@@ -1,0 +1,53 @@
+.process-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Reset and base button styles */
+.process-controls button {
+  min-width: 2rem !important;
+  min-height: 2rem !important;
+  font-size: 1.1rem !important;
+  padding: 0.25rem 0.5rem !important;
+  border: 1px solid #dee2e6 !important;
+  border-radius: 4px !important;
+  background: transparent !important;
+  color: #6c757d !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+/* Enabled button hover state */
+.process-controls button:not(:disabled):hover {
+  background: var(--p-button-primary-background) !important;
+  border: 1px solid var(--p-button-primary-border-color) !important;
+  color: white !important;
+  transform: scale(1.05) !important;
+}
+
+/* Disabled button state */
+.process-controls button:disabled {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+  background: #f8f9fa !important;
+  color: #6c757d !important;
+  border-color: #dee2e6 !important;
+  transform: none !important;
+}
+
+.process-controls button:disabled:hover {
+  background: #f8f9fa !important;
+  color: #6c757d !important;
+  border-color: #dee2e6 !important;
+  transform: none !important;
+}
+
+/* Icon styles */
+.process-controls button span.pi {
+  font-size: 1rem !important;
+}
+
+.process-controls button:disabled span.pi {
+  opacity: 0.5 !important;
+}

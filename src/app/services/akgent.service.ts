@@ -1,0 +1,41 @@
+import { inject, Injectable } from '@angular/core';
+import { ApiService } from '../services/api.service';
+import { ContextService } from '../services/context.service';
+import { BehaviorSubject, Subject } from 'rxjs';
+
+export class Akgent {
+  name!: string;
+  agentId!: string;
+}
+
+@Injectable({
+  providedIn: 'root',
+})
+export class AkgentService {
+  apiService: ApiService = inject(ApiService);
+  contextService: ContextService = inject(ContextService);
+
+  selectedAkgent$: BehaviorSubject<Akgent | null> =
+    new BehaviorSubject<Akgent | null>(null);
+
+  select(agentId: string, actorName: string): void {
+    this.selectedAkgent$.next({
+      name: actorName,
+      agentId: agentId,
+    });
+  }
+
+  unselect(): void {
+    this.selectedAkgent$.next(null);
+  }
+
+  isSavingState: { [key: string]: boolean } = {};
+
+  async sendMessage(
+    processId: string,
+    agentId: string,
+    userInput: string
+  ): Promise<void> {
+    await this.apiService.chat(processId, agentId, userInput);
+  }
+}

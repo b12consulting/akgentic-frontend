@@ -1,0 +1,198 @@
+<section class="content">
+  <br />
+  <div class="main-container">
+    <p-select
+      size="small"
+      [options]="(processTypes$ | async) || []"
+      [ngModel]="processType$ | async"
+      (ngModelChange)="processType$.next($event)"
+    />
+    &nbsp;
+    <p-select
+      size="small"
+      [options]="(configs$ | async) || []"
+      [ngModel]="config$ | async"
+      (ngModelChange)="config$.next($event)"
+    />
+    &nbsp;
+    <button
+      pButton
+      size="small"
+      type="button"
+      label="Create"
+      [icon]="isCreatingProcess ? 'pi pi-spinner pi-spin' : 'pi pi-plus'"
+      [disabled]="isCreatingProcess"
+      (click)="createProcess()"
+      class="extra-small-button"
+    ></button>
+    &nbsp;
+    <button
+      pButton
+      size="small"
+      type="button"
+      label="Configure"
+      icon="pi pi-cog"
+      [disabled]="isRefreshing"
+      (click)="visible = true"
+    ></button>
+    &nbsp;
+    <button
+      pButton
+      size="small"
+      type="button"
+      label="Refresh"
+      [icon]="isRefreshing ? 'pi pi-spinner pi-spin' : 'pi pi-refresh'"
+      [disabled]="isRefreshing"
+      (click)="refreshContext()"
+      class="extra-small-button"
+    ></button>
+    <br />
+    <br />
+
+    <p-table
+      [value]="context"
+      selectionMode="single"
+      (onRowSelect)="onRowSelect($event)"
+      [tableStyle]="{ 'min-width': '50rem' }"
+    >
+      <ng-template #header>
+        <tr>
+          <th>Name</th>
+          <th>Creation Date</th>
+          <th>Status</th>
+          <th>Process ID</th>
+          <th></th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-ctx>
+        <tr [pSelectableRow]="ctx">
+          <td>
+            <div class="team-info">
+              <div class="team-name">
+                {{ ctx.name }} — {{ ctx.config_name }}
+              </div>
+
+              <!-- Display mode -->
+              <div
+                *ngIf="editingDescriptionFor !== ctx.id"
+                class="team-description"
+                (click)="
+                  startEditDescription(ctx.id, ctx.description);
+                  $event.stopPropagation()
+                "
+              >
+                <span *ngIf="ctx.description" class="description-text">
+                  {{ ctx.description }}
+                </span>
+                <span *ngIf="!ctx.description" class="description-placeholder">
+                  Click to add description...
+                </span>
+              </div>
+
+              <!-- Edit mode -->
+              <div
+                *ngIf="editingDescriptionFor === ctx.id"
+                class="description-editor"
+                (click)="$event.stopPropagation()"
+              >
+                <input
+                  #descriptionInput
+                  type="text"
+                  pInputText
+                  [ngModel]="descriptionDrafts.get(ctx.id)"
+                  (ngModelChange)="descriptionDrafts.set(ctx.id, $event)"
+                  placeholder="Enter team description"
+                  (keyup.enter)="saveDescription(ctx.id)"
+                  (keyup.escape)="cancelEditDescription()"
+                  class="description-input"
+                  maxlength="500"
+                  [autofocus]="true"
+                />
+                <button
+                  pButton
+                  icon="pi pi-check"
+                  (click)="saveDescription(ctx.id)"
+                  class="description-save-btn"
+                  rounded
+                ></button>
+                <button
+                  pButton
+                  icon="pi pi-times"
+                  (click)="cancelEditDescription()"
+                  severity="secondary"
+                  class="description-cancel-btn"
+                  rounded
+                ></button>
+              </div>
+            </div>
+          </td>
+          <td>{{ ctx.created_at | date: "short" }}</td>
+          <td>
+            <p-tag *ngIf="!ctx.running" value="Stopped" severity="info">
+            </p-tag>
+            <p-tag *ngIf="ctx.running" value="Running" severity="success">
+            </p-tag>
+          </td>
+          <td>{{ ctx.id }}</td>
+          <td>
+            <p-button
+              *ngIf="ctx.running"
+              [icon]="
+                isArchiving(ctx.id)
+                  ? 'pi pi-spinner pi-spin'
+                  : 'pi pi-stop-circle'
+              "
+              (click)="archiveProcess(ctx.id)"
+              severity="secondary"
+              rounded
+              [style]="{ 'margin-right': '0.5rem' }"
+              title="Archive Process"
+              [disabled]="isArchiving(ctx.id)"
+            />
+            <p-button
+              *ngIf="!ctx.running"
+              [icon]="
+                isRestoring(ctx.id) ? 'pi pi-spinner pi-spin' : 'pi pi-replay'
+              "
+              (click)="restoreProcess(ctx.id)"
+              severity="secondary"
+              rounded
+              [style]="{ 'margin-right': '0.5rem' }"
+              title="Restore Process"
+              [disabled]="isRestoring(ctx.id)"
+            />
+            &nbsp;
+            <p-button
+              icon="pi pi-times"
+              (click)="deleteProcess(ctx.id)"
+              severity="secondary"
+              rounded
+              title="Delete Process"
+            />
+          </td>
+        </tr>
+      </ng-template>
+    </p-table>
+  </div>
+
+  <div class="card flex justify-center">
+    <p-dialog
+      [header]="'Manage configurations — ' + (processType$ | async)"
+      [(visible)]="visible"
+      [modal]="true"
+      [closable]="true"
+      [draggable]="false"
+      [resizable]="false"
+      styleClass="config-dialog"
+      [style]="{ width: '90vw', height: '90vh' }"
+    >
+      <app-config-editor
+        *ngIf="visible"
+        [processType]="(processType$ | async) ?? ''"
+        (onConfigUpdate)="handleConfigUpdate($event)"
+        (onSaveEvent)="visible = false"
+      >
+      </app-config-editor>
+    </p-dialog>
+  </div>
+</section>

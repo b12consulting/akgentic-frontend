@@ -1,0 +1,55 @@
+<div class="input-container">
+  <p-floatlabel variant="in">
+    <div class="input-row">
+      <textarea
+        pTextarea
+        rows="4"
+        cols="50"
+        [autoResize]="true"
+        [style]="{ 'max-height': '400px', 'overflow-y': 'auto' }"
+        [(ngModel)]="userInput"
+        (keydown.enter)="userInputEnterKeySubmit ? sendMessage() : null"
+        (keydown.meta.enter)="sendMessage()"
+        (keydown.control.enter)="sendMessage()"
+        [mention]="mentionItems"
+        [mentionConfig]="{
+          triggerChar: '@',
+          labelKey: 'name',
+          returnTrigger: true,
+          allowSpace: true,
+          mentionSelect: selectAgent,
+          dropUp: true,
+          maxItems: 10
+        }"
+      ></textarea>
+      <label for="on_label">Process input</label>
+    </div>
+  </p-floatlabel>
+
+  <div class="button-group">
+    <app-process-controls></app-process-controls>
+    <div class="send-to-group">
+      <label class="send-to-label">Send to:</label>
+      <p-multiSelect
+        [options]="mentionItems"
+        [(ngModel)]="selectedAgents"
+        (ngModelChange)="onSelectedAgentsChange()"
+        optionLabel="name"
+        placeholder="Override default selection..."
+        [showClear]="true"
+        [showHeader]="false"
+        [disabled]="mentionItems.length === 0"
+        size="small"
+        display="chip"
+        [maxSelectedLabels]="3"
+        [style]="{ 'min-width': '200px', 'max-width': '300px' }"
+      ></p-multiSelect>
+    </div>
+    <p-button
+      size="small"
+      label="Submit"
+      (click)="sendMessage()"
+      [disabled]="!userInput"
+    />
+  </div>
+</div>

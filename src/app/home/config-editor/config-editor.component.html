@@ -1,0 +1,105 @@
+<div>
+  <!-- Dropdown for config selection -->
+  <div
+    class="config-selector"
+    style="margin-bottom: 1rem; display: flex; gap: 0.5rem; align-items: center"
+  >
+    <p-select
+      size="small"
+      [options]="(configData$ | async) || []"
+      [ngModel]="selectedConfig$ | async"
+      (ngModelChange)="onConfigChange($event)"
+      optionLabel="name"
+      placeholder="Select a configuration"
+    />
+    <span style="margin-left: 0.5rem; font-weight: 500">User guide :</span>
+    <button
+      pButton
+      type="button"
+      icon="pi pi-question-circle"
+      [text]="true"
+      [rounded]="true"
+      severity="help"
+      (click)="openDocumentation()"
+      pTooltip="Open configuration documentation"
+      tooltipPosition="right"
+    ></button>
+    <!-- (onChange)="onConfigChange()" -->
+    <!-- [style]="{ width: '100%', marginBottom: '1rem' }" -->
+  </div>
+
+  <nu-monaco-editor
+    [ngModel]="config$ | async"
+    (ngModelChange)="onConfigModelChange($event)"
+    [options]="editorOptions"
+    [height]="'calc(100% - 80px)'"
+    (event)="showEvent($event)"
+  ></nu-monaco-editor>
+
+  <!-- Action buttons row -->
+  <div class="config-actions-row">
+    <div class="config-actions-left">
+      <div class="field">
+        <button
+          pButton
+          type="button"
+          label="Reset"
+          icon="pi pi-refresh"
+          (click)="onReset()"
+          [disabled]="unchanged"
+        ></button>
+        <button
+          pButton
+          type="button"
+          label="Check"
+          icon="pi pi-check"
+          (click)="onCheck()"
+        ></button>
+      </div>
+    </div>
+    <div class="config-actions-right">
+      <div class="field">
+        <label for="configName">Configuration Name:</label>
+        <input
+          id="configName"
+          size="small"
+          type="text"
+          pInputText
+          [(ngModel)]="newConfigName"
+          placeholder="Enter new config name"
+        />
+        <button
+          pButton
+          type="button"
+          label="Save New"
+          icon="pi pi-plus"
+          (click)="onSaveNew()"
+          [disabled]="!newConfigName"
+        ></button>
+        <button
+          pButton
+          type="button"
+          label="Save"
+          icon="pi pi-save"
+          (click)="onSave()"
+          [disabled]="
+            !(selectedConfig$ | async) ||
+            !(selectedConfig$ | async)?.id ||
+            unchanged
+          "
+        ></button>
+        <button
+          pButton
+          type="button"
+          label="Delete"
+          icon="pi pi-trash"
+          severity="danger"
+          (click)="onDelete()"
+          [disabled]="
+            !(selectedConfig$ | async) || !(selectedConfig$ | async)?.id
+          "
+        ></button>
+      </div>
+    </div>
+  </div>
+</div>

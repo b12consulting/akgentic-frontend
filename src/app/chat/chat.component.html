@@ -1,0 +1,35 @@
+<div class="chat-container">
+  <ng-container *ngIf="messagesSignal().length > 0; else noMessagesPlaceholder">
+    <app-message-list
+      [messages]="messagesSignal()"
+      [loading]="(loading$ | async) ?? false"
+      [errorMessage]="errorMessage()"
+      (messageSelected)="handleMessageSelected($event)"
+    ></app-message-list>
+  </ng-container>
+  <ng-template #noMessagesPlaceholder>
+    <ng-container *ngIf="loadingProcess$ | async; else emptyState">
+      <div class="empty-section">
+        <div class="empty-section-box">
+          <i class="pi pi-spin pi-spinner chat-placeholder-icon"></i>
+          <div class="chat-placeholder-title">Loading process...</div>
+          <div class="chat-placeholder-desc">
+            Please wait while we fetch the conversation.
+          </div>
+        </div>
+      </div>
+    </ng-container>
+    <ng-template #emptyState>
+      <div class="empty-section">
+        <div class="empty-section-box">
+          <i class="pi pi-comment chat-placeholder-icon"></i>
+          <div class="chat-placeholder-title">No messages yet</div>
+          <div class="chat-placeholder-desc">
+            Start a conversation by sending a message below.
+          </div>
+        </div>
+      </div>
+    </ng-template>
+  </ng-template>
+  <app-user-input [processId]="processId"></app-user-input>
+</div>

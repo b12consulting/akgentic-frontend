@@ -1,0 +1,24 @@
+.input-container {
+  textarea {
+    width: 100%;
+  }
+}
+
+.button-group {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.send-to-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.send-to-label {
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
