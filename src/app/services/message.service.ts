@@ -68,9 +68,49 @@ export class ActorMessageService {
     this.chatService.loadingProcess$.next(true);
 
     if (!running) {
-      // V2: use getEvents() for stopped teams -- minimal implementation (Story 1.3)
+      // V2: use getEvents() for stopped teams
       const eventResponses: EventResponse[] =
         await this.apiService.getEvents(processId);
+
+      // Reconstruct stateDict$ and contextDict$ from persisted events (Story 1.4)
+      // Events arrive sorted by sequence (ascending) from the API.
+      // - StateChangedMessage: later events overwrite earlier (keeps latest state per agent)
+      // - LlmMessageEvent: messages appended in chronological order (ordered context)
+      const latestStates: { [agentId: string]: any } = {};
+      const contextArrays: { [agentId: string]: any[] } = {};
+
+      for (const er of eventResponses) {
+        const evt = er.event;
+        if (!evt || !evt.__model__) continue;
+
+        if (evt.__model__.includes('StateChangedMessage')) {
+          const agentId = evt.sender?.agent_id;
+          if (agentId) {
+            latestStates[agentId] = evt.state;
+          }
+        } else if (evt.__model__.includes('EventMessage')) {
+          const inner = (evt as any).event;
+          if (inner?.__model__?.includes('LlmMessageEvent')) {
+            const agentId = evt.sender?.agent_id;
+            if (agentId) {
+              if (!contextArrays[agentId]) contextArrays[agentId] = [];
+              contextArrays[agentId].push(inner.message);
+            }
+          }
+        }
+      }
+
+      for (const [agentId, state] of Object.entries(latestStates)) {
+        this.initDict(this.stateDict$, agentId, null);
+        this.stateDict$[agentId].next({ schema: {}, state });
+      }
+
+      for (const [agentId, msgs] of Object.entries(contextArrays)) {
+        this.initDict(this.contextDict$, agentId, []);
+        this.contextDict$[agentId].next(msgs);
+      }
+
+      // Existing graph-relevant message extraction (unchanged -- Story 1.3)
       messages = eventResponses
         .map((er: EventResponse) => er.event as AkgenticMessage)
         .filter(
