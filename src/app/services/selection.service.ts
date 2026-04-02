@@ -3,6 +3,7 @@ import { BehaviorSubject } from 'rxjs';
 import { AkgentService } from './akgent.service';
 import { ApiService } from './api.service';
 import { ChatService } from './chat.service';
+import { ContextService } from './context.service';
 
 import { SentMessage } from '../models/message.types';
 import { ChatMessageInterface, NodeInterface } from '../models/types';
@@ -22,6 +23,7 @@ export class SelectionService {
   akgentService: AkgentService = inject(AkgentService);
   apiService: ApiService = inject(ApiService);
   chatService: ChatService = inject(ChatService);
+  contextService: ContextService = inject(ContextService);
 
   handleSelection(selection: Selectable): void {
     if (!selection.data) {
@@ -57,7 +59,9 @@ export class SelectionService {
   }
 
   onSave(userInput: string, message: SentMessage): void {
-    this.apiService.processHumanInput(userInput, message);
+    const teamId = this.contextService.currentProcessId$.value;
+    // message.id is the SentMessage ID; use it as the message_id for V2 human-input
+    this.apiService.processHumanInput(teamId, userInput, message.id);
     this.modalVisible$.next(false);
   }
 }

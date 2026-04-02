@@ -69,8 +69,6 @@ export function isRunning(team: TeamContext): boolean {
 
 /**
  * Map a V2 TeamResponse to the frontend TeamContext model.
- * Also populates backward-compatible V1 fields (id, running, params)
- * so that un-migrated components work at runtime. Story 1.2 will remove these.
  */
 export function toTeamContext(response: TeamResponse): TeamContext {
   return {
@@ -80,12 +78,8 @@ export function toTeamContext(response: TeamResponse): TeamContext {
     created_at: response.created_at,
     updated_at: response.updated_at,
     // config_name is not in TeamResponse -- V2 does not return it.
-    // Use team name as placeholder; Story 1.2 will populate from catalog.
+    // Use team name as placeholder; future story may populate from catalog metadata.
     config_name: response.name,
     description: null,
-    // Backward-compatible V1 fields (Story 1.2 will remove)
-    id: response.team_id,
-    running: response.status === 'running',
-    params: { workspace: false, knowledge_graph: false },
-  } as TeamContext;
+  };
 }
