@@ -72,7 +72,7 @@ export class ActorMessageService {
       const eventResponses: EventResponse[] =
         await this.apiService.getEvents(processId);
 
-      // Reconstruct stateDict$ and contextDict$ from persisted events (Story 1.4)
+      // Reconstruct stateDict$ and contextDict$ from persisted events.
       // Events arrive sorted by sequence (ascending) from the API.
       // - StateChangedMessage: later events overwrite earlier (keeps latest state per agent)
       // - LlmMessageEvent: messages appended in chronological order (ordered context)
@@ -89,10 +89,10 @@ export class ActorMessageService {
             latestStates[agentId] = evt.state;
           }
         } else if (evt.__model__.includes('EventMessage')) {
-          const inner = (evt as any).event;
+          const inner = evt.event;
           if (inner?.__model__?.includes('LlmMessageEvent')) {
             const agentId = evt.sender?.agent_id;
-            if (agentId) {
+            if (agentId && inner.message) {
               if (!contextArrays[agentId]) contextArrays[agentId] = [];
               contextArrays[agentId].push(inner.message);
             }
@@ -110,7 +110,7 @@ export class ActorMessageService {
         this.contextDict$[agentId].next(msgs);
       }
 
-      // Existing graph-relevant message extraction (unchanged -- Story 1.3)
+      // Filter graph-relevant messages for the agent graph and message list
       messages = eventResponses
         .map((er: EventResponse) => er.event as AkgenticMessage)
         .filter(
