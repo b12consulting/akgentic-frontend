@@ -2,67 +2,83 @@ import { inject, Injectable } from '@angular/core';
 import { Router } from '@angular/router';
 import { BehaviorSubject } from 'rxjs';
 import { ApiService } from './api.service';
-import { ProcessContext } from '../models/process.interface';
+import { TeamContext } from '../models/team.interface';
 
 @Injectable({
   providedIn: 'root',
 })
 export class ContextService {
-  apiService: ApiService = new ApiService();
+  apiService: ApiService = inject(ApiService);
   router: Router = inject(Router);
   currentProcessId$ = new BehaviorSubject<string>('');
 
-  _context: ProcessContext[] = [];
+  _context: TeamContext[] = [];
 
-  async getContext(): Promise<ProcessContext[]> {
-    this._context = await this.apiService.getContext();
+  async getTeams(): Promise<TeamContext[]> {
+    this._context = await this.apiService.getTeams();
     return this._context;
   }
 
-  async getCurrentProcess(
-    processId: string,
+  async getCurrentTeam(
+    teamId: string,
     useCache: boolean = true
-  ): Promise<ProcessContext | null> {
-    // Look for the process in the cache
+  ): Promise<TeamContext | null> {
     if (useCache) {
-      const cachedProcess = this._context.find(
-        (i: ProcessContext) => i.id === processId
+      const cached = this._context.find(
+        (t: TeamContext) => t.team_id === teamId
       );
-      if (cachedProcess) {
-        return cachedProcess;
+      if (cached) {
+        return cached;
       }
     }
 
-    // Get the process from the API
-    const process = await this.apiService.getProcess(processId);
+    const team = await this.apiService.getTeam(teamId);
 
-    // replace the entry in the context cache
-    this._context = this._context.map((i: ProcessContext) =>
-      i.id === processId ? process : i
+    this._context = this._context.map((t: TeamContext) =>
+      t.team_id === teamId ? team : t
     );
 
-    return process;
+    return team;
   }
 
-  async deleteCurrentProcess(team_id: string): Promise<void> {
-    await this.apiService.deleteProcess(team_id);
+  async deleteTeam(teamId: string): Promise<void> {
+    await this.apiService.deleteTeam(teamId);
   }
 
-  // Delete the current process and create a new one of the specified type
-  // Then navigate to the new process
-  async clear(processId: string) {
-    await this.deleteCurrentProcess(processId);
+  async clear(teamId: string) {
+    await this.deleteTeam(teamId);
     await this.router.navigate(['/']);
   }
 
-  async createProcessAndNavigate(processType: string) {
-    await this.apiService.createProcess(processType, 'default');
-    await this.getContext().then((context) => {
-      const len = context.length;
-      const processId = context[len - 1].id;
-      return this.router.navigate(['/process', processId]).then(() => {
-        window.location.reload();
-      });
+  async createTeamAndNavigate(catalogEntryId: string) {
+    const response = await this.apiService.createTeam(catalogEntryId);
+    await this.router.navigate(['/process', response.team_id]).then(() => {
+      window.location.reload();
     });
+  }
+
+  // --- Backward-compatible aliases (Story 1.2 will remove these) ---
+
+  /** @deprecated Use getTeams() instead. */
+  async getContext(): Promise<any[]> {
+    return this.getTeams();
+  }
+
+  /** @deprecated Use getCurrentTeam() instead. */
+  async getCurrentProcess(
+    processId: string,
+    useCache: boolean = true
+  ): Promise<any> {
+    return this.getCurrentTeam(processId, useCache);
+  }
+
+  /** @deprecated Use deleteTeam() instead. */
+  async deleteCurrentProcess(teamId: string): Promise<void> {
+    return this.deleteTeam(teamId);
+  }
+
+  /** @deprecated Use createTeamAndNavigate() instead. */
+  async createProcessAndNavigate(processType: string) {
+    return this.createTeamAndNavigate(processType);
   }
 }
