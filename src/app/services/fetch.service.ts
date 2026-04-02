@@ -25,9 +25,14 @@ export class FetchService {
     const response = await fetch(url, options);
 
     if (!response.ok) {
-      const errorJson = await response.clone().json();
+      let errorDetail = '';
+      try {
+        const errorJson = await response.clone().json();
+        errorDetail = errorJson.detail || '';
+      } catch {
+        // Response body is not valid JSON -- fall back to text
+      }
       const errorBody = await response.text();
-      const errorDetail = errorJson.detail || '';
       console.error(
         `Error: ${response.status} - ${response.statusText}`,
         errorBody
@@ -40,6 +45,11 @@ export class FetchService {
       );
     } else if (successMessage) {
       this.showNotification(successMessage, 'success');
+    }
+
+    // 204 No Content (and other bodyless responses) cannot be parsed as JSON
+    if (response.status === 204 || response.headers.get('content-length') === '0') {
+      return undefined;
     }
 
     return response.json();

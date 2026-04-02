@@ -111,27 +111,32 @@ export class ApiService {
     });
   }
 
+  /**
+   * V2 signature: processHumanInput(teamId, content, messageId).
+   * Also accepts V1 signature: processHumanInput(userInput, sentMessage)
+   * for backward compatibility with un-migrated components (Story 1.2 will remove V1 path).
+   */
   async processHumanInput(
     teamIdOrContent: string,
-    contentOrMessage: any,
+    contentOrMessage: string | { team_id: string; message_id?: string; id?: string },
     messageId?: string
   ): Promise<void> {
     let teamId: string;
     let content: string;
     let msgId: string;
 
-    if (messageId !== undefined) {
-      // New V2 signature: processHumanInput(teamId, content, messageId)
+    if (typeof contentOrMessage === 'string' && messageId !== undefined) {
+      // V2 signature: processHumanInput(teamId, content, messageId)
       teamId = teamIdOrContent;
-      content = contentOrMessage as string;
+      content = contentOrMessage;
       msgId = messageId;
-    } else if (typeof contentOrMessage === 'object' && contentOrMessage.team_id) {
-      // Old V1 signature: processHumanInput(userInput, message: SentMessage)
+    } else if (typeof contentOrMessage === 'object' && contentOrMessage?.team_id) {
+      // V1 signature: processHumanInput(userInput, sentMessage)
       teamId = contentOrMessage.team_id;
       content = teamIdOrContent;
       msgId = contentOrMessage.message_id ?? contentOrMessage.id ?? '';
     } else {
-      console.warn('processHumanInput: unrecognized call signature');
+      console.warn('processHumanInput: unrecognized call signature, skipping');
       return;
     }
 

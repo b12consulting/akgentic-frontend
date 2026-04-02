@@ -79,8 +79,10 @@ export function toTeamContext(response: TeamResponse): TeamContext {
     status: response.status,
     created_at: response.created_at,
     updated_at: response.updated_at,
+    // config_name is not in TeamResponse -- V2 does not return it.
+    // Use team name as placeholder; Story 1.2 will populate from catalog.
     config_name: response.name,
-    description: undefined,
+    description: null,
     // Backward-compatible V1 fields (Story 1.2 will remove)
     id: response.team_id,
     running: response.status === 'running',
