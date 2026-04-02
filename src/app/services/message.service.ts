@@ -1,9 +1,10 @@
 import { inject, Injectable } from '@angular/core';
 
-import { BehaviorSubject, Subscription, switchMap } from 'rxjs';
+import { BehaviorSubject, Subscription } from 'rxjs';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 import { environment } from '../../environments/environment';
 import { AkgenticMessage } from '../models/message.types';
+import { EventResponse } from '../models/team.interface';
 
 import { ApiService } from '../services/api.service';
 import { ChatService } from './chat.service';
@@ -13,6 +14,16 @@ interface KnowledgeGraphData {
   nodes: any[];
   edges: any[];
 }
+
+/** V2 message types that feed the agent graph and message list. */
+const GRAPH_RELEVANT_MODELS = [
+  'StartMessage',
+  'SentMessage',
+  'StopMessage',
+  'ErrorMessage',
+  'UserMessage',
+  'ResultMessage',
+];
 
 @Injectable()
 export class ActorMessageService {
@@ -57,27 +68,17 @@ export class ActorMessageService {
     this.chatService.loadingProcess$.next(true);
 
     if (!running) {
-      // Fetch the contexts from the server
-      const contexts = await this.apiService.getAgentContext(processId);
-      Object.entries(contexts).forEach(([actor_id, data]) => {
-        const typed = data as { context: any[] };
-        this.initDict(this.contextDict$, actor_id, []);
-        this.contextDict$[actor_id].next(typed.context);
-      });
-
-      // Fetch the states from the server
-      const states = await this.apiService.getAkgentStates(processId);
-      Object.entries(states).forEach(([actor_id, data]) => {
-        const typedData = data as { schema: any; state: any };
-        this.initDict(this.stateDict$, actor_id, null);
-        this.stateDict$[actor_id].next({
-          schema: typedData.schema,
-          state: typedData.state,
-        });
-      });
-
-      // Fetch the messages from the server (Comes from the DB, or context if no DB)
-      messages = await this.apiService.getMessages(processId);
+      // V2: use getEvents() for stopped teams -- minimal implementation (Story 1.3)
+      const eventResponses: EventResponse[] =
+        await this.apiService.getEvents(processId);
+      messages = eventResponses
+        .map((er: EventResponse) => er.event as AkgenticMessage)
+        .filter(
+          (evt: AkgenticMessage) =>
+            evt &&
+            evt.__model__ &&
+            GRAPH_RELEVANT_MODELS.some((m) => evt.__model__.includes(m))
+        );
     }
 
     this.createAgentGraph$.next(messages);
@@ -88,64 +89,68 @@ export class ActorMessageService {
       }
     });
 
-    await this.refreshKnowledgeGraph();
-
-    // Subscribe to the webSocket to receive new messages
+    // V2: connect directly -- no ticket needed (community tier, AC8)
     const wsProtocol =
       window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-    //remove http or https from the api url
     const api = environment.api.replace(/(^\w+:|^)\/\//, '');
 
-    this.apiService
-      .getWebSocketTicket()
-      .pipe(
-        switchMap((ticket) => {
-          this.webSocket = webSocket(
-            `${wsProtocol}${api}/ws/${this.processId}?ticket=${ticket}`
-          );
-          return this.webSocket;
-        })
-      )
-      .subscribe({
-        next: (data) => {
-          if (data && data.type === 'error') {
-            this.messageService.add({
-              severity: 'error',
-              summary: 'WebSocket Authentication Failed',
-              detail:
-                data.message || 'Failed to authenticate WebSocket connection',
-              life: 5000,
+    this.webSocket = webSocket(`${wsProtocol}${api}/ws/${this.processId}`);
+    this.chatService.loadingProcess$.next(false);
+
+    this.webSocket.subscribe({
+      next: (data: any) => {
+        // V2: data is a PersistedEvent { team_id, sequence, event, timestamp }
+        const event = data?.event;
+        if (!event || !event.__model__) return;
+
+        if (event.__model__.includes('StateChangedMessage')) {
+          const agentName = event.sender?.name;
+          if (agentName) {
+            this.initDict(this.stateDict$, agentName, null);
+            this.stateDict$[agentName].next({
+              schema: {},
+              state: event.state,
             });
+          }
+        } else if (event.__model__.includes('EventMessage')) {
+          this.handleEventMessage(event);
+        } else if (event.__model__.includes('ErrorMessage')) {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: event.exception_value,
+            life: 5000,
+          });
+          this.message$.next(event);
+        } else {
+          // All other messages: forward to message$ for graph + message list
+          if (this.paused) {
+            this.messages.push(event);
             return;
           }
-          if (data && data.type === 'message') {
-            if (this.paused) {
-              this.messages.push(data.message);
-              return;
-            }
-            this.message$.next(data.message);
-          }
-          if (data && data.type === 'llm_context') {
-            this.initDict(this.contextDict$, data.agent_id, []);
-            this.contextDict$[data.agent_id].next(data.context);
-          }
-          if (data && data.type === 'state') {
-            this.initDict(this.stateDict$, data.agent_id, null);
-            this.stateDict$[data.agent_id].next({
-              schema: data.schema,
-              state: data.state,
-            });
-          }
-          if (data && data.type === 'tool_update') {
-            this.handleToolUpdate(data);
-          }
-          setTimeout(() => {
-            this.chatService.loadingProcess$.next(false);
-          }, 250);
-        },
-        error: (err) => console.log(err),
-        complete: () => console.log('webSocket - complete'),
-      });
+          this.message$.next(event);
+        }
+      },
+      error: (err: any) => console.log(err),
+      complete: () => console.log('webSocket - complete'),
+    });
+  }
+
+  /**
+   * Handle V2 EventMessage: delegates to LlmMessageEvent or ToolCallEvent handlers.
+   */
+  private handleEventMessage(event: any): void {
+    const inner = event.event;
+    if (inner?.__model__?.includes('LlmMessageEvent')) {
+      const agentName = event.sender?.name;
+      if (agentName) {
+        this.initDict(this.contextDict$, agentName, []);
+        const current = this.contextDict$[agentName].getValue();
+        this.contextDict$[agentName].next([...current, inner.message]);
+      }
+    } else if (inner?.__model__?.includes('ToolCallEvent')) {
+      this.handleToolUpdate(inner);
+    }
   }
 
   backwardClicked() {
@@ -219,7 +224,7 @@ export class ActorMessageService {
   }
 
   private handleToolUpdate(payload: any): void {
-    if (payload?.tool !== 'knowledge_graph') {
+    if (payload?.tool !== 'knowledge_graph' && payload?.tool_name !== 'knowledge_graph') {
       return;
     }
 

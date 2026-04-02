@@ -13,9 +13,9 @@ import { BehaviorSubject } from 'rxjs';
 
 import { ButtonModule } from 'primeng/button';
 import { TextareaModule } from 'primeng/textarea';
+import { MessageService } from 'primeng/api';
 
 import { environment } from '../../../../environments/environment';
-import { ApiService } from '../../../services/api.service';
 import { AkgentService } from '../../../services/akgent.service';
 import { ActorMessageService } from '../../../services/message.service';
 import { FetchService } from '../../../services/fetch.service';
@@ -31,8 +31,8 @@ export class AkgentStateComponent {
   @Input() agentId!: string;
 
   akgentService: AkgentService = inject(AkgentService);
-  apiService: ApiService = inject(ApiService);
-  messageService: ActorMessageService = inject(ActorMessageService);
+  actorMessageService: ActorMessageService = inject(ActorMessageService);
+  toastService: MessageService = inject(MessageService);
   fetchService: FetchService = inject(FetchService);
   formBuider: FormBuilder = inject(FormBuilder);
   private destroyRef = inject(DestroyRef);
@@ -118,16 +118,12 @@ export class AkgentStateComponent {
   }
 
   onSubmit(): void {
-    this.akgentService.isSavingState[this.agentId] = true;
-    const dirtValues = this.getDirtyValues(this.dynamicForm);
-    const currentProcessId =
-      this.akgentService.contextService.currentProcessId$.value;
-
-    this.apiService.updateAkgentState(
-      currentProcessId,
-      this.agentId,
-      dirtValues
-    );
+    this.toastService.add({
+      severity: 'info',
+      summary: 'Read Only',
+      detail: 'State editing is not available in V2',
+      life: 3000,
+    });
   }
 
   getDirtyValues(form: FormGroup | FormArray): any {

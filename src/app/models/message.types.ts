@@ -41,12 +41,6 @@ export interface BaseMessage {
 
 // Core message types from orchestrator.py
 
-export interface NotificationMessage extends BaseMessage {
-  __model__: 'akgentic.core.messages.orchestrator.NotificationMessage';
-  subject: string;
-  content: string;
-}
-
 export interface SentMessage extends BaseMessage {
   __model__: 'akgentic.core.messages.orchestrator.SentMessage';
   message: BaseMessage;
@@ -81,23 +75,15 @@ export interface ErrorMessage extends BaseMessage {
   current_message?: BaseMessage;
 }
 
-export interface ContextChangedMessage extends BaseMessage {
-  __model__: 'akgentic.core.messages.orchestrator.ContextChangedMessage';
-  messages: any[]; // LangChain AnyMessage type
-  err?: Error;
-}
-
 export interface StateChangedMessage extends BaseMessage {
   __model__: 'akgentic.core.messages.orchestrator.StateChangedMessage';
   state: BaseState | Record<string, any>;
   err?: Error;
 }
 
-export interface ToolUpdateMessage extends BaseMessage {
-  __model__: 'akgentic.core.messages.orchestrator.ToolUpdateMessage';
-  tool: string;
-  data: any;
-  metadata?: { [key: string]: any };
+export interface EventMessage extends BaseMessage {
+  __model__: string; // contains 'EventMessage'
+  event: any;
 }
 
 // Additional message types that might be used
@@ -114,25 +100,18 @@ export interface ResultMessage extends BaseMessage {
 
 // Union type for all possible messages
 export type AkgenticMessage =
-  | NotificationMessage
   | SentMessage
   | ReceivedMessage
   | ProcessedMessage
   | StartMessage
   | StopMessage
   | ErrorMessage
-  | ContextChangedMessage
   | StateChangedMessage
-  | ToolUpdateMessage
+  | EventMessage
   | UserMessage
   | ResultMessage;
 
 // Type guards for message discrimination
-export function isNotificationMessage(
-  msg: BaseMessage,
-): msg is NotificationMessage {
-  return msg.__model__.includes('NotificationMessage');
-}
 
 export function isSentMessage(msg: BaseMessage): msg is SentMessage {
   return msg.__model__.includes('SentMessage');
@@ -158,22 +137,14 @@ export function isErrorMessage(msg: BaseMessage): msg is ErrorMessage {
   return msg.__model__.includes('ErrorMessage');
 }
 
-export function isContextChangedMessage(
-  msg: BaseMessage,
-): msg is ContextChangedMessage {
-  return msg.__model__.includes('ContextChangedMessage');
-}
-
 export function isStateChangedMessage(
   msg: BaseMessage,
 ): msg is StateChangedMessage {
   return msg.__model__.includes('StateChangedMessage');
 }
 
-export function isToolUpdateMessage(
-  msg: BaseMessage,
-): msg is ToolUpdateMessage {
-  return msg.__model__.includes('ToolUpdateMessage');
+export function isEventMessage(msg: BaseMessage): msg is EventMessage {
+  return msg.__model__.includes('EventMessage');
 }
 
 export function isUserMessage(msg: BaseMessage): msg is UserMessage {
