@@ -58,10 +58,19 @@ export class SelectionService {
     this.modalVisible$.next(false);
   }
 
-  onSave(userInput: string, message: SentMessage): void {
+  async onSave(userInput: string, message: SentMessage): Promise<void> {
     const teamId = this.contextService.currentProcessId$.value;
-    // message.id is the SentMessage ID; use it as the message_id for V2 human-input
-    this.apiService.processHumanInput(teamId, userInput, message.id);
-    this.modalVisible$.next(false);
+    if (!teamId) {
+      console.error('Cannot process human input: no team selected');
+      return;
+    }
+    try {
+      // message.id is the SentMessage ID; use it as the message_id for V2 human-input
+      await this.apiService.processHumanInput(teamId, userInput, message.id);
+    } catch (error) {
+      console.error('Failed to process human input:', error);
+    } finally {
+      this.modalVisible$.next(false);
+    }
   }
 }

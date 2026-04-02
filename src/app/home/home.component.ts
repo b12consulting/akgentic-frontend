@@ -104,6 +104,8 @@ export class HomeComponent {
       const catalogEntryId = entry.id ?? entry.name ?? '';
       await this.apiService.createTeam(catalogEntryId);
       this.context = await this.contextService.getTeams();
+    } catch (error) {
+      console.error('Failed to create team:', error);
     } finally {
       this.isCreatingTeam = false;
     }
