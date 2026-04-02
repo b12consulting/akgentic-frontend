@@ -18,7 +18,6 @@ import { MessageService } from 'primeng/api';
 import { environment } from '../../../../environments/environment';
 import { AkgentService } from '../../../services/akgent.service';
 import { ActorMessageService } from '../../../services/message.service';
-import { FetchService } from '../../../services/fetch.service';
 
 @Component({
   selector: 'app-akgent-state',
@@ -33,7 +32,6 @@ export class AkgentStateComponent {
   akgentService: AkgentService = inject(AkgentService);
   actorMessageService: ActorMessageService = inject(ActorMessageService);
   toastService: MessageService = inject(MessageService);
-  fetchService: FetchService = inject(FetchService);
   formBuider: FormBuilder = inject(FormBuilder);
   private destroyRef = inject(DestroyRef);
 
@@ -42,10 +40,6 @@ export class AkgentStateComponent {
 
   ngOnInit(): void {
     this.state$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((data) => {
-      if (this.akgentService.isSavingState[this.agentId]) {
-        this.fetchService.showNotification('State saved successfully');
-      }
-      this.akgentService.isSavingState[this.agentId] = false;
       this.dynamicForm = this.formBuider.group({});
       this.generateForm(data);
     });
@@ -54,6 +48,12 @@ export class AkgentStateComponent {
   generateForm(data: any): void {
     if (!data) return;
     const schema = data.schema || {};
+
+    if (!schema.properties) {
+      // V2 sends empty schema -- display raw state as JSON
+      this.schemaFields = [];
+      return;
+    }
 
     this.schemaFields = Object.keys(schema.properties).map((key) => {
       const field = schema.properties[key];

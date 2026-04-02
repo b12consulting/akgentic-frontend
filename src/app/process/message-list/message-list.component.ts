@@ -115,13 +115,8 @@ export class MessageListComponent {
     });
   }
 
-  disableRelaunchBtn(message: any) {
-    // Check if a StopMessage has been received for the actor in error
-    // This happens when we relaunched the process (see orchestrator)
-    return !!this.messages.find(
-      (msg) =>
-        msg.__model__.includes('StopMessage') &&
-        msg.actor.agent_id == message.sender.agent_id
-    );
+  disableRelaunchBtn(_message: any) {
+    // V2: relaunch is not available; always disabled
+    return true;
   }
 }

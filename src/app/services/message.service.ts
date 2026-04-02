@@ -104,10 +104,10 @@ export class ActorMessageService {
         if (!event || !event.__model__) return;
 
         if (event.__model__.includes('StateChangedMessage')) {
-          const agentName = event.sender?.name;
-          if (agentName) {
-            this.initDict(this.stateDict$, agentName, null);
-            this.stateDict$[agentName].next({
+          const agentId = event.sender?.agent_id;
+          if (agentId) {
+            this.initDict(this.stateDict$, agentId, null);
+            this.stateDict$[agentId].next({
               schema: {},
               state: event.state,
             });
@@ -131,7 +131,15 @@ export class ActorMessageService {
           this.message$.next(event);
         }
       },
-      error: (err: any) => console.log(err),
+      error: (err: any) => {
+        console.error('WebSocket error:', err);
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Connection Error',
+          detail: 'WebSocket connection failed. Real-time updates unavailable.',
+          life: 5000,
+        });
+      },
       complete: () => console.log('webSocket - complete'),
     });
   }
@@ -142,11 +150,11 @@ export class ActorMessageService {
   private handleEventMessage(event: any): void {
     const inner = event.event;
     if (inner?.__model__?.includes('LlmMessageEvent')) {
-      const agentName = event.sender?.name;
-      if (agentName) {
-        this.initDict(this.contextDict$, agentName, []);
-        const current = this.contextDict$[agentName].getValue();
-        this.contextDict$[agentName].next([...current, inner.message]);
+      const agentId = event.sender?.agent_id;
+      if (agentId) {
+        this.initDict(this.contextDict$, agentId, []);
+        const current = this.contextDict$[agentId].getValue();
+        this.contextDict$[agentId].next([...current, inner.message]);
       }
     } else if (inner?.__model__?.includes('ToolCallEvent')) {
       this.handleToolUpdate(inner);
