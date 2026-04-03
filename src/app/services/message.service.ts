@@ -60,8 +60,9 @@ export class ActorMessageService {
       // Fetch the contexts from the server
       const contexts = await this.apiService.getAgentContext(processId);
       Object.entries(contexts).forEach(([actor_id, data]) => {
+        const typed = data as { context: any[] };
         this.initDict(this.contextDict$, actor_id, []);
-        this.contextDict$[actor_id].next(data.context);
+        this.contextDict$[actor_id].next(typed.context);
       });
 
       // Fetch the states from the server
