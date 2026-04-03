@@ -91,30 +91,29 @@ export class ProcessUserInputComponent implements OnInit {
       });
 
     this.messageService.messages$.subscribe((messages) => {
-      // Filter and map messages into a structured format
+      // Filter SentMessages and map into chat format.
+      // display_type on AgentMessage is always "other", so we infer
+      // direction from the sender's role: Human → user, everything else → AI.
       const sentMessages = messages.filter(isSentMessage);
       const final_messages = sentMessages
         .filter((m) => m?.sender.role !== 'ActorSystem')
         .map((m: SentMessage): Message | undefined => {
-          if (
-            m.message.display_type === 'human' ||
-            m.message.display_type === 'ai'
-          ) {
-            const message: Message = {
-              id: m.id,
-              content: m.message.content || '',
-              sender: m.message.display_type,
-              type: m.message.display_type === 'human' ? 'question' : 'final',
-              timestamp: new Date(m.timestamp),
-              agent_name: m.sender.name,
-              agent_id: m.sender.agent_id,
-              send_to: m.recipient.name,
-            };
-            return message;
-          }
-          return undefined;
+          const content = m.message.content;
+          if (!content) return undefined;
+          const isHuman = m.sender.role === 'Human';
+          const message: Message = {
+            id: m.id,
+            content,
+            sender: isHuman ? 'human' : 'ai',
+            type: isHuman ? 'question' : 'final',
+            timestamp: new Date(m.timestamp),
+            agent_name: m.sender.name,
+            agent_id: m.sender.agent_id,
+            send_to: m.recipient.name,
+          };
+          return message;
         })
-        .filter((m): m is Message => !!m && !!m.content);
+        .filter((m): m is Message => !!m);
 
       // Pass the filtered messages to the chat service
       // Check if a humanRequests has already been answered and update the final messages before passing it to the chat service
