@@ -3,16 +3,11 @@
   <div class="main-container">
     <p-select
       size="small"
-      [options]="(processTypes$ | async) || []"
-      [ngModel]="processType$ | async"
-      (ngModelChange)="processType$.next($event)"
-    />
-    &nbsp;
-    <p-select
-      size="small"
-      [options]="(configs$ | async) || []"
-      [ngModel]="config$ | async"
-      (ngModelChange)="config$.next($event)"
+      [options]="(catalogEntries$ | async) || []"
+      [ngModel]="selectedCatalogEntry$ | async"
+      (ngModelChange)="selectedCatalogEntry$.next($event)"
+      optionLabel="name"
+      placeholder="Select a team type"
     />
     &nbsp;
     <button
@@ -20,20 +15,10 @@
       size="small"
       type="button"
       label="Create"
-      [icon]="isCreatingProcess ? 'pi pi-spinner pi-spin' : 'pi pi-plus'"
-      [disabled]="isCreatingProcess"
-      (click)="createProcess()"
+      [icon]="isCreatingTeam ? 'pi pi-spinner pi-spin' : 'pi pi-plus'"
+      [disabled]="isCreatingTeam"
+      (click)="createTeam()"
       class="extra-small-button"
-    ></button>
-    &nbsp;
-    <button
-      pButton
-      size="small"
-      type="button"
-      label="Configure"
-      icon="pi pi-cog"
-      [disabled]="isRefreshing"
-      (click)="visible = true"
     ></button>
     &nbsp;
     <button
@@ -60,7 +45,7 @@
           <th>Name</th>
           <th>Creation Date</th>
           <th>Status</th>
-          <th>Process ID</th>
+          <th>Team ID</th>
           <th></th>
         </tr>
       </ng-template>
@@ -74,10 +59,10 @@
 
               <!-- Display mode -->
               <div
-                *ngIf="editingDescriptionFor !== ctx.id"
+                *ngIf="editingDescriptionFor !== ctx.team_id"
                 class="team-description"
                 (click)="
-                  startEditDescription(ctx.id, ctx.description);
+                  startEditDescription(ctx.team_id, ctx.description);
                   $event.stopPropagation()
                 "
               >
@@ -91,7 +76,7 @@
 
               <!-- Edit mode -->
               <div
-                *ngIf="editingDescriptionFor === ctx.id"
+                *ngIf="editingDescriptionFor === ctx.team_id"
                 class="description-editor"
                 (click)="$event.stopPropagation()"
               >
@@ -99,10 +84,10 @@
                   #descriptionInput
                   type="text"
                   pInputText
-                  [ngModel]="descriptionDrafts.get(ctx.id)"
-                  (ngModelChange)="descriptionDrafts.set(ctx.id, $event)"
+                  [ngModel]="descriptionDrafts.get(ctx.team_id)"
+                  (ngModelChange)="descriptionDrafts.set(ctx.team_id, $event)"
                   placeholder="Enter team description"
-                  (keyup.enter)="saveDescription(ctx.id)"
+                  (keyup.enter)="saveDescription(ctx.team_id)"
                   (keyup.escape)="cancelEditDescription()"
                   class="description-input"
                   maxlength="500"
@@ -111,7 +96,7 @@
                 <button
                   pButton
                   icon="pi pi-check"
-                  (click)="saveDescription(ctx.id)"
+                  (click)="saveDescription(ctx.team_id)"
                   class="description-save-btn"
                   rounded
                 ></button>
@@ -128,71 +113,60 @@
           </td>
           <td>{{ ctx.created_at | date: "short" }}</td>
           <td>
-            <p-tag *ngIf="!ctx.running" value="Stopped" severity="info">
+            <p-tag
+              *ngIf="!isRunning(ctx)"
+              value="Stopped"
+              severity="info"
+            >
             </p-tag>
-            <p-tag *ngIf="ctx.running" value="Running" severity="success">
+            <p-tag
+              *ngIf="isRunning(ctx)"
+              value="Running"
+              severity="success"
+            >
             </p-tag>
           </td>
-          <td>{{ ctx.id }}</td>
+          <td>{{ ctx.team_id }}</td>
           <td>
             <p-button
-              *ngIf="ctx.running"
+              *ngIf="isRunning(ctx)"
               [icon]="
-                isArchiving(ctx.id)
+                isStopping(ctx.team_id)
                   ? 'pi pi-spinner pi-spin'
                   : 'pi pi-stop-circle'
               "
-              (click)="archiveProcess(ctx.id)"
+              (click)="stopTeam(ctx.team_id)"
               severity="secondary"
               rounded
               [style]="{ 'margin-right': '0.5rem' }"
-              title="Archive Process"
-              [disabled]="isArchiving(ctx.id)"
+              title="Stop Team"
+              [disabled]="isStopping(ctx.team_id)"
             />
             <p-button
-              *ngIf="!ctx.running"
+              *ngIf="!isRunning(ctx)"
               [icon]="
-                isRestoring(ctx.id) ? 'pi pi-spinner pi-spin' : 'pi pi-replay'
+                isRestoring(ctx.team_id)
+                  ? 'pi pi-spinner pi-spin'
+                  : 'pi pi-replay'
               "
-              (click)="restoreProcess(ctx.id)"
+              (click)="restoreTeam(ctx.team_id)"
               severity="secondary"
               rounded
               [style]="{ 'margin-right': '0.5rem' }"
-              title="Restore Process"
-              [disabled]="isRestoring(ctx.id)"
+              title="Restore Team"
+              [disabled]="isRestoring(ctx.team_id)"
             />
             &nbsp;
             <p-button
               icon="pi pi-times"
-              (click)="deleteProcess(ctx.id)"
+              (click)="deleteTeam(ctx.team_id)"
               severity="secondary"
               rounded
-              title="Delete Process"
+              title="Delete Team"
             />
           </td>
         </tr>
       </ng-template>
     </p-table>
-  </div>
-
-  <div class="card flex justify-center">
-    <p-dialog
-      [header]="'Manage configurations — ' + (processType$ | async)"
-      [(visible)]="visible"
-      [modal]="true"
-      [closable]="true"
-      [draggable]="false"
-      [resizable]="false"
-      styleClass="config-dialog"
-      [style]="{ width: '90vw', height: '90vh' }"
-    >
-      <app-config-editor
-        *ngIf="visible"
-        [processType]="(processType$ | async) ?? ''"
-        (onConfigUpdate)="handleConfigUpdate($event)"
-        (onSaveEvent)="visible = false"
-      >
-      </app-config-editor>
-    </p-dialog>
   </div>
 </section>

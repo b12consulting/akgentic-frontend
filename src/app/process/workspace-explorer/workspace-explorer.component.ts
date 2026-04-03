@@ -16,6 +16,7 @@ import {
   FileNode,
   FileContent,
 } from '../../services/workspace.service';
+import { isRunning } from '../../models/team.interface';
 import { ContextService } from '../../services/context.service';
 import { UploadModalComponent } from './upload-modal/upload-modal.component';
 
@@ -68,8 +69,8 @@ export class WorkspaceExplorerComponent implements OnInit {
   }
 
   async checkProcessStatus() {
-    const process = await this.contextService.getCurrentProcess(this.processId);
-    this.isProcessRunning = process?.running ?? false;
+    const process = await this.contextService.getCurrentTeam(this.processId);
+    this.isProcessRunning = process ? isRunning(process) : false;
   }
 
   async loadWorkspace() {

@@ -57,28 +57,4 @@ export class ContextService {
     });
   }
 
-  // --- Backward-compatible aliases (Story 1.2 will remove these) ---
-
-  /** @deprecated Use getTeams() instead. */
-  async getContext(): Promise<any[]> {
-    return this.getTeams();
-  }
-
-  /** @deprecated Use getCurrentTeam() instead. */
-  async getCurrentProcess(
-    processId: string,
-    useCache: boolean = true
-  ): Promise<any> {
-    return this.getCurrentTeam(processId, useCache);
-  }
-
-  /** @deprecated Use deleteTeam() instead. */
-  async deleteCurrentProcess(teamId: string): Promise<void> {
-    return this.deleteTeam(teamId);
-  }
-
-  /** @deprecated Use createTeamAndNavigate() instead. */
-  async createProcessAndNavigate(processType: string) {
-    return this.createTeamAndNavigate(processType);
-  }
 }

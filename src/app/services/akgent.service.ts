@@ -36,6 +36,6 @@ export class AkgentService {
     agentId: string,
     userInput: string
   ): Promise<void> {
-    await this.apiService.chat(processId, agentId, userInput);
+    await this.apiService.sendMessage(processId, userInput, agentId);
   }
 }
