@@ -13,12 +13,11 @@ import { BehaviorSubject } from 'rxjs';
 
 import { ButtonModule } from 'primeng/button';
 import { TextareaModule } from 'primeng/textarea';
+import { MessageService } from 'primeng/api';
 
 import { environment } from '../../../../environments/environment';
-import { ApiService } from '../../../services/api.service';
 import { AkgentService } from '../../../services/akgent.service';
 import { ActorMessageService } from '../../../services/message.service';
-import { FetchService } from '../../../services/fetch.service';
 
 @Component({
   selector: 'app-akgent-state',
@@ -31,9 +30,8 @@ export class AkgentStateComponent {
   @Input() agentId!: string;
 
   akgentService: AkgentService = inject(AkgentService);
-  apiService: ApiService = inject(ApiService);
-  messageService: ActorMessageService = inject(ActorMessageService);
-  fetchService: FetchService = inject(FetchService);
+  actorMessageService: ActorMessageService = inject(ActorMessageService);
+  toastService: MessageService = inject(MessageService);
   formBuider: FormBuilder = inject(FormBuilder);
   private destroyRef = inject(DestroyRef);
 
@@ -42,10 +40,6 @@ export class AkgentStateComponent {
 
   ngOnInit(): void {
     this.state$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((data) => {
-      if (this.akgentService.isSavingState[this.agentId]) {
-        this.fetchService.showNotification('State saved successfully');
-      }
-      this.akgentService.isSavingState[this.agentId] = false;
       this.dynamicForm = this.formBuider.group({});
       this.generateForm(data);
     });
@@ -54,6 +48,12 @@ export class AkgentStateComponent {
   generateForm(data: any): void {
     if (!data) return;
     const schema = data.schema || {};
+
+    if (!schema.properties) {
+      // V2 sends empty schema -- display raw state as JSON
+      this.schemaFields = [];
+      return;
+    }
 
     this.schemaFields = Object.keys(schema.properties).map((key) => {
       const field = schema.properties[key];
@@ -118,16 +118,12 @@ export class AkgentStateComponent {
   }
 
   onSubmit(): void {
-    this.akgentService.isSavingState[this.agentId] = true;
-    const dirtValues = this.getDirtyValues(this.dynamicForm);
-    const currentProcessId =
-      this.akgentService.contextService.currentProcessId$.value;
-
-    this.apiService.updateAkgentState(
-      currentProcessId,
-      this.agentId,
-      dirtValues
-    );
+    this.toastService.add({
+      severity: 'info',
+      summary: 'Read Only',
+      detail: 'State editing is not available in V2',
+      life: 3000,
+    });
   }
 
   getDirtyValues(form: FormGroup | FormArray): any {

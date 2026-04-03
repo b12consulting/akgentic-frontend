@@ -1,6 +1,5 @@
 import { inject, Injectable } from '@angular/core';
 import { Router } from '@angular/router';
-import { BehaviorSubject, Observable, of } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { AuthService } from './auth.service';
 import { FetchService } from './fetch.service';
@@ -22,7 +21,6 @@ export class ApiService {
   router: Router = inject(Router);
 
   private apiUrl = environment.api;
-  webSocketTicket$ = new BehaviorSubject<string | null>(null);
 
   // --- Team CRUD (AC1) ---
 
@@ -144,53 +142,12 @@ export class ApiService {
     });
   }
 
-  // --- Auth stub (AC6 / AC12) ---
-
-  getWebSocketTicket(): Observable<string> {
-    return of('noauth');
-  }
-
   /** No-op stub: description editing is not available in V2. */
   async updateTeamDescription(
     _teamId: string,
     _description: string | null
   ): Promise<void> {
     console.warn('updateTeamDescription is not available in V2');
-  }
-
-  // --- Stubs for Story 1.3/1.4 callers (message.service, akgent.service, etc.) ---
-  // These remain until their callers are migrated in subsequent stories.
-
-  /** @deprecated Story 1.3 will migrate callers to getEvents(). */
-  async getMessages(teamId: string): Promise<any[]> {
-    return this.getEvents(teamId);
-  }
-
-  /** @deprecated Story 1.3 will migrate callers. */
-  async getAgentContext(_teamId: string): Promise<any> {
-    return {};
-  }
-
-  /** @deprecated Story 1.3 will migrate callers. */
-  async getAkgentStates(_teamId: string): Promise<any> {
-    return {};
-  }
-
-  /** @deprecated Story 1.3 will migrate callers. */
-  async updateAkgentState(..._args: any[]): Promise<void> {
-    console.warn('updateAkgentState is removed in V2');
-  }
-
-  /** @deprecated Story 1.3 will migrate callers. */
-  async chat(_teamId: string, _agentId: string, _userInput: string): Promise<any> {
-    console.warn('chat is removed in V2');
-    return null;
-  }
-
-  /** @deprecated Story 1.3 will migrate callers. */
-  async relaunch(_teamId: string, _msgId: string): Promise<Response> {
-    console.warn('relaunch is removed in V2');
-    return new Response(null, { status: 204 });
   }
 
   /** @deprecated Story 1.4 will migrate callers. */

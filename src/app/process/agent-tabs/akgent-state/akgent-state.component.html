@@ -33,16 +33,9 @@
   <p-button
     type="submit"
     size="small"
-    label="Submit"
-    [disabled]="dynamicForm.invalid || !dynamicForm.dirty"
+    label="Read Only (V2)"
+    [disabled]="true"
   >
-    <ng-container
-      *ngIf="akgentService.isSavingState[agentId]; else refreshIcon"
-    >
-      <i class="pi pi-spinner pi-spin"></i>
-    </ng-container>
-    <ng-template #refreshIcon>
-      <i class="pi pi-send"></i>
-    </ng-template>
+    <i class="pi pi-lock"></i>
   </p-button>
 </form>
