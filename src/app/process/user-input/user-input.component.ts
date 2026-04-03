@@ -152,13 +152,11 @@ export class ProcessUserInputComponent implements OnInit {
       return;
     }
 
-    // If no agents specified, send to default agent (first in mention list)
+    // If no agents specified, broadcast to entire team
     if (!this.selectedAgents || this.selectedAgents.length === 0) {
-      const defaultAgent = this.mentionItems[0]?.actorName ?? null;
       await this.apiService.sendMessage(
         this.processId,
         this.userInput,
-        defaultAgent,
       );
     } else {
       // Send message to each target agent
