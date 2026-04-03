@@ -65,6 +65,7 @@ export class ProcessUserInputComponent implements OnInit {
         if (!manager) {
           this.mentionItems = agents.map((node) => ({
             name: makeAgentNameUserFriendly(node.actorName),
+            actorName: node.actorName,
             agentId: node.name,
           }));
           return;
@@ -84,6 +85,7 @@ export class ProcessUserInputComponent implements OnInit {
         // Map children to mention items
         this.mentionItems = [manager, ...managersChildren].map((node) => ({
           name: makeAgentNameUserFriendly(node.actorName),
+          actorName: node.actorName,
           agentId: node.name,
         }));
       });
@@ -155,7 +157,7 @@ export class ProcessUserInputComponent implements OnInit {
       await this.apiService.sendMessage(
         this.processId,
         this.userInput,
-        this.mentionItems[0].agentId,
+        this.mentionItems[0].actorName,
       );
     } else {
       // Send message to each target agent
@@ -163,7 +165,7 @@ export class ProcessUserInputComponent implements OnInit {
         await this.apiService.sendMessage(
           this.processId,
           this.userInput,
-          agent.agentId,
+          agent.actorName,
         );
       }
     }

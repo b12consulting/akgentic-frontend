@@ -43,6 +43,7 @@ export class AgentTabsComponent implements OnInit {
   private destroyRef = inject(DestroyRef);
 
   akgentId: string = '';
+  akgentName: string = '';
   agentsByCategory: any[] = [];
   selectedAgent: any = null;
   isLoading: boolean = false;
@@ -61,6 +62,7 @@ export class AgentTabsComponent implements OnInit {
         this.agentSubscriptions$.next();
 
         this.akgentId = akgent?.agentId || '';
+        this.akgentName = akgent?.name || '';
         if (akgent) {
           this.initDict(this.messageService.contextDict$, akgent.agentId, []);
           this.initDict(this.messageService.stateDict$, akgent.agentId, null);

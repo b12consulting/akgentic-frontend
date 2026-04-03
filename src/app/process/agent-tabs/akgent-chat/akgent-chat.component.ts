@@ -48,6 +48,7 @@ export class AkgentChatComponent {
   @ViewChild('dataTable') dataTable!: Table;
   @Input() context$!: BehaviorSubject<any[]>;
   @Input() agentId!: string;
+  @Input() agentName!: string;
 
   akgentService: AkgentService = inject(AkgentService);
   apiService: ApiService = inject(ApiService);
@@ -238,10 +239,10 @@ export class AkgentChatComponent {
     this.isLoading = true;
     const processId = this.contextService.currentProcessId$.value;
     try {
-      await this.akgentService.sendMessage(
+      await this.apiService.sendMessage(
         processId,
-        this.agentId,
-        this.userInput
+        this.userInput,
+        this.agentName
       );
     } catch (error) {
       this.isLoading = false;
