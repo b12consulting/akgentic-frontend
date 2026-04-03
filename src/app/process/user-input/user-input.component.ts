@@ -46,8 +46,8 @@ export class ProcessUserInputComponent implements OnInit {
   userInputEnterKeySubmit: boolean = environment.userInputEnterKeySubmit;
 
   // Mention configuration
-  mentionItems: any[] = [];
-  selectedAgents: any[] = [];
+  mentionItems: { name: string; actorName: string; agentId: string }[] = [];
+  selectedAgents: { name: string; actorName: string; agentId: string }[] = [];
   private destroyRef = inject(DestroyRef);
 
   ngOnInit() {
@@ -152,12 +152,13 @@ export class ProcessUserInputComponent implements OnInit {
       return;
     }
 
-    // If no agents specified, send without sent_to
+    // If no agents specified, send to default agent (first in mention list)
     if (!this.selectedAgents || this.selectedAgents.length === 0) {
+      const defaultAgent = this.mentionItems[0]?.actorName ?? null;
       await this.apiService.sendMessage(
         this.processId,
         this.userInput,
-        this.mentionItems[0].actorName,
+        defaultAgent,
       );
     } else {
       // Send message to each target agent

@@ -14,7 +14,6 @@ import { TextareaModule } from 'primeng/textarea';
 import { BehaviorSubject } from 'rxjs';
 
 import { CapitalizePipe } from '../../../pipes/capitalise.pipe';
-import { AkgentService } from '../../../services/akgent.service';
 import { ApiService } from '../../../services/api.service';
 import { UtilService } from '../../../services/utils.service';
 import { ContextService } from '../../../services/context.service';
@@ -50,7 +49,6 @@ export class AkgentChatComponent {
   @Input() agentId!: string;
   @Input() agentName!: string;
 
-  akgentService: AkgentService = inject(AkgentService);
   apiService: ApiService = inject(ApiService);
   utilService: UtilService = inject(UtilService);
   contextService: ContextService = inject(ContextService);
