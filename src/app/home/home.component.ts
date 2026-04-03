@@ -4,7 +4,7 @@ import { Router } from '@angular/router';
 import { BehaviorSubject } from 'rxjs';
 
 import { ApiService } from '../services/api.service';
-import { ProcessContextArray } from '../models/process.interface';
+import { TeamContext, isRunning } from '../models/team.interface';
 
 import { CommonModule } from '@angular/common';
 import { ButtonModule } from 'primeng/button';
@@ -17,8 +17,6 @@ import { InputTextModule } from 'primeng/inputtext';
 import { environment } from '../../environments/environment';
 import { AuthService } from '../services/auth.service';
 import { ContextService } from '../services/context.service';
-import { TeamsService } from '../services/teams.service';
-import { ConfigEditorComponent } from './config-editor/config-editor.component';
 
 @Component({
   selector: 'app-home',
@@ -29,7 +27,6 @@ import { ConfigEditorComponent } from './config-editor/config-editor.component';
     ButtonModule,
     TagModule,
     CommonModule,
-    ConfigEditorComponent,
     DialogModule,
     InputTextModule,
   ],
@@ -40,139 +37,155 @@ export class HomeComponent {
   apiService: ApiService = inject(ApiService);
   contextService: ContextService = inject(ContextService);
   router: Router = inject(Router);
-  teamsService: TeamsService = inject(TeamsService);
   authService: AuthService = inject(AuthService);
 
-  processTypes$ = new BehaviorSubject<string[]>([]);
-  processType$ = new BehaviorSubject<string>('');
-  isCreatingProcess = false;
+  // Catalog entries for the team creation dropdown
+  catalogEntries$ = new BehaviorSubject<any[]>([]);
+  selectedCatalogEntry$ = new BehaviorSubject<any>(null);
+  isCreatingTeam = false;
   isRefreshing = false;
-  archivingProcesses = new Set<string>();
-  restoringProcesses = new Set<string>();
+  stoppingTeams = new Set<string>();
+  restoringTeams = new Set<string>();
   editingDescriptionFor: string | null = null;
   descriptionDrafts = new Map<string, string>();
 
   @ViewChildren('descriptionInput') descriptionInputs!: QueryList<ElementRef>;
 
-  configs$ = new BehaviorSubject<string[]>([]);
-  config$ = new BehaviorSubject<string>('');
-  context: ProcessContextArray = [];
+  context: TeamContext[] = [];
+
+  // Expose isRunning to template
+  isRunning = isRunning;
 
   async ngOnInit() {
-    this.processType$.subscribe(async (processType) => {
-      if (!processType) {
-        console.warn('No process type selected, skipping config load.');
-        return;
+    // Load catalog entries for team creation dropdown
+    try {
+      const catalogResponse = await this.apiService.getTeamConfigs();
+      const entries = Array.isArray(catalogResponse)
+        ? catalogResponse
+        : Object.keys(catalogResponse).map((key) => ({ id: key, name: key }));
+      this.catalogEntries$.next(entries);
+      if (entries.length > 0) {
+        this.selectedCatalogEntry$.next(entries[0]);
       }
-      const config_list = await this.apiService.getConfig(processType, false);
-      this.configs$.next(config_list);
-      this.config$.next(config_list[0] || '');
-    });
+    } catch (error) {
+      console.error('Failed to load catalog entries:', error);
+    }
 
-    this.teamsService
-      .getTeamConfigs()
-      .subscribe((teams) => this.processTypes$.next(Object.keys(teams)));
     // Load the current context.
-    this.context = await this.contextService.getContext();
-    // Get last process type from the list.
-    this.processType$.next(this.processTypes$.value[0]);
+    this.context = await this.contextService.getTeams();
 
     if (environment.hideHome) {
-      this.processType$.next(environment.autoRedirectContext);
-      // If no process exists, create one.
+      // If no team exists, create one using the first catalog entry.
       if (!this.context || this.context.length === 0) {
-        await this.contextService.createProcessAndNavigate(
-          this.processType$.value
-        );
+        const entry = this.selectedCatalogEntry$.value;
+        if (entry) {
+          const catalogEntryId = entry.id ?? entry.name ?? '';
+          await this.contextService.createTeamAndNavigate(catalogEntryId);
+        }
       }
-      // If a process exists, navigate to its process page.
+      // If a team exists, navigate to its process page.
       if (this.context && this.context.length > 0) {
-        const processId = this.context[0].id;
-        this.router.navigate(['/process', processId]);
+        const teamId = this.context[0].team_id;
+        this.router.navigate(['/process', teamId]);
       }
     }
 
     this.authService.checkAuth().subscribe();
   }
 
-  async createProcess() {
-    this.isCreatingProcess = true;
+  async createTeam() {
+    this.isCreatingTeam = true;
     try {
-      await this.apiService.createProcess(
-        this.processType$.value,
-        this.config$.value
-      );
-      this.context = await this.contextService.getContext();
+      const entry = this.selectedCatalogEntry$.value;
+      if (!entry) {
+        console.warn('No catalog entry selected');
+        return;
+      }
+      const catalogEntryId = entry.id ?? entry.name ?? '';
+      await this.apiService.createTeam(catalogEntryId);
+      this.context = await this.contextService.getTeams();
+    } catch (error) {
+      console.error('Failed to create team:', error);
     } finally {
-      this.isCreatingProcess = false;
+      this.isCreatingTeam = false;
     }
   }
 
-  async deleteProcess(team_id: string) {
-    await this.apiService.deleteProcess(team_id);
-    this.context = await this.contextService.getContext();
+  async createTeamAndNavigate() {
+    const entry = this.selectedCatalogEntry$.value;
+    if (!entry) {
+      console.warn('No catalog entry selected');
+      return;
+    }
+    const catalogEntryId = entry.id ?? entry.name ?? '';
+    await this.contextService.createTeamAndNavigate(catalogEntryId);
   }
 
-  async restoreProcess(team_id: string) {
-    this.restoringProcesses.add(team_id);
-    await this.apiService.restoreProcess(team_id);
-    this.context = await this.contextService.getContext();
-    this.restoringProcesses.delete(team_id);
+  async deleteTeam(teamId: string) {
+    await this.apiService.deleteTeam(teamId);
+    this.context = await this.contextService.getTeams();
   }
 
-  isRestoring(team_id: string): boolean {
-    return this.restoringProcesses.has(team_id);
-  }
-
-  async archiveProcess(team_id: string) {
-    this.archivingProcesses.add(team_id);
+  async restoreTeam(teamId: string) {
+    this.restoringTeams.add(teamId);
     try {
-      await this.apiService.archiveProcess(team_id);
+      await this.apiService.restoreTeam(teamId);
+      this.context = await this.contextService.getTeams();
+    } finally {
+      this.restoringTeams.delete(teamId);
+    }
+  }
 
-      // Boucle de vérification pour s'assurer que le processus est bien archivé
+  isRestoring(teamId: string): boolean {
+    return this.restoringTeams.has(teamId);
+  }
+
+  async stopTeam(teamId: string) {
+    this.stoppingTeams.add(teamId);
+    try {
+      await this.apiService.stopTeam(teamId);
+
+      // Poll to verify the team has stopped
       let attempts = 0;
       const maxAttempts = 5;
       let isStopped = false;
 
       while (attempts < maxAttempts && !isStopped) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
-        this.context = await this.contextService.getContext();
-        const process = this.context.find((ctx: any) => ctx.id === team_id);
-        if (process && !process.running) {
+        this.context = await this.contextService.getTeams();
+        const team = this.context.find(
+          (ctx: TeamContext) => ctx.team_id === teamId
+        );
+        if (team && !isRunning(team)) {
           isStopped = true;
         }
         attempts++;
       }
 
       if (!isStopped) {
-        this.context = await this.contextService.getContext();
+        this.context = await this.contextService.getTeams();
       }
     } finally {
-      this.archivingProcesses.delete(team_id);
+      this.stoppingTeams.delete(teamId);
     }
   }
 
-  isArchiving(team_id: string): boolean {
-    return this.archivingProcesses.has(team_id);
+  isStopping(teamId: string): boolean {
+    return this.stoppingTeams.has(teamId);
   }
 
   async refreshContext() {
     this.isRefreshing = true;
     try {
-      this.context = await this.contextService.getContext();
+      this.context = await this.contextService.getTeams();
     } finally {
       this.isRefreshing = false;
     }
   }
 
   onRowSelect(event: any) {
-    const actor_system_id = event.data.id;
-    this.router.navigate(['/process', actor_system_id]);
-  }
-
-  handleConfigUpdate($event: any) {
-    console.log('Config updated:', $event);
-    this.processType$.next(this.processType$.value);
+    const teamId = event.data.team_id;
+    this.router.navigate(['/process', teamId]);
   }
 
   startEditDescription(teamId: string, currentDescription: string | null) {
@@ -184,7 +197,7 @@ export class HomeComponent {
       const input = this.descriptionInputs?.first?.nativeElement;
       if (input) {
         input.focus();
-        input.select(); // Also select all text for easy replacement
+        input.select();
       }
     }, 0);
   }
@@ -198,10 +211,17 @@ export class HomeComponent {
     const trimmed = description?.trim() || null;
 
     try {
+      // Note: updateTeamDescription is a no-op in V2 (no equivalent endpoint).
+      // Description changes will not persist. This is a known limitation.
+      console.warn(
+        'Description editing is not available in V2 -- changes will not persist.'
+      );
       await this.apiService.updateTeamDescription(teamId, trimmed);
 
-      // Update local context
-      const team = this.context.find((ctx: any) => ctx.id === teamId);
+      // Update local context optimistically
+      const team = this.context.find(
+        (ctx: TeamContext) => ctx.team_id === teamId
+      );
       if (team) {
         team.description = trimmed;
       }

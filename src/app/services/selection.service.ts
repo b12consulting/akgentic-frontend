@@ -3,6 +3,7 @@ import { BehaviorSubject } from 'rxjs';
 import { AkgentService } from './akgent.service';
 import { ApiService } from './api.service';
 import { ChatService } from './chat.service';
+import { ContextService } from './context.service';
 
 import { SentMessage } from '../models/message.types';
 import { ChatMessageInterface, NodeInterface } from '../models/types';
@@ -22,6 +23,7 @@ export class SelectionService {
   akgentService: AkgentService = inject(AkgentService);
   apiService: ApiService = inject(ApiService);
   chatService: ChatService = inject(ChatService);
+  contextService: ContextService = inject(ContextService);
 
   handleSelection(selection: Selectable): void {
     if (!selection.data) {
@@ -56,8 +58,19 @@ export class SelectionService {
     this.modalVisible$.next(false);
   }
 
-  onSave(userInput: string, message: SentMessage): void {
-    this.apiService.processHumanInput(userInput, message);
-    this.modalVisible$.next(false);
+  async onSave(userInput: string, message: SentMessage): Promise<void> {
+    const teamId = this.contextService.currentProcessId$.value;
+    if (!teamId) {
+      console.error('Cannot process human input: no team selected');
+      return;
+    }
+    try {
+      // message.id is the SentMessage ID; use it as the message_id for V2 human-input
+      await this.apiService.processHumanInput(teamId, userInput, message.id);
+    } catch (error) {
+      console.error('Failed to process human input:', error);
+    } finally {
+      this.modalVisible$.next(false);
+    }
   }
 }

@@ -8,6 +8,7 @@ import { TagModule } from 'primeng/tag';
 import { ToastModule } from 'primeng/toast';
 import { Subject, takeUntil } from 'rxjs';
 import { environment } from '../environments/environment';
+import { isRunning } from './models/team.interface';
 import { emptyableCombineLatest } from './lib/util';
 import { AkgentService } from './services/akgent.service';
 import { ApiService } from './services/api.service';
@@ -66,10 +67,10 @@ export class AppComponent {
         if (processId) {
           try {
             const process =
-              await this.contextService.getCurrentProcess(processId);
+              await this.contextService.getCurrentTeam(processId);
             this.processType = process?.name || '';
             this.processConfigName = process?.config_name || '';
-            this.processRunning = process?.running || false;
+            this.processRunning = process ? isRunning(process) : false;
           } catch (error) {
             console.error('Error fetching process:', error);
             this.processType = '';

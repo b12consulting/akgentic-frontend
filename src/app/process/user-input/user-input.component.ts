@@ -46,8 +46,8 @@ export class ProcessUserInputComponent implements OnInit {
   userInputEnterKeySubmit: boolean = environment.userInputEnterKeySubmit;
 
   // Mention configuration
-  mentionItems: any[] = [];
-  selectedAgents: any[] = [];
+  mentionItems: { name: string; actorName: string; agentId: string }[] = [];
+  selectedAgents: { name: string; actorName: string; agentId: string }[] = [];
   private destroyRef = inject(DestroyRef);
 
   ngOnInit() {
@@ -65,6 +65,7 @@ export class ProcessUserInputComponent implements OnInit {
         if (!manager) {
           this.mentionItems = agents.map((node) => ({
             name: makeAgentNameUserFriendly(node.actorName),
+            actorName: node.actorName,
             agentId: node.name,
           }));
           return;
@@ -84,6 +85,7 @@ export class ProcessUserInputComponent implements OnInit {
         // Map children to mention items
         this.mentionItems = [manager, ...managersChildren].map((node) => ({
           name: makeAgentNameUserFriendly(node.actorName),
+          actorName: node.actorName,
           agentId: node.name,
         }));
       });
@@ -150,12 +152,11 @@ export class ProcessUserInputComponent implements OnInit {
       return;
     }
 
-    // If no agents specified, send without sent_to
+    // If no agents specified, broadcast to entire team
     if (!this.selectedAgents || this.selectedAgents.length === 0) {
       await this.apiService.sendMessage(
         this.processId,
         this.userInput,
-        this.mentionItems[0].agentId,
       );
     } else {
       // Send message to each target agent
@@ -163,7 +164,7 @@ export class ProcessUserInputComponent implements OnInit {
         await this.apiService.sendMessage(
           this.processId,
           this.userInput,
-          agent.agentId,
+          agent.actorName,
         );
       }
     }

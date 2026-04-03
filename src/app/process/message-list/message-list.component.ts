@@ -4,9 +4,9 @@ import { Component, inject, ViewChild } from '@angular/core';
 import { ButtonModule } from 'primeng/button';
 import { FieldsetModule } from 'primeng/fieldset';
 import { Table, TableModule } from 'primeng/table';
+import { MessageService } from 'primeng/api';
 
 import { CapitalizePipe } from '../../pipes/capitalise.pipe';
-import { ApiService } from '../../services/api.service';
 import { CategoryService } from '../../services/category.service';
 import { UtilService } from '../../services/utils.service';
 
@@ -31,11 +31,11 @@ import { CopyButtonComponent } from '../copy-button/copy-button.component';
 export class MessageListComponent {
   @ViewChild('dataTable') dataTable!: Table;
 
-  apiService: ApiService = inject(ApiService);
   utilService: UtilService = inject(UtilService);
   akgentService: AkgentService = inject(AkgentService);
   messageService: ActorMessageService = inject(ActorMessageService);
   categoryService: CategoryService = inject(CategoryService);
+  toastService: MessageService = inject(MessageService);
 
   selectedCategories: boolean[] | null = null;
 
@@ -106,18 +106,17 @@ export class MessageListComponent {
     return Object.keys(message).filter((k) => this.messagesKeys.includes(k));
   }
 
-  relaunch(event: any, msg: any) {
-    const processId = this.messageService.processId;
-    this.apiService.relaunch(processId, msg.id);
+  relaunch(_event: any, _msg: any) {
+    this.toastService.add({
+      severity: 'info',
+      summary: 'Not Available',
+      detail: 'Relaunch is not available in V2',
+      life: 3000,
+    });
   }
 
-  disableRelaunchBtn(message: any) {
-    // Check if a StopMessage has been received for the actor in error
-    // This happens when we relaunched the process (see orchestrator)
-    return !!this.messages.find(
-      (msg) =>
-        msg.__model__.includes('StopMessage') &&
-        msg.actor.agent_id == message.sender.agent_id
-    );
+  disableRelaunchBtn(_message: any) {
+    // V2: relaunch is not available; always disabled
+    return true;
   }
 }
