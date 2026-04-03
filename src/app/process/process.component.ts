@@ -2,6 +2,7 @@ import { AsyncPipe, CommonModule } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 
+import { isRunning } from '../models/team.interface';
 import { AkgentService } from '../services/akgent.service';
 import { ContextService } from '../services/context.service';
 import { ActorMessageService } from '../services/message.service';
@@ -88,7 +89,7 @@ export class ProcessComponent {
     this.contextService.currentProcessId$.next(this.processId);
 
     const useCache = false;
-    const currentProcess = await this.contextService.getCurrentProcess(
+    const currentProcess = await this.contextService.getCurrentTeam(
       this.processId,
       useCache
     );
@@ -104,16 +105,16 @@ export class ProcessComponent {
     }
 
     this.processType = currentProcess.name;
-    // Manage the tab for the Knowledge Graph and Workspace
-    this.hasKnowledgeGraph = !!currentProcess.params.knowledge_graph;
-    this.hasWorkspace = !!currentProcess.params.workspace;
+    // V2 has no params -- workspace/KG tabs default hidden (FR13)
+    this.hasKnowledgeGraph = false;
+    this.hasWorkspace = false;
     this.visualizationOptions = this.visualizationOptions.filter(
       (option) =>
         (option.value !== 'knowledge-graph' || this.hasKnowledgeGraph) &&
         (option.value !== 'workspace' || this.hasWorkspace)
     );
 
-    await this.messageService.init(this.processId, currentProcess.running);
+    await this.messageService.init(this.processId, isRunning(currentProcess));
   }
   ngOnDestroy() {
     this.akgentService.unselect();
