@@ -139,8 +139,8 @@ export class ActorMessageService {
 
     this.webSocket.subscribe({
       next: (data: any) => {
-        // V2: data is a PersistedEvent { team_id, sequence, event, timestamp }
-        const event = data?.event;
+        // V2: data is a raw Message with __model__ discriminator
+        const event = data;
         if (!event || !event.__model__) return;
 
         if (event.__model__.includes('StateChangedMessage')) {
