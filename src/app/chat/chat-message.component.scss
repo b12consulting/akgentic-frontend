@@ -71,6 +71,10 @@
   .left & {
     border-bottom-left-radius: 0;
   }
+
+  &.selected {
+    border: 2px solid var(--primary-color);
+  }
 }
 
 .bubble-header {

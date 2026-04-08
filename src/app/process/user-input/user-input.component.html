@@ -1,4 +1,8 @@
 <div class="input-container">
+  <div *ngIf="replyContext" class="reply-indicator">
+    <span>Reply to {{ replyContextDisplayName }}</span>
+    <i class="pi pi-times reply-indicator-close" (click)="clearReplyContext()"></i>
+  </div>
   <p-floatlabel variant="in">
     <div class="input-row">
       <textarea

@@ -65,6 +65,13 @@ describe('ChatPanelComponent', () => {
     const chatService = {
       messages$: new BehaviorSubject<any[]>([]),
       loadingProcess$: new BehaviorSubject<boolean>(false),
+      replyContext$: new BehaviorSubject<any>(null),
+      setReplyContext: jasmine.createSpy('setReplyContext').and.callFake(
+        function(this: any, msg: any) { this.replyContext$.next(msg); }
+      ),
+      clearReplyContext: jasmine.createSpy('clearReplyContext').and.callFake(
+        function(this: any) { this.replyContext$.next(null); }
+      ),
     };
 
     const messageService = {
@@ -236,6 +243,115 @@ describe('ChatPanelComponent', () => {
 
     expect(chatService.messages$.value.length).toBe(1);
     expect(chatService.messages$.value[0].rule).toBe(1);
+  });
+
+  describe('reply context (bubble selection)', () => {
+    it('onBubbleClicked should call chatService.setReplyContext', () => {
+      const chatMsg: ChatMessage = {
+        id: 'msg-reply',
+        content: 'test',
+        sender: makeAddress({ name: '@Manager', agent_id: 'mgr-1' }),
+        recipient: makeAddress({ name: '@Human' }),
+        timestamp: new Date(),
+        rule: 2,
+        alignment: 'left',
+        color: '#9ebbcb',
+        collapsed: false,
+        label: 'Manager',
+      };
+      component.onBubbleClicked(chatMsg);
+      const svc = TestBed.inject(ChatService) as any;
+      expect(svc.setReplyContext).toHaveBeenCalledWith(chatMsg);
+    });
+
+    it('onBackgroundClick should call chatService.clearReplyContext', () => {
+      component.onBackgroundClick();
+      const svc = TestBed.inject(ChatService) as any;
+      expect(svc.clearReplyContext).toHaveBeenCalled();
+    });
+
+    it('onEscapePress should call chatService.clearReplyContext', () => {
+      component.onEscapePress();
+      const svc = TestBed.inject(ChatService) as any;
+      expect(svc.clearReplyContext).toHaveBeenCalled();
+    });
+
+    it('selectedMessageId should track replyContext$ value', () => {
+      const svc = TestBed.inject(ChatService) as any;
+      expect(component.selectedMessageId).toBeNull();
+
+      svc.replyContext$.next({
+        id: 'msg-selected',
+        content: 'test',
+        sender: makeAddress({ name: '@Manager' }),
+        recipient: makeAddress({ name: '@Human' }),
+        timestamp: new Date(),
+        rule: 2,
+        alignment: 'left',
+        color: '#9ebbcb',
+        collapsed: false,
+        label: 'Manager',
+      });
+      fixture.detectChanges();
+
+      expect(component.selectedMessageId).toBe('msg-selected');
+
+      svc.replyContext$.next(null);
+      fixture.detectChanges();
+      expect(component.selectedMessageId).toBeNull();
+    });
+
+    it('clicking different bubble should switch reply context', () => {
+      const msg1: ChatMessage = {
+        id: 'msg-1',
+        content: 'first',
+        sender: makeAddress({ name: '@Agent1' }),
+        recipient: makeAddress({ name: '@Human' }),
+        timestamp: new Date(),
+        rule: 2,
+        alignment: 'left',
+        color: '#9ebbcb',
+        collapsed: false,
+        label: 'Agent1',
+      };
+      const msg2: ChatMessage = {
+        id: 'msg-2',
+        content: 'second',
+        sender: makeAddress({ name: '@Agent2' }),
+        recipient: makeAddress({ name: '@Human' }),
+        timestamp: new Date(),
+        rule: 2,
+        alignment: 'left',
+        color: '#9ebbcb',
+        collapsed: false,
+        label: 'Agent2',
+      };
+
+      component.onBubbleClicked(msg1);
+      expect(component.selectedMessageId).toBe('msg-1');
+
+      component.onBubbleClicked(msg2);
+      expect(component.selectedMessageId).toBe('msg-2');
+    });
+
+    it('onRule3Clicked should NOT set reply context', () => {
+      const chatMsg: ChatMessage = {
+        id: 'msg-rule3',
+        content: 'test',
+        sender: makeAddress({ name: '@Agent' }),
+        recipient: makeAddress({ name: '@OtherHuman', role: 'Human' }),
+        timestamp: new Date(),
+        rule: 3,
+        alignment: 'left',
+        color: '#9ebbcb',
+        collapsed: false,
+        label: 'Agent -> OtherHuman',
+      };
+      component.onRule3Clicked(chatMsg);
+      const svc = TestBed.inject(ChatService) as any;
+      expect(svc.setReplyContext).not.toHaveBeenCalled();
+      expect(component.selectedMessageId).toBeNull();
+    });
   });
 
   it('onToggleCollapse should toggle collapsed state and preserve across re-classification', () => {

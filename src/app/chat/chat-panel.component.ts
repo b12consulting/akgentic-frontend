@@ -3,6 +3,7 @@ import {
   AfterViewChecked,
   Component,
   ElementRef,
+  HostListener,
   inject,
   Input,
   OnDestroy,
@@ -44,8 +45,12 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   private shouldScrollToBottom = true;
   private lastScrollHeight = 0;
   private expandedMessageIds = new Set<string>();
+  selectedMessageId: string | null = null;
 
   ngOnInit(): void {
+    this.chatService.replyContext$.subscribe((ctx) => {
+      this.selectedMessageId = ctx ? ctx.id : null;
+    });
     this.subscription = this.messageService.messages$.subscribe((messages) => {
       this.checkShouldAutoScroll();
 
@@ -86,6 +91,23 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (this.subscription) {
       this.subscription.unsubscribe();
     }
+  }
+
+  onBubbleClicked(chatMsg: ChatMessage): void {
+    this.chatService.setReplyContext(chatMsg);
+  }
+
+  onRule3Clicked(chatMsg: ChatMessage): void {
+    console.log('Rule 3 modal requested for:', chatMsg);
+  }
+
+  onBackgroundClick(): void {
+    this.chatService.clearReplyContext();
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscapePress(): void {
+    this.chatService.clearReplyContext();
   }
 
   onMessageSelected(chatMsg: ChatMessage): void {
