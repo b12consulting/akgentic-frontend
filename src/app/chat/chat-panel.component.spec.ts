@@ -384,21 +384,47 @@ describe('ChatPanelComponent', () => {
       expect(component.modalVisible).toBe(false);
     });
 
-    it('onModalReply should call processHumanInput and close modal', () => {
+    it('onModalReply should call processHumanInput, close modal, and clear state', () => {
       component.processId = 'team-42';
       component.modalVisible = true;
+      component.modalAgentPair = {
+        sender: makeAddress({ name: '@Manager' }),
+        recipient: makeAddress({ name: '@QATester' }),
+      };
+      const dummyMsg: ChatMessage = {
+        id: 'msg-123', content: 'test', sender: makeAddress({ name: '@Manager' }),
+        recipient: makeAddress({ name: '@QATester', role: 'Human' }),
+        timestamp: new Date(), rule: 3, alignment: 'left', color: '#9ebbcb',
+        collapsed: false, label: 'Manager -> QATester',
+      };
+      component.modalPendingMessages = [dummyMsg];
 
       component.onModalReply({ content: 'approved', messageId: 'msg-123' });
 
       const api = TestBed.inject(ApiService) as any;
       expect(api.processHumanInput).toHaveBeenCalledWith('team-42', 'approved', 'msg-123');
       expect(component.modalVisible).toBe(false);
+      expect(component.modalAgentPair).toBeNull();
+      expect(component.modalPendingMessages).toEqual([]);
     });
 
-    it('onModalVisibleChange should update modalVisible', () => {
+    it('onModalVisibleChange should update modalVisible and clear state when closed', () => {
       component.modalVisible = true;
+      component.modalAgentPair = {
+        sender: makeAddress({ name: '@Manager' }),
+        recipient: makeAddress({ name: '@QATester' }),
+      };
+      const dummyMsg: ChatMessage = {
+        id: 'msg-1', content: 'test', sender: makeAddress({ name: '@Manager' }),
+        recipient: makeAddress({ name: '@QATester', role: 'Human' }),
+        timestamp: new Date(), rule: 3, alignment: 'left', color: '#9ebbcb',
+        collapsed: false, label: 'Manager -> QATester',
+      };
+      component.modalPendingMessages = [dummyMsg];
       component.onModalVisibleChange(false);
       expect(component.modalVisible).toBe(false);
+      expect(component.modalAgentPair).toBeNull();
+      expect(component.modalPendingMessages).toEqual([]);
     });
   });
 

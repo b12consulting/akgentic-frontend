@@ -134,12 +134,20 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   onModalReply(reply: HumanModalReply): void {
-    this.apiService.processHumanInput(this.processId, reply.content, reply.messageId);
     this.modalVisible = false;
+    this.modalAgentPair = null;
+    this.modalPendingMessages = [];
+    this.apiService
+      .processHumanInput(this.processId, reply.content, reply.messageId)
+      .catch((err) => console.error('Failed to send human input:', err));
   }
 
   onModalVisibleChange(visible: boolean): void {
     this.modalVisible = visible;
+    if (!visible) {
+      this.modalAgentPair = null;
+      this.modalPendingMessages = [];
+    }
   }
 
   onBackgroundClick(): void {

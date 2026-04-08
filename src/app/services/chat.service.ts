@@ -34,8 +34,8 @@ export function computePendingNotifications(
   for (const msg of messages) {
     // Rule 3 messages: requests to non-entry-point humans
     if (
-      msg.recipient?.role === HUMAN_ROLE &&
-      msg.recipient?.name !== ENTRY_POINT_NAME
+      msg.recipient.role === HUMAN_ROLE &&
+      msg.recipient.name !== ENTRY_POINT_NAME
     ) {
       const pairKey = `${msg.sender.name}->${msg.recipient.name}`;
       const existing = pending.get(pairKey) ?? [];
@@ -45,8 +45,8 @@ export function computePendingNotifications(
 
     // Reply from a non-entry-point human clears the reverse pair
     if (
-      msg.sender?.role === HUMAN_ROLE &&
-      msg.sender?.name !== ENTRY_POINT_NAME
+      msg.sender.role === HUMAN_ROLE &&
+      msg.sender.name !== ENTRY_POINT_NAME
     ) {
       const reversePairKey = `${msg.recipient.name}->${msg.sender.name}`;
       pending.delete(reversePairKey);
