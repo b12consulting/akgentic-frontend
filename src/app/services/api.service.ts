@@ -109,6 +109,22 @@ export class ApiService {
     });
   }
 
+  async sendMessageFromTo(
+    teamId: string,
+    senderName: string,
+    recipientName: string,
+    content: string
+  ): Promise<void> {
+    await this.fetchService.fetch({
+      url: `${this.apiUrl}/teams/${teamId}/message/from/${senderName}/to/${recipientName}`,
+      options: {
+        method: 'POST',
+        body: JSON.stringify({ content }),
+        headers: { 'Content-Type': 'application/json' },
+      },
+    });
+  }
+
   /** V2 processHumanInput: sends human input for a specific message in a team. */
   async processHumanInput(
     teamId: string,

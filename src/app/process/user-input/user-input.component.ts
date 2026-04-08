@@ -13,6 +13,7 @@ import { Message } from '../../models/types';
 import { makeAgentNameUserFriendly } from '../../lib/util';
 
 import { ApiService } from '../../services/api.service';
+import { AkgentService } from '../../services/akgent.service';
 import { ChatService } from '../../services/chat.service';
 import { GraphDataService } from '../../services/graph-data.service';
 import { ActorMessageService } from '../../services/message.service';
@@ -39,6 +40,7 @@ export class ProcessUserInputComponent implements OnInit {
   @Input() processId!: string;
 
   apiService: ApiService = inject(ApiService);
+  akgentService: AkgentService = inject(AkgentService);
   chatService: ChatService = inject(ChatService);
   messageService: ActorMessageService = inject(ActorMessageService);
   graphDataService: GraphDataService = inject(GraphDataService);
@@ -144,21 +146,27 @@ export class ProcessUserInputComponent implements OnInit {
   }
 
   async sendMessage() {
-    // selectedAgents now contains both mentioned and manually selected agents
-    // thanks to the auto-detection logic
-
     if (!this.userInput || this.userInput.trim() === '') {
       return;
     }
 
-    // If no agents specified, broadcast to entire team
+    const speakAs = this.akgentService.selectedAkgent$.value;
+
     if (!this.selectedAgents || this.selectedAgents.length === 0) {
-      await this.apiService.sendMessage(
-        this.processId,
-        this.userInput,
-      );
+      // No targets → broadcast (speak-as not applicable without explicit target)
+      await this.apiService.sendMessage(this.processId, this.userInput);
+    } else if (speakAs) {
+      // Speak-as IS set AND targets exist → use sendMessageFromTo
+      for (const agent of this.selectedAgents) {
+        await this.apiService.sendMessageFromTo(
+          this.processId,
+          speakAs.name,
+          agent.actorName,
+          this.userInput,
+        );
+      }
     } else {
-      // Send message to each target agent
+      // No speak-as → existing behavior
       for (const agent of this.selectedAgents) {
         await this.apiService.sendMessage(
           this.processId,
