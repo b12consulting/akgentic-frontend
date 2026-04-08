@@ -5,7 +5,7 @@ import { Button } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { Textarea } from 'primeng/textarea';
 import { BehaviorSubject } from 'rxjs';
-import { Message } from '../models/types';
+import { ChatMessage } from '../models/chat-message.model';
 import { Feedback, FeedbackService } from '../services/feedback.service';
 
 @Component({
@@ -14,7 +14,7 @@ import { Feedback, FeedbackService } from '../services/feedback.service';
   imports: [DialogModule, FormsModule, CommonModule, Textarea, Button],
   styleUrls: ['./feedback.component.scss'],
   template: `
-    <div class="feedback-icons" *ngIf="message().sender !== 'human'">
+    <div class="feedback-icons" *ngIf="message().rule !== 1">
       <i
         class="pi pi-thumbs-up"
         [class.selected]="
@@ -85,7 +85,7 @@ import { Feedback, FeedbackService } from '../services/feedback.service';
 })
 export class FeedbackComponent {
   feedbackService = inject(FeedbackService);
-  message = input.required<Message>();
+  message = input.required<ChatMessage>();
 
   displayModal$ = new BehaviorSubject<boolean>(false);
   feedbackComment$ = new BehaviorSubject<string>('');
@@ -97,7 +97,7 @@ export class FeedbackComponent {
     await this.feedbackService.loadFeedback();
     this.feedbackService.feedbacks$.subscribe((feedbacks) => {
       const feedback = feedbacks.find(
-        (f) => f.message.run_id === this.message().run_id
+        (f) => f.message.id === this.message().id
       );
       if (feedback) {
         this.hasFeedback$.next(true);
@@ -124,12 +124,13 @@ export class FeedbackComponent {
       isPositive: this.isPositiveFeedback$.value,
       comment: this.feedbackComment$.value,
     };
-    if (!this.message().run_id) {
-      console.error('No run_id found in message');
+    const msgId = this.message().id;
+    if (!msgId) {
+      console.error('No id found in message');
       this.displayModal$.next(false);
       return;
     }
-    this.feedbackService.setFeedback(this.message().run_id!, feedback);
+    this.feedbackService.setFeedback(msgId, feedback);
     this.displayModal$.next(false);
   }
 

@@ -1,12 +1,12 @@
 import { inject, Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
 import { environment } from '../../environments/environment';
-import { Message } from '../models/types';
+import { ChatMessage } from '../models/chat-message.model';
 import { ChatService } from './chat.service';
 import { FetchService } from './fetch.service';
 
 export interface Feedback {
-  message: Message;
+  message: ChatMessage;
   isPositive: boolean;
   comment: string;
   feedback_id?: string;
@@ -54,7 +54,7 @@ export class FeedbackService {
     feedback: FeedbackBackend
   ): Feedback | null {
     const message = this.chatService.messages$.value.find(
-      (m) => m.run_id === run_id
+      (m) => m.id === run_id
     );
     if (!message) return null;
 
@@ -73,20 +73,16 @@ export class FeedbackService {
   }
 
   async loadFeedback() {
-    const messagesWithRunId = this.chatService.messages$.value.filter(
-      (m) => m.run_id
-    );
+    // Feedback loading is deferred -- chatService.messages$ may be empty
+    // until feedback integration is wired in a future story.
+    const messages = this.chatService.messages$.value;
+    if (messages.length === 0) return;
 
     const feedbacks = await Promise.all(
-      messagesWithRunId.map(async (message) => {
-        const feedback: FeedbackBackend = await this.getFeedback(
-          message.run_id!
-        );
+      messages.map(async (message) => {
+        const feedback: FeedbackBackend = await this.getFeedback(message.id);
         if (!feedback?.score) return null;
-        return this.backendFeedbackToFrontendFeedback(
-          message.run_id!,
-          feedback
-        );
+        return this.backendFeedbackToFrontendFeedback(message.id, feedback);
       })
     );
 

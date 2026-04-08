@@ -1,0 +1,47 @@
+<!-- Rule 4 collapsed line -->
+<div
+  *ngIf="message().rule === 4 && message().collapsed"
+  class="collapsed-line"
+  (click)="toggleCollapse()"
+>
+  <span class="collapse-indicator">&gt;</span>
+  <span class="collapsed-label">{{ message().label }}</span>
+  <span class="collapsed-timestamp">{{
+    message().timestamp | date : "HH:mm"
+  }}</span>
+</div>
+
+<!-- Expanded bubble (Rules 1/2/3, or Rule 4 expanded) -->
+<div
+  *ngIf="message().rule !== 4 || !message().collapsed"
+  class="message"
+  [class.right]="message().alignment === 'right'"
+  [class.left]="message().alignment === 'left'"
+  (click)="message().rule === 4 ? toggleCollapse() : null"
+  [class.clickable]="message().rule === 4"
+>
+  <div
+    class="message-bubble"
+    [style.background-color]="message().color"
+  >
+    <div class="bubble-header">
+      <button
+        class="label-pill"
+        [disabled]="message().rule === 1"
+        (click)="onLabelClick(); $event.stopPropagation()"
+      >
+        {{ message().label }}
+      </button>
+      <span *ngIf="message().rule === 4" class="collapse-indicator-bubble">v</span>
+      <span *ngIf="message().rule === 3" class="notification-placeholder">
+        <i class="pi pi-bell"></i>
+      </span>
+    </div>
+    <div class="markdown-content">
+      <markdown [data]="message().content"></markdown>
+    </div>
+    <span class="timestamp">{{
+      message().timestamp | date : "shortTime"
+    }}</span>
+  </div>
+</div>

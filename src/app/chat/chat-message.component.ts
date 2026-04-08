@@ -1,0 +1,30 @@
+import { CommonModule, DatePipe } from '@angular/common';
+import { Component, EventEmitter, input, Output } from '@angular/core';
+import { MarkdownModule } from 'ngx-markdown';
+import { ChatMessage } from '../models/chat-message.model';
+
+@Component({
+  selector: 'app-chat-message',
+  standalone: true,
+  imports: [CommonModule, MarkdownModule, DatePipe],
+  templateUrl: './chat-message.component.html',
+  styleUrl: './chat-message.component.scss',
+})
+export class ChatMessageComponent {
+  @Output() messageSelected = new EventEmitter<ChatMessage>();
+  message = input.required<ChatMessage>();
+
+  toggleCollapse(): void {
+    const msg = this.message();
+    if (msg.rule === 4) {
+      msg.collapsed = !msg.collapsed;
+    }
+  }
+
+  onLabelClick(): void {
+    const msg = this.message();
+    if (msg.rule !== 1) {
+      this.messageSelected.emit(msg);
+    }
+  }
+}

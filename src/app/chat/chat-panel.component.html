@@ -1,11 +1,20 @@
 <div class="chat-container">
-  <ng-container *ngIf="messagesSignal().length > 0; else noMessagesPlaceholder">
-    <app-message-list
-      [messages]="messagesSignal()"
-      [loading]="(loading$ | async) ?? false"
-      [errorMessage]="errorMessage()"
-      (messageSelected)="handleMessageSelected($event)"
-    ></app-message-list>
+  <ng-container *ngIf="chatMessages.length > 0; else noMessagesPlaceholder">
+    <div class="message-list" #scrollContainer>
+      <app-chat-message
+        *ngFor="let msg of chatMessages; trackBy: trackById"
+        [message]="msg"
+        (messageSelected)="onMessageSelected($event)"
+      ></app-chat-message>
+
+      <div *ngIf="loading$ | async">
+        <div class="thinking-animation">
+          <div class="dot"></div>
+          <div class="dot"></div>
+          <div class="dot"></div>
+        </div>
+      </div>
+    </div>
   </ng-container>
   <ng-template #noMessagesPlaceholder>
     <ng-container *ngIf="loadingProcess$ | async; else emptyState">

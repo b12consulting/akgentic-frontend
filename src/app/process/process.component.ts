@@ -18,7 +18,7 @@ import { ButtonModule } from 'primeng/button';
 import { SelectButtonModule } from 'primeng/selectbutton';
 import { TabsModule } from 'primeng/tabs';
 import { BehaviorSubject } from 'rxjs';
-import { ChatComponent } from '../chat/chat.component';
+import { ChatPanelComponent } from '../chat/chat-panel.component';
 import { ChatService } from '../services/chat.service';
 import { FeedbackService } from '../services/feedback.service';
 import { GraphDataService } from '../services/graph-data.service';
@@ -36,7 +36,7 @@ import { ViewService } from '../view.service';
     WorkspaceExplorerComponent,
     TabsModule,
     ButtonModule,
-    ChatComponent,
+    ChatPanelComponent,
     SelectButtonModule,
     FormsModule,
   ],
