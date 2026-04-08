@@ -47,8 +47,7 @@ describe('ApiService', () => {
       await service.sendMessage('team-1', 'broadcast msg');
 
       const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
-      expect(callArgs.url).toContain('/teams/team-1/message');
-      expect(callArgs.url).not.toContain('/teams/team-1/message/');
+      expect(callArgs.url).toMatch(/\/teams\/team-1\/message$/);
     });
 
     it('should delegate to sendMessageTo when agentName provided', async () => {
