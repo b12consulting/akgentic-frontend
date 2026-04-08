@@ -1,9 +1,11 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { BehaviorSubject, of } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { provideMarkdown } from 'ngx-markdown';
 
 import { ChatPanelComponent } from './chat-panel.component';
-import { ChatService } from '../services/chat.service';
+import { ChatService, computePendingNotifications } from '../services/chat.service';
 import { ActorMessageService } from '../services/message.service';
 import { SelectionService } from '../services/selection.service';
 import { ActorAddress, SentMessage, BaseMessage, AkgenticMessage, StartMessage } from '../models/message.types';
@@ -62,10 +64,12 @@ describe('ChatPanelComponent', () => {
   beforeEach(async () => {
     messagesSubject = new BehaviorSubject<AkgenticMessage[]>([]);
 
+    const messagesSubj = new BehaviorSubject<any[]>([]);
     const chatService = {
-      messages$: new BehaviorSubject<any[]>([]),
+      messages$: messagesSubj,
       loadingProcess$: new BehaviorSubject<boolean>(false),
       replyContext$: new BehaviorSubject<any>(null),
+      pendingNotifications$: messagesSubj.pipe(map(computePendingNotifications)),
       setReplyContext: jasmine.createSpy('setReplyContext').and.callFake(
         function(this: any, msg: any) { this.replyContext$.next(msg); }
       ),
@@ -82,8 +86,9 @@ describe('ChatPanelComponent', () => {
       'handleSelection',
     ]);
 
-    const apiService = jasmine.createSpyObj('ApiService', ['sendMessage']);
+    const apiService = jasmine.createSpyObj('ApiService', ['sendMessage', 'processHumanInput']);
     apiService.sendMessage.and.returnValue(Promise.resolve());
+    apiService.processHumanInput.and.returnValue(Promise.resolve());
 
     const akgentService = {
       selectedAkgent$: new BehaviorSubject<any>(null),
@@ -94,7 +99,7 @@ describe('ChatPanelComponent', () => {
     };
 
     await TestBed.configureTestingModule({
-      imports: [ChatPanelComponent],
+      imports: [ChatPanelComponent, NoopAnimationsModule],
       providers: [
         provideMarkdown(),
         { provide: ChatService, useValue: chatService },
@@ -334,23 +339,173 @@ describe('ChatPanelComponent', () => {
       expect(component.selectedMessageId).toBe('msg-2');
     });
 
-    it('onRule3Clicked should NOT set reply context', () => {
-      const chatMsg: ChatMessage = {
-        id: 'msg-rule3',
-        content: 'test',
-        sender: makeAddress({ name: '@Agent' }),
-        recipient: makeAddress({ name: '@OtherHuman', role: 'Human' }),
-        timestamp: new Date(),
-        rule: 3,
-        alignment: 'left',
-        color: '#9ebbcb',
-        collapsed: false,
-        label: 'Agent -> OtherHuman',
-      };
+    it('onRule3Clicked should open modal with pending messages', () => {
+      // Set up a Rule 3 message
+      const rule3Msg = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'need approval',
+        'r3-modal',
+      );
+      messagesSubject.next([rule3Msg]);
+      fixture.detectChanges();
+
+      const chatMsg = component.chatMessages[0];
+      expect(chatMsg.rule).toBe(3);
+
       component.onRule3Clicked(chatMsg);
-      const svc = TestBed.inject(ChatService) as any;
-      expect(svc.setReplyContext).not.toHaveBeenCalled();
-      expect(component.selectedMessageId).toBeNull();
+
+      expect(component.modalVisible).toBe(true);
+      expect(component.modalAgentPair?.sender.name).toBe('@Manager');
+      expect(component.modalAgentPair?.recipient.name).toBe('@QATester');
+      expect(component.modalPendingMessages.length).toBe(1);
+    });
+
+    it('onRule3Clicked should not open modal when no pending notifications', () => {
+      // A Rule 3 message that has been replied to
+      const rule3Msg = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'need approval',
+        'r3-1',
+      );
+      const replyMsg = makeSentMessage(
+        { name: '@QATester', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'approved',
+        'reply-1',
+      );
+      messagesSubject.next([rule3Msg, replyMsg]);
+      fixture.detectChanges();
+
+      const chatMsg = component.chatMessages.find(m => m.id === 'r3-1')!;
+      component.onRule3Clicked(chatMsg);
+
+      expect(component.modalVisible).toBe(false);
+    });
+
+    it('onModalReply should call processHumanInput and close modal', () => {
+      component.processId = 'team-42';
+      component.modalVisible = true;
+
+      component.onModalReply({ content: 'approved', messageId: 'msg-123' });
+
+      const api = TestBed.inject(ApiService) as any;
+      expect(api.processHumanInput).toHaveBeenCalledWith('team-42', 'approved', 'msg-123');
+      expect(component.modalVisible).toBe(false);
+    });
+
+    it('onModalVisibleChange should update modalVisible', () => {
+      component.modalVisible = true;
+      component.onModalVisibleChange(false);
+      expect(component.modalVisible).toBe(false);
+    });
+  });
+
+  describe('notification wiring (Task 2)', () => {
+    it('hasNotification should return true for Rule 3 messages with pending notifications', () => {
+      const rule3Msg = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'need approval',
+        'r3-1',
+      );
+      messagesSubject.next([rule3Msg]);
+      fixture.detectChanges();
+
+      const chatMsg = component.chatMessages[0];
+      expect(chatMsg.rule).toBe(3);
+      expect(component.hasNotification(chatMsg)).toBe(true);
+    });
+
+    it('hasNotification should return false for Rule 3 messages after reply clears notification', () => {
+      const rule3Msg = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'need approval',
+        'r3-1',
+      );
+      const replyMsg = makeSentMessage(
+        { name: '@QATester', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'approved',
+        'reply-1',
+      );
+      messagesSubject.next([rule3Msg, replyMsg]);
+      fixture.detectChanges();
+
+      const chatMsgR3 = component.chatMessages.find(m => m.id === 'r3-1')!;
+      expect(component.hasNotification(chatMsgR3)).toBe(false);
+    });
+
+    it('hasNotification should return false for non-Rule-3 messages', () => {
+      const msg = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'hello',
+      );
+      messagesSubject.next([msg]);
+      fixture.detectChanges();
+
+      expect(component.chatMessages[0].rule).toBe(1);
+      expect(component.hasNotification(component.chatMessages[0])).toBe(false);
+    });
+  });
+
+  describe('notification clears on reply (Task 5)', () => {
+    it('notification disappears when reply message arrives via messages$', () => {
+      // 1. Rule 3 message pending
+      const rule3Msg = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'need approval',
+        'r3-clear-1',
+      );
+      messagesSubject.next([rule3Msg]);
+      fixture.detectChanges();
+
+      const chatMsg = component.chatMessages[0];
+      expect(component.hasNotification(chatMsg)).toBe(true);
+
+      // 2. Reply arrives (simulating WebSocket message)
+      const replyMsg = makeSentMessage(
+        { name: '@QATester', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'approved',
+        'reply-clear-1',
+      );
+      messagesSubject.next([rule3Msg, replyMsg]);
+      fixture.detectChanges();
+
+      // 3. Notification should be gone
+      const chatMsgAfter = component.chatMessages.find(m => m.id === 'r3-clear-1')!;
+      expect(component.hasNotification(chatMsgAfter)).toBe(false);
+    });
+
+    it('notification reappears if sender sends again after reply', () => {
+      const rule3First = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'first request',
+        'r3-reappear-1',
+      );
+      const reply = makeSentMessage(
+        { name: '@QATester', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'done',
+        'reply-reappear-1',
+      );
+      const rule3Second = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'second request',
+        'r3-reappear-2',
+      );
+      messagesSubject.next([rule3First, reply, rule3Second]);
+      fixture.detectChanges();
+
+      const secondMsg = component.chatMessages.find(m => m.id === 'r3-reappear-2')!;
+      expect(component.hasNotification(secondMsg)).toBe(true);
     });
   });
 

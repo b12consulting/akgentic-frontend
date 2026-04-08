@@ -1,0 +1,31 @@
+<p-dialog
+  [header]="headerText"
+  [modal]="true"
+  [visible]="visible()"
+  (visibleChange)="onVisibleChange($event)"
+  [style]="{ width: '50rem' }"
+  [contentStyle]="{ 'max-height': '60vh', overflow: 'auto' }"
+>
+  <div class="pending-messages">
+    <div *ngFor="let msg of pendingMessages()" class="pending-message-item">
+      <span class="message-time">[{{ msg.timestamp | date : 'HH:mm' }}]</span>
+      <div class="message-content">
+        <markdown [data]="msg.content"></markdown>
+      </div>
+    </div>
+  </div>
+  <div class="reply-section">
+    <textarea
+      pTextarea
+      style="width: 100%; min-height: 80px; max-height: 200px"
+      [autoResize]="true"
+      [(ngModel)]="replyText"
+      placeholder="Type your reply..."
+      (keydown.meta.enter)="onSend()"
+      (keydown.control.enter)="onSend()"
+    ></textarea>
+    <div class="reply-actions">
+      <p-button label="Send" size="small" (click)="onSend()" />
+    </div>
+  </div>
+</p-dialog>
