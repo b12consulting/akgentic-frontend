@@ -12,12 +12,13 @@ import { ChatMessage } from '../models/chat-message.model';
 })
 export class ChatMessageComponent {
   @Output() messageSelected = new EventEmitter<ChatMessage>();
+  @Output() toggleCollapse = new EventEmitter<ChatMessage>();
   message = input.required<ChatMessage>();
 
-  toggleCollapse(): void {
+  onToggleCollapse(): void {
     const msg = this.message();
     if (msg.rule === 4) {
-      msg.collapsed = !msg.collapsed;
+      this.toggleCollapse.emit(msg);
     }
   }
 

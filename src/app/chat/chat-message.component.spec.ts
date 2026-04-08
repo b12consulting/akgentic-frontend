@@ -144,7 +144,7 @@ describe('ChatMessageComponent', () => {
       expect(indicator.textContent.trim()).toBe('>');
     });
 
-    it('should expand on click', () => {
+    it('should emit toggleCollapse on click', () => {
       const msg = makeChatMessage({
         rule: 4,
         collapsed: true,
@@ -153,13 +153,11 @@ describe('ChatMessageComponent', () => {
       fixture.componentRef.setInput('message', msg);
       fixture.detectChanges();
 
+      spyOn(component.toggleCollapse, 'emit');
       const collapsedLine = fixture.nativeElement.querySelector('.collapsed-line');
       collapsedLine.click();
-      fixture.detectChanges();
 
-      expect(msg.collapsed).toBe(false);
-      expect(fixture.nativeElement.querySelector('.message-bubble')).toBeTruthy();
-      expect(fixture.nativeElement.querySelector('.collapsed-line')).toBeNull();
+      expect(component.toggleCollapse.emit).toHaveBeenCalledWith(msg);
     });
 
     it('should show v indicator when expanded', () => {
@@ -173,17 +171,16 @@ describe('ChatMessageComponent', () => {
       expect(indicator.textContent.trim()).toBe('v');
     });
 
-    it('should collapse back on click when expanded', () => {
+    it('should emit toggleCollapse on click when expanded', () => {
       const msg = makeChatMessage({ rule: 4, collapsed: false });
       fixture.componentRef.setInput('message', msg);
       fixture.detectChanges();
 
+      spyOn(component.toggleCollapse, 'emit');
       const messageEl = fixture.nativeElement.querySelector('.message');
       messageEl.click();
-      fixture.detectChanges();
 
-      expect(msg.collapsed).toBe(true);
-      expect(fixture.nativeElement.querySelector('.collapsed-line')).toBeTruthy();
+      expect(component.toggleCollapse.emit).toHaveBeenCalledWith(msg);
     });
   });
 

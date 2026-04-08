@@ -96,8 +96,8 @@
 
   &:disabled {
     background-color: #6a9bb6;
-    cursor: auto;
-    opacity: 0.6;
+    cursor: default;
+    opacity: 1;
   }
 
   &:focus {

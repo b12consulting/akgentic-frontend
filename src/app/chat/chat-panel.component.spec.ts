@@ -223,4 +223,42 @@ describe('ChatPanelComponent', () => {
     const chatMsg = { id: 'abc-123' } as ChatMessage;
     expect(component.trackById(0, chatMsg)).toBe('abc-123');
   });
+
+  it('should push classified messages to chatService.messages$', () => {
+    const chatService = TestBed.inject(ChatService);
+    const sent = makeSentMessage(
+      { name: '@Human', role: 'Human' },
+      { name: '@Manager', role: 'Manager' },
+      'hello',
+    );
+    messagesSubject.next([sent]);
+    fixture.detectChanges();
+
+    expect(chatService.messages$.value.length).toBe(1);
+    expect(chatService.messages$.value[0].rule).toBe(1);
+  });
+
+  it('onToggleCollapse should toggle collapsed state and preserve across re-classification', () => {
+    const msg4 = makeSentMessage(
+      { name: '@Worker', role: 'Worker' },
+      { name: '@Manager', role: 'Manager' },
+      'ai msg',
+      'msg-r4',
+    );
+    messagesSubject.next([msg4]);
+    fixture.detectChanges();
+
+    expect(component.chatMessages[0].collapsed).toBe(true);
+
+    // Expand it
+    component.onToggleCollapse(component.chatMessages[0]);
+    expect(component.chatMessages[0].collapsed).toBe(false);
+
+    // Re-emit messages (simulating new message arrival)
+    messagesSubject.next([msg4]);
+    fixture.detectChanges();
+
+    // Collapsed state should be preserved
+    expect(component.chatMessages[0].collapsed).toBe(false);
+  });
 });

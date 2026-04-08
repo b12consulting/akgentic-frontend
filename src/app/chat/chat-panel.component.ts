@@ -43,6 +43,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   private subscription!: Subscription;
   private shouldScrollToBottom = true;
   private lastScrollHeight = 0;
+  private expandedMessageIds = new Set<string>();
 
   ngOnInit(): void {
     this.subscription = this.messageService.messages$.subscribe((messages) => {
@@ -52,10 +53,27 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
         .filter(isSentMessage)
         .filter((m) => m.sender.role !== 'ActorSystem')
         .filter((m) => m.message.content != null && m.message.content !== '')
-        .map((m) => classifyMessage(m));
+        .map((m) => {
+          const chatMsg = classifyMessage(m);
+          if (chatMsg.rule === 4 && this.expandedMessageIds.has(chatMsg.id)) {
+            chatMsg.collapsed = false;
+          }
+          return chatMsg;
+        });
 
       this.chatMessages = classified;
+      this.chatService.messages$.next(classified);
     });
+  }
+
+  onToggleCollapse(chatMsg: ChatMessage): void {
+    if (chatMsg.rule !== 4) return;
+    chatMsg.collapsed = !chatMsg.collapsed;
+    if (chatMsg.collapsed) {
+      this.expandedMessageIds.delete(chatMsg.id);
+    } else {
+      this.expandedMessageIds.add(chatMsg.id);
+    }
   }
 
   ngAfterViewChecked(): void {

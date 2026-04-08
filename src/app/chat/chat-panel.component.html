@@ -5,6 +5,7 @@
         *ngFor="let msg of chatMessages; trackBy: trackById"
         [message]="msg"
         (messageSelected)="onMessageSelected($event)"
+        (toggleCollapse)="onToggleCollapse($event)"
       ></app-chat-message>
 
       <div *ngIf="loading$ | async">
