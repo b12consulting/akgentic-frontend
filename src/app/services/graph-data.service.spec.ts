@@ -1,6 +1,8 @@
-import { GraphBuilder, HUMAN_ROLE, ENTRY_POINT_NAME } from './graph-data.service';
+import { GraphBuilder, HUMAN_ROLE } from './graph-data.service';
+import { ENTRY_POINT_NAME } from '../models/chat-message.model';
 import {
   ActorAddress,
+  AkgenticMessage,
   SentMessage,
   BaseMessage,
 } from '../models/message.types';
@@ -136,12 +138,27 @@ describe('GraphBuilder.setHumanRequest', () => {
   it('should skip when message is not a SentMessage', () => {
     const msg = makeBaseMessage({
       __model__: 'akgentic.core.messages.orchestrator.ReceivedMessage',
-    });
-    const builder = new GraphBuilder(msg as any);
+    }) as unknown as AkgenticMessage;
+    const builder = new GraphBuilder(msg);
     const nodes = [makeNode({ name: 'manager-1', actorName: '@Manager' })];
 
     builder.setHumanRequest(nodes);
 
+    expect(nodes[0].humanRequests).toBeUndefined();
+  });
+
+  it('should not fail when sender node is not in the nodes array', () => {
+    const msg = makeSentMessage({
+      sender: makeAddress({ name: '@Unknown', role: 'Worker', agent_id: 'unknown-1' }),
+      recipient: makeAddress({ name: '@QATester', role: 'Human', agent_id: 'qa-1' }),
+      message: makeBaseMessage({ display_type: 'other' }),
+    });
+    const builder = new GraphBuilder(msg);
+    const nodes = [makeNode({ name: 'manager-1', actorName: '@Manager' })];
+
+    builder.setHumanRequest(nodes);
+
+    // No node matched the sender, so no humanRequests should be set
     expect(nodes[0].humanRequests).toBeUndefined();
   });
 });

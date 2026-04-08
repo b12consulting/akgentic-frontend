@@ -17,9 +17,9 @@ import {
   isProcessedMessage,
 } from '../models/message.types';
 import { EdgeInterface, NodeInterface } from '../models/types';
+import { ENTRY_POINT_NAME } from '../models/chat-message.model';
 
 export const HUMAN_ROLE = 'Human';
-export const ENTRY_POINT_NAME = '@Human';
 export const ORCHESTRATOR_CLASS = 'Orchestrator';
 
 /**
