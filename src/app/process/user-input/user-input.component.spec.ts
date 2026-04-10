@@ -9,11 +9,25 @@ import { ChatService } from '../../services/chat.service';
 import { GraphDataService } from '../../services/graph-data.service';
 import { ActorMessageService } from '../../services/message.service';
 
+function makeNode(actorName: string, userMessage = true) {
+  return {
+    name: `id-${actorName}`,
+    role: 'Worker',
+    actorName,
+    parentId: '',
+    squadId: '',
+    symbol: '',
+    category: 0,
+    userMessage,
+  };
+}
+
 describe('ProcessUserInputComponent', () => {
   let component: ProcessUserInputComponent;
   let fixture: ComponentFixture<ProcessUserInputComponent>;
   let apiServiceSpy: jasmine.SpyObj<ApiService>;
   let akgentService: { selectedAkgent$: BehaviorSubject<Akgent | null> };
+  let nodesSubject: BehaviorSubject<any[]>;
 
   beforeEach(async () => {
     apiServiceSpy = jasmine.createSpyObj('ApiService', [
@@ -31,8 +45,10 @@ describe('ProcessUserInputComponent', () => {
       messages$: new BehaviorSubject<any[]>([]),
     };
 
+    nodesSubject = new BehaviorSubject<any[]>([]);
+
     const graphDataService = {
-      nodes$: of([]),
+      nodes$: nodesSubject.asObservable(),
     };
 
     const messageService = {
@@ -60,6 +76,58 @@ describe('ProcessUserInputComponent', () => {
     expect(component).toBeTruthy();
   });
 
+  describe('dropdownAgents population', () => {
+    it('should populate dropdownAgents from nodes$ with correct filter', () => {
+      nodesSubject.next([
+        makeNode('@Manager'),
+        makeNode('@Expert'),
+        makeNode('@Human'),
+        makeNode('non-at-agent'),
+      ]);
+
+      // @Human and non-at-agent should be excluded
+      expect(component.dropdownAgents.length).toBe(2);
+      expect(component.dropdownAgents.map(a => a.value)).toEqual(['@Manager', '@Expert']);
+    });
+
+    it('should use makeAgentNameUserFriendly for dropdown labels', () => {
+      nodesSubject.next([makeNode('@Manager')]);
+
+      expect(component.dropdownAgents.length).toBe(1);
+      // makeAgentNameUserFriendly transforms @Manager -> Manager [Manager] or similar
+      expect(component.dropdownAgents[0].label).toBeTruthy();
+      expect(component.dropdownAgents[0].value).toBe('@Manager');
+    });
+
+    it('should reset selectedAgent to null when fired agent is no longer in nodes', () => {
+      nodesSubject.next([makeNode('@Manager'), makeNode('@Expert')]);
+      component.selectedAgent = '@Expert';
+
+      // Emit new nodes without @Expert (agent was fired)
+      nodesSubject.next([makeNode('@Manager')]);
+
+      expect(component.selectedAgent).toBeNull();
+    });
+
+    it('should keep selectedAgent when agent is still in the list', () => {
+      nodesSubject.next([makeNode('@Manager'), makeNode('@Expert')]);
+      component.selectedAgent = '@Expert';
+
+      // Emit same nodes again
+      nodesSubject.next([makeNode('@Manager'), makeNode('@Expert')]);
+
+      expect(component.selectedAgent).toBe('@Expert');
+    });
+
+    it('should update dropdown reactively when nodes change', () => {
+      nodesSubject.next([makeNode('@Manager')]);
+      expect(component.dropdownAgents.length).toBe(1);
+
+      nodesSubject.next([makeNode('@Manager'), makeNode('@Expert'), makeNode('@Researcher')]);
+      expect(component.dropdownAgents.length).toBe(3);
+    });
+  });
+
   describe('sendMessage()', () => {
     it('should not send when input is empty', async () => {
       component.userInput = '';
@@ -74,9 +142,9 @@ describe('ProcessUserInputComponent', () => {
       expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
     });
 
-    it('should broadcast via sendMessage when no targets and no speak-as', async () => {
+    it('should broadcast when no dropdown selection and no speak-as', async () => {
       component.userInput = 'hello everyone';
-      component.selectedAgents = [];
+      component.selectedAgent = null;
       akgentService.selectedAkgent$.next(null);
 
       await component.sendMessage();
@@ -88,25 +156,24 @@ describe('ProcessUserInputComponent', () => {
       expect(apiServiceSpy.sendMessageFromTo).not.toHaveBeenCalled();
     });
 
-    it('should broadcast via sendMessage when no targets even if speak-as is set', async () => {
-      component.userInput = 'broadcast msg';
-      component.selectedAgents = [];
-      akgentService.selectedAkgent$.next({ name: '@Developer', agentId: 'dev-1' });
+    it('should route to selected agent via sendMessage when dropdown has selection', async () => {
+      component.userInput = 'do this task';
+      component.selectedAgent = '@Manager';
+      akgentService.selectedAkgent$.next(null);
 
       await component.sendMessage();
 
       expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
         'test-team-id',
-        'broadcast msg',
+        'do this task',
+        '@Manager',
       );
       expect(apiServiceSpy.sendMessageFromTo).not.toHaveBeenCalled();
     });
 
-    it('should call sendMessageFromTo when speak-as is set and targets exist', async () => {
+    it('should use sendMessageFromTo when speak-as is set and dropdown has selection', async () => {
       component.userInput = 'do this task';
-      component.selectedAgents = [
-        { name: 'Manager', actorName: '@Manager', agentId: 'mgr-1' },
-      ];
+      component.selectedAgent = '@Manager';
       akgentService.selectedAkgent$.next({ name: '@Developer', agentId: 'dev-1' });
 
       await component.sendMessage();
@@ -120,54 +187,87 @@ describe('ProcessUserInputComponent', () => {
       expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
     });
 
-    it('should call sendMessageFromTo for each target when speak-as is set', async () => {
-      component.userInput = 'multi-target';
-      component.selectedAgents = [
-        { name: 'Manager', actorName: '@Manager', agentId: 'mgr-1' },
-        { name: 'Designer', actorName: '@Designer', agentId: 'des-1' },
-      ];
+    it('should broadcast when no dropdown selection even if speak-as is set', async () => {
+      component.userInput = 'broadcast msg';
+      component.selectedAgent = null;
       akgentService.selectedAkgent$.next({ name: '@Developer', agentId: 'dev-1' });
-
-      await component.sendMessage();
-
-      expect(apiServiceSpy.sendMessageFromTo).toHaveBeenCalledTimes(2);
-      expect(apiServiceSpy.sendMessageFromTo).toHaveBeenCalledWith(
-        'test-team-id',
-        '@Developer',
-        '@Manager',
-        'multi-target',
-      );
-      expect(apiServiceSpy.sendMessageFromTo).toHaveBeenCalledWith(
-        'test-team-id',
-        '@Developer',
-        '@Designer',
-        'multi-target',
-      );
-      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
-    });
-
-    it('should call sendMessage per target when no speak-as and targets exist', async () => {
-      component.userInput = 'no impersonation';
-      component.selectedAgents = [
-        { name: 'Manager', actorName: '@Manager', agentId: 'mgr-1' },
-      ];
-      akgentService.selectedAkgent$.next(null);
 
       await component.sendMessage();
 
       expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
         'test-team-id',
-        'no impersonation',
-        '@Manager',
+        'broadcast msg',
       );
       expect(apiServiceSpy.sendMessageFromTo).not.toHaveBeenCalled();
     });
 
     it('should clear userInput after sending', async () => {
       component.userInput = 'will be cleared';
-      component.selectedAgents = [];
+      component.selectedAgent = null;
       await component.sendMessage();
       expect(component.userInput).toBe('');
+    });
+
+    it('should persist dropdown selection across multiple sends', async () => {
+      component.selectedAgent = '@Manager';
+      akgentService.selectedAkgent$.next(null);
+
+      component.userInput = 'first message';
+      await component.sendMessage();
+
+      component.userInput = 'second message';
+      await component.sendMessage();
+
+      // selectedAgent should still be @Manager after both sends
+      expect(component.selectedAgent).toBe('@Manager');
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledTimes(2);
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledWith(
+        'test-team-id',
+        'first message',
+        '@Manager',
+      );
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledWith(
+        'test-team-id',
+        'second message',
+        '@Manager',
+      );
+    });
+
+    it('@mention text in input should NOT affect routing when no dropdown selection', async () => {
+      // Populate mention items like a real scenario
+      component.mentionItems = [
+        { name: 'Manager [Manager]', actorName: '@Manager', agentId: 'mgr-1' },
+      ];
+      component.selectedAgent = null;
+      component.userInput = 'hey Manager [Manager] do this';
+      akgentService.selectedAkgent$.next(null);
+
+      await component.sendMessage();
+
+      // Should broadcast, NOT route to @Manager based on text content
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+        'test-team-id',
+        'hey Manager [Manager] do this',
+      );
+    });
+
+    it('@mention text in input should NOT affect routing when dropdown has selection', async () => {
+      component.mentionItems = [
+        { name: 'Manager [Manager]', actorName: '@Manager', agentId: 'mgr-1' },
+        { name: 'Expert [Expert]', actorName: '@Expert', agentId: 'exp-1' },
+      ];
+      component.selectedAgent = '@Expert';
+      component.userInput = 'hey Manager [Manager] do this';
+      akgentService.selectedAkgent$.next(null);
+
+      await component.sendMessage();
+
+      // Should route to @Expert (dropdown), NOT @Manager (mention text)
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+        'test-team-id',
+        'hey Manager [Manager] do this',
+        '@Expert',
+      );
     });
   });
 });

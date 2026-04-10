@@ -5,7 +5,7 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { FloatLabelModule } from 'primeng/floatlabel';
 import { TextareaModule } from 'primeng/textarea';
-import { MultiSelectModule } from 'primeng/multiselect';
+import { SelectModule } from 'primeng/select';
 import { MentionModule } from 'angular-mentions';
 
 import { environment } from '../../../environments/environment';
@@ -22,6 +22,8 @@ import { isSentMessage, SentMessage } from '../../models/message.types';
 
 import { ProcessControlsComponent } from '../../process-controls/process-controls.component';
 
+const ENTRY_POINT_NAME = '@Human';
+
 @Component({
   selector: 'app-user-input',
   imports: [
@@ -29,7 +31,7 @@ import { ProcessControlsComponent } from '../../process-controls/process-control
     TextareaModule,
     FloatLabelModule,
     ButtonModule,
-    MultiSelectModule,
+    SelectModule,
     MentionModule,
     ProcessControlsComponent,
   ],
@@ -49,19 +51,34 @@ export class ProcessUserInputComponent implements OnInit {
 
   // Mention configuration
   mentionItems: { name: string; actorName: string; agentId: string }[] = [];
-  selectedAgents: { name: string; actorName: string; agentId: string }[] = [];
+
+  // Dropdown agent selection (single-select)
+  selectedAgent: string | null = null;
+  dropdownAgents: { label: string; value: string }[] = [];
+
   private destroyRef = inject(DestroyRef);
 
   ngOnInit() {
-    // Subscribe to nodes to populate mention items
+    // Subscribe to nodes to populate mention items and dropdown agents
     this.graphDataService.nodes$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((nodes) => {
-        // Filter all the agents that accept a user message
+        // Dropdown agents: all @-prefixed agents except the entry point
+        this.dropdownAgents = nodes
+          .filter(n => n.actorName.startsWith('@') && n.actorName !== ENTRY_POINT_NAME)
+          .map(n => ({
+            label: makeAgentNameUserFriendly(n.actorName),
+            value: n.actorName,
+          }));
+
+        // Reset selection if selected agent was fired
+        if (this.selectedAgent && !this.dropdownAgents.some(a => a.value === this.selectedAgent)) {
+          this.selectedAgent = null;
+        }
+
+        // Mention items for angular-mentions autocomplete (existing hierarchy logic)
         const agents = nodes.filter((n) => n.userMessage);
         const parentIds = agents.map((n) => n.parentId);
-
-        // The manager is the first agent with children in the current nodes
         const manager = agents.find((node) => parentIds.includes(node.name));
 
         if (!manager) {
@@ -73,7 +90,6 @@ export class ProcessUserInputComponent implements OnInit {
           return;
         }
 
-        // Get all descendants of managers recursively
         const getAllDescendants = (parentIds: string[]): any[] => {
           const children = agents.filter(
             (n) => n.parentId && parentIds.includes(n.parentId),
@@ -84,7 +100,6 @@ export class ProcessUserInputComponent implements OnInit {
         };
         const managersChildren = getAllDescendants([manager.name]);
 
-        // Map children to mention items
         this.mentionItems = [manager, ...managersChildren].map((node) => ({
           name: makeAgentNameUserFriendly(node.actorName),
           actorName: node.actorName,
@@ -152,29 +167,27 @@ export class ProcessUserInputComponent implements OnInit {
 
     const speakAs = this.akgentService.selectedAkgent$.value;
 
-    if (!this.selectedAgents || this.selectedAgents.length === 0) {
-      // No targets → broadcast (speak-as not applicable without explicit target)
-      await this.apiService.sendMessage(this.processId, this.userInput);
-    } else if (speakAs) {
-      // Speak-as IS set AND targets exist → use sendMessageFromTo
-      for (const agent of this.selectedAgents) {
+    if (this.selectedAgent) {
+      // Dropdown selection → directed send
+      if (speakAs) {
         await this.apiService.sendMessageFromTo(
           this.processId,
           speakAs.name,
-          agent.actorName,
+          this.selectedAgent,
           this.userInput,
         );
-      }
-    } else {
-      // No speak-as → existing behavior
-      for (const agent of this.selectedAgents) {
+      } else {
         await this.apiService.sendMessage(
           this.processId,
           this.userInput,
-          agent.actorName,
+          this.selectedAgent,
         );
       }
+    } else {
+      // No selection → broadcast
+      await this.apiService.sendMessage(this.processId, this.userInput);
     }
+    // Selection persists across sends — do NOT clear selectedAgent
 
     this.userInput = '';
   }
@@ -183,9 +196,4 @@ export class ProcessUserInputComponent implements OnInit {
     return `${item.name} `;
   };
 
-  // // Called when user manually changes the multiselect
-  onSelectedAgentsChange() {
-    // This ensures that manually selected agents are preserved
-    // The auto-detection will merge with these on next text change
-  }
 }
