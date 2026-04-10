@@ -4,26 +4,32 @@
   }
 }
 
+.reply-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background-color: #e0f2fe;
+  border-left: 3px solid var(--primary-color);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  color: #0c4a6e;
+  margin-bottom: 0.5rem;
+
+  .reply-indicator-close {
+    cursor: pointer;
+    font-size: 0.75rem;
+    color: #64748b;
+    &:hover {
+      color: #334155;
+    }
+  }
+}
+
 .button-group {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
   margin-top: 0.5rem;
-}
-
-.send-to-group {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.send-to-label {
-  font-size: 0.875rem;
-  white-space: nowrap;
-}
-
-p-select {
-  min-width: 200px;
-  max-width: 300px;
 }
