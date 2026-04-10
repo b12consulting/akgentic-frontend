@@ -91,12 +91,12 @@ describe('ProcessUserInputComponent', () => {
     });
 
     it('should use makeAgentNameUserFriendly for dropdown labels', () => {
-      nodesSubject.next([makeNode('@Manager')]);
+      nodesSubject.next([makeNode('@alice-manager-batch-0')]);
 
       expect(component.dropdownAgents.length).toBe(1);
-      // makeAgentNameUserFriendly transforms @Manager -> Manager [Manager] or similar
-      expect(component.dropdownAgents[0].label).toBeTruthy();
-      expect(component.dropdownAgents[0].value).toBe('@Manager');
+      // makeAgentNameUserFriendly('@alice-manager-batch-0') → '@alice [Manager]'
+      expect(component.dropdownAgents[0].label).toBe('@alice [Manager]');
+      expect(component.dropdownAgents[0].value).toBe('@alice-manager-batch-0');
     });
 
     it('should reset selectedAgent to null when fired agent is no longer in nodes', () => {
