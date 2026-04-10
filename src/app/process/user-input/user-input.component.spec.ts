@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormsModule } from '@angular/forms';
-import { BehaviorSubject, of } from 'rxjs';
+import { BehaviorSubject, of, Subject } from 'rxjs';
 
 import { ProcessUserInputComponent } from './user-input.component';
 import { ApiService } from '../../services/api.service';
@@ -39,11 +39,22 @@ function makeChatMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
   };
 }
 
+function makeNode(overrides: any = {}): any {
+  return {
+    name: 'node-1',
+    actorName: '@Agent',
+    parentId: null,
+    userMessage: true,
+    ...overrides,
+  };
+}
+
 describe('ProcessUserInputComponent', () => {
   let component: ProcessUserInputComponent;
   let fixture: ComponentFixture<ProcessUserInputComponent>;
   let apiServiceSpy: jasmine.SpyObj<ApiService>;
   let chatServiceMock: any;
+  let nodesSubject: Subject<any[]>;
 
   beforeEach(async () => {
     apiServiceSpy = jasmine.createSpyObj('ApiService', [
@@ -63,8 +74,10 @@ describe('ProcessUserInputComponent', () => {
       ),
     };
 
+    nodesSubject = new Subject<any[]>();
+
     const graphDataService = {
-      nodes$: of([]),
+      nodes$: nodesSubject.asObservable(),
     };
 
     const messageService = {
@@ -98,6 +111,55 @@ describe('ProcessUserInputComponent', () => {
     expect(component).toBeTruthy();
   });
 
+  describe('dropdown population (AC #2, #8)', () => {
+    it('should populate dropdownAgents from nodes, filtering @-prefixed and excluding @Human', () => {
+      nodesSubject.next([
+        makeNode({ name: 'n1', actorName: '@Manager', userMessage: true }),
+        makeNode({ name: 'n2', actorName: '@Expert', userMessage: true }),
+        makeNode({ name: 'n3', actorName: '@Human', userMessage: false }),
+        makeNode({ name: 'n4', actorName: 'InternalAgent', userMessage: false }),
+      ]);
+
+      expect(component.dropdownAgents.length).toBe(2);
+      expect(component.dropdownAgents.map(d => d.value)).toEqual(['@Manager', '@Expert']);
+      // Labels should be user-friendly (formatted via makeAgentNameUserFriendly)
+      expect(component.dropdownAgents[0].label).toBeTruthy();
+      expect(component.dropdownAgents[1].label).toBeTruthy();
+    });
+
+    it('should continue populating mentionItems alongside dropdownAgents', () => {
+      nodesSubject.next([
+        makeNode({ name: 'n1', actorName: '@Manager', userMessage: true }),
+        makeNode({ name: 'n2', actorName: '@Expert', userMessage: true }),
+      ]);
+
+      // mentionItems populated for angular-mentions autocomplete
+      expect(component.mentionItems.length).toBeGreaterThan(0);
+      // dropdownAgents populated for multi-select
+      expect(component.dropdownAgents.length).toBe(2);
+    });
+  });
+
+  describe('fired agent pruning (AC #3)', () => {
+    it('should remove fired agent from selectedAgents when nodes update', () => {
+      // Initial nodes with 2 agents
+      nodesSubject.next([
+        makeNode({ name: 'n1', actorName: '@Manager', userMessage: true }),
+        makeNode({ name: 'n2', actorName: '@Expert', userMessage: true }),
+      ]);
+
+      // User selects both agents
+      component.selectedAgents = ['@Manager', '@Expert'];
+
+      // Expert gets fired -- new nodes without Expert
+      nodesSubject.next([
+        makeNode({ name: 'n1', actorName: '@Manager', userMessage: true }),
+      ]);
+
+      expect(component.selectedAgents).toEqual(['@Manager']);
+    });
+  });
+
   describe('sendMessage()', () => {
     it('should not send when input is empty', async () => {
       component.userInput = '';
@@ -111,9 +173,9 @@ describe('ProcessUserInputComponent', () => {
       expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
     });
 
-    it('should broadcast when no @mention matches', async () => {
+    it('should broadcast when no agents selected (AC #4)', async () => {
       component.userInput = 'hello everyone';
-      component.mentionItems = [];
+      component.selectedAgents = [];
 
       await component.sendMessage();
 
@@ -123,44 +185,81 @@ describe('ProcessUserInputComponent', () => {
       );
     });
 
-    it('should send to mentioned agent when @mention matches', async () => {
-      component.mentionItems = [
-        { name: 'Manager [Manager]', actorName: '@Manager', agentId: 'mgr-1' },
-      ];
-      component.userInput = 'hey Manager [Manager] do this';
+    it('should send to single selected agent (AC #5)', async () => {
+      component.userInput = 'hello expert';
+      component.selectedAgents = ['@Expert'];
 
       await component.sendMessage();
 
       expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
         'test-team-id',
-        'hey Manager [Manager] do this',
-        '@Manager',
+        'hello expert',
+        '@Expert',
       );
     });
 
-    it('should broadcast when text does not match any mention item', async () => {
-      component.mentionItems = [
-        { name: 'Manager [Manager]', actorName: '@Manager', agentId: 'mgr-1' },
-      ];
-      component.userInput = 'hello world no mention';
+    it('should send to each selected agent when multiple selected (AC #5)', async () => {
+      component.userInput = 'hello team';
+      component.selectedAgents = ['@Expert', '@Assistant'];
 
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledTimes(2);
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledWith(
+        'test-team-id',
+        'hello team',
+        '@Expert',
+      );
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledWith(
+        'test-team-id',
+        'hello team',
+        '@Assistant',
+      );
+    });
+
+    it('should persist selectedAgents across multiple sendMessage calls (AC #5)', async () => {
+      component.userInput = 'first message';
+      component.selectedAgents = ['@Expert'];
+      await component.sendMessage();
+
+      expect(component.selectedAgents).toEqual(['@Expert']);
+
+      apiServiceSpy.sendMessage.calls.reset();
+      component.userInput = 'second message';
       await component.sendMessage();
 
       expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
         'test-team-id',
-        'hello world no mention',
+        'second message',
+        '@Expert',
       );
     });
 
     it('should clear userInput after sending', async () => {
       component.userInput = 'will be cleared';
-      component.mentionItems = [];
+      component.selectedAgents = [];
       await component.sendMessage();
       expect(component.userInput).toBe('');
     });
+
+    it('@mention text in userInput should NOT affect API call target (AC #7)', async () => {
+      component.mentionItems = [
+        { name: 'Manager [Manager]', actorName: '@Manager', agentId: 'mgr-1' },
+      ];
+      component.userInput = 'hey Manager [Manager] do this';
+      component.selectedAgents = [];
+
+      await component.sendMessage();
+
+      // Should broadcast, NOT route to @Manager via text matching
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+        'test-team-id',
+        'hey Manager [Manager] do this',
+      );
+    });
   });
 
-  describe('reply context', () => {
+  describe('reply context (AC #6)', () => {
     it('should show reply context display name when replyContext is set', () => {
       const msg = makeChatMessage({
         sender: makeAddress({ name: '@Manager-Manager_agent' }),
@@ -227,33 +326,65 @@ describe('ProcessUserInputComponent', () => {
       expect(chatServiceMock.clearReplyContext).toHaveBeenCalled();
     });
 
-    it('reply context should take priority over @mention', async () => {
+    it('reply context should take priority over dropdown selection (AC #6)', async () => {
       const msg = makeChatMessage({
         sender: makeAddress({ name: '@Developer' }),
       });
       chatServiceMock.replyContext$.next(msg);
       fixture.detectChanges();
 
-      component.mentionItems = [
-        { name: 'Manager [Manager]', actorName: '@Manager', agentId: 'mgr-1' },
-      ];
-      component.userInput = 'hey Manager [Manager] do this';
+      component.selectedAgents = ['@Manager', '@Expert'];
+      component.userInput = 'hey do this';
       await component.sendMessage();
 
-      // Should use reply context sender, not the @mention
+      // Should use reply context sender, not dropdown selection
       expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
         'test-team-id',
-        'hey Manager [Manager] do this',
+        'hey do this',
         '@Developer',
       );
     });
 
-    it('should broadcast when no reply context and no @mention', async () => {
+    it('after reply context cleared, dropdown selection resumes routing (AC #6)', async () => {
+      // Set up dropdown selection
+      component.selectedAgents = ['@Expert'];
+
+      // Send with reply context active
+      const msg = makeChatMessage({
+        sender: makeAddress({ name: '@Developer' }),
+      });
+      chatServiceMock.replyContext$.next(msg);
+      fixture.detectChanges();
+
+      component.userInput = 'reply message';
+      await component.sendMessage();
+
+      // Reply context was used and cleared
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledWith(
+        'test-team-id',
+        'reply message',
+        '@Developer',
+      );
+      expect(chatServiceMock.clearReplyContext).toHaveBeenCalled();
+
+      // Now send again -- reply context is cleared, dropdown should resume
+      apiServiceSpy.sendMessage.calls.reset();
+      component.userInput = 'follow-up message';
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+        'test-team-id',
+        'follow-up message',
+        '@Expert',
+      );
+    });
+
+    it('should broadcast when no reply context and no selection', async () => {
       chatServiceMock.replyContext$.next(null);
       fixture.detectChanges();
 
       component.userInput = 'hello everyone';
-      component.mentionItems = [];
+      component.selectedAgents = [];
       await component.sendMessage();
 
       expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
