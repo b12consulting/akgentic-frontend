@@ -34,7 +34,7 @@
         {{ message().label }}
       </button>
       <span *ngIf="message().rule === 4" class="collapse-indicator-bubble">v</span>
-      <span *ngIf="message().rule === 3" class="notification-placeholder">
+      <span *ngIf="notification()" class="notification-icon">
         <i class="pi pi-bell"></i>
       </span>
     </div>

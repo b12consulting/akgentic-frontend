@@ -17,6 +17,7 @@ export class ChatMessageComponent {
   @Output() rule3Clicked = new EventEmitter<ChatMessage>();
   message = input.required<ChatMessage>();
   selected = input<boolean>(false);
+  notification = input<boolean>(false);
 
   onToggleCollapse(): void {
     const msg = this.message();

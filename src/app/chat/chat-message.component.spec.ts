@@ -105,7 +105,37 @@ describe('ChatMessageComponent', () => {
   });
 
   describe('Rule 3 (notification)', () => {
-    it('should show notification placeholder', () => {
+    it('should show notification icon when notification input is true', () => {
+      const msg = makeChatMessage({
+        rule: 3,
+        alignment: 'left',
+        label: 'Agent -> OtherHuman',
+      });
+      fixture.componentRef.setInput('message', msg);
+      fixture.componentRef.setInput('notification', true);
+      fixture.detectChanges();
+
+      const el = fixture.nativeElement;
+      expect(el.querySelector('.notification-icon')).toBeTruthy();
+      expect(el.querySelector('.pi-bell')).toBeTruthy();
+    });
+
+    it('should NOT show notification icon when notification input is false', () => {
+      const msg = makeChatMessage({
+        rule: 3,
+        alignment: 'left',
+        label: 'Agent -> OtherHuman',
+      });
+      fixture.componentRef.setInput('message', msg);
+      fixture.componentRef.setInput('notification', false);
+      fixture.detectChanges();
+
+      const el = fixture.nativeElement;
+      expect(el.querySelector('.notification-icon')).toBeNull();
+      expect(el.querySelector('.pi-bell')).toBeNull();
+    });
+
+    it('should default notification to false (no bell icon)', () => {
       const msg = makeChatMessage({
         rule: 3,
         alignment: 'left',
@@ -115,8 +145,7 @@ describe('ChatMessageComponent', () => {
       fixture.detectChanges();
 
       const el = fixture.nativeElement;
-      expect(el.querySelector('.notification-placeholder')).toBeTruthy();
-      expect(el.querySelector('.pi-bell')).toBeTruthy();
+      expect(el.querySelector('.notification-icon')).toBeNull();
     });
   });
 

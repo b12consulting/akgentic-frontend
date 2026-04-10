@@ -5,6 +5,7 @@
         *ngFor="let msg of chatMessages; trackBy: trackById"
         [message]="msg"
         [selected]="msg.id === selectedMessageId"
+        [notification]="hasNotification(msg)"
         (messageSelected)="onMessageSelected($event)"
         (toggleCollapse)="onToggleCollapse($event)"
         (bubbleClicked)="onBubbleClicked($event)"
@@ -45,4 +46,11 @@
     </ng-template>
   </ng-template>
   <app-user-input [processId]="processId"></app-user-input>
+  <app-chat-human-modal
+    [visible]="modalVisible"
+    [agentPair]="modalAgentPair"
+    [pendingMessages]="modalPendingMessages"
+    (visibleChange)="onModalVisibleChange($event)"
+    (reply)="onModalReply($event)"
+  ></app-chat-human-modal>
 </div>
