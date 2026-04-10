@@ -3,9 +3,16 @@
     width: 100%;
   }
 
+  .send-to-label {
+    font-size: 0.8rem;
+    color: #64748b;
+    white-space: nowrap;
+    margin-left: auto;
+  }
+
   p-multiSelect {
-    display: block;
-    margin-bottom: 0.5rem;
+    max-width: 500px;
+    min-width: 150px;
   }
 }
 
