@@ -1,4 +1,8 @@
 <div class="input-container">
+  <div *ngIf="replyContext" class="reply-indicator">
+    <span>Reply to {{ replyContextDisplayName }}</span>
+    <i class="pi pi-times reply-indicator-close" role="button" aria-label="Clear reply context" (click)="clearReplyContext()"></i>
+  </div>
   <p-floatlabel variant="in">
     <div class="input-row">
       <textarea
@@ -28,6 +32,17 @@
 
   <div class="button-group">
     <app-process-controls></app-process-controls>
+    <label class="send-to-label">Send to</label>
+    <p-multiSelect
+      [options]="dropdownAgents"
+      [(ngModel)]="selectedAgents"
+      optionLabel="label"
+      optionValue="value"
+      placeholder="All (supervisors)"
+      [showClear]="true"
+      size="small"
+      display="chip"
+    ></p-multiSelect>
     <p-button
       size="small"
       label="Submit"

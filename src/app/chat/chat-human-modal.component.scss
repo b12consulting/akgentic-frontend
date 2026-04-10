@@ -1,0 +1,39 @@
+.pending-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.pending-message-item {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  padding: 0.5rem;
+  border-radius: 6px;
+  background-color: #f8fafc;
+}
+
+.message-time {
+  font-size: 0.85rem;
+  color: #64748b;
+  white-space: nowrap;
+  padding-top: 2px;
+}
+
+.message-content {
+  flex: 1;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.reply-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.reply-actions {
+  display: flex;
+  justify-content: flex-end;
+}

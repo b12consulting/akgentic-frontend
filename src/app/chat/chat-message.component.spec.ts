@@ -105,7 +105,37 @@ describe('ChatMessageComponent', () => {
   });
 
   describe('Rule 3 (notification)', () => {
-    it('should show notification placeholder', () => {
+    it('should show notification icon when notification input is true', () => {
+      const msg = makeChatMessage({
+        rule: 3,
+        alignment: 'left',
+        label: 'Agent -> OtherHuman',
+      });
+      fixture.componentRef.setInput('message', msg);
+      fixture.componentRef.setInput('notification', true);
+      fixture.detectChanges();
+
+      const el = fixture.nativeElement;
+      expect(el.querySelector('.notification-icon')).toBeTruthy();
+      expect(el.querySelector('.pi-bell')).toBeTruthy();
+    });
+
+    it('should NOT show notification icon when notification input is false', () => {
+      const msg = makeChatMessage({
+        rule: 3,
+        alignment: 'left',
+        label: 'Agent -> OtherHuman',
+      });
+      fixture.componentRef.setInput('message', msg);
+      fixture.componentRef.setInput('notification', false);
+      fixture.detectChanges();
+
+      const el = fixture.nativeElement;
+      expect(el.querySelector('.notification-icon')).toBeNull();
+      expect(el.querySelector('.pi-bell')).toBeNull();
+    });
+
+    it('should default notification to false (no bell icon)', () => {
       const msg = makeChatMessage({
         rule: 3,
         alignment: 'left',
@@ -115,8 +145,7 @@ describe('ChatMessageComponent', () => {
       fixture.detectChanges();
 
       const el = fixture.nativeElement;
-      expect(el.querySelector('.notification-placeholder')).toBeTruthy();
-      expect(el.querySelector('.pi-bell')).toBeTruthy();
+      expect(el.querySelector('.notification-icon')).toBeNull();
     });
   });
 
@@ -181,6 +210,110 @@ describe('ChatMessageComponent', () => {
       messageEl.click();
 
       expect(component.toggleCollapse.emit).toHaveBeenCalledWith(msg);
+    });
+  });
+
+  describe('bubbleClicked output', () => {
+    it('should emit bubbleClicked for Rule 1 bubble click', () => {
+      const msg = makeChatMessage({
+        rule: 1,
+        alignment: 'right',
+        color: '#efeeee',
+        label: 'You -> Manager',
+      });
+      fixture.componentRef.setInput('message', msg);
+      fixture.detectChanges();
+
+      spyOn(component.bubbleClicked, 'emit');
+      const messageEl = fixture.nativeElement.querySelector('.message');
+      messageEl.click();
+
+      expect(component.bubbleClicked.emit).toHaveBeenCalledWith(msg);
+    });
+
+    it('should emit bubbleClicked for Rule 2 bubble click', () => {
+      const msg = makeChatMessage({ rule: 2, alignment: 'left' });
+      fixture.componentRef.setInput('message', msg);
+      fixture.detectChanges();
+
+      spyOn(component.bubbleClicked, 'emit');
+      const messageEl = fixture.nativeElement.querySelector('.message');
+      messageEl.click();
+
+      expect(component.bubbleClicked.emit).toHaveBeenCalledWith(msg);
+    });
+
+    it('should NOT emit bubbleClicked for Rule 4 bubble click', () => {
+      const msg = makeChatMessage({ rule: 4, collapsed: false });
+      fixture.componentRef.setInput('message', msg);
+      fixture.detectChanges();
+
+      spyOn(component.bubbleClicked, 'emit');
+      const messageEl = fixture.nativeElement.querySelector('.message');
+      messageEl.click();
+
+      expect(component.bubbleClicked.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('rule3Clicked output', () => {
+    it('should emit rule3Clicked for Rule 3 bubble click', () => {
+      const msg = makeChatMessage({
+        rule: 3,
+        alignment: 'left',
+        label: 'Agent -> OtherHuman',
+      });
+      fixture.componentRef.setInput('message', msg);
+      fixture.detectChanges();
+
+      spyOn(component.rule3Clicked, 'emit');
+      const messageEl = fixture.nativeElement.querySelector('.message');
+      messageEl.click();
+
+      expect(component.rule3Clicked.emit).toHaveBeenCalledWith(msg);
+    });
+
+    it('should NOT emit bubbleClicked for Rule 3', () => {
+      const msg = makeChatMessage({ rule: 3, alignment: 'left' });
+      fixture.componentRef.setInput('message', msg);
+      fixture.detectChanges();
+
+      spyOn(component.bubbleClicked, 'emit');
+      const messageEl = fixture.nativeElement.querySelector('.message');
+      messageEl.click();
+
+      expect(component.bubbleClicked.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('selected input', () => {
+    it('should apply .selected class when selected is true', () => {
+      const msg = makeChatMessage({ rule: 2 });
+      fixture.componentRef.setInput('message', msg);
+      fixture.componentRef.setInput('selected', true);
+      fixture.detectChanges();
+
+      const bubble = fixture.nativeElement.querySelector('.message-bubble');
+      expect(bubble.classList.contains('selected')).toBe(true);
+    });
+
+    it('should NOT apply .selected class when selected is false', () => {
+      const msg = makeChatMessage({ rule: 2 });
+      fixture.componentRef.setInput('message', msg);
+      fixture.componentRef.setInput('selected', false);
+      fixture.detectChanges();
+
+      const bubble = fixture.nativeElement.querySelector('.message-bubble');
+      expect(bubble.classList.contains('selected')).toBe(false);
+    });
+
+    it('should default selected to false', () => {
+      const msg = makeChatMessage({ rule: 2 });
+      fixture.componentRef.setInput('message', msg);
+      fixture.detectChanges();
+
+      const bubble = fixture.nativeElement.querySelector('.message-bubble');
+      expect(bubble.classList.contains('selected')).toBe(false);
     });
   });
 

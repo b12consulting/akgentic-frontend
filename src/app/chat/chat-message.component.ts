@@ -13,7 +13,11 @@ import { ChatMessage } from '../models/chat-message.model';
 export class ChatMessageComponent {
   @Output() messageSelected = new EventEmitter<ChatMessage>();
   @Output() toggleCollapse = new EventEmitter<ChatMessage>();
+  @Output() bubbleClicked = new EventEmitter<ChatMessage>();
+  @Output() rule3Clicked = new EventEmitter<ChatMessage>();
   message = input.required<ChatMessage>();
+  selected = input<boolean>(false);
+  notification = input<boolean>(false);
 
   onToggleCollapse(): void {
     const msg = this.message();
@@ -26,6 +30,23 @@ export class ChatMessageComponent {
     const msg = this.message();
     if (msg.rule !== 1) {
       this.messageSelected.emit(msg);
+    }
+  }
+
+  onBubbleClick(event: Event): void {
+    event.stopPropagation();
+    const msg = this.message();
+    switch (msg.rule) {
+      case 1:
+      case 2:
+        this.bubbleClicked.emit(msg);
+        break;
+      case 3:
+        this.rule3Clicked.emit(msg);
+        break;
+      case 4:
+        this.onToggleCollapse();
+        break;
     }
   }
 }

@@ -1,9 +1,11 @@
+import { CommonModule } from '@angular/common';
 import { Component, inject, Input, OnInit, DestroyRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 
 import { ButtonModule } from 'primeng/button';
 import { FloatLabelModule } from 'primeng/floatlabel';
+import { MultiSelectModule } from 'primeng/multiselect';
 import { TextareaModule } from 'primeng/textarea';
 import { MentionModule } from 'angular-mentions';
 
@@ -11,17 +13,21 @@ import { environment } from '../../../environments/environment';
 import { makeAgentNameUserFriendly } from '../../lib/util';
 
 import { ApiService } from '../../services/api.service';
+import { ChatService } from '../../services/chat.service';
 import { GraphDataService } from '../../services/graph-data.service';
 
+import { ChatMessage, ENTRY_POINT_NAME } from '../../models/chat-message.model';
 import { ProcessControlsComponent } from '../../process-controls/process-controls.component';
 
 @Component({
   selector: 'app-user-input',
   imports: [
+    CommonModule,
     FormsModule,
     TextareaModule,
     FloatLabelModule,
     ButtonModule,
+    MultiSelectModule,
     MentionModule,
     ProcessControlsComponent,
   ],
@@ -32,53 +38,59 @@ export class ProcessUserInputComponent implements OnInit {
   @Input() processId!: string;
 
   apiService: ApiService = inject(ApiService);
+  chatService: ChatService = inject(ChatService);
   graphDataService: GraphDataService = inject(GraphDataService);
   userInput: string = '';
   userInputEnterKeySubmit: boolean = environment.userInputEnterKeySubmit;
+  replyContext: ChatMessage | null = null;
+  replyContextDisplayName: string = '';
 
   // Mention configuration
   mentionItems: { name: string; actorName: string; agentId: string }[] = [];
+  // Dropdown configuration
+  dropdownAgents: { label: string; value: string }[] = [];
+  selectedAgents: string[] = [];
   private destroyRef = inject(DestroyRef);
 
   ngOnInit() {
-    // Subscribe to nodes to populate mention items
+    // Subscribe to reply context changes
+    this.chatService.replyContext$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((ctx) => {
+        this.replyContext = ctx;
+        this.replyContextDisplayName = ctx
+          ? makeAgentNameUserFriendly(ctx.sender.name)
+          : '';
+      });
+
+    // Subscribe to nodes to populate mention items and dropdown agents
     this.graphDataService.nodes$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((nodes) => {
-        // Filter all the agents that accept a user message
-        const agents = nodes.filter((n) => n.userMessage);
-        const parentIds = agents.map((n) => n.parentId);
+        const agents = nodes.filter(
+          (n) => n.actorName.startsWith('@') && n.actorName !== ENTRY_POINT_NAME,
+        );
 
-        // The manager is the first agent with children in the current nodes
-        const manager = agents.find((node) => parentIds.includes(node.name));
-
-        if (!manager) {
-          this.mentionItems = agents.map((node) => ({
-            name: makeAgentNameUserFriendly(node.actorName),
-            actorName: node.actorName,
-            agentId: node.name,
-          }));
-          return;
-        }
-
-        // Get all descendants of managers recursively
-        const getAllDescendants = (parentIds: string[]): any[] => {
-          const children = agents.filter(
-            (n) => n.parentId && parentIds.includes(n.parentId),
-          );
-          return children.length
-            ? [...children, ...getAllDescendants(children.map((c) => c.name))]
-            : [];
-        };
-        const managersChildren = getAllDescendants([manager.name]);
-
-        // Map children to mention items
-        this.mentionItems = [manager, ...managersChildren].map((node) => ({
+        this.mentionItems = agents.map((node) => ({
           name: makeAgentNameUserFriendly(node.actorName),
           actorName: node.actorName,
           agentId: node.name,
         }));
+
+        this.dropdownAgents = agents.map((node) => ({
+          label: makeAgentNameUserFriendly(node.actorName),
+          value: node.actorName,
+        }));
+
+        // Remove fired agents from selection
+        this.selectedAgents = this.selectedAgents.filter((a) =>
+          agents.some((n) => n.actorName === a),
+        );
       });
+  }
+
+  clearReplyContext(): void {
+    this.chatService.clearReplyContext();
   }
 
   async sendMessage() {
@@ -86,18 +98,23 @@ export class ProcessUserInputComponent implements OnInit {
       return;
     }
 
-    // Extract first @mention from text matching a known agent
-    const mentionedAgent = this.mentionItems.find((item) =>
-      this.userInput.includes(item.name),
-    );
+    const replyCtx = this.chatService.replyContext$.value;
 
-    if (mentionedAgent) {
+    if (replyCtx) {
+      // Priority 1: reply context -- directed send to selected bubble's sender
       await this.apiService.sendMessage(
         this.processId,
         this.userInput,
-        mentionedAgent.actorName,
+        replyCtx.sender.name,
       );
+      this.chatService.clearReplyContext();
+    } else if (this.selectedAgents.length > 0) {
+      // Priority 2: dropdown selection -- send to each selected agent
+      for (const agentName of this.selectedAgents) {
+        await this.apiService.sendMessage(this.processId, this.userInput, agentName);
+      }
     } else {
+      // Priority 3: broadcast
       await this.apiService.sendMessage(this.processId, this.userInput);
     }
 

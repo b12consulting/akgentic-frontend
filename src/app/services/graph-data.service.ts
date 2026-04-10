@@ -17,6 +17,7 @@ import {
   isProcessedMessage,
 } from '../models/message.types';
 import { EdgeInterface, NodeInterface } from '../models/types';
+import { ENTRY_POINT_NAME } from '../models/chat-message.model';
 
 export const HUMAN_ROLE = 'Human';
 export const ORCHESTRATOR_CLASS = 'Orchestrator';
@@ -24,7 +25,7 @@ export const ORCHESTRATOR_CLASS = 'Orchestrator';
 /**
  * Helper class to build nodes/edges from messages.
  */
-class GraphBuilder {
+export class GraphBuilder {
   message: AkgenticMessage;
   constructor(msg: AkgenticMessage) {
     this.message = msg;
@@ -77,6 +78,7 @@ class GraphBuilder {
   setHumanRequest(nodes: NodeInterface[]) {
     if (!isSentMessage(this.message)) return;
     if (!this.message.recipient.role.includes(HUMAN_ROLE)) return;
+    if (this.message.recipient.name === ENTRY_POINT_NAME) return;
     if (this.message.message.display_type !== 'other') return;
 
     const senderId = this.message.sender?.agent_id;
