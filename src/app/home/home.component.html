@@ -39,11 +39,16 @@
       selectionMode="single"
       (onRowSelect)="onRowSelect($event)"
       [tableStyle]="{ 'min-width': '50rem' }"
+      [sortField]="'created_at'"
+      [sortOrder]="-1"
     >
       <ng-template #header>
         <tr>
           <th>Name</th>
-          <th>Creation Date</th>
+          <th pSortableColumn="created_at">
+            Creation Date
+            <p-sortIcon field="created_at"></p-sortIcon>
+          </th>
           <th>Status</th>
           <th>Team ID</th>
           <th></th>
