@@ -5,20 +5,13 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { FloatLabelModule } from 'primeng/floatlabel';
 import { TextareaModule } from 'primeng/textarea';
-import { MultiSelectModule } from 'primeng/multiselect';
 import { MentionModule } from 'angular-mentions';
 
 import { environment } from '../../../environments/environment';
-import { Message } from '../../models/types';
 import { makeAgentNameUserFriendly } from '../../lib/util';
 
 import { ApiService } from '../../services/api.service';
-import { AkgentService } from '../../services/akgent.service';
-import { ChatService } from '../../services/chat.service';
 import { GraphDataService } from '../../services/graph-data.service';
-import { ActorMessageService } from '../../services/message.service';
-
-import { isSentMessage, SentMessage } from '../../models/message.types';
 
 import { ProcessControlsComponent } from '../../process-controls/process-controls.component';
 
@@ -29,7 +22,6 @@ import { ProcessControlsComponent } from '../../process-controls/process-control
     TextareaModule,
     FloatLabelModule,
     ButtonModule,
-    MultiSelectModule,
     MentionModule,
     ProcessControlsComponent,
   ],
@@ -40,16 +32,12 @@ export class ProcessUserInputComponent implements OnInit {
   @Input() processId!: string;
 
   apiService: ApiService = inject(ApiService);
-  akgentService: AkgentService = inject(AkgentService);
-  chatService: ChatService = inject(ChatService);
-  messageService: ActorMessageService = inject(ActorMessageService);
   graphDataService: GraphDataService = inject(GraphDataService);
   userInput: string = '';
   userInputEnterKeySubmit: boolean = environment.userInputEnterKeySubmit;
 
   // Mention configuration
   mentionItems: { name: string; actorName: string; agentId: string }[] = [];
-  selectedAgents: { name: string; actorName: string; agentId: string }[] = [];
   private destroyRef = inject(DestroyRef);
 
   ngOnInit() {
@@ -91,58 +79,6 @@ export class ProcessUserInputComponent implements OnInit {
           agentId: node.name,
         }));
       });
-
-    this.messageService.messages$.subscribe((messages) => {
-      // Filter SentMessages and map into chat format.
-      // display_type on AgentMessage is always "other", so we infer
-      // direction from the sender's role: Human → user, everything else → AI.
-      const sentMessages = messages.filter(isSentMessage);
-      const final_messages = sentMessages
-        .filter((m) => m?.sender.role !== 'ActorSystem')
-        .map((m: SentMessage): Message | undefined => {
-          const content = m.message.content;
-          if (!content) return undefined;
-          const isHuman = m.sender.role === 'Human';
-          const message: Message = {
-            id: m.id,
-            content,
-            sender: isHuman ? 'human' : 'ai',
-            type: isHuman ? 'question' : 'final',
-            timestamp: new Date(m.timestamp),
-            agent_name: m.sender.name,
-            agent_id: m.sender.agent_id,
-            send_to: m.recipient.name,
-          };
-          return message;
-        })
-        .filter((m): m is Message => !!m);
-
-      // Pass the filtered messages to the chat service
-      // Check if a humanRequests has already been answered and update the final messages before passing it to the chat service
-      const currentChatMessages = this.chatService.messages$.value;
-
-      // Reapply the alreadyAnswered flag to the matching messages based on their content
-      const final_messages_updated = Array.from(final_messages).map(
-        (message: Message) => {
-          // Find the message in the currentChatMessages by matching its content
-          const existingMessage = currentChatMessages.find(
-            (m: Message) =>
-              m.content === message.content && m.agent_id === message.agent_id,
-          );
-
-          // If the message exists and has been marked as answered, apply the alreadyAnswered field
-          if (existingMessage?.alreadyAnswered) {
-            return {
-              ...message,
-              alreadyAnswered: true,
-            };
-          }
-
-          return message;
-        },
-      );
-      this.chatService.messages$.next(final_messages_updated);
-    });
   }
 
   async sendMessage() {
@@ -150,30 +86,19 @@ export class ProcessUserInputComponent implements OnInit {
       return;
     }
 
-    const speakAs = this.akgentService.selectedAkgent$.value;
+    // Extract first @mention from text matching a known agent
+    const mentionedAgent = this.mentionItems.find((item) =>
+      this.userInput.includes(item.name),
+    );
 
-    if (!this.selectedAgents || this.selectedAgents.length === 0) {
-      // No targets → broadcast (speak-as not applicable without explicit target)
-      await this.apiService.sendMessage(this.processId, this.userInput);
-    } else if (speakAs) {
-      // Speak-as IS set AND targets exist → use sendMessageFromTo
-      for (const agent of this.selectedAgents) {
-        await this.apiService.sendMessageFromTo(
-          this.processId,
-          speakAs.name,
-          agent.actorName,
-          this.userInput,
-        );
-      }
+    if (mentionedAgent) {
+      await this.apiService.sendMessage(
+        this.processId,
+        this.userInput,
+        mentionedAgent.actorName,
+      );
     } else {
-      // No speak-as → existing behavior
-      for (const agent of this.selectedAgents) {
-        await this.apiService.sendMessage(
-          this.processId,
-          this.userInput,
-          agent.actorName,
-        );
-      }
+      await this.apiService.sendMessage(this.processId, this.userInput);
     }
 
     this.userInput = '';
@@ -182,10 +107,4 @@ export class ProcessUserInputComponent implements OnInit {
   selectAgent = (item: any) => {
     return `${item.name} `;
   };
-
-  // // Called when user manually changes the multiselect
-  onSelectedAgentsChange() {
-    // This ensures that manually selected agents are preserved
-    // The auto-detection will merge with these on next text change
-  }
 }

@@ -1,0 +1,130 @@
+/* Collapsed line for Rule 4 */
+.collapsed-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 4px 8px;
+  cursor: pointer;
+  color: #334155;
+  font-size: 0.9rem;
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
+
+  &:hover {
+    background-color: rgba(0, 0, 0, 0.04);
+  }
+}
+
+.collapse-indicator {
+  font-family: monospace;
+  font-weight: bold;
+  font-size: 0.8rem;
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.collapsed-label {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.collapsed-timestamp {
+  font-size: 0.8rem;
+  color: #94a3b8;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+/* Expanded message */
+.message {
+  display: flex;
+  width: 100%;
+
+  &.right {
+    justify-content: flex-end;
+  }
+
+  &.left {
+    justify-content: flex-start;
+  }
+
+  &.clickable {
+    cursor: pointer;
+  }
+}
+
+.message-bubble {
+  max-width: 80%;
+  padding: 10px 15px 2px;
+  font-size: 1rem;
+  line-height: 1.5;
+  border-radius: 10px;
+  word-wrap: break-word;
+  color: black;
+
+  .right & {
+    border-bottom-right-radius: 0;
+  }
+
+  .left & {
+    border-bottom-left-radius: 0;
+  }
+}
+
+.bubble-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 4px;
+}
+
+.label-pill {
+  background-color: #6a9bb6;
+  border: none;
+  padding: 4px 8px;
+  border-radius: 10px;
+  font-size: 1rem;
+  color: white;
+  cursor: pointer;
+  align-self: flex-start;
+
+  &:hover:not(:disabled) {
+    background-color: #075985;
+  }
+
+  &:disabled {
+    background-color: #6a9bb6;
+    cursor: default;
+    opacity: 1;
+  }
+
+  &:focus {
+    outline: none;
+  }
+}
+
+.collapse-indicator-bubble {
+  font-family: monospace;
+  font-weight: bold;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.notification-placeholder {
+  color: #6a9bb6;
+  font-size: 0.9rem;
+}
+
+.markdown-content {
+  margin-top: 4px;
+}
+
+.timestamp {
+  display: block;
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 4px;
+  padding-bottom: 4px;
+}

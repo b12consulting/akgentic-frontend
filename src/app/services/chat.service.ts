@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
-import { Message } from '../models/types';
+import { ChatMessage } from '../models/chat-message.model';
 
 // [CUSTOM] Chat body and chat answer interfaces should be customized according to your API.
 export interface ChatBody {
@@ -17,7 +17,9 @@ export interface ChatAnswer {
 
 @Injectable()
 export class ChatService {
-  messages$: BehaviorSubject<Message[]> = new BehaviorSubject<Message[]>([]);
+  messages$: BehaviorSubject<ChatMessage[]> = new BehaviorSubject<ChatMessage[]>(
+    []
+  );
   loadingProcess$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(
     false
   );
