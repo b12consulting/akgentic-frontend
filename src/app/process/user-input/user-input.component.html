@@ -32,16 +32,6 @@
 
   <div class="button-group">
     <app-process-controls></app-process-controls>
-    <p-multiselect
-      [options]="dropdownAgents"
-      [(ngModel)]="selectedAgents"
-      optionLabel="label"
-      optionValue="value"
-      placeholder="All (supervisors)"
-      size="small"
-      display="chip"
-      [style]="{ 'min-width': '200px' }"
-    />
     <p-button
       size="small"
       label="Submit"
