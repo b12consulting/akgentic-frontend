@@ -17,11 +17,12 @@
   class="message"
   [class.right]="message().alignment === 'right'"
   [class.left]="message().alignment === 'left'"
-  (click)="message().rule === 4 ? onToggleCollapse() : null"
-  [class.clickable]="message().rule === 4"
+  (click)="onBubbleClick($event)"
+  [class.clickable]="true"
 >
   <div
     class="message-bubble"
+    [class.selected]="selected()"
     [style.background-color]="message().color"
   >
     <div class="bubble-header">

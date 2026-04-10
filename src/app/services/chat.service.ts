@@ -23,4 +23,14 @@ export class ChatService {
   loadingProcess$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(
     false
   );
+  replyContext$: BehaviorSubject<ChatMessage | null> =
+    new BehaviorSubject<ChatMessage | null>(null);
+
+  setReplyContext(message: ChatMessage | null): void {
+    this.replyContext$.next(message);
+  }
+
+  clearReplyContext(): void {
+    this.replyContext$.next(null);
+  }
 }

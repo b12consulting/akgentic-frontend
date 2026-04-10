@@ -1,11 +1,14 @@
 <div class="chat-container">
   <ng-container *ngIf="chatMessages.length > 0; else noMessagesPlaceholder">
-    <div class="message-list" #scrollContainer>
+    <div class="message-list" #scrollContainer (click)="onBackgroundClick()">
       <app-chat-message
         *ngFor="let msg of chatMessages; trackBy: trackById"
         [message]="msg"
+        [selected]="msg.id === selectedMessageId"
         (messageSelected)="onMessageSelected($event)"
         (toggleCollapse)="onToggleCollapse($event)"
+        (bubbleClicked)="onBubbleClicked($event)"
+        (rule3Clicked)="onRule3Clicked($event)"
       ></app-chat-message>
 
       <div *ngIf="loading$ | async">

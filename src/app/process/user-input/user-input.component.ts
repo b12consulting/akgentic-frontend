@@ -1,3 +1,4 @@
+import { CommonModule } from '@angular/common';
 import { Component, inject, Input, OnInit, DestroyRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
@@ -11,13 +12,16 @@ import { environment } from '../../../environments/environment';
 import { makeAgentNameUserFriendly } from '../../lib/util';
 
 import { ApiService } from '../../services/api.service';
+import { ChatService } from '../../services/chat.service';
 import { GraphDataService } from '../../services/graph-data.service';
 
+import { ChatMessage } from '../../models/chat-message.model';
 import { ProcessControlsComponent } from '../../process-controls/process-controls.component';
 
 @Component({
   selector: 'app-user-input',
   imports: [
+    CommonModule,
     FormsModule,
     TextareaModule,
     FloatLabelModule,
@@ -32,15 +36,28 @@ export class ProcessUserInputComponent implements OnInit {
   @Input() processId!: string;
 
   apiService: ApiService = inject(ApiService);
+  chatService: ChatService = inject(ChatService);
   graphDataService: GraphDataService = inject(GraphDataService);
   userInput: string = '';
   userInputEnterKeySubmit: boolean = environment.userInputEnterKeySubmit;
+  replyContext: ChatMessage | null = null;
+  replyContextDisplayName: string = '';
 
   // Mention configuration
   mentionItems: { name: string; actorName: string; agentId: string }[] = [];
   private destroyRef = inject(DestroyRef);
 
   ngOnInit() {
+    // Subscribe to reply context changes
+    this.chatService.replyContext$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((ctx) => {
+        this.replyContext = ctx;
+        this.replyContextDisplayName = ctx
+          ? makeAgentNameUserFriendly(ctx.sender.name)
+          : '';
+      });
+
     // Subscribe to nodes to populate mention items
     this.graphDataService.nodes$
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -81,24 +98,40 @@ export class ProcessUserInputComponent implements OnInit {
       });
   }
 
+  clearReplyContext(): void {
+    this.chatService.clearReplyContext();
+  }
+
   async sendMessage() {
     if (!this.userInput || this.userInput.trim() === '') {
       return;
     }
 
-    // Extract first @mention from text matching a known agent
-    const mentionedAgent = this.mentionItems.find((item) =>
-      this.userInput.includes(item.name),
-    );
+    const replyCtx = this.chatService.replyContext$.value;
 
-    if (mentionedAgent) {
+    if (replyCtx) {
+      // Reply context takes priority -- directed send to selected bubble's sender
       await this.apiService.sendMessage(
         this.processId,
         this.userInput,
-        mentionedAgent.actorName,
+        replyCtx.sender.name,
       );
+      this.chatService.clearReplyContext();
     } else {
-      await this.apiService.sendMessage(this.processId, this.userInput);
+      // Existing logic: @mention or broadcast
+      const mentionedAgent = this.mentionItems.find((item) =>
+        this.userInput.includes(item.name),
+      );
+
+      if (mentionedAgent) {
+        await this.apiService.sendMessage(
+          this.processId,
+          this.userInput,
+          mentionedAgent.actorName,
+        );
+      } else {
+        await this.apiService.sendMessage(this.processId, this.userInput);
+      }
     }
 
     this.userInput = '';
