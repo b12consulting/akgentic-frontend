@@ -9,6 +9,7 @@ import { GraphDataService } from '../../services/graph-data.service';
 import { ActorMessageService } from '../../services/message.service';
 import { ChatMessage } from '../../models/chat-message.model';
 import { ActorAddress } from '../../models/message.types';
+import { NodeInterface } from '../../models/types';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {
@@ -39,11 +40,26 @@ function makeChatMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
   };
 }
 
+function makeNode(overrides: Partial<NodeInterface> = {}): NodeInterface {
+  return {
+    name: 'agent-uuid-1',
+    role: 'Worker',
+    actorName: '@Worker',
+    parentId: 'parent-1',
+    squadId: 'squad-1',
+    symbol: 'circle',
+    category: 0,
+    userMessage: true,
+    ...overrides,
+  };
+}
+
 describe('ProcessUserInputComponent', () => {
   let component: ProcessUserInputComponent;
   let fixture: ComponentFixture<ProcessUserInputComponent>;
   let apiServiceSpy: jasmine.SpyObj<ApiService>;
   let chatServiceMock: any;
+  let nodesSubject: BehaviorSubject<NodeInterface[]>;
 
   beforeEach(async () => {
     apiServiceSpy = jasmine.createSpyObj('ApiService', [
@@ -63,8 +79,10 @@ describe('ProcessUserInputComponent', () => {
       ),
     };
 
+    nodesSubject = new BehaviorSubject<NodeInterface[]>([]);
+
     const graphDataService = {
-      nodes$: of([]),
+      nodes$: nodesSubject,
     };
 
     const messageService = {
@@ -98,6 +116,56 @@ describe('ProcessUserInputComponent', () => {
     expect(component).toBeTruthy();
   });
 
+  describe('dropdown population from nodes$', () => {
+    it('should populate dropdown with @-named agents minus @Human', () => {
+      nodesSubject.next([
+        makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Manager' }),
+        makeNode({ name: 'dev-1', actorName: '@Developer', role: 'Developer' }),
+        makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
+      ]);
+
+      expect(component.dropdownAgents.length).toBe(2);
+      expect(component.dropdownAgents.map(a => a.value)).toEqual(['@Manager', '@Developer']);
+      expect(component.dropdownAgents.map(a => a.value)).not.toContain('@Human');
+    });
+
+    it('should populate mentionItems with same filter as dropdown', () => {
+      nodesSubject.next([
+        makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Manager' }),
+        makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
+      ]);
+
+      expect(component.mentionItems.length).toBe(1);
+      expect(component.mentionItems[0].actorName).toBe('@Manager');
+    });
+
+    it('should remove fired agent from selectedAgents when nodes$ emits updated list', () => {
+      nodesSubject.next([
+        makeNode({ name: 'mgr-1', actorName: '@Manager' }),
+        makeNode({ name: 'dev-1', actorName: '@Developer' }),
+      ]);
+
+      component.selectedAgents = ['@Manager', '@Developer'];
+
+      // Fire @Developer by emitting nodes without it
+      nodesSubject.next([
+        makeNode({ name: 'mgr-1', actorName: '@Manager' }),
+      ]);
+
+      expect(component.selectedAgents).toEqual(['@Manager']);
+    });
+
+    it('should exclude nodes without @ prefix from dropdown', () => {
+      nodesSubject.next([
+        makeNode({ name: 'mgr-1', actorName: '@Manager' }),
+        makeNode({ name: 'sys-1', actorName: 'system-process' }),
+      ]);
+
+      expect(component.dropdownAgents.length).toBe(1);
+      expect(component.dropdownAgents[0].value).toBe('@Manager');
+    });
+  });
+
   describe('sendMessage()', () => {
     it('should not send when input is empty', async () => {
       component.userInput = '';
@@ -111,9 +179,9 @@ describe('ProcessUserInputComponent', () => {
       expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
     });
 
-    it('should broadcast when no @mention matches', async () => {
+    it('should broadcast when no agents selected (default)', async () => {
       component.userInput = 'hello everyone';
-      component.mentionItems = [];
+      component.selectedAgents = [];
 
       await component.sendMessage();
 
@@ -123,40 +191,81 @@ describe('ProcessUserInputComponent', () => {
       );
     });
 
-    it('should send to mentioned agent when @mention matches', async () => {
-      component.mentionItems = [
-        { name: 'Manager [Manager]', actorName: '@Manager', agentId: 'mgr-1' },
-      ];
-      component.userInput = 'hey Manager [Manager] do this';
+    it('should send to single selected agent via dropdown', async () => {
+      component.selectedAgents = ['@Manager'];
+      component.userInput = 'hello manager';
 
       await component.sendMessage();
 
       expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
         'test-team-id',
-        'hey Manager [Manager] do this',
+        'hello manager',
         '@Manager',
       );
     });
 
-    it('should broadcast when text does not match any mention item', async () => {
-      component.mentionItems = [
-        { name: 'Manager [Manager]', actorName: '@Manager', agentId: 'mgr-1' },
-      ];
-      component.userInput = 'hello world no mention';
+    it('should send to multiple selected agents via dropdown', async () => {
+      component.selectedAgents = ['@Manager', '@Developer'];
+      component.userInput = 'hello team';
 
       await component.sendMessage();
 
-      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledTimes(2);
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledWith(
         'test-team-id',
-        'hello world no mention',
+        'hello team',
+        '@Manager',
+      );
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledWith(
+        'test-team-id',
+        'hello team',
+        '@Developer',
       );
     });
 
     it('should clear userInput after sending', async () => {
       component.userInput = 'will be cleared';
-      component.mentionItems = [];
+      component.selectedAgents = [];
       await component.sendMessage();
       expect(component.userInput).toBe('');
+    });
+
+    it('should persist dropdown selection across multiple sends', async () => {
+      component.selectedAgents = ['@Manager'];
+      component.userInput = 'first message';
+
+      await component.sendMessage();
+
+      expect(component.selectedAgents).toEqual(['@Manager']);
+
+      component.userInput = 'second message';
+      apiServiceSpy.sendMessage.calls.reset();
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+        'test-team-id',
+        'second message',
+        '@Manager',
+      );
+      expect(component.selectedAgents).toEqual(['@Manager']);
+    });
+
+    it('@mention text in input should NOT affect API call target', async () => {
+      // Populate mentionItems so there IS an agent name in the text
+      component.mentionItems = [
+        { name: 'Manager [Manager]', actorName: '@Manager', agentId: 'mgr-1' },
+      ];
+      // No dropdown selection
+      component.selectedAgents = [];
+      component.userInput = 'hey Manager [Manager] do this';
+
+      await component.sendMessage();
+
+      // Should broadcast, NOT route to @Manager -- text matching is removed
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+        'test-team-id',
+        'hey Manager [Manager] do this',
+      );
     });
   });
 
@@ -227,33 +336,75 @@ describe('ProcessUserInputComponent', () => {
       expect(chatServiceMock.clearReplyContext).toHaveBeenCalled();
     });
 
-    it('reply context should take priority over @mention', async () => {
+    it('reply context should take priority over dropdown selection', async () => {
       const msg = makeChatMessage({
         sender: makeAddress({ name: '@Developer' }),
       });
       chatServiceMock.replyContext$.next(msg);
       fixture.detectChanges();
 
-      component.mentionItems = [
-        { name: 'Manager [Manager]', actorName: '@Manager', agentId: 'mgr-1' },
-      ];
-      component.userInput = 'hey Manager [Manager] do this';
+      component.selectedAgents = ['@Manager'];
+      component.userInput = 'hey do this';
       await component.sendMessage();
 
-      // Should use reply context sender, not the @mention
+      // Should use reply context sender, not the dropdown selection
       expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
         'test-team-id',
-        'hey Manager [Manager] do this',
+        'hey do this',
         '@Developer',
       );
     });
 
-    it('should broadcast when no reply context and no @mention', async () => {
+    it('reply context clearing should restore dropdown routing', async () => {
+      const msg = makeChatMessage({
+        sender: makeAddress({ name: '@Developer' }),
+      });
+      chatServiceMock.replyContext$.next(msg);
+      fixture.detectChanges();
+
+      component.selectedAgents = ['@Manager'];
+      component.userInput = 'reply to dev';
+      await component.sendMessage();
+
+      // First send uses reply context
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledWith(
+        'test-team-id',
+        'reply to dev',
+        '@Developer',
+      );
+
+      // Reply context was cleared, now dropdown should take over
+      apiServiceSpy.sendMessage.calls.reset();
+      component.userInput = 'now to manager';
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+        'test-team-id',
+        'now to manager',
+        '@Manager',
+      );
+    });
+
+    it('should NOT clear dropdown selection when reply context is used', async () => {
+      const msg = makeChatMessage({
+        sender: makeAddress({ name: '@Developer' }),
+      });
+      chatServiceMock.replyContext$.next(msg);
+      fixture.detectChanges();
+
+      component.selectedAgents = ['@Manager'];
+      component.userInput = 'reply message';
+      await component.sendMessage();
+
+      expect(component.selectedAgents).toEqual(['@Manager']);
+    });
+
+    it('should broadcast when no reply context and no dropdown selection', async () => {
       chatServiceMock.replyContext$.next(null);
       fixture.detectChanges();
 
       component.userInput = 'hello everyone';
-      component.mentionItems = [];
+      component.selectedAgents = [];
       await component.sendMessage();
 
       expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
