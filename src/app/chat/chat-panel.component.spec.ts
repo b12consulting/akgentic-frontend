@@ -535,6 +535,81 @@ describe('ChatPanelComponent', () => {
     });
   });
 
+  describe('Rule 3 collapse (Story 4.1)', () => {
+    it('Rule 3 messages arrive collapsed by default', () => {
+      const rule3 = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'need approval',
+        'r3-collapsed',
+      );
+      messagesSubject.next([rule3]);
+      fixture.detectChanges();
+
+      expect(component.chatMessages[0].rule).toBe(3);
+      expect(component.chatMessages[0].collapsed).toBe(true);
+    });
+
+    it('onToggleCollapse on Rule 3 toggles state and preserves across re-emission', () => {
+      const rule3 = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'need approval',
+        'r3-preserve',
+      );
+      messagesSubject.next([rule3]);
+      fixture.detectChanges();
+
+      expect(component.chatMessages[0].collapsed).toBe(true);
+
+      component.onToggleCollapse(component.chatMessages[0]);
+      expect(component.chatMessages[0].collapsed).toBe(false);
+
+      // Re-emit messages — Rule 3 expanded state should be preserved
+      messagesSubject.next([rule3]);
+      fixture.detectChanges();
+
+      expect(component.chatMessages[0].rule).toBe(3);
+      expect(component.chatMessages[0].collapsed).toBe(false);
+    });
+
+    it('onToggleCollapse should ignore non Rule-3/4 messages', () => {
+      const msg: ChatMessage = {
+        id: 'r1',
+        content: 'x',
+        sender: makeAddress({ name: '@Human' }),
+        recipient: makeAddress({ name: '@Manager' }),
+        timestamp: new Date(),
+        rule: 1,
+        alignment: 'right',
+        color: '#efeeee',
+        collapsed: false,
+        label: 'You -> Manager',
+      };
+      component.onToggleCollapse(msg);
+      expect(msg.collapsed).toBe(false);
+    });
+
+    it('Open button click path: onRule3Clicked still opens modal (regression)', () => {
+      const rule3Msg = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'need approval',
+        'r3-open',
+      );
+      messagesSubject.next([rule3Msg]);
+      fixture.detectChanges();
+
+      const chatMsg = component.chatMessages[0];
+      component.onRule3Clicked(chatMsg);
+
+      expect(component.modalVisible).toBe(true);
+      component.onModalReply({ content: 'ok', messageId: chatMsg.id });
+      const api = TestBed.inject(ApiService) as any;
+      expect(api.processHumanInput).toHaveBeenCalledWith('test-team', 'ok', chatMsg.id);
+    });
+  });
+
   it('onToggleCollapse should toggle collapsed state and preserve across re-classification', () => {
     const msg4 = makeSentMessage(
       { name: '@Worker', role: 'Worker' },

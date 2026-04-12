@@ -75,7 +75,7 @@ export function classifyMessage(msg: SentMessage): ChatMessage {
     rule,
     alignment: rule === 1 ? 'right' : 'left',
     color: RULE_COLORS[rule],
-    collapsed: rule === 4,
+    collapsed: rule === 3 || rule === 4,
     label: buildLabel(msg, rule),
   };
 }

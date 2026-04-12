@@ -74,7 +74,10 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
         .filter((m) => m.message.content != null && m.message.content !== '')
         .map((m) => {
           const chatMsg = classifyMessage(m);
-          if (chatMsg.rule === 4 && this.expandedMessageIds.has(chatMsg.id)) {
+          if (
+            (chatMsg.rule === 3 || chatMsg.rule === 4) &&
+            this.expandedMessageIds.has(chatMsg.id)
+          ) {
             chatMsg.collapsed = false;
           }
           return chatMsg;
@@ -86,7 +89,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   onToggleCollapse(chatMsg: ChatMessage): void {
-    if (chatMsg.rule !== 4) return;
+    if (chatMsg.rule !== 3 && chatMsg.rule !== 4) return;
     chatMsg.collapsed = !chatMsg.collapsed;
     if (chatMsg.collapsed) {
       this.expandedMessageIds.delete(chatMsg.id);
