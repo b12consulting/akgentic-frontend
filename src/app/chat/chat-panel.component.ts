@@ -150,7 +150,11 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   hasNotification(chatMsg: ChatMessage): boolean {
-    return chatMsg.rule === 3 && this.pendingNotifications.has(chatMsg.id);
+    // `pendingNotifications` holds inner `BaseMessage.id` values so that
+    // `reply.parent_id` (also inner) clears the correct entry. Using the
+    // outer envelope `chatMsg.id` here would never match, which was the
+    // root cause of the "hand icon never disappears in chat" regression.
+    return chatMsg.rule === 3 && this.pendingNotifications.has(chatMsg.message_id);
   }
 
   ngOnDestroy(): void {
@@ -231,7 +235,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
         m.rule === 3 &&
         m.sender.name === pair.sender.name &&
         m.recipient.name === pair.recipient.name &&
-        this.pendingNotifications.has(m.id),
+        this.pendingNotifications.has(m.message_id),
     );
   }
 
@@ -244,10 +248,13 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
           m.rule === 3 &&
           m.sender.name === pair.sender.name &&
           m.recipient.name === pair.recipient.name &&
-          !this.pendingNotifications.has(m.id),
+          !this.pendingNotifications.has(m.message_id),
       )
       .map((request) => {
-        const reply = this.chatMessages.find((r) => r.parent_id === request.id) ?? null;
+        // Reply's `parent_id` is the original's INNER id (`message_id`),
+        // not its outer envelope `id`.
+        const reply =
+          this.chatMessages.find((r) => r.parent_id === request.message_id) ?? null;
         return reply ? { request, reply } : null;
       })
       .filter((x): x is AnsweredRequest => x !== null);

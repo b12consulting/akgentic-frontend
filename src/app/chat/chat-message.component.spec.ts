@@ -19,8 +19,10 @@ function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
 }
 
 function makeChatMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
+  const id = overrides.id ?? 'msg-1';
   return {
-    id: 'msg-1',
+    id,
+    message_id: id,
     parent_id: null,
     content: 'Hello world',
     sender: makeAddress({ name: '@Manager', role: 'Manager' }),

@@ -34,6 +34,12 @@ function makeSentMessage(
   id: string = 'msg-1',
   parentId: string | null = null,
 ): SentMessage {
+  // Mirror the real backend contract: `parent_id` on the INNER BaseMessage
+  // references the INNER id of the parent (`inner-<parentId>`), not the
+  // outer envelope id. This is what `HumanProxy` produces on real replies
+  // (see team_service.py#process_human_input → HumanProxy sets
+  // `_current_message = event.message` before send()).
+  const innerParentId = parentId === null ? null : 'inner-' + parentId;
   return {
     id,
     parent_id: parentId,
@@ -45,7 +51,7 @@ function makeSentMessage(
     __model__: 'akgentic.core.messages.orchestrator.SentMessage',
     message: {
       id: 'inner-' + id,
-      parent_id: parentId,
+      parent_id: innerParentId,
       team_id: 'team-1',
       timestamp: '2026-04-08T10:00:00Z',
       sender: makeAddress(sender),
@@ -211,6 +217,7 @@ describe('ChatPanelComponent', () => {
   it('onMessageSelected should call selectionService.handleSelection', () => {
     const chatMsg: ChatMessage = {
       id: 'msg-1',
+      message_id: 'msg-1',
       parent_id: null,
       content: 'test',
       sender: makeAddress({ name: '@Manager', agent_id: 'mgr-1' }),
@@ -256,6 +263,7 @@ describe('ChatPanelComponent', () => {
     it('onBubbleClicked should call chatService.setReplyContext', () => {
       const chatMsg: ChatMessage = {
         id: 'msg-reply',
+        message_id: 'msg-reply',
         parent_id: null,
         content: 'test',
         sender: makeAddress({ name: '@Manager', agent_id: 'mgr-1' }),
@@ -312,6 +320,7 @@ describe('ChatPanelComponent', () => {
     it('clicking different bubble should switch reply context', () => {
       const msg1: ChatMessage = {
         id: 'msg-1',
+        message_id: 'msg-1',
         parent_id: null,
         content: 'first',
         sender: makeAddress({ name: '@Agent1' }),
@@ -325,6 +334,7 @@ describe('ChatPanelComponent', () => {
       };
       const msg2: ChatMessage = {
         id: 'msg-2',
+        message_id: 'msg-2',
         parent_id: null,
         content: 'second',
         sender: makeAddress({ name: '@Agent2' }),
@@ -456,7 +466,8 @@ describe('ChatPanelComponent', () => {
         recipient: makeAddress({ name: '@QATester' }),
       };
       const dummyMsg: ChatMessage = {
-        id: 'msg-123', parent_id: null, content: 'test', sender: makeAddress({ name: '@Manager' }),
+        id: 'msg-123', message_id: 'inner-msg-123', parent_id: null, content: 'test',
+        sender: makeAddress({ name: '@Manager' }),
         recipient: makeAddress({ name: '@QATester', role: 'Human' }),
         timestamp: new Date(), rule: 3, alignment: 'left', color: '#9ebbcb',
         collapsed: false, label: 'Manager ⇒ QATester',
@@ -481,13 +492,16 @@ describe('ChatPanelComponent', () => {
         recipient: makeAddress({ name: '@QATester' }),
       };
       const dummyMsg: ChatMessage = {
-        id: 'msg-1', parent_id: null, content: 'test', sender: makeAddress({ name: '@Manager' }),
+        id: 'msg-1', message_id: 'inner-msg-1', parent_id: null, content: 'test',
+        sender: makeAddress({ name: '@Manager' }),
         recipient: makeAddress({ name: '@QATester', role: 'Human' }),
         timestamp: new Date(), rule: 3, alignment: 'left', color: '#9ebbcb',
         collapsed: false, label: 'Manager ⇒ QATester',
       };
-      const dummyReq: ChatMessage = { ...dummyMsg, id: 'req-1' };
-      const dummyReply: ChatMessage = { ...dummyMsg, id: 'reply-1', parent_id: 'req-1' };
+      const dummyReq: ChatMessage = { ...dummyMsg, id: 'req-1', message_id: 'inner-req-1' };
+      const dummyReply: ChatMessage = {
+        ...dummyMsg, id: 'reply-1', message_id: 'inner-reply-1', parent_id: 'inner-req-1',
+      };
       component.modalPendingMessages = [dummyMsg];
       component.modalAnsweredMessages = [{ request: dummyReq, reply: dummyReply }];
       component.onModalVisibleChange(false);
@@ -789,6 +803,7 @@ describe('ChatPanelComponent', () => {
     it('onToggleCollapse should ignore non Rule-3/4 messages', () => {
       const msg: ChatMessage = {
         id: 'r1',
+        message_id: 'r1',
         parent_id: null,
         content: 'x',
         sender: makeAddress({ name: '@Human' }),
