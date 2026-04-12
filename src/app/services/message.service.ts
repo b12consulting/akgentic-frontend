@@ -3,7 +3,12 @@ import { inject, Injectable } from '@angular/core';
 import { BehaviorSubject, Subscription } from 'rxjs';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 import { environment } from '../../environments/environment';
-import { AkgenticMessage } from '../models/message.types';
+import { buildPreview } from '../models/chat-message.model';
+import {
+  AkgenticMessage,
+  isReceivedMessage,
+  isSentMessage,
+} from '../models/message.types';
 import { EventResponse } from '../models/team.interface';
 
 import { ApiService } from '../services/api.service';
@@ -119,6 +124,19 @@ export class ActorMessageService {
             evt.__model__ &&
             GRAPH_RELEVANT_MODELS.some((m) => evt.__model__.includes(m))
         );
+
+      // Story 4-8: seed thinking-bubble lifecycle from replayed envelopes AND
+      // from replayed EventMessage (tool events) in order, so the final
+      // `thinkingAgents$` state is consistent with the live path (AC10).
+      for (const er of eventResponses) {
+        const evt = er.event as AkgenticMessage | undefined;
+        if (!evt || !evt.__model__) continue;
+        if (evt.__model__.includes('EventMessage')) {
+          this.dispatchToolEventToThinking(evt as any);
+          continue;
+        }
+        this.applyThinkingLifecycle(evt);
+      }
     }
 
     this.createAgentGraph$.next(messages);
@@ -163,6 +181,15 @@ export class ActorMessageService {
           });
           this.message$.next(event);
         } else {
+          // Story 4-8: observe raw envelopes for thinking-bubble lifecycle.
+          // Guarded with try/catch so a malformed envelope can never tear
+          // down the WS subscription (which would silently break the graph
+          // red border and all subsequent events).
+          try {
+            this.applyThinkingLifecycle(event as AkgenticMessage);
+          } catch (err) {
+            console.error('applyThinkingLifecycle failed:', err, event);
+          }
           // All other messages: forward to message$ for graph + message list
           if (this.paused) {
             this.messages.push(event);
@@ -197,7 +224,64 @@ export class ActorMessageService {
         this.contextDict$[agentId].next([...current, inner.message]);
       }
     } else if (inner?.__model__?.includes('ToolCallEvent')) {
+      // Legacy knowledge_graph snapshot path — preserved unchanged (ADR-004).
       this.handleToolUpdate(inner);
+    }
+    // Story 4-8: route tool events into ChatService for the thinking bubble.
+    this.dispatchToolEventToThinking(event);
+  }
+
+  /**
+   * Story 4-8: Convert an EventMessage carrying a ToolCallEvent or
+   * ToolReturnEvent into ChatService.appendToolCall / markToolDone. Unknown
+   * inner __model__ values are silently ignored (no regression — matches
+   * existing behaviour).
+   */
+  private dispatchToolEventToThinking(event: any): void {
+    const inner = event?.event;
+    const agentId = event?.sender?.agent_id;
+    if (!inner || !agentId) return;
+    if (inner.__model__?.includes('ToolCallEvent')) {
+      this.chatService.appendToolCall(agentId, {
+        tool_call_id: inner.tool_call_id,
+        tool_name: inner.tool_name,
+        arguments_preview: buildPreview(inner.arguments, 60),
+        done: false,
+      });
+    } else if (inner.__model__?.includes('ToolReturnEvent')) {
+      this.chatService.markToolDone(agentId, inner.tool_call_id);
+    }
+  }
+
+  /**
+   * Story 4-8 (AC3): Single dispatch point for thinking-bubble lifecycle.
+   * Called from BOTH the live WebSocket branch and the replay-seeding loop
+   * so live-vs-replay parity (AC10) is guaranteed by construction.
+   */
+  private applyThinkingLifecycle(msg: AkgenticMessage): void {
+    if (isReceivedMessage(msg)) {
+      // Python `ReceivedMessage` is a lightweight telemetry envelope — it
+      // carries only `message_id` (UUID of the inner message being
+      // received), NOT the full inner `BaseMessage`. Using `msg.message.id`
+      // here previously threw `TypeError: Cannot read properties of
+      // undefined (reading 'id')`, which tore down the WS subscription and
+      // silently killed downstream consumers (graph red border, thinking
+      // bubbles, every subsequent event).
+      //
+      // Human-role agents (HumanProxy) never "think" — they wait for user
+      // input. Skip the bubble entirely; the user's own reply path drives
+      // the UI, not a simulated thinking state.
+      if (msg.sender.role === 'Human') return;
+      this.chatService.beginThinking({
+        agent_id: msg.sender.agent_id,
+        agent_name: msg.sender.name,
+        start_time: new Date(msg.timestamp),
+        anchor_message_id: msg.message_id,
+      });
+      return;
+    }
+    if (isSentMessage(msg) && msg.sender.role !== 'ActorSystem') {
+      this.chatService.finaliseOrDiscard(msg.sender.agent_id);
     }
   }
 
