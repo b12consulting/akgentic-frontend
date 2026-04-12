@@ -62,6 +62,57 @@ const RULE_COLORS: Record<MessageRule, string> = {
 };
 
 /**
+ * Build a single-line, markdown-stripped, ellipsised preview of message content
+ * for display in the collapsed chat line (per ADR-002 Decision 5).
+ *
+ * Rules (in order):
+ *   1. null/undefined/empty -> ""
+ *   2. Strip markdown: fenced code, inline code, images, links, bold/italic,
+ *      heading markers, blockquote markers, list markers
+ *   3. Collapse whitespace runs to single space
+ *   4. Trim
+ *   5. If length > maxLength, truncate to maxLength chars and append literal "..."
+ *
+ * Pure: no side effects, no DOM, no service calls.
+ */
+export function buildPreview(
+  content: string | null | undefined,
+  maxLength = 60,
+): string {
+  if (!content) return '';
+
+  let out = content;
+
+  // 1. Fenced code blocks: ```...``` (multi-line, non-greedy)
+  out = out.replace(/```[\s\S]*?```/g, '');
+  // 2. Inline code: `foo` -> foo
+  out = out.replace(/`([^`]*)`/g, '$1');
+  // 3. Images: ![alt](url) -> alt
+  out = out.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1');
+  // 4. Links: [text](url) -> text
+  out = out.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
+  // 5. Bold/italic wrappers (__, **, _, *)
+  out = out.replace(/__(.+?)__/g, '$1');
+  out = out.replace(/\*\*(.+?)\*\*/g, '$1');
+  out = out.replace(/_(.+?)_/g, '$1');
+  out = out.replace(/\*(.+?)\*/g, '$1');
+  // 6. Line-start markers: heading, blockquote, list markers
+  out = out.replace(/^\s{0,3}#+\s+/gm, '');
+  out = out.replace(/^\s{0,3}>\s+/gm, '');
+  out = out.replace(/^\s*\d+\.\s+/gm, '');
+  out = out.replace(/^\s*[-*+]\s+/gm, '');
+
+  // Collapse whitespace
+  out = out.replace(/\s+/g, ' ').trim();
+
+  if (out.length > maxLength) {
+    out = out.slice(0, maxLength) + '...';
+  }
+
+  return out;
+}
+
+/**
  * Convert a SentMessage into a ChatMessage with full classification.
  */
 export function classifyMessage(msg: SentMessage): ChatMessage {

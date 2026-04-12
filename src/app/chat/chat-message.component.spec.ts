@@ -434,6 +434,108 @@ describe('ChatMessageComponent', () => {
     });
   });
 
+  describe('collapsed line preview (Story 4.2)', () => {
+    it('Rule 4 collapsed line renders preview after " : " when content is non-empty', () => {
+      const msg = makeChatMessage({
+        rule: 4,
+        collapsed: true,
+        label: 'Worker -> Manager',
+        content: 'Start of the message',
+      });
+      fixture.componentRef.setInput('message', msg);
+      fixture.detectChanges();
+
+      const label = fixture.nativeElement.querySelector('.collapsed-label');
+      expect(label.textContent).toContain('[Worker -> Manager]');
+      expect(label.textContent).toContain(' : Start of the message');
+    });
+
+    it('Rule 4 collapsed line omits " : " and preview when content is empty', () => {
+      const msg = makeChatMessage({
+        rule: 4,
+        collapsed: true,
+        label: 'Worker -> Manager',
+        content: '',
+      });
+      fixture.componentRef.setInput('message', msg);
+      fixture.detectChanges();
+
+      const label = fixture.nativeElement.querySelector('.collapsed-label');
+      expect(label.textContent).toContain('[Worker -> Manager]');
+      expect(label.textContent).not.toContain(' : ');
+      expect(label.querySelector('.collapsed-preview')).toBeNull();
+    });
+
+    it('Rule 3 collapsed with notification renders (🙋) inside bracket, preview after " : "', () => {
+      const msg = makeChatMessage({
+        rule: 3,
+        collapsed: true,
+        label: 'Manager -> Support',
+        content: 'Can you verify the auth flow',
+      });
+      fixture.componentRef.setInput('message', msg);
+      fixture.componentRef.setInput('notification', true);
+      fixture.detectChanges();
+
+      const label = fixture.nativeElement.querySelector('.collapsed-label');
+      const text = label.textContent.replace(/\s+/g, ' ');
+      // Bracket encloses label + marker, then preview follows
+      expect(text).toContain('[Manager -> Support (🙋)]');
+      expect(text).toContain(' : Can you verify the auth flow');
+    });
+
+    it('Rule 3 collapsed without notification omits (🙋) marker, preview still present', () => {
+      const msg = makeChatMessage({
+        rule: 3,
+        collapsed: true,
+        label: 'Manager -> Support',
+        content: 'Hello',
+      });
+      fixture.componentRef.setInput('message', msg);
+      fixture.componentRef.setInput('notification', false);
+      fixture.detectChanges();
+
+      const label = fixture.nativeElement.querySelector('.collapsed-label');
+      const text = label.textContent.replace(/\s+/g, ' ');
+      expect(text).not.toContain('🙋');
+      expect(text).toContain('[Manager -> Support]');
+      expect(text).toContain(' : Hello');
+    });
+
+    it('long content is truncated with "..." in the rendered preview', () => {
+      const longContent = 'x'.repeat(80);
+      const msg = makeChatMessage({
+        rule: 4,
+        collapsed: true,
+        label: 'Worker -> Manager',
+        content: longContent,
+      });
+      fixture.componentRef.setInput('message', msg);
+      fixture.detectChanges();
+
+      const label = fixture.nativeElement.querySelector('.collapsed-label');
+      expect(label.textContent).toContain('...');
+      // Preview span ends with "..."
+      const preview = label.querySelector('.collapsed-preview');
+      expect(preview.textContent.trim().endsWith('...')).toBe(true);
+    });
+
+    it('timestamp remains visible on the same collapsed row', () => {
+      const msg = makeChatMessage({
+        rule: 4,
+        collapsed: true,
+        label: 'Worker -> Manager',
+        content: 'hi',
+      });
+      fixture.componentRef.setInput('message', msg);
+      fixture.detectChanges();
+
+      const ts = fixture.nativeElement.querySelector('.collapsed-timestamp');
+      expect(ts).toBeTruthy();
+      expect(ts.textContent.trim().length).toBeGreaterThan(0);
+    });
+  });
+
   describe('messageSelected output', () => {
     it('should emit on label click for non-Rule-1 messages', () => {
       const msg = makeChatMessage({ rule: 2 });
