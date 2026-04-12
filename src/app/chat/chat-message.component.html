@@ -4,7 +4,6 @@
   class="collapsed-line"
   (click)="onToggleCollapse()"
 >
-  <span class="collapse-indicator">&gt;</span>
   <span class="collapsed-label">
     [{{ message().label }}<span
       *ngIf="message().rule === 3 && notification()"
@@ -17,7 +16,8 @@
   <p-button
     *ngIf="message().rule === 3"
     size="small"
-    label="Open"
+    label="Reply"
+    [disabled]="!notification()"
     (click)="onOpenModal($event)"
     class="open-button"
   ></p-button>
@@ -60,11 +60,11 @@
       >
         <i class="pi pi-bell"></i>
       </span>
-      <span *ngIf="message().rule === 3 || message().rule === 4" class="collapse-indicator-bubble">v</span>
       <p-button
         *ngIf="message().rule === 3"
         size="small"
-        label="Open"
+        label="Reply"
+        [disabled]="!notification()"
         (click)="onOpenModal($event)"
         class="open-button"
       ></p-button>
