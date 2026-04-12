@@ -52,6 +52,13 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   private subscription!: Subscription;
   private shouldScrollToBottom = true;
   private lastScrollHeight = 0;
+  // Story 4.4: hover-aware auto-scroll lock. `isHovered` short-circuits the
+  // scroll in ngAfterViewChecked while the user's pointer is over the panel.
+  // `pendingCatchUpScroll` is set ONLY from the messages$ subscription path
+  // (new-message arrival) — never from ngAfterViewChecked height changes —
+  // so collapse/expand toggles during hover do NOT queue a spurious catch-up.
+  private isHovered = false;
+  private pendingCatchUpScroll = false;
   private expandedMessageIds = new Set<string>();
   selectedMessageId: string | null = null;
   private replyContextSubscription!: Subscription;
@@ -68,6 +75,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.subscription = this.messageService.messages$.subscribe((messages) => {
       this.checkShouldAutoScroll();
 
+      const previousLength = this.chatMessages.length;
       const classified = messages
         .filter(isSentMessage)
         .filter((m) => m.sender.role !== 'ActorSystem')
@@ -84,6 +92,11 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
         });
 
       this.chatMessages = classified;
+      // Story 4.4: if a new message arrived while the user is hovering the
+      // panel, remember that a catch-up scroll is owed on mouseleave.
+      if (this.isHovered && classified.length > previousLength) {
+        this.pendingCatchUpScroll = true;
+      }
       this.chatService.messages$.next(classified);
     });
   }
@@ -99,8 +112,31 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   ngAfterViewChecked(): void {
-    if (this.shouldScrollToBottom && this.hasContentChanged()) {
+    // Always evaluate hasContentChanged() so lastScrollHeight stays fresh —
+    // even while hovered — otherwise a collapse/expand during hover would
+    // leave a stale lastScrollHeight that spuriously fires a scroll later.
+    const contentChanged = this.hasContentChanged();
+    if (this.isHovered) return; // Story 4.4: suspended while hovering
+    if (this.shouldScrollToBottom && contentChanged) {
       this.scrollToBottom();
+    }
+  }
+
+  onMouseEnter(): void {
+    this.isHovered = true;
+  }
+
+  onMouseLeave(): void {
+    this.isHovered = false;
+    // Catch-up only if a new message arrived during hover AND the user was
+    // near the bottom at arrival time (preserve pre-existing user-intent).
+    const shouldCatchUp = this.pendingCatchUpScroll && this.shouldScrollToBottom;
+    this.pendingCatchUpScroll = false;
+    if (shouldCatchUp) {
+      // queueMicrotask defers the scroll until after the current event-loop
+      // tick so Angular can finish any change detection triggered by the
+      // isHovered = false assignment before we read scrollHeight.
+      queueMicrotask(() => this.scrollToBottom());
     }
   }
 
