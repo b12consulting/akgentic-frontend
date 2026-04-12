@@ -68,12 +68,12 @@
         (click)="onOpenModal($event)"
         class="open-button"
       ></p-button>
+      <span class="bubble-timestamp">{{
+        message().timestamp | date : "HH:mm"
+      }}</span>
     </div>
     <div class="markdown-content">
       <markdown [data]="message().content"></markdown>
     </div>
-    <span class="timestamp">{{
-      message().timestamp | date : "shortTime"
-    }}</span>
   </div>
 </div>

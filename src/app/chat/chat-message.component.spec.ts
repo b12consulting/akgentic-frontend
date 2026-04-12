@@ -60,7 +60,7 @@ describe('ChatMessageComponent', () => {
         rule: 1,
         alignment: 'right',
         color: '#efeeee',
-        label: 'You -> Manager',
+        label: 'You ⇒ Manager',
       });
       fixture.componentRef.setInput('message', msg);
       fixture.detectChanges();
@@ -75,7 +75,7 @@ describe('ChatMessageComponent', () => {
       const msg = makeChatMessage({
         rule: 1,
         alignment: 'right',
-        label: 'You -> Manager',
+        label: 'You ⇒ Manager',
       });
       fixture.componentRef.setInput('message', msg);
       fixture.detectChanges();
@@ -111,7 +111,7 @@ describe('ChatMessageComponent', () => {
         rule: 3,
         alignment: 'left',
         collapsed: false,
-        label: 'Agent -> OtherHuman',
+        label: 'Agent ⇒ OtherHuman',
       });
       fixture.componentRef.setInput('message', msg);
       fixture.componentRef.setInput('notification', true);
@@ -130,7 +130,7 @@ describe('ChatMessageComponent', () => {
         rule: 3,
         alignment: 'left',
         collapsed: false,
-        label: 'Agent -> OtherHuman',
+        label: 'Agent ⇒ OtherHuman',
       });
       fixture.componentRef.setInput('message', msg);
       fixture.componentRef.setInput('notification', false);
@@ -145,7 +145,7 @@ describe('ChatMessageComponent', () => {
       const msg = makeChatMessage({
         rule: 3,
         collapsed: true,
-        label: 'Agent -> OtherHuman',
+        label: 'Agent ⇒ OtherHuman',
       });
       fixture.componentRef.setInput('message', msg);
       fixture.detectChanges();
@@ -154,14 +154,14 @@ describe('ChatMessageComponent', () => {
       expect(el.querySelector('.collapsed-line')).toBeTruthy();
       expect(el.querySelector('.message-bubble')).toBeNull();
       const label = el.querySelector('.collapsed-label');
-      expect(label.textContent).toContain('Agent -> OtherHuman');
+      expect(label.textContent).toContain('Agent ⇒ OtherHuman');
     });
 
     it('should append (🙋) in collapsed line when notification is true', () => {
       const msg = makeChatMessage({
         rule: 3,
         collapsed: true,
-        label: 'Agent -> OtherHuman',
+        label: 'Agent ⇒ OtherHuman',
       });
       fixture.componentRef.setInput('message', msg);
       fixture.componentRef.setInput('notification', true);
@@ -177,7 +177,7 @@ describe('ChatMessageComponent', () => {
       const msg = makeChatMessage({
         rule: 3,
         collapsed: true,
-        label: 'Agent -> OtherHuman',
+        label: 'Agent ⇒ OtherHuman',
       });
       fixture.componentRef.setInput('message', msg);
       fixture.componentRef.setInput('notification', false);
@@ -287,7 +287,7 @@ describe('ChatMessageComponent', () => {
       const msg = makeChatMessage({
         rule: 4,
         collapsed: true,
-        label: 'Worker -> Manager',
+        label: 'Worker ⇒ Manager',
       });
       fixture.componentRef.setInput('message', msg);
       fixture.detectChanges();
@@ -352,7 +352,7 @@ describe('ChatMessageComponent', () => {
         rule: 1,
         alignment: 'right',
         color: '#efeeee',
-        label: 'You -> Manager',
+        label: 'You ⇒ Manager',
       });
       fixture.componentRef.setInput('message', msg);
       fixture.detectChanges();
@@ -439,14 +439,14 @@ describe('ChatMessageComponent', () => {
       const msg = makeChatMessage({
         rule: 4,
         collapsed: true,
-        label: 'Worker -> Manager',
+        label: 'Worker ⇒ Manager',
         content: 'Start of the message',
       });
       fixture.componentRef.setInput('message', msg);
       fixture.detectChanges();
 
       const label = fixture.nativeElement.querySelector('.collapsed-label');
-      expect(label.textContent).toContain('[Worker -> Manager]');
+      expect(label.textContent).toContain('[Worker ⇒ Manager]');
       expect(label.textContent).toContain(' : Start of the message');
     });
 
@@ -454,14 +454,14 @@ describe('ChatMessageComponent', () => {
       const msg = makeChatMessage({
         rule: 4,
         collapsed: true,
-        label: 'Worker -> Manager',
+        label: 'Worker ⇒ Manager',
         content: '',
       });
       fixture.componentRef.setInput('message', msg);
       fixture.detectChanges();
 
       const label = fixture.nativeElement.querySelector('.collapsed-label');
-      expect(label.textContent).toContain('[Worker -> Manager]');
+      expect(label.textContent).toContain('[Worker ⇒ Manager]');
       expect(label.textContent).not.toContain(' : ');
       expect(label.querySelector('.collapsed-preview')).toBeNull();
     });
@@ -470,7 +470,7 @@ describe('ChatMessageComponent', () => {
       const msg = makeChatMessage({
         rule: 3,
         collapsed: true,
-        label: 'Manager -> Support',
+        label: 'Manager ⇒ Support',
         content: 'Can you verify the auth flow',
       });
       fixture.componentRef.setInput('message', msg);
@@ -480,7 +480,7 @@ describe('ChatMessageComponent', () => {
       const label = fixture.nativeElement.querySelector('.collapsed-label');
       const text = label.textContent.replace(/\s+/g, ' ');
       // Bracket encloses label + marker, then preview follows
-      expect(text).toContain('[Manager -> Support (🙋)]');
+      expect(text).toContain('[Manager ⇒ Support (🙋)]');
       expect(text).toContain(' : Can you verify the auth flow');
     });
 
@@ -488,7 +488,7 @@ describe('ChatMessageComponent', () => {
       const msg = makeChatMessage({
         rule: 3,
         collapsed: true,
-        label: 'Manager -> Support',
+        label: 'Manager ⇒ Support',
         content: 'Hello',
       });
       fixture.componentRef.setInput('message', msg);
@@ -498,7 +498,7 @@ describe('ChatMessageComponent', () => {
       const label = fixture.nativeElement.querySelector('.collapsed-label');
       const text = label.textContent.replace(/\s+/g, ' ');
       expect(text).not.toContain('🙋');
-      expect(text).toContain('[Manager -> Support]');
+      expect(text).toContain('[Manager ⇒ Support]');
       expect(text).toContain(' : Hello');
     });
 
@@ -507,7 +507,7 @@ describe('ChatMessageComponent', () => {
       const msg = makeChatMessage({
         rule: 4,
         collapsed: true,
-        label: 'Worker -> Manager',
+        label: 'Worker ⇒ Manager',
         content: longContent,
       });
       fixture.componentRef.setInput('message', msg);
@@ -524,7 +524,7 @@ describe('ChatMessageComponent', () => {
       const msg = makeChatMessage({
         rule: 4,
         collapsed: true,
-        label: 'Worker -> Manager',
+        label: 'Worker ⇒ Manager',
         content: 'hi',
       });
       fixture.componentRef.setInput('message', msg);
@@ -556,6 +556,95 @@ describe('ChatMessageComponent', () => {
       spyOn(component.messageSelected, 'emit');
       component.onLabelClick();
       expect(component.messageSelected.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Rule 2 label — @Sender ⇒ You (Story 4.3)', () => {
+    it('renders label pill ending with "⇒ You" for Rule 2', () => {
+      const msg = makeChatMessage({
+        rule: 2,
+        alignment: 'left',
+        label: '@Manager ⇒ You',
+      });
+      fixture.componentRef.setInput('message', msg);
+      fixture.detectChanges();
+
+      const pill = fixture.nativeElement.querySelector('.label-pill');
+      expect(pill).toBeTruthy();
+      expect(pill.textContent.trim().endsWith('⇒ You')).toBe(true);
+    });
+
+    it('Rule 2 label pill is NOT disabled (clickable for selection)', () => {
+      const msg = makeChatMessage({
+        rule: 2,
+        alignment: 'left',
+        label: '@Manager ⇒ You',
+      });
+      fixture.componentRef.setInput('message', msg);
+      fixture.detectChanges();
+
+      const pill = fixture.nativeElement.querySelector('.label-pill');
+      expect(pill.disabled).toBe(false);
+    });
+  });
+
+  describe('Expanded bubble header layout (Story 4.3)', () => {
+    function makeExpanded(rule: 1 | 2 | 3 | 4): ChatMessage {
+      return makeChatMessage({
+        rule,
+        alignment: rule === 1 ? 'right' : 'left',
+        collapsed: false,
+        label:
+          rule === 1
+            ? 'You ⇒ @Manager'
+            : rule === 2
+              ? '@Manager ⇒ You'
+              : rule === 3
+                ? '@Manager ⇒ @Support'
+                : '@Worker ⇒ @Manager',
+        timestamp: new Date('2026-04-08T10:45:00Z'),
+      });
+    }
+
+    for (const rule of [1, 2, 3, 4] as const) {
+      it(`Rule ${rule}: .bubble-header .bubble-timestamp exists and matches HH:mm`, () => {
+        fixture.componentRef.setInput('message', makeExpanded(rule));
+        fixture.detectChanges();
+
+        const ts = fixture.nativeElement.querySelector(
+          '.bubble-header .bubble-timestamp',
+        );
+        expect(ts).toBeTruthy();
+        expect(ts.textContent.trim()).toMatch(/^\d{2}:\d{2}$/);
+      });
+
+      it(`Rule ${rule}: standalone .timestamp span removed`, () => {
+        fixture.componentRef.setInput('message', makeExpanded(rule));
+        fixture.detectChanges();
+
+        const standalone = fixture.nativeElement.querySelectorAll(
+          '.message-bubble > .timestamp',
+        );
+        expect(standalone.length).toBe(0);
+      });
+    }
+
+    it('Rule 3 expanded: .bubble-timestamp is the last element child of .bubble-header', () => {
+      fixture.componentRef.setInput('message', makeExpanded(3));
+      fixture.detectChanges();
+
+      const header = fixture.nativeElement.querySelector('.bubble-header');
+      expect(header).toBeTruthy();
+      expect(header.lastElementChild.classList.contains('bubble-timestamp')).toBe(true);
+    });
+
+    it('Rule 4 expanded: .bubble-timestamp is the last element child of .bubble-header', () => {
+      fixture.componentRef.setInput('message', makeExpanded(4));
+      fixture.detectChanges();
+
+      const header = fixture.nativeElement.querySelector('.bubble-header');
+      expect(header).toBeTruthy();
+      expect(header.lastElementChild.classList.contains('bubble-timestamp')).toBe(true);
     });
   });
 });
