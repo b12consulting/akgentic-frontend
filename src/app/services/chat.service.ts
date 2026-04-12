@@ -19,41 +19,49 @@ export interface ChatAnswer {
 }
 
 /**
- * Compute pending notification state from classified chat messages.
- * Scans all messages in order. Rule 3 messages (to a non-@Human human) add
- * to the pending map. A reply from the human recipient to the original sender
- * clears the entire agent pair.
+ * Compute pending notification state from classified chat messages (per-message).
  *
- * @returns Map keyed by "senderName->recipientName" with list of unanswered messages.
+ * Scans all messages in order:
+ *   - Rule 3 messages (recipient.role === 'Human' and recipient.name !== @Human)
+ *     add their `id` to the unanswered set.
+ *   - Any message whose `parent_id` is non-null removes that parent id from
+ *     the unanswered set (i.e. a reply clears only the specific message it
+ *     answers — identified by `parent_id === original.id`).
+ *
+ * This aligns the chat panel with `graph-data.service.ts#unSetHumanRequest`,
+ * which already performs per-request clearing on the graph-node side by
+ * matching `reply.parent_id` against `humanRequests[*].message.id`. Prior
+ * behaviour (pair-keyed `Map<string, ChatMessage[]>`) cleared every pending
+ * bubble for an agent pair on the first reply; the per-message set preserves
+ * individual notifications so the user can see exactly which requests still
+ * need a reply — see ADR-002 Decision 4 (revision 2026-04-12).
+ *
+ * The clearing step runs for every message (any rule, any sender role) — the
+ * reply contract is "message with `parent_id === original.id`", not "reply
+ * whose sender role is Human".
+ *
+ * Pure: no side effects, no DOM, no service calls. Deterministic.
+ *
+ * @returns Set of message ids that are still unanswered.
  */
 export function computePendingNotifications(
   messages: ChatMessage[],
-): Map<string, ChatMessage[]> {
-  const pending = new Map<string, ChatMessage[]>();
+): Set<string> {
+  const unanswered = new Set<string>();
 
   for (const msg of messages) {
-    // Rule 3 messages: requests to non-entry-point humans
     if (
       msg.recipient.role === HUMAN_ROLE &&
       msg.recipient.name !== ENTRY_POINT_NAME
     ) {
-      const pairKey = `${msg.sender.name}->${msg.recipient.name}`;
-      const existing = pending.get(pairKey) ?? [];
-      existing.push(msg);
-      pending.set(pairKey, existing);
+      unanswered.add(msg.id);
     }
-
-    // Reply from a non-entry-point human clears the reverse pair
-    if (
-      msg.sender.role === HUMAN_ROLE &&
-      msg.sender.name !== ENTRY_POINT_NAME
-    ) {
-      const reversePairKey = `${msg.recipient.name}->${msg.sender.name}`;
-      pending.delete(reversePairKey);
+    if (msg.parent_id !== null) {
+      unanswered.delete(msg.parent_id);
     }
   }
 
-  return pending;
+  return unanswered;
 }
 
 @Injectable()
@@ -67,8 +75,8 @@ export class ChatService {
   replyContext$: BehaviorSubject<ChatMessage | null> =
     new BehaviorSubject<ChatMessage | null>(null);
 
-  /** Reactive map of pending notifications keyed by agent pair. */
-  pendingNotifications$: Observable<Map<string, ChatMessage[]>> =
+  /** Reactive set of unanswered Rule 3 message ids (per-message tracking). */
+  pendingNotifications$: Observable<Set<string>> =
     this.messages$.pipe(map(computePendingNotifications));
 
   setReplyContext(message: ChatMessage | null): void {

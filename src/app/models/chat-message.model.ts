@@ -7,6 +7,7 @@ export type MessageRule = 1 | 2 | 3 | 4;
 
 export interface ChatMessage {
   id: string;
+  parent_id: string | null;
   content: string;
   sender: ActorAddress;
   recipient: ActorAddress;
@@ -119,6 +120,7 @@ export function classifyMessage(msg: SentMessage): ChatMessage {
   const rule = classifyRule(msg);
   return {
     id: msg.id,
+    parent_id: msg.message.parent_id,
     content: msg.message.content ?? '',
     sender: msg.sender,
     recipient: msg.recipient,

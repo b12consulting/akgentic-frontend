@@ -337,6 +337,25 @@ describe('classifyMessage', () => {
     expect(result.content).toBe('');
   });
 
+  it('should propagate parent_id from inner BaseMessage (Story 4.6)', () => {
+    const msg = makeSentMessage({
+      sender: makeAddress({ name: '@QATester', role: 'Human' }),
+      recipient: makeAddress({ name: '@Manager', role: 'Manager' }),
+      message: makeBaseMessage({ parent_id: 'original-r3-id', content: 'reply' }),
+    });
+    const result = classifyMessage(msg);
+    expect(result.parent_id).toBe('original-r3-id');
+  });
+
+  it('should default parent_id to null when inner BaseMessage has no parent (Story 4.6)', () => {
+    const msg = makeSentMessage({
+      sender: makeAddress({ name: '@Human', role: 'Human' }),
+      recipient: makeAddress({ name: '@Manager', role: 'Manager' }),
+    });
+    const result = classifyMessage(msg);
+    expect(result.parent_id).toBeNull();
+  });
+
   it('should set timestamp as Date object', () => {
     const msg = makeSentMessage({
       sender: makeAddress({ name: '@Human', role: 'Human' }),
