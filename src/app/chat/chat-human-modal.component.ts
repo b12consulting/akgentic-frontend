@@ -45,7 +45,7 @@ export class ChatHumanModalComponent {
     if (!pair) return 'Human Input';
     const sender = makeAgentNameUserFriendly(pair.sender.name);
     const recipient = makeAgentNameUserFriendly(pair.recipient.name);
-    return `${sender} -> ${recipient}`;
+    return `${sender} ⇒ ${recipient}`;
   }
 
   onVisibleChange(value: boolean): void {

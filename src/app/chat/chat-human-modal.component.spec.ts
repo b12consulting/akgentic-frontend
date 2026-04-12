@@ -33,7 +33,7 @@ function makeChatMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
     alignment: 'left',
     color: '#9ebbcb',
     collapsed: false,
-    label: 'Manager -> QATester',
+    label: 'Manager ⇒ QATester',
     ...overrides,
   };
 }
@@ -71,7 +71,7 @@ describe('ChatHumanModalComponent', () => {
       fixture.detectChanges();
 
       expect(component.headerText).toContain('Manager');
-      expect(component.headerText).toContain('->');
+      expect(component.headerText).toContain('⇒');
       expect(component.headerText).toContain('QATester');
     });
   });

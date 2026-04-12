@@ -33,11 +33,11 @@ export function classifyRule(msg: SentMessage): MessageRule {
 }
 
 /**
- * Build a display label per ADR-002 Decision 6:
- *   Rule 1: "You -> @{recipient}" (using makeAgentNameUserFriendly)
- *   Rule 2: "@{sender}" (recipient is implicit)
- *   Rule 3: "@{sender} -> @{recipient}"
- *   Rule 4: "@{sender} -> @{recipient}"
+ * Build a display label per ADR-002 Decision 6 (revised 2026-04-12):
+ *   Rule 1: "You ⇒ @{recipient}" (using makeAgentNameUserFriendly)
+ *   Rule 2: "@{sender} ⇒ You" (recipient expanded explicitly for multi-human teams)
+ *   Rule 3: "@{sender} ⇒ @{recipient}"
+ *   Rule 4: "@{sender} ⇒ @{recipient}"
  */
 export function buildLabel(msg: SentMessage, rule: MessageRule): string {
   const senderName = makeAgentNameUserFriendly(msg.sender.name);
@@ -45,12 +45,12 @@ export function buildLabel(msg: SentMessage, rule: MessageRule): string {
 
   switch (rule) {
     case 1:
-      return `You -> ${recipientName}`;
+      return `You ⇒ ${recipientName}`;
     case 2:
-      return senderName;
+      return `${senderName} ⇒ You`;
     case 3:
     case 4:
-      return `${senderName} -> ${recipientName}`;
+      return `${senderName} ⇒ ${recipientName}`;
   }
 }
 
