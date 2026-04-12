@@ -182,6 +182,37 @@ describe('classifyMessage', () => {
     expect(result.collapsed).toBe(true);
   });
 
+  it('should return collapsed=true for Rule 3 (non-@Human human recipient)', () => {
+    const msg = makeSentMessage({
+      sender: makeAddress({ name: '@Manager', role: 'Manager' }),
+      recipient: makeAddress({ name: '@QATester', role: 'Human' }),
+    });
+    const result: ChatMessage = classifyMessage(msg);
+
+    expect(result.rule).toBe(3);
+    expect(result.alignment).toBe('left');
+    expect(result.collapsed).toBe(true);
+  });
+
+  it('should return collapsed=false for Rule 1 and Rule 2', () => {
+    const r1 = classifyMessage(
+      makeSentMessage({
+        sender: makeAddress({ name: '@Human', role: 'Human' }),
+        recipient: makeAddress({ name: '@Manager', role: 'Manager' }),
+      }),
+    );
+    const r2 = classifyMessage(
+      makeSentMessage({
+        sender: makeAddress({ name: '@Manager', role: 'Manager' }),
+        recipient: makeAddress({ name: '@Human', role: 'Human' }),
+      }),
+    );
+    expect(r1.rule).toBe(1);
+    expect(r1.collapsed).toBe(false);
+    expect(r2.rule).toBe(2);
+    expect(r2.collapsed).toBe(false);
+  });
+
   it('should handle null content gracefully', () => {
     const msg = makeSentMessage({
       sender: makeAddress({ name: '@Human', role: 'Human' }),
