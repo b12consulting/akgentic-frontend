@@ -4,15 +4,20 @@
  * previously lived in chat-panel.component.scss (Story 4-8 AC6). */
 
 .thinking-bubble {
+  /* Match the collapsed-line styling (chat-message.component.scss) so a
+   * thinking bubble and a Rule 4 collapsed bubble read as the same family:
+   * transparent background, hover tint only. */
   padding: 4px 8px;
   cursor: pointer;
   color: #334155;
   font-size: 0.9rem;
   border-radius: 6px;
   border: 1px solid rgba(158, 187, 203, 0.5);
-  background-color: rgba(158, 187, 203, 0.06);
 
-  &:hover {
+  /* Hover tint only while the bubble is clickable (non-final). Once
+   * finalised the bubble is static chat history — no cursor change, no
+   * hover affordance. */
+  &:not(.final):hover {
     background-color: rgba(0, 0, 0, 0.02);
   }
 

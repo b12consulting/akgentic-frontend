@@ -182,7 +182,14 @@ export class ActorMessageService {
           this.message$.next(event);
         } else {
           // Story 4-8: observe raw envelopes for thinking-bubble lifecycle.
-          this.applyThinkingLifecycle(event as AkgenticMessage);
+          // Guarded with try/catch so a malformed envelope can never tear
+          // down the WS subscription (which would silently break the graph
+          // red border and all subsequent events).
+          try {
+            this.applyThinkingLifecycle(event as AkgenticMessage);
+          } catch (err) {
+            console.error('applyThinkingLifecycle failed:', err, event);
+          }
           // All other messages: forward to message$ for graph + message list
           if (this.paused) {
             this.messages.push(event);
@@ -253,11 +260,23 @@ export class ActorMessageService {
    */
   private applyThinkingLifecycle(msg: AkgenticMessage): void {
     if (isReceivedMessage(msg)) {
+      // Python `ReceivedMessage` is a lightweight telemetry envelope — it
+      // carries only `message_id` (UUID of the inner message being
+      // received), NOT the full inner `BaseMessage`. Using `msg.message.id`
+      // here previously threw `TypeError: Cannot read properties of
+      // undefined (reading 'id')`, which tore down the WS subscription and
+      // silently killed downstream consumers (graph red border, thinking
+      // bubbles, every subsequent event).
+      //
+      // Human-role agents (HumanProxy) never "think" — they wait for user
+      // input. Skip the bubble entirely; the user's own reply path drives
+      // the UI, not a simulated thinking state.
+      if (msg.sender.role === 'Human') return;
       this.chatService.beginThinking({
         agent_id: msg.sender.agent_id,
         agent_name: msg.sender.name,
         start_time: new Date(msg.timestamp),
-        anchor_message_id: msg.message.id,
+        anchor_message_id: msg.message_id,
       });
       return;
     }

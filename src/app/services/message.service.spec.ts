@@ -9,10 +9,10 @@ import { ActorAddress } from '../models/message.types';
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {
     __actor_address__: true,
-    address: 'addr',
     name: '@Researcher',
     role: 'Worker',
     agent_id: 'agent-1',
+    team_id: 'team-1',
     squad_id: 'squad-1',
     user_message: false,
     ...overrides,
@@ -20,6 +20,8 @@ function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
 }
 
 function makeReceived(overrides: Partial<any> = {}): any {
+  // Matches the Python contract: ReceivedMessage carries only `message_id`
+  // (UUID of the inner message), NOT a nested `message: BaseMessage`.
   return {
     id: 'outer-1',
     parent_id: null,
@@ -29,16 +31,7 @@ function makeReceived(overrides: Partial<any> = {}): any {
     display_type: 'other',
     content: null,
     __model__: 'akgentic.core.messages.orchestrator.ReceivedMessage',
-    message: {
-      id: 'inner-1',
-      parent_id: null,
-      team_id: 'team-1',
-      timestamp: '2026-04-12T10:00:00Z',
-      sender: makeAddress(),
-      display_type: 'other',
-      content: 'hi',
-      __model__: 'akgentic.core.messages.orchestrator.UserMessage',
-    },
+    message_id: 'inner-1',
     ...overrides,
   };
 }

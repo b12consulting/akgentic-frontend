@@ -5,7 +5,7 @@
   (click)="onClick()"
 >
   <div class="thinking-header">
-    <span class="agent-label">[{{ state().agent_name }}] thinking</span>
+    <span class="agent-label">[{{ state().agent_name }}]<span *ngIf="!state().final"> thinking</span></span>
     <span class="thinking-dots" *ngIf="!state().final">
       <span class="dot"></span><span class="dot"></span><span class="dot"></span>
     </span>

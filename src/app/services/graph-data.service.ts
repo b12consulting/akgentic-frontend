@@ -67,7 +67,7 @@ export class GraphBuilder {
       name: this.message.sender.agent_id,
       role: this.message.sender.role,
       actorName: this.message.sender.name,
-      parentId: this.message.parent.agent_id,
+      parentId: this.message.parent?.agent_id ?? '',
       squadId: this.message.sender.squad_id || '',
       userMessage: this.message.sender.user_message || false,
       symbol: userProxy ? 'circle' : 'roundRect',
@@ -309,6 +309,10 @@ export class GraphDataService {
   }
 
   private handleReceivedMessage(msg: ReceivedMessage) {
+    // Human-role agents (HumanProxy) are not "thinking" when they receive
+    // a message — they are waiting on the user. Skip the red-border
+    // indicator so it stays specific to agents actively processing.
+    if (msg.sender?.role === HUMAN_ROLE) return;
     const node = this.nodes.find((n) => n.name === msg.sender?.agent_id);
     if (node) {
       node.itemStyle = node.itemStyle || {};
