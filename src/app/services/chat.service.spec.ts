@@ -18,6 +18,7 @@ function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
 function makeChatMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {
     id: 'msg-1',
+    parent_id: null,
     content: 'Hello world',
     sender: makeAddress({ name: '@Manager', role: 'Manager' }),
     recipient: makeAddress({ name: '@Human', role: 'Human' }),
@@ -89,7 +90,7 @@ describe('ChatService', () => {
   });
 
   describe('pendingNotifications$', () => {
-    it('should emit empty map initially', (done) => {
+    it('should emit empty set initially', (done) => {
       service.pendingNotifications$.subscribe((pending) => {
         expect(pending.size).toBe(0);
         done();
@@ -107,13 +108,13 @@ describe('ChatService', () => {
 
       service.pendingNotifications$.subscribe((pending) => {
         expect(pending.size).toBe(1);
-        expect(pending.get('@Manager->@QATester')?.length).toBe(1);
+        expect(pending.has('r3-1')).toBe(true);
         done();
       });
     });
 
     it('should reactively update when messages$ changes', () => {
-      const emitted: Map<string, ChatMessage[]>[] = [];
+      const emitted: Set<string>[] = [];
       service.pendingNotifications$.subscribe((p) => emitted.push(p));
 
       // Initially empty
@@ -129,17 +130,18 @@ describe('ChatService', () => {
       service.messages$.next([rule3Msg]);
 
       expect(emitted[1].size).toBe(1);
+      expect(emitted[1].has('r3-1')).toBe(true);
     });
   });
 });
 
 describe('computePendingNotifications', () => {
-  it('should return empty map for empty messages', () => {
+  it('should return empty set for empty messages', () => {
     const result = computePendingNotifications([]);
     expect(result.size).toBe(0);
   });
 
-  it('should track Rule 3 messages as pending', () => {
+  it('should track Rule 3 message ids as pending', () => {
     const msgs: ChatMessage[] = [
       makeChatMessage({
         id: 'r3-1',
@@ -150,10 +152,10 @@ describe('computePendingNotifications', () => {
     ];
     const result = computePendingNotifications(msgs);
     expect(result.size).toBe(1);
-    expect(result.get('@Manager->@QATester')?.length).toBe(1);
+    expect(result.has('r3-1')).toBe(true);
   });
 
-  it('should accumulate multiple messages for same agent pair', () => {
+  it('should accumulate multiple messages for same agent pair (per-message)', () => {
     const msgs: ChatMessage[] = [
       makeChatMessage({
         id: 'r3-1',
@@ -175,10 +177,13 @@ describe('computePendingNotifications', () => {
       }),
     ];
     const result = computePendingNotifications(msgs);
-    expect(result.get('@Manager->@QATester')?.length).toBe(3);
+    expect(result.size).toBe(3);
+    expect(result.has('r3-1')).toBe(true);
+    expect(result.has('r3-2')).toBe(true);
+    expect(result.has('r3-3')).toBe(true);
   });
 
-  it('should clear all pending when human replies (AC #2, #3)', () => {
+  it('should clear only the specific message whose id matches reply.parent_id', () => {
     const msgs: ChatMessage[] = [
       makeChatMessage({
         id: 'r3-1',
@@ -192,20 +197,22 @@ describe('computePendingNotifications', () => {
         sender: makeAddress({ name: '@Manager', role: 'Manager' }),
         recipient: makeAddress({ name: '@QATester', role: 'Human' }),
       }),
-      // QATester replies to Manager
+      // QATester replies to r3-1 only
       makeChatMessage({
         id: 'reply-1',
+        parent_id: 'r3-1',
         rule: 1,
         sender: makeAddress({ name: '@QATester', role: 'Human' }),
         recipient: makeAddress({ name: '@Manager', role: 'Manager' }),
       }),
     ];
     const result = computePendingNotifications(msgs);
-    expect(result.has('@Manager->@QATester')).toBe(false);
-    expect(result.size).toBe(0);
+    expect(result.size).toBe(1);
+    expect(result.has('r3-1')).toBe(false);
+    expect(result.has('r3-2')).toBe(true);
   });
 
-  it('should re-add notifications after reply if new messages arrive (AC #2)', () => {
+  it('should re-add notifications after reply if new messages arrive', () => {
     const msgs: ChatMessage[] = [
       makeChatMessage({
         id: 'r3-1',
@@ -213,9 +220,10 @@ describe('computePendingNotifications', () => {
         sender: makeAddress({ name: '@Manager', role: 'Manager' }),
         recipient: makeAddress({ name: '@QATester', role: 'Human' }),
       }),
-      // QATester replies
+      // QATester replies to r3-1
       makeChatMessage({
         id: 'reply-1',
+        parent_id: 'r3-1',
         rule: 1,
         sender: makeAddress({ name: '@QATester', role: 'Human' }),
         recipient: makeAddress({ name: '@Manager', role: 'Manager' }),
@@ -230,7 +238,8 @@ describe('computePendingNotifications', () => {
     ];
     const result = computePendingNotifications(msgs);
     expect(result.size).toBe(1);
-    expect(result.get('@Manager->@QATester')?.length).toBe(1);
+    expect(result.has('r3-new')).toBe(true);
+    expect(result.has('r3-1')).toBe(false);
   });
 
   it('should handle multiple agent pairs independently', () => {
@@ -250,8 +259,8 @@ describe('computePendingNotifications', () => {
     ];
     const result = computePendingNotifications(msgs);
     expect(result.size).toBe(2);
-    expect(result.get('@Manager->@QATester')?.length).toBe(1);
-    expect(result.get('@Worker->@QATester')?.length).toBe(1);
+    expect(result.has('r3-a')).toBe(true);
+    expect(result.has('r3-b')).toBe(true);
   });
 
   it('should NOT track messages to @Human entry point', () => {
@@ -267,7 +276,7 @@ describe('computePendingNotifications', () => {
     expect(result.size).toBe(0);
   });
 
-  it('should NOT clear when @Human entry point replies', () => {
+  it('should NOT clear when @Human entry point sends a message without parent_id', () => {
     const msgs: ChatMessage[] = [
       makeChatMessage({
         id: 'r3-1',
@@ -275,9 +284,10 @@ describe('computePendingNotifications', () => {
         sender: makeAddress({ name: '@Manager', role: 'Manager' }),
         recipient: makeAddress({ name: '@QATester', role: 'Human' }),
       }),
-      // @Human sends a message (entry point user) - should NOT clear QATester notifications
+      // @Human sends a message with no parent_id — should NOT clear anything
       makeChatMessage({
         id: 'user-1',
+        parent_id: null,
         rule: 1,
         sender: makeAddress({ name: '@Human', role: 'Human' }),
         recipient: makeAddress({ name: '@Manager', role: 'Manager' }),
@@ -285,10 +295,10 @@ describe('computePendingNotifications', () => {
     ];
     const result = computePendingNotifications(msgs);
     expect(result.size).toBe(1);
-    expect(result.get('@Manager->@QATester')?.length).toBe(1);
+    expect(result.has('r3-1')).toBe(true);
   });
 
-  it('reply clears only the specific agent pair, not others', () => {
+  it('reply clears only the specific message, not others in the same pair', () => {
     const msgs: ChatMessage[] = [
       makeChatMessage({
         id: 'r3-a',
@@ -302,17 +312,67 @@ describe('computePendingNotifications', () => {
         sender: makeAddress({ name: '@Worker', role: 'Worker' }),
         recipient: makeAddress({ name: '@QATester', role: 'Human' }),
       }),
-      // QATester replies to Manager only
+      // QATester replies to r3-a specifically
       makeChatMessage({
         id: 'reply-1',
+        parent_id: 'r3-a',
         rule: 1,
         sender: makeAddress({ name: '@QATester', role: 'Human' }),
         recipient: makeAddress({ name: '@Manager', role: 'Manager' }),
       }),
     ];
     const result = computePendingNotifications(msgs);
-    expect(result.has('@Manager->@QATester')).toBe(false);
-    expect(result.has('@Worker->@QATester')).toBe(true);
-    expect(result.get('@Worker->@QATester')?.length).toBe(1);
+    expect(result.size).toBe(1);
+    expect(result.has('r3-a')).toBe(false);
+    expect(result.has('r3-b')).toBe(true);
+  });
+
+  it('multiple unanswered messages in the same pair are all flagged independently', () => {
+    const msgs: ChatMessage[] = [
+      makeChatMessage({
+        id: 'r3-1',
+        rule: 3,
+        sender: makeAddress({ name: '@Manager', role: 'Manager' }),
+        recipient: makeAddress({ name: '@QATester', role: 'Human' }),
+      }),
+      makeChatMessage({
+        id: 'r3-2',
+        rule: 3,
+        sender: makeAddress({ name: '@Manager', role: 'Manager' }),
+        recipient: makeAddress({ name: '@QATester', role: 'Human' }),
+      }),
+      makeChatMessage({
+        id: 'r3-3',
+        rule: 3,
+        sender: makeAddress({ name: '@Manager', role: 'Manager' }),
+        recipient: makeAddress({ name: '@QATester', role: 'Human' }),
+      }),
+    ];
+    const result = computePendingNotifications(msgs);
+    expect(result.size).toBe(3);
+    expect(result.has('r3-1')).toBe(true);
+    expect(result.has('r3-2')).toBe(true);
+    expect(result.has('r3-3')).toBe(true);
+  });
+
+  it('a reply with an unknown parent_id clears nothing', () => {
+    const msgs: ChatMessage[] = [
+      makeChatMessage({
+        id: 'r3-1',
+        rule: 3,
+        sender: makeAddress({ name: '@Manager', role: 'Manager' }),
+        recipient: makeAddress({ name: '@QATester', role: 'Human' }),
+      }),
+      makeChatMessage({
+        id: 'stray-reply',
+        parent_id: 'does-not-exist',
+        rule: 1,
+        sender: makeAddress({ name: '@QATester', role: 'Human' }),
+        recipient: makeAddress({ name: '@Manager', role: 'Manager' }),
+      }),
+    ];
+    const result = computePendingNotifications(msgs);
+    expect(result.size).toBe(1);
+    expect(result.has('r3-1')).toBe(true);
   });
 });

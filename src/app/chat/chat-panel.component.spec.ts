@@ -32,10 +32,11 @@ function makeSentMessage(
   recipient: Partial<ActorAddress>,
   content: string = 'test',
   id: string = 'msg-1',
+  parentId: string | null = null,
 ): SentMessage {
   return {
     id,
-    parent_id: null,
+    parent_id: parentId,
     team_id: 'team-1',
     timestamp: '2026-04-08T10:00:00Z',
     sender: makeAddress(sender),
@@ -43,8 +44,8 @@ function makeSentMessage(
     content: null,
     __model__: 'akgentic.core.messages.orchestrator.SentMessage',
     message: {
-      id: 'inner-1',
-      parent_id: null,
+      id: 'inner-' + id,
+      parent_id: parentId,
       team_id: 'team-1',
       timestamp: '2026-04-08T10:00:00Z',
       sender: makeAddress(sender),
@@ -210,6 +211,7 @@ describe('ChatPanelComponent', () => {
   it('onMessageSelected should call selectionService.handleSelection', () => {
     const chatMsg: ChatMessage = {
       id: 'msg-1',
+      parent_id: null,
       content: 'test',
       sender: makeAddress({ name: '@Manager', agent_id: 'mgr-1' }),
       recipient: makeAddress({ name: '@Human' }),
@@ -254,6 +256,7 @@ describe('ChatPanelComponent', () => {
     it('onBubbleClicked should call chatService.setReplyContext', () => {
       const chatMsg: ChatMessage = {
         id: 'msg-reply',
+        parent_id: null,
         content: 'test',
         sender: makeAddress({ name: '@Manager', agent_id: 'mgr-1' }),
         recipient: makeAddress({ name: '@Human' }),
@@ -309,6 +312,7 @@ describe('ChatPanelComponent', () => {
     it('clicking different bubble should switch reply context', () => {
       const msg1: ChatMessage = {
         id: 'msg-1',
+        parent_id: null,
         content: 'first',
         sender: makeAddress({ name: '@Agent1' }),
         recipient: makeAddress({ name: '@Human' }),
@@ -321,6 +325,7 @@ describe('ChatPanelComponent', () => {
       };
       const msg2: ChatMessage = {
         id: 'msg-2',
+        parent_id: null,
         content: 'second',
         sender: makeAddress({ name: '@Agent2' }),
         recipient: makeAddress({ name: '@Human' }),
@@ -374,6 +379,7 @@ describe('ChatPanelComponent', () => {
         { name: '@Manager', role: 'Manager' },
         'approved',
         'reply-1',
+        'r3-1',
       );
       messagesSubject.next([rule3Msg, replyMsg]);
       fixture.detectChanges();
@@ -384,6 +390,60 @@ describe('ChatPanelComponent', () => {
       expect(component.modalVisible).toBe(false);
     });
 
+    it('onRule3Clicked with two pending in the same pair opens modal with both (AC #8)', () => {
+      const r3a = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'first',
+        'r3-pair-1',
+      );
+      const r3b = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'second',
+        'r3-pair-2',
+      );
+      messagesSubject.next([r3a, r3b]);
+      fixture.detectChanges();
+
+      const chatMsg = component.chatMessages.find(m => m.id === 'r3-pair-1')!;
+      component.onRule3Clicked(chatMsg);
+
+      expect(component.modalVisible).toBe(true);
+      expect(component.modalPendingMessages.length).toBe(2);
+    });
+
+    it('onRule3Clicked after one reply opens modal with single still-pending message (AC #8)', () => {
+      const r3a = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'first',
+        'r3-after-1',
+      );
+      const r3b = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'second',
+        'r3-after-2',
+      );
+      const reply = makeSentMessage(
+        { name: '@QATester', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'answering first',
+        'reply-after-1',
+        'r3-after-1',
+      );
+      messagesSubject.next([r3a, r3b, reply]);
+      fixture.detectChanges();
+
+      const stillPending = component.chatMessages.find(m => m.id === 'r3-after-2')!;
+      component.onRule3Clicked(stillPending);
+
+      expect(component.modalVisible).toBe(true);
+      expect(component.modalPendingMessages.length).toBe(1);
+      expect(component.modalPendingMessages[0].id).toBe('r3-after-2');
+    });
+
     it('onModalReply should call processHumanInput, close modal, and clear state', () => {
       component.processId = 'team-42';
       component.modalVisible = true;
@@ -392,7 +452,7 @@ describe('ChatPanelComponent', () => {
         recipient: makeAddress({ name: '@QATester' }),
       };
       const dummyMsg: ChatMessage = {
-        id: 'msg-123', content: 'test', sender: makeAddress({ name: '@Manager' }),
+        id: 'msg-123', parent_id: null, content: 'test', sender: makeAddress({ name: '@Manager' }),
         recipient: makeAddress({ name: '@QATester', role: 'Human' }),
         timestamp: new Date(), rule: 3, alignment: 'left', color: '#9ebbcb',
         collapsed: false, label: 'Manager ⇒ QATester',
@@ -415,7 +475,7 @@ describe('ChatPanelComponent', () => {
         recipient: makeAddress({ name: '@QATester' }),
       };
       const dummyMsg: ChatMessage = {
-        id: 'msg-1', content: 'test', sender: makeAddress({ name: '@Manager' }),
+        id: 'msg-1', parent_id: null, content: 'test', sender: makeAddress({ name: '@Manager' }),
         recipient: makeAddress({ name: '@QATester', role: 'Human' }),
         timestamp: new Date(), rule: 3, alignment: 'left', color: '#9ebbcb',
         collapsed: false, label: 'Manager ⇒ QATester',
@@ -451,17 +511,48 @@ describe('ChatPanelComponent', () => {
         'need approval',
         'r3-1',
       );
+      // Reply carries parent_id === r3-1 — per-message clearing requires this linkage.
       const replyMsg = makeSentMessage(
         { name: '@QATester', role: 'Human' },
         { name: '@Manager', role: 'Manager' },
         'approved',
         'reply-1',
+        'r3-1',
       );
       messagesSubject.next([rule3Msg, replyMsg]);
       fixture.detectChanges();
 
       const chatMsgR3 = component.chatMessages.find(m => m.id === 'r3-1')!;
       expect(component.hasNotification(chatMsgR3)).toBe(false);
+    });
+
+    it('two separate messages — one cleared, one still pending (AC #8)', () => {
+      const r3First = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'first',
+        'r3-1',
+      );
+      const r3Second = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'second',
+        'r3-2',
+      );
+      const reply = makeSentMessage(
+        { name: '@QATester', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'answering first',
+        'reply-1',
+        'r3-1',
+      );
+      messagesSubject.next([r3First, r3Second, reply]);
+      fixture.detectChanges();
+
+      const msg1 = component.chatMessages.find(m => m.id === 'r3-1')!;
+      const msg2 = component.chatMessages.find(m => m.id === 'r3-2')!;
+      expect(component.hasNotification(msg1)).toBe(false);
+      expect(component.hasNotification(msg2)).toBe(true);
     });
 
     it('hasNotification should return false for non-Rule-3 messages', () => {
@@ -493,12 +584,13 @@ describe('ChatPanelComponent', () => {
       const chatMsg = component.chatMessages[0];
       expect(component.hasNotification(chatMsg)).toBe(true);
 
-      // 2. Reply arrives (simulating WebSocket message)
+      // 2. Reply arrives (simulating WebSocket message); parent_id points at r3-clear-1.
       const replyMsg = makeSentMessage(
         { name: '@QATester', role: 'Human' },
         { name: '@Manager', role: 'Manager' },
         'approved',
         'reply-clear-1',
+        'r3-clear-1',
       );
       messagesSubject.next([rule3Msg, replyMsg]);
       fixture.detectChanges();
@@ -520,6 +612,7 @@ describe('ChatPanelComponent', () => {
         { name: '@Manager', role: 'Manager' },
         'done',
         'reply-reappear-1',
+        'r3-reappear-1',
       );
       const rule3Second = makeSentMessage(
         { name: '@Manager', role: 'Manager' },
@@ -576,6 +669,7 @@ describe('ChatPanelComponent', () => {
     it('onToggleCollapse should ignore non Rule-3/4 messages', () => {
       const msg: ChatMessage = {
         id: 'r1',
+        parent_id: null,
         content: 'x',
         sender: makeAddress({ name: '@Human' }),
         recipient: makeAddress({ name: '@Manager' }),

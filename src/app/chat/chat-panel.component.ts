@@ -63,7 +63,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   selectedMessageId: string | null = null;
   private replyContextSubscription!: Subscription;
   private notificationSubscription!: Subscription;
-  pendingNotifications: Map<string, ChatMessage[]> = new Map();
+  pendingNotifications: Set<string> = new Set();
 
   ngOnInit(): void {
     this.replyContextSubscription = this.chatService.replyContext$.subscribe((ctx) => {
@@ -141,9 +141,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   hasNotification(chatMsg: ChatMessage): boolean {
-    if (chatMsg.rule !== 3) return false;
-    const pairKey = `${chatMsg.sender.name}->${chatMsg.recipient.name}`;
-    return this.pendingNotifications.has(pairKey);
+    return chatMsg.rule === 3 && this.pendingNotifications.has(chatMsg.id);
   }
 
   ngOnDestroy(): void {
@@ -162,13 +160,25 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.chatService.setReplyContext(chatMsg);
   }
 
+  /**
+   * Open the Rule 3 modal with every still-unanswered message from the same
+   * agent pair as the clicked bubble. Story 4-7 will replace the
+   * last-message fallback (modal emits one reply per send) with per-request
+   * reply inputs; this story only changes the notification tracking data
+   * model from `Map<pairKey, ChatMessage[]>` to `Set<id>`.
+   */
   onRule3Clicked(chatMsg: ChatMessage): void {
-    const pairKey = `${chatMsg.sender.name}->${chatMsg.recipient.name}`;
-    const pending = this.pendingNotifications.get(pairKey) ?? [];
-    if (pending.length === 0) return;
+    const pendingForPair = this.chatMessages.filter(
+      (m) =>
+        m.rule === 3 &&
+        m.sender.name === chatMsg.sender.name &&
+        m.recipient.name === chatMsg.recipient.name &&
+        this.pendingNotifications.has(m.id),
+    );
+    if (pendingForPair.length === 0) return;
 
     this.modalAgentPair = { sender: chatMsg.sender, recipient: chatMsg.recipient };
-    this.modalPendingMessages = pending;
+    this.modalPendingMessages = pendingForPair;
     this.modalVisible = true;
   }
 
