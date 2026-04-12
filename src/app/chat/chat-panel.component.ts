@@ -10,12 +10,12 @@ import {
   OnInit,
   ViewChild,
 } from '@angular/core';
-import { BehaviorSubject, Subscription } from 'rxjs';
+import { combineLatest, Subscription } from 'rxjs';
 
 import { ChatMessage, classifyMessage } from '../models/chat-message.model';
 import { ActorAddress, isSentMessage } from '../models/message.types';
 import { ApiService } from '../services/api.service';
-import { ChatService } from '../services/chat.service';
+import { ChatService, ThinkingState } from '../services/chat.service';
 import { ActorMessageService } from '../services/message.service';
 import { Selectable, SelectionService } from '../services/selection.service';
 import {
@@ -24,18 +24,29 @@ import {
   HumanModalReply,
 } from './chat-human-modal.component';
 import { ChatMessageComponent } from './chat-message.component';
+import { ChatThinkingComponent } from './chat-thinking.component';
 import { ProcessUserInputComponent } from '../process/user-input/user-input.component';
+
+/** Discriminated-union item rendered inline in the chat panel. */
+export type DisplayItem =
+  | { kind: 'message'; data: ChatMessage }
+  | { kind: 'thinking'; data: ThinkingState };
 
 @Component({
   selector: 'app-chat-panel',
   standalone: true,
-  imports: [CommonModule, ChatMessageComponent, ChatHumanModalComponent, ProcessUserInputComponent],
+  imports: [
+    CommonModule,
+    ChatMessageComponent,
+    ChatThinkingComponent,
+    ChatHumanModalComponent,
+    ProcessUserInputComponent,
+  ],
   templateUrl: './chat-panel.component.html',
   styleUrl: './chat-panel.component.scss',
 })
 export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   @Input() processId!: string;
-  @Input() loading$!: BehaviorSubject<boolean>;
 
   @ViewChild('scrollContainer', { static: false })
   private scrollContainer!: ElementRef;
@@ -46,6 +57,8 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   apiService: ApiService = inject(ApiService);
 
   chatMessages: ChatMessage[] = [];
+  thinkingStates: ThinkingState[] = [];
+  displayItems: DisplayItem[] = [];
   loadingProcess$ = this.chatService.loadingProcess$;
 
   // Modal state for Rule 3 notification dialog
@@ -65,6 +78,9 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   private isHovered = false;
   private pendingCatchUpScroll = false;
   private expandedMessageIds = new Set<string>();
+  /** Story 4-8: per-bubble expansion state (mirrors expandedMessageIds
+   *  pattern; persists across thinkingAgents$ re-emissions). */
+  private thinkingExpanded = new Set<string>();
   selectedMessageId: string | null = null;
   private replyContextSubscription!: Subscription;
   private notificationSubscription!: Subscription;
@@ -80,7 +96,12 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.recomputeModalInputs();
       }
     );
-    this.subscription = this.messageService.messages$.subscribe((messages) => {
+    // Story 4-8: merge chat messages + thinking states into a single sorted
+    // displayItems array. Either stream re-triggers rebuild.
+    this.subscription = combineLatest([
+      this.messageService.messages$,
+      this.chatService.thinkingAgents$,
+    ]).subscribe(([messages, thinkingStates]) => {
       this.checkShouldAutoScroll();
 
       const previousLength = this.chatMessages.length;
@@ -100,6 +121,8 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
         });
 
       this.chatMessages = classified;
+      this.thinkingStates = thinkingStates;
+      this.displayItems = this.buildDisplayItems(classified, thinkingStates);
       // Story 4.4: if a new message arrived while the user is hovering the
       // panel, remember that a catch-up scroll is owed on mouseleave.
       if (this.isHovered && classified.length > previousLength) {
@@ -282,6 +305,58 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   trackById(_index: number, item: ChatMessage): string {
     return item.id;
+  }
+
+  /**
+   * Story 4-8: Stable tracking key for the mixed display list — preserves
+   * DOM nodes across ephemeral → persistent transitions of a thinking
+   * bubble (the `anchor_message_id` is constant across the finalise flip).
+   */
+  trackByDisplayItem(_: number, item: DisplayItem): string {
+    return (
+      item.kind +
+      ':' +
+      (item.kind === 'message' ? item.data.id : item.data.anchor_message_id)
+    );
+  }
+
+  isThinkingExpanded(state: ThinkingState): boolean {
+    return this.thinkingExpanded.has(state.anchor_message_id);
+  }
+
+  onToggleThinkingExpanded(anchorId: string): void {
+    if (this.thinkingExpanded.has(anchorId)) {
+      this.thinkingExpanded.delete(anchorId);
+    } else {
+      this.thinkingExpanded.add(anchorId);
+    }
+  }
+
+  /**
+   * Story 4-8 (AC5): Merge chat messages and thinking states into a single
+   * chronologically sorted list.
+   *   - Primary key: timestamp / start_time (ms).
+   *   - Tie-break (same ms): message BEFORE thinking (so the triggering
+   *     ReceivedMessage visually precedes its own bubble).
+   */
+  private buildDisplayItems(
+    messages: ChatMessage[],
+    thinking: ThinkingState[],
+  ): DisplayItem[] {
+    const items: DisplayItem[] = [];
+    for (const m of messages) items.push({ kind: 'message', data: m });
+    for (const t of thinking) items.push({ kind: 'thinking', data: t });
+    items.sort((a, b) => {
+      const ta =
+        a.kind === 'message' ? a.data.timestamp.getTime() : a.data.start_time.getTime();
+      const tb =
+        b.kind === 'message' ? b.data.timestamp.getTime() : b.data.start_time.getTime();
+      if (ta !== tb) return ta - tb;
+      // Tie-break: messages before thinking bubbles.
+      if (a.kind === b.kind) return 0;
+      return a.kind === 'message' ? -1 : 1;
+    });
+    return items;
   }
 
   private checkShouldAutoScroll(): void {

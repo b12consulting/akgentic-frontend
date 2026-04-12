@@ -5,7 +5,11 @@ import { map } from 'rxjs/operators';
 import { provideMarkdown } from 'ngx-markdown';
 
 import { ChatPanelComponent } from './chat-panel.component';
-import { ChatService, computePendingNotifications } from '../services/chat.service';
+import {
+  ChatService,
+  computePendingNotifications,
+  ThinkingState,
+} from '../services/chat.service';
 import { ActorMessageService } from '../services/message.service';
 import { SelectionService } from '../services/selection.service';
 import { ActorAddress, SentMessage, BaseMessage, AkgenticMessage, StartMessage } from '../models/message.types';
@@ -72,11 +76,13 @@ describe('ChatPanelComponent', () => {
     messagesSubject = new BehaviorSubject<AkgenticMessage[]>([]);
 
     const messagesSubj = new BehaviorSubject<any[]>([]);
+    const thinkingAgentsSubj = new BehaviorSubject<ThinkingState[]>([]);
     const chatService = {
       messages$: messagesSubj,
       loadingProcess$: new BehaviorSubject<boolean>(false),
       replyContext$: new BehaviorSubject<any>(null),
       pendingNotifications$: messagesSubj.pipe(map(computePendingNotifications)),
+      thinkingAgents$: thinkingAgentsSubj,
       setReplyContext: jasmine.createSpy('setReplyContext').and.callFake(
         function(this: any, msg: any) { this.replyContext$.next(msg); }
       ),
@@ -86,7 +92,7 @@ describe('ChatPanelComponent', () => {
     };
 
     const messageService = {
-      messages$: messagesSubject.asObservable(),
+      messages$: messagesSubject,
     };
 
     const selectionService = jasmine.createSpyObj('SelectionService', [
@@ -121,7 +127,6 @@ describe('ChatPanelComponent', () => {
     fixture = TestBed.createComponent(ChatPanelComponent);
     component = fixture.componentInstance;
     component.processId = 'test-team';
-    component.loading$ = new BehaviorSubject<boolean>(false);
     fixture.detectChanges();
   });
 
@@ -861,6 +866,121 @@ describe('ChatPanelComponent', () => {
 
     // Collapsed state should be preserved
     expect(component.chatMessages[0].collapsed).toBe(false);
+  });
+
+  describe('displayItems merge (Story 4-8)', () => {
+    function getThinkingSubj(): BehaviorSubject<ThinkingState[]> {
+      const svc = TestBed.inject(ChatService) as any;
+      return svc.thinkingAgents$ as BehaviorSubject<ThinkingState[]>;
+    }
+
+    function makeThinking(
+      overrides: Partial<ThinkingState> = {},
+    ): ThinkingState {
+      return {
+        agent_id: 'a1',
+        agent_name: '@Researcher',
+        start_time: new Date('2026-04-12T10:00:00Z'),
+        tools: [],
+        anchor_message_id: 'anchor-1',
+        final: false,
+        ...overrides,
+      };
+    }
+
+    it('sorts a message and a thinking state chronologically', () => {
+      const sent = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'later',
+        'm-1',
+      );
+      sent.timestamp = '2026-04-12T10:00:10Z';
+      messagesSubject.next([sent]);
+      getThinkingSubj().next([
+        makeThinking({
+          start_time: new Date('2026-04-12T10:00:00Z'),
+        }),
+      ]);
+      fixture.detectChanges();
+
+      expect(component.displayItems.length).toBe(2);
+      expect(component.displayItems[0].kind).toBe('thinking');
+      expect(component.displayItems[1].kind).toBe('message');
+    });
+
+    it('ties (same timestamp) order messages BEFORE thinking bubbles', () => {
+      const sent = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'sametime',
+        'tie-1',
+      );
+      sent.timestamp = '2026-04-12T10:00:00Z';
+      messagesSubject.next([sent]);
+      getThinkingSubj().next([
+        makeThinking({ start_time: new Date('2026-04-12T10:00:00Z') }),
+      ]);
+      fixture.detectChanges();
+
+      expect(component.displayItems.length).toBe(2);
+      expect(component.displayItems[0].kind).toBe('message');
+      expect(component.displayItems[1].kind).toBe('thinking');
+    });
+
+    it('trackByDisplayItem produces stable keys across ephemeral → persistent transition', () => {
+      const s1 = makeThinking({ final: false, anchor_message_id: 'anc-stable' });
+      const key1 = component.trackByDisplayItem(0, { kind: 'thinking', data: s1 });
+      const s2 = makeThinking({ final: true, anchor_message_id: 'anc-stable' });
+      const key2 = component.trackByDisplayItem(0, { kind: 'thinking', data: s2 });
+      expect(key1).toBe(key2);
+    });
+
+    it('trackByDisplayItem distinguishes message ids from thinking anchor ids', () => {
+      const chatMsg: ChatMessage = {
+        id: 'same-id',
+        message_id: 'same-id',
+        parent_id: null,
+        content: 'x',
+        sender: makeAddress({ name: '@A' }),
+        recipient: makeAddress({ name: '@B' }),
+        timestamp: new Date(),
+        rule: 2,
+        alignment: 'left',
+        color: '#9ebbcb',
+        collapsed: false,
+        label: 'A ⇒ B',
+      };
+      const state = makeThinking({ anchor_message_id: 'same-id' });
+      const k1 = component.trackByDisplayItem(0, {
+        kind: 'message',
+        data: chatMsg,
+      });
+      const k2 = component.trackByDisplayItem(0, { kind: 'thinking', data: state });
+      expect(k1).not.toBe(k2);
+    });
+
+    it('loading$ DOM block is gone (no .thinking-animation inside .message-list)', () => {
+      const sent = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'hello',
+      );
+      messagesSubject.next([sent]);
+      fixture.detectChanges();
+      const el: HTMLElement = fixture.nativeElement;
+      const list = el.querySelector('.message-list');
+      expect(list).not.toBeNull();
+      expect(list!.querySelector('.thinking-animation')).toBeNull();
+    });
+
+    it('onToggleThinkingExpanded toggles the anchor id in the internal set', () => {
+      component.onToggleThinkingExpanded('anc-1');
+      const state = makeThinking({ anchor_message_id: 'anc-1' });
+      expect(component.isThinkingExpanded(state)).toBe(true);
+      component.onToggleThinkingExpanded('anc-1');
+      expect(component.isThinkingExpanded(state)).toBe(false);
+    });
   });
 
   describe('Hover-aware auto-scroll lock (Story 4.4)', () => {

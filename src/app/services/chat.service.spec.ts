@@ -1,4 +1,8 @@
-import { ChatService, computePendingNotifications } from './chat.service';
+import {
+  ChatService,
+  computePendingNotifications,
+  ThinkingToolEntry,
+} from './chat.service';
 import { ChatMessage } from '../models/chat-message.model';
 import { ActorAddress } from '../models/message.types';
 
@@ -90,6 +94,156 @@ describe('ChatService', () => {
       service.setReplyContext(msg);
       service.setReplyContext(null);
       expect(service.replyContext$.value).toBeNull();
+    });
+  });
+
+  describe('thinkingAgents$ mutators (Story 4-8)', () => {
+    function makeEntry(
+      overrides: Partial<ThinkingToolEntry> = {},
+    ): ThinkingToolEntry {
+      return {
+        tool_call_id: 'call-1',
+        tool_name: 'search_web',
+        arguments_preview: 'q=foo',
+        done: false,
+        ...overrides,
+      };
+    }
+
+    it('initialises thinkingAgents$ to empty array', () => {
+      expect(service.thinkingAgents$.value).toEqual([]);
+    });
+
+    it('beginThinking appends a new state (tools [], final false)', () => {
+      const previous = service.thinkingAgents$.value;
+      service.beginThinking({
+        agent_id: 'a1',
+        agent_name: '@Researcher',
+        start_time: new Date('2026-04-12T00:00:00Z'),
+        anchor_message_id: 'anchor-1',
+      });
+      const next = service.thinkingAgents$.value;
+      expect(next.length).toBe(1);
+      expect(next[0].agent_id).toBe('a1');
+      expect(next[0].tools).toEqual([]);
+      expect(next[0].final).toBe(false);
+      expect(next[0].anchor_message_id).toBe('anchor-1');
+      expect(next).not.toBe(previous);
+    });
+
+    it('beginThinking is a no-op for the same agent_id while non-final', () => {
+      service.beginThinking({
+        agent_id: 'a1',
+        agent_name: '@Researcher',
+        start_time: new Date('2026-04-12T00:00:00Z'),
+        anchor_message_id: 'anchor-1',
+      });
+      const refAfterFirst = service.thinkingAgents$.value;
+      service.beginThinking({
+        agent_id: 'a1',
+        agent_name: '@Researcher',
+        start_time: new Date('2026-04-12T00:01:00Z'),
+        anchor_message_id: 'anchor-2',
+      });
+      expect(service.thinkingAgents$.value).toBe(refAfterFirst);
+      expect(service.thinkingAgents$.value.length).toBe(1);
+      expect(service.thinkingAgents$.value[0].anchor_message_id).toBe(
+        'anchor-1',
+      );
+    });
+
+    it('appendToolCall appends onto the non-final state; emits fresh array', () => {
+      service.beginThinking({
+        agent_id: 'a1',
+        agent_name: '@Researcher',
+        start_time: new Date(),
+        anchor_message_id: 'anchor-1',
+      });
+      const previous = service.thinkingAgents$.value;
+      service.appendToolCall('a1', makeEntry());
+      const next = service.thinkingAgents$.value;
+      expect(next[0].tools.length).toBe(1);
+      expect(next[0].tools[0].tool_call_id).toBe('call-1');
+      expect(next).not.toBe(previous);
+    });
+
+    it('appendToolCall is a no-op (debug log) when no state exists', () => {
+      const debugSpy = spyOn(console, 'debug');
+      const before = service.thinkingAgents$.value;
+      service.appendToolCall('missing', makeEntry());
+      expect(service.thinkingAgents$.value).toBe(before);
+      expect(debugSpy).toHaveBeenCalled();
+    });
+
+    it('markToolDone flips done; unknown tool_call_id is a no-op', () => {
+      service.beginThinking({
+        agent_id: 'a1',
+        agent_name: '@Researcher',
+        start_time: new Date(),
+        anchor_message_id: 'anchor-1',
+      });
+      service.appendToolCall('a1', makeEntry({ tool_call_id: 'call-1' }));
+      const previous = service.thinkingAgents$.value;
+      service.markToolDone('a1', 'call-1');
+      const next = service.thinkingAgents$.value;
+      expect(next[0].tools[0].done).toBe(true);
+      expect(next).not.toBe(previous);
+
+      const ref = service.thinkingAgents$.value;
+      service.markToolDone('a1', 'unknown');
+      expect(service.thinkingAgents$.value).toBe(ref);
+    });
+
+    it('finaliseOrDiscard removes state when tools is empty (ephemeral exit)', () => {
+      service.beginThinking({
+        agent_id: 'a1',
+        agent_name: '@Researcher',
+        start_time: new Date(),
+        anchor_message_id: 'anchor-1',
+      });
+      service.finaliseOrDiscard('a1');
+      expect(service.thinkingAgents$.value).toEqual([]);
+    });
+
+    it('finaliseOrDiscard flips final=true when tools.length > 0 (persistent)', () => {
+      service.beginThinking({
+        agent_id: 'a1',
+        agent_name: '@Researcher',
+        start_time: new Date(),
+        anchor_message_id: 'anchor-1',
+      });
+      service.appendToolCall('a1', makeEntry());
+      const previous = service.thinkingAgents$.value;
+      service.finaliseOrDiscard('a1');
+      const next = service.thinkingAgents$.value;
+      expect(next.length).toBe(1);
+      expect(next[0].final).toBe(true);
+      expect(next).not.toBe(previous);
+    });
+
+    it('finaliseOrDiscard is a no-op for unknown agent_id', () => {
+      const before = service.thinkingAgents$.value;
+      service.finaliseOrDiscard('missing');
+      expect(service.thinkingAgents$.value).toBe(before);
+    });
+
+    it('each mutator emits a new array reference (OnPush safety)', () => {
+      const refs: unknown[] = [];
+      service.thinkingAgents$.subscribe((v) => refs.push(v));
+      service.beginThinking({
+        agent_id: 'a1',
+        agent_name: '@Researcher',
+        start_time: new Date(),
+        anchor_message_id: 'anchor-1',
+      });
+      service.appendToolCall('a1', makeEntry());
+      service.markToolDone('a1', 'call-1');
+      service.finaliseOrDiscard('a1');
+      // 1 initial + 4 mutations
+      expect(refs.length).toBe(5);
+      // All distinct array references
+      const uniq = new Set(refs);
+      expect(uniq.size).toBe(5);
     });
   });
 
