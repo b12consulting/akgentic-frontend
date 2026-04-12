@@ -105,7 +105,7 @@ describe('ChatMessageComponent', () => {
     });
   });
 
-  describe('Rule 3 (notification + collapse + Open button)', () => {
+  describe('Rule 3 (notification + collapse + Reply button)', () => {
     it('should show hand-raised icon (🙋) on expanded bubble when notification is true', () => {
       const msg = makeChatMessage({
         rule: 3,
