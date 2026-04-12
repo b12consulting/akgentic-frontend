@@ -34,6 +34,12 @@ function makeSentMessage(
   id: string = 'msg-1',
   parentId: string | null = null,
 ): SentMessage {
+  // Mirror the real backend contract: `parent_id` on the INNER BaseMessage
+  // references the INNER id of the parent (`inner-<parentId>`), not the
+  // outer envelope id. This is what `HumanProxy` produces on real replies
+  // (see team_service.py#process_human_input → HumanProxy sets
+  // `_current_message = event.message` before send()).
+  const innerParentId = parentId === null ? null : 'inner-' + parentId;
   return {
     id,
     parent_id: parentId,
@@ -45,7 +51,7 @@ function makeSentMessage(
     __model__: 'akgentic.core.messages.orchestrator.SentMessage',
     message: {
       id: 'inner-' + id,
-      parent_id: parentId,
+      parent_id: innerParentId,
       team_id: 'team-1',
       timestamp: '2026-04-08T10:00:00Z',
       sender: makeAddress(sender),
@@ -211,6 +217,7 @@ describe('ChatPanelComponent', () => {
   it('onMessageSelected should call selectionService.handleSelection', () => {
     const chatMsg: ChatMessage = {
       id: 'msg-1',
+      message_id: 'msg-1',
       parent_id: null,
       content: 'test',
       sender: makeAddress({ name: '@Manager', agent_id: 'mgr-1' }),
@@ -256,6 +263,7 @@ describe('ChatPanelComponent', () => {
     it('onBubbleClicked should call chatService.setReplyContext', () => {
       const chatMsg: ChatMessage = {
         id: 'msg-reply',
+        message_id: 'msg-reply',
         parent_id: null,
         content: 'test',
         sender: makeAddress({ name: '@Manager', agent_id: 'mgr-1' }),
@@ -312,6 +320,7 @@ describe('ChatPanelComponent', () => {
     it('clicking different bubble should switch reply context', () => {
       const msg1: ChatMessage = {
         id: 'msg-1',
+        message_id: 'msg-1',
         parent_id: null,
         content: 'first',
         sender: makeAddress({ name: '@Agent1' }),
@@ -325,6 +334,7 @@ describe('ChatPanelComponent', () => {
       };
       const msg2: ChatMessage = {
         id: 'msg-2',
+        message_id: 'msg-2',
         parent_id: null,
         content: 'second',
         sender: makeAddress({ name: '@Agent2' }),
@@ -366,8 +376,9 @@ describe('ChatPanelComponent', () => {
       expect(component.modalPendingMessages.length).toBe(1);
     });
 
-    it('onRule3Clicked should not open modal when no pending notifications', () => {
-      // A Rule 3 message that has been replied to
+    it('onRule3Clicked opens modal with answered-only history (no pending)', () => {
+      // A Rule 3 message that has been replied to — now opens modal in
+      // read-only mode (Story 4-7 AC6 early-return change).
       const rule3Msg = makeSentMessage(
         { name: '@Manager', role: 'Manager' },
         { name: '@QATester', role: 'Human' },
@@ -387,7 +398,10 @@ describe('ChatPanelComponent', () => {
       const chatMsg = component.chatMessages.find(m => m.id === 'r3-1')!;
       component.onRule3Clicked(chatMsg);
 
-      expect(component.modalVisible).toBe(false);
+      expect(component.modalVisible).toBe(true);
+      expect(component.modalPendingMessages.length).toBe(0);
+      expect(component.modalAnsweredMessages.length).toBe(1);
+      expect(component.modalAnsweredMessages[0].request.id).toBe('r3-1');
     });
 
     it('onRule3Clicked with two pending in the same pair opens modal with both (AC #8)', () => {
@@ -444,7 +458,7 @@ describe('ChatPanelComponent', () => {
       expect(component.modalPendingMessages[0].id).toBe('r3-after-2');
     });
 
-    it('onModalReply should call processHumanInput, close modal, and clear state', () => {
+    it('onModalReply should call processHumanInput and KEEP modal open (Story 4-7 AC3)', () => {
       component.processId = 'team-42';
       component.modalVisible = true;
       component.modalAgentPair = {
@@ -452,39 +466,159 @@ describe('ChatPanelComponent', () => {
         recipient: makeAddress({ name: '@QATester' }),
       };
       const dummyMsg: ChatMessage = {
-        id: 'msg-123', parent_id: null, content: 'test', sender: makeAddress({ name: '@Manager' }),
+        id: 'msg-123', message_id: 'inner-msg-123', parent_id: null, content: 'test',
+        sender: makeAddress({ name: '@Manager' }),
         recipient: makeAddress({ name: '@QATester', role: 'Human' }),
         timestamp: new Date(), rule: 3, alignment: 'left', color: '#9ebbcb',
         collapsed: false, label: 'Manager ⇒ QATester',
       };
       component.modalPendingMessages = [dummyMsg];
+      component.modalAnsweredMessages = [];
 
       component.onModalReply({ content: 'approved', messageId: 'msg-123' });
 
       const api = TestBed.inject(ApiService) as any;
       expect(api.processHumanInput).toHaveBeenCalledWith('team-42', 'approved', 'msg-123');
-      expect(component.modalVisible).toBe(false);
-      expect(component.modalAgentPair).toBeNull();
-      expect(component.modalPendingMessages).toEqual([]);
+      // Modal stays open — reclassification is handled by recomputeModalInputs.
+      expect(component.modalVisible).toBe(true);
+      expect(component.modalAgentPair).not.toBeNull();
+      expect(component.modalPendingMessages).toEqual([dummyMsg]);
     });
 
-    it('onModalVisibleChange should update modalVisible and clear state when closed', () => {
+    it('onModalVisibleChange should update modalVisible and clear ALL state when closed', () => {
       component.modalVisible = true;
       component.modalAgentPair = {
         sender: makeAddress({ name: '@Manager' }),
         recipient: makeAddress({ name: '@QATester' }),
       };
       const dummyMsg: ChatMessage = {
-        id: 'msg-1', parent_id: null, content: 'test', sender: makeAddress({ name: '@Manager' }),
+        id: 'msg-1', message_id: 'inner-msg-1', parent_id: null, content: 'test',
+        sender: makeAddress({ name: '@Manager' }),
         recipient: makeAddress({ name: '@QATester', role: 'Human' }),
         timestamp: new Date(), rule: 3, alignment: 'left', color: '#9ebbcb',
         collapsed: false, label: 'Manager ⇒ QATester',
       };
+      const dummyReq: ChatMessage = { ...dummyMsg, id: 'req-1', message_id: 'inner-req-1' };
+      const dummyReply: ChatMessage = {
+        ...dummyMsg, id: 'reply-1', message_id: 'inner-reply-1', parent_id: 'inner-req-1',
+      };
       component.modalPendingMessages = [dummyMsg];
+      component.modalAnsweredMessages = [{ request: dummyReq, reply: dummyReply }];
       component.onModalVisibleChange(false);
       expect(component.modalVisible).toBe(false);
       expect(component.modalAgentPair).toBeNull();
       expect(component.modalPendingMessages).toEqual([]);
+      expect(component.modalAnsweredMessages).toEqual([]);
+    });
+  });
+
+  describe('Story 4-7: modal answered wiring + reactive recompute', () => {
+    it('onRule3Clicked populates BOTH modalPendingMessages AND modalAnsweredMessages', () => {
+      // Two pending and one already-answered pair in the same pair.
+      const r3a = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'pending-1',
+        'r3-pend-1',
+      );
+      const r3b = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'pending-2',
+        'r3-pend-2',
+      );
+      const r3answered = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'answered',
+        'r3-answered',
+      );
+      const reply = makeSentMessage(
+        { name: '@QATester', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'done',
+        'reply-answered',
+        'r3-answered',
+      );
+      messagesSubject.next([r3answered, reply, r3a, r3b]);
+      fixture.detectChanges();
+
+      const pending = component.chatMessages.find((m) => m.id === 'r3-pend-1')!;
+      component.onRule3Clicked(pending);
+
+      expect(component.modalVisible).toBe(true);
+      expect(component.modalPendingMessages.length).toBe(2);
+      expect(component.modalAnsweredMessages.length).toBe(1);
+      expect(component.modalAnsweredMessages[0].request.id).toBe('r3-answered');
+      expect(component.modalAnsweredMessages[0].reply.id).toBe('reply-answered');
+    });
+
+    it('reactive recompute: reply arriving while modal is open reclassifies lists', () => {
+      const r3a = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'one',
+        'r3-react-1',
+      );
+      const r3b = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'two',
+        'r3-react-2',
+      );
+      messagesSubject.next([r3a, r3b]);
+      fixture.detectChanges();
+
+      const first = component.chatMessages.find((m) => m.id === 'r3-react-1')!;
+      component.onRule3Clicked(first);
+      expect(component.modalPendingMessages.length).toBe(2);
+      expect(component.modalAnsweredMessages.length).toBe(0);
+
+      // A reply to r3-react-1 arrives — without re-click, modal inputs must
+      // reclassify.
+      const reply = makeSentMessage(
+        { name: '@QATester', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'answering',
+        'reply-react-1',
+        'r3-react-1',
+      );
+      messagesSubject.next([r3a, r3b, reply]);
+      fixture.detectChanges();
+
+      expect(component.modalVisible).toBe(true);
+      expect(component.modalPendingMessages.length).toBe(1);
+      expect(component.modalPendingMessages[0].id).toBe('r3-react-2');
+      expect(component.modalAnsweredMessages.length).toBe(1);
+      expect(component.modalAnsweredMessages[0].request.id).toBe('r3-react-1');
+      expect(component.modalAnsweredMessages[0].reply.id).toBe('reply-react-1');
+    });
+
+    it('auto-closes modal when last pending is answered AND no answered entries remain', () => {
+      // Single Rule 3 with no reply in play.
+      const r3 = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'only',
+        'r3-auto-1',
+      );
+      messagesSubject.next([r3]);
+      fixture.detectChanges();
+
+      const pending = component.chatMessages.find((m) => m.id === 'r3-auto-1')!;
+      component.onRule3Clicked(pending);
+      expect(component.modalVisible).toBe(true);
+
+      // Force the edge case: no messages at all (both lists empty after
+      // recompute). In practice a reply would produce an answered entry, but
+      // this guards the defensive auto-close branch.
+      messagesSubject.next([]);
+      fixture.detectChanges();
+
+      expect(component.modalVisible).toBe(false);
+      expect(component.modalAgentPair).toBeNull();
+      expect(component.modalPendingMessages).toEqual([]);
+      expect(component.modalAnsweredMessages).toEqual([]);
     });
   });
 
@@ -669,6 +803,7 @@ describe('ChatPanelComponent', () => {
     it('onToggleCollapse should ignore non Rule-3/4 messages', () => {
       const msg: ChatMessage = {
         id: 'r1',
+        message_id: 'r1',
         parent_id: null,
         content: 'x',
         sender: makeAddress({ name: '@Human' }),

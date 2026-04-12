@@ -3,6 +3,7 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideMarkdown } from 'ngx-markdown';
 
 import {
+  AnsweredRequest,
   ChatHumanModalComponent,
   HumanModalReply,
 } from './chat-human-modal.component';
@@ -23,8 +24,10 @@ function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
 }
 
 function makeChatMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
+  const id = overrides.id ?? 'msg-1';
   return {
-    id: 'msg-1',
+    id,
+    message_id: id,
     parent_id: null,
     content: 'Hello world',
     sender: makeAddress({ name: '@Manager', role: 'Manager' }),
@@ -37,6 +40,25 @@ function makeChatMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
     label: 'Manager ⇒ QATester',
     ...overrides,
   };
+}
+
+function makeAnsweredRequest(
+  requestOverrides: Partial<ChatMessage> = {},
+  replyOverrides: Partial<ChatMessage> = {},
+): AnsweredRequest {
+  const request = makeChatMessage({
+    id: requestOverrides.id ?? 'req-1',
+    ...requestOverrides,
+  });
+  const reply = makeChatMessage({
+    id: replyOverrides.id ?? 'reply-for-' + request.id,
+    parent_id: request.id,
+    content: replyOverrides.content ?? 'answered',
+    sender: makeAddress({ name: '@QATester', role: 'Human' }),
+    recipient: makeAddress({ name: '@Manager', role: 'Manager' }),
+    ...replyOverrides,
+  });
+  return { request, reply };
 }
 
 describe('ChatHumanModalComponent', () => {
@@ -77,12 +99,12 @@ describe('ChatHumanModalComponent', () => {
     });
   });
 
-  describe('onSend', () => {
-    it('should emit reply with last message id and content', () => {
+  describe('onSendForRequest', () => {
+    it('should emit reply with the id of the request whose Send button was clicked', () => {
       const msgs = [
-        makeChatMessage({ id: 'msg-1' }),
-        makeChatMessage({ id: 'msg-2' }),
-        makeChatMessage({ id: 'msg-3' }),
+        makeChatMessage({ id: 'r3-1' }),
+        makeChatMessage({ id: 'r3-2' }),
+        makeChatMessage({ id: 'r3-3' }),
       ];
       fixture.componentRef.setInput('visible', true);
       fixture.componentRef.setInput('pendingMessages', msgs);
@@ -91,77 +113,142 @@ describe('ChatHumanModalComponent', () => {
       const emitted: HumanModalReply[] = [];
       component.reply.subscribe((r: HumanModalReply) => emitted.push(r));
 
-      component.replyText = 'Approved!';
-      component.onSend();
+      component.replyBuffers.set('r3-2', 'only this one');
+      component.onSendForRequest('r3-2');
 
       expect(emitted.length).toBe(1);
-      expect(emitted[0].content).toBe('Approved!');
-      expect(emitted[0].messageId).toBe('msg-3');
+      expect(emitted[0].content).toBe('only this one');
+      expect(emitted[0].messageId).toBe('r3-2');
     });
 
-    it('should not emit if reply text is empty', () => {
+    it('should not clear other request buffers when one is sent', () => {
+      const msgs = [
+        makeChatMessage({ id: 'r3-1' }),
+        makeChatMessage({ id: 'r3-3' }),
+      ];
       fixture.componentRef.setInput('visible', true);
-      fixture.componentRef.setInput('pendingMessages', [makeChatMessage()]);
+      fixture.componentRef.setInput('pendingMessages', msgs);
       fixture.detectChanges();
 
-      const emitted: HumanModalReply[] = [];
-      component.reply.subscribe((r: HumanModalReply) => emitted.push(r));
+      component.replyBuffers.set('r3-1', 'looks good');
+      component.replyBuffers.set('r3-3', 'need more detail');
+      component.onSendForRequest('r3-1');
 
-      component.replyText = '   ';
-      component.onSend();
-
-      expect(emitted.length).toBe(0);
+      expect(component.replyBuffers.get('r3-1')).toBeUndefined();
+      expect(component.replyBuffers.get('r3-3')).toBe('need more detail');
     });
 
-    it('should not emit if no pending messages', () => {
+    it('should not emit visibleChange(false) after sending one request', () => {
       fixture.componentRef.setInput('visible', true);
-      fixture.componentRef.setInput('pendingMessages', []);
-      fixture.detectChanges();
-
-      const emitted: HumanModalReply[] = [];
-      component.reply.subscribe((r: HumanModalReply) => emitted.push(r));
-
-      component.replyText = 'reply';
-      component.onSend();
-
-      expect(emitted.length).toBe(0);
-    });
-
-    it('should clear reply text after sending', () => {
-      fixture.componentRef.setInput('visible', true);
-      fixture.componentRef.setInput('pendingMessages', [makeChatMessage()]);
-      fixture.detectChanges();
-
-      component.replyText = 'test reply';
-      component.onSend();
-
-      expect(component.replyText).toBe('');
-    });
-
-    it('should emit visibleChange(false) after sending', () => {
-      fixture.componentRef.setInput('visible', true);
-      fixture.componentRef.setInput('pendingMessages', [makeChatMessage()]);
+      fixture.componentRef.setInput('pendingMessages', [makeChatMessage({ id: 'r3-1' })]);
       fixture.detectChanges();
 
       const visibleChanges: boolean[] = [];
       component.visibleChange.subscribe((v: boolean) => visibleChanges.push(v));
 
-      component.replyText = 'done';
-      component.onSend();
+      component.replyBuffers.set('r3-1', 'done');
+      component.onSendForRequest('r3-1');
 
-      expect(visibleChanges).toContain(false);
+      expect(visibleChanges.length).toBe(0);
+    });
+
+    it('should not emit if reply buffer is empty/whitespace for that request', () => {
+      fixture.componentRef.setInput('visible', true);
+      fixture.componentRef.setInput('pendingMessages', [makeChatMessage({ id: 'r3-1' })]);
+      fixture.detectChanges();
+
+      const emitted: HumanModalReply[] = [];
+      component.reply.subscribe((r: HumanModalReply) => emitted.push(r));
+
+      component.replyBuffers.set('r3-1', '   ');
+      component.onSendForRequest('r3-1');
+
+      expect(emitted.length).toBe(0);
+    });
+
+    it('should not emit if the buffer for the request id is missing', () => {
+      fixture.componentRef.setInput('visible', true);
+      fixture.componentRef.setInput('pendingMessages', [makeChatMessage({ id: 'r3-1' })]);
+      fixture.detectChanges();
+
+      const emitted: HumanModalReply[] = [];
+      component.reply.subscribe((r: HumanModalReply) => emitted.push(r));
+
+      component.onSendForRequest('r3-1');
+
+      expect(emitted.length).toBe(0);
+    });
+
+    it('should clear only the sent request buffer', () => {
+      fixture.componentRef.setInput('visible', true);
+      fixture.componentRef.setInput('pendingMessages', [makeChatMessage({ id: 'r3-1' })]);
+      fixture.detectChanges();
+
+      component.replyBuffers.set('r3-1', 'hello');
+      component.onSendForRequest('r3-1');
+
+      expect(component.replyBuffers.has('r3-1')).toBe(false);
+    });
+  });
+
+  describe('DOM rendering', () => {
+    it('renders one .pending-request per pending message', () => {
+      fixture.componentRef.setInput('visible', true);
+      fixture.componentRef.setInput('pendingMessages', [
+        makeChatMessage({ id: 'r3-1' }),
+        makeChatMessage({ id: 'r3-2' }),
+      ]);
+      fixture.detectChanges();
+
+      const nodes = document.querySelectorAll('.pending-request');
+      expect(nodes.length).toBe(2);
+    });
+
+    it('renders answered section when answeredMessages non-empty', () => {
+      fixture.componentRef.setInput('visible', true);
+      fixture.componentRef.setInput('pendingMessages', []);
+      fixture.componentRef.setInput('answeredMessages', [
+        makeAnsweredRequest({ id: 'a-1' }),
+        makeAnsweredRequest({ id: 'a-2' }),
+      ]);
+      fixture.detectChanges();
+
+      const nodes = document.querySelectorAll('.answered-request');
+      expect(nodes.length).toBe(2);
+    });
+
+    it('answered section contains no textarea', () => {
+      fixture.componentRef.setInput('visible', true);
+      fixture.componentRef.setInput('pendingMessages', []);
+      fixture.componentRef.setInput('answeredMessages', [makeAnsweredRequest({ id: 'a-1' })]);
+      fixture.detectChanges();
+
+      const answered = document.querySelector('.answered-request');
+      expect(answered).toBeTruthy();
+      expect(answered!.querySelector('textarea')).toBeNull();
+    });
+
+    it('shows empty placeholder when both lists are empty', () => {
+      fixture.componentRef.setInput('visible', true);
+      fixture.componentRef.setInput('pendingMessages', []);
+      fixture.componentRef.setInput('answeredMessages', []);
+      fixture.detectChanges();
+
+      expect(document.querySelector('.empty-state')).toBeTruthy();
     });
   });
 
   describe('onVisibleChange', () => {
-    it('should emit false when dialog is closed', () => {
+    it('should emit false and clear buffers when dialog is closed', () => {
       fixture.detectChanges();
+      component.replyBuffers.set('r3-1', 'draft');
       const emitted: boolean[] = [];
       component.visibleChange.subscribe((v: boolean) => emitted.push(v));
 
       component.onVisibleChange(false);
 
       expect(emitted).toEqual([false]);
+      expect(component.replyBuffers.size).toBe(0);
     });
 
     it('should NOT emit when value is true (dialog opens)', () => {
