@@ -5,6 +5,8 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { isRunning } from '../models/team.interface';
 import { AkgentService } from '../services/akgent.service';
 import { ContextService } from '../services/context.service';
+import { KGStateReducer } from '../services/kg-state.reducer';
+import { MessageLogService } from '../services/message-log.service';
 import { ActorMessageService } from '../services/message.service';
 import { ToolPresenceService } from '../services/tool-presence.service';
 
@@ -50,6 +52,9 @@ interface VisualizationOption {
   ],
   providers: [
     AsyncPipe,
+    MessageLogService,
+    ToolPresenceService,
+    KGStateReducer,
     ActorMessageService,
     GraphDataService,
     ChatService,
