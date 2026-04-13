@@ -42,6 +42,12 @@ echarts.use([
 ]);
 
 interface KnowledgeGraphEntity {
+  // V2 wire: uuid string, required. The projection from `KGStateReducer`
+  // always carries `id`; component keeps it optional only to tolerate any
+  // legacy fixture/test that builds entities manually without an id.
+  id?: string;
+  // V2 wire: optional flag (backend only sends it when `True`).
+  is_root?: boolean;
   name?: string;
   entity_type?: string;
   description?: string;
@@ -49,9 +55,13 @@ interface KnowledgeGraphEntity {
 }
 
 interface KnowledgeGraphRelation {
+  // V2 wire: uuid string, required (see note above on id optionality).
+  id?: string;
   from_entity?: string;
   to_entity?: string;
   relation_type?: string;
+  // V2 wire: optional, defaults to "" on the wire.
+  description?: string;
 }
 
 interface KnowledgeGraphData {
