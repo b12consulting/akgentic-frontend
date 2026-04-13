@@ -299,14 +299,14 @@ export class ActorMessageService {
         this._wsInbound$.next(event as AkgenticMessage);
 
         if (event.__model__.includes('StateChangedMessage')) {
-          const agentId = event.sender?.agent_id;
-          if (agentId) {
-            this.initDict(this.stateDict$, agentId, null);
-            this.stateDict$[agentId].next({
-              schema: {},
-              state: event.state,
-            });
-          }
+          // Story 6.1 (AC8 fix): stateDict$ is updated by the batched
+          // subscriber only (`applyStateChanged`). The inline write was
+          // removed to prevent double-emission to agent-tabs consumers
+          // (which would otherwise re-render twice per state change and,
+          // for context, surface duplicated messages — see
+          // `agent-tabs.component.ts:67-87`). The batched path remains the
+          // single source of truth for dict updates as Story 6.4's
+          // selector migration lands.
         } else if (event.__model__.includes('EventMessage')) {
           this.handleEventMessage(event);
         } else if (event.__model__.includes('ErrorMessage')) {
@@ -509,22 +509,18 @@ export class ActorMessageService {
    * Handle V2 EventMessage: delegates to LlmMessageEvent or ToolCallEvent handlers.
    */
   private handleEventMessage(event: any): void {
-    const inner = event.event;
-    if (inner?.__model__?.includes('LlmMessageEvent')) {
-      const agentId = event.sender?.agent_id;
-      if (agentId) {
-        this.initDict(this.contextDict$, agentId, []);
-        const current = this.contextDict$[agentId].getValue();
-        this.contextDict$[agentId].next([...current, inner.message]);
-      }
-    } else if (inner?.__model__?.includes('ToolStateEvent')) {
-      // Story 5-2: live-path KG delta dispatch (AC5). Sibling to the
-      // `LlmMessageEvent` branch; falls through to
-      // `dispatchToolEventToThinking` below so unknown inner models
-      // retain today's silent-ignore behaviour.
-      this.kgReducer.apply(inner);
-    }
+    // Story 6.1 (AC8 fix): contextDict$ and kgReducer.apply() are now driven
+    // by the batched subscriber's `applyEventMessageDicts` helper exclusively.
+    // The inline writes were removed to prevent:
+    //   - Duplicated entries in `contextDict$[agentId]` (consumer:
+    //     `agent-tabs.component.ts` would render every LLM message twice).
+    //   - Double `kgReducer.apply()` per ToolStateEvent (the reducer is NOT
+    //     idempotent on `seq` — second call logs "seq gap" warnings AND
+    //     emits a duplicate `knowledgeGraph$` projection, breaking AC8 for
+    //     the KG panel rewired in Story 5-3).
     // Story 4-8: route tool events into ChatService for the thinking bubble.
+    // Thinking-bubble dispatch is NOT a duplicate concern — the batched
+    // subscriber does not touch the chat thinking lifecycle.
     this.dispatchToolEventToThinking(event);
   }
 
