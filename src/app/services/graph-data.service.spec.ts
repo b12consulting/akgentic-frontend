@@ -202,44 +202,48 @@ describe('ENTRY_POINT_NAME constant', () => {
   });
 });
 
-describe('GraphBuilder.setHumanRequest', () => {
-  it('adds notification for non-entry-point human recipient', () => {
+describe('GraphBuilder.setHumanRequestPure', () => {
+  it('adds notification for non-entry-point human recipient (returns new array + new node)', () => {
     const msg = makeSentMessage({
       recipient: makeAddress({ name: '@QATester', role: 'Human', agent_id: 'qa-1' }),
       message: makeBaseMessage({ display_type: 'other' }),
     });
     const builder = new GraphBuilder(msg);
     const nodes = [makeNode({ name: 'manager-1', actorName: '@Manager' })];
-    builder.setHumanRequest(nodes);
-    expect(nodes[0].humanRequests).toBeDefined();
-    expect(nodes[0].humanRequests![0]).toBe(msg);
+    const next = builder.setHumanRequestPure(nodes);
+    expect(next).not.toBe(nodes); // AC7: new array when changed
+    expect(next[0]).not.toBe(nodes[0]); // new node object
+    expect(next[0].humanRequests).toBeDefined();
+    expect(next[0].humanRequests![0]).toBe(msg);
+    // Original nodes MUST remain unmutated (no in-place side effects).
+    expect(nodes[0].humanRequests).toBeUndefined();
   });
 
-  it('skips when recipient is @Human entry point', () => {
+  it('skips when recipient is @Human entry point (same reference)', () => {
     const msg = makeSentMessage({
       recipient: makeAddress({ name: '@Human', role: 'Human', agent_id: 'human-1' }),
       message: makeBaseMessage({ display_type: 'other' }),
     });
     const builder = new GraphBuilder(msg);
     const nodes = [makeNode({ name: 'manager-1', actorName: '@Manager' })];
-    builder.setHumanRequest(nodes);
-    expect(nodes[0].humanRequests).toBeUndefined();
+    const next = builder.setHumanRequestPure(nodes);
+    expect(next).toBe(nodes); // AC7: same reference when no-op
   });
 
-  it('skips when recipient role is not Human', () => {
+  it('skips when recipient role is not Human (same reference)', () => {
     const msg = makeSentMessage({
       recipient: makeAddress({ name: '@Worker', role: 'Worker', agent_id: 'worker-1' }),
       message: makeBaseMessage({ display_type: 'other' }),
     });
     const builder = new GraphBuilder(msg);
     const nodes = [makeNode({ name: 'manager-1', actorName: '@Manager' })];
-    builder.setHumanRequest(nodes);
-    expect(nodes[0].humanRequests).toBeUndefined();
+    const next = builder.setHumanRequestPure(nodes);
+    expect(next).toBe(nodes);
   });
 });
 
-describe('GraphBuilder.unSetHumanRequest', () => {
-  it('clears notification by parent_id for non-entry-point human', () => {
+describe('GraphBuilder.unSetHumanRequestPure', () => {
+  it('clears notification by parent_id for non-entry-point human (returns new array + new node)', () => {
     const originalMsg = makeSentMessage({
       id: 'sent-1',
       message: makeBaseMessage({ id: 'inner-1', display_type: 'other' }),
@@ -255,8 +259,12 @@ describe('GraphBuilder.unSetHumanRequest', () => {
       makeNode({ name: 'manager-1', actorName: '@Manager', humanRequests: [originalMsg] }),
     ];
     const builder = new GraphBuilder(replyMsg);
-    builder.unSetHumanRequest(nodes);
-    expect(nodes[0].humanRequests!.length).toBe(0);
+    const next = builder.unSetHumanRequestPure(nodes);
+    expect(next).not.toBe(nodes);
+    expect(next[0]).not.toBe(nodes[0]);
+    expect(next[0].humanRequests!.length).toBe(0);
+    // Original untouched.
+    expect(nodes[0].humanRequests!.length).toBe(1);
   });
 });
 
@@ -410,6 +418,56 @@ describe('graphFold / graphStep (pure)', () => {
     );
     expect(after.nodes).not.toBe(before.nodes);
     expect(after.edges).toBe(before.edges);
+  });
+
+  it('(AC7) ReceivedMessage on existing node emits a NEW nodes reference (OnPush)', () => {
+    const before: GraphState = graphFold(
+      [makeStart({ sender: makeAddress({ agent_id: 'a1' }) })],
+      cs,
+    );
+    const after = graphStep(before, makeReceived('a1'), cs);
+    expect(after.nodes).not.toBe(before.nodes);
+    expect(after.edges).toBe(before.edges);
+    expect(after.squad).toBe(before.squad);
+    // Original node object MUST NOT be mutated (immutability guard).
+    expect(before.nodes[0].itemStyle?.borderColor).toBeUndefined();
+    expect(after.nodes[0].itemStyle?.borderColor).toBe('darkred');
+  });
+
+  it('(AC7) ProcessedMessage clearing border emits a NEW nodes reference', () => {
+    const before: GraphState = graphFold(
+      [
+        makeStart({ sender: makeAddress({ agent_id: 'a1' }) }),
+        makeReceived('a1'),
+      ],
+      cs,
+    );
+    const after = graphStep(before, makeProcessed('a1'), cs);
+    expect(after.nodes).not.toBe(before.nodes);
+    // Prior snapshot retains the border (no retroactive mutation).
+    expect(before.nodes[0].itemStyle?.borderColor).toBe('darkred');
+    expect(after.nodes[0].itemStyle?.borderColor).toBeUndefined();
+  });
+
+  it('(AC7) ErrorMessage emits a NEW nodes reference and preserves previous snapshot', () => {
+    const before: GraphState = graphFold(
+      [makeStart({ sender: makeAddress({ agent_id: 'a1' }) })],
+      cs,
+    );
+    const after = graphStep(before, makeError('a1'), cs);
+    expect(after.nodes).not.toBe(before.nodes);
+    expect(before.nodes[0].itemStyle?.color).toBeUndefined();
+    expect(after.nodes[0].itemStyle?.color).toBe('darkred');
+  });
+
+  it('(AC7) ProcessedMessage on node with no border is a same-reference no-op', () => {
+    const before: GraphState = graphFold(
+      [makeStart({ sender: makeAddress({ agent_id: 'a1' }) })],
+      cs,
+    );
+    const after = graphStep(before, makeProcessed('a1'), cs);
+    expect(after).toBe(before);
+    expect(after.nodes).toBe(before.nodes);
   });
 });
 

@@ -77,33 +77,50 @@ export class GraphBuilder {
     };
   }
 
-  setHumanRequest(nodes: NodeInterface[]) {
-    if (!isSentMessage(this.message)) return;
-    if (!this.message.recipient.role.includes(HUMAN_ROLE)) return;
-    if (this.message.recipient.name === ENTRY_POINT_NAME) return;
-    if (this.message.message.display_type !== 'other') return;
+  /**
+   * Pure variant of `setHumanRequest`: returns a new nodes array with the
+   * targeted node replaced by a new object carrying an updated
+   * `humanRequests`. Returns the SAME `nodes` reference when no change is
+   * required (AC7 reference-equality contract).
+   */
+  setHumanRequestPure(nodes: NodeInterface[]): NodeInterface[] {
+    if (!isSentMessage(this.message)) return nodes;
+    if (!this.message.recipient.role.includes(HUMAN_ROLE)) return nodes;
+    if (this.message.recipient.name === ENTRY_POINT_NAME) return nodes;
+    if (this.message.message.display_type !== 'other') return nodes;
 
     const senderId = this.message.sender?.agent_id;
-    const node = nodes.find((n) => n.name === senderId);
-
-    if (node) {
-      node.humanRequests = node.humanRequests || [];
-      node.humanRequests.push(this.message);
-    }
+    const idx = nodes.findIndex((n) => n.name === senderId);
+    if (idx === -1) return nodes;
+    const target = nodes[idx];
+    const updated: NodeInterface = {
+      ...target,
+      humanRequests: [...(target.humanRequests || []), this.message],
+    };
+    return [...nodes.slice(0, idx), updated, ...nodes.slice(idx + 1)];
   }
 
-  unSetHumanRequest(nodes: NodeInterface[]) {
-    if (!isSentMessage(this.message)) return;
-    if (this.message.sender?.role !== HUMAN_ROLE) return;
+  /**
+   * Pure variant of `unSetHumanRequest`: returns a new nodes array with the
+   * targeted node replaced by a new object whose `humanRequests` has the
+   * answered entry removed. Returns the SAME `nodes` reference when no change
+   * is required (AC7 reference-equality contract).
+   */
+  unSetHumanRequestPure(nodes: NodeInterface[]): NodeInterface[] {
+    if (!isSentMessage(this.message)) return nodes;
+    if (this.message.sender?.role !== HUMAN_ROLE) return nodes;
     const recipientId = this.message.recipient?.agent_id;
     const parentMessageId = this.message.message.parent_id;
-    const node = nodes.find((n) => n.name === recipientId);
-
-    if (node?.humanRequests) {
-      node.humanRequests = node.humanRequests.filter(
-        (m: SentMessage) => m.message.id !== parentMessageId
-      );
-    }
+    const idx = nodes.findIndex((n) => n.name === recipientId);
+    if (idx === -1) return nodes;
+    const target = nodes[idx];
+    if (!target.humanRequests) return nodes;
+    const filtered = target.humanRequests.filter(
+      (m: SentMessage) => m.message.id !== parentMessageId,
+    );
+    if (filtered.length === target.humanRequests.length) return nodes;
+    const updated: NodeInterface = { ...target, humanRequests: filtered };
+    return [...nodes.slice(0, idx), updated, ...nodes.slice(idx + 1)];
   }
 }
 
@@ -182,13 +199,15 @@ function applySentMessage(state: GraphState, msg: SentMessage): GraphState {
   if (builder.isNewEdge(state.edges)) {
     nextEdges = [...state.edges, builder.buildEdge()];
   }
-  // `setHumanRequest` / `unSetHumanRequest` mutate node.humanRequests in
-  // place on the existing nodes array — documented side-effect preserved
-  // from the pre-refactor behaviour (consumers read `node.humanRequests`).
-  builder.setHumanRequest(state.nodes);
-  builder.unSetHumanRequest(state.nodes);
-  if (nextEdges === state.edges) return state;
-  return { ...state, edges: nextEdges };
+  // Immutable human-request bookkeeping (AC7): return a fresh nodes array
+  // with only the targeted node replaced when changes occur; otherwise the
+  // same reference. Replaces the former in-place mutation of
+  // `node.humanRequests` which silently skipped OnPush change detection.
+  let nextNodes = state.nodes;
+  nextNodes = builder.setHumanRequestPure(nextNodes);
+  nextNodes = builder.unSetHumanRequestPure(nextNodes);
+  if (nextEdges === state.edges && nextNodes === state.nodes) return state;
+  return { ...state, edges: nextEdges, nodes: nextNodes };
 }
 
 function applyReceivedMessage(
@@ -197,23 +216,44 @@ function applyReceivedMessage(
 ): GraphState {
   // Human-role agents (HumanProxy) are waiting for user input, not thinking.
   if (msg.sender?.role === HUMAN_ROLE) return state;
-  const node = state.nodes.find((n) => n.name === msg.sender?.agent_id);
-  if (!node) return state;
-  node.itemStyle = node.itemStyle || {};
-  node.itemStyle.borderColor = 'darkred';
-  node.itemStyle.borderWidth = 3;
-  return state;
+  const idx = state.nodes.findIndex((n) => n.name === msg.sender?.agent_id);
+  if (idx === -1) return state;
+  const target = state.nodes[idx];
+  const updated: NodeInterface = {
+    ...target,
+    itemStyle: {
+      ...(target.itemStyle || {}),
+      borderColor: 'darkred',
+      borderWidth: 3,
+    },
+  };
+  const nextNodes = [
+    ...state.nodes.slice(0, idx),
+    updated,
+    ...state.nodes.slice(idx + 1),
+  ];
+  return { ...state, nodes: nextNodes };
 }
 
 function applyProcessedMessage(
   state: GraphState,
   msg: ProcessedMessage,
 ): GraphState {
-  const node = state.nodes.find((n) => n.name === msg.sender?.agent_id);
-  if (!node?.itemStyle) return state;
-  delete node.itemStyle.borderColor;
-  delete node.itemStyle.borderWidth;
-  return state;
+  const idx = state.nodes.findIndex((n) => n.name === msg.sender?.agent_id);
+  if (idx === -1) return state;
+  const target = state.nodes[idx];
+  if (!target.itemStyle) return state;
+  // Strip thinking-border properties without mutating the existing itemStyle.
+  const { borderColor: _bc, borderWidth: _bw, ...restStyle } = target.itemStyle;
+  // No-op if neither border property was set — preserve slice identity.
+  if (_bc === undefined && _bw === undefined) return state;
+  const updated: NodeInterface = { ...target, itemStyle: restStyle };
+  const nextNodes = [
+    ...state.nodes.slice(0, idx),
+    updated,
+    ...state.nodes.slice(idx + 1),
+  ];
+  return { ...state, nodes: nextNodes };
 }
 
 function applyStopMessage(state: GraphState, msg: StopMessage): GraphState {
@@ -224,11 +264,19 @@ function applyStopMessage(state: GraphState, msg: StopMessage): GraphState {
 }
 
 function applyErrorMessage(state: GraphState, msg: ErrorMessage): GraphState {
-  const node = state.nodes.find((n) => n.name === msg.sender?.agent_id);
-  if (!node) return state;
-  node.itemStyle = node.itemStyle || {};
-  node.itemStyle.color = 'darkred';
-  return state;
+  const idx = state.nodes.findIndex((n) => n.name === msg.sender?.agent_id);
+  if (idx === -1) return state;
+  const target = state.nodes[idx];
+  const updated: NodeInterface = {
+    ...target,
+    itemStyle: { ...(target.itemStyle || {}), color: 'darkred' },
+  };
+  const nextNodes = [
+    ...state.nodes.slice(0, idx),
+    updated,
+    ...state.nodes.slice(idx + 1),
+  ];
+  return { ...state, nodes: nextNodes };
 }
 
 /**
