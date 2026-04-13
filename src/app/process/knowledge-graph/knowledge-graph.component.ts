@@ -10,7 +10,7 @@ import {
 } from '@angular/core';
 import { trigger, style, transition, animate } from '@angular/animations';
 import { ActivatedRoute } from '@angular/router';
-import { BehaviorSubject, Subscription, Observable } from 'rxjs';
+import { BehaviorSubject, Subscription } from 'rxjs';
 
 import { ButtonModule } from 'primeng/button';
 import { CardModule } from 'primeng/card';
@@ -96,7 +96,6 @@ interface KnowledgeGraphData {
 export class KnowledgeGraphComponent implements OnInit, OnDestroy {
   @Input() isModal = false;
   @Input() processId?: string; // Allow process ID to be passed as input for modal mode
-  @Input() refreshTrigger$?: Observable<void>; // Observable to trigger refresh
 
   @HostBinding('class.modal-mode') get modalMode() {
     return this.isModal;
@@ -104,15 +103,9 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
 
   isModalView = false;
   showKGModal = false;
-  modalRefreshTrigger$ = new BehaviorSubject<void>(undefined);
 
   openKGModal(): void {
     this.showKGModal = true;
-  }
-
-  refreshModalData(): void {
-    // Trigger refresh on the modal component instance
-    this.modalRefreshTrigger$.next();
   }
 
   zone: NgZone = inject(NgZone);
@@ -156,15 +149,6 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
         this.updateChart(data || { nodes: [], edges: [] });
       })
     );
-
-    // Subscribe to refresh trigger if provided (for modal instances)
-    if (this.refreshTrigger$) {
-      this.subscriptions.push(
-        this.refreshTrigger$.subscribe(() => {
-          this.refreshData();
-        })
-      );
-    }
   }
 
   ngOnDestroy(): void {
@@ -221,11 +205,6 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
       }
     });
   }
-
-  async refreshData(): Promise<void> {
-    await this.messageService.refreshKnowledgeGraph();
-  }
-
 
   private createChart(data: KnowledgeGraphData): void {
     const { nodes, links, categories } = this.processGraphData(data);

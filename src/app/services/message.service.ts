@@ -61,11 +61,6 @@ export class ActorMessageService {
 
   processId: string = '';
 
-  private knowledgeGraphSnapshot: KnowledgeGraphData = {
-    nodes: [],
-    edges: [],
-  };
-
   async init(processId: string, running: boolean): Promise<void> {
     this.processId = processId;
     let messages: AkgenticMessage[] = [];
@@ -223,9 +218,6 @@ export class ActorMessageService {
         const current = this.contextDict$[agentId].getValue();
         this.contextDict$[agentId].next([...current, inner.message]);
       }
-    } else if (inner?.__model__?.includes('ToolCallEvent')) {
-      // Legacy knowledge_graph snapshot path — preserved unchanged (ADR-004).
-      this.handleToolUpdate(inner);
     }
     // Story 4-8: route tool events into ChatService for the thinking bubble.
     this.dispatchToolEventToThinking(event);
@@ -338,55 +330,6 @@ export class ActorMessageService {
   ) {
     if (dict[key]) return;
     dict[key] = new BehaviorSubject<any>(defaultValue);
-  }
-
-  async refreshKnowledgeGraph(): Promise<void> {
-    if (!this.processId) return;
-    this.knowledgeGraphLoading$.next(true);
-    try {
-      const graph = await this.apiService.getKnowledgeGraphData(this.processId);
-      this.knowledgeGraphSnapshot = this.normalizeKnowledgeGraph(graph);
-      this.knowledgeGraph$.next(this.knowledgeGraphSnapshot);
-    } catch (error) {
-      console.error('Error loading knowledge graph data:', error);
-      this.knowledgeGraph$.next({ nodes: [], edges: [] });
-    } finally {
-      this.knowledgeGraphLoading$.next(false);
-    }
-  }
-
-  private handleToolUpdate(payload: any): void {
-    if (payload?.tool !== 'knowledge_graph' && payload?.tool_name !== 'knowledge_graph') {
-      return;
-    }
-
-    if (payload.data) {
-      this.knowledgeGraphSnapshot = this.normalizeKnowledgeGraph(payload.data);
-    }
-
-    this.knowledgeGraph$.next(this.knowledgeGraphSnapshot);
-  }
-
-  private normalizeKnowledgeGraph(data: any): KnowledgeGraphData {
-    if (!data) {
-      return { nodes: [], edges: [] };
-    }
-
-    if ('nodes' in data && 'edges' in data) {
-      return {
-        nodes: Array.isArray(data.nodes) ? data.nodes : [],
-        edges: Array.isArray(data.edges) ? data.edges : [],
-      };
-    }
-
-    if ('entities' in data || 'relations' in data) {
-      return {
-        nodes: Array.isArray(data.entities) ? data.entities : [],
-        edges: Array.isArray(data.relations) ? data.relations : [],
-      };
-    }
-
-    return { nodes: [], edges: [] };
   }
 
   ngOnDestroy() {

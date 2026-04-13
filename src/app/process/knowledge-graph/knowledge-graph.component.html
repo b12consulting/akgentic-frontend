@@ -131,23 +131,11 @@
     <ng-template pTemplate="header">
       <div class="dialog-header-container">
         <span class="dialog-title">Knowledge Graph</span>
-        <!-- <button
-          pButton
-          type="button"
-          severity="primary"
-          size="small"
-          label="Refresh"
-          (click)="refreshModalData()"
-          [disabled]="false"
-          icon="pi pi-refresh"
-          class="dialog-refresh-button"
-        ></button> -->
       </div>
     </ng-template>
     <app-knowledge-graph
       [isModal]="true"
       [processId]="currentProcessId"
-      [refreshTrigger$]="modalRefreshTrigger$"
       class="modal-app-component"
     ></app-knowledge-graph>
   </p-dialog>
