@@ -10,7 +10,7 @@ import {
 } from '@angular/core';
 import { trigger, style, transition, animate } from '@angular/animations';
 import { ActivatedRoute } from '@angular/router';
-import { BehaviorSubject, Subscription, Observable } from 'rxjs';
+import { BehaviorSubject, Subscription } from 'rxjs';
 
 import { ButtonModule } from 'primeng/button';
 import { CardModule } from 'primeng/card';
@@ -42,6 +42,12 @@ echarts.use([
 ]);
 
 interface KnowledgeGraphEntity {
+  // V2 wire: uuid string, required. The projection from `KGStateReducer`
+  // always carries `id`; component keeps it optional only to tolerate any
+  // legacy fixture/test that builds entities manually without an id.
+  id?: string;
+  // V2 wire: optional flag (backend only sends it when `True`).
+  is_root?: boolean;
   name?: string;
   entity_type?: string;
   description?: string;
@@ -49,9 +55,13 @@ interface KnowledgeGraphEntity {
 }
 
 interface KnowledgeGraphRelation {
+  // V2 wire: uuid string, required (see note above on id optionality).
+  id?: string;
   from_entity?: string;
   to_entity?: string;
   relation_type?: string;
+  // V2 wire: optional, defaults to "" on the wire.
+  description?: string;
 }
 
 interface KnowledgeGraphData {
@@ -96,7 +106,6 @@ interface KnowledgeGraphData {
 export class KnowledgeGraphComponent implements OnInit, OnDestroy {
   @Input() isModal = false;
   @Input() processId?: string; // Allow process ID to be passed as input for modal mode
-  @Input() refreshTrigger$?: Observable<void>; // Observable to trigger refresh
 
   @HostBinding('class.modal-mode') get modalMode() {
     return this.isModal;
@@ -104,15 +113,9 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
 
   isModalView = false;
   showKGModal = false;
-  modalRefreshTrigger$ = new BehaviorSubject<void>(undefined);
 
   openKGModal(): void {
     this.showKGModal = true;
-  }
-
-  refreshModalData(): void {
-    // Trigger refresh on the modal component instance
-    this.modalRefreshTrigger$.next();
   }
 
   zone: NgZone = inject(NgZone);
@@ -156,15 +159,6 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
         this.updateChart(data || { nodes: [], edges: [] });
       })
     );
-
-    // Subscribe to refresh trigger if provided (for modal instances)
-    if (this.refreshTrigger$) {
-      this.subscriptions.push(
-        this.refreshTrigger$.subscribe(() => {
-          this.refreshData();
-        })
-      );
-    }
   }
 
   ngOnDestroy(): void {
@@ -221,11 +215,6 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
       }
     });
   }
-
-  async refreshData(): Promise<void> {
-    await this.messageService.refreshKnowledgeGraph();
-  }
-
 
   private createChart(data: KnowledgeGraphData): void {
     const { nodes, links, categories } = this.processGraphData(data);

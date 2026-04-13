@@ -1,11 +1,12 @@
 import { AsyncPipe, CommonModule } from '@angular/common';
-import { Component, inject } from '@angular/core';
+import { Component, inject, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 
 import { isRunning } from '../models/team.interface';
 import { AkgentService } from '../services/akgent.service';
 import { ContextService } from '../services/context.service';
 import { ActorMessageService } from '../services/message.service';
+import { ToolPresenceService } from '../services/tool-presence.service';
 
 import { AgentTabsComponent } from './agent-tabs/agent-tabs.component';
 import { TeamTabsComponent } from './team-tabs/team-tabs.component';
@@ -17,13 +18,20 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { SelectButtonModule } from 'primeng/selectbutton';
 import { TabsModule } from 'primeng/tabs';
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, combineLatest, Observable, of, Subscription } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { ChatPanelComponent } from '../chat/chat-panel.component';
 import { ChatService } from '../services/chat.service';
 import { FeedbackService } from '../services/feedback.service';
 import { GraphDataService } from '../services/graph-data.service';
 import { SelectionService } from '../services/selection.service';
 import { ViewService } from '../view.service';
+
+interface VisualizationOption {
+  label: string;
+  value: string;
+  icon: string;
+}
 
 @Component({
   selector: 'app-process',
@@ -51,7 +59,7 @@ import { ViewService } from '../view.service';
   templateUrl: './process.component.html',
   styleUrl: './process.component.scss',
 })
-export class ProcessComponent {
+export class ProcessComponent implements OnDestroy {
   route: ActivatedRoute = inject(ActivatedRoute);
   router: Router = inject(Router);
 
@@ -60,14 +68,27 @@ export class ProcessComponent {
   messageService: ActorMessageService = inject(ActorMessageService);
   graphDataService: GraphDataService = inject(GraphDataService);
   viewService: ViewService = inject(ViewService);
+  toolPresenceService: ToolPresenceService = inject(ToolPresenceService);
 
   processId: string = '';
   processType: string = '';
-  hasKnowledgeGraph: boolean = false;
+  // `hasWorkspace` remains hardcoded: reactivating the workspace panel is a
+  // separate, future story (Epic 5 covers KG only). Keeping the flag in the
+  // filter predicate below so a future story can swap `of(false)` for a real
+  // observable in one line. (ADR-004 §Decision 4)
   hasWorkspace: boolean = false;
 
+  /**
+   * Reactive presence observable for the `#KnowledgeGraphTool` actor.
+   * Sourced from `ToolPresenceService.hasKnowledgeGraph$` (Story 5-2).
+   * Drives the `<app-knowledge-graph>` `*ngIf` binding via `| async`.
+   */
+  hasKnowledgeGraph$: Observable<boolean> =
+    this.toolPresenceService.hasKnowledgeGraph$;
+
   visualizationMode$ = new BehaviorSubject<string>('team');
-  visualizationOptions: { label: string; value: string; icon: string }[] = [
+
+  private readonly allVisualizationOptions: VisualizationOption[] = [
     { label: 'Team', value: 'team', icon: 'pi pi-users' },
     { label: 'Member', value: 'member', icon: 'pi pi-user' },
     { label: 'Workspace', value: 'workspace', icon: 'pi pi-folder-open' },
@@ -79,10 +100,44 @@ export class ProcessComponent {
     { label: 'Messages', value: 'messages', icon: 'pi pi-envelope' },
   ];
 
+  /**
+   * Reactive, filtered list of visualization options. Recomputed whenever
+   * `hasKnowledgeGraph$` emits; preserves the `hasWorkspace` static gate so
+   * workspace-presence reactivation is a one-line change in the future.
+   * (AC3 — reactive derivation)
+   */
+  visualizationOptions$: Observable<VisualizationOption[]> = combineLatest([
+    this.toolPresenceService.hasKnowledgeGraph$,
+    of(this.hasWorkspace),
+  ]).pipe(
+    map(([hasKG, hasWS]) =>
+      this.allVisualizationOptions.filter(
+        (option) =>
+          (option.value !== 'knowledge-graph' || hasKG) &&
+          (option.value !== 'workspace' || hasWS),
+      ),
+    ),
+  );
+
   isRightColumnCollapsed$ =
     this.viewService.isRightColumnCollapsed$.asObservable();
 
   isLoading$ = this.graphDataService.isLoading$;
+
+  private presenceSub: Subscription | null = null;
+
+  constructor() {
+    // Active-mode reset guard (AC3 last clause, AC8): if the user is viewing
+    // the KG tab when presence flips to `false`, snap back to 'team' so we
+    // never leave the user on a hidden-mode blank panel.
+    this.presenceSub = this.toolPresenceService.hasKnowledgeGraph$.subscribe(
+      (hasKG) => {
+        if (!hasKG && this.currentVisualizationMode === 'knowledge-graph') {
+          this.visualizationMode$.next('team');
+        }
+      },
+    );
+  }
 
   async ngOnInit(): Promise<void> {
     this.processId = this.route.snapshot.params['id'];
@@ -105,19 +160,18 @@ export class ProcessComponent {
     }
 
     this.processType = currentProcess.name;
-    // V2 has no params -- workspace/KG tabs default hidden (FR13)
-    this.hasKnowledgeGraph = false;
-    this.hasWorkspace = false;
-    this.visualizationOptions = this.visualizationOptions.filter(
-      (option) =>
-        (option.value !== 'knowledge-graph' || this.hasKnowledgeGraph) &&
-        (option.value !== 'workspace' || this.hasWorkspace)
-    );
+    // KG presence is reactive (Story 5-3 / ADR-004 §Decision 4): the
+    // `hasKnowledgeGraph$` observable flips based on `#KnowledgeGraphTool`
+    // `StartMessage` / `StopMessage` on the replay + live streams. Workspace
+    // presence remains static until a future story reactivates it.
 
     await this.messageService.init(this.processId, isRunning(currentProcess));
   }
+
   ngOnDestroy() {
     this.akgentService.unselect();
+    this.presenceSub?.unsubscribe();
+    this.presenceSub = null;
   }
 
   setVisualizationMode(mode: string): void {

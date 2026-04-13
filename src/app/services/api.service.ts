@@ -165,9 +165,4 @@ export class ApiService {
   ): Promise<void> {
     console.warn('updateTeamDescription is not available in V2');
   }
-
-  /** @deprecated Story 1.4 will migrate callers. */
-  async getKnowledgeGraphData(_teamId: string): Promise<any> {
-    return { nodes: [], edges: [] };
-  }
 }

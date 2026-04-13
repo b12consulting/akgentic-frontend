@@ -13,12 +13,9 @@ import { EventResponse } from '../models/team.interface';
 
 import { ApiService } from '../services/api.service';
 import { ChatService } from './chat.service';
+import { KGStateReducer, KnowledgeGraphData } from './kg-state.reducer';
+import { ToolPresenceService } from './tool-presence.service';
 import { MessageService } from 'primeng/api';
-
-interface KnowledgeGraphData {
-  nodes: any[];
-  edges: any[];
-}
 
 /** V2 message types that feed the agent graph and message list. */
 const GRAPH_RELEVANT_MODELS = [
@@ -35,6 +32,8 @@ export class ActorMessageService {
   apiService: ApiService = inject(ApiService);
   chatService: ChatService = inject(ChatService);
   messageService: MessageService = inject(MessageService);
+  private kgReducer: KGStateReducer = inject(KGStateReducer);
+  private toolPresenceService: ToolPresenceService = inject(ToolPresenceService);
 
   webSocket: WebSocketSubject<any> = new WebSocketSubject({ url: '' });
 
@@ -61,14 +60,25 @@ export class ActorMessageService {
 
   processId: string = '';
 
-  private knowledgeGraphSnapshot: KnowledgeGraphData = {
-    nodes: [],
-    edges: [],
-  };
+  constructor() {
+    // Wire the KG reducer's projection stream into `knowledgeGraph$`
+    // (AC4, Option A). One-time bind avoids a circular DI dependency —
+    // the reducer never injects back into this service.
+    this.kgReducer.bind(this.knowledgeGraph$);
+    // Bind the presence service to our replay + live message streams.
+    // Same bind-from-outside pattern (AC6) — the presence service does
+    // not `inject(ActorMessageService)`.
+    this.toolPresenceService.bindTo(this);
+  }
 
   async init(processId: string, running: boolean): Promise<void> {
     this.processId = processId;
     let messages: AkgenticMessage[] = [];
+
+    // Team switch: drop any KG state / presence carried over from a prior
+    // team load so replay rebuilds from zero (ADR-004 §Decision 5).
+    this.kgReducer.resetForTeam();
+    this.toolPresenceService.resetForTeam();
 
     this.chatService.loadingProcess$.next(true);
 
@@ -101,6 +111,10 @@ export class ActorMessageService {
               if (!contextArrays[agentId]) contextArrays[agentId] = [];
               contextArrays[agentId].push(inner.message);
             }
+          } else if (inner?.__model__?.includes('ToolStateEvent')) {
+            // Story 5-2: rebuild KG state during replay through the same
+            // reducer used by the live path (AC5 — live/replay parity).
+            this.kgReducer.apply(inner);
           }
         }
       }
@@ -223,9 +237,12 @@ export class ActorMessageService {
         const current = this.contextDict$[agentId].getValue();
         this.contextDict$[agentId].next([...current, inner.message]);
       }
-    } else if (inner?.__model__?.includes('ToolCallEvent')) {
-      // Legacy knowledge_graph snapshot path — preserved unchanged (ADR-004).
-      this.handleToolUpdate(inner);
+    } else if (inner?.__model__?.includes('ToolStateEvent')) {
+      // Story 5-2: live-path KG delta dispatch (AC5). Sibling to the
+      // `LlmMessageEvent` branch; falls through to
+      // `dispatchToolEventToThinking` below so unknown inner models
+      // retain today's silent-ignore behaviour.
+      this.kgReducer.apply(inner);
     }
     // Story 4-8: route tool events into ChatService for the thinking bubble.
     this.dispatchToolEventToThinking(event);
@@ -338,55 +355,6 @@ export class ActorMessageService {
   ) {
     if (dict[key]) return;
     dict[key] = new BehaviorSubject<any>(defaultValue);
-  }
-
-  async refreshKnowledgeGraph(): Promise<void> {
-    if (!this.processId) return;
-    this.knowledgeGraphLoading$.next(true);
-    try {
-      const graph = await this.apiService.getKnowledgeGraphData(this.processId);
-      this.knowledgeGraphSnapshot = this.normalizeKnowledgeGraph(graph);
-      this.knowledgeGraph$.next(this.knowledgeGraphSnapshot);
-    } catch (error) {
-      console.error('Error loading knowledge graph data:', error);
-      this.knowledgeGraph$.next({ nodes: [], edges: [] });
-    } finally {
-      this.knowledgeGraphLoading$.next(false);
-    }
-  }
-
-  private handleToolUpdate(payload: any): void {
-    if (payload?.tool !== 'knowledge_graph' && payload?.tool_name !== 'knowledge_graph') {
-      return;
-    }
-
-    if (payload.data) {
-      this.knowledgeGraphSnapshot = this.normalizeKnowledgeGraph(payload.data);
-    }
-
-    this.knowledgeGraph$.next(this.knowledgeGraphSnapshot);
-  }
-
-  private normalizeKnowledgeGraph(data: any): KnowledgeGraphData {
-    if (!data) {
-      return { nodes: [], edges: [] };
-    }
-
-    if ('nodes' in data && 'edges' in data) {
-      return {
-        nodes: Array.isArray(data.nodes) ? data.nodes : [],
-        edges: Array.isArray(data.edges) ? data.edges : [],
-      };
-    }
-
-    if ('entities' in data || 'relations' in data) {
-      return {
-        nodes: Array.isArray(data.entities) ? data.entities : [],
-        edges: Array.isArray(data.relations) ? data.relations : [],
-      };
-    }
-
-    return { nodes: [], edges: [] };
   }
 
   ngOnDestroy() {
