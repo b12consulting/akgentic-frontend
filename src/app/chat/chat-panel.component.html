@@ -1,4 +1,4 @@
-<div class="chat-container">
+<div class="chat-container" (mouseenter)="onMouseEnter()" (mouseleave)="onMouseLeave()">
   <ng-container *ngIf="chatMessages.length > 0; else noMessagesPlaceholder">
     <div class="message-list" #scrollContainer (click)="onBackgroundClick()">
       <app-chat-message

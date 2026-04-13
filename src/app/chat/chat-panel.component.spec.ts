@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, fakeAsync, flushMicrotasks, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { BehaviorSubject, of } from 'rxjs';
 import { map } from 'rxjs/operators';
@@ -632,5 +632,128 @@ describe('ChatPanelComponent', () => {
 
     // Collapsed state should be preserved
     expect(component.chatMessages[0].collapsed).toBe(false);
+  });
+
+  describe('Hover-aware auto-scroll lock (Story 4.4)', () => {
+    // Helper to install a mock scrollContainer with controllable
+    // scrollTop/scrollHeight/clientHeight on the component.
+    function installMockScrollContainer(
+      initialHeight = 1000,
+      clientHeight = 400,
+    ): { scrollTop: number; scrollHeight: number; clientHeight: number } {
+      const mockEl = { scrollTop: 0, scrollHeight: initialHeight, clientHeight };
+      (component as any).scrollContainer = { nativeElement: mockEl };
+      (component as any).lastScrollHeight = initialHeight;
+      return mockEl;
+    }
+
+    it('(a) auto-scroll fires when NOT hovered and a new message arrives', () => {
+      const mockEl = installMockScrollContainer(1000, 400);
+      // Not hovered (default)
+      expect((component as any).isHovered).toBe(false);
+      // Simulate DOM growth from a new message.
+      mockEl.scrollHeight = 1200;
+      component.ngAfterViewChecked();
+      expect(mockEl.scrollTop).toBe(1200);
+    });
+
+    it('(b) auto-scroll is SUSPENDED when hovered; pendingCatchUpScroll is set', () => {
+      const mockEl = installMockScrollContainer(1000, 400);
+      mockEl.scrollTop = 850; // near bottom so shouldScrollToBottom will be true
+      (component as any).checkShouldAutoScroll();
+      component.onMouseEnter();
+      expect((component as any).isHovered).toBe(true);
+
+      // New message arrives while hovered.
+      const sent = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'hovered-arrival',
+        'hov-1',
+      );
+      messagesSubject.next([sent]);
+      mockEl.scrollHeight = 1200;
+      component.ngAfterViewChecked();
+
+      // scrollTop was NOT moved to bottom — hover suspends.
+      expect(mockEl.scrollTop).toBe(850);
+      expect((component as any).pendingCatchUpScroll).toBe(true);
+    });
+
+    it('(c) mouseleave performs catch-up when a message arrived during hover', fakeAsync(() => {
+      const mockEl = installMockScrollContainer(1000, 400);
+      mockEl.scrollTop = 850;
+      (component as any).checkShouldAutoScroll();
+      component.onMouseEnter();
+
+      const sent = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'catch-up',
+        'cu-1',
+      );
+      messagesSubject.next([sent]);
+      mockEl.scrollHeight = 1200;
+      component.ngAfterViewChecked();
+      expect(mockEl.scrollTop).toBe(850);
+      expect((component as any).pendingCatchUpScroll).toBe(true);
+
+      component.onMouseLeave();
+      flushMicrotasks();
+
+      expect(mockEl.scrollTop).toBe(1200);
+      expect((component as any).pendingCatchUpScroll).toBe(false);
+      expect((component as any).isHovered).toBe(false);
+    }));
+
+    it('(d) mouseleave does NOT catch-up if no message arrived during hover', fakeAsync(() => {
+      const mockEl = installMockScrollContainer(1000, 400);
+      mockEl.scrollTop = 850;
+      (component as any).checkShouldAutoScroll();
+
+      component.onMouseEnter();
+      // No message arrives — scrollHeight unchanged.
+      component.ngAfterViewChecked();
+      component.onMouseLeave();
+      flushMicrotasks();
+
+      expect(mockEl.scrollTop).toBe(850);
+      expect((component as any).pendingCatchUpScroll).toBe(false);
+    }));
+
+    it('(e) collapse toggle during hover does NOT queue a catch-up', fakeAsync(() => {
+      // Seed a Rule 4 message so we have something to toggle.
+      const r4 = makeSentMessage(
+        { name: '@Worker', role: 'Worker' },
+        { name: '@Manager', role: 'Manager' },
+        'ai msg',
+        'r4-hover',
+      );
+      messagesSubject.next([r4]);
+      fixture.detectChanges();
+
+      const mockEl = installMockScrollContainer(1000, 400);
+      mockEl.scrollTop = 850;
+      (component as any).checkShouldAutoScroll();
+
+      component.onMouseEnter();
+
+      // User toggles collapse — this changes DOM height but is NOT a
+      // message-arrival event, so pendingCatchUpScroll MUST remain false.
+      component.onToggleCollapse(component.chatMessages[0]);
+      mockEl.scrollHeight = 1100; // toggle grew the bubble
+      component.ngAfterViewChecked();
+
+      // Hover still suspends the scroll.
+      expect(mockEl.scrollTop).toBe(850);
+      // CRITICAL: no catch-up queued for a collapse toggle.
+      expect((component as any).pendingCatchUpScroll).toBe(false);
+
+      component.onMouseLeave();
+      flushMicrotasks();
+
+      // No catch-up fired — scrollTop still at 850.
+      expect(mockEl.scrollTop).toBe(850);
+    }));
   });
 });
