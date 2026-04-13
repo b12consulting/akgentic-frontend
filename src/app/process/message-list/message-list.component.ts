@@ -12,7 +12,7 @@ import { UtilService } from '../../services/utils.service';
 
 import { combineLatest, Subscription } from 'rxjs';
 import { AkgentService } from '../../services/akgent.service';
-import { ActorMessageService } from '../../services/message.service';
+import { MessageLogService } from '../../services/message-log.service';
 import { CopyButtonComponent } from '../copy-button/copy-button.component';
 
 @Component({
@@ -33,7 +33,7 @@ export class MessageListComponent {
 
   utilService: UtilService = inject(UtilService);
   akgentService: AkgentService = inject(AkgentService);
-  messageService: ActorMessageService = inject(ActorMessageService);
+  messageLogService: MessageLogService = inject(MessageLogService);
   categoryService: CategoryService = inject(CategoryService);
   toastService: MessageService = inject(MessageService);
 
@@ -51,21 +51,23 @@ export class MessageListComponent {
   }
 
   ngOnInit(): void {
+    // Story 6.4 (AC4): migrated from the deleted `messageService.messages$`
+    // to the log-derived `messageLogService.messageList$` selector. The
+    // `SentMessage` / `ErrorMessage` / non-`ActorSystem` conjuncts moved
+    // into `messageListFold`; only the view-concern squad-category filter
+    // remains below.
     this.subscribe = combineLatest([
-      this.messageService.messages$,
+      this.messageLogService.messageList$,
       this.categoryService.selectedSquad$,
     ]).subscribe(([messages, selectedCategories]) => {
       this.messages = messages;
       this.filteredMessages = messages.filter(
         (message) =>
-          (message.__model__.includes('SentMessage') ||
-            message.__model__.includes('ErrorMessage')) &&
-          message.sender.role !== 'ActorSystem' &&
-          (!selectedCategories ||
-            (message.sender?.squad_id &&
-              selectedCategories[
-                this.categoryService.squadDict[message.sender.squad_id]
-              ]))
+          !selectedCategories ||
+          (message.sender?.squad_id &&
+            selectedCategories[
+              this.categoryService.squadDict[message.sender.squad_id]
+            ])
       );
 
       setTimeout(() => this.scroll(), 0);

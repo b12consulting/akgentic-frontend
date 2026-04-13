@@ -5,17 +5,23 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { BehaviorSubject } from 'rxjs';
 
-import { ProcessComponent } from './process.component';
+import { StartMessage, StopMessage } from '../models/message.types';
 import { AkgentService } from '../services/akgent.service';
-import { ContextService } from '../services/context.service';
-import { ActorMessageService } from '../services/message.service';
-import { GraphDataService } from '../services/graph-data.service';
 import { ChatService } from '../services/chat.service';
-import { SelectionService } from '../services/selection.service';
+import { ContextService } from '../services/context.service';
 import { FeedbackService } from '../services/feedback.service';
-import { ToolPresenceService } from '../services/tool-presence.service';
-import { ViewService } from '../view.service';
+import { GraphDataService } from '../services/graph-data.service';
+import { KGStateReducer } from '../services/kg-state.reducer';
+import { MessageLogService } from '../services/message-log.service';
+import { ActorMessageService } from '../services/message.service';
+import { SelectionService } from '../services/selection.service';
+import {
+  KG_ACTOR_NAME,
+  ToolPresenceService,
+} from '../services/tool-presence.service';
 import { TeamContext } from '../models/team.interface';
+import { ViewService } from '../view.service';
+import { ProcessComponent } from './process.component';
 
 // --------------------------------------------------------------------
 // Fixture helpers
@@ -34,15 +40,51 @@ function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
   };
 }
 
-describe('ProcessComponent', () => {
+function baseSender(name: string) {
+  return {
+    __actor_address__: true as const,
+    agent_id: 'agent-' + name,
+    name,
+    role: 'Tool',
+    squad_id: 's1',
+    user_message: false,
+  };
+}
+
+function makeKgStart(id: string): StartMessage {
+  return {
+    id,
+    parent_id: null,
+    team_id: 'team-1',
+    timestamp: new Date().toISOString(),
+    sender: baseSender(KG_ACTOR_NAME),
+    display_type: 'other',
+    content: null,
+    __model__: 'akgentic.core.messages.orchestrator.StartMessage',
+    config: {} as any,
+    parent: null,
+  };
+}
+
+function makeKgStop(id: string): StopMessage {
+  return {
+    id,
+    parent_id: null,
+    team_id: 'team-1',
+    timestamp: new Date().toISOString(),
+    sender: baseSender(KG_ACTOR_NAME),
+    display_type: 'other',
+    content: null,
+    __model__: 'akgentic.core.messages.orchestrator.StopMessage',
+  };
+}
+
+describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
   let component: ProcessComponent;
   let fixture: ComponentFixture<ProcessComponent>;
-  let toolPresenceService: ToolPresenceService;
+  let log: MessageLogService;
 
   beforeEach(async () => {
-    // Fresh presence service per test so cross-test leakage is impossible.
-    const presence = new ToolPresenceService();
-
     const contextService = {
       currentProcessId$: new BehaviorSubject<string>(''),
       getCurrentTeam: jasmine
@@ -50,15 +92,13 @@ describe('ProcessComponent', () => {
         .and.callFake(async () => makeTeam()),
     };
 
+    // Story 6.4 (AC1): `messages$` / `message$` / `createAgentGraph$` were
+    // deleted from `ActorMessageService`; the stub no longer references them.
+    // Code review fix: `knowledgeGraphLoading$` deleted (dead state, never
+    // `.next()`-ed and its `isLoading$` consumer was never read in the KG
+    // component template — collapsed into the two-exceptions invariant purity).
     const messageService = {
-      init: jasmine
-        .createSpy('init')
-        .and.returnValue(Promise.resolve()),
-      messages$: new BehaviorSubject<any[]>([]),
-      message$: new BehaviorSubject<any>(null),
-      createAgentGraph$: new BehaviorSubject<any>(null),
-      knowledgeGraph$: new BehaviorSubject<any>({ nodes: [], edges: [] }),
-      knowledgeGraphLoading$: new BehaviorSubject<boolean>(false),
+      init: jasmine.createSpy('init').and.returnValue(Promise.resolve()),
     };
 
     const akgentService = {
@@ -86,7 +126,9 @@ describe('ProcessComponent', () => {
     };
 
     const router = {
-      navigate: jasmine.createSpy('navigate').and.returnValue(Promise.resolve(true)),
+      navigate: jasmine
+        .createSpy('navigate')
+        .and.returnValue(Promise.resolve(true)),
     };
 
     const activatedRoute = {
@@ -96,7 +138,12 @@ describe('ProcessComponent', () => {
     await TestBed.configureTestingModule({
       imports: [ProcessComponent, NoopAnimationsModule],
       providers: [
-        { provide: ToolPresenceService, useValue: presence },
+        // Story 6.2 (AC5): drive presence through the REAL log + selector
+        // pipeline so the unit test exercises the same path the production
+        // code will on home→process navigation.
+        MessageLogService,
+        ToolPresenceService,
+        KGStateReducer,
         { provide: ContextService, useValue: contextService },
         { provide: ActorMessageService, useValue: messageService },
         { provide: AkgentService, useValue: akgentService },
@@ -116,6 +163,9 @@ describe('ProcessComponent', () => {
       .overrideComponent(ProcessComponent, {
         set: {
           imports: [CommonModule],
+          // Strip the component-level providers so the module-level providers
+          // above (real MessageLogService + ToolPresenceService + KGStateReducer)
+          // are used instead of fresh instances per-component.
           providers: [],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
@@ -124,12 +174,8 @@ describe('ProcessComponent', () => {
 
     fixture = TestBed.createComponent(ProcessComponent);
     component = fixture.componentInstance;
-    toolPresenceService = presence;
+    log = TestBed.inject(MessageLogService);
 
-    // Initial detectChanges without ngOnInit route resolution side effects
-    // would still fire `ngOnInit` — but the `getCurrentTeam` spy returns a
-    // resolved promise with a valid team so the router.navigate path is
-    // not taken.
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -139,9 +185,7 @@ describe('ProcessComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  it('scenario 1 — empty init (no KG actor): KG option absent, <app-knowledge-graph> not in DOM', async () => {
-    expect(toolPresenceService.hasKnowledgeGraph$.getValue()).toBe(false);
-
+  it('scenario 1 — empty log: KG option absent, <app-knowledge-graph> not in DOM', async () => {
     const options = await firstValue(component.visualizationOptions$);
     expect(options.some((o) => o.value === 'knowledge-graph')).toBe(false);
 
@@ -149,8 +193,8 @@ describe('ProcessComponent', () => {
     expect(kgEl).toBeNull();
   });
 
-  it('scenario 2 — KG presence flips to true: KG option appears and <app-knowledge-graph> mounts', async () => {
-    toolPresenceService.hasKnowledgeGraph$.next(true);
+  it('scenario 2 — KG StartMessage appended to log: KG option appears and <app-knowledge-graph> mounts (AC5 race fix)', async () => {
+    log.append(makeKgStart('kg-start-1'));
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -162,13 +206,13 @@ describe('ProcessComponent', () => {
     expect(kgEl).not.toBeNull();
   });
 
-  it('scenario 3 — KG presence flips back to false: KG option disappears and <app-knowledge-graph> unmounts', async () => {
-    toolPresenceService.hasKnowledgeGraph$.next(true);
+  it('scenario 3 — KG StopMessage in log: KG option disappears and <app-knowledge-graph> unmounts', async () => {
+    log.append(makeKgStart('kg-start-1'));
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
 
-    toolPresenceService.hasKnowledgeGraph$.next(false);
+    log.append(makeKgStop('kg-stop-1'));
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -181,37 +225,34 @@ describe('ProcessComponent', () => {
   });
 
   it('scenario 4 — active-mode reset: KG active then presence→false flips visualization mode back to team', () => {
-    toolPresenceService.hasKnowledgeGraph$.next(true);
+    log.append(makeKgStart('kg-start-1'));
     component.setVisualizationMode('knowledge-graph');
     expect(component.currentVisualizationMode).toBe('knowledge-graph');
 
-    toolPresenceService.hasKnowledgeGraph$.next(false);
+    log.append(makeKgStop('kg-stop-1'));
     expect(component.currentVisualizationMode).toBe('team');
   });
 
   it('scenario 5 — no regression: Team / Member / Messages entries remain present under both presence states (order preserved)', async () => {
-    // presence=false
     let options = await firstValue(component.visualizationOptions$);
     let labels = options.map((o) => o.value);
     expect(labels).toEqual(['team', 'member', 'messages']);
 
-    // presence=true
-    toolPresenceService.hasKnowledgeGraph$.next(true);
+    log.append(makeKgStart('kg-start-1'));
     options = await firstValue(component.visualizationOptions$);
     labels = options.map((o) => o.value);
-    // Team, Member, (no Workspace — hasWorkspace stays false), Knowledge
-    // graph, Messages — order preserved from allVisualizationOptions.
     expect(labels).toEqual(['team', 'member', 'knowledge-graph', 'messages']);
   });
 });
 
 // Small synchronous-first-emission helper for BehaviorSubject-derived
 // observables (combineLatest over BehaviorSubjects replays synchronously).
-function firstValue<T>(observable$: { subscribe: (fn: (v: T) => void) => { unsubscribe(): void } }): Promise<T> {
+function firstValue<T>(observable$: {
+  subscribe: (fn: (v: T) => void) => { unsubscribe(): void };
+}): Promise<T> {
   return new Promise((resolve) => {
     const sub = observable$.subscribe((v) => {
       resolve(v);
-      // Defer unsubscribe so we don't cancel the synchronous resolve path
       setTimeout(() => sub.unsubscribe(), 0);
     });
   });

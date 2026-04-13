@@ -2,8 +2,9 @@ import { inject, Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
 import { environment } from '../../environments/environment';
 import { ChatMessage } from '../models/chat-message.model';
-import { ChatService } from './chat.service';
+import { chatFold } from './chat.service';
 import { FetchService } from './fetch.service';
+import { MessageLogService } from './message-log.service';
 
 export interface Feedback {
   message: ChatMessage;
@@ -20,7 +21,15 @@ export interface FeedbackBackend {
 @Injectable()
 export class FeedbackService {
   fetchService: FetchService = inject(FetchService);
-  chatService: ChatService = inject(ChatService);
+  private readonly log: MessageLogService = inject(MessageLogService);
+
+  /** Snapshot of the current derived chat message list via `chatFold` over
+   *  the unified message log. Replaces the pre-refactor
+   *  `chatService.messages$.value` access — the selector is now read-only
+   *  (Story 6.3). */
+  private currentMessages(): ChatMessage[] {
+    return chatFold(this.log.snapshot()).messages;
+  }
 
   feedbacks$: BehaviorSubject<Feedback[]> = new BehaviorSubject<Feedback[]>([]);
 
@@ -53,7 +62,7 @@ export class FeedbackService {
     run_id: string,
     feedback: FeedbackBackend
   ): Feedback | null {
-    const message = this.chatService.messages$.value.find(
+    const message = this.currentMessages().find(
       (m) => m.id === run_id
     );
     if (!message) return null;
@@ -73,9 +82,9 @@ export class FeedbackService {
   }
 
   async loadFeedback() {
-    // Feedback loading is deferred -- chatService.messages$ may be empty
-    // until feedback integration is wired in a future story.
-    const messages = this.chatService.messages$.value;
+    // Feedback loading is deferred — derived chat state may be empty until
+    // feedback integration is wired in a future story.
+    const messages = this.currentMessages();
     if (messages.length === 0) return;
 
     const feedbacks = await Promise.all(

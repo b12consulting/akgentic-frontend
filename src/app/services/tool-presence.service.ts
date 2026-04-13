@@ -1,11 +1,12 @@
-import { Injectable } from '@angular/core';
-import { BehaviorSubject } from 'rxjs';
+import { inject, Injectable } from '@angular/core';
+import { distinctUntilChanged, map, Observable } from 'rxjs';
 
 import {
   AkgenticMessage,
   isStartMessage,
   isStopMessage,
 } from '../models/message.types';
+import { MessageLogService } from './message-log.service';
 
 /**
  * Canonical name for the Knowledge Graph tool actor (ADR-004 §Decision 4).
@@ -14,90 +15,49 @@ import {
 export const KG_ACTOR_NAME = '#KnowledgeGraphTool';
 
 /**
- * Minimal interface the presence service needs from the message producer.
- * Kept narrow (two streams) so the presence service does NOT depend on
- * `ActorMessageService` directly — that would create a circular DI loop
- * since `ActorMessageService` also wires the presence service up.
+ * Ordered-reduce presence fold over the message log (ADR-005 §Decision 4,
+ * Epic 6 FR4).
+ *
+ * Ordered-reduce semantics are LOAD-BEARING: `log.some(isStart) &&
+ * !log.some(isStop)` is WRONG on Start→Stop→Start restart sequences (would
+ * yield `false` when the correct answer is `true` — the last Start wins).
+ *
+ * Exported at module scope so tests can assert the pure function directly
+ * without a `TestBed` harness (faster + clearer coverage).
  */
-export interface KGPresenceMessageSource {
-  createAgentGraph$: BehaviorSubject<AkgenticMessage[] | null>;
-  message$: BehaviorSubject<AkgenticMessage | null>;
+export function presenceReduce(log: AkgenticMessage[]): boolean {
+  return log.reduce<boolean>(
+    (present, m) =>
+      isStartMessage(m) && m.sender?.name === KG_ACTOR_NAME
+        ? true
+        : isStopMessage(m) && m.sender?.name === KG_ACTOR_NAME
+          ? false
+          : present,
+    false,
+  );
 }
 
 /**
- * ToolPresenceService — publishes `hasKnowledgeGraph$` derived from the
- * `StartMessage` / `StopMessage` stream.
+ * ToolPresenceService — Story 6.2 (ADR-005 §Decision 4).
  *
- * Subscribes to both channels `GraphDataService` uses so presence detection
- * works during replay (batch on `createAgentGraph$`) AND live
- * (one-by-one on `message$`). ADR-004 §Decision 4.
+ * Publishes `hasKnowledgeGraph$` as a pure selector over
+ * `MessageLogService.log$`. No mutable instance state, no `bindTo()` glue,
+ * no `BehaviorSubject`. Late subscribers see the current derived value
+ * synchronously on subscribe (AC4) because `log$` is backed by a
+ * `BehaviorSubject<AkgenticMessage[]>` that replays its latest value on
+ * subscribe, and `map(presenceReduce)` is synchronous.
  *
- * Wiring note: call `bindTo(messageService)` once from the message service's
- * constructor to establish the subscriptions. The presence service does NOT
- * `inject(ActorMessageService)` — doing so would create a circular DI graph.
- *
- * Story 5-2 ships this observable "dark" — no UI consumer yet. Story 5-3
- * wires it into `ProcessComponent` to activate the KG tab reactively.
+ * Scope: component-scoped (NOT `providedIn: 'root'`) because it injects
+ * `MessageLogService`, which is component-scoped on
+ * `ProcessComponent.providers`. Team switches destroy `ProcessComponent`,
+ * which destroys the log and the selector — no state leaks between teams.
  */
-@Injectable({ providedIn: 'root' })
+@Injectable()
 export class ToolPresenceService {
-  readonly hasKnowledgeGraph$: BehaviorSubject<boolean> =
-    new BehaviorSubject<boolean>(false);
+  private readonly log: MessageLogService = inject(MessageLogService);
 
-  private bound = false;
-
-  /**
-   * Establish subscriptions against the message source's replay + live
-   * streams. Idempotent — second+ calls are a no-op so `ActorMessageService`
-   * construction remains safe under HMR / test re-instantiation.
-   */
-  bindTo(source: KGPresenceMessageSource): void {
-    if (this.bound) return;
-    this.bound = true;
-
-    source.createAgentGraph$.subscribe((messages) => {
-      if (!messages) return;
-      for (const msg of messages) {
-        this.observe(msg);
-      }
-    });
-
-    source.message$.subscribe((message) => {
-      if (!message) return;
-      this.observe(message);
-    });
-  }
-
-  /**
-   * Reset presence to `false`. Called from `ActorMessageService.init()` on
-   * team switch (alongside `KGStateReducer.resetForTeam()`).
-   */
-  resetForTeam(): void {
-    this.setPresence(false);
-  }
-
-  /**
-   * Single-message observer. Exposed for tests that feed messages directly
-   * without binding to a full `ActorMessageService`. Production code uses
-   * `bindTo()` + the streams; test code may use either.
-   */
-  observe(msg: AkgenticMessage): void {
-    if (isStartMessage(msg) && msg.sender?.name === KG_ACTOR_NAME) {
-      this.setPresence(true);
-      return;
-    }
-    if (isStopMessage(msg) && msg.sender?.name === KG_ACTOR_NAME) {
-      this.setPresence(false);
-    }
-  }
-
-  /**
-   * `BehaviorSubject.next()` wrapped with an explicit value check so we
-   * never emit the same boolean twice in a row (AC8.7 — avoid redundant
-   * downstream work; cheaper than piping through `distinctUntilChanged`).
-   */
-  private setPresence(value: boolean): void {
-    if (this.hasKnowledgeGraph$.getValue() === value) return;
-    this.hasKnowledgeGraph$.next(value);
-  }
+  readonly hasKnowledgeGraph$: Observable<boolean> = this.log.log$.pipe(
+    map(presenceReduce),
+    distinctUntilChanged(),
+  );
 }
