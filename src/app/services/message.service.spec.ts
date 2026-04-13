@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { MessageService } from 'primeng/api';
-import { Subject } from 'rxjs';
+import { BehaviorSubject, Subject } from 'rxjs';
 import { WebSocketSubject } from 'rxjs/webSocket';
 
 import { ActorMessageService } from './message.service';
@@ -22,206 +22,16 @@ function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   };
 }
 
-function makeReceived(overrides: Partial<any> = {}): any {
-  // Matches the Python contract: ReceivedMessage carries only `message_id`
-  // (UUID of the inner message), NOT a nested `message: BaseMessage`.
-  return {
-    id: 'outer-1',
-    parent_id: null,
-    team_id: 'team-1',
-    timestamp: '2026-04-12T10:00:00Z',
-    sender: makeAddress(),
-    display_type: 'other',
-    content: null,
-    __model__: 'akgentic.core.messages.orchestrator.ReceivedMessage',
-    message_id: 'inner-1',
-    ...overrides,
-  };
-}
+// Story 6.3 (Task 7.4): makeReceived / makeSent / makeEventMessage fixture
+// helpers were removed with the deleted `applyThinkingLifecycle` and
+// `dispatchToolEventToThinking` describe blocks.
 
-function makeSent(overrides: Partial<any> = {}): any {
-  return {
-    id: 'outer-2',
-    parent_id: null,
-    team_id: 'team-1',
-    timestamp: '2026-04-12T10:00:01Z',
-    sender: makeAddress(),
-    display_type: 'other',
-    content: null,
-    __model__: 'akgentic.core.messages.orchestrator.SentMessage',
-    message: {
-      id: 'inner-2',
-      parent_id: null,
-      team_id: 'team-1',
-      timestamp: '2026-04-12T10:00:01Z',
-      sender: makeAddress(),
-      display_type: 'other',
-      content: 'reply',
-      __model__: 'akgentic.core.messages.orchestrator.SentMessage',
-    },
-    recipient: makeAddress({ name: '@Manager' }),
-    ...overrides,
-  };
-}
-
-function makeEventMessage(inner: any, overrides: Partial<any> = {}): any {
-  return {
-    id: 'outer-evt',
-    parent_id: null,
-    team_id: 'team-1',
-    timestamp: '2026-04-12T10:00:00Z',
-    sender: makeAddress(),
-    display_type: 'other',
-    content: null,
-    __model__: 'akgentic.core.messages.orchestrator.EventMessage',
-    event: inner,
-    ...overrides,
-  };
-}
-
-describe('ActorMessageService.applyThinkingLifecycle + dispatch (Story 4-8)', () => {
-  let service: ActorMessageService;
-  let chatService: ChatService;
-
-  beforeEach(() => {
-    TestBed.configureTestingModule({
-      providers: [
-        MessageLogService,
-        ActorMessageService,
-        ChatService,
-        { provide: ApiService, useValue: {} },
-        { provide: MessageService, useValue: { add: jasmine.createSpy('add') } },
-      ],
-    });
-    service = TestBed.inject(ActorMessageService);
-    chatService = TestBed.inject(ChatService);
-  });
-
-  describe('applyThinkingLifecycle', () => {
-    it('ReceivedMessage -> beginThinking with expected payload', () => {
-      const spy = spyOn(chatService, 'beginThinking').and.callThrough();
-      const msg = makeReceived();
-      (service as any).applyThinkingLifecycle(msg);
-      expect(spy).toHaveBeenCalledWith({
-        agent_id: 'agent-1',
-        agent_name: '@Researcher',
-        start_time: jasmine.any(Date),
-        anchor_message_id: 'inner-1',
-      });
-    });
-
-    it('SentMessage -> finaliseOrDiscard with sender agent_id', () => {
-      const spy = spyOn(chatService, 'finaliseOrDiscard').and.callThrough();
-      const msg = makeSent();
-      (service as any).applyThinkingLifecycle(msg);
-      expect(spy).toHaveBeenCalledWith('agent-1');
-    });
-
-    it('SentMessage from ActorSystem is filtered out', () => {
-      const spy = spyOn(chatService, 'finaliseOrDiscard').and.callThrough();
-      const msg = makeSent({
-        sender: makeAddress({ role: 'ActorSystem' }),
-      });
-      (service as any).applyThinkingLifecycle(msg);
-      expect(spy).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('dispatchToolEventToThinking', () => {
-    it('ToolCallEvent -> appendToolCall with buildPreview(arguments, 60)', () => {
-      chatService.beginThinking({
-        agent_id: 'agent-1',
-        agent_name: '@Researcher',
-        start_time: new Date(),
-        anchor_message_id: 'anchor-1',
-      });
-      const appendSpy = spyOn(chatService, 'appendToolCall').and.callThrough();
-      const event = makeEventMessage({
-        __model__: 'akgentic.llm.event.ToolCallEvent',
-        run_id: 'run-1',
-        tool_name: 'search_web',
-        tool_call_id: 'call-1',
-        arguments: '{"query": "competitor pricing enterprise tier"}',
-      });
-      (service as any).dispatchToolEventToThinking(event);
-      expect(appendSpy).toHaveBeenCalledWith(
-        'agent-1',
-        jasmine.objectContaining({
-          tool_call_id: 'call-1',
-          tool_name: 'search_web',
-          done: false,
-        }),
-      );
-      // arguments_preview should be a non-empty, markdown-stripped string.
-      const call = appendSpy.calls.mostRecent();
-      const entry = call.args[1];
-      expect(entry.arguments_preview.length).toBeGreaterThan(0);
-    });
-
-    it('ToolReturnEvent -> markToolDone with the tool_call_id', () => {
-      const spy = spyOn(chatService, 'markToolDone').and.callThrough();
-      const event = makeEventMessage({
-        __model__: 'akgentic.llm.event.ToolReturnEvent',
-        run_id: 'run-1',
-        tool_name: 'search_web',
-        tool_call_id: 'call-1',
-        success: true,
-      });
-      (service as any).dispatchToolEventToThinking(event);
-      expect(spy).toHaveBeenCalledWith('agent-1', 'call-1');
-    });
-
-    it('unknown inner __model__ is silently ignored (no throw, no dispatch)', () => {
-      const appendSpy = spyOn(chatService, 'appendToolCall').and.callThrough();
-      const markSpy = spyOn(chatService, 'markToolDone').and.callThrough();
-      const event = makeEventMessage({
-        __model__: 'akgentic.llm.event.LlmUsageEvent',
-        tool_call_id: 'x',
-      });
-      expect(() =>
-        (service as any).dispatchToolEventToThinking(event),
-      ).not.toThrow();
-      expect(appendSpy).not.toHaveBeenCalled();
-      expect(markSpy).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('integration: ReceivedMessage → ToolCallEvent → ToolReturnEvent → SentMessage', () => {
-    it('produces a finalised thinking state with one done tool entry', () => {
-      (service as any).applyThinkingLifecycle(makeReceived());
-      (service as any).dispatchToolEventToThinking(
-        makeEventMessage({
-          __model__: 'akgentic.llm.event.ToolCallEvent',
-          tool_name: 'search_web',
-          tool_call_id: 'call-1',
-          arguments: '{"q": "x"}',
-        }),
-      );
-      (service as any).dispatchToolEventToThinking(
-        makeEventMessage({
-          __model__: 'akgentic.llm.event.ToolReturnEvent',
-          tool_name: 'search_web',
-          tool_call_id: 'call-1',
-          success: true,
-        }),
-      );
-      (service as any).applyThinkingLifecycle(makeSent());
-
-      const states = chatService.thinkingAgents$.value;
-      expect(states.length).toBe(1);
-      expect(states[0].final).toBe(true);
-      expect(states[0].tools.length).toBe(1);
-      expect(states[0].tools[0].done).toBe(true);
-    });
-
-    it('ReceivedMessage without tools then SentMessage -> ephemeral removal', () => {
-      (service as any).applyThinkingLifecycle(makeReceived());
-      expect(chatService.thinkingAgents$.value.length).toBe(1);
-      (service as any).applyThinkingLifecycle(makeSent());
-      expect(chatService.thinkingAgents$.value.length).toBe(0);
-    });
-  });
-});
+// Story 6.3 (AC9, Task 7.4): `applyThinkingLifecycle`,
+// `dispatchToolEventToThinking`, and `handleEventMessage` were deleted from
+// `ActorMessageService`. The thinking-bubble lifecycle is now reconstructed
+// by `chatFold` over `log$` — coverage lives in `chat.service.spec.ts`
+// (ReceivedMessage → ToolCallEvent → ToolReturnEvent → SentMessage fold
+// scenarios, integration + FR11 + AC7 + late-subscriber).
 
 describe('ActorMessageService.init — loadingProcess$ spinner window (Story 4-10)', () => {
   let service: ActorMessageService;
@@ -699,7 +509,7 @@ describe('ActorMessageService — Story 6.1 (frame-batched log ingestion)', () =
   });
 
   // ---------- AC8 ----------
-  it('AC8: log and messages$ both contain synthetic event sequence in arrival order', async () => {
+  it('AC8: log contains synthetic event sequence in arrival order (Story 6.4: messages$ deleted)', async () => {
     await service.init('proc-1', true);
 
     const s1 = mkStart('s1');
@@ -712,11 +522,9 @@ describe('ActorMessageService — Story 6.1 (frame-batched log ingestion)', () =
 
     // log populated via the batched subscriber.
     expect(log.snapshot().map((m: any) => m.id)).toEqual(['s1', 's2', 's3']);
-    // messages$ populated via the existing message$ → messages$ closure.
-    // StartMessage falls through to the `else` branch → message$.next(event)
-    // → messages$.next([...]).
-    const msgIds = service.messages$.value.map((m: any) => m.id);
-    expect(msgIds).toEqual(['s1', 's2', 's3']);
+    // Story 6.4 (AC1): `messages$` is deleted; the log is the single
+    // source of truth for downstream selectors.
+    expect((service as any).messages$).toBeUndefined();
   });
 
   // ---------- Task 3.2 — REST replay populates log in strict order ----------
@@ -731,5 +539,90 @@ describe('ActorMessageService — Story 6.1 (frame-batched log ingestion)', () =
     await service.init('proc-stopped', false);
 
     expect(log.snapshot().map((m: any) => m.id)).toEqual(['r1', 'r2', 'r3']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 6.4 (AC5) — two-exceptions invariant (NFR9)
+//
+// ADR-005 §Decision 5: stateDict$ and contextDict$ are the ONLY imperative
+// state containers on ActorMessageService after the Story 6.4 refactor.
+// "Adding a third exception requires a new ADR. This test is the automated
+// guard."
+// ---------------------------------------------------------------------------
+
+/**
+ * Probe the public surface of an `ActorMessageService` (or subclass) and
+ * return the set of own-property names whose runtime shape is an imperative
+ * state container — either a direct `BehaviorSubject` field, or a per-agent
+ * dict `{ [k: string]: BehaviorSubject<...> }` (the `stateDict$` /
+ * `contextDict$` shape; counted as ONE exception each, regardless of cardinality).
+ */
+function probeStateContainers(service: object): string[] {
+  return Object.getOwnPropertyNames(service).filter((name) => {
+    const v = (service as any)[name];
+    if (v instanceof BehaviorSubject) return true;
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      const values = Object.values(v);
+      // Empty dicts that match the documented dict-name suffix still count
+      // — the contract is structural, not population-dependent.
+      if (values.length === 0) {
+        return /(stateDict|contextDict)\$$/.test(name);
+      }
+      return values.every((x) => x instanceof BehaviorSubject);
+    }
+    return false;
+  });
+}
+
+describe('ActorMessageService — two-exceptions invariant (Story 6.4, NFR9)', () => {
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        MessageLogService,
+        ActorMessageService,
+        ChatService,
+        {
+          provide: ApiService,
+          useValue: {
+            getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+          },
+        },
+        { provide: MessageService, useValue: { add: jasmine.createSpy('add') } },
+      ],
+    });
+  });
+
+  it('public data surface is exactly {stateDict$, contextDict$}', () => {
+    const service = TestBed.inject(ActorMessageService);
+    // AC5 spec: the probe MUST NOT rely on a name allow-list — it walks
+    // `Object.getOwnPropertyNames` with a runtime `instanceof` check so that
+    // any new `BehaviorSubject` field (regardless of name) forces this test
+    // to fail. Per ADR-005 §Decision 5, adding a third exception requires a
+    // new ADR.
+    const containers = probeStateContainers(service);
+    expect(new Set(containers)).toEqual(new Set(['stateDict$', 'contextDict$']));
+  });
+
+  it('negative probe: adding a third exception fails the invariant', () => {
+    const service = TestBed.inject(ActorMessageService);
+    // Simulate the "someone added a new BehaviorSubject" diff.
+    (service as any).extraDict$ = { agent: new BehaviorSubject<any>(null) };
+    const containers = probeStateContainers(service);
+    // The probe MUST detect the addition (set is no longer the documented
+    // pair). Without this guard, the invariant test would silently pass.
+    expect(new Set(containers)).not.toEqual(
+      new Set(['stateDict$', 'contextDict$']),
+    );
+    expect(containers).toContain('extraDict$');
+  });
+
+  it('non-state observables (Subjects, Subscriptions, WebSocketSubject) are NOT counted as exceptions', () => {
+    const service = TestBed.inject(ActorMessageService);
+    const containers = probeStateContainers(service);
+    expect(containers).not.toContain('_wsInbound$');
+    expect(containers).not.toContain('bufferSub');
+    expect(containers).not.toContain('spinnerSub');
+    expect(containers).not.toContain('webSocket');
   });
 });

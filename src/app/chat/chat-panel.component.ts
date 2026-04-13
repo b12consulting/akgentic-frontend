@@ -12,11 +12,10 @@ import {
 } from '@angular/core';
 import { combineLatest, Subscription } from 'rxjs';
 
-import { ChatMessage, classifyMessage } from '../models/chat-message.model';
-import { ActorAddress, isSentMessage } from '../models/message.types';
+import { ChatMessage } from '../models/chat-message.model';
+import { ActorAddress } from '../models/message.types';
 import { ApiService } from '../services/api.service';
 import { ChatService, ThinkingState } from '../services/chat.service';
-import { ActorMessageService } from '../services/message.service';
 import { Selectable, SelectionService } from '../services/selection.service';
 import {
   AnsweredRequest,
@@ -51,7 +50,6 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   @ViewChild('scrollContainer', { static: false })
   private scrollContainer!: ElementRef;
 
-  messageService: ActorMessageService = inject(ActorMessageService);
   chatService: ChatService = inject(ChatService);
   selectionService: SelectionService = inject(SelectionService);
   apiService: ApiService = inject(ApiService);
@@ -94,27 +92,25 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     );
     // Story 4-8: merge chat messages + thinking states into a single sorted
     // displayItems array. Either stream re-triggers rebuild.
+    // Story 6.4 (AC3): subscription migrated from the deleted
+    // `messageService.messages$` onto `chatService.messages$` — classification
+    // is owned by `chatFold` (Story 6.3); the component is a presenter.
     this.subscription = combineLatest([
-      this.messageService.messages$,
+      this.chatService.messages$,
       this.chatService.thinkingAgents$,
-    ]).subscribe(([messages, thinkingStates]) => {
+    ]).subscribe(([classified, thinkingStates]) => {
       this.checkShouldAutoScroll();
 
       const previousLength = this.chatMessages.length;
-      const classified = messages
-        .filter(isSentMessage)
-        .filter((m) => m.sender.role !== 'ActorSystem')
-        .filter((m) => m.message.content != null && m.message.content !== '')
-        .map((m) => {
-          const chatMsg = classifyMessage(m);
-          if (
-            (chatMsg.rule === 3 || chatMsg.rule === 4) &&
-            this.expandedMessageIds.has(chatMsg.id)
-          ) {
-            chatMsg.collapsed = false;
-          }
-          return chatMsg;
-        });
+      // Preserve per-user expand state across re-emissions (Rule 3 / Rule 4).
+      for (const chatMsg of classified) {
+        if (
+          (chatMsg.rule === 3 || chatMsg.rule === 4) &&
+          this.expandedMessageIds.has(chatMsg.id)
+        ) {
+          chatMsg.collapsed = false;
+        }
+      }
 
       this.chatMessages = classified;
       this.thinkingStates = thinkingStates;
@@ -124,7 +120,6 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
       if (this.isHovered && classified.length > previousLength) {
         this.pendingCatchUpScroll = true;
       }
-      this.chatService.messages$.next(classified);
       this.recomputeModalInputs();
     });
   }

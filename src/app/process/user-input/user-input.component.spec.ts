@@ -1,12 +1,11 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormsModule } from '@angular/forms';
-import { BehaviorSubject, of } from 'rxjs';
+import { BehaviorSubject } from 'rxjs';
 
 import { ProcessUserInputComponent } from './user-input.component';
 import { ApiService } from '../../services/api.service';
 import { ChatService } from '../../services/chat.service';
 import { GraphDataService } from '../../services/graph-data.service';
-import { ActorMessageService } from '../../services/message.service';
 import { ActorAddress } from '../../models/message.types';
 import { NodeInterface } from '../../models/types';
 
@@ -60,24 +59,12 @@ describe('ProcessUserInputComponent', () => {
       nodes$: nodesSubject,
     };
 
-    const messageService = {
-      messages$: of([]),
-      pauseClicked: () => {},
-      playClicked: () => {},
-      backClicked: () => {},
-      backwardClicked: () => {},
-      nextClicked: () => {},
-      forwardClicked: () => {},
-      controlStatus: () => [0, 0],
-    };
-
     await TestBed.configureTestingModule({
       imports: [FormsModule, ProcessUserInputComponent],
       providers: [
         { provide: ApiService, useValue: apiServiceSpy },
         { provide: ChatService, useValue: chatServiceMock },
         { provide: GraphDataService, useValue: graphDataService },
-        { provide: ActorMessageService, useValue: messageService },
       ],
     }).compileComponents();
 
