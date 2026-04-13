@@ -85,6 +85,8 @@ export class KGStateReducer {
   readonly knowledgeGraph$: Observable<KnowledgeGraphData> =
     this.projectionSubject$.asObservable();
 
+  private bound = false;
+
   /**
    * Bind the reducer's projection stream to an external `BehaviorSubject`
    * (typically `ActorMessageService.knowledgeGraph$`). Called once by the
@@ -93,10 +95,17 @@ export class KGStateReducer {
    *
    * Using a setter-binding (Option A from AC4) avoids introducing a circular
    * DI dependency between `ActorMessageService` and `KGStateReducer`.
+   *
+   * Idempotent — second+ calls are a no-op so test re-instantiation / HMR
+   * cannot accumulate duplicate forwarders that would double-emit into the
+   * external subject (parity with `ToolPresenceService.bindTo()`).
    */
   bind(subject$: BehaviorSubject<KnowledgeGraphData>): void {
-    // Seed with current projection so late binders still see the latest state.
-    subject$.next(this.projectionSubject$.getValue());
+    if (this.bound) return;
+    this.bound = true;
+    // `BehaviorSubject.subscribe()` replays its current value synchronously,
+    // so the callback below seeds `subject$` with the latest projection on
+    // the first tick — no explicit seeding needed.
     this.projectionSubject$.subscribe((projection) => {
       subject$.next(projection);
     });
