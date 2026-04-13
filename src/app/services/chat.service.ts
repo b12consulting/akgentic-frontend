@@ -111,8 +111,6 @@ export class ChatService {
   loadingProcess$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(
     false
   );
-  replyContext$: BehaviorSubject<ChatMessage | null> =
-    new BehaviorSubject<ChatMessage | null>(null);
 
   /** Reactive set of unanswered Rule 3 message ids (per-message tracking). */
   pendingNotifications$: Observable<Set<string>> =
@@ -126,14 +124,6 @@ export class ChatService {
   thinkingAgents$: BehaviorSubject<ThinkingState[]> = new BehaviorSubject<
     ThinkingState[]
   >([]);
-
-  setReplyContext(message: ChatMessage | null): void {
-    this.replyContext$.next(message);
-  }
-
-  clearReplyContext(): void {
-    this.replyContext$.next(null);
-  }
 
   /**
    * Append a new thinking state for an agent. Idempotent: if a non-final

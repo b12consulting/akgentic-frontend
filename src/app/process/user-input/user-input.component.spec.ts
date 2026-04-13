@@ -7,7 +7,6 @@ import { ApiService } from '../../services/api.service';
 import { ChatService } from '../../services/chat.service';
 import { GraphDataService } from '../../services/graph-data.service';
 import { ActorMessageService } from '../../services/message.service';
-import { ChatMessage } from '../../models/chat-message.model';
 import { ActorAddress } from '../../models/message.types';
 import { NodeInterface } from '../../models/types';
 
@@ -19,25 +18,6 @@ function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
     agent_id: 'agent-1',
     squad_id: 'squad-1',
     user_message: false,
-    ...overrides,
-  };
-}
-
-function makeChatMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
-  const id = overrides.id ?? 'msg-1';
-  return {
-    id,
-    message_id: id,
-    parent_id: null,
-    content: 'Hello world',
-    sender: makeAddress({ name: '@Manager', role: 'Manager' }),
-    recipient: makeAddress({ name: '@Human', role: 'Human' }),
-    timestamp: new Date('2026-04-08T10:00:00Z'),
-    rule: 2,
-    alignment: 'left',
-    color: '#9ebbcb',
-    collapsed: false,
-    label: 'Manager [Manager]',
     ...overrides,
   };
 }
@@ -72,13 +52,6 @@ describe('ProcessUserInputComponent', () => {
     chatServiceMock = {
       messages$: new BehaviorSubject<any[]>([]),
       loadingProcess$: new BehaviorSubject<boolean>(false),
-      replyContext$: new BehaviorSubject<ChatMessage | null>(null),
-      setReplyContext: jasmine.createSpy('setReplyContext').and.callFake(
-        function(this: any, msg: any) { this.replyContext$.next(msg); }
-      ),
-      clearReplyContext: jasmine.createSpy('clearReplyContext').and.callFake(
-        function(this: any) { this.replyContext$.next(null); }
-      ),
     };
 
     nodesSubject = new BehaviorSubject<NodeInterface[]>([]);
@@ -271,153 +244,65 @@ describe('ProcessUserInputComponent', () => {
     });
   });
 
-  describe('reply context', () => {
-    it('should show reply context display name when replyContext is set', () => {
-      const msg = makeChatMessage({
-        sender: makeAddress({ name: '@Manager-Manager_agent' }),
-      });
-      chatServiceMock.replyContext$.next(msg);
-      fixture.detectChanges();
-
-      expect(component.replyContext).toBe(msg);
-      expect(component.replyContextDisplayName).toBeTruthy();
-    });
-
-    it('should clear display name when replyContext is null', () => {
-      chatServiceMock.replyContext$.next(null);
-      fixture.detectChanges();
-
-      expect(component.replyContext).toBeNull();
-      expect(component.replyContextDisplayName).toBe('');
-    });
-
-    it('should show reply indicator in template when replyContext is set', () => {
-      const msg = makeChatMessage();
-      chatServiceMock.replyContext$.next(msg);
-      fixture.detectChanges();
-
-      const indicator = fixture.nativeElement.querySelector('.reply-indicator');
-      expect(indicator).toBeTruthy();
-    });
-
-    it('should NOT show reply indicator when replyContext is null', () => {
-      chatServiceMock.replyContext$.next(null);
+  describe('Send-to echo indicator (Story 4-11)', () => {
+    it('should hide the indicator when no agent is selected (broadcast case)', () => {
+      component.selectedAgents = [];
       fixture.detectChanges();
 
       const indicator = fixture.nativeElement.querySelector('.reply-indicator');
       expect(indicator).toBeNull();
     });
 
-    it('should send to reply context sender when replyContext is active', async () => {
-      const msg = makeChatMessage({
-        sender: makeAddress({ name: '@Manager' }),
-      });
-      chatServiceMock.replyContext$.next(msg);
-      fixture.detectChanges();
-
-      component.userInput = 'reply message';
-      await component.sendMessage();
-
-      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
-        'test-team-id',
-        'reply message',
-        '@Manager',
-      );
-    });
-
-    it('should clear reply context after sending with reply context', async () => {
-      const msg = makeChatMessage({
-        sender: makeAddress({ name: '@Manager' }),
-      });
-      chatServiceMock.replyContext$.next(msg);
-      fixture.detectChanges();
-
-      component.userInput = 'reply message';
-      await component.sendMessage();
-
-      expect(chatServiceMock.clearReplyContext).toHaveBeenCalled();
-    });
-
-    it('reply context should take priority over dropdown selection', async () => {
-      const msg = makeChatMessage({
-        sender: makeAddress({ name: '@Developer' }),
-      });
-      chatServiceMock.replyContext$.next(msg);
-      fixture.detectChanges();
-
+    it('should render the indicator with a single-agent label when one is selected', () => {
       component.selectedAgents = ['@Manager'];
-      component.userInput = 'hey do this';
-      await component.sendMessage();
-
-      // Should use reply context sender, not the dropdown selection
-      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
-        'test-team-id',
-        'hey do this',
-        '@Developer',
-      );
-    });
-
-    it('reply context clearing should restore dropdown routing', async () => {
-      const msg = makeChatMessage({
-        sender: makeAddress({ name: '@Developer' }),
-      });
-      chatServiceMock.replyContext$.next(msg);
       fixture.detectChanges();
 
+      const indicator = fixture.nativeElement.querySelector('.reply-indicator');
+      expect(indicator).toBeTruthy();
+      expect(indicator.textContent).toContain('Send to');
+      expect(indicator.textContent).toContain('Manager');
+    });
+
+    it('should render the indicator with a comma-joined label when multiple are selected', () => {
+      component.selectedAgents = ['@Manager', '@Developer'];
+      fixture.detectChanges();
+
+      expect(component.selectedAgentsDisplay).toContain('Manager');
+      expect(component.selectedAgentsDisplay).toContain('Developer');
+      expect(component.selectedAgentsDisplay).toContain(',');
+
+      const indicator = fixture.nativeElement.querySelector('.reply-indicator');
+      expect(indicator).toBeTruthy();
+      expect(indicator.textContent).toContain('Send to');
+    });
+
+    it('clearSendTo() should empty selectedAgents', () => {
+      component.selectedAgents = ['@Manager', '@Developer'];
+      component.clearSendTo();
+      expect(component.selectedAgents).toEqual([]);
+    });
+
+    it('the `×` button in the indicator should clear selectedAgents', () => {
       component.selectedAgents = ['@Manager'];
-      component.userInput = 'reply to dev';
-      await component.sendMessage();
-
-      // First send uses reply context
-      expect(apiServiceSpy.sendMessage).toHaveBeenCalledWith(
-        'test-team-id',
-        'reply to dev',
-        '@Developer',
-      );
-
-      // Reply context was cleared, now dropdown should take over
-      apiServiceSpy.sendMessage.calls.reset();
-      component.userInput = 'now to manager';
-      await component.sendMessage();
-
-      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
-        'test-team-id',
-        'now to manager',
-        '@Manager',
-      );
-    });
-
-    it('should NOT clear dropdown selection when reply context is used', async () => {
-      const msg = makeChatMessage({
-        sender: makeAddress({ name: '@Developer' }),
-      });
-      chatServiceMock.replyContext$.next(msg);
       fixture.detectChanges();
 
-      component.selectedAgents = ['@Manager'];
-      component.userInput = 'reply message';
-      await component.sendMessage();
-
-      expect(component.selectedAgents).toEqual(['@Manager']);
-    });
-
-    it('should broadcast when no reply context and no dropdown selection', async () => {
-      chatServiceMock.replyContext$.next(null);
+      const closeBtn = fixture.nativeElement.querySelector(
+        '.reply-indicator .reply-indicator-close',
+      );
+      expect(closeBtn).toBeTruthy();
+      closeBtn.click();
       fixture.detectChanges();
 
-      component.userInput = 'hello everyone';
-      component.selectedAgents = [];
-      await component.sendMessage();
-
-      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
-        'test-team-id',
-        'hello everyone',
-      );
+      expect(component.selectedAgents).toEqual([]);
+      const indicatorAfter = fixture.nativeElement.querySelector('.reply-indicator');
+      expect(indicatorAfter).toBeNull();
     });
 
-    it('clearReplyContext should call chatService.clearReplyContext', () => {
-      component.clearReplyContext();
-      expect(chatServiceMock.clearReplyContext).toHaveBeenCalled();
+    it('component should NOT expose legacy reply-context API', () => {
+      // Retired by Story 4-11 — these fields/methods are gone.
+      expect((component as any).replyContext).toBeUndefined();
+      expect((component as any).replyContextDisplayName).toBeUndefined();
+      expect((component as any).clearReplyContext).toBeUndefined();
     });
   });
 });
