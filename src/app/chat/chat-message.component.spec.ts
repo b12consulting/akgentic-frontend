@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideMarkdown } from 'ngx-markdown';
 import { ChatMessageComponent } from './chat-message.component';
 import { ChatMessage } from '../models/chat-message.model';
@@ -39,7 +40,7 @@ describe('ChatMessageComponent', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [ChatMessageComponent],
+      imports: [ChatMessageComponent, NoopAnimationsModule],
       providers: [provideMarkdown()],
     }).compileComponents();
 
@@ -104,11 +105,12 @@ describe('ChatMessageComponent', () => {
     });
   });
 
-  describe('Rule 3 (notification)', () => {
-    it('should show notification icon when notification input is true', () => {
+  describe('Rule 3 (notification + collapse + Open button)', () => {
+    it('should show hand-raised icon (🙋) on expanded bubble when notification is true', () => {
       const msg = makeChatMessage({
         rule: 3,
         alignment: 'left',
+        collapsed: false,
         label: 'Agent -> OtherHuman',
       });
       fixture.componentRef.setInput('message', msg);
@@ -116,14 +118,18 @@ describe('ChatMessageComponent', () => {
       fixture.detectChanges();
 
       const el = fixture.nativeElement;
-      expect(el.querySelector('.notification-icon')).toBeTruthy();
-      expect(el.querySelector('.pi-bell')).toBeTruthy();
+      const icon = el.querySelector('.notification-icon');
+      expect(icon).toBeTruthy();
+      expect(icon.textContent).toContain('🙋');
+      // Bell icon must NOT be present anywhere for Rule 3
+      expect(el.querySelector('.pi-bell')).toBeNull();
     });
 
-    it('should NOT show notification icon when notification input is false', () => {
+    it('should NOT show hand-raised icon when notification input is false', () => {
       const msg = makeChatMessage({
         rule: 3,
         alignment: 'left',
+        collapsed: false,
         label: 'Agent -> OtherHuman',
       });
       fixture.componentRef.setInput('message', msg);
@@ -135,17 +141,144 @@ describe('ChatMessageComponent', () => {
       expect(el.querySelector('.pi-bell')).toBeNull();
     });
 
-    it('should default notification to false (no bell icon)', () => {
+    it('should render collapsed line by default when Rule 3 collapsed', () => {
       const msg = makeChatMessage({
         rule: 3,
-        alignment: 'left',
+        collapsed: true,
         label: 'Agent -> OtherHuman',
       });
       fixture.componentRef.setInput('message', msg);
       fixture.detectChanges();
 
       const el = fixture.nativeElement;
-      expect(el.querySelector('.notification-icon')).toBeNull();
+      expect(el.querySelector('.collapsed-line')).toBeTruthy();
+      expect(el.querySelector('.message-bubble')).toBeNull();
+      const label = el.querySelector('.collapsed-label');
+      expect(label.textContent).toContain('Agent -> OtherHuman');
+    });
+
+    it('should append (🙋) in collapsed line when notification is true', () => {
+      const msg = makeChatMessage({
+        rule: 3,
+        collapsed: true,
+        label: 'Agent -> OtherHuman',
+      });
+      fixture.componentRef.setInput('message', msg);
+      fixture.componentRef.setInput('notification', true);
+      fixture.detectChanges();
+
+      const label = fixture.nativeElement.querySelector('.collapsed-label');
+      expect(label.textContent).toContain('🙋');
+      expect(label.textContent).toContain('(');
+      expect(label.textContent).toContain(')');
+    });
+
+    it('should NOT append (🙋) in collapsed line when notification is false', () => {
+      const msg = makeChatMessage({
+        rule: 3,
+        collapsed: true,
+        label: 'Agent -> OtherHuman',
+      });
+      fixture.componentRef.setInput('message', msg);
+      fixture.componentRef.setInput('notification', false);
+      fixture.detectChanges();
+
+      const label = fixture.nativeElement.querySelector('.collapsed-label');
+      expect(label.textContent).not.toContain('🙋');
+    });
+
+    it('should render Open button on collapsed Rule 3 line', () => {
+      const msg = makeChatMessage({ rule: 3, collapsed: true });
+      fixture.componentRef.setInput('message', msg);
+      fixture.detectChanges();
+
+      const btn = fixture.nativeElement.querySelector('.open-button');
+      expect(btn).toBeTruthy();
+      expect(btn.textContent).toContain('Open');
+    });
+
+    it('should render Open button on expanded Rule 3 bubble header', () => {
+      const msg = makeChatMessage({ rule: 3, collapsed: false });
+      fixture.componentRef.setInput('message', msg);
+      fixture.detectChanges();
+
+      const header = fixture.nativeElement.querySelector('.bubble-header');
+      const btn = header.querySelector('.open-button');
+      expect(btn).toBeTruthy();
+      expect(btn.textContent).toContain('Open');
+    });
+
+    it('bubble body click on expanded Rule 3 should emit toggleCollapse and NOT rule3Clicked', () => {
+      const msg = makeChatMessage({ rule: 3, collapsed: false });
+      fixture.componentRef.setInput('message', msg);
+      fixture.detectChanges();
+
+      spyOn(component.toggleCollapse, 'emit');
+      spyOn(component.rule3Clicked, 'emit');
+
+      const messageEl = fixture.nativeElement.querySelector('.message');
+      messageEl.click();
+
+      expect(component.toggleCollapse.emit).toHaveBeenCalledWith(msg);
+      expect(component.rule3Clicked.emit).not.toHaveBeenCalled();
+    });
+
+    it('collapsed-line click on Rule 3 should emit toggleCollapse and NOT rule3Clicked', () => {
+      const msg = makeChatMessage({ rule: 3, collapsed: true });
+      fixture.componentRef.setInput('message', msg);
+      fixture.detectChanges();
+
+      spyOn(component.toggleCollapse, 'emit');
+      spyOn(component.rule3Clicked, 'emit');
+
+      const line = fixture.nativeElement.querySelector('.collapsed-line');
+      line.click();
+
+      expect(component.toggleCollapse.emit).toHaveBeenCalledWith(msg);
+      expect(component.rule3Clicked.emit).not.toHaveBeenCalled();
+    });
+
+    it('Open button click should emit rule3Clicked and NOT toggleCollapse', () => {
+      const msg = makeChatMessage({ rule: 3, collapsed: true });
+      fixture.componentRef.setInput('message', msg);
+      fixture.detectChanges();
+
+      spyOn(component.toggleCollapse, 'emit');
+      spyOn(component.rule3Clicked, 'emit');
+
+      const btn = fixture.nativeElement.querySelector('.open-button button');
+      btn.click();
+
+      expect(component.rule3Clicked.emit).toHaveBeenCalledWith(msg);
+      expect(component.toggleCollapse.emit).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Open button visibility (Rule 3 only)', () => {
+    it('should NOT render Open button for Rule 1', () => {
+      const msg = makeChatMessage({ rule: 1, alignment: 'right' });
+      fixture.componentRef.setInput('message', msg);
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.open-button')).toBeNull();
+    });
+
+    it('should NOT render Open button for Rule 2', () => {
+      const msg = makeChatMessage({ rule: 2, alignment: 'left' });
+      fixture.componentRef.setInput('message', msg);
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.open-button')).toBeNull();
+    });
+
+    it('should NOT render Open button for Rule 4 (collapsed or expanded)', () => {
+      const collapsed = makeChatMessage({ rule: 4, collapsed: true });
+      fixture.componentRef.setInput('message', collapsed);
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.open-button')).toBeNull();
+
+      const expanded = makeChatMessage({ rule: 4, collapsed: false });
+      fixture.componentRef.setInput('message', expanded);
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.open-button')).toBeNull();
     });
   });
 
@@ -257,24 +390,8 @@ describe('ChatMessageComponent', () => {
   });
 
   describe('rule3Clicked output', () => {
-    it('should emit rule3Clicked for Rule 3 bubble click', () => {
-      const msg = makeChatMessage({
-        rule: 3,
-        alignment: 'left',
-        label: 'Agent -> OtherHuman',
-      });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      spyOn(component.rule3Clicked, 'emit');
-      const messageEl = fixture.nativeElement.querySelector('.message');
-      messageEl.click();
-
-      expect(component.rule3Clicked.emit).toHaveBeenCalledWith(msg);
-    });
-
-    it('should NOT emit bubbleClicked for Rule 3', () => {
-      const msg = makeChatMessage({ rule: 3, alignment: 'left' });
+    it('should NOT emit bubbleClicked for Rule 3 bubble click', () => {
+      const msg = makeChatMessage({ rule: 3, alignment: 'left', collapsed: false });
       fixture.componentRef.setInput('message', msg);
       fixture.detectChanges();
 

@@ -1,12 +1,13 @@
 import { CommonModule, DatePipe } from '@angular/common';
 import { Component, EventEmitter, input, Output } from '@angular/core';
+import { ButtonModule } from 'primeng/button';
 import { MarkdownModule } from 'ngx-markdown';
 import { ChatMessage } from '../models/chat-message.model';
 
 @Component({
   selector: 'app-chat-message',
   standalone: true,
-  imports: [CommonModule, MarkdownModule, DatePipe],
+  imports: [CommonModule, MarkdownModule, DatePipe, ButtonModule],
   templateUrl: './chat-message.component.html',
   styleUrl: './chat-message.component.scss',
 })
@@ -21,7 +22,7 @@ export class ChatMessageComponent {
 
   onToggleCollapse(): void {
     const msg = this.message();
-    if (msg.rule === 4) {
+    if (msg.rule === 3 || msg.rule === 4) {
       this.toggleCollapse.emit(msg);
     }
   }
@@ -42,11 +43,14 @@ export class ChatMessageComponent {
         this.bubbleClicked.emit(msg);
         break;
       case 3:
-        this.rule3Clicked.emit(msg);
-        break;
       case 4:
         this.onToggleCollapse();
         break;
     }
+  }
+
+  onOpenModal(event: Event): void {
+    event.stopPropagation();
+    this.rule3Clicked.emit(this.message());
   }
 }

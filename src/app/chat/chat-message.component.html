@@ -1,19 +1,31 @@
-<!-- Rule 4 collapsed line -->
+<!-- Collapsed line for Rule 3 and Rule 4 -->
 <div
-  *ngIf="message().rule === 4 && message().collapsed"
+  *ngIf="(message().rule === 3 || message().rule === 4) && message().collapsed"
   class="collapsed-line"
   (click)="onToggleCollapse()"
 >
   <span class="collapse-indicator">&gt;</span>
-  <span class="collapsed-label">{{ message().label }}</span>
+  <span class="collapsed-label">
+    {{ message().label }}<span
+      *ngIf="message().rule === 3 && notification()"
+      class="notification-icon collapsed-notification-icon"
+    > (<span class="hand-raised">🙋</span>)</span>
+  </span>
+  <p-button
+    *ngIf="message().rule === 3"
+    size="small"
+    label="Open"
+    (click)="onOpenModal($event)"
+    class="open-button"
+  ></p-button>
   <span class="collapsed-timestamp">{{
     message().timestamp | date : "HH:mm"
   }}</span>
 </div>
 
-<!-- Expanded bubble (Rules 1/2/3, or Rule 4 expanded) -->
+<!-- Expanded bubble (Rules 1/2, or Rule 3/4 expanded) -->
 <div
-  *ngIf="message().rule !== 4 || !message().collapsed"
+  *ngIf="(message().rule !== 3 && message().rule !== 4) || !message().collapsed"
   class="message"
   [class.right]="message().alignment === 'right'"
   [class.left]="message().alignment === 'left'"
@@ -33,10 +45,26 @@
       >
         {{ message().label }}
       </button>
-      <span *ngIf="message().rule === 4" class="collapse-indicator-bubble">v</span>
-      <span *ngIf="notification()" class="notification-icon">
+      <span
+        *ngIf="message().rule === 3 && notification()"
+        class="notification-icon"
+      >
+        <span class="hand-raised">🙋</span>
+      </span>
+      <span
+        *ngIf="message().rule === 4 && notification()"
+        class="notification-icon"
+      >
         <i class="pi pi-bell"></i>
       </span>
+      <span *ngIf="message().rule === 3 || message().rule === 4" class="collapse-indicator-bubble">v</span>
+      <p-button
+        *ngIf="message().rule === 3"
+        size="small"
+        label="Open"
+        (click)="onOpenModal($event)"
+        class="open-button"
+      ></p-button>
     </div>
     <div class="markdown-content">
       <markdown [data]="message().content"></markdown>

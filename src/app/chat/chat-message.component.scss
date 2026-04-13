@@ -1,4 +1,4 @@
-/* Collapsed line for Rule 4 */
+/* Collapsed line for Rule 3 and Rule 4 */
 .collapsed-line {
   display: flex;
   align-items: center;
@@ -34,7 +34,25 @@
   font-size: 0.8rem;
   color: #94a3b8;
   white-space: nowrap;
-  margin-left: auto;
+}
+
+.open-button {
+  flex-shrink: 0;
+}
+
+:host ::ng-deep .open-button .p-button {
+  padding: 2px 8px;
+  font-size: 0.8rem;
+}
+
+.collapsed-notification-icon {
+  display: inline;
+  margin-left: 0;
+}
+
+.hand-raised {
+  display: inline-block;
+  font-style: normal;
 }
 
 /* Expanded message */
