@@ -6,7 +6,15 @@ export const ENTRY_POINT_NAME = '@Human';
 export type MessageRule = 1 | 2 | 3 | 4;
 
 export interface ChatMessage {
+  /** Outer `SentMessage` envelope id — used to route human replies back to
+   *  the backend (backend's `_find_message` looks up by this id). */
   id: string;
+  /** Inner `BaseMessage.id` — the id that `parent_id` references. Used for
+   *  notification-clearing / reply linkage. Mirrors the graph-data.service
+   *  contract (`m.message.id` ↔ reply `m.message.parent_id`). */
+  message_id: string;
+  /** Inner `BaseMessage.parent_id` — points to the replied-to message's
+   *  `message_id` (NOT its outer envelope `id`). */
   parent_id: string | null;
   content: string;
   sender: ActorAddress;
@@ -120,6 +128,7 @@ export function classifyMessage(msg: SentMessage): ChatMessage {
   const rule = classifyRule(msg);
   return {
     id: msg.id,
+    message_id: msg.message.id,
     parent_id: msg.message.parent_id,
     content: msg.message.content ?? '',
     sender: msg.sender,

@@ -18,7 +18,11 @@ import { ApiService } from '../services/api.service';
 import { ChatService } from '../services/chat.service';
 import { ActorMessageService } from '../services/message.service';
 import { Selectable, SelectionService } from '../services/selection.service';
-import { ChatHumanModalComponent, HumanModalReply } from './chat-human-modal.component';
+import {
+  AnsweredRequest,
+  ChatHumanModalComponent,
+  HumanModalReply,
+} from './chat-human-modal.component';
 import { ChatMessageComponent } from './chat-message.component';
 import { ProcessUserInputComponent } from '../process/user-input/user-input.component';
 
@@ -48,6 +52,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   modalVisible = false;
   modalAgentPair: { sender: ActorAddress; recipient: ActorAddress } | null = null;
   modalPendingMessages: ChatMessage[] = [];
+  modalAnsweredMessages: AnsweredRequest[] = [];
 
   private subscription!: Subscription;
   private shouldScrollToBottom = true;
@@ -70,7 +75,10 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
       this.selectedMessageId = ctx ? ctx.id : null;
     });
     this.notificationSubscription = this.chatService.pendingNotifications$.subscribe(
-      (pending) => { this.pendingNotifications = pending; }
+      (pending) => {
+        this.pendingNotifications = pending;
+        this.recomputeModalInputs();
+      }
     );
     this.subscription = this.messageService.messages$.subscribe((messages) => {
       this.checkShouldAutoScroll();
@@ -98,6 +106,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.pendingCatchUpScroll = true;
       }
       this.chatService.messages$.next(classified);
+      this.recomputeModalInputs();
     });
   }
 
@@ -141,7 +150,11 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   hasNotification(chatMsg: ChatMessage): boolean {
-    return chatMsg.rule === 3 && this.pendingNotifications.has(chatMsg.id);
+    // `pendingNotifications` holds inner `BaseMessage.id` values so that
+    // `reply.parent_id` (also inner) clears the correct entry. Using the
+    // outer envelope `chatMsg.id` here would never match, which was the
+    // root cause of the "hand icon never disappears in chat" regression.
+    return chatMsg.rule === 3 && this.pendingNotifications.has(chatMsg.message_id);
   }
 
   ngOnDestroy(): void {
@@ -168,24 +181,21 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
    * model from `Map<pairKey, ChatMessage[]>` to `Set<id>`.
    */
   onRule3Clicked(chatMsg: ChatMessage): void {
-    const pendingForPair = this.chatMessages.filter(
-      (m) =>
-        m.rule === 3 &&
-        m.sender.name === chatMsg.sender.name &&
-        m.recipient.name === chatMsg.recipient.name &&
-        this.pendingNotifications.has(m.id),
-    );
-    if (pendingForPair.length === 0) return;
+    const pair = { sender: chatMsg.sender, recipient: chatMsg.recipient };
+    const pendingForPair = this.computePendingForPair(pair);
+    const answeredForPair = this.computeAnsweredForPair(pair);
 
-    this.modalAgentPair = { sender: chatMsg.sender, recipient: chatMsg.recipient };
+    if (pendingForPair.length === 0 && answeredForPair.length === 0) return;
+
+    this.modalAgentPair = pair;
     this.modalPendingMessages = pendingForPair;
+    this.modalAnsweredMessages = answeredForPair;
     this.modalVisible = true;
   }
 
   onModalReply(reply: HumanModalReply): void {
-    this.modalVisible = false;
-    this.modalAgentPair = null;
-    this.modalPendingMessages = [];
+    // Modal stays open across replies (Story 4-7 AC3) — the next messages$
+    // emission will reclassify pending/answered via recomputeModalInputs().
     this.apiService
       .processHumanInput(this.processId, reply.content, reply.messageId)
       .catch((err) => console.error('Failed to send human input:', err));
@@ -196,7 +206,58 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (!visible) {
       this.modalAgentPair = null;
       this.modalPendingMessages = [];
+      this.modalAnsweredMessages = [];
     }
+  }
+
+  /**
+   * Re-derive modalPendingMessages and modalAnsweredMessages from the current
+   * chatMessages + pendingNotifications when the modal is open. Auto-closes
+   * the modal when both lists become empty (clean-exit condition).
+   */
+  private recomputeModalInputs(): void {
+    if (this.modalAgentPair === null) return;
+    const pendingForPair = this.computePendingForPair(this.modalAgentPair);
+    const answeredForPair = this.computeAnsweredForPair(this.modalAgentPair);
+    this.modalPendingMessages = pendingForPair;
+    this.modalAnsweredMessages = answeredForPair;
+    if (pendingForPair.length === 0 && answeredForPair.length === 0) {
+      this.modalVisible = false;
+      this.modalAgentPair = null;
+    }
+  }
+
+  private computePendingForPair(
+    pair: { sender: ActorAddress; recipient: ActorAddress },
+  ): ChatMessage[] {
+    return this.chatMessages.filter(
+      (m) =>
+        m.rule === 3 &&
+        m.sender.name === pair.sender.name &&
+        m.recipient.name === pair.recipient.name &&
+        this.pendingNotifications.has(m.message_id),
+    );
+  }
+
+  private computeAnsweredForPair(
+    pair: { sender: ActorAddress; recipient: ActorAddress },
+  ): AnsweredRequest[] {
+    return this.chatMessages
+      .filter(
+        (m) =>
+          m.rule === 3 &&
+          m.sender.name === pair.sender.name &&
+          m.recipient.name === pair.recipient.name &&
+          !this.pendingNotifications.has(m.message_id),
+      )
+      .map((request) => {
+        // Reply's `parent_id` is the original's INNER id (`message_id`),
+        // not its outer envelope `id`.
+        const reply =
+          this.chatMessages.find((r) => r.parent_id === request.message_id) ?? null;
+        return reply ? { request, reply } : null;
+      })
+      .filter((x): x is AnsweredRequest => x !== null);
   }
 
   onBackgroundClick(): void {

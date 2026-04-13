@@ -23,26 +23,27 @@ export interface ChatAnswer {
  *
  * Scans all messages in order:
  *   - Rule 3 messages (recipient.role === 'Human' and recipient.name !== @Human)
- *     add their `id` to the unanswered set.
+ *     add their `message_id` (inner `BaseMessage.id`) to the unanswered set.
  *   - Any message whose `parent_id` is non-null removes that parent id from
- *     the unanswered set (i.e. a reply clears only the specific message it
- *     answers — identified by `parent_id === original.id`).
+ *     the unanswered set (a reply clears only the specific message it
+ *     answers — identified by `parent_id === original.message_id`).
  *
  * This aligns the chat panel with `graph-data.service.ts#unSetHumanRequest`,
- * which already performs per-request clearing on the graph-node side by
- * matching `reply.parent_id` against `humanRequests[*].message.id`. Prior
- * behaviour (pair-keyed `Map<string, ChatMessage[]>`) cleared every pending
- * bubble for an agent pair on the first reply; the per-message set preserves
- * individual notifications so the user can see exactly which requests still
- * need a reply — see ADR-002 Decision 4 (revision 2026-04-12).
+ * which performs per-request clearing on the graph-node side by matching
+ * `reply.message.parent_id` against `humanRequests[*].message.id` (both INNER
+ * ids). The previous implementation mistakenly keyed the unanswered set on
+ * the outer `SentMessage.id` while comparing against the inner
+ * `BaseMessage.parent_id` — a mismatch that caused every real-world reply to
+ * silently fail to clear the chat bubble (even though the graph cleared
+ * correctly). See ADR-002 Decision 4 (revision 2026-04-12).
  *
  * The clearing step runs for every message (any rule, any sender role) — the
- * reply contract is "message with `parent_id === original.id`", not "reply
- * whose sender role is Human".
+ * reply contract is "message with `parent_id === original.message_id`", not
+ * "reply whose sender role is Human".
  *
  * Pure: no side effects, no DOM, no service calls. Deterministic.
  *
- * @returns Set of message ids that are still unanswered.
+ * @returns Set of inner `BaseMessage.id`s that are still unanswered.
  */
 export function computePendingNotifications(
   messages: ChatMessage[],
@@ -54,7 +55,7 @@ export function computePendingNotifications(
       msg.recipient.role === HUMAN_ROLE &&
       msg.recipient.name !== ENTRY_POINT_NAME
     ) {
-      unanswered.add(msg.id);
+      unanswered.add(msg.message_id);
     }
     if (msg.parent_id !== null) {
       unanswered.delete(msg.parent_id);

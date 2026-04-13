@@ -347,6 +347,26 @@ describe('classifyMessage', () => {
     expect(result.parent_id).toBe('original-r3-id');
   });
 
+  it('should populate message_id from inner BaseMessage.id (distinct from outer envelope id)', () => {
+    // Regression guard for per-message notification tracking: the outer
+    // SentMessage.id and the inner BaseMessage.id are DIFFERENT values in
+    // production. ChatMessage.id holds the outer (for backend routing via
+    // processHumanInput) while ChatMessage.message_id holds the inner (the
+    // value reply.parent_id will reference). A fixture that makes them
+    // coincide defeats the purpose — this test uses deliberately distinct
+    // values to protect against the regression that shipped in Story 4.6.
+    const msg = makeSentMessage({
+      sender: makeAddress({ name: '@Manager', role: 'Manager' }),
+      recipient: makeAddress({ name: '@QATester', role: 'Human' }),
+      message: makeBaseMessage({ id: 'msg-inner-42', content: 'req' }),
+    });
+    // Force outer id distinct from inner id.
+    msg.id = 'msg-outer-42';
+    const result = classifyMessage(msg);
+    expect(result.id).toBe('msg-outer-42');
+    expect(result.message_id).toBe('msg-inner-42');
+  });
+
   it('should default parent_id to null when inner BaseMessage has no parent (Story 4.6)', () => {
     const msg = makeSentMessage({
       sender: makeAddress({ name: '@Human', role: 'Human' }),

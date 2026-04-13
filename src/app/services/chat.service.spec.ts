@@ -16,8 +16,12 @@ function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
 }
 
 function makeChatMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
+  const id = overrides.id ?? 'msg-1';
   return {
-    id: 'msg-1',
+    id,
+    // Default inner id mirrors outer id so existing assertions keep working;
+    // tests that need to exercise outer/inner divergence override explicitly.
+    message_id: id,
     parent_id: null,
     content: 'Hello world',
     sender: makeAddress({ name: '@Manager', role: 'Manager' }),
@@ -353,6 +357,37 @@ describe('computePendingNotifications', () => {
     expect(result.has('r3-1')).toBe(true);
     expect(result.has('r3-2')).toBe(true);
     expect(result.has('r3-3')).toBe(true);
+  });
+
+  it('tracks by inner message_id, not outer envelope id (regression: Story 4.6 outer/inner mismatch)', () => {
+    // In production the outer SentMessage.id and inner BaseMessage.id are
+    // distinct, and reply.parent_id references the INNER id. If the pending
+    // set is keyed on the outer id, the reply's inner parent_id never
+    // matches and the hand icon never clears in the chat. This test
+    // deliberately makes id !== message_id to exercise the divergence.
+    const msgs: ChatMessage[] = [
+      makeChatMessage({
+        id: 'r3-outer-1',
+        message_id: 'r3-inner-1',
+        rule: 3,
+        sender: makeAddress({ name: '@Manager', role: 'Manager' }),
+        recipient: makeAddress({ name: '@QATester', role: 'Human' }),
+      }),
+      makeChatMessage({
+        id: 'reply-outer-1',
+        message_id: 'reply-inner-1',
+        // Reply's parent_id references the INNER id of the request.
+        parent_id: 'r3-inner-1',
+        rule: 1,
+        sender: makeAddress({ name: '@QATester', role: 'Human' }),
+        recipient: makeAddress({ name: '@Manager', role: 'Manager' }),
+      }),
+    ];
+    const result = computePendingNotifications(msgs);
+    expect(result.size).toBe(0);
+    // Must NOT still contain the outer id (that would be the old buggy key).
+    expect(result.has('r3-outer-1')).toBe(false);
+    expect(result.has('r3-inner-1')).toBe(false);
   });
 
   it('a reply with an unknown parent_id clears nothing', () => {
