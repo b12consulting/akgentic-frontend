@@ -1,23 +1,25 @@
 import { inject, Injectable } from '@angular/core';
-import { BehaviorSubject } from 'rxjs';
-import { CategoryService } from './category.service';
-import { ActorMessageService } from './message.service';
+import { BehaviorSubject, distinctUntilChanged, map, Observable, shareReplay } from 'rxjs';
+
+import { ENTRY_POINT_NAME } from '../models/chat-message.model';
 import {
   AkgenticMessage,
-  StopMessage,
   ErrorMessage,
-  SentMessage,
-  ReceivedMessage,
-  ProcessedMessage,
+  isErrorMessage,
+  isProcessedMessage,
+  isReceivedMessage,
   isSentMessage,
   isStartMessage,
   isStopMessage,
-  isErrorMessage,
-  isReceivedMessage,
-  isProcessedMessage,
+  ProcessedMessage,
+  ReceivedMessage,
+  SentMessage,
+  StartMessage,
+  StopMessage,
 } from '../models/message.types';
 import { EdgeInterface, NodeInterface } from '../models/types';
-import { ENTRY_POINT_NAME } from '../models/chat-message.model';
+import { CategoryService } from './category.service';
+import { MessageLogService } from './message-log.service';
 
 export const HUMAN_ROLE = 'Human';
 export const ORCHESTRATOR_CLASS = 'Orchestrator';
@@ -106,247 +108,219 @@ export class GraphBuilder {
 }
 
 /**
- * GraphDataService centralizes the logic for:
- *  - Subscribing to incoming messages
- *  - Converting messages into nodes, edges, and categories
- *  - Exposing the data as Observables
+ * Story 6.3 (ADR-005 §Decision 4, FR6) — pure graph state.
+ *
+ * Mirrors the three `BehaviorSubject` slices the old imperative
+ * `GraphDataService` exposed (nodes$/edges$/categories$). `EMPTY_GRAPH`
+ * is the seed for `graphFold` and the late-subscriber initial value.
+ */
+export interface GraphState {
+  nodes: NodeInterface[];
+  edges: EdgeInterface[];
+  squad: any[];
+}
+
+export const EMPTY_GRAPH: GraphState = { nodes: [], edges: [], squad: [] };
+
+// ---------------------------------------------------------------------------
+// Module-scope pure helpers (Task 1.2) — one per domain rule. Each returns the
+// SAME state reference for no-op cases (AC7 reference-equality contract) and a
+// fresh object with ONLY changed slices replaced for changes.
+//
+// Path 1 (Task 1.4): `CategoryService` is passed through as a companion DI
+// dependency. `squadDict` / `nodes` mutations on the service are documented
+// side effects (idempotent — same squadId always maps to the same index).
+// External consumers (MessageListComponent, tree/graph components) continue
+// to read `categoryService.squadDict` / `.COLORS` / `.nodes` as before.
+// ---------------------------------------------------------------------------
+
+function applyStartMessage(
+  state: GraphState,
+  msg: StartMessage,
+  categoryService: CategoryService,
+): GraphState {
+  if (msg.sender.role.includes(ORCHESTRATOR_CLASS)) return state;
+
+  const builder = new GraphBuilder(msg);
+  const node = builder.buildNode();
+  const nextNodes = [...state.nodes, node];
+
+  const existingCat = state.squad.find((c) => c.squadId === node.squadId);
+  let nextSquad = state.squad;
+  if (existingCat && node.squadId) {
+    node.category = categoryService.squadDict[node.squadId];
+  } else if (node.squadId) {
+    const newIndex = state.squad.length;
+    node.category = newIndex;
+    nextSquad = [
+      ...state.squad,
+      {
+        name: `Team ${newIndex}`,
+        squadId: node.squadId,
+        itemStyle: { color: categoryService.COLORS[newIndex] },
+      },
+    ];
+    categoryService.squadDict[node.squadId] = newIndex;
+    const selectedSquad = categoryService.getSelectedCategory();
+    if (selectedSquad) {
+      selectedSquad.push(true);
+      categoryService.setSelectedCategory(selectedSquad);
+    }
+  }
+
+  // Keep companion `categoryService.nodes` in sync with the fold state so
+  // downstream components that read from it (MessageListComponent) stay
+  // consistent with `graph$.nodes` (Path 1 — Task 1.5 kept-stateful branch).
+  categoryService.nodes = nextNodes;
+
+  return { ...state, nodes: nextNodes, squad: nextSquad };
+}
+
+function applySentMessage(state: GraphState, msg: SentMessage): GraphState {
+  const builder = new GraphBuilder(msg);
+  let nextEdges = state.edges;
+  if (builder.isNewEdge(state.edges)) {
+    nextEdges = [...state.edges, builder.buildEdge()];
+  }
+  // `setHumanRequest` / `unSetHumanRequest` mutate node.humanRequests in
+  // place on the existing nodes array — documented side-effect preserved
+  // from the pre-refactor behaviour (consumers read `node.humanRequests`).
+  builder.setHumanRequest(state.nodes);
+  builder.unSetHumanRequest(state.nodes);
+  if (nextEdges === state.edges) return state;
+  return { ...state, edges: nextEdges };
+}
+
+function applyReceivedMessage(
+  state: GraphState,
+  msg: ReceivedMessage,
+): GraphState {
+  // Human-role agents (HumanProxy) are waiting for user input, not thinking.
+  if (msg.sender?.role === HUMAN_ROLE) return state;
+  const node = state.nodes.find((n) => n.name === msg.sender?.agent_id);
+  if (!node) return state;
+  node.itemStyle = node.itemStyle || {};
+  node.itemStyle.borderColor = 'darkred';
+  node.itemStyle.borderWidth = 3;
+  return state;
+}
+
+function applyProcessedMessage(
+  state: GraphState,
+  msg: ProcessedMessage,
+): GraphState {
+  const node = state.nodes.find((n) => n.name === msg.sender?.agent_id);
+  if (!node?.itemStyle) return state;
+  delete node.itemStyle.borderColor;
+  delete node.itemStyle.borderWidth;
+  return state;
+}
+
+function applyStopMessage(state: GraphState, msg: StopMessage): GraphState {
+  const idx = state.nodes.findIndex((n) => n.name === msg.sender?.agent_id);
+  if (idx === -1) return state;
+  const nextNodes = [...state.nodes.slice(0, idx), ...state.nodes.slice(idx + 1)];
+  return { ...state, nodes: nextNodes };
+}
+
+function applyErrorMessage(state: GraphState, msg: ErrorMessage): GraphState {
+  const node = state.nodes.find((n) => n.name === msg.sender?.agent_id);
+  if (!node) return state;
+  node.itemStyle = node.itemStyle || {};
+  node.itemStyle.color = 'darkred';
+  return state;
+}
+
+/**
+ * Pure per-message transition (Task 1.3). Discriminates on `__model__` and
+ * delegates to a helper. Returns `state` unchanged for unhandled
+ * discriminants (FR11 passthrough — AC6).
+ */
+export function graphStep(
+  state: GraphState,
+  msg: AkgenticMessage,
+  categoryService: CategoryService,
+): GraphState {
+  if (!msg?.__model__) return state;
+  const kind = msg.__model__.split('.').pop();
+  switch (kind) {
+    case 'StartMessage':
+      return isStartMessage(msg)
+        ? applyStartMessage(state, msg, categoryService)
+        : state;
+    case 'SentMessage':
+      return isSentMessage(msg) ? applySentMessage(state, msg) : state;
+    case 'ReceivedMessage':
+      return isReceivedMessage(msg) ? applyReceivedMessage(state, msg) : state;
+    case 'ProcessedMessage':
+      return isProcessedMessage(msg)
+        ? applyProcessedMessage(state, msg)
+        : state;
+    case 'StopMessage':
+      return isStopMessage(msg) ? applyStopMessage(state, msg) : state;
+    case 'ErrorMessage':
+      return isErrorMessage(msg) ? applyErrorMessage(state, msg) : state;
+    default:
+      return state;
+  }
+}
+
+/**
+ * Pure fold over the full log (Task 1.4). `categoryService` is an injected
+ * companion dependency (Path 1 — kept-stateful `squadDict` mutation). The
+ * fold is pure w.r.t. the `(log, categoryService)` pair.
+ */
+export function graphFold(
+  log: AkgenticMessage[],
+  categoryService: CategoryService,
+): GraphState {
+  return log.reduce(
+    (s, m) => graphStep(s, m, categoryService),
+    EMPTY_GRAPH,
+  );
+}
+
+/**
+ * GraphDataService — Story 6.3 (ADR-005 §Decision 4).
+ *
+ * Exposes `graph$` as a pure selector over `MessageLogService.log$`. The
+ * three legacy observables `nodes$` / `edges$` / `categories$` are re-derived
+ * as sliced projections for downstream compatibility. Imperative state
+ * (`isLoading$`) is preserved — it reflects UX concerns, not message state
+ * (AC10; NFR9 "two exceptions" invariant is unaffected because it lives on
+ * `GraphDataService`, not `ActorMessageService`).
  */
 @Injectable()
 export class GraphDataService {
-  private readonly nodesSubject$ = new BehaviorSubject<NodeInterface[]>([]);
-  private readonly edgesSubject$ = new BehaviorSubject<EdgeInterface[]>([]);
-  private readonly squadSubject$ = new BehaviorSubject<any[]>([]);
+  categoryService: CategoryService = inject(CategoryService);
+  private readonly log: MessageLogService = inject(MessageLogService);
 
-  nodes$ = this.nodesSubject$.asObservable();
-  edges$ = this.edgesSubject$.asObservable();
-  categories$ = this.squadSubject$.asObservable();
+  readonly graph$: Observable<GraphState> = this.log.log$.pipe(
+    map((log) => graphFold(log, this.categoryService)),
+    shareReplay(1),
+  );
+
+  readonly nodes$: Observable<NodeInterface[]> = this.graph$.pipe(
+    map((s) => s.nodes),
+    distinctUntilChanged(),
+  );
+  readonly edges$: Observable<EdgeInterface[]> = this.graph$.pipe(
+    map((s) => s.edges),
+    distinctUntilChanged(),
+  );
+  readonly categories$: Observable<any[]> = this.graph$.pipe(
+    map((s) => s.squad),
+    distinctUntilChanged(),
+  );
+
+  /**
+   * AC10 — intentionally imperative UX state (external async loading
+   * indicator). NOT one of ADR-005's two exceptions — those live on
+   * `ActorMessageService`, so NFR9's invariant is unaffected.
+   */
   isLoading$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
 
   set isLoading(value: boolean) {
     this.isLoading$.next(value);
-  }
-
-  private nodes: NodeInterface[] = [];
-  private edges: EdgeInterface[] = [];
-  private squad: any[] = [];
-
-  messageService: ActorMessageService = inject(ActorMessageService);
-  categoryService: CategoryService = inject(CategoryService);
-
-  constructor() {
-    // Subscribe to full-chart rebuild events.
-    this.messageService.createAgentGraph$.subscribe((messages) => {
-      this.createAkgentGraph(messages);
-    });
-    // Subscribe to incremental message updates.
-    this.messageService.message$.subscribe((message) => {
-      this.updateAkgentGraph(message);
-    });
-  }
-
-  /**
-   * Create a full chart from a list of messages.
-   * If messages is null or empty, use dummy data.
-   */
-  private createAkgentGraph(messages: AkgenticMessage[] | null) {
-    if (!messages) {
-      this.nodes = [];
-      this.edges = [];
-      this.squad = [];
-      this.emitAll(); // still emit empty arrays
-      return;
-    }
-
-    // Clear previous data.
-    this.nodes = [];
-    this.edges = [];
-    this.squad = [];
-
-    // Determine stopped nodes.
-    const stoppedNodeIds = messages
-      .filter((m) => isStopMessage(m))
-      .map((m) => m.sender.agent_id);
-
-    // Build nodes from StartMessage, excluding stopped nodes.
-    this.nodes = messages
-      .filter((m) => isStartMessage(m))
-      .filter((m) => !m.sender.role.includes(ORCHESTRATOR_CLASS))
-      .filter((m) => !stoppedNodeIds.includes(m.sender.agent_id))
-      .map((m) => new GraphBuilder(m).buildNode());
-
-    // Build category mapping based on squadId.
-    const squadIds = [...new Set(this.nodes.map((n) => n.squadId))];
-    const squadDict = squadIds.reduce((acc, squadId, index) => {
-      acc[squadId] = index;
-      return acc;
-    }, {} as { [key: string]: number });
-
-    // Set node categories.
-    this.nodes.forEach((n) => {
-      n.category = squadDict[n.squadId];
-    });
-
-    // Update CategoryService.
-    this.categoryService.nodes = this.nodes;
-    this.categoryService.squadDict = squadDict;
-
-    // Build categories array.
-    this.squad = squadIds.map((squadId, i) => ({
-      name: `Team ${i}`,
-      squadId: squadId,
-      itemStyle: { color: this.categoryService.COLORS[i] },
-    }));
-
-    // Select all categories by default.
-    this.categoryService.setSelectedCategory(this.squad.map(() => true));
-
-    // Build edges from SentMessage.
-    this.edges = [];
-    messages
-      .filter((m) => isSentMessage(m))
-      .forEach((m) => {
-        const builder = new GraphBuilder(m);
-        if (builder.isNewEdge(this.edges)) {
-          this.edges.push(builder.buildEdge());
-        }
-        builder.setHumanRequest(this.nodes);
-        builder.unSetHumanRequest(this.nodes);
-      });
-
-    // Mark crashed nodes (ErrorMessage).
-    messages
-      .filter((m) => isErrorMessage(m))
-      .forEach((m) => {
-        const senderId = m.sender?.agent_id;
-        const node = this.nodes.find((n) => n.name === senderId);
-        if (node) {
-          node.itemStyle = node.itemStyle || {};
-          node.itemStyle.color = 'darkred';
-        }
-      });
-
-    this.emitAll();
-  }
-
-  /**
-   * Update the chart with a single incoming message.
-   * If msg is null, do nothing.
-   */
-  private updateAkgentGraph(msg: AkgenticMessage | null) {
-    if (!msg) {
-      console.warn('updateChart received null message.');
-      return;
-    }
-    if (isStartMessage(msg) && msg.sender.role == ORCHESTRATOR_CLASS) {
-      return; // Skip orchestrator nodes
-    }
-
-    const builder = new GraphBuilder(msg);
-    const selectedSquad = this.categoryService.getSelectedCategory();
-
-    switch (msg.__model__.split('.').pop()) {
-      case 'StartMessage':
-        this.handleStartMessage(builder, selectedSquad);
-        break;
-      case 'SentMessage':
-        this.handleSentMessage(builder);
-        break;
-      case 'ReceivedMessage':
-        if (isReceivedMessage(msg)) {
-          this.handleReceivedMessage(msg);
-        }
-        break;
-      case 'ProcessedMessage':
-        if (isProcessedMessage(msg)) {
-          this.handleProcessedMessage(msg);
-        }
-        break;
-      case 'StopMessage':
-        if (isStopMessage(msg)) {
-          this.handleStopMessage(msg);
-        }
-        break;
-      case 'ErrorMessage':
-        if (isErrorMessage(msg)) {
-          this.handleErrorMessage(msg);
-        }
-        break;
-    }
-    this.emitAll();
-  }
-
-  private handleStartMessage(
-    builder: GraphBuilder,
-    selectedSquad: boolean[] | null
-  ) {
-    const node = builder.buildNode();
-    this.nodes.push(node);
-    const existingCat = this.squad.find((c) => c.squadId === node.squadId);
-    if (existingCat && node.squadId) {
-      node.category = this.categoryService.squadDict[node.squadId];
-    } else if (node.squadId) {
-      const newIndex = this.squad.length;
-      node.category = newIndex;
-      this.squad.push({
-        name: `Team ${newIndex}`,
-        squadId: node.squadId,
-        itemStyle: { color: this.categoryService.COLORS[newIndex] },
-      });
-      this.categoryService.squadDict[node.squadId] = newIndex;
-      if (selectedSquad) {
-        selectedSquad.push(true);
-        this.categoryService.setSelectedCategory(selectedSquad);
-      }
-    }
-  }
-
-  private handleSentMessage(builder: GraphBuilder) {
-    if (builder.isNewEdge(this.edges)) {
-      this.edges.push(builder.buildEdge());
-    }
-    builder.setHumanRequest(this.nodes);
-    builder.unSetHumanRequest(this.nodes);
-  }
-
-  private handleReceivedMessage(msg: ReceivedMessage) {
-    // Human-role agents (HumanProxy) are not "thinking" when they receive
-    // a message — they are waiting on the user. Skip the red-border
-    // indicator so it stays specific to agents actively processing.
-    if (msg.sender?.role === HUMAN_ROLE) return;
-    const node = this.nodes.find((n) => n.name === msg.sender?.agent_id);
-    if (node) {
-      node.itemStyle = node.itemStyle || {};
-      node.itemStyle.borderColor = 'darkred';
-      node.itemStyle.borderWidth = 3;
-    }
-  }
-
-  private handleProcessedMessage(msg: ProcessedMessage) {
-    const node = this.nodes.find((n) => n.name === msg.sender?.agent_id);
-    if (node?.itemStyle) {
-      delete node.itemStyle.borderColor;
-      delete node.itemStyle.borderWidth;
-    }
-  }
-
-  private handleStopMessage(msg: StopMessage) {
-    const idx = this.nodes.findIndex((n) => n.name === msg.sender?.agent_id);
-    if (idx !== -1) {
-      this.nodes.splice(idx, 1);
-    }
-  }
-
-  private handleErrorMessage(msg: ErrorMessage) {
-    const node = this.nodes.find((n) => n.name === msg.sender?.agent_id);
-    if (node) {
-      node.itemStyle = node.itemStyle || {};
-      node.itemStyle.color = 'darkred';
-    }
-  }
-
-  private emitAll() {
-    this.nodesSubject$.next(this.nodes);
-    this.edgesSubject$.next(this.edges);
-    this.squadSubject$.next(this.squad);
   }
 }

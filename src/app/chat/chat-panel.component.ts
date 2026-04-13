@@ -124,7 +124,11 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
       if (this.isHovered && classified.length > previousLength) {
         this.pendingCatchUpScroll = true;
       }
-      this.chatService.messages$.next(classified);
+      // Story 6.3 (Task 6.1): `chatService.messages$` is now a derived
+      // selector over `MessageLogService.log$` (read-only). `chatFold`
+      // performs the same classification internally, so the prior
+      // imperative push (`this.chatService.messages$.next(classified)`) is
+      // redundant and has been deleted.
       this.recomputeModalInputs();
     });
   }

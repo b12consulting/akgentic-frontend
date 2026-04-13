@@ -12,8 +12,8 @@ import {
 } from '../services/chat.service';
 import { ActorMessageService } from '../services/message.service';
 import { SelectionService } from '../services/selection.service';
-import { ActorAddress, SentMessage, BaseMessage, AkgenticMessage, StartMessage } from '../models/message.types';
-import { ChatMessage } from '../models/chat-message.model';
+import { ActorAddress, SentMessage, BaseMessage, AkgenticMessage, StartMessage, isSentMessage } from '../models/message.types';
+import { ChatMessage, classifyMessage } from '../models/chat-message.model';
 import { ApiService } from '../services/api.service';
 import { AkgentService } from '../services/akgent.service';
 import { GraphDataService } from '../services/graph-data.service';
@@ -74,12 +74,28 @@ describe('ChatPanelComponent', () => {
   beforeEach(async () => {
     messagesSubject = new BehaviorSubject<AkgenticMessage[]>([]);
 
-    const messagesSubj = new BehaviorSubject<any[]>([]);
+    // Story 6.3 (Task 6.3): `chatService.messages$` is now a read-only
+    // derived observable owned by `chatFold`. For this component spec we
+    // mock it by projecting the (stub) `messageService.messages$` through
+    // the same classification that `chatFold` applies, so every tests that
+    // feeds SentMessages via `messagesSubject.next(...)` drives the derived
+    // pipeline end-to-end.
+    const classifiedMessages$ = messagesSubject.pipe(
+      map((msgs: AkgenticMessage[]) =>
+        msgs
+          .filter(isSentMessage)
+          .filter((m) => m.sender.role !== 'ActorSystem')
+          .filter((m) => m.message.content != null && m.message.content !== '')
+          .map((m) => classifyMessage(m)),
+      ),
+    );
     const thinkingAgentsSubj = new BehaviorSubject<ThinkingState[]>([]);
     const chatService = {
-      messages$: messagesSubj,
+      messages$: classifiedMessages$,
       loadingProcess$: new BehaviorSubject<boolean>(false),
-      pendingNotifications$: messagesSubj.pipe(map(computePendingNotifications)),
+      pendingNotifications$: classifiedMessages$.pipe(
+        map(computePendingNotifications),
+      ),
       thinkingAgents$: thinkingAgentsSubj,
     };
 
@@ -242,19 +258,11 @@ describe('ChatPanelComponent', () => {
     expect(component.trackById(0, chatMsg)).toBe('abc-123');
   });
 
-  it('should push classified messages to chatService.messages$', () => {
-    const chatService = TestBed.inject(ChatService);
-    const sent = makeSentMessage(
-      { name: '@Human', role: 'Human' },
-      { name: '@Manager', role: 'Manager' },
-      'hello',
-    );
-    messagesSubject.next([sent]);
-    fixture.detectChanges();
-
-    expect(chatService.messages$.value.length).toBe(1);
-    expect(chatService.messages$.value[0].rule).toBe(1);
-  });
+  // Story 6.3 (Task 6.1 / AC2): the test that asserted
+  // `chatService.messages$.value` after the component pushed classified
+  // messages is retired. `chatService.messages$` is now a read-only derived
+  // observable over `MessageLogService.log$`; `chatFold` owns the
+  // classification. Coverage moved to `chat.service.spec.ts`.
 
   describe('bubble selection (Story 4-11 — routing retired)', () => {
     it('onBubbleClicked should update selectedMessageId only (no chatService call)', () => {
