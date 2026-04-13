@@ -166,11 +166,42 @@ export class ActorMessageService {
       window.location.protocol === 'https:' ? 'wss://' : 'ws://';
     const api = environment.api.replace(/(^\w+:|^)\/\//, '');
 
-    this.webSocket = webSocket(`${wsProtocol}${api}/ws/${this.processId}`);
-    this.chatService.loadingProcess$.next(false);
+    // Story 4-10 (AC2): stopped-team path has already populated replay state
+    // via HTTP getEvents() above — flip the spinner off BEFORE wiring up the
+    // WS subscription so the user never sees `#emptyState` flash.
+    if (!running) {
+      this.chatService.loadingProcess$.next(false);
+    }
+
+    // Story 4-10 (AC1): running-team path keeps the spinner on until the
+    // first WS event actually lands. Closure flag guards against re-emitting
+    // `false` for every subsequent event.
+    let firstEventReceived = false;
+    const flipOnFirstEvent = (): void => {
+      if (firstEventReceived) return;
+      firstEventReceived = true;
+      this.chatService.loadingProcess$.next(false);
+    };
+
+    try {
+      this.webSocket = this.createWebSocket(
+        `${wsProtocol}${api}/ws/${this.processId}`,
+      );
+    } catch (err) {
+      // Story 4-10 (AC3): synchronous ctor failure must not leave the UI
+      // spinning forever.
+      console.error('WebSocket construction failed:', err);
+      this.chatService.loadingProcess$.next(false);
+      throw err;
+    }
 
     this.webSocket.subscribe({
       next: (data: any) => {
+        // Story 4-10 (AC1): first event over the wire ends the loading
+        // window. Runs for EVERY event shape (including ones we ignore
+        // below) — receiving bytes is proof the replay stream has started.
+        flipOnFirstEvent();
+
         // V2: data is a raw Message with __model__ discriminator
         const event = data;
         if (!event || !event.__model__) return;
@@ -213,6 +244,11 @@ export class ActorMessageService {
         }
       },
       error: (err: any) => {
+        // Story 4-10 (AC3): failure before any event landed must not leave
+        // the UI spinning forever — flip the flag so the chat panel falls
+        // through to `#emptyState` (or the subsequent error affordance)
+        // instead of showing the "Loading process..." placeholder for ever.
+        flipOnFirstEvent();
         console.error('WebSocket error:', err);
         this.messageService.add({
           severity: 'error',
@@ -223,6 +259,15 @@ export class ActorMessageService {
       },
       complete: () => console.log('webSocket - complete'),
     });
+  }
+
+  /**
+   * Story 4-10: indirection point for WebSocket construction so tests can
+   * inject a fake Subject without trying to rewrite the rxjs module
+   * namespace (which is frozen under ES modules).
+   */
+  protected createWebSocket(url: string): WebSocketSubject<any> {
+    return webSocket(url);
   }
 
   /**

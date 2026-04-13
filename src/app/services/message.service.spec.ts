@@ -1,5 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { MessageService } from 'primeng/api';
+import { Subject } from 'rxjs';
+import { WebSocketSubject } from 'rxjs/webSocket';
 
 import { ActorMessageService } from './message.service';
 import { ApiService } from './api.service';
@@ -216,5 +218,98 @@ describe('ActorMessageService.applyThinkingLifecycle + dispatch (Story 4-8)', ()
       (service as any).applyThinkingLifecycle(makeSent());
       expect(chatService.thinkingAgents$.value.length).toBe(0);
     });
+  });
+});
+
+describe('ActorMessageService.init — loadingProcess$ spinner window (Story 4-10)', () => {
+  let service: ActorMessageService;
+  let chatService: ChatService;
+  let fakeSocket: Subject<any>;
+
+  beforeEach(() => {
+    fakeSocket = new Subject<any>();
+
+    TestBed.configureTestingModule({
+      providers: [
+        ActorMessageService,
+        ChatService,
+        {
+          provide: ApiService,
+          useValue: {
+            // Only used by the `!running` branch; default empty list is fine.
+            getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+          },
+        },
+        { provide: MessageService, useValue: { add: jasmine.createSpy('add') } },
+      ],
+    });
+    service = TestBed.inject(ActorMessageService);
+    chatService = TestBed.inject(ChatService);
+
+    // Stub the service's protected WS factory so init() wires the
+    // subscription up to our Subject instead of opening a real TCP
+    // connection. Cast through unknown to satisfy the WebSocketSubject<any>
+    // return type expected by init().
+    spyOn<any>(service, 'createWebSocket').and.returnValue(
+      fakeSocket as unknown as WebSocketSubject<any>,
+    );
+  });
+
+  afterEach(() => {
+    // Avoid cross-test leakage of the fake socket.
+    fakeSocket.complete();
+  });
+
+  it('AC1: running=true keeps loadingProcess$ true until the first WS event arrives', async () => {
+    await service.init('proc-1', true);
+
+    // Socket is open but no events yet → spinner MUST stay on.
+    expect(chatService.loadingProcess$.value).toBe(true);
+  });
+
+  it('AC1: loadingProcess$ flips to false on the first WS event', async () => {
+    await service.init('proc-1', true);
+    expect(chatService.loadingProcess$.value).toBe(true);
+
+    // First event over the wire — shape intentionally uninteresting, the
+    // flip MUST happen before any per-__model__ branching.
+    fakeSocket.next({
+      __model__: 'akgentic.core.messages.orchestrator.StartMessage',
+    });
+
+    expect(chatService.loadingProcess$.value).toBe(false);
+  });
+
+  it('AC1: subsequent events do not re-emit false (guard is single-shot)', async () => {
+    await service.init('proc-1', true);
+    const emitted: boolean[] = [];
+    chatService.loadingProcess$.subscribe((v) => emitted.push(v));
+    // Start: BehaviorSubject replays current value (true).
+    expect(emitted).toEqual([true]);
+
+    fakeSocket.next({ __model__: 'StartMessage' });
+    fakeSocket.next({ __model__: 'StartMessage' });
+    fakeSocket.next({ __model__: 'StartMessage' });
+
+    // Exactly ONE transition to false — no re-emit per event.
+    expect(emitted).toEqual([true, false]);
+  });
+
+  it('AC3: WS error before any event flips loadingProcess$ to false', async () => {
+    await service.init('proc-1', true);
+    expect(chatService.loadingProcess$.value).toBe(true);
+
+    fakeSocket.error(new Error('connect refused'));
+
+    expect(chatService.loadingProcess$.value).toBe(false);
+  });
+
+  it('AC2: running=false (stopped team) flips loadingProcess$ to false before WS wiring', async () => {
+    // Record the sequence of `loadingProcess$` values as init() runs so we
+    // can assert the spinner is OFF before any WS events are delivered.
+    await service.init('proc-1', false);
+
+    // No WS events pushed → stopped-team path MUST have already flipped it.
+    expect(chatService.loadingProcess$.value).toBe(false);
   });
 });
