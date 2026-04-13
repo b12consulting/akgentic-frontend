@@ -82,14 +82,10 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
    *  pattern; persists across thinkingAgents$ re-emissions). */
   private thinkingExpanded = new Set<string>();
   selectedMessageId: string | null = null;
-  private replyContextSubscription!: Subscription;
   private notificationSubscription!: Subscription;
   pendingNotifications: Set<string> = new Set();
 
   ngOnInit(): void {
-    this.replyContextSubscription = this.chatService.replyContext$.subscribe((ctx) => {
-      this.selectedMessageId = ctx ? ctx.id : null;
-    });
     this.notificationSubscription = this.chatService.pendingNotifications$.subscribe(
       (pending) => {
         this.pendingNotifications = pending;
@@ -184,16 +180,20 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (this.subscription) {
       this.subscription.unsubscribe();
     }
-    if (this.replyContextSubscription) {
-      this.replyContextSubscription.unsubscribe();
-    }
     if (this.notificationSubscription) {
       this.notificationSubscription.unsubscribe();
     }
   }
 
+  /**
+   * Bubble click updates the visual selection highlight only. Routing is
+   * driven exclusively by the Send-to dropdown in `user-input.component`
+   * (see Story 4-11 / ADR-002 Revision Log 2026-04-13 — Decision 3
+   * superseded). The former `chatService.setReplyContext(...)` call was
+   * retired because it silently overrode the dropdown selection.
+   */
   onBubbleClicked(chatMsg: ChatMessage): void {
-    this.chatService.setReplyContext(chatMsg);
+    this.selectedMessageId = chatMsg.id;
   }
 
   /**
@@ -284,12 +284,12 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   onBackgroundClick(): void {
-    this.chatService.clearReplyContext();
+    this.selectedMessageId = null;
   }
 
   @HostListener('document:keydown.escape')
   onEscapePress(): void {
-    this.chatService.clearReplyContext();
+    this.selectedMessageId = null;
   }
 
   onMessageSelected(chatMsg: ChatMessage): void {

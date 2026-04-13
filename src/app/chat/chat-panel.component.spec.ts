@@ -79,15 +79,8 @@ describe('ChatPanelComponent', () => {
     const chatService = {
       messages$: messagesSubj,
       loadingProcess$: new BehaviorSubject<boolean>(false),
-      replyContext$: new BehaviorSubject<any>(null),
       pendingNotifications$: messagesSubj.pipe(map(computePendingNotifications)),
       thinkingAgents$: thinkingAgentsSubj,
-      setReplyContext: jasmine.createSpy('setReplyContext').and.callFake(
-        function(this: any, msg: any) { this.replyContext$.next(msg); }
-      ),
-      clearReplyContext: jasmine.createSpy('clearReplyContext').and.callFake(
-        function(this: any) { this.replyContext$.next(null); }
-      ),
     };
 
     const messageService = {
@@ -263,8 +256,8 @@ describe('ChatPanelComponent', () => {
     expect(chatService.messages$.value[0].rule).toBe(1);
   });
 
-  describe('reply context (bubble selection)', () => {
-    it('onBubbleClicked should call chatService.setReplyContext', () => {
+  describe('bubble selection (Story 4-11 — routing retired)', () => {
+    it('onBubbleClicked should update selectedMessageId only (no chatService call)', () => {
       const chatMsg: ChatMessage = {
         id: 'msg-reply',
         message_id: 'msg-reply',
@@ -279,49 +272,28 @@ describe('ChatPanelComponent', () => {
         collapsed: false,
         label: 'Manager',
       };
+      const svc = TestBed.inject(ChatService) as any;
+      // The retired API must not be present on the service mock.
+      expect(svc.setReplyContext).toBeUndefined();
+      expect(svc.replyContext$).toBeUndefined();
+
       component.onBubbleClicked(chatMsg);
-      const svc = TestBed.inject(ChatService) as any;
-      expect(svc.setReplyContext).toHaveBeenCalledWith(chatMsg);
+      expect(component.selectedMessageId).toBe('msg-reply');
     });
 
-    it('onBackgroundClick should call chatService.clearReplyContext', () => {
+    it('onBackgroundClick should clear selectedMessageId locally', () => {
+      component.selectedMessageId = 'msg-abc';
       component.onBackgroundClick();
-      const svc = TestBed.inject(ChatService) as any;
-      expect(svc.clearReplyContext).toHaveBeenCalled();
+      expect(component.selectedMessageId).toBeNull();
     });
 
-    it('onEscapePress should call chatService.clearReplyContext', () => {
+    it('onEscapePress should clear selectedMessageId locally', () => {
+      component.selectedMessageId = 'msg-abc';
       component.onEscapePress();
-      const svc = TestBed.inject(ChatService) as any;
-      expect(svc.clearReplyContext).toHaveBeenCalled();
-    });
-
-    it('selectedMessageId should track replyContext$ value', () => {
-      const svc = TestBed.inject(ChatService) as any;
-      expect(component.selectedMessageId).toBeNull();
-
-      svc.replyContext$.next({
-        id: 'msg-selected',
-        content: 'test',
-        sender: makeAddress({ name: '@Manager' }),
-        recipient: makeAddress({ name: '@Human' }),
-        timestamp: new Date(),
-        rule: 2,
-        alignment: 'left',
-        color: '#9ebbcb',
-        collapsed: false,
-        label: 'Manager',
-      });
-      fixture.detectChanges();
-
-      expect(component.selectedMessageId).toBe('msg-selected');
-
-      svc.replyContext$.next(null);
-      fixture.detectChanges();
       expect(component.selectedMessageId).toBeNull();
     });
 
-    it('clicking different bubble should switch reply context', () => {
+    it('clicking different bubble should switch selectedMessageId', () => {
       const msg1: ChatMessage = {
         id: 'msg-1',
         message_id: 'msg-1',

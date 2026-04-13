@@ -17,6 +17,14 @@ import { KGStateReducer, KnowledgeGraphData } from './kg-state.reducer';
 import { ToolPresenceService } from './tool-presence.service';
 import { MessageService } from 'primeng/api';
 
+/**
+ * Story 4-10 (AC7): minimum visible duration of the loading spinner.
+ * When the first event / WS error / stopped-team replay lands before this
+ * floor, the flip to `loadingProcess$.next(false)` is deferred so users
+ * never see a sub-perception flash of the spinner before the UI transitions.
+ */
+const SPINNER_MIN_VISIBLE_MS = 500;
+
 /** V2 message types that feed the agent graph and message list. */
 const GRAPH_RELEVANT_MODELS = [
   'StartMessage',
@@ -60,6 +68,19 @@ export class ActorMessageService {
 
   processId: string = '';
 
+  /**
+   * Story 4-10 (AC7): timestamp (ms since epoch) of the most recent
+   * `loadingProcess$.next(true)` emission in `init()`. Used to compute the
+   * elapsed visible duration when scheduling the flip-to-false.
+   */
+  private spinnerShownAt: number = 0;
+  /**
+   * Story 4-10 (AC7): handle of a pending `setTimeout` that will flip the
+   * spinner to `false` once the 500ms floor is reached. Cleared on re-init
+   * so a stale `false` can never clobber a fresh spinner cycle.
+   */
+  private spinnerFlipTimer: ReturnType<typeof setTimeout> | null = null;
+
   constructor() {
     // Wire the KG reducer's projection stream into `knowledgeGraph$`
     // (AC4, Option A). One-time bind avoids a circular DI dependency —
@@ -80,6 +101,14 @@ export class ActorMessageService {
     this.kgReducer.resetForTeam();
     this.toolPresenceService.resetForTeam();
 
+    // Story 4-10 (AC7): cancel any pending flip from a prior `init()` call
+    // (team switch / re-init) before we start a new spinner cycle, otherwise
+    // a stale timer could emit `false` against the new cycle.
+    if (this.spinnerFlipTimer !== null) {
+      clearTimeout(this.spinnerFlipTimer);
+      this.spinnerFlipTimer = null;
+    }
+    this.spinnerShownAt = Date.now();
     this.chatService.loadingProcess$.next(true);
 
     if (!running) {
@@ -166,11 +195,42 @@ export class ActorMessageService {
       window.location.protocol === 'https:' ? 'wss://' : 'ws://';
     const api = environment.api.replace(/(^\w+:|^)\/\//, '');
 
-    this.webSocket = webSocket(`${wsProtocol}${api}/ws/${this.processId}`);
-    this.chatService.loadingProcess$.next(false);
+    // Story 4-10 (AC2): stopped-team path has already populated replay state
+    // via HTTP getEvents() above — flip the spinner off BEFORE wiring up the
+    // WS subscription so the user never sees `#emptyState` flash.
+    if (!running) {
+      this.scheduleSpinnerFlipFalse();
+    }
+
+    // Story 4-10 (AC1): running-team path keeps the spinner on until the
+    // first WS event actually lands. Closure flag guards against re-emitting
+    // `false` for every subsequent event.
+    let firstEventReceived = false;
+    const flipOnFirstEvent = (): void => {
+      if (firstEventReceived) return;
+      firstEventReceived = true;
+      this.scheduleSpinnerFlipFalse();
+    };
+
+    try {
+      this.webSocket = this.createWebSocket(
+        `${wsProtocol}${api}/ws/${this.processId}`,
+      );
+    } catch (err) {
+      // Story 4-10 (AC3): synchronous ctor failure must not leave the UI
+      // spinning forever.
+      console.error('WebSocket construction failed:', err);
+      this.scheduleSpinnerFlipFalse();
+      throw err;
+    }
 
     this.webSocket.subscribe({
       next: (data: any) => {
+        // Story 4-10 (AC1): first event over the wire ends the loading
+        // window. Runs for EVERY event shape (including ones we ignore
+        // below) — receiving bytes is proof the replay stream has started.
+        flipOnFirstEvent();
+
         // V2: data is a raw Message with __model__ discriminator
         const event = data;
         if (!event || !event.__model__) return;
@@ -213,6 +273,11 @@ export class ActorMessageService {
         }
       },
       error: (err: any) => {
+        // Story 4-10 (AC3): failure before any event landed must not leave
+        // the UI spinning forever — flip the flag so the chat panel falls
+        // through to `#emptyState` (or the subsequent error affordance)
+        // instead of showing the "Loading process..." placeholder for ever.
+        flipOnFirstEvent();
         console.error('WebSocket error:', err);
         this.messageService.add({
           severity: 'error',
@@ -223,6 +288,46 @@ export class ActorMessageService {
       },
       complete: () => console.log('webSocket - complete'),
     });
+  }
+
+  /**
+   * Story 4-10: indirection point for WebSocket construction so tests can
+   * inject a fake Subject without trying to rewrite the rxjs module
+   * namespace (which is frozen under ES modules).
+   */
+  protected createWebSocket(url: string): WebSocketSubject<any> {
+    return webSocket(url);
+  }
+
+  /**
+   * Story 4-10 (AC7): flip `loadingProcess$` to `false`, but respect the
+   * `SPINNER_MIN_VISIBLE_MS` floor measured from the spinner-on emission
+   * time. If the floor has already been reached, flip immediately; otherwise
+   * defer via `setTimeout` so the user always sees the spinner for at least
+   * half a second.
+   *
+   * Called from THREE sites (all share the same floor semantics):
+   *   - WS first-event path (running=true)
+   *   - WS error path (failure-safety)
+   *   - stopped-team path (after HTTP replay seeds state)
+   *   - synchronous `createWebSocket` throw (failure-safety)
+   */
+  private scheduleSpinnerFlipFalse(): void {
+    const elapsed = Date.now() - this.spinnerShownAt;
+    if (elapsed >= SPINNER_MIN_VISIBLE_MS) {
+      this.chatService.loadingProcess$.next(false);
+      return;
+    }
+    // Clear any pending timer (should normally be null here because the
+    // single-shot guard in `flipOnFirstEvent()` prevents double-scheduling,
+    // but the stopped-team path and failure paths do not use that guard).
+    if (this.spinnerFlipTimer !== null) {
+      clearTimeout(this.spinnerFlipTimer);
+    }
+    this.spinnerFlipTimer = setTimeout(() => {
+      this.spinnerFlipTimer = null;
+      this.chatService.loadingProcess$.next(false);
+    }, SPINNER_MIN_VISIBLE_MS - elapsed);
   }
 
   /**
