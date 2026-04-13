@@ -1,9 +1,13 @@
 import { TestBed } from '@angular/core/testing';
 
 import { AkgenticMessage } from '../models/message.types';
-import { MessageLogService } from './message-log.service';
+import { MessageLogService, messageListFold } from './message-log.service';
 
-function msg(id: string, model: string = 'StartMessage'): AkgenticMessage {
+function msg(
+  id: string,
+  model: string = 'StartMessage',
+  senderRole: string = 'Worker',
+): AkgenticMessage {
   return {
     id,
     parent_id: null,
@@ -12,7 +16,7 @@ function msg(id: string, model: string = 'StartMessage'): AkgenticMessage {
     sender: {
       __actor_address__: true,
       name: '@X',
-      role: 'Worker',
+      role: senderRole,
       agent_id: 'a',
       team_id: 'team-1',
       squad_id: 's',
@@ -97,5 +101,96 @@ describe('MessageLogService (Story 6.1)', () => {
     service.append(msg('1'));
     service.appendAll([msg('2'), msg('3')]);
     expect(service.snapshot().map((m) => m.id)).toEqual(['1', '2', '3']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 6.4 (AC4) — messageList$ selector
+// ---------------------------------------------------------------------------
+
+describe('messageListFold (Story 6.4, AC4)', () => {
+  it('empty log → []', () => {
+    expect(messageListFold([])).toEqual([]);
+  });
+
+  it('filters to SentMessage and ErrorMessage only', () => {
+    const log: AkgenticMessage[] = [
+      msg('s1', 'SentMessage'),
+      msg('st1', 'StartMessage'),
+      msg('e1', 'ErrorMessage'),
+      msg('sc1', 'StateChangedMessage'),
+      msg('ev1', 'EventMessage'),
+      msg('r1', 'ReceivedMessage'),
+    ];
+    const out = messageListFold(log);
+    expect(out.map((m) => m.id)).toEqual(['s1', 'e1']);
+  });
+
+  it('excludes ActorSystem senders', () => {
+    const log: AkgenticMessage[] = [
+      msg('s1', 'SentMessage', 'ActorSystem'),
+      msg('s2', 'SentMessage', 'Worker'),
+      msg('e1', 'ErrorMessage', 'ActorSystem'),
+    ];
+    const out = messageListFold(log);
+    expect(out.map((m) => m.id)).toEqual(['s2']);
+  });
+
+  it('FR11 passthrough: messages with missing/unknown __model__ are silently excluded (no throw)', () => {
+    const unknown = { ...msg('x1', 'SentMessage'), __model__: undefined as any };
+    const empty = { ...msg('x2', 'SentMessage'), __model__: '' as any };
+    const good = msg('x3', 'SentMessage');
+    expect(() => messageListFold([unknown, empty, good])).not.toThrow();
+    const out = messageListFold([unknown, empty, good]);
+    expect(out.map((m) => m.id)).toEqual(['x3']);
+  });
+
+  it('preserves arrival order across a mixed log', () => {
+    const log: AkgenticMessage[] = [
+      msg('a', 'SentMessage'),
+      msg('b', 'StartMessage'),
+      msg('c', 'ErrorMessage'),
+      msg('d', 'SentMessage'),
+    ];
+    expect(messageListFold(log).map((m) => m.id)).toEqual(['a', 'c', 'd']);
+  });
+});
+
+describe('MessageLogService.messageList$ (Story 6.4, AC4)', () => {
+  let service: MessageLogService;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [MessageLogService] });
+    service = TestBed.inject(MessageLogService);
+  });
+
+  it('emits [] on subscribe when log is empty', () => {
+    let observed: AkgenticMessage[] | null = null;
+    const sub = service.messageList$.subscribe((v) => (observed = v));
+    expect(observed as AkgenticMessage[] | null).toEqual([]);
+    sub.unsubscribe();
+  });
+
+  it('emits the filtered slice when the log changes', () => {
+    const emissions: AkgenticMessage[][] = [];
+    const sub = service.messageList$.subscribe((v) => emissions.push(v));
+
+    // Initial [] from the seed log.
+    expect(emissions.length).toBe(1);
+    expect(emissions[0]).toEqual([]);
+
+    // A non-relevant message still triggers a log$ emission; the filter
+    // produces a fresh [] (new reference) so distinctUntilChanged passes
+    // through (default reference comparison). This is intentional — OnPush
+    // consumers rely on a new reference to re-evaluate (NFR3).
+    service.append(msg('st1', 'StartMessage'));
+    expect(emissions[emissions.length - 1]).toEqual([]);
+
+    // Append a relevant message — slice now contains the SentMessage.
+    service.append(msg('s1', 'SentMessage'));
+    const last = emissions[emissions.length - 1];
+    expect(last.map((m) => m.id)).toEqual(['s1']);
+
+    sub.unsubscribe();
   });
 });

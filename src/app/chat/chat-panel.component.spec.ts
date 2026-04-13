@@ -10,9 +10,8 @@ import {
   computePendingNotifications,
   ThinkingState,
 } from '../services/chat.service';
-import { ActorMessageService } from '../services/message.service';
 import { SelectionService } from '../services/selection.service';
-import { ActorAddress, SentMessage, BaseMessage, AkgenticMessage, StartMessage, isSentMessage } from '../models/message.types';
+import { ActorAddress, SentMessage, AkgenticMessage, StartMessage, isSentMessage } from '../models/message.types';
 import { ChatMessage, classifyMessage } from '../models/chat-message.model';
 import { ApiService } from '../services/api.service';
 import { AkgentService } from '../services/akgent.service';
@@ -74,12 +73,11 @@ describe('ChatPanelComponent', () => {
   beforeEach(async () => {
     messagesSubject = new BehaviorSubject<AkgenticMessage[]>([]);
 
-    // Story 6.3 (Task 6.3): `chatService.messages$` is now a read-only
-    // derived observable owned by `chatFold`. For this component spec we
-    // mock it by projecting the (stub) `messageService.messages$` through
-    // the same classification that `chatFold` applies, so every tests that
-    // feeds SentMessages via `messagesSubject.next(...)` drives the derived
-    // pipeline end-to-end.
+    // Story 6.4 (AC3): `ChatPanelComponent` no longer injects
+    // `ActorMessageService`. The spec feeds SentMessages via
+    // `messagesSubject` and projects them through the same classification
+    // `chatFold` performs in production — the component now reads the
+    // derived `chatService.messages$` directly.
     const classifiedMessages$ = messagesSubject.pipe(
       map((msgs: AkgenticMessage[]) =>
         msgs
@@ -97,10 +95,6 @@ describe('ChatPanelComponent', () => {
         map(computePendingNotifications),
       ),
       thinkingAgents$: thinkingAgentsSubj,
-    };
-
-    const messageService = {
-      messages$: messagesSubject,
     };
 
     const selectionService = jasmine.createSpyObj('SelectionService', [
@@ -124,7 +118,6 @@ describe('ChatPanelComponent', () => {
       providers: [
         provideMarkdown(),
         { provide: ChatService, useValue: chatService },
-        { provide: ActorMessageService, useValue: messageService },
         { provide: SelectionService, useValue: selectionService },
         { provide: ApiService, useValue: apiService },
         { provide: AkgentService, useValue: akgentService },
@@ -142,7 +135,7 @@ describe('ChatPanelComponent', () => {
     expect(component).toBeTruthy();
   });
 
-  it('should classify messages from messageService.messages$', () => {
+  it('should pass chatService.messages$ through to this.chatMessages', () => {
     const sent = makeSentMessage(
       { name: '@Human', role: 'Human' },
       { name: '@Manager', role: 'Manager' },
