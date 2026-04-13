@@ -8,11 +8,10 @@
   color: #334155;
   font-size: 0.9rem;
   border-radius: 6px;
-  transition: background-color 0.15s ease;
-  background-color: rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(158, 187, 203, 0.5);
 
   &:hover {
-    background-color: rgba(0, 0, 0, 0.04);
+    background-color: rgba(0, 0, 0, 0.02);
   }
 }
 

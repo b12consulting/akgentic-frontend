@@ -25,6 +25,7 @@ function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
 function makeChatMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
   return {
     id: 'msg-1',
+    parent_id: null,
     content: 'Hello world',
     sender: makeAddress({ name: '@Manager', role: 'Manager' }),
     recipient: makeAddress({ name: '@QATester', role: 'Human' }),
