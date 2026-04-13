@@ -593,14 +593,14 @@ describe('ActorMessageService — two-exceptions invariant (Story 6.4, NFR9)', (
     });
   });
 
-  it('public data surface is exactly {stateDict$, contextDict$} (knowledgeGraphLoading$ excluded — UX state, see §Decision 8)', () => {
+  it('public data surface is exactly {stateDict$, contextDict$}', () => {
     const service = TestBed.inject(ActorMessageService);
-    // Story 6.4: `knowledgeGraphLoading$` is a UX spinner (analogous to
-    // `loadingProcess$` on `ChatService`, AC10), not log-derived state — it
-    // is intentionally excluded from the invariant check via name allow-list.
-    const containers = probeStateContainers(service).filter(
-      (n) => n !== 'knowledgeGraphLoading$',
-    );
+    // AC5 spec: the probe MUST NOT rely on a name allow-list — it walks
+    // `Object.getOwnPropertyNames` with a runtime `instanceof` check so that
+    // any new `BehaviorSubject` field (regardless of name) forces this test
+    // to fail. Per ADR-005 §Decision 5, adding a third exception requires a
+    // new ADR.
+    const containers = probeStateContainers(service);
     expect(new Set(containers)).toEqual(new Set(['stateDict$', 'contextDict$']));
   });
 
@@ -608,9 +608,7 @@ describe('ActorMessageService — two-exceptions invariant (Story 6.4, NFR9)', (
     const service = TestBed.inject(ActorMessageService);
     // Simulate the "someone added a new BehaviorSubject" diff.
     (service as any).extraDict$ = { agent: new BehaviorSubject<any>(null) };
-    const containers = probeStateContainers(service).filter(
-      (n) => n !== 'knowledgeGraphLoading$',
-    );
+    const containers = probeStateContainers(service);
     // The probe MUST detect the addition (set is no longer the documented
     // pair). Without this guard, the invariant test would silently pass.
     expect(new Set(containers)).not.toEqual(
@@ -622,8 +620,6 @@ describe('ActorMessageService — two-exceptions invariant (Story 6.4, NFR9)', (
   it('non-state observables (Subjects, Subscriptions, WebSocketSubject) are NOT counted as exceptions', () => {
     const service = TestBed.inject(ActorMessageService);
     const containers = probeStateContainers(service);
-    // These should not surface in the probe regardless of the
-    // knowledgeGraphLoading$ allow-list:
     expect(containers).not.toContain('_wsInbound$');
     expect(containers).not.toContain('bufferSub');
     expect(containers).not.toContain('spinnerSub');

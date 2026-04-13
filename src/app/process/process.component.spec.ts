@@ -94,9 +94,11 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
 
     // Story 6.4 (AC1): `messages$` / `message$` / `createAgentGraph$` were
     // deleted from `ActorMessageService`; the stub no longer references them.
+    // Code review fix: `knowledgeGraphLoading$` deleted (dead state, never
+    // `.next()`-ed and its `isLoading$` consumer was never read in the KG
+    // component template — collapsed into the two-exceptions invariant purity).
     const messageService = {
       init: jasmine.createSpy('init').and.returnValue(Promise.resolve()),
-      knowledgeGraphLoading$: new BehaviorSubject<boolean>(false),
     };
 
     const akgentService = {

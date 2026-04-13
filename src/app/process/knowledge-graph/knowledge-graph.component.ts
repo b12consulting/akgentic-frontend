@@ -128,7 +128,6 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
 
   currentProcessId: string = '';
   graphData$ = new BehaviorSubject<KnowledgeGraphData | null>(null);
-  isLoading$ = this.messageService.knowledgeGraphLoading$;
   error$ = new BehaviorSubject<string | null>(null);
 
   echartsInstance: any;

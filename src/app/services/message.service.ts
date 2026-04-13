@@ -53,9 +53,6 @@ export class ActorMessageService {
   contextDict$: { [key: string]: BehaviorSubject<any[]> } = {};
   stateDict$: { [key: string]: BehaviorSubject<any> } = {};
 
-  knowledgeGraphLoading$: BehaviorSubject<boolean> =
-    new BehaviorSubject<boolean>(false);
-
   processId: string = '';
 
   /**
