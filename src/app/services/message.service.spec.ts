@@ -227,6 +227,13 @@ describe('ActorMessageService.init — loadingProcess$ spinner window (Story 4-1
   let fakeSocket: Subject<any>;
 
   beforeEach(() => {
+    // Story 4-10 (AC7): the spinner now has a 500ms minimum visible duration
+    // enforced via `Date.now()` + `setTimeout`. Install the jasmine clock so
+    // every test in this suite can deterministically control both the
+    // "wall-clock" elapsed window AND the deferred setTimeout callback.
+    jasmine.clock().install();
+    jasmine.clock().mockDate(new Date(0));
+
     fakeSocket = new Subject<any>();
 
     TestBed.configureTestingModule({
@@ -258,6 +265,7 @@ describe('ActorMessageService.init — loadingProcess$ spinner window (Story 4-1
   afterEach(() => {
     // Avoid cross-test leakage of the fake socket.
     fakeSocket.complete();
+    jasmine.clock().uninstall();
   });
 
   it('AC1: running=true keeps loadingProcess$ true until the first WS event arrives', async () => {
@@ -267,9 +275,13 @@ describe('ActorMessageService.init — loadingProcess$ spinner window (Story 4-1
     expect(chatService.loadingProcess$.value).toBe(true);
   });
 
-  it('AC1: loadingProcess$ flips to false on the first WS event', async () => {
+  it('AC1: loadingProcess$ flips to false on the first WS event (past the 500ms floor)', async () => {
     await service.init('proc-1', true);
     expect(chatService.loadingProcess$.value).toBe(true);
+
+    // Advance past the SPINNER_MIN_VISIBLE_MS floor so the first-event flip
+    // fires immediately (AC7 immediate-flip branch).
+    jasmine.clock().tick(600);
 
     // First event over the wire — shape intentionally uninteresting, the
     // flip MUST happen before any per-__model__ branching.
@@ -287,6 +299,8 @@ describe('ActorMessageService.init — loadingProcess$ spinner window (Story 4-1
     // Start: BehaviorSubject replays current value (true).
     expect(emitted).toEqual([true]);
 
+    // Past the 500ms floor so the flip happens immediately on first event.
+    jasmine.clock().tick(600);
     fakeSocket.next({ __model__: 'StartMessage' });
     fakeSocket.next({ __model__: 'StartMessage' });
     fakeSocket.next({ __model__: 'StartMessage' });
@@ -295,10 +309,11 @@ describe('ActorMessageService.init — loadingProcess$ spinner window (Story 4-1
     expect(emitted).toEqual([true, false]);
   });
 
-  it('AC3: WS error before any event flips loadingProcess$ to false', async () => {
+  it('AC3: WS error before any event flips loadingProcess$ to false (past the floor)', async () => {
     await service.init('proc-1', true);
     expect(chatService.loadingProcess$.value).toBe(true);
 
+    jasmine.clock().tick(600);
     fakeSocket.error(new Error('connect refused'));
 
     expect(chatService.loadingProcess$.value).toBe(false);
@@ -315,6 +330,8 @@ describe('ActorMessageService.init — loadingProcess$ spinner window (Story 4-1
     const sub = chatService.loadingProcess$.subscribe((v) => emitted.push(v));
 
     await service.init('proc-1', false);
+    // Drive the 500ms floor so the deferred flip can actually fire.
+    jasmine.clock().tick(600);
 
     // No WS events pushed → stopped-team path MUST have already flipped it,
     // AND the sequence must include at least one `true` (spinner on during
@@ -324,5 +341,82 @@ describe('ActorMessageService.init — loadingProcess$ spinner window (Story 4-1
     expect(emitted[emitted.length - 1]).toBe(false);
 
     sub.unsubscribe();
+  });
+
+  // ---------------------------------------------------------------------
+  // AC8 — Minimum visible spinner duration (500ms floor)
+  // ---------------------------------------------------------------------
+
+  it('AC8: first event at 100ms → flag still true at 400ms → false at 500ms (deferred flip)', async () => {
+    await service.init('proc-1', true);
+    expect(chatService.loadingProcess$.value).toBe(true);
+
+    // First event arrives at 100ms — well before the 500ms floor.
+    jasmine.clock().tick(100);
+    fakeSocket.next({ __model__: 'StartMessage' });
+
+    // At 400ms total, the deferred timer has NOT fired yet.
+    jasmine.clock().tick(300);
+    expect(chatService.loadingProcess$.value).toBe(true);
+
+    // Crossing the 500ms floor triggers the pending setTimeout.
+    jasmine.clock().tick(100);
+    expect(chatService.loadingProcess$.value).toBe(false);
+  });
+
+  it('AC8: first event at 800ms → flag becomes false immediately (past floor, no extra delay)', async () => {
+    await service.init('proc-1', true);
+    expect(chatService.loadingProcess$.value).toBe(true);
+
+    // First event well past the 500ms floor — flip must be immediate.
+    jasmine.clock().tick(800);
+    fakeSocket.next({ __model__: 'StartMessage' });
+
+    // No further tick needed: immediate branch of scheduleSpinnerFlipFalse.
+    expect(chatService.loadingProcess$.value).toBe(false);
+  });
+
+  it('AC8: WS error at 100ms → flag still true at 400ms → false at 500ms (failure path respects floor)', async () => {
+    await service.init('proc-1', true);
+    expect(chatService.loadingProcess$.value).toBe(true);
+
+    jasmine.clock().tick(100);
+    fakeSocket.error(new Error('connect refused'));
+
+    jasmine.clock().tick(300);
+    expect(chatService.loadingProcess$.value).toBe(true);
+
+    jasmine.clock().tick(100);
+    expect(chatService.loadingProcess$.value).toBe(false);
+  });
+
+  it('AC8: re-init while a deferred flip is pending cancels the pending timer (no late false clobber)', async () => {
+    await service.init('proc-1', true);
+    expect(chatService.loadingProcess$.value).toBe(true);
+
+    // Schedule a deferred flip for t=500ms via an early first event.
+    jasmine.clock().tick(100);
+    fakeSocket.next({ __model__: 'StartMessage' });
+    // Pending timer exists; flag still true.
+    expect(chatService.loadingProcess$.value).toBe(true);
+
+    // Re-init (team switch) before the pending timer fires — swap in a new
+    // fake socket so the fresh init() has something to subscribe to.
+    const secondSocket = new Subject<any>();
+    (service as any).createWebSocket = jasmine
+      .createSpy('createWebSocket')
+      .and.returnValue(secondSocket as unknown as WebSocketSubject<any>);
+    await service.init('proc-2', true);
+
+    // Fresh cycle: flag is back to true.
+    expect(chatService.loadingProcess$.value).toBe(true);
+
+    // Advance past the ORIGINAL scheduled time (t=500ms from first init).
+    // If the pending timer had not been cancelled, it would fire here and
+    // clobber the fresh spinner cycle with a stale `false`.
+    jasmine.clock().tick(500);
+    expect(chatService.loadingProcess$.value).toBe(true);
+
+    secondSocket.complete();
   });
 });
