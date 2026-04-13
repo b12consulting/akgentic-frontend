@@ -13,7 +13,7 @@
     >
       <div class="right-header">
         <p-selectbutton
-          [options]="visualizationOptions"
+          [options]="(visualizationOptions$ | async) ?? []"
           optionLabel="label"
           optionValue="value"
           aria-labelledby="basic"
@@ -38,7 +38,7 @@
           [class.moved-offscreen]="isHidden('workspace')"
         ></app-workspace-explorer>
         <app-knowledge-graph
-          *ngIf="hasKnowledgeGraph"
+          *ngIf="hasKnowledgeGraph$ | async"
           [class.moved-offscreen]="isHidden('knowledge-graph')"
         ></app-knowledge-graph>
         <app-message-list
