@@ -1,4 +1,5 @@
 import {
+  buildPreview,
   classifyRule,
   buildLabel,
   classifyMessage,
@@ -149,6 +150,105 @@ describe('buildLabel', () => {
     expect(label).toContain('->');
     expect(label).toContain('Worker');
     expect(label).toContain('Manager');
+  });
+});
+
+describe('buildPreview', () => {
+  it('returns "" for null', () => {
+    expect(buildPreview(null)).toBe('');
+  });
+
+  it('returns "" for undefined', () => {
+    expect(buildPreview(undefined)).toBe('');
+  });
+
+  it('returns "" for empty string', () => {
+    expect(buildPreview('')).toBe('');
+  });
+
+  it('collapses multi-line content to a single line', () => {
+    expect(buildPreview('hello\nworld\n\n!')).toBe('hello world !');
+  });
+
+  it('collapses tabs and multiple spaces', () => {
+    expect(buildPreview('hello\t\tworld   !')).toBe('hello world !');
+  });
+
+  it('strips fenced code blocks', () => {
+    expect(buildPreview('text\n```ts\ncode here\n```\nmore')).toBe('text more');
+  });
+
+  it('strips inline code ticks but keeps inner text', () => {
+    expect(buildPreview('use `npm install` now')).toBe('use npm install now');
+  });
+
+  it('strips markdown link syntax to text', () => {
+    expect(buildPreview('see [docs](http://x) here')).toBe('see docs here');
+  });
+
+  it('strips markdown image syntax to alt', () => {
+    expect(buildPreview('![logo](x.png) ok')).toBe('logo ok');
+  });
+
+  it('strips bold (**) wrappers', () => {
+    expect(buildPreview('**bold** text')).toBe('bold text');
+  });
+
+  it('strips bold (__) wrappers', () => {
+    expect(buildPreview('__bold__ text')).toBe('bold text');
+  });
+
+  it('strips italic (_) wrappers', () => {
+    expect(buildPreview('_italic_ text')).toBe('italic text');
+  });
+
+  it('strips italic (*) wrappers', () => {
+    expect(buildPreview('*em* text')).toBe('em text');
+  });
+
+  it('strips combined emphasis wrappers', () => {
+    expect(buildPreview('**bold** and _italic_ and *em*')).toBe(
+      'bold and italic and em',
+    );
+  });
+
+  it('strips heading markers', () => {
+    expect(buildPreview('# Title')).toBe('Title');
+  });
+
+  it('strips blockquote markers', () => {
+    expect(buildPreview('> quoted')).toBe('quoted');
+  });
+
+  it('strips bullet list markers', () => {
+    expect(buildPreview('- item')).toBe('item');
+  });
+
+  it('strips numeric list markers', () => {
+    expect(buildPreview('1. first')).toBe('first');
+  });
+
+  it('does NOT truncate when content length <= maxLength', () => {
+    const forty = 'a'.repeat(40);
+    expect(buildPreview(forty)).toBe(forty);
+    expect(buildPreview(forty).endsWith('...')).toBe(false);
+  });
+
+  it('truncates with literal "..." when content > maxLength', () => {
+    const eighty = 'a'.repeat(80);
+    const result = buildPreview(eighty);
+    expect(result.length).toBe(63);
+    expect(result.endsWith('...')).toBe(true);
+    expect(result.startsWith('a'.repeat(60))).toBe(true);
+  });
+
+  it('respects custom maxLength override', () => {
+    expect(buildPreview('abcdefghijklmnop', 10)).toBe('abcdefghij...');
+  });
+
+  it('exactly maxLength boundary: no truncation at length === maxLength', () => {
+    const sixty = 'b'.repeat(60);
+    expect(buildPreview(sixty)).toBe(sixty);
   });
 });
 
