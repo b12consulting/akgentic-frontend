@@ -31,6 +31,7 @@ import { EChartsCoreOption } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { NgxEchartsDirective, provideEchartsCore } from 'ngx-echarts';
 
+import { KGStateReducer } from '../../services/kg-state.reducer';
 import { ActorMessageService } from '../../services/message.service';
 
 echarts.use([
@@ -121,6 +122,9 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
   zone: NgZone = inject(NgZone);
   route: ActivatedRoute = inject(ActivatedRoute);
   messageService: ActorMessageService = inject(ActorMessageService);
+  // Story 6.2 (ADR-005 §Decision 4): subscribe to the pure selector instead
+  // of the former `messageService.knowledgeGraph$` passthrough (deleted).
+  private readonly kgReducer: KGStateReducer = inject(KGStateReducer);
 
   currentProcessId: string = '';
   graphData$ = new BehaviorSubject<KnowledgeGraphData | null>(null);
@@ -147,7 +151,7 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
     this.graphData$.next({ nodes: [], edges: [] });
 
     this.subscriptions.push(
-      this.messageService.knowledgeGraph$.subscribe((data) => {
+      this.kgReducer.knowledgeGraph$.subscribe((data) => {
         this.graphData$.next(data || { nodes: [], edges: [] });
         this.error$.next(null);
       })

@@ -1,14 +1,14 @@
 import { TestBed } from '@angular/core/testing';
-import { BehaviorSubject } from 'rxjs';
 
 import {
   AkgenticMessage,
   StartMessage,
   StopMessage,
 } from '../models/message.types';
+import { MessageLogService } from './message-log.service';
 import {
   KG_ACTOR_NAME,
-  KGPresenceMessageSource,
+  presenceReduce,
   ToolPresenceService,
 } from './tool-presence.service';
 
@@ -55,94 +55,118 @@ function makeStopMessage(senderName: string): StopMessage {
   };
 }
 
-function makeSource(): {
-  source: KGPresenceMessageSource;
-  createAgentGraph$: BehaviorSubject<AkgenticMessage[] | null>;
-  message$: BehaviorSubject<AkgenticMessage | null>;
-} {
-  const createAgentGraph$ = new BehaviorSubject<AkgenticMessage[] | null>(null);
-  const message$ = new BehaviorSubject<AkgenticMessage | null>(null);
-  return {
-    source: { createAgentGraph$, message$ },
-    createAgentGraph$,
-    message$,
-  };
-}
+describe('presenceReduce (pure function)', () => {
+  it('empty log → false', () => {
+    expect(presenceReduce([])).toBe(false);
+  });
 
-describe('ToolPresenceService', () => {
+  it('KG StartMessage → true', () => {
+    expect(presenceReduce([makeStartMessage(KG_ACTOR_NAME)])).toBe(true);
+  });
+
+  it('non-KG StartMessage → false (irrelevant sender ignored)', () => {
+    expect(presenceReduce([makeStartMessage('@Worker')])).toBe(false);
+    expect(presenceReduce([makeStartMessage('#VectorStoreTool')])).toBe(false);
+  });
+
+  it('(AC2) ordered-reduce — Start → Stop → Start ends as true (NOT some()&&!some() semantics)', () => {
+    const log: AkgenticMessage[] = [
+      makeStartMessage(KG_ACTOR_NAME),
+      makeStopMessage(KG_ACTOR_NAME),
+      makeStartMessage(KG_ACTOR_NAME),
+    ];
+    expect(presenceReduce(log)).toBe(true);
+  });
+
+  it('Start → Stop ends as false', () => {
+    const log: AkgenticMessage[] = [
+      makeStartMessage(KG_ACTOR_NAME),
+      makeStopMessage(KG_ACTOR_NAME),
+    ];
+    expect(presenceReduce(log)).toBe(false);
+  });
+});
+
+describe('ToolPresenceService (selector over MessageLogService.log$)', () => {
+  let log: MessageLogService;
   let service: ToolPresenceService;
 
   beforeEach(() => {
-    TestBed.configureTestingModule({ providers: [ToolPresenceService] });
+    TestBed.configureTestingModule({
+      providers: [MessageLogService, ToolPresenceService],
+    });
+    log = TestBed.inject(MessageLogService);
     service = TestBed.inject(ToolPresenceService);
   });
 
-  it('(1) initial — hasKnowledgeGraph$ is false before any message', () => {
-    expect(service.hasKnowledgeGraph$.getValue()).toBe(false);
+  function currentValue(): boolean {
+    let v: boolean | undefined;
+    const sub = service.hasKnowledgeGraph$.subscribe((x) => (v = x));
+    sub.unsubscribe();
+    return v as boolean;
+  }
+
+  it('(1) initial — hasKnowledgeGraph$ emits false on empty log', () => {
+    expect(currentValue()).toBe(false);
   });
 
-  it('(2) detection on live StartMessage for #KnowledgeGraphTool', () => {
-    const { source, message$ } = makeSource();
-    service.bindTo(source);
-    expect(service.hasKnowledgeGraph$.getValue()).toBe(false);
-
-    message$.next(makeStartMessage(KG_ACTOR_NAME));
-    expect(service.hasKnowledgeGraph$.getValue()).toBe(true);
+  it('(2) KG StartMessage via live append → true', () => {
+    log.append(makeStartMessage(KG_ACTOR_NAME));
+    expect(currentValue()).toBe(true);
   });
 
-  it('(3) detection on replay batch via createAgentGraph$', () => {
-    const { source, createAgentGraph$ } = makeSource();
-    service.bindTo(source);
-    expect(service.hasKnowledgeGraph$.getValue()).toBe(false);
-
-    createAgentGraph$.next([makeStartMessage(KG_ACTOR_NAME)]);
-    expect(service.hasKnowledgeGraph$.getValue()).toBe(true);
+  it('(3) KG StartMessage via appendAll (REST-replay batch) → true', () => {
+    log.appendAll([makeStartMessage(KG_ACTOR_NAME)]);
+    expect(currentValue()).toBe(true);
   });
 
-  it('(4) irrelevant sender ignored — stays false', () => {
-    const { source, message$ } = makeSource();
-    service.bindTo(source);
-
-    message$.next(makeStartMessage('@Support'));
-    message$.next(makeStartMessage('#VectorStoreTool'));
-    expect(service.hasKnowledgeGraph$.getValue()).toBe(false);
+  it('(4) irrelevant senders ignored — stays false', () => {
+    log.append(makeStartMessage('@Support'));
+    log.append(makeStartMessage('#VectorStoreTool'));
+    expect(currentValue()).toBe(false);
   });
 
-  it('(5) StopMessage for KG actor flips presence back to false', () => {
-    const { source, message$ } = makeSource();
-    service.bindTo(source);
-
-    message$.next(makeStartMessage(KG_ACTOR_NAME));
-    expect(service.hasKnowledgeGraph$.getValue()).toBe(true);
-
-    message$.next(makeStopMessage(KG_ACTOR_NAME));
-    expect(service.hasKnowledgeGraph$.getValue()).toBe(false);
+  it('(5) KG StopMessage flips presence back to false', () => {
+    log.append(makeStartMessage(KG_ACTOR_NAME));
+    expect(currentValue()).toBe(true);
+    log.append(makeStopMessage(KG_ACTOR_NAME));
+    expect(currentValue()).toBe(false);
   });
 
-  it('(6) resetForTeam() flips presence back to false on team switch', () => {
-    const { source, message$ } = makeSource();
-    service.bindTo(source);
-
-    message$.next(makeStartMessage(KG_ACTOR_NAME));
-    expect(service.hasKnowledgeGraph$.getValue()).toBe(true);
-
-    service.resetForTeam();
-    expect(service.hasKnowledgeGraph$.getValue()).toBe(false);
+  it('(6) log.reset() flips presence back to false on team switch', () => {
+    log.append(makeStartMessage(KG_ACTOR_NAME));
+    expect(currentValue()).toBe(true);
+    log.reset();
+    expect(currentValue()).toBe(false);
   });
 
-  it('(7) redundant StartMessages do not emit true twice (distinct values only)', () => {
-    const { source, message$ } = makeSource();
-    service.bindTo(source);
-
+  it('(7) redundant StartMessages do not emit true twice (distinctUntilChanged)', () => {
     const emissions: boolean[] = [];
-    service.hasKnowledgeGraph$.subscribe((v) => emissions.push(v));
+    const sub = service.hasKnowledgeGraph$.subscribe((v) => emissions.push(v));
 
-    message$.next(makeStartMessage(KG_ACTOR_NAME));
-    message$.next(makeStartMessage(KG_ACTOR_NAME));
+    log.append(makeStartMessage(KG_ACTOR_NAME));
+    log.append(makeStartMessage(KG_ACTOR_NAME));
 
-    // Expected emissions from the subscription above:
-    //   [false (initial replay), true (first KG start)]
-    // The second KG StartMessage must NOT produce a third emission.
+    // Expected: [false (initial empty log), true (first KG start)].
+    // The second KG StartMessage does NOT produce a third emission because
+    // the folded value is still `true` and distinctUntilChanged suppresses.
     expect(emissions).toEqual([false, true]);
+    sub.unsubscribe();
+  });
+
+  it('(AC2) ordered-reduce restart — Start → Stop → Start ends as true', () => {
+    log.append(makeStartMessage(KG_ACTOR_NAME));
+    log.append(makeStopMessage(KG_ACTOR_NAME));
+    log.append(makeStartMessage(KG_ACTOR_NAME));
+    expect(currentValue()).toBe(true);
+  });
+
+  it('(AC4) late subscriber — current value delivered synchronously on subscribe', () => {
+    log.append(makeStartMessage(KG_ACTOR_NAME));
+
+    let received: boolean | undefined;
+    const sub = service.hasKnowledgeGraph$.subscribe((v) => (received = v));
+    expect(received).toBe(true);
+    sub.unsubscribe();
   });
 });

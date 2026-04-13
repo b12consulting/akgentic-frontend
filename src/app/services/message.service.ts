@@ -14,9 +14,7 @@ import { EventResponse } from '../models/team.interface';
 
 import { ApiService } from '../services/api.service';
 import { ChatService } from './chat.service';
-import { KGStateReducer, KnowledgeGraphData } from './kg-state.reducer';
 import { MessageLogService } from './message-log.service';
-import { ToolPresenceService } from './tool-presence.service';
 import { MessageService } from 'primeng/api';
 
 /**
@@ -42,12 +40,12 @@ export class ActorMessageService {
   apiService: ApiService = inject(ApiService);
   chatService: ChatService = inject(ChatService);
   messageService: MessageService = inject(MessageService);
-  private kgReducer: KGStateReducer = inject(KGStateReducer);
-  private toolPresenceService: ToolPresenceService = inject(ToolPresenceService);
   /**
    * Story 6.1 (ADR-005 §Decision 1): component-scoped append-only log of
-   * every WS + REST-replay message. Parallel-populated in PR 1 — consumer
-   * migration lands in Stories 6.2–6.4.
+   * every WS + REST-replay message. Story 6.2 migrated KG presence + KG
+   * projection to pure selectors (`ToolPresenceService.hasKnowledgeGraph$`,
+   * `KGStateReducer.knowledgeGraph$`) — both fold the same log, so the
+   * message service no longer injects either of them.
    */
   private log: MessageLogService = inject(MessageLogService);
 
@@ -65,8 +63,6 @@ export class ActorMessageService {
   contextDict$: { [key: string]: BehaviorSubject<any[]> } = {};
   stateDict$: { [key: string]: BehaviorSubject<any> } = {};
 
-  knowledgeGraph$: BehaviorSubject<KnowledgeGraphData> =
-    new BehaviorSubject<KnowledgeGraphData>({ nodes: [], edges: [] });
   knowledgeGraphLoading$: BehaviorSubject<boolean> =
     new BehaviorSubject<boolean>(false);
 
@@ -104,17 +100,6 @@ export class ActorMessageService {
    *  disposal in init()'s (a) step and in ngOnDestroy. */
   private spinnerSub: Subscription | null = null;
 
-  constructor() {
-    // Wire the KG reducer's projection stream into `knowledgeGraph$`
-    // (AC4, Option A). One-time bind avoids a circular DI dependency —
-    // the reducer never injects back into this service.
-    this.kgReducer.bind(this.knowledgeGraph$);
-    // Bind the presence service to our replay + live message streams.
-    // Same bind-from-outside pattern (AC6) — the presence service does
-    // not `inject(ActorMessageService)`.
-    this.toolPresenceService.bindTo(this);
-  }
-
   async init(processId: string, running: boolean): Promise<void> {
     this.processId = processId;
     let messages: AkgenticMessage[] = [];
@@ -125,10 +110,10 @@ export class ActorMessageService {
     // Load-bearing for AC5 (team-switch correctness) and AC7 (no leaks).
     this.disposePriorSubscriptions();
 
-    // Team switch: drop any KG state / presence carried over from a prior
-    // team load so replay rebuilds from zero (ADR-004 §Decision 5).
-    this.kgReducer.resetForTeam();
-    this.toolPresenceService.resetForTeam();
+    // Story 6.2 (ADR-005 §Decision 4): KG state + KG presence are now pure
+    // selectors over `log$`. `this.log.reset()` below causes both selectors
+    // to re-emit their empty-log derivatives automatically — no explicit
+    // `resetForTeam()` calls required.
 
     // --- ADR-005 §Decision 6 step (b) ---------------------------------
     // Reset the log and clear the per-agent exception dicts BEFORE any
@@ -187,11 +172,10 @@ export class ActorMessageService {
               if (!contextArrays[agentId]) contextArrays[agentId] = [];
               contextArrays[agentId].push(inner.message);
             }
-          } else if (inner?.__model__?.includes('ToolStateEvent')) {
-            // Story 5-2: rebuild KG state during replay through the same
-            // reducer used by the live path (AC5 — live/replay parity).
-            this.kgReducer.apply(inner);
           }
+          // Story 6.2 (ADR-005 §Decision 4): `ToolStateEvent` is now folded
+          // into `knowledgeGraph$` via `kgFold` over `log$` (seeded above by
+          // `log.appendAll`). No explicit reducer drive required.
         }
       }
 
@@ -456,9 +440,10 @@ export class ActorMessageService {
         const current = this.contextDict$[agentId].getValue();
         this.contextDict$[agentId].next([...current, inner.message]);
       }
-    } else if (inner.__model__.includes('ToolStateEvent')) {
-      this.kgReducer.apply(inner);
     }
+    // Story 6.2 (ADR-005 §Decision 4): `ToolStateEvent` is now covered
+    // entirely by `KGStateReducer.knowledgeGraph$` (pure selector over
+    // `log$`). The batched subscriber no longer drives the reducer.
   }
 
   /**
