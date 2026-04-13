@@ -46,53 +46,11 @@ describe('ChatService', () => {
     service = new ChatService();
   });
 
-  describe('replyContext$', () => {
-    it('should initialize to null', () => {
-      expect(service.replyContext$.value).toBeNull();
-    });
-
-    it('should set reply context via setReplyContext', () => {
-      const msg = makeChatMessage();
-      service.setReplyContext(msg);
-      expect(service.replyContext$.value).toBe(msg);
-    });
-
-    it('should clear reply context via clearReplyContext', () => {
-      const msg = makeChatMessage();
-      service.setReplyContext(msg);
-      expect(service.replyContext$.value).toBe(msg);
-
-      service.clearReplyContext();
-      expect(service.replyContext$.value).toBeNull();
-    });
-
-    it('should emit values to subscribers', () => {
-      const emitted: (ChatMessage | null)[] = [];
-      service.replyContext$.subscribe((val) => emitted.push(val));
-
-      const msg = makeChatMessage({ id: 'msg-2' });
-      service.setReplyContext(msg);
-      service.clearReplyContext();
-
-      expect(emitted).toEqual([null, msg, null]);
-    });
-
-    it('should replace previous reply context when setting a new one', () => {
-      const msg1 = makeChatMessage({ id: 'msg-1' });
-      const msg2 = makeChatMessage({ id: 'msg-2' });
-
-      service.setReplyContext(msg1);
-      expect(service.replyContext$.value).toBe(msg1);
-
-      service.setReplyContext(msg2);
-      expect(service.replyContext$.value).toBe(msg2);
-    });
-
-    it('should accept null via setReplyContext', () => {
-      const msg = makeChatMessage();
-      service.setReplyContext(msg);
-      service.setReplyContext(null);
-      expect(service.replyContext$.value).toBeNull();
+  describe('replyContext API retired (Story 4-11)', () => {
+    it('should not expose replyContext$, setReplyContext, or clearReplyContext', () => {
+      expect((service as any).replyContext$).toBeUndefined();
+      expect((service as any).setReplyContext).toBeUndefined();
+      expect((service as any).clearReplyContext).toBeUndefined();
     });
   });
 

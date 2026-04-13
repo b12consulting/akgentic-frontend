@@ -16,7 +16,7 @@ import { ApiService } from '../../services/api.service';
 import { ChatService } from '../../services/chat.service';
 import { GraphDataService } from '../../services/graph-data.service';
 
-import { ChatMessage, ENTRY_POINT_NAME } from '../../models/chat-message.model';
+import { ENTRY_POINT_NAME } from '../../models/chat-message.model';
 import { ProcessControlsComponent } from '../../process-controls/process-controls.component';
 
 @Component({
@@ -42,8 +42,6 @@ export class ProcessUserInputComponent implements OnInit {
   graphDataService: GraphDataService = inject(GraphDataService);
   userInput: string = '';
   userInputEnterKeySubmit: boolean = environment.userInputEnterKeySubmit;
-  replyContext: ChatMessage | null = null;
-  replyContextDisplayName: string = '';
 
   // Mention configuration
   mentionItems: { name: string; actorName: string; agentId: string }[] = [];
@@ -53,16 +51,6 @@ export class ProcessUserInputComponent implements OnInit {
   private destroyRef = inject(DestroyRef);
 
   ngOnInit() {
-    // Subscribe to reply context changes
-    this.chatService.replyContext$
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((ctx) => {
-        this.replyContext = ctx;
-        this.replyContextDisplayName = ctx
-          ? makeAgentNameUserFriendly(ctx.sender.name)
-          : '';
-      });
-
     // Subscribe to nodes to populate mention items and dropdown agents
     this.graphDataService.nodes$
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -89,8 +77,22 @@ export class ProcessUserInputComponent implements OnInit {
       });
   }
 
-  clearReplyContext(): void {
-    this.chatService.clearReplyContext();
+  /**
+   * Comma-joined friendly labels of the current dropdown selection, e.g.
+   * `@AgentA, @AgentB`. Used by the Send-to echo indicator in the template.
+   * Empty string when no agent is selected (broadcast case).
+   */
+  get selectedAgentsDisplay(): string {
+    return this.selectedAgents.map(makeAgentNameUserFriendly).join(', ');
+  }
+
+  /**
+   * Redundant convenience for clearing the Send-to dropdown selection.
+   * The p-multiSelect's own `[showClear]` chip remains the canonical clear
+   * control; this method backs the `×` button on the Send-to echo indicator.
+   */
+  clearSendTo(): void {
+    this.selectedAgents = [];
   }
 
   async sendMessage() {
@@ -98,23 +100,13 @@ export class ProcessUserInputComponent implements OnInit {
       return;
     }
 
-    const replyCtx = this.chatService.replyContext$.value;
-
-    if (replyCtx) {
-      // Priority 1: reply context -- directed send to selected bubble's sender
-      await this.apiService.sendMessage(
-        this.processId,
-        this.userInput,
-        replyCtx.sender.name,
-      );
-      this.chatService.clearReplyContext();
-    } else if (this.selectedAgents.length > 0) {
-      // Priority 2: dropdown selection -- send to each selected agent
+    if (this.selectedAgents.length > 0) {
+      // Priority 1: dropdown selection -- send to each selected agent
       for (const agentName of this.selectedAgents) {
         await this.apiService.sendMessage(this.processId, this.userInput, agentName);
       }
     } else {
-      // Priority 3: broadcast
+      // Priority 2: broadcast
       await this.apiService.sendMessage(this.processId, this.userInput);
     }
 
