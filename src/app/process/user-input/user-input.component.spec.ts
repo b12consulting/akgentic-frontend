@@ -14,7 +14,6 @@ import { NodeInterface } from '../../models/types';
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {
     __actor_address__: true,
-    address: 'addr',
     name: '@Agent',
     role: 'Worker',
     agent_id: 'agent-1',
@@ -25,8 +24,11 @@ function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
 }
 
 function makeChatMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
+  const id = overrides.id ?? 'msg-1';
   return {
-    id: 'msg-1',
+    id,
+    message_id: id,
+    parent_id: null,
     content: 'Hello world',
     sender: makeAddress({ name: '@Manager', role: 'Manager' }),
     recipient: makeAddress({ name: '@Human', role: 'Human' }),

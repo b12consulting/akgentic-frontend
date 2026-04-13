@@ -1,11 +1,15 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, fakeAsync, flushMicrotasks, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { BehaviorSubject, of } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { provideMarkdown } from 'ngx-markdown';
 
 import { ChatPanelComponent } from './chat-panel.component';
-import { ChatService, computePendingNotifications } from '../services/chat.service';
+import {
+  ChatService,
+  computePendingNotifications,
+  ThinkingState,
+} from '../services/chat.service';
 import { ActorMessageService } from '../services/message.service';
 import { SelectionService } from '../services/selection.service';
 import { ActorAddress, SentMessage, BaseMessage, AkgenticMessage, StartMessage } from '../models/message.types';
@@ -17,7 +21,6 @@ import { GraphDataService } from '../services/graph-data.service';
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {
     __actor_address__: true,
-    address: 'addr',
     name: '@Agent',
     role: 'Worker',
     agent_id: 'agent-1',
@@ -32,10 +35,17 @@ function makeSentMessage(
   recipient: Partial<ActorAddress>,
   content: string = 'test',
   id: string = 'msg-1',
+  parentId: string | null = null,
 ): SentMessage {
+  // Mirror the real backend contract: `parent_id` on the INNER BaseMessage
+  // references the INNER id of the parent (`inner-<parentId>`), not the
+  // outer envelope id. This is what `HumanProxy` produces on real replies
+  // (see team_service.py#process_human_input → HumanProxy sets
+  // `_current_message = event.message` before send()).
+  const innerParentId = parentId === null ? null : 'inner-' + parentId;
   return {
     id,
-    parent_id: null,
+    parent_id: parentId,
     team_id: 'team-1',
     timestamp: '2026-04-08T10:00:00Z',
     sender: makeAddress(sender),
@@ -43,8 +53,8 @@ function makeSentMessage(
     content: null,
     __model__: 'akgentic.core.messages.orchestrator.SentMessage',
     message: {
-      id: 'inner-1',
-      parent_id: null,
+      id: 'inner-' + id,
+      parent_id: innerParentId,
       team_id: 'team-1',
       timestamp: '2026-04-08T10:00:00Z',
       sender: makeAddress(sender),
@@ -65,11 +75,13 @@ describe('ChatPanelComponent', () => {
     messagesSubject = new BehaviorSubject<AkgenticMessage[]>([]);
 
     const messagesSubj = new BehaviorSubject<any[]>([]);
+    const thinkingAgentsSubj = new BehaviorSubject<ThinkingState[]>([]);
     const chatService = {
       messages$: messagesSubj,
       loadingProcess$: new BehaviorSubject<boolean>(false),
       replyContext$: new BehaviorSubject<any>(null),
       pendingNotifications$: messagesSubj.pipe(map(computePendingNotifications)),
+      thinkingAgents$: thinkingAgentsSubj,
       setReplyContext: jasmine.createSpy('setReplyContext').and.callFake(
         function(this: any, msg: any) { this.replyContext$.next(msg); }
       ),
@@ -79,7 +91,7 @@ describe('ChatPanelComponent', () => {
     };
 
     const messageService = {
-      messages$: messagesSubject.asObservable(),
+      messages$: messagesSubject,
     };
 
     const selectionService = jasmine.createSpyObj('SelectionService', [
@@ -114,7 +126,6 @@ describe('ChatPanelComponent', () => {
     fixture = TestBed.createComponent(ChatPanelComponent);
     component = fixture.componentInstance;
     component.processId = 'test-team';
-    component.loading$ = new BehaviorSubject<boolean>(false);
     fixture.detectChanges();
   });
 
@@ -210,6 +221,8 @@ describe('ChatPanelComponent', () => {
   it('onMessageSelected should call selectionService.handleSelection', () => {
     const chatMsg: ChatMessage = {
       id: 'msg-1',
+      message_id: 'msg-1',
+      parent_id: null,
       content: 'test',
       sender: makeAddress({ name: '@Manager', agent_id: 'mgr-1' }),
       recipient: makeAddress({ name: '@Human' }),
@@ -254,6 +267,8 @@ describe('ChatPanelComponent', () => {
     it('onBubbleClicked should call chatService.setReplyContext', () => {
       const chatMsg: ChatMessage = {
         id: 'msg-reply',
+        message_id: 'msg-reply',
+        parent_id: null,
         content: 'test',
         sender: makeAddress({ name: '@Manager', agent_id: 'mgr-1' }),
         recipient: makeAddress({ name: '@Human' }),
@@ -309,6 +324,8 @@ describe('ChatPanelComponent', () => {
     it('clicking different bubble should switch reply context', () => {
       const msg1: ChatMessage = {
         id: 'msg-1',
+        message_id: 'msg-1',
+        parent_id: null,
         content: 'first',
         sender: makeAddress({ name: '@Agent1' }),
         recipient: makeAddress({ name: '@Human' }),
@@ -321,6 +338,8 @@ describe('ChatPanelComponent', () => {
       };
       const msg2: ChatMessage = {
         id: 'msg-2',
+        message_id: 'msg-2',
+        parent_id: null,
         content: 'second',
         sender: makeAddress({ name: '@Agent2' }),
         recipient: makeAddress({ name: '@Human' }),
@@ -361,8 +380,9 @@ describe('ChatPanelComponent', () => {
       expect(component.modalPendingMessages.length).toBe(1);
     });
 
-    it('onRule3Clicked should not open modal when no pending notifications', () => {
-      // A Rule 3 message that has been replied to
+    it('onRule3Clicked opens modal with answered-only history (no pending)', () => {
+      // A Rule 3 message that has been replied to — now opens modal in
+      // read-only mode (Story 4-7 AC6 early-return change).
       const rule3Msg = makeSentMessage(
         { name: '@Manager', role: 'Manager' },
         { name: '@QATester', role: 'Human' },
@@ -374,6 +394,7 @@ describe('ChatPanelComponent', () => {
         { name: '@Manager', role: 'Manager' },
         'approved',
         'reply-1',
+        'r3-1',
       );
       messagesSubject.next([rule3Msg, replyMsg]);
       fixture.detectChanges();
@@ -381,10 +402,67 @@ describe('ChatPanelComponent', () => {
       const chatMsg = component.chatMessages.find(m => m.id === 'r3-1')!;
       component.onRule3Clicked(chatMsg);
 
-      expect(component.modalVisible).toBe(false);
+      expect(component.modalVisible).toBe(true);
+      expect(component.modalPendingMessages.length).toBe(0);
+      expect(component.modalAnsweredMessages.length).toBe(1);
+      expect(component.modalAnsweredMessages[0].request.id).toBe('r3-1');
     });
 
-    it('onModalReply should call processHumanInput, close modal, and clear state', () => {
+    it('onRule3Clicked with two pending in the same pair opens modal with both (AC #8)', () => {
+      const r3a = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'first',
+        'r3-pair-1',
+      );
+      const r3b = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'second',
+        'r3-pair-2',
+      );
+      messagesSubject.next([r3a, r3b]);
+      fixture.detectChanges();
+
+      const chatMsg = component.chatMessages.find(m => m.id === 'r3-pair-1')!;
+      component.onRule3Clicked(chatMsg);
+
+      expect(component.modalVisible).toBe(true);
+      expect(component.modalPendingMessages.length).toBe(2);
+    });
+
+    it('onRule3Clicked after one reply opens modal with single still-pending message (AC #8)', () => {
+      const r3a = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'first',
+        'r3-after-1',
+      );
+      const r3b = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'second',
+        'r3-after-2',
+      );
+      const reply = makeSentMessage(
+        { name: '@QATester', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'answering first',
+        'reply-after-1',
+        'r3-after-1',
+      );
+      messagesSubject.next([r3a, r3b, reply]);
+      fixture.detectChanges();
+
+      const stillPending = component.chatMessages.find(m => m.id === 'r3-after-2')!;
+      component.onRule3Clicked(stillPending);
+
+      expect(component.modalVisible).toBe(true);
+      expect(component.modalPendingMessages.length).toBe(1);
+      expect(component.modalPendingMessages[0].id).toBe('r3-after-2');
+    });
+
+    it('onModalReply should call processHumanInput and KEEP modal open (Story 4-7 AC3)', () => {
       component.processId = 'team-42';
       component.modalVisible = true;
       component.modalAgentPair = {
@@ -392,39 +470,159 @@ describe('ChatPanelComponent', () => {
         recipient: makeAddress({ name: '@QATester' }),
       };
       const dummyMsg: ChatMessage = {
-        id: 'msg-123', content: 'test', sender: makeAddress({ name: '@Manager' }),
+        id: 'msg-123', message_id: 'inner-msg-123', parent_id: null, content: 'test',
+        sender: makeAddress({ name: '@Manager' }),
         recipient: makeAddress({ name: '@QATester', role: 'Human' }),
         timestamp: new Date(), rule: 3, alignment: 'left', color: '#9ebbcb',
-        collapsed: false, label: 'Manager -> QATester',
+        collapsed: false, label: 'Manager ⇒ QATester',
       };
       component.modalPendingMessages = [dummyMsg];
+      component.modalAnsweredMessages = [];
 
       component.onModalReply({ content: 'approved', messageId: 'msg-123' });
 
       const api = TestBed.inject(ApiService) as any;
       expect(api.processHumanInput).toHaveBeenCalledWith('team-42', 'approved', 'msg-123');
-      expect(component.modalVisible).toBe(false);
-      expect(component.modalAgentPair).toBeNull();
-      expect(component.modalPendingMessages).toEqual([]);
+      // Modal stays open — reclassification is handled by recomputeModalInputs.
+      expect(component.modalVisible).toBe(true);
+      expect(component.modalAgentPair).not.toBeNull();
+      expect(component.modalPendingMessages).toEqual([dummyMsg]);
     });
 
-    it('onModalVisibleChange should update modalVisible and clear state when closed', () => {
+    it('onModalVisibleChange should update modalVisible and clear ALL state when closed', () => {
       component.modalVisible = true;
       component.modalAgentPair = {
         sender: makeAddress({ name: '@Manager' }),
         recipient: makeAddress({ name: '@QATester' }),
       };
       const dummyMsg: ChatMessage = {
-        id: 'msg-1', content: 'test', sender: makeAddress({ name: '@Manager' }),
+        id: 'msg-1', message_id: 'inner-msg-1', parent_id: null, content: 'test',
+        sender: makeAddress({ name: '@Manager' }),
         recipient: makeAddress({ name: '@QATester', role: 'Human' }),
         timestamp: new Date(), rule: 3, alignment: 'left', color: '#9ebbcb',
-        collapsed: false, label: 'Manager -> QATester',
+        collapsed: false, label: 'Manager ⇒ QATester',
+      };
+      const dummyReq: ChatMessage = { ...dummyMsg, id: 'req-1', message_id: 'inner-req-1' };
+      const dummyReply: ChatMessage = {
+        ...dummyMsg, id: 'reply-1', message_id: 'inner-reply-1', parent_id: 'inner-req-1',
       };
       component.modalPendingMessages = [dummyMsg];
+      component.modalAnsweredMessages = [{ request: dummyReq, reply: dummyReply }];
       component.onModalVisibleChange(false);
       expect(component.modalVisible).toBe(false);
       expect(component.modalAgentPair).toBeNull();
       expect(component.modalPendingMessages).toEqual([]);
+      expect(component.modalAnsweredMessages).toEqual([]);
+    });
+  });
+
+  describe('Story 4-7: modal answered wiring + reactive recompute', () => {
+    it('onRule3Clicked populates BOTH modalPendingMessages AND modalAnsweredMessages', () => {
+      // Two pending and one already-answered pair in the same pair.
+      const r3a = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'pending-1',
+        'r3-pend-1',
+      );
+      const r3b = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'pending-2',
+        'r3-pend-2',
+      );
+      const r3answered = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'answered',
+        'r3-answered',
+      );
+      const reply = makeSentMessage(
+        { name: '@QATester', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'done',
+        'reply-answered',
+        'r3-answered',
+      );
+      messagesSubject.next([r3answered, reply, r3a, r3b]);
+      fixture.detectChanges();
+
+      const pending = component.chatMessages.find((m) => m.id === 'r3-pend-1')!;
+      component.onRule3Clicked(pending);
+
+      expect(component.modalVisible).toBe(true);
+      expect(component.modalPendingMessages.length).toBe(2);
+      expect(component.modalAnsweredMessages.length).toBe(1);
+      expect(component.modalAnsweredMessages[0].request.id).toBe('r3-answered');
+      expect(component.modalAnsweredMessages[0].reply.id).toBe('reply-answered');
+    });
+
+    it('reactive recompute: reply arriving while modal is open reclassifies lists', () => {
+      const r3a = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'one',
+        'r3-react-1',
+      );
+      const r3b = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'two',
+        'r3-react-2',
+      );
+      messagesSubject.next([r3a, r3b]);
+      fixture.detectChanges();
+
+      const first = component.chatMessages.find((m) => m.id === 'r3-react-1')!;
+      component.onRule3Clicked(first);
+      expect(component.modalPendingMessages.length).toBe(2);
+      expect(component.modalAnsweredMessages.length).toBe(0);
+
+      // A reply to r3-react-1 arrives — without re-click, modal inputs must
+      // reclassify.
+      const reply = makeSentMessage(
+        { name: '@QATester', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'answering',
+        'reply-react-1',
+        'r3-react-1',
+      );
+      messagesSubject.next([r3a, r3b, reply]);
+      fixture.detectChanges();
+
+      expect(component.modalVisible).toBe(true);
+      expect(component.modalPendingMessages.length).toBe(1);
+      expect(component.modalPendingMessages[0].id).toBe('r3-react-2');
+      expect(component.modalAnsweredMessages.length).toBe(1);
+      expect(component.modalAnsweredMessages[0].request.id).toBe('r3-react-1');
+      expect(component.modalAnsweredMessages[0].reply.id).toBe('reply-react-1');
+    });
+
+    it('auto-closes modal when last pending is answered AND no answered entries remain', () => {
+      // Single Rule 3 with no reply in play.
+      const r3 = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'only',
+        'r3-auto-1',
+      );
+      messagesSubject.next([r3]);
+      fixture.detectChanges();
+
+      const pending = component.chatMessages.find((m) => m.id === 'r3-auto-1')!;
+      component.onRule3Clicked(pending);
+      expect(component.modalVisible).toBe(true);
+
+      // Force the edge case: no messages at all (both lists empty after
+      // recompute). In practice a reply would produce an answered entry, but
+      // this guards the defensive auto-close branch.
+      messagesSubject.next([]);
+      fixture.detectChanges();
+
+      expect(component.modalVisible).toBe(false);
+      expect(component.modalAgentPair).toBeNull();
+      expect(component.modalPendingMessages).toEqual([]);
+      expect(component.modalAnsweredMessages).toEqual([]);
     });
   });
 
@@ -451,17 +649,48 @@ describe('ChatPanelComponent', () => {
         'need approval',
         'r3-1',
       );
+      // Reply carries parent_id === r3-1 — per-message clearing requires this linkage.
       const replyMsg = makeSentMessage(
         { name: '@QATester', role: 'Human' },
         { name: '@Manager', role: 'Manager' },
         'approved',
         'reply-1',
+        'r3-1',
       );
       messagesSubject.next([rule3Msg, replyMsg]);
       fixture.detectChanges();
 
       const chatMsgR3 = component.chatMessages.find(m => m.id === 'r3-1')!;
       expect(component.hasNotification(chatMsgR3)).toBe(false);
+    });
+
+    it('two separate messages — one cleared, one still pending (AC #8)', () => {
+      const r3First = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'first',
+        'r3-1',
+      );
+      const r3Second = makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@QATester', role: 'Human' },
+        'second',
+        'r3-2',
+      );
+      const reply = makeSentMessage(
+        { name: '@QATester', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'answering first',
+        'reply-1',
+        'r3-1',
+      );
+      messagesSubject.next([r3First, r3Second, reply]);
+      fixture.detectChanges();
+
+      const msg1 = component.chatMessages.find(m => m.id === 'r3-1')!;
+      const msg2 = component.chatMessages.find(m => m.id === 'r3-2')!;
+      expect(component.hasNotification(msg1)).toBe(false);
+      expect(component.hasNotification(msg2)).toBe(true);
     });
 
     it('hasNotification should return false for non-Rule-3 messages', () => {
@@ -493,12 +722,13 @@ describe('ChatPanelComponent', () => {
       const chatMsg = component.chatMessages[0];
       expect(component.hasNotification(chatMsg)).toBe(true);
 
-      // 2. Reply arrives (simulating WebSocket message)
+      // 2. Reply arrives (simulating WebSocket message); parent_id points at r3-clear-1.
       const replyMsg = makeSentMessage(
         { name: '@QATester', role: 'Human' },
         { name: '@Manager', role: 'Manager' },
         'approved',
         'reply-clear-1',
+        'r3-clear-1',
       );
       messagesSubject.next([rule3Msg, replyMsg]);
       fixture.detectChanges();
@@ -520,6 +750,7 @@ describe('ChatPanelComponent', () => {
         { name: '@Manager', role: 'Manager' },
         'done',
         'reply-reappear-1',
+        'r3-reappear-1',
       );
       const rule3Second = makeSentMessage(
         { name: '@Manager', role: 'Manager' },
@@ -576,6 +807,8 @@ describe('ChatPanelComponent', () => {
     it('onToggleCollapse should ignore non Rule-3/4 messages', () => {
       const msg: ChatMessage = {
         id: 'r1',
+        message_id: 'r1',
+        parent_id: null,
         content: 'x',
         sender: makeAddress({ name: '@Human' }),
         recipient: makeAddress({ name: '@Manager' }),
@@ -584,7 +817,7 @@ describe('ChatPanelComponent', () => {
         alignment: 'right',
         color: '#efeeee',
         collapsed: false,
-        label: 'You -> Manager',
+        label: 'You ⇒ Manager',
       };
       component.onToggleCollapse(msg);
       expect(msg.collapsed).toBe(false);
@@ -632,5 +865,243 @@ describe('ChatPanelComponent', () => {
 
     // Collapsed state should be preserved
     expect(component.chatMessages[0].collapsed).toBe(false);
+  });
+
+  describe('displayItems merge (Story 4-8)', () => {
+    function getThinkingSubj(): BehaviorSubject<ThinkingState[]> {
+      const svc = TestBed.inject(ChatService) as any;
+      return svc.thinkingAgents$ as BehaviorSubject<ThinkingState[]>;
+    }
+
+    function makeThinking(
+      overrides: Partial<ThinkingState> = {},
+    ): ThinkingState {
+      return {
+        agent_id: 'a1',
+        agent_name: '@Researcher',
+        start_time: new Date('2026-04-12T10:00:00Z'),
+        tools: [],
+        anchor_message_id: 'anchor-1',
+        final: false,
+        ...overrides,
+      };
+    }
+
+    it('sorts a message and a thinking state chronologically', () => {
+      const sent = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'later',
+        'm-1',
+      );
+      sent.timestamp = '2026-04-12T10:00:10Z';
+      messagesSubject.next([sent]);
+      getThinkingSubj().next([
+        makeThinking({
+          start_time: new Date('2026-04-12T10:00:00Z'),
+        }),
+      ]);
+      fixture.detectChanges();
+
+      expect(component.displayItems.length).toBe(2);
+      expect(component.displayItems[0].kind).toBe('thinking');
+      expect(component.displayItems[1].kind).toBe('message');
+    });
+
+    it('ties (same timestamp) order messages BEFORE thinking bubbles', () => {
+      const sent = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'sametime',
+        'tie-1',
+      );
+      sent.timestamp = '2026-04-12T10:00:00Z';
+      messagesSubject.next([sent]);
+      getThinkingSubj().next([
+        makeThinking({ start_time: new Date('2026-04-12T10:00:00Z') }),
+      ]);
+      fixture.detectChanges();
+
+      expect(component.displayItems.length).toBe(2);
+      expect(component.displayItems[0].kind).toBe('message');
+      expect(component.displayItems[1].kind).toBe('thinking');
+    });
+
+    it('trackByDisplayItem produces stable keys across ephemeral → persistent transition', () => {
+      const s1 = makeThinking({ final: false, anchor_message_id: 'anc-stable' });
+      const key1 = component.trackByDisplayItem(0, { kind: 'thinking', data: s1 });
+      const s2 = makeThinking({ final: true, anchor_message_id: 'anc-stable' });
+      const key2 = component.trackByDisplayItem(0, { kind: 'thinking', data: s2 });
+      expect(key1).toBe(key2);
+    });
+
+    it('trackByDisplayItem distinguishes message ids from thinking anchor ids', () => {
+      const chatMsg: ChatMessage = {
+        id: 'same-id',
+        message_id: 'same-id',
+        parent_id: null,
+        content: 'x',
+        sender: makeAddress({ name: '@A' }),
+        recipient: makeAddress({ name: '@B' }),
+        timestamp: new Date(),
+        rule: 2,
+        alignment: 'left',
+        color: '#9ebbcb',
+        collapsed: false,
+        label: 'A ⇒ B',
+      };
+      const state = makeThinking({ anchor_message_id: 'same-id' });
+      const k1 = component.trackByDisplayItem(0, {
+        kind: 'message',
+        data: chatMsg,
+      });
+      const k2 = component.trackByDisplayItem(0, { kind: 'thinking', data: state });
+      expect(k1).not.toBe(k2);
+    });
+
+    it('loading$ DOM block is gone (no .thinking-animation inside .message-list)', () => {
+      const sent = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'hello',
+      );
+      messagesSubject.next([sent]);
+      fixture.detectChanges();
+      const el: HTMLElement = fixture.nativeElement;
+      const list = el.querySelector('.message-list');
+      expect(list).not.toBeNull();
+      expect(list!.querySelector('.thinking-animation')).toBeNull();
+    });
+
+    it('onToggleThinkingExpanded toggles the anchor id in the internal set', () => {
+      component.onToggleThinkingExpanded('anc-1');
+      const state = makeThinking({ anchor_message_id: 'anc-1' });
+      expect(component.isThinkingExpanded(state)).toBe(true);
+      component.onToggleThinkingExpanded('anc-1');
+      expect(component.isThinkingExpanded(state)).toBe(false);
+    });
+  });
+
+  describe('Hover-aware auto-scroll lock (Story 4.4)', () => {
+    // Helper to install a mock scrollContainer with controllable
+    // scrollTop/scrollHeight/clientHeight on the component.
+    function installMockScrollContainer(
+      initialHeight = 1000,
+      clientHeight = 400,
+    ): { scrollTop: number; scrollHeight: number; clientHeight: number } {
+      const mockEl = { scrollTop: 0, scrollHeight: initialHeight, clientHeight };
+      (component as any).scrollContainer = { nativeElement: mockEl };
+      (component as any).lastScrollHeight = initialHeight;
+      return mockEl;
+    }
+
+    it('(a) auto-scroll fires when NOT hovered and a new message arrives', () => {
+      const mockEl = installMockScrollContainer(1000, 400);
+      // Not hovered (default)
+      expect((component as any).isHovered).toBe(false);
+      // Simulate DOM growth from a new message.
+      mockEl.scrollHeight = 1200;
+      component.ngAfterViewChecked();
+      expect(mockEl.scrollTop).toBe(1200);
+    });
+
+    it('(b) auto-scroll is SUSPENDED when hovered; pendingCatchUpScroll is set', () => {
+      const mockEl = installMockScrollContainer(1000, 400);
+      mockEl.scrollTop = 850; // near bottom so shouldScrollToBottom will be true
+      (component as any).checkShouldAutoScroll();
+      component.onMouseEnter();
+      expect((component as any).isHovered).toBe(true);
+
+      // New message arrives while hovered.
+      const sent = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'hovered-arrival',
+        'hov-1',
+      );
+      messagesSubject.next([sent]);
+      mockEl.scrollHeight = 1200;
+      component.ngAfterViewChecked();
+
+      // scrollTop was NOT moved to bottom — hover suspends.
+      expect(mockEl.scrollTop).toBe(850);
+      expect((component as any).pendingCatchUpScroll).toBe(true);
+    });
+
+    it('(c) mouseleave performs catch-up when a message arrived during hover', fakeAsync(() => {
+      const mockEl = installMockScrollContainer(1000, 400);
+      mockEl.scrollTop = 850;
+      (component as any).checkShouldAutoScroll();
+      component.onMouseEnter();
+
+      const sent = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'catch-up',
+        'cu-1',
+      );
+      messagesSubject.next([sent]);
+      mockEl.scrollHeight = 1200;
+      component.ngAfterViewChecked();
+      expect(mockEl.scrollTop).toBe(850);
+      expect((component as any).pendingCatchUpScroll).toBe(true);
+
+      component.onMouseLeave();
+      flushMicrotasks();
+
+      expect(mockEl.scrollTop).toBe(1200);
+      expect((component as any).pendingCatchUpScroll).toBe(false);
+      expect((component as any).isHovered).toBe(false);
+    }));
+
+    it('(d) mouseleave does NOT catch-up if no message arrived during hover', fakeAsync(() => {
+      const mockEl = installMockScrollContainer(1000, 400);
+      mockEl.scrollTop = 850;
+      (component as any).checkShouldAutoScroll();
+
+      component.onMouseEnter();
+      // No message arrives — scrollHeight unchanged.
+      component.ngAfterViewChecked();
+      component.onMouseLeave();
+      flushMicrotasks();
+
+      expect(mockEl.scrollTop).toBe(850);
+      expect((component as any).pendingCatchUpScroll).toBe(false);
+    }));
+
+    it('(e) collapse toggle during hover does NOT queue a catch-up', fakeAsync(() => {
+      // Seed a Rule 4 message so we have something to toggle.
+      const r4 = makeSentMessage(
+        { name: '@Worker', role: 'Worker' },
+        { name: '@Manager', role: 'Manager' },
+        'ai msg',
+        'r4-hover',
+      );
+      messagesSubject.next([r4]);
+      fixture.detectChanges();
+
+      const mockEl = installMockScrollContainer(1000, 400);
+      mockEl.scrollTop = 850;
+      (component as any).checkShouldAutoScroll();
+
+      component.onMouseEnter();
+
+      // User toggles collapse — this changes DOM height but is NOT a
+      // message-arrival event, so pendingCatchUpScroll MUST remain false.
+      component.onToggleCollapse(component.chatMessages[0]);
+      mockEl.scrollHeight = 1100; // toggle grew the bubble
+      component.ngAfterViewChecked();
+
+      // Hover still suspends the scroll.
+      expect(mockEl.scrollTop).toBe(850);
+      // CRITICAL: no catch-up queued for a collapse toggle.
+      expect((component as any).pendingCatchUpScroll).toBe(false);
+
+      component.onMouseLeave();
+      flushMicrotasks();
+
+      // No catch-up fired — scrollTop still at 850.
+      expect(mockEl.scrollTop).toBe(850);
+    }));
   });
 });

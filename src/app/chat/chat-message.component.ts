@@ -1,8 +1,8 @@
 import { CommonModule, DatePipe } from '@angular/common';
-import { Component, EventEmitter, input, Output } from '@angular/core';
+import { Component, computed, EventEmitter, input, Output } from '@angular/core';
 import { ButtonModule } from 'primeng/button';
 import { MarkdownModule } from 'ngx-markdown';
-import { ChatMessage } from '../models/chat-message.model';
+import { buildPreview, ChatMessage } from '../models/chat-message.model';
 
 @Component({
   selector: 'app-chat-message',
@@ -19,6 +19,8 @@ export class ChatMessageComponent {
   message = input.required<ChatMessage>();
   selected = input<boolean>(false);
   notification = input<boolean>(false);
+
+  readonly preview = computed(() => buildPreview(this.message().content));
 
   onToggleCollapse(): void {
     const msg = this.message();

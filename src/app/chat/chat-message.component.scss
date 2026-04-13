@@ -8,19 +8,11 @@
   color: #334155;
   font-size: 0.9rem;
   border-radius: 6px;
-  transition: background-color 0.15s ease;
+  border: 1px solid rgba(158, 187, 203, 0.5);
 
   &:hover {
-    background-color: rgba(0, 0, 0, 0.04);
+    background-color: rgba(0, 0, 0, 0.02);
   }
-}
-
-.collapse-indicator {
-  font-family: monospace;
-  font-weight: bold;
-  font-size: 0.8rem;
-  color: #64748b;
-  flex-shrink: 0;
 }
 
 .collapsed-label {
@@ -28,6 +20,10 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.collapsed-preview {
+  color: #64748b;
 }
 
 .collapsed-timestamp {
@@ -101,6 +97,13 @@
   align-items: center;
   gap: 0.5rem;
   margin-bottom: 4px;
+
+  .bubble-timestamp {
+    margin-left: auto;
+    font-size: 0.8rem;
+    color: #94a3b8;
+    white-space: nowrap;
+  }
 }
 
 .label-pill {
@@ -128,13 +131,6 @@
   }
 }
 
-.collapse-indicator-bubble {
-  font-family: monospace;
-  font-weight: bold;
-  font-size: 0.8rem;
-  color: #64748b;
-}
-
 .notification-icon {
   color: #38bdf8;
   font-size: 0.9rem;
@@ -148,12 +144,4 @@
 
 .markdown-content {
   margin-top: 4px;
-}
-
-.timestamp {
-  display: block;
-  font-size: 0.75rem;
-  color: #64748b;
-  margin-top: 4px;
-  padding-bottom: 4px;
 }

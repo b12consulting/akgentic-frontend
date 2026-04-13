@@ -1,24 +1,24 @@
-<div class="chat-container">
-  <ng-container *ngIf="chatMessages.length > 0; else noMessagesPlaceholder">
+<div class="chat-container" (mouseenter)="onMouseEnter()" (mouseleave)="onMouseLeave()">
+  <ng-container *ngIf="displayItems.length > 0; else noMessagesPlaceholder">
     <div class="message-list" #scrollContainer (click)="onBackgroundClick()">
-      <app-chat-message
-        *ngFor="let msg of chatMessages; trackBy: trackById"
-        [message]="msg"
-        [selected]="msg.id === selectedMessageId"
-        [notification]="hasNotification(msg)"
-        (messageSelected)="onMessageSelected($event)"
-        (toggleCollapse)="onToggleCollapse($event)"
-        (bubbleClicked)="onBubbleClicked($event)"
-        (rule3Clicked)="onRule3Clicked($event)"
-      ></app-chat-message>
-
-      <div *ngIf="loading$ | async">
-        <div class="thinking-animation">
-          <div class="dot"></div>
-          <div class="dot"></div>
-          <div class="dot"></div>
-        </div>
-      </div>
+      <ng-container *ngFor="let item of displayItems; trackBy: trackByDisplayItem">
+        <app-chat-message
+          *ngIf="item.kind === 'message'"
+          [message]="item.data"
+          [selected]="item.data.id === selectedMessageId"
+          [notification]="hasNotification(item.data)"
+          (messageSelected)="onMessageSelected($event)"
+          (toggleCollapse)="onToggleCollapse($event)"
+          (bubbleClicked)="onBubbleClicked($event)"
+          (rule3Clicked)="onRule3Clicked($event)"
+        ></app-chat-message>
+        <app-chat-thinking
+          *ngIf="item.kind === 'thinking'"
+          [state]="item.data"
+          [expanded]="isThinkingExpanded(item.data)"
+          (toggleExpanded)="onToggleThinkingExpanded($event)"
+        ></app-chat-thinking>
+      </ng-container>
     </div>
   </ng-container>
   <ng-template #noMessagesPlaceholder>
@@ -50,6 +50,7 @@
     [visible]="modalVisible"
     [agentPair]="modalAgentPair"
     [pendingMessages]="modalPendingMessages"
+    [answeredMessages]="modalAnsweredMessages"
     (visibleChange)="onModalVisibleChange($event)"
     (reply)="onModalReply($event)"
   ></app-chat-human-modal>
