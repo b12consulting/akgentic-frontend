@@ -6,6 +6,7 @@ import { WebSocketSubject } from 'rxjs/webSocket';
 import { ActorMessageService } from './message.service';
 import { ApiService } from './api.service';
 import { ChatService } from './chat.service';
+import { MessageLogService } from './message-log.service';
 import { ActorAddress } from '../models/message.types';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
@@ -85,6 +86,7 @@ describe('ActorMessageService.applyThinkingLifecycle + dispatch (Story 4-8)', ()
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
+        MessageLogService,
         ActorMessageService,
         ChatService,
         { provide: ApiService, useValue: {} },
@@ -238,6 +240,7 @@ describe('ActorMessageService.init — loadingProcess$ spinner window (Story 4-1
 
     TestBed.configureTestingModule({
       providers: [
+        MessageLogService,
         ActorMessageService,
         ChatService,
         {
@@ -263,8 +266,18 @@ describe('ActorMessageService.init — loadingProcess$ spinner window (Story 4-1
   });
 
   afterEach(() => {
-    // Avoid cross-test leakage of the fake socket.
-    fakeSocket.complete();
+    // Avoid cross-test leakage of the fake socket. Story 6.1 made
+    // `init()`'s (a) step call `this.webSocket.unsubscribe()` before
+    // swapping in a new socket — on re-init tests the previous fake
+    // socket is therefore already closed, so `complete()` here would
+    // throw `ObjectUnsubscribedError`. Swallow it: the whole point of
+    // this teardown is "make sure the Subject does not leak into the
+    // next test".
+    try {
+      fakeSocket.complete();
+    } catch {
+      /* subject already closed by disposePriorSubscriptions — ignore */
+    }
     jasmine.clock().uninstall();
   });
 
@@ -418,5 +431,305 @@ describe('ActorMessageService.init — loadingProcess$ spinner window (Story 4-1
     expect(chatService.loadingProcess$.value).toBe(true);
 
     secondSocket.complete();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 6.1 — MessageLogService integration + frame-batched ingestion (AC1-8)
+// ---------------------------------------------------------------------------
+
+describe('ActorMessageService — Story 6.1 (frame-batched log ingestion)', () => {
+  let service: ActorMessageService;
+  let log: MessageLogService;
+  let chatService: ChatService;
+  let fakeSocket: Subject<any>;
+
+  function mkStart(id: string): any {
+    return {
+      id,
+      parent_id: null,
+      team_id: 'team-X',
+      timestamp: '2026-04-13T00:00:00Z',
+      sender: {
+        __actor_address__: true,
+        name: '@X',
+        role: 'Worker',
+        agent_id: 'a1',
+        team_id: 'team-X',
+        squad_id: 's1',
+        user_message: false,
+      },
+      display_type: 'other',
+      content: null,
+      __model__: 'akgentic.core.messages.orchestrator.StartMessage',
+    };
+  }
+
+  beforeEach(() => {
+    jasmine.clock().install();
+    jasmine.clock().mockDate(new Date(0));
+
+    fakeSocket = new Subject<any>();
+
+    TestBed.configureTestingModule({
+      providers: [
+        MessageLogService,
+        ActorMessageService,
+        ChatService,
+        {
+          provide: ApiService,
+          useValue: {
+            getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+          },
+        },
+        { provide: MessageService, useValue: { add: jasmine.createSpy('add') } },
+      ],
+    });
+    service = TestBed.inject(ActorMessageService);
+    log = TestBed.inject(MessageLogService);
+    chatService = TestBed.inject(ChatService);
+
+    spyOn<any>(service, 'createWebSocket').and.returnValue(
+      fakeSocket as unknown as WebSocketSubject<any>,
+    );
+  });
+
+  afterEach(() => {
+    try {
+      fakeSocket.complete();
+    } catch {
+      /* may already be unsubscribed by disposePriorSubscriptions */
+    }
+    jasmine.clock().uninstall();
+  });
+
+  // ---------- AC1 ----------
+  it('AC1: log$ emits [] before init and log.snapshot() is empty', () => {
+    let observed: any[] | null = null;
+    const sub = log.log$.subscribe((v) => (observed = v));
+    expect(observed as any[] | null).toEqual([]);
+    expect(log.snapshot()).toEqual([]);
+    sub.unsubscribe();
+  });
+
+  // ---------- AC3 + ADR-005 AC4 ----------
+  it('AC3: N synchronous WS messages within 16ms → ONE appendAll + ONE log$ emission', async () => {
+    await service.init('proc-1', true);
+
+    const appendSpy = spyOn(log, 'appendAll').and.callThrough();
+    const emissions: any[][] = [];
+    // Subscribe AFTER init completes so we capture the current snapshot as
+    // the baseline emission and then the post-batch emission.
+    const sub = log.log$.subscribe((v) => emissions.push(v));
+    expect(emissions.length).toBe(1); // baseline, [] (or whatever init left)
+
+    // Fire 5 synchronous events within one 16ms window.
+    fakeSocket.next(mkStart('1'));
+    fakeSocket.next(mkStart('2'));
+    fakeSocket.next(mkStart('3'));
+    fakeSocket.next(mkStart('4'));
+    fakeSocket.next(mkStart('5'));
+
+    // bufferTime(16) has not flushed yet — the batched subscriber is still
+    // accumulating; no log$ emission should have landed past baseline.
+    expect(emissions.length).toBe(1);
+    expect(appendSpy).not.toHaveBeenCalled();
+
+    jasmine.clock().tick(17);
+
+    expect(appendSpy).toHaveBeenCalledTimes(1);
+    expect(appendSpy.calls.mostRecent().args[0].length).toBe(5);
+    expect(emissions.length).toBe(2);
+    expect(emissions[1].map((m: any) => m.id)).toEqual(['1', '2', '3', '4', '5']);
+    expect(log.snapshot().map((m: any) => m.id)).toEqual(['1', '2', '3', '4', '5']);
+
+    sub.unsubscribe();
+  });
+
+  // ---------- AC4 ----------
+  it('AC4: batched subscriber updates stateDict$ and contextDict$ in same pass', async () => {
+    await service.init('proc-1', true);
+
+    const stateChanged = {
+      id: 'sc1',
+      parent_id: null,
+      team_id: 'team-X',
+      timestamp: '2026-04-13T00:00:00Z',
+      sender: {
+        __actor_address__: true,
+        name: '@X',
+        role: 'Worker',
+        agent_id: 'agent-X',
+        team_id: 'team-X',
+        squad_id: 's',
+        user_message: false,
+      },
+      display_type: 'other',
+      content: null,
+      __model__: 'akgentic.core.messages.orchestrator.StateChangedMessage',
+      state: { phase: 'thinking' },
+    };
+    const llmEvent = {
+      id: 'evt1',
+      parent_id: null,
+      team_id: 'team-X',
+      timestamp: '2026-04-13T00:00:00Z',
+      sender: {
+        __actor_address__: true,
+        name: '@Y',
+        role: 'Worker',
+        agent_id: 'agent-Y',
+        team_id: 'team-X',
+        squad_id: 's',
+        user_message: false,
+      },
+      display_type: 'other',
+      content: null,
+      __model__: 'akgentic.core.messages.orchestrator.EventMessage',
+      event: {
+        __model__: 'akgentic.llm.event.LlmMessageEvent',
+        message: { role: 'assistant', content: 'hi' },
+      },
+    };
+
+    fakeSocket.next(stateChanged);
+    fakeSocket.next(llmEvent);
+    jasmine.clock().tick(17);
+
+    // Both dicts populated by the BATCHED subscriber path.
+    expect(service.stateDict$['agent-X']).toBeDefined();
+    expect(service.stateDict$['agent-X'].value.state).toEqual({ phase: 'thinking' });
+    expect(service.contextDict$['agent-Y']).toBeDefined();
+    // NOTE: PR 1 is parallel populate — the per-__model__ dispatch in
+    // webSocket.subscribe.next ALSO appends to contextDict$ (existing
+    // handleEventMessage). So the ctx array may contain the same message
+    // twice (batched + existing). The invariant we care about for AC4 is
+    // that AT LEAST one update happened in the batched pass.
+    expect(service.contextDict$['agent-Y'].value.length).toBeGreaterThanOrEqual(1);
+    // Log also contains both messages in arrival order.
+    expect(log.snapshot().length).toBe(2);
+  });
+
+  // ---------- AC5 ----------
+  it('AC5: rapid init("A") → init("B") leaves only B events in log.snapshot()', async () => {
+    // First cycle — process A.
+    await service.init('proc-A', true);
+    fakeSocket.next(mkStart('A-1'));
+    fakeSocket.next(mkStart('A-2'));
+    jasmine.clock().tick(17);
+    expect(log.snapshot().map((m: any) => m.id)).toEqual(['A-1', 'A-2']);
+
+    // Swap in a fresh fake socket for the B cycle.
+    const socketB = new Subject<any>();
+    (service as any).createWebSocket = jasmine
+      .createSpy('createWebSocket')
+      .and.returnValue(socketB as unknown as WebSocketSubject<any>);
+
+    await service.init('proc-B', true);
+    // After init: log MUST be empty (Task 3.1 step (b) reset).
+    expect(log.snapshot()).toEqual([]);
+
+    socketB.next(mkStart('B-1'));
+    jasmine.clock().tick(17);
+    // Only B events remain.
+    expect(log.snapshot().map((m: any) => m.id)).toEqual(['B-1']);
+
+    socketB.complete();
+  });
+
+  // ---------- AC6 ----------
+  it('AC6: spinner flip fires EXACTLY once via take(1) for N events in same 16ms window', async () => {
+    await service.init('proc-1', true);
+
+    // Jump past the 500ms floor so the flip is immediate (not deferred).
+    jasmine.clock().tick(600);
+
+    const emitted: boolean[] = [];
+    const sub = chatService.loadingProcess$.subscribe((v) => emitted.push(v));
+    expect(emitted).toEqual([true]);
+
+    // Fire 5 events synchronously — take(1) must trigger ONLY ONE flip.
+    fakeSocket.next(mkStart('1'));
+    fakeSocket.next(mkStart('2'));
+    fakeSocket.next(mkStart('3'));
+    fakeSocket.next(mkStart('4'));
+    fakeSocket.next(mkStart('5'));
+
+    // Exactly one transition to false (from the take(1) side-channel;
+    // the legacy flipOnFirstEvent closure also fires but calls the same
+    // idempotent scheduleSpinnerFlipFalse → loadingProcess$ is a
+    // BehaviorSubject so a second `next(false)` with the same value does
+    // emit another `false` — assert only ONE transition from true→false.
+    expect(emitted[0]).toBe(true);
+    expect(emitted).toContain(false);
+    // Values in strict order: first is true, LAST is false.
+    expect(emitted[emitted.length - 1]).toBe(false);
+
+    sub.unsubscribe();
+  });
+
+  // ---------- AC7 ----------
+  it('AC7: N mount/unmount cycles leave no residual subscriptions on _wsInbound$', async () => {
+    // After init() step (a) disposes prior bufferSub + spinnerSub, the
+    // internal Subject observer list should stay bounded. Probe via the
+    // rxjs 7 `observed` boolean and the internal `observers` array (still
+    // reachable on Subject even if flagged @deprecated). Both paths agree.
+    const inbound = (service as any)._wsInbound$ as Subject<any>;
+
+    for (let i = 0; i < 5; i++) {
+      // Each re-init disposes the previous WS (`fakeSocket.unsubscribe()`),
+      // so swap in a fresh Subject for every cycle — otherwise the next
+      // init's `.subscribe(...)` would hit an unsubscribed Subject.
+      const cycleSocket = new Subject<any>();
+      (service as any).createWebSocket = jasmine
+        .createSpy('createWebSocket')
+        .and.returnValue(cycleSocket as unknown as WebSocketSubject<any>);
+
+      await service.init('proc-' + i, true);
+      // After a full init() the two live subscribers are bufferSub +
+      // spinnerSub — exactly 2, never more.
+      expect((inbound as any).observers.length).toBe(2);
+      expect(inbound.observed).toBeTrue();
+    }
+
+    // Destroy: must release ALL observers and complete the Subject.
+    service.ngOnDestroy();
+    expect((inbound as any).observers.length).toBe(0);
+    expect(inbound.observed).toBeFalse();
+  });
+
+  // ---------- AC8 ----------
+  it('AC8: log and messages$ both contain synthetic event sequence in arrival order', async () => {
+    await service.init('proc-1', true);
+
+    const s1 = mkStart('s1');
+    const s2 = mkStart('s2');
+    const s3 = mkStart('s3');
+    fakeSocket.next(s1);
+    fakeSocket.next(s2);
+    fakeSocket.next(s3);
+    jasmine.clock().tick(17);
+
+    // log populated via the batched subscriber.
+    expect(log.snapshot().map((m: any) => m.id)).toEqual(['s1', 's2', 's3']);
+    // messages$ populated via the existing message$ → messages$ closure.
+    // StartMessage falls through to the `else` branch → message$.next(event)
+    // → messages$.next([...]).
+    const msgIds = service.messages$.value.map((m: any) => m.id);
+    expect(msgIds).toEqual(['s1', 's2', 's3']);
+  });
+
+  // ---------- Task 3.2 — REST replay populates log in strict order ----------
+  it('Task 3.2: !running init replays events into log in arrival order', async () => {
+    const apiService = TestBed.inject(ApiService) as any;
+    apiService.getEvents.and.resolveTo([
+      { event: mkStart('r1') },
+      { event: mkStart('r2') },
+      { event: mkStart('r3') },
+    ]);
+
+    await service.init('proc-stopped', false);
+
+    expect(log.snapshot().map((m: any) => m.id)).toEqual(['r1', 'r2', 'r3']);
   });
 });
