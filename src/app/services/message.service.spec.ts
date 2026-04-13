@@ -307,9 +307,22 @@ describe('ActorMessageService.init — loadingProcess$ spinner window (Story 4-1
   it('AC2: running=false (stopped team) flips loadingProcess$ to false before WS wiring', async () => {
     // Record the sequence of `loadingProcess$` values as init() runs so we
     // can assert the spinner is OFF before any WS events are delivered.
+    // Note: createWebSocket is called BEFORE subscribe(), so by the time the
+    // spy-stubbed factory returns, the stopped-team branch has already flipped
+    // the flag to `false`. Subscribing to track values after await captures
+    // the current BehaviorSubject state without needing to push any events.
+    const emitted: boolean[] = [];
+    const sub = chatService.loadingProcess$.subscribe((v) => emitted.push(v));
+
     await service.init('proc-1', false);
 
-    // No WS events pushed → stopped-team path MUST have already flipped it.
+    // No WS events pushed → stopped-team path MUST have already flipped it,
+    // AND the sequence must include at least one `true` (spinner on during
+    // getEvents()) followed by `false` (before WS wiring).
     expect(chatService.loadingProcess$.value).toBe(false);
+    expect(emitted).toContain(true);
+    expect(emitted[emitted.length - 1]).toBe(false);
+
+    sub.unsubscribe();
   });
 });
