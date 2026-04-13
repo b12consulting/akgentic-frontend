@@ -69,6 +69,21 @@ describe('ChatThinkingComponent (Story 4-8)', () => {
     expect(entries.length).toBe(2);
   });
 
+  it('collapsed non-final state with tools renders tool list (live streaming)', () => {
+    const tools = [
+      {
+        tool_call_id: 'call-1',
+        tool_name: 'search_web',
+        arguments_preview: 'q=x',
+        done: false,
+      },
+    ];
+    setInputs(makeState({ final: false, tools }), false);
+    const el: HTMLElement = fixture.nativeElement;
+    expect(el.querySelector('.tool-list')).not.toBeNull();
+    expect(el.querySelectorAll('.tool-entry').length).toBe(1);
+  });
+
   it('expanded non-final state with tools renders tool list', () => {
     const tools = [
       {

@@ -12,7 +12,7 @@
     <span class="spacer"></span>
     <span class="timestamp">{{ state().start_time | date: 'HH:mm' }}</span>
   </div>
-  <div class="tool-list" *ngIf="(expanded() || state().final) && state().tools.length > 0">
+  <div class="tool-list" *ngIf="state().tools.length > 0">
     <div
       class="tool-entry"
       *ngFor="let t of state().tools; trackBy: trackByToolId"
