@@ -395,7 +395,7 @@ describe('ChatPanelComponent', () => {
         id: 'msg-123', content: 'test', sender: makeAddress({ name: '@Manager' }),
         recipient: makeAddress({ name: '@QATester', role: 'Human' }),
         timestamp: new Date(), rule: 3, alignment: 'left', color: '#9ebbcb',
-        collapsed: false, label: 'Manager -> QATester',
+        collapsed: false, label: 'Manager ⇒ QATester',
       };
       component.modalPendingMessages = [dummyMsg];
 
@@ -418,7 +418,7 @@ describe('ChatPanelComponent', () => {
         id: 'msg-1', content: 'test', sender: makeAddress({ name: '@Manager' }),
         recipient: makeAddress({ name: '@QATester', role: 'Human' }),
         timestamp: new Date(), rule: 3, alignment: 'left', color: '#9ebbcb',
-        collapsed: false, label: 'Manager -> QATester',
+        collapsed: false, label: 'Manager ⇒ QATester',
       };
       component.modalPendingMessages = [dummyMsg];
       component.onModalVisibleChange(false);
@@ -584,7 +584,7 @@ describe('ChatPanelComponent', () => {
         alignment: 'right',
         color: '#efeeee',
         collapsed: false,
-        label: 'You -> Manager',
+        label: 'You ⇒ Manager',
       };
       component.onToggleCollapse(msg);
       expect(msg.collapsed).toBe(false);

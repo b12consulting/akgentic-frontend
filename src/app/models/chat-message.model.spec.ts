@@ -110,46 +110,60 @@ describe('classifyRule', () => {
 });
 
 describe('buildLabel', () => {
-  it('Rule 1: "You -> {recipient}"', () => {
+  it('Rule 1: "You ⇒ {recipient}"', () => {
     const msg = makeSentMessage({
       sender: makeAddress({ name: '@Human', role: 'Human' }),
       recipient: makeAddress({ name: '@Manager-manager', role: 'Manager' }),
     });
     const label = buildLabel(msg, 1);
-    expect(label).toContain('You ->');
+    expect(label).toContain('You ⇒');
     expect(label).toContain('Manager');
+    expect(label).not.toContain('->');
   });
 
-  it('Rule 2: just sender name', () => {
+  it('Rule 2: "{sender} ⇒ You"', () => {
     const msg = makeSentMessage({
       sender: makeAddress({ name: '@Manager-manager', role: 'Manager' }),
       recipient: makeAddress({ name: '@Human', role: 'Human' }),
     });
     const label = buildLabel(msg, 2);
-    expect(label).not.toContain('->');
+    expect(label).toContain('⇒ You');
     expect(label).toContain('Manager');
+    expect(label.endsWith('⇒ You')).toBe(true);
+    expect(label).not.toContain('->');
   });
 
-  it('Rule 3: "@{sender} -> @{recipient}"', () => {
+  it('Rule 3: "@{sender} ⇒ @{recipient}"', () => {
     const msg = makeSentMessage({
       sender: makeAddress({ name: '@Agent-worker', role: 'Worker' }),
       recipient: makeAddress({ name: '@OtherHuman-human', role: 'Human' }),
     });
     const label = buildLabel(msg, 3);
-    expect(label).toContain('->');
+    expect(label).toContain('⇒');
     expect(label).toContain('Agent');
     expect(label).toContain('OtherHuman');
+    expect(label).not.toContain('->');
   });
 
-  it('Rule 4: "@{sender} -> @{recipient}"', () => {
+  it('Rule 4: "@{sender} ⇒ @{recipient}"', () => {
     const msg = makeSentMessage({
       sender: makeAddress({ name: '@Worker-worker', role: 'Worker' }),
       recipient: makeAddress({ name: '@Manager-manager', role: 'Manager' }),
     });
     const label = buildLabel(msg, 4);
-    expect(label).toContain('->');
+    expect(label).toContain('⇒');
     expect(label).toContain('Worker');
     expect(label).toContain('Manager');
+    expect(label).not.toContain('->');
+  });
+
+  it('Rule 2 explicit: result ends with "⇒ You" (Story 4.3)', () => {
+    const msg = makeSentMessage({
+      sender: makeAddress({ name: '@Manager-manager', role: 'Manager' }),
+      recipient: makeAddress({ name: '@Human', role: 'Human' }),
+    });
+    const label = buildLabel(msg, 2);
+    expect(label.endsWith('⇒ You')).toBe(true);
   });
 });
 
@@ -266,7 +280,7 @@ describe('classifyMessage', () => {
     expect(result.alignment).toBe('right');
     expect(result.color).toBe('#efeeee');
     expect(result.collapsed).toBe(false);
-    expect(result.label).toContain('You ->');
+    expect(result.label).toContain('You ⇒');
   });
 
   it('should return a ChatMessage with correct fields for Rule 4 (collapsed)', () => {

@@ -105,6 +105,13 @@
   align-items: center;
   gap: 0.5rem;
   margin-bottom: 4px;
+
+  .bubble-timestamp {
+    margin-left: auto;
+    font-size: 0.8rem;
+    color: #94a3b8;
+    white-space: nowrap;
+  }
 }
 
 .label-pill {
@@ -152,12 +159,4 @@
 
 .markdown-content {
   margin-top: 4px;
-}
-
-.timestamp {
-  display: block;
-  font-size: 0.75rem;
-  color: #64748b;
-  margin-top: 4px;
-  padding-bottom: 4px;
 }
