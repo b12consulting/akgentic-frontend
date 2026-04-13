@@ -14,7 +14,6 @@ import { NodeInterface } from '../../models/types';
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {
     __actor_address__: true,
-    address: 'addr',
     name: '@Agent',
     role: 'Worker',
     agent_id: 'agent-1',

@@ -5,10 +5,13 @@
 
 export interface ActorAddress {
   __actor_address__: true;
-  address: string;
+  /** Fully qualified class name for deserialization (Python
+   *  `ActorAddressDict.__actor_type__`). */
+  __actor_type__?: string;
+  agent_id: string;
   name: string;
   role: string;
-  agent_id: string;
+  team_id?: string;
   squad_id: string;
   user_message: boolean;
 }
@@ -49,7 +52,11 @@ export interface SentMessage extends BaseMessage {
 
 export interface ReceivedMessage extends BaseMessage {
   __model__: 'akgentic.core.messages.orchestrator.ReceivedMessage';
-  message: BaseMessage;
+  /** UUID of the inner message being received. Python class only carries
+   *  the id (lightweight telemetry) — the full inner message is NOT
+   *  serialised into this envelope. See
+   *  `akgentic.core.messages.orchestrator.ReceivedMessage`. */
+  message_id: string;
 }
 
 export interface ProcessedMessage extends BaseMessage {
@@ -60,7 +67,7 @@ export interface ProcessedMessage extends BaseMessage {
 export interface StartMessage extends BaseMessage {
   __model__: 'akgentic.core.messages.orchestrator.StartMessage';
   config: BaseConfig;
-  parent: ActorAddress;
+  parent: ActorAddress | null;
 }
 
 export interface StopMessage extends BaseMessage {
@@ -71,14 +78,12 @@ export interface ErrorMessage extends BaseMessage {
   __model__: 'akgentic.core.messages.orchestrator.ErrorMessage';
   exception_type: string;
   exception_value: string;
-  current_aktion?: string;
-  current_message?: BaseMessage;
+  current_message?: BaseMessage | null;
 }
 
 export interface StateChangedMessage extends BaseMessage {
   __model__: 'akgentic.core.messages.orchestrator.StateChangedMessage';
   state: BaseState | Record<string, any>;
-  err?: Error;
 }
 
 export interface EventMessage extends BaseMessage {
