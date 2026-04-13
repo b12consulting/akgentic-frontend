@@ -9,18 +9,11 @@
   font-size: 0.9rem;
   border-radius: 6px;
   transition: background-color 0.15s ease;
+  background-color: rgba(0, 0, 0, 0.04);
 
   &:hover {
     background-color: rgba(0, 0, 0, 0.04);
   }
-}
-
-.collapse-indicator {
-  font-family: monospace;
-  font-weight: bold;
-  font-size: 0.8rem;
-  color: #64748b;
-  flex-shrink: 0;
 }
 
 .collapsed-label {
@@ -137,13 +130,6 @@
   &:focus {
     outline: none;
   }
-}
-
-.collapse-indicator-bubble {
-  font-family: monospace;
-  font-weight: bold;
-  font-size: 0.8rem;
-  color: #64748b;
 }
 
 .notification-icon {
