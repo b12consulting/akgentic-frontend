@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { MessageService } from 'primeng/api';
-import { Subject } from 'rxjs';
+import { BehaviorSubject, Subject } from 'rxjs';
 import { WebSocketSubject } from 'rxjs/webSocket';
 
 import { ActorMessageService } from './message.service';
@@ -509,7 +509,7 @@ describe('ActorMessageService — Story 6.1 (frame-batched log ingestion)', () =
   });
 
   // ---------- AC8 ----------
-  it('AC8: log and messages$ both contain synthetic event sequence in arrival order', async () => {
+  it('AC8: log contains synthetic event sequence in arrival order (Story 6.4: messages$ deleted)', async () => {
     await service.init('proc-1', true);
 
     const s1 = mkStart('s1');
@@ -522,11 +522,9 @@ describe('ActorMessageService — Story 6.1 (frame-batched log ingestion)', () =
 
     // log populated via the batched subscriber.
     expect(log.snapshot().map((m: any) => m.id)).toEqual(['s1', 's2', 's3']);
-    // messages$ populated via the existing message$ → messages$ closure.
-    // StartMessage falls through to the `else` branch → message$.next(event)
-    // → messages$.next([...]).
-    const msgIds = service.messages$.value.map((m: any) => m.id);
-    expect(msgIds).toEqual(['s1', 's2', 's3']);
+    // Story 6.4 (AC1): `messages$` is deleted; the log is the single
+    // source of truth for downstream selectors.
+    expect((service as any).messages$).toBeUndefined();
   });
 
   // ---------- Task 3.2 — REST replay populates log in strict order ----------
@@ -541,5 +539,94 @@ describe('ActorMessageService — Story 6.1 (frame-batched log ingestion)', () =
     await service.init('proc-stopped', false);
 
     expect(log.snapshot().map((m: any) => m.id)).toEqual(['r1', 'r2', 'r3']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 6.4 (AC5) — two-exceptions invariant (NFR9)
+//
+// ADR-005 §Decision 5: stateDict$ and contextDict$ are the ONLY imperative
+// state containers on ActorMessageService after the Story 6.4 refactor.
+// "Adding a third exception requires a new ADR. This test is the automated
+// guard."
+// ---------------------------------------------------------------------------
+
+/**
+ * Probe the public surface of an `ActorMessageService` (or subclass) and
+ * return the set of own-property names whose runtime shape is an imperative
+ * state container — either a direct `BehaviorSubject` field, or a per-agent
+ * dict `{ [k: string]: BehaviorSubject<...> }` (the `stateDict$` /
+ * `contextDict$` shape; counted as ONE exception each, regardless of cardinality).
+ */
+function probeStateContainers(service: object): string[] {
+  return Object.getOwnPropertyNames(service).filter((name) => {
+    const v = (service as any)[name];
+    if (v instanceof BehaviorSubject) return true;
+    if (v && typeof v === 'object' && !Array.isArray(v)) {
+      const values = Object.values(v);
+      // Empty dicts that match the documented dict-name suffix still count
+      // — the contract is structural, not population-dependent.
+      if (values.length === 0) {
+        return /(stateDict|contextDict)\$$/.test(name);
+      }
+      return values.every((x) => x instanceof BehaviorSubject);
+    }
+    return false;
+  });
+}
+
+describe('ActorMessageService — two-exceptions invariant (Story 6.4, NFR9)', () => {
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        MessageLogService,
+        ActorMessageService,
+        ChatService,
+        {
+          provide: ApiService,
+          useValue: {
+            getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+          },
+        },
+        { provide: MessageService, useValue: { add: jasmine.createSpy('add') } },
+      ],
+    });
+  });
+
+  it('public data surface is exactly {stateDict$, contextDict$} (knowledgeGraphLoading$ excluded — UX state, see §Decision 8)', () => {
+    const service = TestBed.inject(ActorMessageService);
+    // Story 6.4: `knowledgeGraphLoading$` is a UX spinner (analogous to
+    // `loadingProcess$` on `ChatService`, AC10), not log-derived state — it
+    // is intentionally excluded from the invariant check via name allow-list.
+    const containers = probeStateContainers(service).filter(
+      (n) => n !== 'knowledgeGraphLoading$',
+    );
+    expect(new Set(containers)).toEqual(new Set(['stateDict$', 'contextDict$']));
+  });
+
+  it('negative probe: adding a third exception fails the invariant', () => {
+    const service = TestBed.inject(ActorMessageService);
+    // Simulate the "someone added a new BehaviorSubject" diff.
+    (service as any).extraDict$ = { agent: new BehaviorSubject<any>(null) };
+    const containers = probeStateContainers(service).filter(
+      (n) => n !== 'knowledgeGraphLoading$',
+    );
+    // The probe MUST detect the addition (set is no longer the documented
+    // pair). Without this guard, the invariant test would silently pass.
+    expect(new Set(containers)).not.toEqual(
+      new Set(['stateDict$', 'contextDict$']),
+    );
+    expect(containers).toContain('extraDict$');
+  });
+
+  it('non-state observables (Subjects, Subscriptions, WebSocketSubject) are NOT counted as exceptions', () => {
+    const service = TestBed.inject(ActorMessageService);
+    const containers = probeStateContainers(service);
+    // These should not surface in the probe regardless of the
+    // knowledgeGraphLoading$ allow-list:
+    expect(containers).not.toContain('_wsInbound$');
+    expect(containers).not.toContain('bufferSub');
+    expect(containers).not.toContain('spinnerSub');
+    expect(containers).not.toContain('webSocket');
   });
 });

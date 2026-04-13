@@ -92,11 +92,10 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
         .and.callFake(async () => makeTeam()),
     };
 
+    // Story 6.4 (AC1): `messages$` / `message$` / `createAgentGraph$` were
+    // deleted from `ActorMessageService`; the stub no longer references them.
     const messageService = {
       init: jasmine.createSpy('init').and.returnValue(Promise.resolve()),
-      messages$: new BehaviorSubject<any[]>([]),
-      message$: new BehaviorSubject<any>(null),
-      createAgentGraph$: new BehaviorSubject<any>(null),
       knowledgeGraphLoading$: new BehaviorSubject<boolean>(false),
     };
 

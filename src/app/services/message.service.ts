@@ -20,16 +20,20 @@ import { MessageService } from 'primeng/api';
  */
 const SPINNER_MIN_VISIBLE_MS = 500;
 
-/** V2 message types that feed the agent graph and message list. */
-const GRAPH_RELEVANT_MODELS = [
-  'StartMessage',
-  'SentMessage',
-  'StopMessage',
-  'ErrorMessage',
-  'UserMessage',
-  'ResultMessage',
-];
-
+/**
+ * `ActorMessageService` — minimal ingestion surface (post Story 6.4):
+ *   - REST init replays events into `MessageLogService.log$` and seeds the
+ *     two per-agent exception dicts (`stateDict$`, `contextDict$`).
+ *   - WS `bufferTime(16)` ingestion appends to the log + per-agent dicts.
+ *   - Spinner floor (`loadingProcess$` on `ChatService`, AC7) — UX concern.
+ *
+ * Two documented exceptions (NFR9 / ADR-005 §Decision 5):
+ *   - `stateDict$`  — driven by `StateChangedMessage`
+ *   - `contextDict$` — driven by `LlmMessageEvent`
+ *
+ * Adding a third exception requires a new ADR.
+ * `message.service.spec.ts` enforces this invariant by test (Story 6.4 AC5).
+ */
 @Injectable()
 export class ActorMessageService {
   apiService: ApiService = inject(ApiService);
@@ -46,24 +50,11 @@ export class ActorMessageService {
 
   webSocket: WebSocketSubject<any> = new WebSocketSubject({ url: '' });
 
-  createAgentGraph$: BehaviorSubject<AkgenticMessage[] | null> =
-    new BehaviorSubject<AkgenticMessage[] | null>(null);
-
-  messages$: BehaviorSubject<AkgenticMessage[]> = new BehaviorSubject<
-    AkgenticMessage[]
-  >([]);
-  message$: BehaviorSubject<AkgenticMessage | null> =
-    new BehaviorSubject<AkgenticMessage | null>(null);
-
   contextDict$: { [key: string]: BehaviorSubject<any[]> } = {};
   stateDict$: { [key: string]: BehaviorSubject<any> } = {};
 
   knowledgeGraphLoading$: BehaviorSubject<boolean> =
     new BehaviorSubject<boolean>(false);
-
-  subscribe: Subscription = new Subscription();
-  paused: boolean = false;
-  messages: AkgenticMessage[] = [];
 
   processId: string = '';
 
@@ -97,11 +88,10 @@ export class ActorMessageService {
 
   async init(processId: string, running: boolean): Promise<void> {
     this.processId = processId;
-    let messages: AkgenticMessage[] = [];
 
     // --- ADR-005 §Decision 6 step (a) ---------------------------------
-    // Dispose prior WS + bufferTime + spinner + message$ subscriptions so a
-    // stale team's pipeline cannot deliver events into the fresh cycle.
+    // Dispose prior WS + bufferTime + spinner subscriptions so a stale
+    // team's pipeline cannot deliver events into the fresh cycle.
     // Load-bearing for AC5 (team-switch correctness) and AC7 (no leaks).
     this.disposePriorSubscriptions();
 
@@ -135,9 +125,9 @@ export class ActorMessageService {
       // --- ADR-005 §Decision 6 step (c) -------------------------------
       // log.appendAll runs FIRST (atomic snapshot of the full replay),
       // BEFORE per-dict seeding. Story 6.1 Task 3.2 documents this choice:
-      // selectors in PR 2/3 will fold `log$`; the per-agent dicts are
-      // imperative side state and are seeded by the loop below in the same
-      // synchronous pass.
+      // selectors in PR 2/3 fold `log$`; the per-agent dicts are imperative
+      // side state and are seeded by the loop below in the same synchronous
+      // pass.
       const replayMessages: AkgenticMessage[] = eventResponses
         .map((er: EventResponse) => er.event as AkgenticMessage)
         .filter((evt) => !!evt && !!evt.__model__);
@@ -184,29 +174,15 @@ export class ActorMessageService {
         this.contextDict$[agentId].next(msgs);
       }
 
-      // Filter graph-relevant messages for the agent graph and message list
-      messages = eventResponses
-        .map((er: EventResponse) => er.event as AkgenticMessage)
-        .filter(
-          (evt: AkgenticMessage) =>
-            evt &&
-            evt.__model__ &&
-            GRAPH_RELEVANT_MODELS.some((m) => evt.__model__.includes(m))
-        );
-
-      // Story 6.3 (AC9, FR7): thinking-bubble lifecycle is now reconstructed
-      // by `chatFold` over `log$` (seeded above by `log.appendAll`). The
-      // prior imperative replay loop (`applyThinkingLifecycle` +
-      // `dispatchToolEventToThinking`) has been deleted.
+      // Story 6.4 (AC1): `GRAPH_RELEVANT_MODELS` filtering and the
+      // `createAgentGraph$` / `messages$` emits below are deleted along with
+      // the streams themselves. The agent graph + message list now consume
+      // log-derived selectors (`GraphDataService.graph$`, Story 6.3;
+      // `MessageLogService.messageList$`, Story 6.4).
+      // Story 6.3 (AC9, FR7): thinking-bubble lifecycle is reconstructed by
+      // `chatFold` over `log$` (seeded above by `log.appendAll`). The prior
+      // imperative replay loop has been deleted.
     }
-
-    this.createAgentGraph$.next(messages);
-    this.messages$.next(messages);
-    this.subscribe = this.message$.subscribe((message) => {
-      if (message) {
-        this.messages$.next([...this.messages$.value, message]);
-      }
-    });
 
     // V2: connect directly -- no ticket needed (community tier, AC8)
     const wsProtocol =
@@ -264,42 +240,27 @@ export class ActorMessageService {
         if (!event || !event.__model__) return;
 
         // Story 6.1 (Task 2.6 / AC8): feed the unified log via the frame
-        // batched subscriber. Inserted BEFORE the per-__model__ dispatch so
-        // every inbound message reaches the log while the existing closures
-        // below continue to emit on the parallel-populated streams.
+        // batched subscriber. The batched path is now the SOLE producer of
+        // dict updates and log emissions (Story 6.4 retired the parallel
+        // per-__model__ dispatch).
         this._wsInbound$.next(event as AkgenticMessage);
 
-        if (event.__model__.includes('StateChangedMessage')) {
-          // Story 6.1 (AC8 fix): stateDict$ is updated by the batched
-          // subscriber only (`applyStateChanged`). The inline write was
-          // removed to prevent double-emission to agent-tabs consumers
-          // (which would otherwise re-render twice per state change and,
-          // for context, surface duplicated messages — see
-          // `agent-tabs.component.ts:67-87`). The batched path remains the
-          // single source of truth for dict updates as Story 6.4's
-          // selector migration lands.
-        } else if (event.__model__.includes('EventMessage')) {
-          // Story 6.3 (AC9): `EventMessage`s flow through `_wsInbound$` +
-          // `chatFold` / `kgFold`; no imperative dispatch.
-        } else if (event.__model__.includes('ErrorMessage')) {
+        if (event.__model__.includes('ErrorMessage')) {
+          // Story 6.4 (AC1): the toast is dispatched here; the inbound log
+          // emission above already feeds every downstream selector. The
+          // legacy `this.message$.next(event)` push is deleted (no
+          // subscribers remain).
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
             detail: event.exception_value,
             life: 5000,
           });
-          this.message$.next(event);
-        } else {
-          // Story 6.3 (AC9): thinking-bubble lifecycle is reconstructed from
-          // `log$` by `chatFold`; no imperative dispatch here. Forward to
-          // `message$` so legacy `createAgentGraph$` / `messages$` consumers
-          // (Story 6.4 will delete those) continue to receive updates.
-          if (this.paused) {
-            this.messages.push(event);
-            return;
-          }
-          this.message$.next(event);
         }
+        // Story 6.4 (AC1): every other branch (StateChangedMessage,
+        // EventMessage, fallthrough) is now pure log-feed via
+        // `_wsInbound$.next(...)` above. The per-__model__ dispatch + VCR
+        // `paused` early-return have been deleted.
       },
       error: (err: any) => {
         // Story 4-10 (AC3): failure before any event landed must not leave
@@ -331,8 +292,8 @@ export class ActorMessageService {
   /**
    * Story 6.1 (ADR-005 §Decision 6 step (a)): dispose every subscription
    * owned by a previous `init()` cycle in one place. Called from `init()`
-   * BEFORE any new state is wired so a stale WS / bufferTime / message$
-   * subscription cannot bleed into the fresh team.
+   * BEFORE any new state is wired so a stale WS / bufferTime subscription
+   * cannot bleed into the fresh team.
    */
   private disposePriorSubscriptions(): void {
     try {
@@ -340,8 +301,6 @@ export class ActorMessageService {
     } catch {
       /* first-init path: no prior webSocket — ignore */
     }
-    this.subscribe.unsubscribe();
-    this.subscribe = new Subscription();
     if (this.bufferSub) {
       this.bufferSub.unsubscribe();
       this.bufferSub = null;
@@ -407,10 +366,9 @@ export class ActorMessageService {
   /**
    * Story 6.1 (Task 2.4): apply an `EventMessage` carrying an
    * `LlmMessageEvent` / `ToolStateEvent` to the exception dicts and to the
-   * KG reducer. Preserves the live-path semantics of the existing
-   * `handleEventMessage` dispatch (AC8 parallel populate: the batched
-   * subscriber and the per-message dispatch both run — the batched version
-   * is the new source of truth from Story 6.4 onward).
+   * KG reducer. Story 6.4 made the batched subscriber the SOLE producer of
+   * dict updates (the parallel per-message dispatch in `webSocket.subscribe`
+   * has been deleted).
    */
   private applyEventMessageDicts(event: any): void {
     const inner = event?.event;
@@ -472,52 +430,6 @@ export class ActorMessageService {
     }, SPINNER_MIN_VISIBLE_MS - elapsed);
   }
 
-  backwardClicked() {
-    this.messages = [...this.messages$.value, ...this.messages];
-    this.messages$.next([]);
-    this.createAgentGraph$.next(null);
-  }
-
-  backClicked() {
-    const currentMessages = this.messages$.value;
-    if (currentMessages.length > 0) {
-      const lastMessage = currentMessages[currentMessages.length - 1];
-      this.messages.unshift(lastMessage);
-      this.messages$.next(currentMessages.slice(0, -1));
-      this.createAgentGraph$.next(null);
-      this.createAgentGraph$.next(this.messages$.value);
-    }
-  }
-
-  pauseClicked() {
-    this.paused = true;
-  }
-
-  playClicked() {
-    this.paused = false;
-    this.forwardClicked();
-  }
-
-  nextClicked() {
-    const msg = this.messages.shift();
-    if (msg) {
-      this.message$.next(msg);
-    }
-  }
-
-  forwardClicked() {
-    while (this.messages.length > 0) {
-      this.nextClicked();
-    }
-  }
-
-  controlStatus() {
-    return [
-      this.messages$.value.length + this.messages.length,
-      this.messages$.value.length,
-    ];
-  }
-
   initDict(
     dict: { [key: string]: BehaviorSubject<any[]> },
     key: string,
@@ -528,7 +440,6 @@ export class ActorMessageService {
   }
 
   ngOnDestroy() {
-    this.subscribe.unsubscribe();
     try {
       this.webSocket.unsubscribe();
     } catch {

@@ -1,7 +1,24 @@
 import { Injectable } from '@angular/core';
-import { BehaviorSubject, Observable } from 'rxjs';
+import { BehaviorSubject, distinctUntilChanged, map, Observable } from 'rxjs';
 
 import { AkgenticMessage } from '../models/message.types';
+
+/**
+ * Story 6.4 (AC4) — pure selector over the log producing the inputs for
+ * `MessageListComponent`. Extracted as a module-scope helper so the fold is
+ * trivially unit-testable without instantiating the service. FR11 passthrough:
+ * messages with an unknown or missing `__model__` are silently excluded
+ * (not thrown) — the selector is domain-meaningful, not a validator.
+ */
+export function messageListFold(log: AkgenticMessage[]): AkgenticMessage[] {
+  return log.filter(
+    (m) =>
+      !!m.__model__ &&
+      (m.__model__.includes('SentMessage') ||
+        m.__model__.includes('ErrorMessage')) &&
+      m.sender?.role !== 'ActorSystem',
+  );
+}
 
 /**
  * Story 6.1 — MessageLogService (ADR-005 §Decision 1).
@@ -25,6 +42,17 @@ export class MessageLogService {
    *  `append` / `appendAll` / `reset`. Emits a NEW array reference on every
    *  mutation so OnPush consumers (NFR3) re-evaluate. */
   readonly log$: Observable<AkgenticMessage[]> = this._log$.asObservable();
+
+  /**
+   * Story 6.4 (AC4): log-derived selector for `MessageListComponent`. Emits
+   * every `SentMessage` / `ErrorMessage` whose sender is not `ActorSystem`,
+   * in arrival order. `distinctUntilChanged` preserves reference equality
+   * across no-op log emissions (OnPush safety, NFR3).
+   */
+  readonly messageList$: Observable<AkgenticMessage[]> = this.log$.pipe(
+    map(messageListFold),
+    distinctUntilChanged(),
+  );
 
   /** Append a single message to the log. Prefer `appendAll` when a batch is
    *  available — `appendAll` produces one `log$` emission per batch, whereas

@@ -17,7 +17,6 @@ import { ChatService } from '../../services/chat.service';
 import { GraphDataService } from '../../services/graph-data.service';
 
 import { ENTRY_POINT_NAME } from '../../models/chat-message.model';
-import { ProcessControlsComponent } from '../../process-controls/process-controls.component';
 
 @Component({
   selector: 'app-user-input',
@@ -29,7 +28,6 @@ import { ProcessControlsComponent } from '../../process-controls/process-control
     ButtonModule,
     MultiSelectModule,
     MentionModule,
-    ProcessControlsComponent,
   ],
   templateUrl: './user-input.component.html',
   styleUrl: './user-input.component.scss',
