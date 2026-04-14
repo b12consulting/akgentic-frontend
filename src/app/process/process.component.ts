@@ -77,11 +77,10 @@ export class ProcessComponent implements OnDestroy {
 
   processId: string = '';
   processType: string = '';
-  // `hasWorkspace` remains hardcoded: reactivating the workspace panel is a
-  // separate, future story (Epic 5 covers KG only). Keeping the flag in the
-  // filter predicate below so a future story can swap `of(false)` for a real
-  // observable in one line. (ADR-004 §Decision 4)
-  hasWorkspace: boolean = false;
+  // Workspace presence is static: every team has a workspace directory by
+  // default (backend creates one on team boot). Reactive presence detection
+  // for workspace is an explicit future enhancement — out of scope today.
+  hasWorkspace: boolean = true;
 
   /**
    * Reactive presence observable for the `#KnowledgeGraphTool` actor.
@@ -96,12 +95,12 @@ export class ProcessComponent implements OnDestroy {
   private readonly allVisualizationOptions: VisualizationOption[] = [
     { label: 'Team', value: 'team', icon: 'pi pi-users' },
     { label: 'Member', value: 'member', icon: 'pi pi-user' },
-    { label: 'Workspace', value: 'workspace', icon: 'pi pi-folder-open' },
     {
       label: 'Knowledge graph',
       value: 'knowledge-graph',
       icon: 'pi pi-sitemap',
     },
+    { label: 'Workspace', value: 'workspace', icon: 'pi pi-folder-open' },
     { label: 'Messages', value: 'messages', icon: 'pi pi-envelope' },
   ];
 
