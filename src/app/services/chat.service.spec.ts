@@ -329,6 +329,28 @@ describe('chatFold / chatStep (pure)', () => {
     expect(state.thinkingAgents.length).toBe(0);
   });
 
+  it('ProcessedMessage for different agent does NOT clear another agent thinking', () => {
+    const rcv = makeReceived(); // agent-1
+    const proc = makeProcessed({
+      sender: makeAddress({ name: '@Writer', agent_id: 'agent-2' }),
+    });
+    const state = chatFold([rcv, proc]);
+    expect(state.thinkingAgents.length).toBe(1);
+    expect(state.thinkingAgents[0].agent_id).toBe('agent-1');
+    expect(state.thinkingAgents[0].final).toBe(false);
+  });
+
+  it('ProcessedMessage after SentMessage already finalised → idempotent no-op', () => {
+    const rcv = makeReceived();
+    const sent = makeSent({
+      sender: makeAddress({ name: '@Researcher', agent_id: 'agent-1', role: 'Worker' }),
+    });
+    const proc = makeProcessed();
+    const state = chatFold([rcv, sent, proc]);
+    // SentMessage already removed the entry (no tools), ProcessedMessage is a no-op
+    expect(state.thinkingAgents.length).toBe(0);
+  });
+
   it('(AC6 / FR11) UnknownFutureMessage interleaved is a pure no-op', () => {
     const rcv = makeReceived();
     const unk = makeUnknown();
