@@ -31,6 +31,22 @@
   </p-floatlabel>
 
   <div class="button-group">
+    @if (humanAgents.length > 1) {
+      <div class="send-as-group">
+        <label class="send-as-label">Send as</label>
+        <p-dropdown
+          [options]="humanAgentOptions"
+          [(ngModel)]="selectedSender"
+          optionLabel="label"
+          optionValue="value"
+          placeholder="Send as"
+          [showClear]="true"
+          size="small"
+          appendTo="body"
+          [panelStyleClass]="'send-as-panel-up'"
+        ></p-dropdown>
+      </div>
+    }
     <label class="send-to-label">Send to</label>
     <p-multiSelect
       [options]="dropdownAgents"
