@@ -149,6 +149,43 @@ export class WorkspaceExplorerComponent implements OnInit {
     return iconMap[ext] || 'pi pi-file';
   }
 
+  /**
+   * PrimeNG lazy-expand handler: when a user clicks the expand arrow on a
+   * directory TreeNode whose children have never been fetched (`children ===
+   * undefined`), fetch that directory's entries from `WorkspaceService` and
+   * splice them into the node. Loaded-empty (`children === []`) and loaded-
+   * populated directories short-circuit via the `!== undefined` guard — the
+   * second expand on any directory never issues a second HTTP call.
+   */
+  async onNodeExpand(event: {
+    node: TreeNode;
+    originalEvent?: Event;
+  }): Promise<void> {
+    const node = event.node;
+    const fileNode = node.data as FileNode | undefined;
+
+    // Only directories are lazy-loaded
+    if (!fileNode || fileNode.type !== 'directory') return;
+    // Cache hit: already loaded (empty or populated)
+    if (node.children !== undefined) return;
+
+    try {
+      const children = await this.workspaceService.getWorkspaceTree(
+        this.processId,
+        fileNode.path
+      );
+      node.children = this.convertToTreeNodes(children);
+      // Re-assign the top-level array reference so Angular's default CD
+      // picks up the mutation on a nested TreeNode's `children` property.
+      this.treeNodes = [...this.treeNodes];
+    } catch (error: any) {
+      console.error('Error loading subdirectory', error);
+      this.errorMessage = error?.message || 'Failed to load subdirectory';
+      // Leave node.children as undefined so a subsequent user-initiated
+      // expand can retry the fetch.
+    }
+  }
+
   async onNodeSelect(event: any) {
     const node: FileNode = event.node.data;
 
@@ -279,11 +316,63 @@ export class WorkspaceExplorerComponent implements OnInit {
         this.uploadTargetPath
       );
 
-      // Refresh the workspace tree
-      await this.loadWorkspace();
+      // Refresh ONLY the directory the user uploaded to — preserves the
+      // rest of the user's expansion state. Root ('') targets the synthetic
+      // Root Folder wrapper; subdirs are located via `findTreeNodeByPath`.
+      await this.refreshDirectory(this.uploadTargetPath);
     } catch (error: any) {
       console.error('Upload failed', error);
       throw error;
     }
+  }
+
+  /**
+   * Re-fetch a single directory listing and splice the fresh children into
+   * the tree at that path. For the root ('') this replaces the synthetic
+   * Root Folder wrapper's children (the wrapper itself stays). For subdirs
+   * we walk the tree to locate the matching TreeNode; if not found (e.g.
+   * user uploaded to a dir that hasn't been expanded yet), silently return —
+   * the next manual expand will lazy-fetch the fresh listing anyway.
+   */
+  private async refreshDirectory(path: string): Promise<void> {
+    const fresh = await this.workspaceService.getWorkspaceTree(
+      this.processId,
+      path
+    );
+    const freshNodes = this.convertToTreeNodes(fresh);
+
+    if (path === '') {
+      if (this.treeNodes.length > 0) {
+        this.treeNodes[0].children = freshNodes;
+        this.treeNodes = [...this.treeNodes];
+      }
+      return;
+    }
+
+    const target = this.findTreeNodeByPath(this.treeNodes, path);
+    if (target) {
+      target.children = freshNodes;
+      this.treeNodes = [...this.treeNodes];
+    }
+  }
+
+  /**
+   * Recursive depth-first walk locating the TreeNode whose `data.path`
+   * matches `path`. Returns `null` if no match exists in the currently
+   * materialized tree (lazy: unloaded subtrees are invisible to this walk).
+   */
+  private findTreeNodeByPath(
+    nodes: TreeNode[],
+    path: string
+  ): TreeNode | null {
+    for (const n of nodes) {
+      const fn = n.data as FileNode | undefined;
+      if (fn?.path === path) return n;
+      if (n.children) {
+        const found = this.findTreeNodeByPath(n.children, path);
+        if (found) return found;
+      }
+    }
+    return null;
   }
 }
