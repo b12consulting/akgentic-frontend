@@ -17,8 +17,10 @@ import {
   AkgenticMessage,
   EventMessage,
   isEventMessage,
+  isProcessedMessage,
   isReceivedMessage,
   isSentMessage,
+  ProcessedMessage,
   ReceivedMessage,
   SentMessage,
 } from '../models/message.types';
@@ -61,6 +63,7 @@ export interface ThinkingToolEntry {
  *   EventMessage+ToolCallEvent  → pushes an entry into tools
  *   EventMessage+ToolReturnEvent → flips entry.done to true
  *   SentMessage                 → if tools empty: removed; else final = true
+ *   ProcessedMessage            → if tools empty: removed; else final = true
  */
 export interface ThinkingState {
   /** Stable UUID of the receiving agent actor (from ReceivedMessage.sender). */
@@ -221,8 +224,23 @@ function applyToolReturnToThinking(
 
 function applySentToThinking(state: ChatState, msg: SentMessage): ChatState {
   if (msg.sender.role === ACTOR_SYSTEM_ROLE) return state;
+  return finaliseThinking(state, msg.sender.agent_id);
+}
+
+function applyProcessedToThinking(
+  state: ChatState,
+  msg: ProcessedMessage,
+): ChatState {
+  return finaliseThinking(state, msg.sender.agent_id);
+}
+
+/**
+ * Shared finalisation logic for thinking bubbles.
+ * If the bubble has no tools: remove it. Otherwise: set `final: true`.
+ */
+function finaliseThinking(state: ChatState, agentId: string): ChatState {
   const idx = state.thinkingAgents.findIndex(
-    (s) => s.agent_id === msg.sender.agent_id && !s.final,
+    (s) => s.agent_id === agentId && !s.final,
   );
   if (idx === -1) return state;
   const existing = state.thinkingAgents[idx];
@@ -252,6 +270,9 @@ export function chatStep(state: ChatState, msg: AkgenticMessage): ChatState {
   if (isSentMessage(msg)) {
     const afterMsg = applyMessageFromSent(state, msg);
     return applySentToThinking(afterMsg, msg);
+  }
+  if (isProcessedMessage(msg)) {
+    return applyProcessedToThinking(state, msg);
   }
   if (isReceivedMessage(msg)) {
     return applyReceivedToThinking(state, msg);
