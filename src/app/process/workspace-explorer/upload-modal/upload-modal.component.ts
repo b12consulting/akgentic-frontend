@@ -1,8 +1,8 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, Output, ViewChild } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { DialogModule } from 'primeng/dialog';
 import { ButtonModule } from 'primeng/button';
-import { FileUploadModule } from 'primeng/fileupload';
+import { FileUpload, FileUploadModule } from 'primeng/fileupload';
 import { ProgressBarModule } from 'primeng/progressbar';
 import { MessageModule } from 'primeng/message';
 
@@ -25,6 +25,8 @@ export class UploadModalComponent {
   @Input() targetPath: string = '';
   @Output() visibleChange = new EventEmitter<boolean>();
   @Output() uploadComplete = new EventEmitter<void>();
+
+  @ViewChild(FileUpload) fileUpload!: FileUpload;
 
   selectedFiles: File[] = [];
   uploading = false;
@@ -84,6 +86,10 @@ export class UploadModalComponent {
   }
 
   private resetModal() {
+    // Clear the PrimeNG widget's internal files array first. The optional
+    // chain guards against the ViewChild being undefined when the dialog
+    // content has not yet been rendered (see issue #75 / Story 6-3 AC5).
+    this.fileUpload?.clear();
     this.selectedFiles = [];
     this.uploading = false;
     this.uploadProgress = 0;
