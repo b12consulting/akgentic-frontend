@@ -8,6 +8,7 @@ import { ChatService } from '../../services/chat.service';
 import { GraphDataService } from '../../services/graph-data.service';
 import { ActorAddress } from '../../models/message.types';
 import { NodeInterface } from '../../models/types';
+import { makeAgentNameUserFriendly } from '../../lib/util';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {
@@ -299,7 +300,7 @@ describe('ProcessUserInputComponent', () => {
       expect(component.selectedSender).toBeNull();
     });
 
-    it('populates humanAgents with role === Human and actorName !== @Human', () => {
+    it('populates humanAgents with role === Human (Story 7-3)', () => {
       nodesSubject.next([
         makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
         makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
@@ -307,29 +308,39 @@ describe('ProcessUserInputComponent', () => {
         makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
       ]);
 
-      expect(component.humanAgents.length).toBe(2);
+      // Story 7-3: @Human is now INCLUDED alongside other human-role nodes.
+      expect(component.humanAgents.length).toBe(3);
       expect(component.humanAgents.map((n) => n.actorName)).toEqual([
         '@Support',
         '@Operator',
+        '@Human',
       ]);
       expect(component.humanAgentOptions.map((o) => o.value)).toEqual([
         '@Support',
         '@Operator',
+        '@Human',
       ]);
       // Labels come from makeAgentNameUserFriendly (passes @Support through
       // as-is since there is no '-' role segment).
       expect(component.humanAgentOptions[0].label).toBe('@Support');
     });
 
-    it('excludes the entry-point @Human even when role === Human', () => {
+    it('includes the entry-point @Human when role === Human (Story 7-3)', () => {
       nodesSubject.next([
         makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
         makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
       ]);
 
-      expect(component.humanAgents.length).toBe(1);
-      expect(component.humanAgents[0].actorName).toBe('@Support');
-      expect(component.humanAgentOptions.map((o) => o.value)).not.toContain('@Human');
+      // Story 7-3 (AC #1, AC #2): the @Human entry point is a first-class
+      // selectable sender. The filter uses role === HUMAN_ROLE only.
+      expect(component.humanAgents.length).toBe(2);
+      expect(component.humanAgents.map((n) => n.actorName)).toContain('@Human');
+      expect(component.humanAgents.map((n) => n.actorName)).toContain('@Support');
+      expect(component.humanAgentOptions.map((o) => o.value)).toContain('@Human');
+      // AC #2: label for @Human uses the friendly helper, not a hard-coded string.
+      const humanOpt = component.humanAgentOptions.find((o) => o.value === '@Human');
+      expect(humanOpt).toBeTruthy();
+      expect(humanOpt!.label).toBe(makeAgentNameUserFriendly('@Human'));
     });
 
     it('excludes nodes whose role !== Human', () => {
@@ -354,9 +365,10 @@ describe('ProcessUserInputComponent', () => {
       expect(dropdown).toBeNull();
     });
 
-    it('is hidden when humanAgents.length === 1', () => {
+    it('is hidden when humanAgents.length === 1 (solo @Human) (Story 7-3)', () => {
+      // Story 7-3: humans include @Human; solo-@Human still hides dropdown.
       nodesSubject.next([
-        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+        makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
       ]);
       fixture.detectChanges();
 
@@ -364,16 +376,19 @@ describe('ProcessUserInputComponent', () => {
       expect(dropdown).toBeNull();
     });
 
-    it('is visible when humanAgents.length === 2 and carries humanAgentOptions', () => {
+    it('is visible when humanAgents.length === 2 (@Human + @Support) (Story 7-3)', () => {
+      // Story 7-3: threshold fires at 2 humans INCLUDING @Human.
       nodesSubject.next([
+        makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
         makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
-        makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
       ]);
       fixture.detectChanges();
 
       const dropdown = fixture.nativeElement.querySelector('p-dropdown');
       expect(dropdown).not.toBeNull();
       expect(component.humanAgentOptions.length).toBe(2);
+      expect(component.humanAgentOptions.map((o) => o.value)).toContain('@Human');
+      expect(component.humanAgentOptions.map((o) => o.value)).toContain('@Support');
     });
 
     it('picking an option sets selectedSender to the option value', () => {
@@ -511,6 +526,36 @@ describe('ProcessUserInputComponent', () => {
       expect(apiServiceSpy.sendMessageFromTo).not.toHaveBeenCalled();
       expect(component.userInput).toBe('   ');
     });
+
+    it('Priority 1: @Human as sender routes via sendMessageFromTo (Story 7-3)', async () => {
+      component.selectedSender = '@Human';
+      component.selectedAgents = ['@Manager'];
+      component.userInput = 'hello from human';
+
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessageFromTo).toHaveBeenCalledOnceWith(
+        'test-team-id', '@Human', '@Manager', 'hello from human',
+      );
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+      expect(component.userInput).toBe('');
+    });
+
+    it('Priority 2: @Human as sender with no recipient auto-targets first dropdown agent (Story 7-3)', async () => {
+      component.selectedSender = '@Human';
+      component.selectedAgents = [];
+      component.userInput = 'auto-target from @Human';
+
+      await component.sendMessage();
+
+      const firstDropdownAgent = component.dropdownAgents[0]?.value;
+      expect(firstDropdownAgent).toBeTruthy();
+      expect(apiServiceSpy.sendMessageFromTo).toHaveBeenCalledOnceWith(
+        'test-team-id', '@Human', firstDropdownAgent!, 'auto-target from @Human',
+      );
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+      expect(component.userInput).toBe('');
+    });
   });
 
   describe('"Send as" dynamic state (Story 7-2)', () => {
@@ -584,6 +629,69 @@ describe('ProcessUserInputComponent', () => {
         makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
       ]);
       expect(component.selectedSender).toBeNull();
+    });
+
+    it('clears selectedSender === "@Human" when @Human disappears from the roster (Story 7-3)', () => {
+      // Initial: @Human + @Support both present, selectedSender = @Human
+      nodesSubject.next([
+        makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+      ]);
+      component.selectedSender = '@Human';
+
+      // Defensive case: @Human somehow removed (leaving only non-entry humans).
+      // The clear-on-fire predicate fires because @Human is no longer in humanAgents.
+      nodesSubject.next([
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+        makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
+      ]);
+
+      expect(component.selectedSender).toBeNull();
+      expect(component.humanAgents.length).toBe(2);
+    });
+  });
+
+  describe('"Send as" layout and panel positioning (Story 7-3)', () => {
+    beforeEach(() => {
+      nodesSubject.next([
+        makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+      ]);
+      fixture.detectChanges();
+    });
+
+    it('renders p-dropdown with appendTo="body" (AC #14)', () => {
+      const dropdown = fixture.nativeElement.querySelector('p-dropdown');
+      expect(dropdown).not.toBeNull();
+      // In Angular dev-mode runtime, string inputs appear as DOM attributes.
+      // `appendTo` is bound as a literal string on the template, so it
+      // surfaces as an attribute on the <p-dropdown> element.
+      expect(dropdown.getAttribute('appendTo')).toBe('body');
+    });
+
+    it('renders p-dropdown with the upward panel style class configured (AC #14)', () => {
+      const dropdown = fixture.nativeElement.querySelector('p-dropdown');
+      expect(dropdown).not.toBeNull();
+      // [panelStyleClass] is an input binding — Angular reflects its current
+      // value via `ng-reflect-panel-style-class` in dev mode. Accept any
+      // deterministic channel that carries the class name.
+      const panelClass =
+        dropdown.getAttribute('ng-reflect-panel-style-class') ||
+        dropdown.getAttribute('panelStyleClass');
+      expect(panelClass).toContain('send-as-panel-up');
+    });
+
+    it('right-aligns the Send-as group inside .button-group (AC #15)', () => {
+      const group = fixture.nativeElement.querySelector('.send-as-group');
+      expect(group).not.toBeNull();
+      // The implementation uses both `justify-content: flex-end` (intra-group
+      // alignment) and `margin-left: auto` (pushes the group to the right
+      // inside `.button-group`). Either is acceptable evidence that the
+      // Send-as block is right-aligned.
+      const style = window.getComputedStyle(group);
+      expect(
+        style.justifyContent === 'flex-end' || style.marginLeft === 'auto',
+      ).toBeTrue();
     });
   });
 });

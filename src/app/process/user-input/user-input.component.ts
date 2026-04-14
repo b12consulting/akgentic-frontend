@@ -80,12 +80,13 @@ export class ProcessUserInputComponent implements OnInit {
           agents.some((n) => n.actorName === a),
         );
 
-        // "Send as" human selector (Story 7-1): populate humanAgents /
-        // humanAgentOptions from the same emission. Visibility is template-driven
-        // by humanAgents.length >= 2. Routing wiring is Story 7-2.
-        this.humanAgents = nodes.filter(
-          (n) => n.role === HUMAN_ROLE && n.actorName !== ENTRY_POINT_NAME,
-        );
+        // "Send as" human selector (Story 7-1, revised Story 7-3): populate
+        // humanAgents / humanAgentOptions from the same emission. Visibility is
+        // template-driven by humanAgents.length > 1. Routing wiring is
+        // Story 7-2. Story 7-3 drops the actorName !== ENTRY_POINT_NAME clause
+        // so @Human is a first-class selectable sender (ADR-007 Revision
+        // 2026-04-15, FR2 amendment).
+        this.humanAgents = nodes.filter((n) => n.role === HUMAN_ROLE);
         this.humanAgentOptions = this.humanAgents.map((n) => ({
           label: makeAgentNameUserFriendly(n.actorName),
           value: n.actorName,
