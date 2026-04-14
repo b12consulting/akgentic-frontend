@@ -233,15 +233,48 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
     expect(component.currentVisualizationMode).toBe('team');
   });
 
-  it('scenario 5 — no regression: Team / Member / Messages entries remain present under both presence states (order preserved)', async () => {
+  it('scenario 5 — no regression: Team / Member / Messages entries remain present under both KG presence states (order preserved)', async () => {
+    // `hasWorkspace` defaults to `true` in production (Story 6-2 AC1), so
+    // Workspace is always present; the legacy KG-presence regression check
+    // now runs against `[team, member, workspace, messages]` without KG and
+    // `[team, member, knowledge-graph, workspace, messages]` with KG.
     let options = await firstValue(component.visualizationOptions$);
     let labels = options.map((o) => o.value);
-    expect(labels).toEqual(['team', 'member', 'messages']);
+    expect(labels).toEqual(['team', 'member', 'workspace', 'messages']);
 
     log.append(makeKgStart('kg-start-1'));
     options = await firstValue(component.visualizationOptions$);
     labels = options.map((o) => o.value);
-    expect(labels).toEqual(['team', 'member', 'knowledge-graph', 'messages']);
+    expect(labels).toEqual([
+      'team',
+      'member',
+      'knowledge-graph',
+      'workspace',
+      'messages',
+    ]);
+  });
+
+  it('scenario 6 — hasWorkspace=true: Workspace appears between KG and Messages (Story 6-2 AC1, AC2)', async () => {
+    // Default is `hasWorkspace = true` (Story 6-2 AC1). Without KG, the
+    // tab order degrades gracefully to [team, member, workspace, messages].
+    let options = await firstValue(component.visualizationOptions$);
+    expect(options.map((o) => o.value)).toEqual([
+      'team',
+      'member',
+      'workspace',
+      'messages',
+    ]);
+
+    // With KG present, Workspace sits between KG and Messages (AC2 order).
+    log.append(makeKgStart('kg-start-1'));
+    options = await firstValue(component.visualizationOptions$);
+    expect(options.map((o) => o.value)).toEqual([
+      'team',
+      'member',
+      'knowledge-graph',
+      'workspace',
+      'messages',
+    ]);
   });
 });
 
