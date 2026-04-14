@@ -7,6 +7,7 @@ import {
   AkgenticMessage,
   BaseMessage,
   EventMessage,
+  ProcessedMessage,
   ReceivedMessage,
   SentMessage,
   StartMessage,
@@ -110,6 +111,21 @@ function makeStateChanged(): StateChangedMessage {
     content: null,
     __model__: 'akgentic.core.messages.orchestrator.StateChangedMessage',
     state: { phase: 'x' },
+  };
+}
+
+function makeProcessed(overrides: Partial<ProcessedMessage> = {}): ProcessedMessage {
+  return {
+    id: 'proc-1',
+    parent_id: null,
+    team_id: 'team-1',
+    timestamp: '2026-04-12T10:00:00Z',
+    sender: makeAddress({ name: '@Researcher', agent_id: 'agent-1' }),
+    display_type: 'other',
+    content: null,
+    __model__: 'akgentic.core.messages.orchestrator.ProcessedMessage',
+    message_id: 'inner-rcv-1',
+    ...overrides,
   };
 }
 
@@ -284,6 +300,33 @@ describe('chatFold / chatStep (pure)', () => {
     });
     const state = chatFold([rcv, sentSys]);
     expect(state.thinkingAgents.length).toBe(1);
+  });
+
+  it('ProcessedMessage with no tools in active thinking → ephemeral exit (entry removed)', () => {
+    const rcv = makeReceived();
+    const proc = makeProcessed();
+    const state = chatFold([rcv, proc]);
+    expect(state.thinkingAgents.length).toBe(0);
+  });
+
+  it('ProcessedMessage with tools in active thinking → persistent (final=true, entry kept)', () => {
+    const rcv = makeReceived();
+    const call = makeEvent({
+      __model__: 'akgentic.llm.event.ToolCallEvent',
+      tool_call_id: 'call-1',
+      tool_name: 'search_web',
+      arguments: '{}',
+    });
+    const proc = makeProcessed();
+    const state = chatFold([rcv, call, proc]);
+    expect(state.thinkingAgents.length).toBe(1);
+    expect(state.thinkingAgents[0].final).toBe(true);
+  });
+
+  it('ProcessedMessage with no prior thinking state → no-op', () => {
+    const proc = makeProcessed();
+    const state = chatFold([proc]);
+    expect(state.thinkingAgents.length).toBe(0);
   });
 
   it('(AC6 / FR11) UnknownFutureMessage interleaved is a pure no-op', () => {
