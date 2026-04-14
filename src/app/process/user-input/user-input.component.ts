@@ -4,6 +4,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 
 import { ButtonModule } from 'primeng/button';
+import { DropdownModule } from 'primeng/dropdown';
 import { FloatLabelModule } from 'primeng/floatlabel';
 import { MultiSelectModule } from 'primeng/multiselect';
 import { TextareaModule } from 'primeng/textarea';
@@ -14,9 +15,10 @@ import { makeAgentNameUserFriendly } from '../../lib/util';
 
 import { ApiService } from '../../services/api.service';
 import { ChatService } from '../../services/chat.service';
-import { GraphDataService } from '../../services/graph-data.service';
+import { GraphDataService, HUMAN_ROLE } from '../../services/graph-data.service';
 
 import { ENTRY_POINT_NAME } from '../../models/chat-message.model';
+import { NodeInterface } from '../../models/types';
 
 @Component({
   selector: 'app-user-input',
@@ -26,6 +28,7 @@ import { ENTRY_POINT_NAME } from '../../models/chat-message.model';
     TextareaModule,
     FloatLabelModule,
     ButtonModule,
+    DropdownModule,
     MultiSelectModule,
     MentionModule,
   ],
@@ -46,6 +49,10 @@ export class ProcessUserInputComponent implements OnInit {
   // Dropdown configuration
   dropdownAgents: { label: string; value: string }[] = [];
   selectedAgents: string[] = [];
+  // "Send as" human selector state (Story 7-1)
+  humanAgents: NodeInterface[] = [];
+  humanAgentOptions: { label: string; value: string }[] = [];
+  selectedSender: string | null = null;
   private destroyRef = inject(DestroyRef);
 
   ngOnInit() {
@@ -72,6 +79,17 @@ export class ProcessUserInputComponent implements OnInit {
         this.selectedAgents = this.selectedAgents.filter((a) =>
           agents.some((n) => n.actorName === a),
         );
+
+        // "Send as" human selector (Story 7-1): populate humanAgents /
+        // humanAgentOptions from the same emission. Visibility is template-driven
+        // by humanAgents.length >= 2. Routing wiring is Story 7-2.
+        this.humanAgents = nodes.filter(
+          (n) => n.role === HUMAN_ROLE && n.actorName !== ENTRY_POINT_NAME,
+        );
+        this.humanAgentOptions = this.humanAgents.map((n) => ({
+          label: makeAgentNameUserFriendly(n.actorName),
+          value: n.actorName,
+        }));
       });
   }
 

@@ -292,4 +292,138 @@ describe('ProcessUserInputComponent', () => {
       expect((component as any).clearReplyContext).toBeUndefined();
     });
   });
+
+  describe('"Send as" dropdown population (Story 7-1)', () => {
+    it('initializes humanAgents / humanAgentOptions / selectedSender to defaults', () => {
+      expect(component.humanAgents).toEqual([]);
+      expect(component.humanAgentOptions).toEqual([]);
+      expect(component.selectedSender).toBeNull();
+    });
+
+    it('populates humanAgents with role === Human and actorName !== @Human', () => {
+      nodesSubject.next([
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+        makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
+        makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
+        makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
+      ]);
+
+      expect(component.humanAgents.length).toBe(2);
+      expect(component.humanAgents.map((n) => n.actorName)).toEqual([
+        '@Support',
+        '@Operator',
+      ]);
+      expect(component.humanAgentOptions.map((o) => o.value)).toEqual([
+        '@Support',
+        '@Operator',
+      ]);
+      // Labels come from makeAgentNameUserFriendly (passes @Support through
+      // as-is since there is no '-' role segment).
+      expect(component.humanAgentOptions[0].label).toBe('@Support');
+    });
+
+    it('excludes the entry-point @Human even when role === Human', () => {
+      nodesSubject.next([
+        makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+      ]);
+
+      expect(component.humanAgents.length).toBe(1);
+      expect(component.humanAgents[0].actorName).toBe('@Support');
+      expect(component.humanAgentOptions.map((o) => o.value)).not.toContain('@Human');
+    });
+
+    it('excludes nodes whose role !== Human', () => {
+      nodesSubject.next([
+        makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Manager' }),
+        makeNode({ name: 'dev-1', actorName: '@Developer', role: 'Worker' }),
+      ]);
+
+      expect(component.humanAgents.length).toBe(0);
+      expect(component.humanAgentOptions.length).toBe(0);
+    });
+  });
+
+  describe('"Send as" dropdown visibility (Story 7-1)', () => {
+    it('is hidden when humanAgents.length === 0', () => {
+      nodesSubject.next([
+        makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
+      ]);
+      fixture.detectChanges();
+
+      const dropdown = fixture.nativeElement.querySelector('p-dropdown');
+      expect(dropdown).toBeNull();
+    });
+
+    it('is hidden when humanAgents.length === 1', () => {
+      nodesSubject.next([
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+      ]);
+      fixture.detectChanges();
+
+      const dropdown = fixture.nativeElement.querySelector('p-dropdown');
+      expect(dropdown).toBeNull();
+    });
+
+    it('is visible when humanAgents.length === 2 and carries humanAgentOptions', () => {
+      nodesSubject.next([
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+        makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
+      ]);
+      fixture.detectChanges();
+
+      const dropdown = fixture.nativeElement.querySelector('p-dropdown');
+      expect(dropdown).not.toBeNull();
+      expect(component.humanAgentOptions.length).toBe(2);
+    });
+
+    it('picking an option sets selectedSender to the option value', () => {
+      nodesSubject.next([
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+        makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
+      ]);
+      fixture.detectChanges();
+
+      component.selectedSender = '@Support';
+      fixture.detectChanges();
+
+      expect(component.selectedSender).toBe('@Support');
+    });
+
+    it('a non-null selectedSender does NOT alter sendMessage() routing (AC #6 guard)', async () => {
+      nodesSubject.next([
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+        makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
+        makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
+      ]);
+      component.selectedSender = '@Support';
+      component.selectedAgents = ['@Manager'];
+      component.userInput = 'hello';
+
+      // Guard: sendMessageFromTo is NOT on ApiService spy — if production code
+      // called it, the test would throw. Additionally verify the per-agent
+      // Priority 1 path from Story 3-1 remains byte-for-byte intact.
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+        'test-team-id',
+        'hello',
+        '@Manager',
+      );
+      expect((apiServiceSpy as any).sendMessageFromTo).toBeUndefined();
+    });
+
+    it('a non-null selectedSender with empty selectedAgents still broadcasts (AC #6 guard)', async () => {
+      component.selectedSender = '@Support';
+      component.selectedAgents = [];
+      component.userInput = 'broadcast hello';
+
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+        'test-team-id',
+        'broadcast hello',
+      );
+    });
+  });
 });

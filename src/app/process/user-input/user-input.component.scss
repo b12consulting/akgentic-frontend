@@ -10,6 +10,16 @@
     margin-left: auto;
   }
 
+  .send-as-label {
+    font-size: 0.8rem;
+    color: #64748b;
+    white-space: nowrap;
+  }
+
+  p-dropdown {
+    margin-right: 0.5rem;
+  }
+
   p-multiSelect {
     max-width: 500px;
     min-width: 150px;
