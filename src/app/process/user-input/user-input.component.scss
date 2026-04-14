@@ -25,6 +25,19 @@
     gap: 0.5rem;
     justify-content: flex-end;
     margin-left: auto;
+    // Positioning context for the upward-opening dropdown overlay below.
+    position: relative;
+  }
+
+  // Pin the Send-as dropdown panel above its trigger. The dropdown is
+  // rendered inline (no `appendTo="body"`), so the overlay is a child of
+  // `.send-as-group` and `bottom: 100%` resolves against the trigger's
+  // own height. ::ng-deep is required because PrimeNG renders the panel
+  // outside the component's scoped style boundary.
+  :host ::ng-deep .send-as-group .p-dropdown-panel {
+    top: auto !important;
+    bottom: 100%;
+    margin-bottom: 0.25rem;
   }
 
   p-multiSelect {
@@ -32,10 +45,6 @@
     min-width: 150px;
   }
 }
-
-// Story 7-3 note: the `.send-as-panel-up` overlay rule lives in
-// `src/styles.scss` because `appendTo="body"` renders the PrimeNG panel
-// outside the component's scoped styles. See that file for the rule.
 
 .reply-indicator {
   display: flex;

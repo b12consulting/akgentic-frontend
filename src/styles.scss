@@ -127,16 +127,6 @@ chat-wrapper {
   margin-top: 0.5rem;
 }
 
-// Story 7-3: PrimeNG `p-dropdown` overlay rendered with `appendTo="body"`.
-// The Send-as dropdown lives at the bottom of the chat panel, so opening
-// the panel downward would clip it below the viewport edge. This class,
-// passed via `[panelStyleClass]="'send-as-panel-up'"` on the trigger,
-// lifts the overlay above the trigger. `-100%` backs off its own height;
-// the extra `2.5rem` clears the trigger height (matching `size="small"`).
-.send-as-panel-up {
-  transform: translateY(calc(-100% - 2.5rem));
-}
-
 // markdown styles
 markdown {
 

@@ -660,25 +660,20 @@ describe('ProcessUserInputComponent', () => {
       fixture.detectChanges();
     });
 
-    it('renders p-dropdown with appendTo="body" (AC #14)', () => {
+    it('renders p-dropdown inline (no appendTo="body") so the panel can pin to its trigger (AC #14)', () => {
       const dropdown = fixture.nativeElement.querySelector('p-dropdown');
       expect(dropdown).not.toBeNull();
-      // In Angular dev-mode runtime, string inputs appear as DOM attributes.
-      // `appendTo` is bound as a literal string on the template, so it
-      // surfaces as an attribute on the <p-dropdown> element.
-      expect(dropdown.getAttribute('appendTo')).toBe('body');
+      // Hotfix for Story 7-3: panel must be a child of `.send-as-group`
+      // so `bottom: 100%` resolves against the trigger. `appendTo="body"`
+      // moves the panel out of that positioning context and breaks layout.
+      expect(dropdown.getAttribute('appendTo')).toBeNull();
     });
 
-    it('renders p-dropdown with the upward panel style class configured (AC #14)', () => {
-      const dropdown = fixture.nativeElement.querySelector('p-dropdown');
+    it('renders the dropdown inside the .send-as-group positioning context (AC #14)', () => {
+      const group = fixture.nativeElement.querySelector('.send-as-group');
+      expect(group).not.toBeNull();
+      const dropdown = group.querySelector('p-dropdown');
       expect(dropdown).not.toBeNull();
-      // [panelStyleClass] is an input binding — Angular reflects its current
-      // value via `ng-reflect-panel-style-class` in dev mode. Accept any
-      // deterministic channel that carries the class name.
-      const panelClass =
-        dropdown.getAttribute('ng-reflect-panel-style-class') ||
-        dropdown.getAttribute('panelStyleClass');
-      expect(panelClass).toContain('send-as-panel-up');
     });
 
     it('right-aligns the Send-as group inside .button-group (AC #15)', () => {
