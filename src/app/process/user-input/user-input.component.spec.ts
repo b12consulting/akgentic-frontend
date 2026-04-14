@@ -8,6 +8,7 @@ import { ChatService } from '../../services/chat.service';
 import { GraphDataService } from '../../services/graph-data.service';
 import { ActorAddress } from '../../models/message.types';
 import { NodeInterface } from '../../models/types';
+import { makeAgentNameUserFriendly } from '../../lib/util';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {
@@ -43,10 +44,9 @@ describe('ProcessUserInputComponent', () => {
   let nodesSubject: BehaviorSubject<NodeInterface[]>;
 
   beforeEach(async () => {
-    apiServiceSpy = jasmine.createSpyObj('ApiService', [
-      'sendMessage',
-    ]);
+    apiServiceSpy = jasmine.createSpyObj('ApiService', ['sendMessage', 'sendMessageFromTo']);
     apiServiceSpy.sendMessage.and.returnValue(Promise.resolve());
+    apiServiceSpy.sendMessageFromTo.and.returnValue(Promise.resolve());
 
     chatServiceMock = {
       messages$: new BehaviorSubject<any[]>([]),
@@ -300,7 +300,7 @@ describe('ProcessUserInputComponent', () => {
       expect(component.selectedSender).toBeNull();
     });
 
-    it('populates humanAgents with role === Human and actorName !== @Human', () => {
+    it('populates humanAgents with role === Human (Story 7-3)', () => {
       nodesSubject.next([
         makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
         makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
@@ -308,29 +308,39 @@ describe('ProcessUserInputComponent', () => {
         makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
       ]);
 
-      expect(component.humanAgents.length).toBe(2);
+      // Story 7-3: @Human is now INCLUDED alongside other human-role nodes.
+      expect(component.humanAgents.length).toBe(3);
       expect(component.humanAgents.map((n) => n.actorName)).toEqual([
         '@Support',
         '@Operator',
+        '@Human',
       ]);
       expect(component.humanAgentOptions.map((o) => o.value)).toEqual([
         '@Support',
         '@Operator',
+        '@Human',
       ]);
       // Labels come from makeAgentNameUserFriendly (passes @Support through
       // as-is since there is no '-' role segment).
       expect(component.humanAgentOptions[0].label).toBe('@Support');
     });
 
-    it('excludes the entry-point @Human even when role === Human', () => {
+    it('includes the entry-point @Human when role === Human (Story 7-3)', () => {
       nodesSubject.next([
         makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
         makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
       ]);
 
-      expect(component.humanAgents.length).toBe(1);
-      expect(component.humanAgents[0].actorName).toBe('@Support');
-      expect(component.humanAgentOptions.map((o) => o.value)).not.toContain('@Human');
+      // Story 7-3 (AC #1, AC #2): the @Human entry point is a first-class
+      // selectable sender. The filter uses role === HUMAN_ROLE only.
+      expect(component.humanAgents.length).toBe(2);
+      expect(component.humanAgents.map((n) => n.actorName)).toContain('@Human');
+      expect(component.humanAgents.map((n) => n.actorName)).toContain('@Support');
+      expect(component.humanAgentOptions.map((o) => o.value)).toContain('@Human');
+      // AC #2: label for @Human uses the friendly helper, not a hard-coded string.
+      const humanOpt = component.humanAgentOptions.find((o) => o.value === '@Human');
+      expect(humanOpt).toBeTruthy();
+      expect(humanOpt!.label).toBe(makeAgentNameUserFriendly('@Human'));
     });
 
     it('excludes nodes whose role !== Human', () => {
@@ -355,9 +365,10 @@ describe('ProcessUserInputComponent', () => {
       expect(dropdown).toBeNull();
     });
 
-    it('is hidden when humanAgents.length === 1', () => {
+    it('is hidden when humanAgents.length === 1 (solo @Human) (Story 7-3)', () => {
+      // Story 7-3: humans include @Human; solo-@Human still hides dropdown.
       nodesSubject.next([
-        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+        makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
       ]);
       fixture.detectChanges();
 
@@ -365,16 +376,19 @@ describe('ProcessUserInputComponent', () => {
       expect(dropdown).toBeNull();
     });
 
-    it('is visible when humanAgents.length === 2 and carries humanAgentOptions', () => {
+    it('is visible when humanAgents.length === 2 (@Human + @Support) (Story 7-3)', () => {
+      // Story 7-3: threshold fires at 2 humans INCLUDING @Human.
       nodesSubject.next([
+        makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
         makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
-        makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
       ]);
       fixture.detectChanges();
 
       const dropdown = fixture.nativeElement.querySelector('p-dropdown');
       expect(dropdown).not.toBeNull();
       expect(component.humanAgentOptions.length).toBe(2);
+      expect(component.humanAgentOptions.map((o) => o.value)).toContain('@Human');
+      expect(component.humanAgentOptions.map((o) => o.value)).toContain('@Support');
     });
 
     it('picking an option sets selectedSender to the option value', () => {
@@ -390,40 +404,294 @@ describe('ProcessUserInputComponent', () => {
       expect(component.selectedSender).toBe('@Support');
     });
 
-    it('a non-null selectedSender does NOT alter sendMessage() routing (AC #6 guard)', async () => {
+  });
+
+  describe('"Send as" routing (Story 7-2)', () => {
+    beforeEach(() => {
+      // 2 non-entry-point humans so the dropdown would be visible
       nodesSubject.next([
         makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
         makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
         makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
+        makeNode({ name: 'dev-1', actorName: '@Developer', role: 'Worker' }),
       ]);
-      component.selectedSender = '@Support';
-      component.selectedAgents = ['@Manager'];
-      component.userInput = 'hello';
-
-      // Guard: sendMessageFromTo is NOT on ApiService spy — if production code
-      // called it, the test would throw. Additionally verify the per-agent
-      // Priority 1 path from Story 3-1 remains byte-for-byte intact.
-      await component.sendMessage();
-
-      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
-        'test-team-id',
-        'hello',
-        '@Manager',
-      );
-      expect((apiServiceSpy as any).sendMessageFromTo).toBeUndefined();
     });
 
-    it('a non-null selectedSender with empty selectedAgents still broadcasts (AC #6 guard)', async () => {
+    it('Priority 1: sender + recipients -> sendMessageFromTo per recipient (AC #1)', async () => {
       component.selectedSender = '@Support';
+      component.selectedAgents = ['@Manager', '@Developer'];
+      component.userInput = 'hello';
+
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessageFromTo).toHaveBeenCalledTimes(2);
+      expect(apiServiceSpy.sendMessageFromTo).toHaveBeenCalledWith(
+        'test-team-id', '@Support', '@Manager', 'hello',
+      );
+      expect(apiServiceSpy.sendMessageFromTo).toHaveBeenCalledWith(
+        'test-team-id', '@Support', '@Developer', 'hello',
+      );
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+      expect(component.userInput).toBe('');
+    });
+
+    it('Priority 2: sender, no recipient, non-empty dropdownAgents -> first dropdown agent (AC #2)', async () => {
+      // Override the beforeEach roster with workers only so dropdownAgents[0]
+      // is @Manager (the "typical supervisor" case from AC #2). The current
+      // dropdown filter (Story 3-1) excludes only the entry-point @Human; any
+      // other @-prefixed node — including humans like @Support — would
+      // otherwise land in dropdownAgents and shadow the worker at index 0.
+      nodesSubject.next([
+        makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
+        makeNode({ name: 'dev-1', actorName: '@Developer', role: 'Worker' }),
+      ]);
+      // selectedSender is set AFTER the emission, so the clear-on-count-drop
+      // logic (which runs inside the nodes$ subscription) doesn't see it.
+      component.selectedSender = '@Support';
+      component.selectedAgents = [];
+      component.userInput = 'first-agent auto-target';
+
+      // sanity-check the expected first entry.
+      expect(component.dropdownAgents[0].value).toBe('@Manager');
+
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessageFromTo).toHaveBeenCalledOnceWith(
+        'test-team-id', '@Support', '@Manager', 'first-agent auto-target',
+      );
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+      expect(component.userInput).toBe('');
+    });
+
+    it('Priority 2 edge case: sender, no recipient, empty dropdownAgents -> no send, input preserved (AC #3)', async () => {
+      // Emit a roster with 2 humans but NO worker agents in the Send-to dropdown.
+      nodesSubject.next([
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+        makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
+        makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
+      ]);
+      // Force the edge case by emptying dropdownAgents directly:
+      component.dropdownAgents = [];
+      component.selectedSender = '@Support';
+      component.selectedAgents = [];
+      component.userInput = 'orphan sender';
+
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessageFromTo).not.toHaveBeenCalled();
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+      expect(component.userInput).toBe('orphan sender');
+    });
+
+    it('Priority 3: no sender + recipients -> sendMessage per recipient (AC #4, Story 3-1 preserved)', async () => {
+      component.selectedSender = null;
+      component.selectedAgents = ['@Manager', '@Developer'];
+      component.userInput = 'hello team';
+
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledTimes(2);
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledWith(
+        'test-team-id', 'hello team', '@Manager',
+      );
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledWith(
+        'test-team-id', 'hello team', '@Developer',
+      );
+      expect(apiServiceSpy.sendMessageFromTo).not.toHaveBeenCalled();
+      expect(component.userInput).toBe('');
+    });
+
+    it('Priority 4: no sender + no recipient -> broadcast (AC #5, Story 3-1 preserved)', async () => {
+      component.selectedSender = null;
       component.selectedAgents = [];
       component.userInput = 'broadcast hello';
 
       await component.sendMessage();
 
       expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
-        'test-team-id',
-        'broadcast hello',
+        'test-team-id', 'broadcast hello',
       );
+      expect(apiServiceSpy.sendMessageFromTo).not.toHaveBeenCalled();
+      expect(component.userInput).toBe('');
+    });
+
+    it('empty input guard runs first across all priorities (AC #6)', async () => {
+      component.selectedSender = '@Support';
+      component.selectedAgents = ['@Manager'];
+      component.userInput = '   '; // whitespace only
+
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+      expect(apiServiceSpy.sendMessageFromTo).not.toHaveBeenCalled();
+      expect(component.userInput).toBe('   ');
+    });
+
+    it('Priority 1: @Human as sender routes via sendMessageFromTo (Story 7-3)', async () => {
+      component.selectedSender = '@Human';
+      component.selectedAgents = ['@Manager'];
+      component.userInput = 'hello from human';
+
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessageFromTo).toHaveBeenCalledOnceWith(
+        'test-team-id', '@Human', '@Manager', 'hello from human',
+      );
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+      expect(component.userInput).toBe('');
+    });
+
+    it('Priority 2: @Human as sender with no recipient auto-targets first dropdown agent (Story 7-3)', async () => {
+      component.selectedSender = '@Human';
+      component.selectedAgents = [];
+      component.userInput = 'auto-target from @Human';
+
+      await component.sendMessage();
+
+      const firstDropdownAgent = component.dropdownAgents[0]?.value;
+      expect(firstDropdownAgent).toBeTruthy();
+      expect(apiServiceSpy.sendMessageFromTo).toHaveBeenCalledOnceWith(
+        'test-team-id', '@Human', firstDropdownAgent!, 'auto-target from @Human',
+      );
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+      expect(component.userInput).toBe('');
+    });
+  });
+
+  describe('"Send as" dynamic state (Story 7-2)', () => {
+    it('clears selectedSender when the selected sender is fired (AC #7)', () => {
+      nodesSubject.next([
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+        makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
+        makeNode({ name: 'thi-1', actorName: '@Third', role: 'Human' }),
+      ]);
+      component.selectedSender = '@Support';
+
+      // Fire @Support by emitting a roster without it (count stays >= 2).
+      nodesSubject.next([
+        makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
+        makeNode({ name: 'thi-1', actorName: '@Third', role: 'Human' }),
+      ]);
+
+      expect(component.selectedSender).toBeNull();
+      expect(component.humanAgents.length).toBe(2);
+    });
+
+    it('clears selectedSender when human count drops below 2 (AC #8)', () => {
+      nodesSubject.next([
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+        makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
+      ]);
+      component.selectedSender = '@Support';
+
+      // Drop to 1 non-entry-point human.
+      nodesSubject.next([
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+      ]);
+
+      expect(component.selectedSender).toBeNull();
+      expect(component.humanAgents.length).toBe(1);
+    });
+
+    it('preserves selectedSender when the selection still exists and count >= 2', () => {
+      nodesSubject.next([
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+        makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
+        makeNode({ name: 'thi-1', actorName: '@Third', role: 'Human' }),
+      ]);
+      component.selectedSender = '@Support';
+
+      // Fire an unrelated human -> @Support stays selected.
+      nodesSubject.next([
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+        makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
+      ]);
+
+      expect(component.selectedSender).toBe('@Support');
+    });
+
+    it('does not resurrect a cleared selectedSender when count recovers', () => {
+      nodesSubject.next([
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+        makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
+      ]);
+      component.selectedSender = '@Support';
+
+      // Drop below 2 -> selection cleared.
+      nodesSubject.next([
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+      ]);
+      expect(component.selectedSender).toBeNull();
+
+      // Recover to 2 humans -> selection STAYS null (user must repick).
+      nodesSubject.next([
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+        makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
+      ]);
+      expect(component.selectedSender).toBeNull();
+    });
+
+    it('clears selectedSender === "@Human" when @Human disappears from the roster (Story 7-3)', () => {
+      // Initial: @Human + @Support both present, selectedSender = @Human
+      nodesSubject.next([
+        makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+      ]);
+      component.selectedSender = '@Human';
+
+      // Defensive case: @Human somehow removed (leaving only non-entry humans).
+      // The clear-on-fire predicate fires because @Human is no longer in humanAgents.
+      nodesSubject.next([
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+        makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
+      ]);
+
+      expect(component.selectedSender).toBeNull();
+      expect(component.humanAgents.length).toBe(2);
+    });
+  });
+
+  describe('"Send as" layout and panel positioning (Story 7-3)', () => {
+    beforeEach(() => {
+      nodesSubject.next([
+        makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+      ]);
+      fixture.detectChanges();
+    });
+
+    it('renders p-dropdown with appendTo="body" (AC #14)', () => {
+      const dropdown = fixture.nativeElement.querySelector('p-dropdown');
+      expect(dropdown).not.toBeNull();
+      // In Angular dev-mode runtime, string inputs appear as DOM attributes.
+      // `appendTo` is bound as a literal string on the template, so it
+      // surfaces as an attribute on the <p-dropdown> element.
+      expect(dropdown.getAttribute('appendTo')).toBe('body');
+    });
+
+    it('renders p-dropdown with the upward panel style class configured (AC #14)', () => {
+      const dropdown = fixture.nativeElement.querySelector('p-dropdown');
+      expect(dropdown).not.toBeNull();
+      // [panelStyleClass] is an input binding — Angular reflects its current
+      // value via `ng-reflect-panel-style-class` in dev mode. Accept any
+      // deterministic channel that carries the class name.
+      const panelClass =
+        dropdown.getAttribute('ng-reflect-panel-style-class') ||
+        dropdown.getAttribute('panelStyleClass');
+      expect(panelClass).toContain('send-as-panel-up');
+    });
+
+    it('right-aligns the Send-as group inside .button-group (AC #15)', () => {
+      const group = fixture.nativeElement.querySelector('.send-as-group');
+      expect(group).not.toBeNull();
+      // The implementation uses both `justify-content: flex-end` (intra-group
+      // alignment) and `margin-left: auto` (pushes the group to the right
+      // inside `.button-group`). Either is acceptable evidence that the
+      // Send-as block is right-aligned.
+      const style = window.getComputedStyle(group);
+      expect(
+        style.justifyContent === 'flex-end' || style.marginLeft === 'auto',
+      ).toBeTrue();
     });
   });
 });

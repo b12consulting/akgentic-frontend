@@ -80,16 +80,29 @@ export class ProcessUserInputComponent implements OnInit {
           agents.some((n) => n.actorName === a),
         );
 
-        // "Send as" human selector (Story 7-1): populate humanAgents /
-        // humanAgentOptions from the same emission. Visibility is template-driven
-        // by humanAgents.length >= 2. Routing wiring is Story 7-2.
-        this.humanAgents = nodes.filter(
-          (n) => n.role === HUMAN_ROLE && n.actorName !== ENTRY_POINT_NAME,
-        );
+        // "Send as" human selector (Story 7-1, revised Story 7-3): populate
+        // humanAgents / humanAgentOptions from the same emission. Visibility is
+        // template-driven by humanAgents.length > 1. Routing wiring is
+        // Story 7-2. Story 7-3 drops the actorName !== ENTRY_POINT_NAME clause
+        // so @Human is a first-class selectable sender (ADR-007 Revision
+        // 2026-04-15, FR2 amendment).
+        this.humanAgents = nodes.filter((n) => n.role === HUMAN_ROLE);
         this.humanAgentOptions = this.humanAgents.map((n) => ({
           label: makeAgentNameUserFriendly(n.actorName),
           value: n.actorName,
         }));
+
+        // NFR1 / Story 7-2: keep selectedSender coherent with the live roster.
+        // Clear the selection when the chosen sender is fired, OR when the
+        // non-entry-point human count drops below 2 (dropdown hidden — selection
+        // would be invisible and stale).
+        if (
+          this.selectedSender !== null &&
+          (this.humanAgents.length < 2 ||
+            !this.humanAgents.some((n) => n.actorName === this.selectedSender))
+        ) {
+          this.selectedSender = null;
+        }
       });
   }
 
@@ -116,13 +129,33 @@ export class ProcessUserInputComponent implements OnInit {
       return;
     }
 
-    if (this.selectedAgents.length > 0) {
-      // Priority 1: dropdown selection -- send to each selected agent
+    const hasSender = this.selectedSender !== null && this.selectedSender !== '';
+    const hasRecipients = this.selectedAgents.length > 0;
+
+    if (hasSender && hasRecipients) {
+      // Priority 1: explicit sender + explicit recipients
+      for (const recipient of this.selectedAgents) {
+        await this.apiService.sendMessageFromTo(
+          this.processId, this.selectedSender!, recipient, this.userInput,
+        );
+      }
+    } else if (hasSender && !hasRecipients) {
+      // Priority 2: explicit sender, no recipient -> first dropdown agent
+      const defaultRecipient = this.dropdownAgents[0]?.value;
+      if (!defaultRecipient) {
+        // AC #3: no candidate recipient exists -> do not send, preserve input
+        return;
+      }
+      await this.apiService.sendMessageFromTo(
+        this.processId, this.selectedSender!, defaultRecipient, this.userInput,
+      );
+    } else if (hasRecipients) {
+      // Priority 3: default sender + explicit recipients (Story 3-1 preserved)
       for (const agentName of this.selectedAgents) {
         await this.apiService.sendMessage(this.processId, this.userInput, agentName);
       }
     } else {
-      // Priority 2: broadcast
+      // Priority 4: broadcast (Story 3-1 preserved)
       await this.apiService.sendMessage(this.processId, this.userInput);
     }
 
