@@ -3,7 +3,7 @@ import { inject, Injectable } from '@angular/core';
 import { BehaviorSubject, Subject, Subscription } from 'rxjs';
 import { bufferTime, filter, take } from 'rxjs/operators';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
-import { environment } from '../../environments/environment';
+import { ConfigService } from './config.service';
 import { AkgenticMessage } from '../models/message.types';
 import { EventResponse } from '../models/team.interface';
 
@@ -39,6 +39,7 @@ export class ActorMessageService {
   apiService: ApiService = inject(ApiService);
   chatService: ChatService = inject(ChatService);
   messageService: MessageService = inject(MessageService);
+  private config: ConfigService = inject(ConfigService);
   /**
    * Story 6.1 (ADR-005 §Decision 1): component-scoped append-only log of
    * every WS + REST-replay message. Story 6.2 migrated KG presence + KG
@@ -184,7 +185,7 @@ export class ActorMessageService {
     // V2: connect directly -- no ticket needed (community tier, AC8)
     const wsProtocol =
       window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-    const api = environment.api.replace(/(^\w+:|^)\/\//, '');
+    const api = this.config.api.replace(/(^\w+:|^)\/\//, '');
 
     // Story 4-10 (AC2): stopped-team path has already populated replay state
     // via HTTP getEvents() above — flip the spinner off BEFORE wiring up the

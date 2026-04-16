@@ -1,5 +1,5 @@
 import { inject, Injectable } from '@angular/core';
-import { environment } from '../../environments/environment';
+import { ConfigService } from './config.service';
 import { FetchService } from './fetch.service';
 
 export interface FileNode {
@@ -44,7 +44,9 @@ export const MAX_UPLOAD_SIZE_BYTES = 10_485_760;
 })
 export class WorkspaceService {
   fetchService: FetchService = inject(FetchService);
-  private apiUrl = environment.api;
+  private config = inject(ConfigService);
+
+  private get apiUrl(): string { return this.config.api; }
 
   async getWorkspaceTree(
     processId: string,
@@ -85,7 +87,7 @@ export class WorkspaceService {
     // Inline the credentials logic from fetch.service.ts so auth cookies
     // still propagate. See ADR-006 §Decision 2.2.
     const url = `${this.apiUrl}/workspace/${processId}/file?path=${encodeURIComponent(filePath)}`;
-    const options: RequestInit = environment.hideLogin
+    const options: RequestInit = this.config.hideLogin
       ? {}
       : { credentials: 'include' };
     const response = await fetch(url, options);

@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
-import { environment } from '../../environments/environment';
+import { ConfigService } from './config.service';
 import { ChatMessage } from '../models/chat-message.model';
 import { chatFold } from './chat.service';
 import { FetchService } from './fetch.service';
@@ -22,6 +22,7 @@ export interface FeedbackBackend {
 export class FeedbackService {
   fetchService: FetchService = inject(FetchService);
   private readonly log: MessageLogService = inject(MessageLogService);
+  private config = inject(ConfigService);
 
   /** Snapshot of the current derived chat message list via `chatFold` over
    *  the unified message log. Replaces the pre-refactor
@@ -35,14 +36,14 @@ export class FeedbackService {
 
   async getFeedback(run_id: string): Promise<any> {
     const response = await this.fetchService.fetch({
-      url: `${environment.api}/get-feedback?run_id=${run_id}`,
+      url: `${this.config.api}/get-feedback?run_id=${run_id}`,
     });
     return response;
   }
 
   async setFeedback(run_id: string, feedback: Feedback) {
     const feedback_id = await this.fetchService.fetch({
-      url: `${environment.api}/set-feedback`,
+      url: `${this.config.api}/set-feedback`,
       options: {
         method: 'POST',
         body: JSON.stringify({

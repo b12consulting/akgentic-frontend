@@ -14,8 +14,8 @@ import { TagModule } from 'primeng/tag';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 
-import { environment } from '../../environments/environment';
 import { AuthService } from '../services/auth.service';
+import { ConfigService } from '../services/config.service';
 import { ContextService } from '../services/context.service';
 
 @Component({
@@ -38,6 +38,7 @@ export class HomeComponent {
   contextService: ContextService = inject(ContextService);
   router: Router = inject(Router);
   authService: AuthService = inject(AuthService);
+  private config = inject(ConfigService);
 
   // Catalog entries for the team creation dropdown
   catalogEntries$ = new BehaviorSubject<any[]>([]);
@@ -74,7 +75,7 @@ export class HomeComponent {
     // Load the current context.
     this.context = await this.contextService.getTeams();
 
-    if (environment.hideHome) {
+    if (this.config.hideHome) {
       // If no team exists, create one using the first catalog entry.
       if (!this.context || this.context.length === 0) {
         const entry = this.selectedCatalogEntry$.value;

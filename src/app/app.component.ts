@@ -7,12 +7,12 @@ import { MenubarModule } from 'primeng/menubar';
 import { TagModule } from 'primeng/tag';
 import { ToastModule } from 'primeng/toast';
 import { Subject, takeUntil } from 'rxjs';
-import { environment } from '../environments/environment';
 import { isRunning } from './models/team.interface';
 import { emptyableCombineLatest } from './lib/util';
 import { AkgentService } from './services/akgent.service';
 import { ApiService } from './services/api.service';
 import { AuthService } from './services/auth.service';
+import { ConfigService } from './services/config.service';
 import { ContextService } from './services/context.service';
 import { FaviconService } from './services/favicon.service';
 import { ViewService } from './view.service';
@@ -33,8 +33,9 @@ import { ViewService } from './view.service';
 export class AppComponent {
   title = 'akgent-app';
   items: MenuItem[] | undefined;
-  logo: string = environment.logo;
-  hideLogin: boolean = environment.hideLogin;
+  private configService = inject(ConfigService);
+  logo: string = '';
+  hideLogin: boolean = true;
   processType: string = '';
   processConfigName: string = '';
   processRunning: boolean = false;
@@ -49,7 +50,12 @@ export class AppComponent {
   router = inject(Router);
 
   ngOnInit() {
-    this.faviconService.setFavicon(environment.favicon);
+    this.logo = this.configService.logo;
+    this.hideLogin = this.configService.hideLogin;
+    this.faviconService.setFavicon(this.configService.favicon);
+
+    // Fetch the authenticated user from the backend session
+    this.authService.checkAuth().subscribe();
     const destroyed = new Subject();
 
     this.destroyRef.onDestroy(() => {
@@ -128,7 +134,7 @@ export class AppComponent {
               ]
             : []),
         ].filter((item) =>
-          environment.hideHome ? item.label != 'Home' : true,
+          this.configService.hideHome ? item.label != 'Home' : true,
         );
       });
   }

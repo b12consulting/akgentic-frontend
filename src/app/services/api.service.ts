@@ -1,7 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import { Router } from '@angular/router';
-import { environment } from '../../environments/environment';
 import { AuthService } from './auth.service';
+import { ConfigService } from './config.service';
 import { FetchService } from './fetch.service';
 import {
   TeamContext,
@@ -19,8 +19,9 @@ export class ApiService {
   fetchService: FetchService = inject(FetchService);
   authService: AuthService = inject(AuthService);
   router: Router = inject(Router);
+  private config = inject(ConfigService);
 
-  private apiUrl = environment.api;
+  private get apiUrl(): string { return this.config.api; }
 
   // --- Team CRUD (AC1) ---
 
