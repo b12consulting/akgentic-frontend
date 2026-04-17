@@ -1,13 +1,17 @@
-import { Injectable } from '@angular/core';
+import { inject, Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
-import { environment } from '../environments/environment';
+import { ConfigService } from './services/config.service';
 
-const INITIAL_COLLAPSED = environment.initRightPanelCollapsed;
 @Injectable({
   providedIn: 'root',
 })
 export class ViewService {
-  isRightColumnCollapsed$ = new BehaviorSubject<boolean>(INITIAL_COLLAPSED);
+  private config = inject(ConfigService);
+  isRightColumnCollapsed$ = new BehaviorSubject<boolean>(false);
+
+  constructor() {
+    this.isRightColumnCollapsed$.next(this.config.initRightPanelCollapsed);
+  }
 
   toggleRightColumn(): void {
     this.isRightColumnCollapsed$.next(!this.isRightColumnCollapsed$.value);

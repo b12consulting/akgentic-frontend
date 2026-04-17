@@ -15,8 +15,8 @@ import { ButtonModule } from 'primeng/button';
 import { TextareaModule } from 'primeng/textarea';
 import { MessageService } from 'primeng/api';
 
-import { environment } from '../../../../environments/environment';
 import { AkgentService } from '../../../services/akgent.service';
+import { ConfigService } from '../../../services/config.service';
 import { ActorMessageService } from '../../../services/message.service';
 
 @Component({
@@ -31,6 +31,7 @@ export class AkgentStateComponent {
 
   akgentService: AkgentService = inject(AkgentService);
   actorMessageService: ActorMessageService = inject(ActorMessageService);
+  private config = inject(ConfigService);
   toastService: MessageService = inject(MessageService);
   formBuider: FormBuilder = inject(FormBuilder);
   private destroyRef = inject(DestroyRef);
@@ -95,7 +96,7 @@ export class AkgentStateComponent {
   }
 
   mapKeysToUserFriendlyNames(key: string): string {
-    if (environment.production) {
+    if (this.config.production) {
       if (key === 'Backstory') {
         return 'Objectives';
       } else if (key === 'Support Ticket') {

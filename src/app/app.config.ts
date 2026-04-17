@@ -1,4 +1,4 @@
-import { ApplicationConfig, provideZoneChangeDetection } from '@angular/core';
+import { APP_INITIALIZER, ApplicationConfig, provideZoneChangeDetection } from '@angular/core';
 import { provideRouter } from '@angular/router';
 
 import { routes } from './app.routes';
@@ -13,10 +13,10 @@ import {
   provideHttpClient,
   withInterceptorsFromDi,
 } from '@angular/common/http';
-import { environment } from '../environments/environment';
 import customPreset from './app.theme';
 import { CredentialsInterceptor } from './credentials.interceptor';
 import { markedOptionsFactory } from './lib/util';
+import { ConfigService } from './services/config.service';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -39,14 +39,18 @@ export const appConfig: ApplicationConfig = {
       },
     }),
     provideHttpClient(withInterceptorsFromDi()),
-    ...(environment.hideLogin
-      ? []
-      : [
-          {
-            provide: HTTP_INTERCEPTORS,
-            useClass: CredentialsInterceptor,
-            multi: true,
-          },
-        ]),
+    // Always register — the interceptor checks hideLogin at runtime
+    {
+      provide: HTTP_INTERCEPTORS,
+      useClass: CredentialsInterceptor,
+      multi: true,
+    },
+    // Load runtime config before app renders
+    {
+      provide: APP_INITIALIZER,
+      useFactory: (config: ConfigService) => () => config.load(),
+      deps: [ConfigService],
+      multi: true,
+    },
   ],
 };

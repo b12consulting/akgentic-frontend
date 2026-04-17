@@ -10,8 +10,8 @@ import { MultiSelectModule } from 'primeng/multiselect';
 import { TextareaModule } from 'primeng/textarea';
 import { MentionModule } from 'angular-mentions';
 
-import { environment } from '../../../environments/environment';
 import { makeAgentNameUserFriendly } from '../../lib/util';
+import { ConfigService } from '../../services/config.service';
 
 import { ApiService } from '../../services/api.service';
 import { ChatService } from '../../services/chat.service';
@@ -41,8 +41,9 @@ export class ProcessUserInputComponent implements OnInit {
   apiService: ApiService = inject(ApiService);
   chatService: ChatService = inject(ChatService);
   graphDataService: GraphDataService = inject(GraphDataService);
+  private config = inject(ConfigService);
   userInput: string = '';
-  userInputEnterKeySubmit: boolean = environment.userInputEnterKeySubmit;
+  userInputEnterKeySubmit: boolean = this.config.userInputEnterKeySubmit;
 
   // Mention configuration
   mentionItems: { name: string; actorName: string; agentId: string }[] = [];

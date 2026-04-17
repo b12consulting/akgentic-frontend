@@ -1,12 +1,13 @@
 import { Injectable, inject } from '@angular/core';
 import { MessageService } from 'primeng/api';
-import { environment } from '../../environments/environment';
+import { ConfigService } from './config.service';
 
 @Injectable({
   providedIn: 'root',
 })
 export class FetchService {
   messageService: MessageService = inject(MessageService);
+  private config = inject(ConfigService);
 
   async fetch({
     url,
@@ -19,7 +20,7 @@ export class FetchService {
     successMessage?: string;
     errorMessage?: string;
   }): Promise<any> {
-    options = environment.hideLogin
+    options = this.config.hideLogin
       ? options
       : { ...options, credentials: 'include' };
     const response = await fetch(url, options);

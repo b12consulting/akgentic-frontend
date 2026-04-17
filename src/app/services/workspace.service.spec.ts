@@ -1,5 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { environment } from '../../environments/environment';
+import { ConfigService } from './config.service';
 import { FetchService } from './fetch.service';
 import {
   MAX_UPLOAD_SIZE_BYTES,
@@ -46,6 +47,7 @@ describe('WorkspaceService', () => {
       providers: [
         WorkspaceService,
         { provide: FetchService, useValue: fetchServiceSpy },
+        { provide: ConfigService, useValue: { api: environment.api, hideLogin: environment.hideLogin } },
       ],
     });
 

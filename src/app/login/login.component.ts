@@ -2,8 +2,8 @@ import { CommonModule } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { environment } from '../../environments/environment';
 import { AuthService } from '../services/auth.service';
+import { ConfigService } from '../services/config.service';
 import { AuthProvider } from '../models/auth.types';
 
 @Component({
@@ -14,13 +14,15 @@ import { AuthProvider } from '../models/auth.types';
   standalone: true,
 })
 export class LoginComponent {
+  private config = inject(ConfigService);
+
   // Configuration
-  logo: string = environment.logo;
-  welcomeMessage: string = environment.welcomeMessage;
-  apiBaseUrl: string = environment.api;
+  logo: string = this.config.logo;
+  welcomeMessage: string = this.config.welcomeMessage;
+  apiBaseUrl: string = this.config.api;
 
   // Multi-provider configuration
-  loginProviders: AuthProvider[] = environment.loginProviders;
+  loginProviders: AuthProvider[] = this.config.loginProviders;
 
   // UI State
   activeProvider: AuthProvider | '';
@@ -61,28 +63,23 @@ export class LoginComponent {
   }
 
   getProviderLabel(provider: AuthProvider): string {
-    const labels: Record<AuthProvider, string> = {
+    const labels: Record<string, string> = {
       azure: 'Azure AD',
       google: 'Google',
-      apikey: 'API Key'
+      apikey: 'API Key',
+      default: 'Sign In',
     };
     return labels[provider] || provider.charAt(0).toUpperCase() + provider.slice(1);
   }
 
-  /**
-   * Redirects the user to the backend endpoint that initiates
-   * the Azure AD OAuth 2.0 authorization flow.
-   */
-  loginAzure(): void {
-    window.location.href = `${this.apiBaseUrl}/auth/login/azure`;
+  /** Returns true if the provider is an OAuth/OIDC provider (not API key). */
+  isOAuthProvider(provider: AuthProvider): boolean {
+    return provider !== 'apikey';
   }
 
-  /**
-   * Redirects the user to the backend endpoint that initiates
-   * the Google OAuth 2.0 authorization flow.
-   */
-  loginGoogle(): void {
-    window.location.href = `${this.apiBaseUrl}/auth/login/google`;
+  /** Redirects to the backend OAuth login endpoint for any provider. */
+  loginOAuth(provider: AuthProvider): void {
+    window.location.href = `${this.apiBaseUrl}/auth/login/${provider}`;
   }
 
   /**

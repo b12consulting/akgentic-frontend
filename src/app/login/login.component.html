@@ -24,19 +24,17 @@
     <!-- Provider content area -->
     <div class="provider-content" *ngIf="loginProviders.length > 0">
 
-      <!-- Azure AD Provider -->
-      <div *ngIf="isProviderActive('azure') && isProviderEnabled('azure')" class="provider-panel">
-        <button (click)="loginAzure()" class="login-button azure-button">
-          <img src="microsoft_auth_button.svg" alt="Azure AD" class="icon" />
-        </button>
-      </div>
-
-      <!-- Google Provider -->
-      <div *ngIf="isProviderActive('google') && isProviderEnabled('google')" class="provider-panel">
-        <button (click)="loginGoogle()" class="login-button google-button">
-          <img src="google_auth_button.svg" alt="Google" class="icon" />
-        </button>
-      </div>
+      <!-- OAuth/OIDC Providers (azure, google, default, or any custom) -->
+      <ng-container *ngFor="let provider of loginProviders">
+        <div *ngIf="isOAuthProvider(provider) && isProviderActive(provider)" class="provider-panel">
+          <button (click)="loginOAuth(provider)" class="login-button oauth-button">
+            <img *ngIf="provider === 'azure'" src="microsoft_auth_button.svg" alt="Azure AD" class="icon" />
+            <img *ngIf="provider === 'google'" src="google_auth_button.svg" alt="Google" class="icon" />
+            <span *ngIf="provider !== 'azure' && provider !== 'google'" class="pi pi-sign-in"></span>
+            <span *ngIf="provider !== 'azure' && provider !== 'google'">{{ getProviderLabel(provider) }}</span>
+          </button>
+        </div>
+      </ng-container>
 
       <!-- API Key Provider -->
       <div *ngIf="isProviderActive('apikey') && isProviderEnabled('apikey')" class="provider-panel">
