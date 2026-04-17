@@ -10,7 +10,6 @@
         <span
           class="human-node"
           [class.highlight-node]="node?.styleClass === 'highlight-node'"
-          [class.error-node]="node?.styleClass === 'error-node'"
           [ngStyle]="{ background: node.key }"
           >{{ node.label }}</span
         >
@@ -18,10 +17,12 @@
       <ng-template let-node pTemplate="default">
         <div
           [class.highlight-node]="node?.styleClass === 'highlight-node'"
-          [class.error-node]="node?.styleClass === 'error-node'"
           [ngStyle]="{ background: node.key }"
         >
           <b>{{ node.label }}</b>
+          <span *ngIf="node.data?.errorMessage" class="error-label">
+            — {{ node.data.errorMessage }}
+          </span>
         </div>
       </ng-template>
     </p-tree>

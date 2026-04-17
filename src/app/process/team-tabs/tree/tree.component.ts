@@ -88,11 +88,9 @@ export class TreeComponent implements OnInit, OnDestroy {
         children: [], // Initialize children as an empty array
         expanded: false,
         styleClass:
-          n.itemStyle?.color === 'darkred'
-            ? 'error-node'
-            : n.itemStyle?.borderColor === 'darkred'
+          n.itemStyle?.borderColor === 'darkred'
             ? 'highlight-node'
-            : '', // Apply CSS class for red color
+            : '',
       };
 
       // Group nodes by category

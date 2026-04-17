@@ -17,7 +17,7 @@ export interface NodeInterface {
   userMessage: boolean;
   itemStyle?: any;
   humanRequests?: SentMessage[];
-  alreadyAnswered?: boolean;
+  errorMessage?: string;
 }
 
 export interface EdgeInterface {

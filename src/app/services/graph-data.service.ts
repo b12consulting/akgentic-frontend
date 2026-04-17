@@ -22,7 +22,7 @@ import { CategoryService } from './category.service';
 import { MessageLogService } from './message-log.service';
 
 export const HUMAN_ROLE = 'Human';
-export const ORCHESTRATOR_CLASS = 'Orchestrator';
+export const ORCHESTRATOR_CLASS = 'akgentic.core.orchestrator.Orchestrator';
 
 /**
  * Helper class to build nodes/edges from messages.
@@ -156,7 +156,7 @@ function applyStartMessage(
   msg: StartMessage,
   categoryService: CategoryService,
 ): GraphState {
-  if (msg.sender.role.includes(ORCHESTRATOR_CLASS)) return state;
+  if (msg.sender.__actor_type__ === ORCHESTRATOR_CLASS) return state;
 
   const builder = new GraphBuilder(msg);
   const node = builder.buildNode();
@@ -206,6 +206,22 @@ function applySentMessage(state: GraphState, msg: SentMessage): GraphState {
   let nextNodes = state.nodes;
   nextNodes = builder.setHumanRequestPure(nextNodes);
   nextNodes = builder.unSetHumanRequestPure(nextNodes);
+
+  // Clear error state if the sender recovered (sent a message after an error).
+  const senderId = msg.sender?.agent_id;
+  if (senderId) {
+    const idx = nextNodes.findIndex((n) => n.name === senderId);
+    if (idx !== -1 && nextNodes[idx].errorMessage) {
+      const { color: _, ...restStyle } = nextNodes[idx].itemStyle || {};
+      const updated: NodeInterface = {
+        ...nextNodes[idx],
+        errorMessage: undefined,
+        itemStyle: restStyle,
+      };
+      nextNodes = [...nextNodes.slice(0, idx), updated, ...nextNodes.slice(idx + 1)];
+    }
+  }
+
   if (nextEdges === state.edges && nextNodes === state.nodes) return state;
   return { ...state, edges: nextEdges, nodes: nextNodes };
 }
@@ -269,6 +285,7 @@ function applyErrorMessage(state: GraphState, msg: ErrorMessage): GraphState {
   const target = state.nodes[idx];
   const updated: NodeInterface = {
     ...target,
+    errorMessage: msg.exception_value || msg.exception_type || 'Error',
     itemStyle: { ...(target.itemStyle || {}), color: 'darkred' },
   };
   const nextNodes = [

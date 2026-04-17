@@ -38,9 +38,8 @@
 }
 
 
-.error-node {
-  background-color: darkred !important;
-  color: white !important;
-  border-radius: 5px;
-  padding: 5px;
+.error-label {
+  color: darkred;
+  font-size: 0.85em;
+  font-weight: normal;
 }

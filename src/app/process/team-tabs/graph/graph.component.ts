@@ -136,6 +136,20 @@ export class GraphComponent {
     };
 
     const chartOptions: EChartsCoreOption = {
+      tooltip: {
+        trigger: 'item',
+        confine: true,
+        extraCssText: 'max-width: 300px; white-space: normal; word-wrap: break-word;',
+        formatter: (params: any) => {
+          if (params.dataType === 'node' && params.data.errorMessage) {
+            const name = makeAgentNameUserFriendly(params.data.actorName);
+            const escaped = params.data.errorMessage
+              .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return `<b>${name}</b><br/><span style="color:darkred; font-size:11px">${escaped}</span>`;
+          }
+          return '';
+        },
+      },
       legend: [{ data: categories.map((c) => c.name), top: '8px' }],
       series: [
         {
