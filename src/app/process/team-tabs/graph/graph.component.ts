@@ -143,7 +143,9 @@ export class GraphComponent {
         formatter: (params: any) => {
           if (params.dataType === 'node' && params.data.errorMessage) {
             const name = makeAgentNameUserFriendly(params.data.actorName);
-            return `<b>${name}</b><br/><span style="color:darkred; font-size:11 px">${params.data.errorMessage}</span>`;
+            const escaped = params.data.errorMessage
+              .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return `<b>${name}</b><br/><span style="color:darkred; font-size:11px">${escaped}</span>`;
           }
           return '';
         },

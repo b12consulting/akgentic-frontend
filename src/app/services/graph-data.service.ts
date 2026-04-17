@@ -156,7 +156,7 @@ function applyStartMessage(
   msg: StartMessage,
   categoryService: CategoryService,
 ): GraphState {
-  if (msg.sender.__actor_type__ == ORCHESTRATOR_CLASS) return state;
+  if (msg.sender.__actor_type__ === ORCHESTRATOR_CLASS) return state;
 
   const builder = new GraphBuilder(msg);
   const node = builder.buildNode();
