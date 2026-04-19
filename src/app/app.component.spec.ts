@@ -42,6 +42,7 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
   let viewStub: { isRightColumnCollapsed$: BehaviorSubject<boolean>; toggleRightColumn: jasmine.Spy };
   let authStub: { currentUser$: BehaviorSubject<any>; checkAuth: jasmine.Spy; logout: jasmine.Spy };
   let configStub: { logo: string; hideLogin: boolean; favicon: string; hideHome: boolean };
+  let apiStub: { getTeam: jasmine.Spy; getTeams: jasmine.Spy };
 
   beforeEach(async () => {
     contextStub = {
@@ -71,7 +72,10 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
     };
 
     const faviconStub = { setFavicon: jasmine.createSpy('setFavicon') };
-    const apiStub = {};
+    apiStub = {
+      getTeam: jasmine.createSpy('getTeam'),
+      getTeams: jasmine.createSpy('getTeams'),
+    };
     const routerStub = {
       navigate: jasmine.createSpy('navigate').and.returnValue(Promise.resolve(true)),
     };
@@ -199,5 +203,88 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
     }
     fixture.destroy();
     expect(contextStub.currentTeam$.observed).toBeFalse();
+  });
+
+  // --- Story 10-3 — decouple AppComponent from isRightColumnCollapsed$ ---
+
+  it('(AC2) right-column toggle does not call contextService.getCurrentTeam or apiService.getTeam', async () => {
+    const team = makeTeam({ team_id: 'team-A', name: 'Alpha' });
+    contextStub.currentProcessId$.next('team-A');
+    contextStub.currentTeam$.next(team);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    contextStub.getCurrentTeam.calls.reset();
+    apiStub.getTeam.calls.reset();
+
+    viewStub.isRightColumnCollapsed$.next(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    viewStub.isRightColumnCollapsed$.next(false);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(contextStub.getCurrentTeam).not.toHaveBeenCalled();
+    expect(apiStub.getTeam).not.toHaveBeenCalled();
+  });
+
+  it('(AC2) right-column toggle rebuilds items with a new Hide/Show details label', async () => {
+    contextStub.currentProcessId$.next('team-A');
+    await fixture.whenStable();
+    fixture.detectChanges();
+    viewStub.isRightColumnCollapsed$.next(false);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const expandedLabel = component.items?.find(
+      (i) => i.label === 'Hide details' || i.label === 'Show details',
+    )?.label;
+    expect(expandedLabel).toBe('Hide details');
+
+    viewStub.isRightColumnCollapsed$.next(true);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    const collapsedLabel = component.items?.find(
+      (i) => i.label === 'Hide details' || i.label === 'Show details',
+    )?.label;
+    expect(collapsedLabel).toBe('Show details');
+  });
+
+  it('(AC3) currentUser$ change does not call getCurrentTeam or getTeam', async () => {
+    contextStub.currentProcessId$.next('team-A');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    contextStub.getCurrentTeam.calls.reset();
+    apiStub.getTeam.calls.reset();
+
+    authStub.currentUser$.next({ name: 'Bob', user_id: 'u-2' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    authStub.currentUser$.next(null);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(contextStub.getCurrentTeam).not.toHaveBeenCalled();
+    expect(apiStub.getTeam).not.toHaveBeenCalled();
+  });
+
+  it('(AC3) username dropdown is present when currentUser$ has a name and absent when null', async () => {
+    authStub.currentUser$.next({ name: 'Alice', user_id: 'u-1' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(component.items?.some((i) => i.label === 'Alice')).toBeTrue();
+
+    authStub.currentUser$.next(null);
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(component.items?.some((i) => i.label === 'Alice')).toBeFalse();
+  });
+
+  it('(AC5) on destroy, zero residual observers on currentTeam$, currentProcessId$, currentUser$, and isRightColumnCollapsed$', async () => {
+    fixture.destroy();
+    expect(contextStub.currentTeam$.observed).toBeFalse();
+    expect(contextStub.currentProcessId$.observed).toBeFalse();
+    expect(authStub.currentUser$.observed).toBeFalse();
+    expect(viewStub.isRightColumnCollapsed$.observed).toBeFalse();
   });
 });
