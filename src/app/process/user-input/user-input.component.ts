@@ -15,6 +15,7 @@ import { ConfigService } from '../../services/config.service';
 
 import { ApiService } from '../../services/api.service';
 import { ChatService } from '../../services/chat.service';
+import { ContextService } from '../../services/context.service';
 import { GraphDataService, HUMAN_ROLE } from '../../services/graph-data.service';
 
 import { ENTRY_POINT_NAME } from '../../models/chat-message.model';
@@ -40,6 +41,7 @@ export class ProcessUserInputComponent implements OnInit {
 
   apiService: ApiService = inject(ApiService);
   chatService: ChatService = inject(ChatService);
+  contextService: ContextService = inject(ContextService);
   graphDataService: GraphDataService = inject(GraphDataService);
   private config = inject(ConfigService);
   userInput: string = '';
@@ -126,7 +128,7 @@ export class ProcessUserInputComponent implements OnInit {
   }
 
   async sendMessage() {
-    if (!this.userInput || this.userInput.trim() === '') {
+    if (!this.contextService.currentTeamRunning$.value || !this.userInput || this.userInput.trim() === '') {
       return;
     }
 

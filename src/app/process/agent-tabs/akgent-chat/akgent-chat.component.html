@@ -88,7 +88,7 @@
           size="small"
           label="Submit"
           (click)="sendMessage()"
-          [disabled]="!userInput || isLoading"
+          [disabled]="!userInput || isLoading || !(contextService.currentTeamRunning$ | async)"
         >
           <ng-container *ngIf="isLoading; else refreshIcon">
             <i class="pi pi-spinner pi-spin"></i>

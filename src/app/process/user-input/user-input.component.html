@@ -62,7 +62,7 @@
       size="small"
       label="Submit"
       (click)="sendMessage()"
-      [disabled]="!userInput"
+      [disabled]="!userInput || !(contextService.currentTeamRunning$ | async)"
     />
   </div>
 </div>
