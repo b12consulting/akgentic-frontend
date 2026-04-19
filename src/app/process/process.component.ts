@@ -76,7 +76,6 @@ export class ProcessComponent implements OnDestroy {
   toolPresenceService: ToolPresenceService = inject(ToolPresenceService);
 
   processId: string = '';
-  processType: string = '';
   // Workspace presence is static: every team has a workspace directory by
   // default (backend creates one on team boot). Reactive presence detection
   // for workspace is an explicit future enhancement — out of scope today.
@@ -163,7 +162,6 @@ export class ProcessComponent implements OnDestroy {
       return;
     }
 
-    this.processType = currentProcess.name;
     // KG presence is reactive (Story 5-3 / ADR-004 §Decision 4): the
     // `hasKnowledgeGraph$` observable flips based on `#KnowledgeGraphTool`
     // `StartMessage` / `StopMessage` on the replay + live streams. Workspace

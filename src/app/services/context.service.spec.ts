@@ -635,4 +635,74 @@ describe('ContextService', () => {
     expect(service.currentTeam$).toBeDefined();
     expect(service.currentTeamRunning$).toBeDefined();
   });
+
+  // =======================================================================
+  // Story 10.6 — public-surface ratification + deleteTeam immutability
+  // =======================================================================
+
+  it('(AC6 10.6) ContextService public surface is exactly the post-10.6 set', () => {
+    const expectedObservables = [
+      'currentProcessId$',
+      'teams$',
+      'currentTeam$',
+      'currentTeamRunning$',
+    ];
+    const expectedMethods = [
+      'getTeams',
+      'getCurrentTeam',
+      'deleteTeam',
+      'clear',
+      'createTeamAndNavigate',
+      'stopTeamAndAwait',
+    ];
+    for (const name of expectedObservables) {
+      expect((service as unknown as Record<string, unknown>)[name])
+        .withContext(name)
+        .toBeDefined();
+    }
+    for (const name of expectedMethods) {
+      expect(typeof (service as unknown as Record<string, unknown>)[name])
+        .withContext(name)
+        .toBe('function');
+    }
+    // FR14 closure: no alternative `removeTeam` entry point was introduced.
+    expect(
+      (service as unknown as Record<string, unknown>)['removeTeam'],
+    ).toBeUndefined();
+  });
+
+  it('(AC7 10.6) deleteTeam removes the team immutably from _context$', fakeAsync(() => {
+    const teamA = makeTeam('a', 'running');
+    const teamB = makeTeam('b', 'running');
+    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA, teamB]));
+    apiSpy.deleteTeam.and.returnValue(Promise.resolve());
+
+    service.getTeams();
+    tick();
+
+    let prev: TeamContext[] = [];
+    service.teams$
+      .subscribe((teams) => {
+        prev = teams;
+      })
+      .unsubscribe();
+    const prevB = prev.find((t) => t.team_id === 'b')!;
+
+    service.deleteTeam('a');
+    tick();
+
+    let next: TeamContext[] = [];
+    service.teams$
+      .subscribe((teams) => {
+        next = teams;
+      })
+      .unsubscribe();
+
+    expect(apiSpy.deleteTeam).toHaveBeenCalledOnceWith('a');
+    expect(next).not.toBe(prev);
+    expect(next.length).toBe(1);
+    expect(next[0].team_id).toBe('b');
+    // Unchanged slot preserves reference identity (immutable filter on same refs).
+    expect(next[0]).toBe(prevB);
+  }));
 });

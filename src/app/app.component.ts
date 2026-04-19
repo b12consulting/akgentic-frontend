@@ -8,7 +8,6 @@ import { TagModule } from 'primeng/tag';
 import { ToastModule } from 'primeng/toast';
 import { Subject, takeUntil } from 'rxjs';
 import { emptyableCombineLatest } from './lib/util';
-import { isRunning } from './models/team.interface';
 import { AkgentService } from './services/akgent.service';
 import { ApiService } from './services/api.service';
 import { AuthService } from './services/auth.service';
@@ -36,9 +35,6 @@ export class AppComponent {
   private configService = inject(ConfigService);
   logo: string = '';
   hideLogin: boolean = true;
-  processType: string = '';
-  processConfigName: string = '';
-  processRunning: boolean = false;
 
   akgentService: AkgentService = inject(AkgentService);
   authService: AuthService = inject(AuthService);
@@ -62,17 +58,6 @@ export class AppComponent {
       destroyed.next(null);
       destroyed.complete();
     });
-
-    // Team-metadata subscription: no REST call; reads from the reactive
-    // `currentTeam$` selector. `ProcessComponent.ngOnInit` is the sole fetcher
-    // for a navigation; this subscription only consumes the derived state.
-    this.contextService.currentTeam$
-      .pipe(takeUntil(destroyed))
-      .subscribe((team) => {
-        this.processType = team?.name ?? '';
-        this.processConfigName = team?.config_name ?? '';
-        this.processRunning = team !== null && isRunning(team);
-      });
 
     emptyableCombineLatest([
       this.contextService.currentProcessId$.asObservable(),

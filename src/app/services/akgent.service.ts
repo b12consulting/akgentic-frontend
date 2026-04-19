@@ -1,6 +1,5 @@
 import { inject, Injectable } from '@angular/core';
 import { ApiService } from '../services/api.service';
-import { ContextService } from '../services/context.service';
 import { BehaviorSubject, Subject } from 'rxjs';
 
 export class Akgent {
@@ -13,7 +12,6 @@ export class Akgent {
 })
 export class AkgentService {
   apiService: ApiService = inject(ApiService);
-  contextService: ContextService = inject(ContextService);
 
   selectedAkgent$: BehaviorSubject<Akgent | null> =
     new BehaviorSubject<Akgent | null>(null);
