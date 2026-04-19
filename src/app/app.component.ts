@@ -8,6 +8,7 @@ import { TagModule } from 'primeng/tag';
 import { ToastModule } from 'primeng/toast';
 import { Subject, takeUntil } from 'rxjs';
 import { emptyableCombineLatest } from './lib/util';
+import { isRunning } from './models/team.interface';
 import { AkgentService } from './services/akgent.service';
 import { ApiService } from './services/api.service';
 import { AuthService } from './services/auth.service';
@@ -61,31 +62,25 @@ export class AppComponent {
       destroyed.next(null);
       destroyed.complete();
     });
+
+    // Team-metadata subscription: no REST call; reads from the reactive
+    // `currentTeam$` selector. `ProcessComponent.ngOnInit` is the sole fetcher
+    // for a navigation; this subscription only consumes the derived state.
+    this.contextService.currentTeam$
+      .pipe(takeUntil(destroyed))
+      .subscribe((team) => {
+        this.processType = team?.name ?? '';
+        this.processConfigName = team?.config_name ?? '';
+        this.processRunning = team !== null && isRunning(team);
+      });
+
     emptyableCombineLatest([
       this.contextService.currentProcessId$.asObservable(),
       this.authService.currentUser$,
       this.viewService.isRightColumnCollapsed$,
     ])
       .pipe(takeUntil(destroyed))
-      .subscribe(async ([processId, currentUser, isRightColumnCollapsed]) => {
-        // Update process type when process changes
-        if (processId) {
-          try {
-            const process =
-              await this.contextService.getCurrentTeam(processId, false);
-            this.processType = process?.name || '';
-            this.processConfigName = process?.config_name || '';
-            this.processRunning = this.contextService.currentTeamRunning$.value;
-          } catch (error) {
-            console.error('Error fetching process:', error);
-            this.processType = '';
-            this.processRunning = false;
-          }
-        } else {
-          this.processType = '';
-          this.processRunning = false;
-        }
-
+      .subscribe(([processId, currentUser, isRightColumnCollapsed]) => {
         this.items = [
           {
             icon: 'pi pi-home',

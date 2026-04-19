@@ -130,17 +130,19 @@ describe('ContextService', () => {
     expect(nextB).toBe(prevB);
   });
 
-  it('(AC3) getCurrentTeam(true) cache-hit leaves _context$.value unchanged and emits currentTeamRunning$', async () => {
+  it('(AC3) getCurrentTeam(true) cache-hit leaves _context$.value unchanged; currentTeamRunning$.value reflects cached team', async () => {
     const teamA = makeTeam('a', 'running');
     apiSpy.getTeams.and.returnValue(Promise.resolve([teamA]));
     await service.getTeams();
 
-    const prev = await firstValueFrom(service.teams$);
+    // Arm the derived pipeline by pointing currentProcessId$ at 'a' BEFORE
+    // the cache-hit call. The pipeline is the sole writer to
+    // currentTeamRunning$ (Story 10.2); getCurrentTeam no longer emits.
+    service.currentProcessId$.next('a');
+    // Let the derived pipeline flush its first emission.
+    await Promise.resolve();
 
-    const runningEmissions: boolean[] = [];
-    const sub = service.currentTeamRunning$.subscribe((v) =>
-      runningEmissions.push(v)
-    );
+    const prev = await firstValueFrom(service.teams$);
 
     const result = await service.getCurrentTeam('a', true);
 
@@ -148,10 +150,9 @@ describe('ContextService', () => {
     expect(result).toBe(teamA);
     const next = await firstValueFrom(service.teams$);
     expect(next).toBe(prev);
-    // Initial false + cached isRunning(teamA) == true.
-    expect(runningEmissions[runningEmissions.length - 1]).toBe(true);
-
-    sub.unsubscribe();
+    // Derived pipeline already emitted `true` for the running cached team;
+    // distinctUntilChanged may suppress further emissions, but .value is live.
+    expect(service.currentTeamRunning$.value).toBe(true);
   });
 
   it('(AC3 guard) getCurrentTeam(false) with null API response leaves _context$.value unchanged', async () => {
@@ -211,7 +212,7 @@ describe('ContextService', () => {
     expect(next.map((t) => t.team_id)).toEqual(['a', 'c']);
   });
 
-  it('(AC5) clear(teamId) shrinks, emits currentTeamRunning$ false, and navigates home', async () => {
+  it('(AC5) clear(teamId) shrinks, ends with currentTeamRunning$.value === false via derived pipeline, and navigates home', async () => {
     const teams = [makeTeam('a'), makeTeam('b')];
     apiSpy.getTeams.and.returnValue(Promise.resolve(teams));
     await service.getTeams();
@@ -219,19 +220,24 @@ describe('ContextService', () => {
     apiSpy.deleteTeam.and.returnValue(Promise.resolve());
     routerSpy.navigate.and.returnValue(Promise.resolve(true));
 
-    service.currentTeamRunning$.next(true);
+    // Point currentProcessId$ at 'a' so the derived pipeline flips to `true`
+    // first, then `false` after `clear('a')` removes the team.
+    service.currentProcessId$.next('a');
+    await Promise.resolve();
+    expect(service.currentTeamRunning$.value).toBe(true);
 
     await service.clear('a');
 
     const next = await firstValueFrom(service.teams$);
     expect(next.map((t) => t.team_id)).toEqual(['b']);
+    // Derived pipeline emitted `false` because `currentTeam$` → null.
     expect(service.currentTeamRunning$.value).toBe(false);
     expect(routerSpy.navigate).toHaveBeenCalledWith(['/']);
   });
 
-  // --- AC11 --------------------------------------------------------------
+  // --- AC11 (Story 10.1 late-subscriber on teams$) -----------------------
 
-  it('(AC11) late-subscriber receives the current value synchronously', async () => {
+  it('(AC11 10.1) late-subscriber receives the current value synchronously', async () => {
     const teams = [makeTeam('a')];
     apiSpy.getTeams.and.returnValue(Promise.resolve(teams));
     await service.getTeams();
@@ -240,5 +246,156 @@ describe('ContextService', () => {
     const sub = service.teams$.subscribe((v) => (received = v));
     expect(received).toEqual(teams);
     sub.unsubscribe();
+  });
+
+  // =======================================================================
+  // Story 10.2 — derived currentTeam$ pipeline
+  // =======================================================================
+
+  // --- AC1 (10.2) --------------------------------------------------------
+
+  it('(AC1 10.2) currentTeam$ is exposed as a subscribable Observable', () => {
+    expect(service.currentTeam$).toBeTruthy();
+    expect(typeof service.currentTeam$.subscribe).toBe('function');
+  });
+
+  // --- AC2 (10.2) --------------------------------------------------------
+
+  it('(AC2 10.2) currentTeam$ emits the team whose id matches currentProcessId$', async () => {
+    const teamA = makeTeam('a', 'running');
+    const teamB = makeTeam('b', 'stopped');
+    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA, teamB]));
+    await service.getTeams();
+
+    service.currentProcessId$.next('a');
+    const first = await firstValueFrom(service.currentTeam$);
+    expect(first).toBe(teamA);
+
+    service.currentProcessId$.next('b');
+    const second = await firstValueFrom(service.currentTeam$);
+    expect(second).toBe(teamB);
+  });
+
+  // --- AC3 (10.2) --------------------------------------------------------
+
+  it('(AC3 10.2) currentTeam$ emits in order on id switch; currentTeamRunning$ tracks running state', async () => {
+    const teamA = makeTeam('a', 'running');
+    const teamB = makeTeam('b', 'stopped');
+    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA, teamB]));
+    await service.getTeams();
+
+    const teamEmissions: (TeamContext | null)[] = [];
+    const runningEmissions: boolean[] = [];
+    const sub1 = service.currentTeam$.subscribe((t) => teamEmissions.push(t));
+    const sub2 = service.currentTeamRunning$.subscribe((r) =>
+      runningEmissions.push(r)
+    );
+
+    service.currentProcessId$.next('a');
+    service.currentProcessId$.next('b');
+    // Flush microtasks so the derived pipeline propagates.
+    await Promise.resolve();
+
+    expect(teamEmissions).toContain(teamA);
+    expect(teamEmissions).toContain(teamB);
+    // The last emission must be teamB (after the id switch).
+    expect(teamEmissions[teamEmissions.length - 1]).toBe(teamB);
+    // Running progression: init false → true (team-A) → false (team-B); last
+    // emission is false, and the set must include true (from team-A).
+    expect(runningEmissions[runningEmissions.length - 1]).toBe(false);
+    expect(runningEmissions).toContain(true);
+
+    sub1.unsubscribe();
+    sub2.unsubscribe();
+  });
+
+  // --- AC4 (10.2) --------------------------------------------------------
+
+  it('(AC4 10.2) late subscriber to currentTeam$ receives current value synchronously', async () => {
+    const teamA = makeTeam('a', 'running');
+    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA]));
+    await service.getTeams();
+    service.currentProcessId$.next('a');
+
+    // Let microtasks flush so shareReplay has captured the value.
+    await Promise.resolve();
+
+    let received: TeamContext | null | undefined;
+    const sub = service.currentTeam$.subscribe((t) => (received = t));
+    expect(received).toBe(teamA);
+    sub.unsubscribe();
+  });
+
+  // --- AC8 (10.2, NFR5) --------------------------------------------------
+
+  it('(AC8 10.2 / NFR5) status flip via getCurrentTeam(id, false) emits currentTeam$ once and currentTeamRunning$ once', async () => {
+    const teamA = makeTeam('a', 'running');
+    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA]));
+    await service.getTeams();
+    service.currentProcessId$.next('a');
+    await Promise.resolve();
+
+    const teamEmissions: (TeamContext | null)[] = [];
+    const runningEmissions: boolean[] = [];
+    const sub1 = service.currentTeam$.subscribe((t) => teamEmissions.push(t));
+    const sub2 = service.currentTeamRunning$.subscribe((r) =>
+      runningEmissions.push(r)
+    );
+
+    const countBeforeFlipTeam = teamEmissions.length;
+    const countBeforeFlipRunning = runningEmissions.length;
+
+    // Flip the team's status via getCurrentTeam(id, false).
+    const stoppedA = makeTeam('a', 'stopped');
+    apiSpy.getTeam.and.returnValue(Promise.resolve(stoppedA));
+    await service.getCurrentTeam('a', false);
+
+    expect(teamEmissions.length).toBe(countBeforeFlipTeam + 1);
+    expect(teamEmissions[teamEmissions.length - 1]).toBe(stoppedA);
+    expect(runningEmissions.length).toBe(countBeforeFlipRunning + 1);
+    expect(runningEmissions[runningEmissions.length - 1]).toBe(false);
+
+    sub1.unsubscribe();
+    sub2.unsubscribe();
+  });
+
+  // --- AC9 (10.2) --------------------------------------------------------
+
+  it('(AC9 10.2) unknown currentProcessId$ emits null from currentTeam$ and false from currentTeamRunning$', async () => {
+    const teamA = makeTeam('a', 'running');
+    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA]));
+    await service.getTeams();
+
+    service.currentProcessId$.next('does-not-exist');
+    const t = await firstValueFrom(service.currentTeam$);
+    expect(t).toBeNull();
+    expect(service.currentTeamRunning$.value).toBe(false);
+  });
+
+  // --- AC11 (10.2) — single-fetch navigation invariant -------------------
+
+  it('(AC11 10.2) navigation flow issues exactly ONE apiService.getTeam call (home init + id switch + ngOnInit fetch)', async () => {
+    const teamA = makeTeam('a', 'running');
+    const teamB = makeTeam('b', 'running');
+    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA, teamB]));
+    // Simulate the single `getCurrentTeam(id, false)` call from
+    // ProcessComponent.ngOnInit. No other code path issues a REST call.
+    apiSpy.getTeam.and.returnValue(Promise.resolve(teamA));
+
+    // Home init — loads the team list.
+    await service.getTeams();
+
+    // Route change — AppComponent reacts to currentProcessId$.next('a') but
+    // NO LONGER fetches. The derived pipeline emits the cached team.
+    service.currentProcessId$.next('a');
+    await Promise.resolve();
+    const afterRoute = await firstValueFrom(service.currentTeam$);
+    expect(afterRoute).toBe(teamA);
+
+    // ProcessComponent.ngOnInit — the single one-shot fetch.
+    await service.getCurrentTeam('a', false);
+
+    expect(apiSpy.getTeam).toHaveBeenCalledTimes(1);
+    expect(apiSpy.getTeam).toHaveBeenCalledWith('a');
   });
 });

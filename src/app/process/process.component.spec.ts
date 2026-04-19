@@ -290,3 +290,130 @@ function firstValue<T>(observable$: {
     });
   });
 }
+
+// =====================================================================
+// Story 10-2 — single-fetch navigation and messageService.init argument
+// =====================================================================
+
+describe('ProcessComponent (Story 10-2 — single-fetch navigation)', () => {
+  async function setup(options: {
+    fetchedTeam: TeamContext | null;
+  }): Promise<{
+    component: ProcessComponent;
+    fixture: ComponentFixture<ProcessComponent>;
+    contextSpy: { getCurrentTeam: jasmine.Spy };
+    messageSpy: { init: jasmine.Spy };
+    routerSpy: { navigate: jasmine.Spy };
+  }> {
+    const contextService = {
+      currentProcessId$: new BehaviorSubject<string>(''),
+      getCurrentTeam: jasmine
+        .createSpy('getCurrentTeam')
+        .and.returnValue(Promise.resolve(options.fetchedTeam)),
+    };
+
+    const messageService = {
+      init: jasmine.createSpy('init').and.returnValue(Promise.resolve()),
+    };
+
+    const akgentService = {
+      unselect: jasmine.createSpy('unselect'),
+      selectedAkgent$: new BehaviorSubject<any>(null),
+    };
+
+    const graphDataService = {
+      isLoading$: new BehaviorSubject<boolean>(false),
+      nodes$: new BehaviorSubject<any[]>([]),
+    };
+
+    const chatService = {
+      messages$: new BehaviorSubject<any[]>([]),
+    };
+
+    const selectionService = { handleSelection: jasmine.createSpy('handleSelection') };
+    const feedbackService = {};
+    const viewService = {
+      isRightColumnCollapsed$: new BehaviorSubject<boolean>(false),
+    };
+    const router = {
+      navigate: jasmine.createSpy('navigate').and.returnValue(Promise.resolve(true)),
+    };
+    const activatedRoute = { snapshot: { params: { id: 'team-1' } } };
+
+    await TestBed.configureTestingModule({
+      imports: [ProcessComponent, NoopAnimationsModule],
+      providers: [
+        MessageLogService,
+        ToolPresenceService,
+        KGStateReducer,
+        { provide: ContextService, useValue: contextService },
+        { provide: ActorMessageService, useValue: messageService },
+        { provide: AkgentService, useValue: akgentService },
+        { provide: GraphDataService, useValue: graphDataService },
+        { provide: ChatService, useValue: chatService },
+        { provide: SelectionService, useValue: selectionService },
+        { provide: FeedbackService, useValue: feedbackService },
+        { provide: ViewService, useValue: viewService },
+        { provide: Router, useValue: router },
+        { provide: ActivatedRoute, useValue: activatedRoute },
+      ],
+    })
+      .overrideComponent(ProcessComponent, {
+        set: {
+          imports: [CommonModule],
+          providers: [],
+          schemas: [CUSTOM_ELEMENTS_SCHEMA],
+        },
+      })
+      .compileComponents();
+
+    const fixture = TestBed.createComponent(ProcessComponent);
+    const component = fixture.componentInstance;
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    return {
+      component,
+      fixture,
+      contextSpy: contextService,
+      messageSpy: messageService,
+      routerSpy: router,
+    };
+  }
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('(AC6, AC11) ngOnInit calls getCurrentTeam exactly once with (processId, false)', async () => {
+    const { contextSpy } = await setup({ fetchedTeam: makeTeam({ status: 'running' }) });
+    expect(contextSpy.getCurrentTeam).toHaveBeenCalledTimes(1);
+    expect(contextSpy.getCurrentTeam).toHaveBeenCalledWith('team-1', false);
+  });
+
+  it('(AC6) messageService.init is called with (processId, true) for a running team', async () => {
+    const { messageSpy } = await setup({ fetchedTeam: makeTeam({ status: 'running' }) });
+    expect(messageSpy.init).toHaveBeenCalledTimes(1);
+    expect(messageSpy.init).toHaveBeenCalledWith('team-1', true);
+  });
+
+  it('(AC6) messageService.init is called with (processId, false) for a stopped team', async () => {
+    const { messageSpy } = await setup({ fetchedTeam: makeTeam({ status: 'stopped' }) });
+    expect(messageSpy.init).toHaveBeenCalledTimes(1);
+    expect(messageSpy.init).toHaveBeenCalledWith('team-1', false);
+  });
+
+  it('(AC6) null team short-circuits: router.navigate([/]) is called and messageService.init is NOT', async () => {
+    const { messageSpy, routerSpy } = await setup({ fetchedTeam: null });
+    expect(routerSpy.navigate).toHaveBeenCalledWith(['/']);
+    expect(messageSpy.init).not.toHaveBeenCalled();
+  });
+
+  it('(AC6) processType is populated from the fetched team name', async () => {
+    const { component } = await setup({
+      fetchedTeam: makeTeam({ name: 'Fetched Name', status: 'running' }),
+    });
+    expect(component.processType).toBe('Fetched Name');
+  });
+});
