@@ -5,6 +5,7 @@ import { BehaviorSubject } from 'rxjs';
 import { ProcessUserInputComponent } from './user-input.component';
 import { ApiService } from '../../services/api.service';
 import { ChatService } from '../../services/chat.service';
+import { ContextService } from '../../services/context.service';
 import { GraphDataService } from '../../services/graph-data.service';
 import { ActorAddress } from '../../models/message.types';
 import { NodeInterface } from '../../models/types';
@@ -41,6 +42,7 @@ describe('ProcessUserInputComponent', () => {
   let fixture: ComponentFixture<ProcessUserInputComponent>;
   let apiServiceSpy: jasmine.SpyObj<ApiService>;
   let chatServiceMock: any;
+  let contextServiceStub: { currentTeamRunning$: BehaviorSubject<boolean> };
   let nodesSubject: BehaviorSubject<NodeInterface[]>;
 
   beforeEach(async () => {
@@ -51,6 +53,12 @@ describe('ProcessUserInputComponent', () => {
     chatServiceMock = {
       messages$: new BehaviorSubject<any[]>([]),
       loadingProcess$: new BehaviorSubject<boolean>(false),
+    };
+
+    // sendMessage() guards on currentTeamRunning$.value (Story 2-5). Default
+    // to running=true so the guard does not short-circuit routing tests.
+    contextServiceStub = {
+      currentTeamRunning$: new BehaviorSubject<boolean>(true),
     };
 
     nodesSubject = new BehaviorSubject<NodeInterface[]>([]);
@@ -64,6 +72,7 @@ describe('ProcessUserInputComponent', () => {
       providers: [
         { provide: ApiService, useValue: apiServiceSpy },
         { provide: ChatService, useValue: chatServiceMock },
+        { provide: ContextService, useValue: contextServiceStub },
         { provide: GraphDataService, useValue: graphDataService },
       ],
     }).compileComponents();

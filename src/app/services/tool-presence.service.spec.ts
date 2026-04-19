@@ -155,9 +155,20 @@ describe('ToolPresenceService (selector over MessageLogService.log$)', () => {
   });
 
   it('(AC2) ordered-reduce restart — Start → Stop → Start ends as true', () => {
-    log.append(makeStartMessage(KG_ACTOR_NAME));
-    log.append(makeStopMessage(KG_ACTOR_NAME));
-    log.append(makeStartMessage(KG_ACTOR_NAME));
+    // MessageLogService.append() dedupes by msg.id. makeStartMessage uses a
+    // deterministic id derived from the sender name, so two raw append(start)
+    // calls would drop the second. Assign unique ids per event to model a
+    // real restart sequence (Start-1 → Stop-1 → Start-2).
+    const start1 = makeStartMessage(KG_ACTOR_NAME);
+    start1.id = 'kg-start-1';
+    const stop1 = makeStopMessage(KG_ACTOR_NAME);
+    stop1.id = 'kg-stop-1';
+    const start2 = makeStartMessage(KG_ACTOR_NAME);
+    start2.id = 'kg-start-2';
+
+    log.append(start1);
+    log.append(stop1);
+    log.append(start2);
     expect(currentValue()).toBe(true);
   });
 
