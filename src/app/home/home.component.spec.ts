@@ -145,6 +145,27 @@ describe('HomeComponent', () => {
     expect((component as any).context).toBeUndefined();
   });
 
+  // --- Story 10.4 — HomeComponent.createTeamAndNavigate delegation ------
+
+  it('(AC4 10.4) HomeComponent.createTeamAndNavigate delegates to contextService and has no reload compensation', async () => {
+    const entry = { id: 'cat-1', name: 'Cat One' };
+    component.selectedCatalogEntry$.next(entry);
+    // The component has not invoked ngOnInit yet (no detectChanges in this
+    // test), so contextSpy.getTeams should not have been called. Reset to
+    // guard against any spurious prior invocation.
+    contextSpy.getTeams.calls.reset();
+    await component.createTeamAndNavigate();
+    expect(contextSpy.createTeamAndNavigate).toHaveBeenCalledOnceWith('cat-1');
+    // No per-component compensation for the removed reload.
+    expect(contextSpy.getTeams).not.toHaveBeenCalled();
+  });
+
+  it('(AC4 10.4) HomeComponent.createTeamAndNavigate no-entry guard returns cleanly', async () => {
+    component.selectedCatalogEntry$.next(null);
+    await component.createTeamAndNavigate();
+    expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
+  });
+
   // --- AC9 ---------------------------------------------------------------
 
   it('(AC9) N=3 mount/unmount cycles leave zero residual subscribers on teams$', async () => {

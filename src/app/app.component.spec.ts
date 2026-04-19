@@ -287,4 +287,41 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
     expect(authStub.currentUser$.observed).toBeFalse();
     expect(viewStub.isRightColumnCollapsed$.observed).toBeFalse();
   });
+
+  // --- Story 10-4 — header renders new team after reload-free flow ------
+
+  it('(AC5 10.4) AppComponent header renders new team after create + navigate sequence with zero REST calls', async () => {
+    // Starting state: no process, no team.
+    contextStub.currentProcessId$.next('');
+    contextStub.currentTeam$.next(null);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.processType).toBe('');
+    expect(component.processConfigName).toBe('');
+    expect(component.processRunning).toBe(false);
+
+    contextStub.getCurrentTeam.calls.reset();
+    apiStub.getTeam.calls.reset();
+
+    // Simulate the exact sequence produced by createTeamAndNavigate followed by
+    // ProcessComponent.ngOnInit: _context$ mutation (driving currentTeam$) then
+    // currentProcessId$ flipping to the new id.
+    const newTeam = makeTeam({
+      team_id: 'new',
+      name: 'Alpha',
+      config_name: 'cfg-alpha',
+      status: 'running',
+    });
+    contextStub.currentTeam$.next(newTeam);
+    contextStub.currentProcessId$.next('new');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.processType).toBe('Alpha');
+    expect(component.processConfigName).toBe('cfg-alpha');
+    expect(component.processRunning).toBe(true);
+    expect(contextStub.getCurrentTeam).not.toHaveBeenCalled();
+    expect(apiStub.getTeam).not.toHaveBeenCalled();
+  });
 });

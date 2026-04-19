@@ -96,8 +96,6 @@ export class ContextService {
     const newTeam = toTeamContext(response);
     const prev = this._context$.value;
     this._context$.next([...prev, newTeam]);
-    await this.router.navigate(['/process', response.team_id]).then(() => {
-      window.location.reload();
-    });
+    await this.router.navigate(['/process', response.team_id]);
   }
 }

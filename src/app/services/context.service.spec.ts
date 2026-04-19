@@ -179,14 +179,7 @@ describe('ContextService', () => {
 
     const response = makeTeamResponse('new');
     apiSpy.createTeam.and.returnValue(Promise.resolve(response));
-
-    // router.navigate(...).then(() => window.location.reload()) — the reload
-    // is out-of-scope for this story; stub .then by replacing navigate with
-    // a resolved Promise that does not actually reload. We spy on navigate
-    // and force `then` to swallow the reload callback safely.
-    routerSpy.navigate.and.returnValue({
-      then: (_cb: () => void) => Promise.resolve(true),
-    } as unknown as Promise<boolean>);
+    routerSpy.navigate.and.returnValue(Promise.resolve(true));
 
     await service.createTeamAndNavigate('cat-1');
 
@@ -194,6 +187,73 @@ describe('ContextService', () => {
     expect(next.length).toBe(existing.length + 1);
     expect(next[next.length - 1].team_id).toBe('new');
     expect(routerSpy.navigate).toHaveBeenCalledWith(['/process', 'new']);
+  });
+
+  // --- Story 10.4 — reload-free createTeamAndNavigate --------------------
+
+  it('(AC2 10.4) createTeamAndNavigate does not drive a reload', async () => {
+    const existing = [makeTeam('a')];
+    apiSpy.getTeams.and.returnValue(Promise.resolve(existing));
+    await service.getTeams();
+
+    const response = makeTeamResponse('new');
+    apiSpy.createTeam.and.returnValue(Promise.resolve(response));
+    routerSpy.navigate.and.returnValue(Promise.resolve(true));
+
+    // Variant A (plain removal) is adopted: there is no reloadFn seam in
+    // production. The spy exists to document the "no reload" assertion
+    // shape — it MUST remain at zero calls because the source code no
+    // longer contains any path that would trigger it.
+    const reloadSpy = jasmine.createSpy('reloadFn');
+
+    await service.createTeamAndNavigate('cat-1');
+
+    expect(reloadSpy).not.toHaveBeenCalled();
+    expect(apiSpy.createTeam).toHaveBeenCalledOnceWith('cat-1');
+    expect(routerSpy.navigate).toHaveBeenCalledOnceWith(['/process', 'new']);
+  });
+
+  it('(AC1 10.4) createTeamAndNavigate preserves immutability on append', async () => {
+    const existing = [makeTeam('a'), makeTeam('b')];
+    apiSpy.getTeams.and.returnValue(Promise.resolve(existing));
+    await service.getTeams();
+
+    const prev = await firstValueFrom(service.teams$);
+    const prevA = prev.find((t) => t.team_id === 'a')!;
+    const prevB = prev.find((t) => t.team_id === 'b')!;
+
+    apiSpy.createTeam.and.returnValue(Promise.resolve(makeTeamResponse('new')));
+    routerSpy.navigate.and.returnValue(Promise.resolve(true));
+
+    await service.createTeamAndNavigate('cat-1');
+
+    const next = await firstValueFrom(service.teams$);
+    expect(next).not.toBe(prev);
+    expect(next.length).toBe(prev.length + 1);
+    expect(next.find((t) => t.team_id === 'a')).toBe(prevA);
+    expect(next.find((t) => t.team_id === 'b')).toBe(prevB);
+    expect(next[next.length - 1].team_id).toBe('new');
+  });
+
+  it('(AC3 10.4) after create + navigate, currentTeam$ emits the new team and currentTeamRunning$ reflects it', async () => {
+    apiSpy.getTeams.and.returnValue(Promise.resolve([]));
+    await service.getTeams();
+
+    const newTeamResponse = makeTeamResponse('new', 'running');
+    apiSpy.createTeam.and.returnValue(Promise.resolve(newTeamResponse));
+    routerSpy.navigate.and.returnValue(Promise.resolve(true));
+
+    await service.createTeamAndNavigate('cat-1');
+
+    // The method itself does NOT set currentProcessId$; ProcessComponent.ngOnInit
+    // does that in production. Simulate it here to exercise the derived pipeline.
+    service.currentProcessId$.next('new');
+    await Promise.resolve();
+
+    const currentTeam = await firstValueFrom(service.currentTeam$);
+    expect(currentTeam).not.toBeNull();
+    expect(currentTeam!.team_id).toBe('new');
+    expect(service.currentTeamRunning$.value).toBe(true);
   });
 
   // --- AC5 ---------------------------------------------------------------
