@@ -70,18 +70,18 @@ export class ActorMessageService {
   private spinnerFlipTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
+   * Story 8-2 (AC3): deduplication flag — prevents stacking duplicate
+   * disconnect toasts when both error and complete fire in sequence.
+   */
+  private wsDisconnectToastShown = false;
+
+  /**
    * Story 6.1 (ADR-005 §Decision 3): raw WS inbound stream. Every WS event
    * is `next()`ed onto this Subject at the top of the `webSocket.subscribe`
    * callback so the `bufferTime(16)` batched subscriber (and the `take(1)`
    * spinner side-channel) can consume it without coupling to the per-model
    * dispatch below — which stays intact in PR 1 for parallel populate (AC8).
    */
-  /**
-   * Story 8-2 (AC3): deduplication flag — prevents stacking duplicate
-   * disconnect toasts when both error and complete fire in sequence.
-   */
-  private wsDisconnectToastShown = false;
-
   private readonly _wsInbound$ = new Subject<AkgenticMessage>();
   /** Frame-batched subscriber (bufferTime 16ms). Held so init()'s (a) step
    *  can dispose it deterministically before (b)-(e) run. */
@@ -110,6 +110,11 @@ export class ActorMessageService {
     this.log.reset();
     this.stateDict$ = {};
     this.contextDict$ = {};
+
+    // Story 8-2: clear any stale disconnect toast from a prior init() cycle
+    // so process-A's warning does not persist into process-B.
+    this.messageService.clear('ws-disconnect');
+    this.wsDisconnectToastShown = false;
 
     // Story 4-10 (AC7): cancel any pending flip from a prior `init()` call
     // (team switch / re-init) before we start a new spinner cycle, otherwise
