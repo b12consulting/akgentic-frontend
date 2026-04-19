@@ -306,7 +306,7 @@ describe('graphFold / graphStep (pure)', () => {
     const s = graphFold(
       [
         makeStart({
-          sender: makeAddress({ agent_id: 'o1', role: ORCHESTRATOR_CLASS }),
+          sender: makeAddress({ agent_id: 'o1', __actor_type__: ORCHESTRATOR_CLASS }),
         }),
       ],
       cs,

@@ -40,6 +40,7 @@ export class ActorMessageService {
   chatService: ChatService = inject(ChatService);
   messageService: MessageService = inject(MessageService);
   private config: ConfigService = inject(ConfigService);
+
   /**
    * Story 6.1 (ADR-005 §Decision 1): component-scoped append-only log of
    * every WS + REST-replay message. Story 6.2 migrated KG presence + KG
@@ -68,6 +69,14 @@ export class ActorMessageService {
    * so a stale `false` can never clobber a fresh spinner cycle.
    */
   private spinnerFlipTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Story 8-2 (AC3): deduplication flag — prevents stacking duplicate
+   * disconnect toasts when both error and complete fire in sequence.
+   */
+  private wsDisconnectToastShown = false;
+  /** True during ngOnDestroy — suppresses disconnect toast on intentional navigation. */
+  private destroying = false;
 
   /**
    * Story 6.1 (ADR-005 §Decision 3): raw WS inbound stream. Every WS event
@@ -104,6 +113,11 @@ export class ActorMessageService {
     this.log.reset();
     this.stateDict$ = {};
     this.contextDict$ = {};
+
+    // Story 8-2: clear any stale toasts from a prior init() cycle
+    // so process-A's warnings do not persist into process-B.
+    this.messageService.clear();
+    this.wsDisconnectToastShown = false;
 
     // Story 4-10 (AC7): cancel any pending flip from a prior `init()` call
     // (team switch / re-init) before we start a new spinner cycle, otherwise
@@ -267,14 +281,15 @@ export class ActorMessageService {
         // instead of showing the "Loading process..." placeholder for ever.
         flipOnFirstEvent();
         console.error('WebSocket error:', err);
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Connection Error',
-          detail: 'WebSocket connection failed. Real-time updates unavailable.',
-          life: 5000,
-        });
+        // Story 8-2 (AC1, AC5): persistent warning toast replaces the
+        // transient 5-second error toast. flipOnFirstEvent() is preserved above.
+        this.showDisconnectToast();
       },
-      complete: () => console.log('webSocket - complete'),
+      complete: () => {
+        console.log('webSocket - complete');
+        // Story 8-2 (AC2): persistent warning on stream completion.
+        this.showDisconnectToast();
+      },
     });
   }
 
@@ -428,6 +443,23 @@ export class ActorMessageService {
     }, SPINNER_MIN_VISIBLE_MS - elapsed);
   }
 
+  /**
+   * Story 8-2 (AC1, AC2, AC3): show a persistent, non-closable warning toast
+   * when the WebSocket disconnects. The deduplication guard ensures only one
+   * toast is visible even if both error and complete fire in sequence.
+   */
+  private showDisconnectToast(): void {
+    if (this.wsDisconnectToastShown || this.destroying) return;
+    this.wsDisconnectToastShown = true;
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Connection Lost',
+      detail: 'Real-time connection to the server has been lost. Updates are paused.',
+      sticky: true,
+      closable: false,
+    });
+  }
+
   initDict(
     dict: { [key: string]: BehaviorSubject<any[]> },
     key: string,
@@ -438,6 +470,15 @@ export class ActorMessageService {
   }
 
   ngOnDestroy() {
+    // Suppress disconnect toast triggered by the unsubscribe below —
+    // this is intentional navigation, not a connection loss.
+    this.destroying = true;
+
+    // Story 8-2 (AC4): clear all toasts and reset the flag so
+    // navigating away removes warnings and a fresh process view starts clean.
+    this.messageService.clear();
+    this.wsDisconnectToastShown = false;
+
     try {
       this.webSocket.unsubscribe();
     } catch {
