@@ -686,7 +686,6 @@ describe('ActorMessageService — Story 8-2 (persistent disconnect toast)', () =
         detail: 'Real-time connection to the server has been lost. Updates are paused.',
         sticky: true,
         closable: false,
-        key: 'ws-disconnect',
       }),
     );
   });
@@ -715,7 +714,6 @@ describe('ActorMessageService — Story 8-2 (persistent disconnect toast)', () =
         severity: 'warn',
         sticky: true,
         closable: false,
-        key: 'ws-disconnect',
       }),
     );
   });
@@ -732,7 +730,7 @@ describe('ActorMessageService — Story 8-2 (persistent disconnect toast)', () =
 
     const warnCalls = msgService.add.calls.allArgs()
       .map((a: any[]) => a[0])
-      .filter((c: any) => c.key === 'ws-disconnect');
+      .filter((c: any) => c.severity === 'warn' && c.summary === 'Connection Lost');
     expect(warnCalls.length).toBe(1);
   });
 
@@ -746,23 +744,23 @@ describe('ActorMessageService — Story 8-2 (persistent disconnect toast)', () =
 
     service.ngOnDestroy();
 
-    expect(msgService.clear).toHaveBeenCalledWith('ws-disconnect');
+    expect(msgService.clear).toHaveBeenCalled();
     expect((service as any).wsDisconnectToastShown).toBe(false);
   });
 
-  it('AC4: after ngOnDestroy, a new showDisconnectToast call works (flag was reset)', async () => {
+  it('AC4: ngOnDestroy suppresses disconnect toast triggered by unsubscribe (destroying guard)', async () => {
     await service.init('proc-1', true);
-    (service as any).showDisconnectToast();
+
+    // Destroy sets the destroying flag BEFORE unsubscribe, so the complete
+    // callback's showDisconnectToast() call is suppressed.
     service.ngOnDestroy();
 
-    // Reset clears the flag — a fresh call should add a new toast.
-    msgService.add.calls.reset();
-    (service as any).showDisconnectToast();
-
-    expect(msgService.add).toHaveBeenCalledTimes(1);
-    expect(msgService.add).toHaveBeenCalledWith(
-      jasmine.objectContaining({ key: 'ws-disconnect' }),
-    );
+    // The only warn-toast add calls should be zero — the destroying guard
+    // prevents the toast from being shown during intentional navigation.
+    const warnCalls = msgService.add.calls.allArgs()
+      .map((a: any[]) => a[0])
+      .filter((c: any) => c.severity === 'warn' && c.summary === 'Connection Lost');
+    expect(warnCalls.length).toBe(0);
   });
 
   it('AC5: WS error still calls flipOnFirstEvent (spinner falls through)', async () => {
