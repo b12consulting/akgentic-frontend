@@ -86,11 +86,7 @@ export class ContextService {
     const team = await this.apiService.getTeam(teamId);
 
     if (team) {
-      const prev = this._context$.value;
-      const next = prev.map((t: TeamContext) =>
-        t.team_id === teamId ? team : t
-      );
-      this._context$.next(next);
+      this._upsertTeam(team);
     }
 
     return team;
@@ -118,13 +114,22 @@ export class ContextService {
   private async refreshOneTeam(teamId: string): Promise<TeamContext | null> {
     const fresh = await this.apiService.getTeam(teamId);
     if (fresh) {
-      const prev = this._context$.value;
-      const next = prev.map((t: TeamContext) =>
-        t.team_id === teamId ? fresh : t,
-      );
-      this._context$.next(next);
+      this._upsertTeam(fresh);
     }
     return fresh;
+  }
+
+  /** Upsert a team into `_context$`: replace if already cached (preserves
+   *  reference identity of other slots); append if not yet cached. Single
+   *  write path shared by `getCurrentTeam` and `refreshOneTeam` so the two
+   *  cannot diverge in a future change. Issue #104 regression fix. */
+  private _upsertTeam(team: TeamContext): void {
+    const prev = this._context$.value;
+    const exists = prev.some((t) => t.team_id === team.team_id);
+    const next = exists
+      ? prev.map((t) => (t.team_id === team.team_id ? team : t))
+      : [...prev, team];
+    this._context$.next(next);
   }
 
   async stopTeamAndAwait(

@@ -635,4 +635,268 @@ describe('ContextService', () => {
     expect(service.currentTeam$).toBeDefined();
     expect(service.currentTeamRunning$).toBeDefined();
   });
+
+  // =======================================================================
+  // Story 10.6 — public-surface ratification + deleteTeam immutability
+  // =======================================================================
+
+  it('(AC6 10.6) ContextService public surface is exactly the post-10.6 set', () => {
+    const expectedObservables = [
+      'currentProcessId$',
+      'teams$',
+      'currentTeam$',
+      'currentTeamRunning$',
+    ];
+    const expectedMethods = [
+      'getTeams',
+      'getCurrentTeam',
+      'deleteTeam',
+      'clear',
+      'createTeamAndNavigate',
+      'stopTeamAndAwait',
+    ];
+    for (const name of expectedObservables) {
+      expect((service as unknown as Record<string, unknown>)[name])
+        .withContext(name)
+        .toBeDefined();
+    }
+    for (const name of expectedMethods) {
+      expect(typeof (service as unknown as Record<string, unknown>)[name])
+        .withContext(name)
+        .toBe('function');
+    }
+    // FR14 closure: no alternative `removeTeam` entry point was introduced.
+    expect(
+      (service as unknown as Record<string, unknown>)['removeTeam'],
+    ).toBeUndefined();
+  });
+
+  // =======================================================================
+  // Story 10.7 — upsert on hard reload (issue #104)
+  // =======================================================================
+
+  // --- AC1 (10.7) — empty-cache append via getCurrentTeam(id, false) -----
+
+  it('(AC1 10.7) getCurrentTeam(false) appends team to empty _context$', async () => {
+    const prev = await firstValueFrom(service.teams$);
+    expect(prev).toEqual([]);
+
+    const teamA = makeTeam('a', 'running');
+    apiSpy.getTeam.and.returnValue(Promise.resolve(teamA));
+
+    const result = await service.getCurrentTeam('a', false);
+
+    const next = await firstValueFrom(service.teams$);
+    expect(result).toBe(teamA);
+    expect(next).toEqual([teamA]);
+    expect(next).not.toBe(prev);
+  });
+
+  // --- AC2 (10.7) — replace path preserves other-slot identity ----------
+
+  it('(AC2 10.7) getCurrentTeam(false) replace path: array ref changes, unchanged slot ref preserved', async () => {
+    const teamA = makeTeam('a', 'running');
+    const teamB = makeTeam('b', 'running');
+    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA, teamB]));
+    await service.getTeams();
+
+    const prev = await firstValueFrom(service.teams$);
+    const prevA = prev.find((t) => t.team_id === 'a')!;
+    const prevB = prev.find((t) => t.team_id === 'b')!;
+
+    const teamAPrime = makeTeam('a', 'stopped');
+    apiSpy.getTeam.and.returnValue(Promise.resolve(teamAPrime));
+
+    await service.getCurrentTeam('a', false);
+
+    const next = await firstValueFrom(service.teams$);
+    expect(next).not.toBe(prev);
+    expect(next.length).toBe(2);
+    const nextA = next.find((t) => t.team_id === 'a')!;
+    const nextB = next.find((t) => t.team_id === 'b')!;
+    expect(nextA).toBe(teamAPrime);
+    expect(nextA).not.toBe(prevA);
+    expect(nextB).toBe(prevB);
+  });
+
+  // --- AC3 (10.7) — currentTeam$ emits null → team on empty-cache path --
+
+  it('(AC3 10.7) currentTeam$ emits null then team after empty-cache getCurrentTeam(false)', async () => {
+    const emissions: (TeamContext | null)[] = [];
+    const sub = service.currentTeam$.subscribe((t) => emissions.push(t));
+
+    service.currentProcessId$.next('a');
+    await Promise.resolve();
+
+    const teamA = makeTeam('a', 'running');
+    apiSpy.getTeam.and.returnValue(Promise.resolve(teamA));
+    await service.getCurrentTeam('a', false);
+    await Promise.resolve();
+
+    expect(emissions[0]).toBeNull();
+    expect(emissions[emissions.length - 1]).toBe(teamA);
+    expect(service.currentTeamRunning$.value).toBe(true);
+
+    sub.unsubscribe();
+  });
+
+  // --- AC4 (10.7) — refreshOneTeam follows same upsert invariant --------
+
+  it('(AC4 10.7) refreshOneTeam appends team when _context$ is empty', async () => {
+    const prev = await firstValueFrom(service.teams$);
+    expect(prev).toEqual([]);
+
+    const teamA = makeTeam('a', 'running');
+    apiSpy.getTeam.and.returnValue(Promise.resolve(teamA));
+
+    const refreshOneTeam = (
+      service as unknown as { refreshOneTeam: (id: string) => Promise<TeamContext | null> }
+    ).refreshOneTeam.bind(service);
+    const result = await refreshOneTeam('a');
+
+    const next = await firstValueFrom(service.teams$);
+    expect(result).toBe(teamA);
+    expect(next).toEqual([teamA]);
+    expect(next).not.toBe(prev);
+  });
+
+  it('(AC4 10.7) refreshOneTeam replace path: array ref changes, unchanged slot ref preserved', async () => {
+    const teamA = makeTeam('a', 'running');
+    const teamB = makeTeam('b', 'running');
+    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA, teamB]));
+    await service.getTeams();
+
+    const prev = await firstValueFrom(service.teams$);
+    const prevA = prev.find((t) => t.team_id === 'a')!;
+    const prevB = prev.find((t) => t.team_id === 'b')!;
+
+    const teamAPrime = makeTeam('a', 'stopped');
+    apiSpy.getTeam.and.returnValue(Promise.resolve(teamAPrime));
+
+    const refreshOneTeam = (
+      service as unknown as { refreshOneTeam: (id: string) => Promise<TeamContext | null> }
+    ).refreshOneTeam.bind(service);
+    await refreshOneTeam('a');
+
+    const next = await firstValueFrom(service.teams$);
+    expect(next).not.toBe(prev);
+    expect(next.length).toBe(2);
+    const nextA = next.find((t) => t.team_id === 'a')!;
+    const nextB = next.find((t) => t.team_id === 'b')!;
+    expect(nextA).toBe(teamAPrime);
+    expect(nextA).not.toBe(prevA);
+    expect(nextB).toBe(prevB);
+  });
+
+  // --- AC5 (10.7) — null API response leaves _context$ unchanged --------
+
+  it('(AC5 10.7) getCurrentTeam(false) null API on empty cache leaves _context$ unchanged', async () => {
+    const prev = await firstValueFrom(service.teams$);
+    expect(prev).toEqual([]);
+
+    apiSpy.getTeam.and.returnValue(Promise.resolve(null as unknown as TeamContext));
+
+    const result = await service.getCurrentTeam('a', false);
+    const next = await firstValueFrom(service.teams$);
+
+    expect(result).toBeNull();
+    expect(next).toBe(prev);
+  });
+
+  it('(AC5 10.7) refreshOneTeam null API leaves _context$ unchanged', async () => {
+    const teamA = makeTeam('a', 'running');
+    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA]));
+    await service.getTeams();
+
+    const prev = await firstValueFrom(service.teams$);
+    apiSpy.getTeam.and.returnValue(Promise.resolve(null as unknown as TeamContext));
+
+    const refreshOneTeam = (
+      service as unknown as { refreshOneTeam: (id: string) => Promise<TeamContext | null> }
+    ).refreshOneTeam.bind(service);
+    const result = await refreshOneTeam('a');
+
+    const next = await firstValueFrom(service.teams$);
+    expect(result).toBeNull();
+    expect(next).toBe(prev);
+  });
+
+  // --- AC6 (10.7) — cache-hit short-circuit unchanged --------------------
+
+  it('(AC6 10.7) getCurrentTeam(true) cache-hit does not call API and leaves _context$ unchanged', async () => {
+    const teamA = makeTeam('a', 'running');
+    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA]));
+    await service.getTeams();
+
+    const prev = await firstValueFrom(service.teams$);
+
+    const result = await service.getCurrentTeam('a', true);
+    const next = await firstValueFrom(service.teams$);
+
+    expect(result).toBe(teamA);
+    expect(apiSpy.getTeam).not.toHaveBeenCalled();
+    expect(next).toBe(prev);
+  });
+
+  // --- AC7 (10.7) — end-to-end observable contract on hard reload -------
+
+  it('(AC7 10.7) currentTeam$ + currentTeamRunning$ transitions on empty-cache hard reload', async () => {
+    const teamEmissions: (TeamContext | null)[] = [];
+    const runningEmissions: boolean[] = [];
+    const sub1 = service.currentTeam$.subscribe((t) => teamEmissions.push(t));
+    const sub2 = service.currentTeamRunning$.subscribe((r) =>
+      runningEmissions.push(r)
+    );
+
+    service.currentProcessId$.next('a');
+    await Promise.resolve();
+
+    const teamA = makeTeam('a', 'running');
+    apiSpy.getTeam.and.returnValue(Promise.resolve(teamA));
+    await service.getCurrentTeam('a', false);
+    await Promise.resolve();
+
+    expect(teamEmissions[0]).toBeNull();
+    expect(teamEmissions[teamEmissions.length - 1]).toBe(teamA);
+    expect(runningEmissions[0]).toBe(false);
+    expect(runningEmissions[runningEmissions.length - 1]).toBe(true);
+
+    sub1.unsubscribe();
+    sub2.unsubscribe();
+  });
+
+  it('(AC7 10.6) deleteTeam removes the team immutably from _context$', fakeAsync(() => {
+    const teamA = makeTeam('a', 'running');
+    const teamB = makeTeam('b', 'running');
+    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA, teamB]));
+    apiSpy.deleteTeam.and.returnValue(Promise.resolve());
+
+    service.getTeams();
+    tick();
+
+    let prev: TeamContext[] = [];
+    service.teams$
+      .subscribe((teams) => {
+        prev = teams;
+      })
+      .unsubscribe();
+    const prevB = prev.find((t) => t.team_id === 'b')!;
+
+    service.deleteTeam('a');
+    tick();
+
+    let next: TeamContext[] = [];
+    service.teams$
+      .subscribe((teams) => {
+        next = teams;
+      })
+      .unsubscribe();
+
+    expect(apiSpy.deleteTeam).toHaveBeenCalledOnceWith('a');
+    expect(next).not.toBe(prev);
+    expect(next.length).toBe(1);
+    expect(next[0].team_id).toBe('b');
+    // Unchanged slot preserves reference identity (immutable filter on same refs).
+    expect(next[0]).toBe(prevB);
+  }));
 });

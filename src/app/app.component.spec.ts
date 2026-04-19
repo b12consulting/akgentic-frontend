@@ -2,11 +2,14 @@ import { CommonModule } from '@angular/common';
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
-import { Router } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
+import { RouterTestingModule } from '@angular/router/testing';
+import { MenubarModule } from 'primeng/menubar';
+import { TagModule } from 'primeng/tag';
 import { BehaviorSubject, of } from 'rxjs';
 
 import { AppComponent } from './app.component';
-import { TeamContext } from './models/team.interface';
+import { isRunning, TeamContext } from './models/team.interface';
 import { ApiService } from './services/api.service';
 import { AuthService } from './services/auth.service';
 import { ConfigService } from './services/config.service';
@@ -76,12 +79,9 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
       getTeam: jasmine.createSpy('getTeam'),
       getTeams: jasmine.createSpy('getTeams'),
     };
-    const routerStub = {
-      navigate: jasmine.createSpy('navigate').and.returnValue(Promise.resolve(true)),
-    };
 
     await TestBed.configureTestingModule({
-      imports: [AppComponent, NoopAnimationsModule],
+      imports: [AppComponent, NoopAnimationsModule, RouterTestingModule],
       providers: [
         { provide: ContextService, useValue: contextStub },
         { provide: ViewService, useValue: viewStub },
@@ -89,12 +89,11 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
         { provide: ConfigService, useValue: configStub },
         { provide: FaviconService, useValue: faviconStub },
         { provide: ApiService, useValue: apiStub },
-        { provide: Router, useValue: routerStub },
       ],
     })
       .overrideComponent(AppComponent, {
         set: {
-          imports: [CommonModule],
+          imports: [CommonModule, MenubarModule, TagModule, RouterModule],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
       })
@@ -111,6 +110,24 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
     expect(component).toBeTruthy();
   });
 
+  // Drive both `currentTeam$` and `currentTeamRunning$` consistently so the
+  // template bindings (which read `| async` from both) see the same state.
+  // In production `ContextService` derives `currentTeamRunning$` from
+  // `currentTeam$`; the stub must emulate that derivation.
+  async function emitTeam(team: TeamContext | null): Promise<void> {
+    contextStub.currentTeam$.next(team);
+    contextStub.currentTeamRunning$.next(team !== null && isRunning(team));
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  function headerTagValues(): string[] {
+    const nodes = fixture.nativeElement.querySelectorAll('p-tag');
+    return Array.from(nodes).map(
+      (n: any) => n.getAttribute('value') || '',
+    );
+  }
+
   // --- AC5 — AppComponent drops getCurrentTeam fetch -------------------
 
   it('(AC5) AppComponent never calls contextService.getCurrentTeam on currentProcessId$ emissions', async () => {
@@ -125,37 +142,40 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
     expect(contextStub.getCurrentTeam).not.toHaveBeenCalled();
   });
 
-  it('(AC5) currentTeam$ emission populates processType, processConfigName, and processRunning', async () => {
+  it('(AC9 10.6) header renders name/config_name/Running tag when currentTeam$ emits a running team', async () => {
     const team = makeTeam({ name: 'Alpha', config_name: 'alpha-cfg', status: 'running' });
-    contextStub.currentTeam$.next(team);
-    await fixture.whenStable();
-    fixture.detectChanges();
+    await emitTeam(team);
 
-    expect(component.processType).toBe('Alpha');
-    expect(component.processConfigName).toBe('alpha-cfg');
-    expect(component.processRunning).toBe(true);
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Alpha');
+    expect(text).toContain('alpha-cfg');
+    const tags = headerTagValues();
+    expect(tags).toContain('Running');
+    expect(tags).not.toContain('Stopped');
   });
 
-  it('(AC5) currentTeam$ emitting null clears processType, processConfigName, and processRunning', async () => {
-    contextStub.currentTeam$.next(makeTeam({ name: 'Beta' }));
-    await fixture.whenStable();
-    fixture.detectChanges();
-    expect(component.processType).toBe('Beta');
+  it('(AC9 10.6) header renders Stopped tag when currentTeam$ emits a stopped team', async () => {
+    const team = makeTeam({ name: 'Beta', config_name: 'beta-cfg', status: 'stopped' });
+    await emitTeam(team);
 
-    contextStub.currentTeam$.next(null);
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(component.processType).toBe('');
-    expect(component.processConfigName).toBe('');
-    expect(component.processRunning).toBe(false);
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Beta');
+    expect(text).toContain('beta-cfg');
+    const tags = headerTagValues();
+    expect(tags).toContain('Stopped');
+    expect(tags).not.toContain('Running');
   });
 
-  it('(AC5) currentTeam$ emission with stopped status keeps processRunning false', async () => {
-    contextStub.currentTeam$.next(makeTeam({ status: 'stopped' }));
-    await fixture.whenStable();
-    fixture.detectChanges();
-    expect(component.processRunning).toBe(false);
+  it('(AC9 10.6) header metadata block is hidden when currentTeam$ emits null', async () => {
+    // Seed then clear so transitions exercise both branches.
+    await emitTeam(makeTeam({ name: 'Gamma' }));
+    expect(
+      fixture.nativeElement.querySelector('.process-type'),
+    ).not.toBeNull();
+
+    await emitTeam(null);
+
+    expect(fixture.nativeElement.querySelector('.process-type')).toBeNull();
   });
 
   // --- AC11 — REST call count invariant --------------------------------
@@ -293,13 +313,9 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
   it('(AC5 10.4) AppComponent header renders new team after create + navigate sequence with zero REST calls', async () => {
     // Starting state: no process, no team.
     contextStub.currentProcessId$.next('');
-    contextStub.currentTeam$.next(null);
-    await fixture.whenStable();
-    fixture.detectChanges();
+    await emitTeam(null);
 
-    expect(component.processType).toBe('');
-    expect(component.processConfigName).toBe('');
-    expect(component.processRunning).toBe(false);
+    expect(fixture.nativeElement.querySelector('.process-type')).toBeNull();
 
     contextStub.getCurrentTeam.calls.reset();
     apiStub.getTeam.calls.reset();
@@ -313,14 +329,15 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
       config_name: 'cfg-alpha',
       status: 'running',
     });
-    contextStub.currentTeam$.next(newTeam);
+    await emitTeam(newTeam);
     contextStub.currentProcessId$.next('new');
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(component.processType).toBe('Alpha');
-    expect(component.processConfigName).toBe('cfg-alpha');
-    expect(component.processRunning).toBe(true);
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Alpha');
+    expect(text).toContain('cfg-alpha');
+    expect(headerTagValues()).toContain('Running');
     expect(contextStub.getCurrentTeam).not.toHaveBeenCalled();
     expect(apiStub.getTeam).not.toHaveBeenCalled();
   });

@@ -43,6 +43,7 @@ describe('WorkspaceExplorerComponent', () => {
   let workspaceServiceSpy: jasmine.SpyObj<WorkspaceService>;
   let contextServiceStub: {
     currentProcessId$: BehaviorSubject<string>;
+    currentTeamRunning$: BehaviorSubject<boolean>;
     getCurrentTeam: jasmine.Spy;
   };
 
@@ -55,6 +56,7 @@ describe('WorkspaceExplorerComponent', () => {
     ]);
     contextServiceStub = {
       currentProcessId$: new BehaviorSubject<string>('proc'),
+      currentTeamRunning$: new BehaviorSubject<boolean>(true),
       getCurrentTeam: jasmine
         .createSpy('getCurrentTeam')
         .and.callFake(async () => makeTeam()),
