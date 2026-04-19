@@ -1,7 +1,23 @@
 import { inject, Injectable } from '@angular/core';
 import { Router } from '@angular/router';
-import { BehaviorSubject, combineLatest, Observable } from 'rxjs';
-import { distinctUntilChanged, map, shareReplay } from 'rxjs/operators';
+import {
+  BehaviorSubject,
+  combineLatest,
+  firstValueFrom,
+  interval,
+  Observable,
+  Subject,
+} from 'rxjs';
+import {
+  distinctUntilChanged,
+  filter,
+  map,
+  shareReplay,
+  switchMap,
+  take,
+  takeUntil,
+  timeout,
+} from 'rxjs/operators';
 import { ApiService } from './api.service';
 import { isRunning, TeamContext, toTeamContext } from '../models/team.interface';
 
@@ -70,11 +86,7 @@ export class ContextService {
     const team = await this.apiService.getTeam(teamId);
 
     if (team) {
-      const prev = this._context$.value;
-      const next = prev.map((t: TeamContext) =>
-        t.team_id === teamId ? team : t
-      );
-      this._context$.next(next);
+      this._upsertTeam(team);
     }
 
     return team;
@@ -96,8 +108,60 @@ export class ContextService {
     const newTeam = toTeamContext(response);
     const prev = this._context$.value;
     this._context$.next([...prev, newTeam]);
-    await this.router.navigate(['/process', response.team_id]).then(() => {
-      window.location.reload();
-    });
+    await this.router.navigate(['/process', response.team_id]);
+  }
+
+  private async refreshOneTeam(teamId: string): Promise<TeamContext | null> {
+    const fresh = await this.apiService.getTeam(teamId);
+    if (fresh) {
+      this._upsertTeam(fresh);
+    }
+    return fresh;
+  }
+
+  /** Upsert a team into `_context$`: replace if already cached (preserves
+   *  reference identity of other slots); append if not yet cached. Single
+   *  write path shared by `getCurrentTeam` and `refreshOneTeam` so the two
+   *  cannot diverge in a future change. Issue #104 regression fix. */
+  private _upsertTeam(team: TeamContext): void {
+    const prev = this._context$.value;
+    const exists = prev.some((t) => t.team_id === team.team_id);
+    const next = exists
+      ? prev.map((t) => (t.team_id === team.team_id ? team : t))
+      : [...prev, team];
+    this._context$.next(next);
+  }
+
+  async stopTeamAndAwait(
+    teamId: string,
+    timeoutMs: number = 10000,
+  ): Promise<void> {
+    await this.apiService.stopTeam(teamId);
+
+    // Bounded periodic refresh feeding _context$ with fresh data for this
+    // team only. When homepage WebSocket lands this interval is replaced by
+    // WS-driven _context$.next(...) updates; the firstValueFrom awaiter below
+    // stays unchanged.
+    const stop$ = new Subject<void>();
+    interval(1000)
+      .pipe(
+        takeUntil(stop$),
+        switchMap(() => this.refreshOneTeam(teamId)),
+      )
+      .subscribe();
+
+    try {
+      await firstValueFrom(
+        this.teams$.pipe(
+          map((teams) => teams.find((t) => t.team_id === teamId)),
+          filter((t): t is TeamContext => t !== undefined && !isRunning(t)),
+          take(1),
+          timeout(timeoutMs),
+        ),
+      );
+    } finally {
+      stop$.next();
+      stop$.complete();
+    }
   }
 }
