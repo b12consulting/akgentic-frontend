@@ -40,6 +40,7 @@ export class ActorMessageService {
   chatService: ChatService = inject(ChatService);
   messageService: MessageService = inject(MessageService);
   private config: ConfigService = inject(ConfigService);
+
   /**
    * Story 6.1 (ADR-005 §Decision 1): component-scoped append-only log of
    * every WS + REST-replay message. Story 6.2 migrated KG presence + KG
@@ -74,6 +75,8 @@ export class ActorMessageService {
    * disconnect toasts when both error and complete fire in sequence.
    */
   private wsDisconnectToastShown = false;
+  /** True during ngOnDestroy — suppresses disconnect toast on intentional navigation. */
+  private destroying = false;
 
   /**
    * Story 6.1 (ADR-005 §Decision 3): raw WS inbound stream. Every WS event
@@ -111,9 +114,9 @@ export class ActorMessageService {
     this.stateDict$ = {};
     this.contextDict$ = {};
 
-    // Story 8-2: clear any stale disconnect toast from a prior init() cycle
-    // so process-A's warning does not persist into process-B.
-    this.messageService.clear('ws-disconnect');
+    // Story 8-2: clear any stale toasts from a prior init() cycle
+    // so process-A's warnings do not persist into process-B.
+    this.messageService.clear();
     this.wsDisconnectToastShown = false;
 
     // Story 4-10 (AC7): cancel any pending flip from a prior `init()` call
@@ -446,7 +449,7 @@ export class ActorMessageService {
    * toast is visible even if both error and complete fire in sequence.
    */
   private showDisconnectToast(): void {
-    if (this.wsDisconnectToastShown) return;
+    if (this.wsDisconnectToastShown || this.destroying) return;
     this.wsDisconnectToastShown = true;
     this.messageService.add({
       severity: 'warn',
@@ -454,7 +457,6 @@ export class ActorMessageService {
       detail: 'Real-time connection to the server has been lost. Updates are paused.',
       sticky: true,
       closable: false,
-      key: 'ws-disconnect',
     });
   }
 
@@ -468,9 +470,13 @@ export class ActorMessageService {
   }
 
   ngOnDestroy() {
-    // Story 8-2 (AC4): clear the disconnect toast and reset the flag so
-    // navigating away removes the warning and a fresh process view starts clean.
-    this.messageService.clear('ws-disconnect');
+    // Suppress disconnect toast triggered by the unsubscribe below —
+    // this is intentional navigation, not a connection loss.
+    this.destroying = true;
+
+    // Story 8-2 (AC4): clear all toasts and reset the flag so
+    // navigating away removes warnings and a fresh process view starts clean.
+    this.messageService.clear();
     this.wsDisconnectToastShown = false;
 
     try {

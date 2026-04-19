@@ -23,7 +23,18 @@ export class FetchService {
     options = this.config.hideLogin
       ? options
       : { ...options, credentials: 'include' };
-    const response = await fetch(url, options);
+
+    let response: Response;
+    try {
+      response = await fetch(url, options);
+    } catch {
+      console.error('Network error: server unreachable');
+      this.showNotification(
+        errorMessage || 'Server unreachable. Check your connection.',
+        'error'
+      );
+      return undefined;
+    }
 
     if (!response.ok) {
       let errorDetail = '';
