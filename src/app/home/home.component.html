@@ -35,7 +35,7 @@
     <br />
 
     <p-table
-      [value]="context"
+      [value]="(contextService.teams$ | async) || []"
       selectionMode="single"
       (onRowSelect)="onRowSelect($event)"
       [tableStyle]="{ 'min-width': '50rem' }"
