@@ -56,17 +56,26 @@ export class MessageLogService {
 
   /** Append a single message to the log. Prefer `appendAll` when a batch is
    *  available — `appendAll` produces one `log$` emission per batch, whereas
-   *  calling `append` N times produces N emissions. */
+   *  calling `append` N times produces N emissions. Skips duplicates by `id`. */
   append(msg: AkgenticMessage): void {
+    if (msg.id && this._log$.value.some(m => m.id === msg.id)) return;
     this._log$.next([...this._log$.value, msg]);
   }
 
-  /** Append N messages in a single emission. Under ADR-005's frame-batched
-   *  ingestion (NFR7: N<1000) a plain array spread is acceptable — no need
-   *  for immutable-list data structures. */
+  /** Append N messages in a single emission, deduplicating by `id`.
+   *  Under ADR-005's frame-batched ingestion (NFR7: N<1000) a plain array
+   *  spread is acceptable — no need for immutable-list data structures.
+   *
+   *  Deduplication handles the case where a WS replay delivers events
+   *  already loaded via REST getEvents() (e.g., team restored while the
+   *  frontend is viewing the stopped team's history). */
   appendAll(msgs: AkgenticMessage[]): void {
     if (msgs.length === 0) return;
-    this._log$.next([...this._log$.value, ...msgs]);
+    const current = this._log$.value;
+    const existingIds = new Set(current.map(m => m.id).filter(Boolean));
+    const newMsgs = msgs.filter(m => !m.id || !existingIds.has(m.id));
+    if (newMsgs.length === 0) return;
+    this._log$.next([...current, ...newMsgs]);
   }
 
   /** Reset the log to empty. Called in `ActorMessageService.init()` step (b)
