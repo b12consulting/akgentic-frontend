@@ -1,7 +1,7 @@
 import { Component, inject, ViewChildren, QueryList, ElementRef } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, firstValueFrom } from 'rxjs';
 
 import { ApiService } from '../services/api.service';
 import { TeamContext, isRunning } from '../models/team.interface';
@@ -52,8 +52,6 @@ export class HomeComponent {
 
   @ViewChildren('descriptionInput') descriptionInputs!: QueryList<ElementRef>;
 
-  context: TeamContext[] = [];
-
   // Expose isRunning to template
   isRunning = isRunning;
 
@@ -72,12 +70,12 @@ export class HomeComponent {
       console.error('Failed to load catalog entries:', error);
     }
 
-    // Load the current context.
-    this.context = await this.contextService.getTeams();
+    // Populate _context$; return value reused for the hideHome branch.
+    const teams = await this.contextService.getTeams();
 
     if (this.config.hideHome) {
       // If no team exists, create one using the first catalog entry.
-      if (!this.context || this.context.length === 0) {
+      if (!teams || teams.length === 0) {
         const entry = this.selectedCatalogEntry$.value;
         if (entry) {
           const catalogEntryId = entry.id ?? entry.name ?? '';
@@ -85,8 +83,8 @@ export class HomeComponent {
         }
       }
       // If a team exists, navigate to its process page.
-      if (this.context && this.context.length > 0) {
-        const teamId = this.context[0].team_id;
+      if (teams && teams.length > 0) {
+        const teamId = teams[0].team_id;
         this.router.navigate(['/process', teamId]);
       }
     }
@@ -104,7 +102,7 @@ export class HomeComponent {
       }
       const catalogEntryId = entry.id ?? entry.name ?? '';
       await this.apiService.createTeam(catalogEntryId);
-      this.context = await this.contextService.getTeams();
+      await this.contextService.getTeams();
     } catch (error) {
       console.error('Failed to create team:', error);
     } finally {
@@ -123,15 +121,14 @@ export class HomeComponent {
   }
 
   async deleteTeam(teamId: string) {
-    await this.apiService.deleteTeam(teamId);
-    this.context = await this.contextService.getTeams();
+    await this.contextService.deleteTeam(teamId);
   }
 
   async restoreTeam(teamId: string) {
     this.restoringTeams.add(teamId);
     try {
       await this.apiService.restoreTeam(teamId);
-      this.context = await this.contextService.getTeams();
+      await this.contextService.getTeams();
     } finally {
       this.restoringTeams.delete(teamId);
     }
@@ -146,17 +143,15 @@ export class HomeComponent {
     try {
       await this.apiService.stopTeam(teamId);
 
-      // Poll to verify the team has stopped
+      // Poll to verify the team has stopped (Story 10.5 converts to reactive).
       let attempts = 0;
       const maxAttempts = 5;
       let isStopped = false;
 
       while (attempts < maxAttempts && !isStopped) {
         await new Promise((resolve) => setTimeout(resolve, 1000));
-        this.context = await this.contextService.getTeams();
-        const team = this.context.find(
-          (ctx: TeamContext) => ctx.team_id === teamId
-        );
+        const teams = await this.contextService.getTeams();
+        const team = teams.find((ctx: TeamContext) => ctx.team_id === teamId);
         if (team && !isRunning(team)) {
           isStopped = true;
         }
@@ -164,7 +159,7 @@ export class HomeComponent {
       }
 
       if (!isStopped) {
-        this.context = await this.contextService.getTeams();
+        await this.contextService.getTeams();
       }
     } finally {
       this.stoppingTeams.delete(teamId);
@@ -178,7 +173,7 @@ export class HomeComponent {
   async refreshContext() {
     this.isRefreshing = true;
     try {
-      this.context = await this.contextService.getTeams();
+      await this.contextService.getTeams();
     } finally {
       this.isRefreshing = false;
     }
@@ -219,10 +214,9 @@ export class HomeComponent {
       );
       await this.apiService.updateTeamDescription(teamId, trimmed);
 
-      // Update local context optimistically
-      const team = this.context.find(
-        (ctx: TeamContext) => ctx.team_id === teamId
-      );
+      // Update local context optimistically (read current list from teams$).
+      const teams = await firstValueFrom(this.contextService.teams$);
+      const team = teams.find((ctx: TeamContext) => ctx.team_id === teamId);
       if (team) {
         team.description = trimmed;
       }
