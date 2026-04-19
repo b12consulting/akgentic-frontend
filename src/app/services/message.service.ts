@@ -76,6 +76,12 @@ export class ActorMessageService {
    * spinner side-channel) can consume it without coupling to the per-model
    * dispatch below — which stays intact in PR 1 for parallel populate (AC8).
    */
+  /**
+   * Story 8-2 (AC3): deduplication flag — prevents stacking duplicate
+   * disconnect toasts when both error and complete fire in sequence.
+   */
+  private wsDisconnectToastShown = false;
+
   private readonly _wsInbound$ = new Subject<AkgenticMessage>();
   /** Frame-batched subscriber (bufferTime 16ms). Held so init()'s (a) step
    *  can dispose it deterministically before (b)-(e) run. */
@@ -267,14 +273,15 @@ export class ActorMessageService {
         // instead of showing the "Loading process..." placeholder for ever.
         flipOnFirstEvent();
         console.error('WebSocket error:', err);
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Connection Error',
-          detail: 'WebSocket connection failed. Real-time updates unavailable.',
-          life: 5000,
-        });
+        // Story 8-2 (AC1, AC5): persistent warning toast replaces the
+        // transient 5-second error toast. flipOnFirstEvent() is preserved above.
+        this.showDisconnectToast();
       },
-      complete: () => console.log('webSocket - complete'),
+      complete: () => {
+        console.log('webSocket - complete');
+        // Story 8-2 (AC2): persistent warning on stream completion.
+        this.showDisconnectToast();
+      },
     });
   }
 
@@ -428,6 +435,24 @@ export class ActorMessageService {
     }, SPINNER_MIN_VISIBLE_MS - elapsed);
   }
 
+  /**
+   * Story 8-2 (AC1, AC2, AC3): show a persistent, non-closable warning toast
+   * when the WebSocket disconnects. The deduplication guard ensures only one
+   * toast is visible even if both error and complete fire in sequence.
+   */
+  private showDisconnectToast(): void {
+    if (this.wsDisconnectToastShown) return;
+    this.wsDisconnectToastShown = true;
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Connection Lost',
+      detail: 'Real-time connection to the server has been lost. Updates are paused.',
+      sticky: true,
+      closable: false,
+      key: 'ws-disconnect',
+    });
+  }
+
   initDict(
     dict: { [key: string]: BehaviorSubject<any[]> },
     key: string,
@@ -438,6 +463,11 @@ export class ActorMessageService {
   }
 
   ngOnDestroy() {
+    // Story 8-2 (AC4): clear the disconnect toast and reset the flag so
+    // navigating away removes the warning and a fresh process view starts clean.
+    this.messageService.clear('ws-disconnect');
+    this.wsDisconnectToastShown = false;
+
     try {
       this.webSocket.unsubscribe();
     } catch {

@@ -60,7 +60,7 @@ describe('ActorMessageService.init — loadingProcess$ spinner window (Story 4-1
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
           },
         },
-        { provide: MessageService, useValue: { add: jasmine.createSpy('add') } },
+        { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
       ],
     });
     service = TestBed.inject(ActorMessageService);
@@ -292,7 +292,7 @@ describe('ActorMessageService — Story 6.1 (frame-batched log ingestion)', () =
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
           },
         },
-        { provide: MessageService, useValue: { add: jasmine.createSpy('add') } },
+        { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
       ],
     });
     service = TestBed.inject(ActorMessageService);
@@ -588,7 +588,7 @@ describe('ActorMessageService — two-exceptions invariant (Story 6.4, NFR9)', (
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
           },
         },
-        { provide: MessageService, useValue: { add: jasmine.createSpy('add') } },
+        { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
       ],
     });
   });
@@ -624,5 +624,157 @@ describe('ActorMessageService — two-exceptions invariant (Story 6.4, NFR9)', (
     expect(containers).not.toContain('bufferSub');
     expect(containers).not.toContain('spinnerSub');
     expect(containers).not.toContain('webSocket');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 8-2 — Persistent WebSocket disconnect warning toast (AC1–AC5)
+// ---------------------------------------------------------------------------
+
+describe('ActorMessageService — Story 8-2 (persistent disconnect toast)', () => {
+  let service: ActorMessageService;
+  let msgService: any;
+  let fakeSocket: Subject<any>;
+
+  beforeEach(() => {
+    jasmine.clock().install();
+    jasmine.clock().mockDate(new Date(0));
+
+    fakeSocket = new Subject<any>();
+
+    TestBed.configureTestingModule({
+      providers: [
+        MessageLogService,
+        ActorMessageService,
+        ChatService,
+        {
+          provide: ApiService,
+          useValue: {
+            getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+          },
+        },
+        { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
+      ],
+    });
+    service = TestBed.inject(ActorMessageService);
+    msgService = TestBed.inject(MessageService);
+
+    spyOn<any>(service, 'createWebSocket').and.returnValue(
+      fakeSocket as unknown as WebSocketSubject<any>,
+    );
+  });
+
+  afterEach(() => {
+    try {
+      fakeSocket.complete();
+    } catch {
+      /* already closed */
+    }
+    jasmine.clock().uninstall();
+  });
+
+  it('AC1: WS error shows persistent warning toast with correct properties', async () => {
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+
+    fakeSocket.error(new Error('connection lost'));
+
+    expect(msgService.add).toHaveBeenCalledWith(
+      jasmine.objectContaining({
+        severity: 'warn',
+        summary: 'Connection Lost',
+        detail: 'Real-time connection to the server has been lost. Updates are paused.',
+        sticky: true,
+        closable: false,
+        key: 'ws-disconnect',
+      }),
+    );
+  });
+
+  it('AC1: WS error no longer shows transient error toast with life: 5000', async () => {
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+
+    fakeSocket.error(new Error('connection lost'));
+
+    const calls = msgService.add.calls.allArgs().map((a: any[]) => a[0]);
+    const transientErrorCalls = calls.filter(
+      (c: any) => c.severity === 'error' && c.life === 5000 && c.summary === 'Connection Error',
+    );
+    expect(transientErrorCalls.length).toBe(0);
+  });
+
+  it('AC2: WS complete shows persistent warning toast', async () => {
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+
+    fakeSocket.complete();
+
+    expect(msgService.add).toHaveBeenCalledWith(
+      jasmine.objectContaining({
+        severity: 'warn',
+        sticky: true,
+        closable: false,
+        key: 'ws-disconnect',
+      }),
+    );
+  });
+
+  it('AC3: second disconnect event does not add a duplicate toast', async () => {
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+
+    // Simulate error followed by complete — use separate subjects to control
+    // the sequence since error() terminates the Subject.
+    // Instead, call showDisconnectToast twice via the private method.
+    (service as any).showDisconnectToast();
+    (service as any).showDisconnectToast();
+
+    const warnCalls = msgService.add.calls.allArgs()
+      .map((a: any[]) => a[0])
+      .filter((c: any) => c.key === 'ws-disconnect');
+    expect(warnCalls.length).toBe(1);
+  });
+
+  it('AC4: ngOnDestroy clears the ws-disconnect toast and resets the flag', async () => {
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+
+    // Show the toast first.
+    (service as any).showDisconnectToast();
+    expect((service as any).wsDisconnectToastShown).toBe(true);
+
+    service.ngOnDestroy();
+
+    expect(msgService.clear).toHaveBeenCalledWith('ws-disconnect');
+    expect((service as any).wsDisconnectToastShown).toBe(false);
+  });
+
+  it('AC4: after ngOnDestroy, a new showDisconnectToast call works (flag was reset)', async () => {
+    await service.init('proc-1', true);
+    (service as any).showDisconnectToast();
+    service.ngOnDestroy();
+
+    // Reset clears the flag — a fresh call should add a new toast.
+    msgService.add.calls.reset();
+    (service as any).showDisconnectToast();
+
+    expect(msgService.add).toHaveBeenCalledTimes(1);
+    expect(msgService.add).toHaveBeenCalledWith(
+      jasmine.objectContaining({ key: 'ws-disconnect' }),
+    );
+  });
+
+  it('AC5: WS error still calls flipOnFirstEvent (spinner falls through)', async () => {
+    const chatService = TestBed.inject(ChatService);
+    await service.init('proc-1', true);
+    expect(chatService.loadingProcess$.value).toBe(true);
+
+    // Past the spinner floor so flip is immediate.
+    jasmine.clock().tick(600);
+    fakeSocket.error(new Error('connect refused'));
+
+    // flipOnFirstEvent was called — spinner is now false.
+    expect(chatService.loadingProcess$.value).toBe(false);
   });
 });
