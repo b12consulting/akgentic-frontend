@@ -234,6 +234,7 @@ export class AkgentChatComponent {
   userInput = '';
   isLoading = false;
   async sendMessage() {
+    if (!this.contextService.currentTeamRunning$.value) return;
     this.isLoading = true;
     const processId = this.contextService.currentProcessId$.value;
     try {

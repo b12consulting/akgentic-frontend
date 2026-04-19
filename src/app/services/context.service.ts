@@ -2,7 +2,7 @@ import { inject, Injectable } from '@angular/core';
 import { Router } from '@angular/router';
 import { BehaviorSubject } from 'rxjs';
 import { ApiService } from './api.service';
-import { TeamContext } from '../models/team.interface';
+import { isRunning, TeamContext } from '../models/team.interface';
 
 @Injectable({
   providedIn: 'root',
@@ -11,6 +11,9 @@ export class ContextService {
   apiService: ApiService = inject(ApiService);
   router: Router = inject(Router);
   currentProcessId$ = new BehaviorSubject<string>('');
+  /** Reactive running state of the current team. Updated by getCurrentTeam()
+   *  and reset when navigating away. Future: fed by homepage WebSocket. */
+  currentTeamRunning$ = new BehaviorSubject<boolean>(false);
 
   _context: TeamContext[] = [];
 
@@ -28,6 +31,7 @@ export class ContextService {
         (t: TeamContext) => t.team_id === teamId
       );
       if (cached) {
+        this.currentTeamRunning$.next(isRunning(cached));
         return cached;
       }
     }
@@ -38,6 +42,10 @@ export class ContextService {
       t.team_id === teamId ? team : t
     );
 
+    if (team) {
+      this.currentTeamRunning$.next(isRunning(team));
+    }
+
     return team;
   }
 
@@ -47,6 +55,7 @@ export class ContextService {
 
   async clear(teamId: string) {
     await this.deleteTeam(teamId);
+    this.currentTeamRunning$.next(false);
     await this.router.navigate(['/']);
   }
 
