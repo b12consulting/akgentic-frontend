@@ -1,4 +1,4 @@
-import { TestBed } from '@angular/core/testing';
+import { fakeAsync, flushMicrotasks, TestBed, tick } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
@@ -44,7 +44,9 @@ describe('ContextService', () => {
       'getTeam',
       'createTeam',
       'deleteTeam',
+      'stopTeam',
     ]);
+    apiSpy.stopTeam.and.returnValue(Promise.resolve());
     routerSpy = jasmine.createSpyObj('Router', ['navigate']);
     routerSpy.navigate.and.returnValue(Promise.resolve(true));
 
@@ -457,5 +459,180 @@ describe('ContextService', () => {
 
     expect(apiSpy.getTeam).toHaveBeenCalledTimes(1);
     expect(apiSpy.getTeam).toHaveBeenCalledWith('a');
+  });
+
+  // =======================================================================
+  // Story 10.5 — reactive stopTeamAndAwait
+  // =======================================================================
+
+  it('(AC1 10.5) stopTeamAndAwait is defined on the service with (teamId, timeoutMs?) shape', () => {
+    expect(typeof service.stopTeamAndAwait).toBe('function');
+    // One required formal parameter: teamId. timeoutMs is optional (default 10000).
+    expect(service.stopTeamAndAwait.length).toBe(1);
+  });
+
+  it('(AC2 10.5) stopTeamAndAwait resolves when refresh reports stopped', fakeAsync(() => {
+    const running = makeTeam('team-A', 'running');
+    const stopped = makeTeam('team-A', 'stopped');
+
+    apiSpy.getTeams.and.returnValue(Promise.resolve([running]));
+    service.getTeams();
+    tick();
+
+    apiSpy.stopTeam.and.returnValue(Promise.resolve());
+    apiSpy.getTeam.and.returnValue(Promise.resolve(stopped));
+
+    let resolved = false;
+    service.stopTeamAndAwait('team-A').then(() => {
+      resolved = true;
+    });
+
+    tick();
+    expect(apiSpy.stopTeam).toHaveBeenCalledOnceWith('team-A');
+
+    tick(1000);
+    flushMicrotasks();
+
+    expect(resolved).toBe(true);
+
+    apiSpy.getTeam.calls.reset();
+    tick(5000);
+    expect(apiSpy.getTeam).not.toHaveBeenCalled();
+  }));
+
+  it('(AC3 10.5) stopTeamAndAwait rejects with TimeoutError when team never stops', fakeAsync(() => {
+    const running = makeTeam('team-A', 'running');
+    apiSpy.getTeams.and.returnValue(Promise.resolve([running]));
+    service.getTeams();
+    tick();
+
+    apiSpy.stopTeam.and.returnValue(Promise.resolve());
+    apiSpy.getTeam.and.returnValue(Promise.resolve(running));
+
+    let rejected: Error | null = null;
+    service.stopTeamAndAwait('team-A', 10000).catch((err: Error) => {
+      rejected = err;
+    });
+
+    tick();
+
+    tick(11000);
+    flushMicrotasks();
+
+    expect(rejected).not.toBeNull();
+    expect(rejected!.name).toBe('TimeoutError');
+
+    apiSpy.getTeam.calls.reset();
+    tick(5000);
+    expect(apiSpy.getTeam).not.toHaveBeenCalled();
+  }));
+
+  it('(AC4 10.5) concurrent stopTeamAndAwait calls do not share intervals', fakeAsync(() => {
+    const runningA = makeTeam('team-A', 'running');
+    const runningB = makeTeam('team-B', 'running');
+    const stoppedA = makeTeam('team-A', 'stopped');
+
+    apiSpy.getTeams.and.returnValue(Promise.resolve([runningA, runningB]));
+    service.getTeams();
+    tick();
+
+    apiSpy.stopTeam.and.returnValue(Promise.resolve());
+    apiSpy.getTeam.and.callFake((id: string) => {
+      if (id === 'team-A') return Promise.resolve(stoppedA);
+      return Promise.resolve(runningB);
+    });
+
+    let resolvedA = false;
+    let resolvedB = false;
+    let rejectedB: Error | null = null;
+
+    service.stopTeamAndAwait('team-A').then(() => {
+      resolvedA = true;
+    });
+    service
+      .stopTeamAndAwait('team-B', 10000)
+      .then(() => {
+        resolvedB = true;
+      })
+      .catch((err: Error) => {
+        rejectedB = err;
+      });
+
+    tick();
+    tick(1000);
+    flushMicrotasks();
+
+    expect(resolvedA).toBe(true);
+    expect(resolvedB).toBe(false);
+
+    tick(10000);
+    flushMicrotasks();
+
+    expect(rejectedB).not.toBeNull();
+    expect(rejectedB!.name).toBe('TimeoutError');
+
+    apiSpy.getTeam.calls.reset();
+    tick(5000);
+    expect(apiSpy.getTeam).not.toHaveBeenCalled();
+  }));
+
+  it('(AC8 10.5) stopTeamAndAwait refresh updates _context$ immutably', fakeAsync(() => {
+    const runningA = makeTeam('team-A', 'running');
+    const runningB = makeTeam('team-B', 'running');
+    const stoppedA = makeTeam('team-A', 'stopped');
+
+    apiSpy.getTeams.and.returnValue(Promise.resolve([runningA, runningB]));
+    service.getTeams();
+    tick();
+
+    let prev: TeamContext[] = [];
+    let prevB: TeamContext | undefined;
+    service.teams$
+      .subscribe((v) => {
+        prev = v;
+      })
+      .unsubscribe();
+    prevB = prev.find((t) => t.team_id === 'team-B');
+
+    apiSpy.stopTeam.and.returnValue(Promise.resolve());
+    apiSpy.getTeam.and.returnValue(Promise.resolve(stoppedA));
+
+    service.stopTeamAndAwait('team-A').catch(() => {
+      /* ignore */
+    });
+    tick();
+    tick(1000);
+    flushMicrotasks();
+
+    let next: TeamContext[] = [];
+    service.teams$
+      .subscribe((v) => {
+        next = v;
+      })
+      .unsubscribe();
+
+    expect(next).not.toBe(prev);
+    expect(next.find((t) => t.team_id === 'team-A')).toBe(stoppedA);
+    expect(next.find((t) => t.team_id === 'team-B')).toBe(prevB);
+  }));
+
+  it('(AC10 10.5) ContextService public surface includes stopTeamAndAwait and keeps existing methods', () => {
+    const expected = [
+      'getTeams',
+      'getCurrentTeam',
+      'deleteTeam',
+      'clear',
+      'createTeamAndNavigate',
+      'stopTeamAndAwait',
+    ];
+    for (const name of expected) {
+      expect(typeof (service as unknown as Record<string, unknown>)[name]).toBe(
+        'function',
+      );
+    }
+    expect(service.currentProcessId$).toBeDefined();
+    expect(service.teams$).toBeDefined();
+    expect(service.currentTeam$).toBeDefined();
+    expect(service.currentTeamRunning$).toBeDefined();
   });
 });

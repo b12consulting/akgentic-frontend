@@ -56,7 +56,7 @@ describe('HomeComponent', () => {
 
     contextSpy = jasmine.createSpyObj<ContextService>(
       'ContextService',
-      ['getTeams', 'deleteTeam', 'createTeamAndNavigate']
+      ['getTeams', 'deleteTeam', 'createTeamAndNavigate', 'stopTeamAndAwait']
     ) as jasmine.SpyObj<ContextService> & {
       teams$: BehaviorSubject<TeamContext[]>;
     };
@@ -64,6 +64,7 @@ describe('HomeComponent', () => {
     contextSpy.getTeams.and.callFake(async () => teams$.value);
     contextSpy.deleteTeam.and.returnValue(Promise.resolve());
     contextSpy.createTeamAndNavigate.and.returnValue(Promise.resolve());
+    contextSpy.stopTeamAndAwait.and.returnValue(Promise.resolve());
 
     authSpy = jasmine.createSpyObj('AuthService', ['checkAuth']);
     authSpy.checkAuth.and.returnValue(of(true as any));
@@ -167,6 +168,87 @@ describe('HomeComponent', () => {
   });
 
   // --- AC9 ---------------------------------------------------------------
+
+  // --- Story 10.5 — reactive stopTeam delegation -----------------------
+
+  it('(AC5 10.5) HomeComponent.stopTeam delegates to contextService.stopTeamAndAwait without polling', async () => {
+    apiSpy.stopTeam.calls.reset();
+    contextSpy.getTeams.calls.reset();
+    contextSpy.stopTeamAndAwait.and.returnValue(Promise.resolve());
+
+    await component.stopTeam('team-A');
+
+    expect(contextSpy.stopTeamAndAwait).toHaveBeenCalledOnceWith('team-A');
+    expect(apiSpy.stopTeam).not.toHaveBeenCalled();
+    expect(contextSpy.getTeams).not.toHaveBeenCalled();
+  });
+
+  it('(AC5 10.5) stopTeam tracks the teamId in stoppingTeams across the await boundary', async () => {
+    let resolveStop: (() => void) | null = null;
+    const pending = new Promise<void>((resolve) => {
+      resolveStop = resolve;
+    });
+    contextSpy.stopTeamAndAwait.and.returnValue(pending);
+
+    const stopPromise = component.stopTeam('team-A');
+
+    expect(component.isStopping('team-A')).toBe(true);
+    expect(component.stoppingTeams.has('team-A')).toBe(true);
+
+    resolveStop!();
+    await stopPromise;
+
+    expect(component.isStopping('team-A')).toBe(false);
+    expect(component.stoppingTeams.has('team-A')).toBe(false);
+  });
+
+  it('(AC6 10.5) stopTeam catches timeout/error and clears the stoppingTeams entry', async () => {
+    const timeoutErr = Object.assign(new Error('timeout'), {
+      name: 'TimeoutError',
+    });
+    contextSpy.stopTeamAndAwait.and.returnValue(Promise.reject(timeoutErr));
+
+    const consoleErrorSpy = spyOn(console, 'error');
+
+    await expectAsync(component.stopTeam('team-A')).toBeResolved();
+
+    expect(component.stoppingTeams.has('team-A')).toBe(false);
+    expect(component.isStopping('team-A')).toBe(false);
+    expect(consoleErrorSpy).toHaveBeenCalled();
+  });
+
+  it('(AC7 10.5) stopTeam is safe to call concurrently for different teams', async () => {
+    let resolveA: (() => void) | null = null;
+    let resolveB: (() => void) | null = null;
+    contextSpy.stopTeamAndAwait.and.callFake((teamId: string) => {
+      if (teamId === 'team-A')
+        return new Promise<void>((r) => {
+          resolveA = r;
+        });
+      if (teamId === 'team-B')
+        return new Promise<void>((r) => {
+          resolveB = r;
+        });
+      return Promise.resolve();
+    });
+
+    const pA = component.stopTeam('team-A');
+    const pB = component.stopTeam('team-B');
+
+    expect(component.stoppingTeams.has('team-A')).toBe(true);
+    expect(component.stoppingTeams.has('team-B')).toBe(true);
+
+    resolveA!();
+    await pA;
+
+    expect(component.stoppingTeams.has('team-A')).toBe(false);
+    expect(component.stoppingTeams.has('team-B')).toBe(true);
+
+    resolveB!();
+    await pB;
+
+    expect(component.stoppingTeams.has('team-B')).toBe(false);
+  });
 
   it('(AC9) N=3 mount/unmount cycles leave zero residual subscribers on teams$', async () => {
     for (let i = 0; i < 3; i++) {

@@ -1,7 +1,23 @@
 import { inject, Injectable } from '@angular/core';
 import { Router } from '@angular/router';
-import { BehaviorSubject, combineLatest, Observable } from 'rxjs';
-import { distinctUntilChanged, map, shareReplay } from 'rxjs/operators';
+import {
+  BehaviorSubject,
+  combineLatest,
+  firstValueFrom,
+  interval,
+  Observable,
+  Subject,
+} from 'rxjs';
+import {
+  distinctUntilChanged,
+  filter,
+  map,
+  shareReplay,
+  switchMap,
+  take,
+  takeUntil,
+  timeout,
+} from 'rxjs/operators';
 import { ApiService } from './api.service';
 import { isRunning, TeamContext, toTeamContext } from '../models/team.interface';
 
@@ -97,5 +113,50 @@ export class ContextService {
     const prev = this._context$.value;
     this._context$.next([...prev, newTeam]);
     await this.router.navigate(['/process', response.team_id]);
+  }
+
+  private async refreshOneTeam(teamId: string): Promise<TeamContext | null> {
+    const fresh = await this.apiService.getTeam(teamId);
+    if (fresh) {
+      const prev = this._context$.value;
+      const next = prev.map((t: TeamContext) =>
+        t.team_id === teamId ? fresh : t,
+      );
+      this._context$.next(next);
+    }
+    return fresh;
+  }
+
+  async stopTeamAndAwait(
+    teamId: string,
+    timeoutMs: number = 10000,
+  ): Promise<void> {
+    await this.apiService.stopTeam(teamId);
+
+    // Bounded periodic refresh feeding _context$ with fresh data for this
+    // team only. When homepage WebSocket lands this interval is replaced by
+    // WS-driven _context$.next(...) updates; the firstValueFrom awaiter below
+    // stays unchanged.
+    const stop$ = new Subject<void>();
+    interval(1000)
+      .pipe(
+        takeUntil(stop$),
+        switchMap(() => this.refreshOneTeam(teamId)),
+      )
+      .subscribe();
+
+    try {
+      await firstValueFrom(
+        this.teams$.pipe(
+          map((teams) => teams.find((t) => t.team_id === teamId)),
+          filter((t): t is TeamContext => t !== undefined && !isRunning(t)),
+          take(1),
+          timeout(timeoutMs),
+        ),
+      );
+    } finally {
+      stop$.next();
+      stop$.complete();
+    }
   }
 }
