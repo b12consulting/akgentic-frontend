@@ -11,12 +11,12 @@ import { ToolbarModule } from 'primeng/toolbar';
 import { DividerModule } from 'primeng/divider';
 import { TagModule } from 'primeng/tag';
 import { MarkdownModule } from 'ngx-markdown';
+import { firstValueFrom } from 'rxjs';
 import {
   WorkspaceService,
   FileNode,
   FileContent,
 } from '../../services/workspace.service';
-import { isRunning } from '../../models/team.interface';
 import { ContextService } from '../../services/context.service';
 import { UploadModalComponent } from './upload-modal/upload-modal.component';
 
@@ -69,8 +69,9 @@ export class WorkspaceExplorerComponent implements OnInit {
   }
 
   async checkProcessStatus() {
-    const process = await this.contextService.getCurrentTeam(this.processId);
-    this.isProcessRunning = process ? isRunning(process) : false;
+    this.isProcessRunning = await firstValueFrom(
+      this.contextService.currentTeamRunning$,
+    );
   }
 
   async loadWorkspace() {

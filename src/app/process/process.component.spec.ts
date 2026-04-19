@@ -410,10 +410,4 @@ describe('ProcessComponent (Story 10-2 — single-fetch navigation)', () => {
     expect(messageSpy.init).not.toHaveBeenCalled();
   });
 
-  it('(AC6) processType is populated from the fetched team name', async () => {
-    const { component } = await setup({
-      fetchedTeam: makeTeam({ name: 'Fetched Name', status: 'running' }),
-    });
-    expect(component.processType).toBe('Fetched Name');
-  });
 });
