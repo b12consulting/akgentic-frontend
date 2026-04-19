@@ -141,26 +141,9 @@ export class HomeComponent {
   async stopTeam(teamId: string) {
     this.stoppingTeams.add(teamId);
     try {
-      await this.apiService.stopTeam(teamId);
-
-      // Poll to verify the team has stopped (Story 10.5 converts to reactive).
-      let attempts = 0;
-      const maxAttempts = 5;
-      let isStopped = false;
-
-      while (attempts < maxAttempts && !isStopped) {
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-        const teams = await this.contextService.getTeams();
-        const team = teams.find((ctx: TeamContext) => ctx.team_id === teamId);
-        if (team && !isRunning(team)) {
-          isStopped = true;
-        }
-        attempts++;
-      }
-
-      if (!isStopped) {
-        await this.contextService.getTeams();
-      }
+      await this.contextService.stopTeamAndAwait(teamId);
+    } catch (error) {
+      console.error(`Failed to stop team ${teamId}:`, error);
     } finally {
       this.stoppingTeams.delete(teamId);
     }

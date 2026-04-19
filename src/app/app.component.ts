@@ -35,9 +35,6 @@ export class AppComponent {
   private configService = inject(ConfigService);
   logo: string = '';
   hideLogin: boolean = true;
-  processType: string = '';
-  processConfigName: string = '';
-  processRunning: boolean = false;
 
   akgentService: AkgentService = inject(AkgentService);
   authService: AuthService = inject(AuthService);
@@ -61,31 +58,14 @@ export class AppComponent {
       destroyed.next(null);
       destroyed.complete();
     });
+
     emptyableCombineLatest([
       this.contextService.currentProcessId$.asObservable(),
       this.authService.currentUser$,
       this.viewService.isRightColumnCollapsed$,
     ])
       .pipe(takeUntil(destroyed))
-      .subscribe(async ([processId, currentUser, isRightColumnCollapsed]) => {
-        // Update process type when process changes
-        if (processId) {
-          try {
-            const process =
-              await this.contextService.getCurrentTeam(processId, false);
-            this.processType = process?.name || '';
-            this.processConfigName = process?.config_name || '';
-            this.processRunning = this.contextService.currentTeamRunning$.value;
-          } catch (error) {
-            console.error('Error fetching process:', error);
-            this.processType = '';
-            this.processRunning = false;
-          }
-        } else {
-          this.processType = '';
-          this.processRunning = false;
-        }
-
+      .subscribe(([processId, currentUser, isRightColumnCollapsed]) => {
         this.items = [
           {
             icon: 'pi pi-home',
