@@ -11,13 +11,13 @@
     <i class="pi pi-spinner pi-spin" style="font-size: 2rem"></i>
   </div>
 
-  <div *ngIf="!loading && (catalogEntries$ | async) as entries">
-    <h4>Available Catalog Entries</h4>
-    <ul *ngIf="entries.length > 0">
-      <li *ngFor="let entry of entries">
-        {{ entry.name || entry.id }}
+  <div *ngIf="!loading && (namespaces$ | async) as namespaces">
+    <h4>Available Catalog Namespaces</h4>
+    <ul *ngIf="namespaces.length > 0">
+      <li *ngFor="let ns of namespaces" [attr.title]="ns.description">
+        {{ ns.name }}
       </li>
     </ul>
-    <p *ngIf="entries.length === 0">No catalog entries found.</p>
+    <p *ngIf="namespaces.length === 0">No catalog namespaces found.</p>
   </div>
 </div>
