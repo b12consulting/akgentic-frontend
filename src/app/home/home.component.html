@@ -3,12 +3,19 @@
   <div class="main-container">
     <p-select
       size="small"
-      [options]="(catalogEntries$ | async) || []"
-      [ngModel]="selectedCatalogEntry$ | async"
-      (ngModelChange)="selectedCatalogEntry$.next($event)"
+      [options]="(namespaces$ | async) || []"
+      [ngModel]="selectedNamespace$ | async"
+      (ngModelChange)="selectedNamespace$.next($event)"
       optionLabel="name"
       placeholder="Select a team type"
-    />
+    >
+      <ng-template let-ns pTemplate="item">
+        <div [attr.title]="ns.description">{{ ns.name }}</div>
+      </ng-template>
+      <ng-template let-ns pTemplate="selectedItem">
+        <div [attr.title]="ns.description">{{ ns.name }}</div>
+      </ng-template>
+    </p-select>
     &nbsp;
     <button
       pButton
@@ -16,7 +23,7 @@
       type="button"
       label="Create"
       [icon]="isCreatingTeam ? 'pi pi-spinner pi-spin' : 'pi pi-plus'"
-      [disabled]="isCreatingTeam"
+      [disabled]="isCreatingTeam || ((namespaces$ | async) || []).length === 0"
       (click)="createTeam()"
       class="extra-small-button"
     ></button>

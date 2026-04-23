@@ -40,14 +40,14 @@ describe('HomeComponent', () => {
     teams$ = new BehaviorSubject<TeamContext[]>([]);
 
     apiSpy = jasmine.createSpyObj('ApiService', [
-      'getTeamConfigs',
+      'getNamespaces',
       'createTeam',
       'deleteTeam',
       'restoreTeam',
       'stopTeam',
       'updateTeamDescription',
     ]);
-    apiSpy.getTeamConfigs.and.returnValue(Promise.resolve([]));
+    apiSpy.getNamespaces.and.returnValue(Promise.resolve([]));
     apiSpy.createTeam.and.returnValue(Promise.resolve({} as any));
     apiSpy.deleteTeam.and.returnValue(Promise.resolve());
     apiSpy.restoreTeam.and.returnValue(Promise.resolve({} as any));
@@ -149,8 +149,8 @@ describe('HomeComponent', () => {
   // --- Story 10.4 — HomeComponent.createTeamAndNavigate delegation ------
 
   it('(AC4 10.4) HomeComponent.createTeamAndNavigate delegates to contextService and has no reload compensation', async () => {
-    const entry = { id: 'cat-1', name: 'Cat One' };
-    component.selectedCatalogEntry$.next(entry);
+    const ns = { namespace: 'cat-1', name: 'Cat One', description: 'first cat' };
+    component.selectedNamespace$.next(ns);
     // The component has not invoked ngOnInit yet (no detectChanges in this
     // test), so contextSpy.getTeams should not have been called. Reset to
     // guard against any spurious prior invocation.
@@ -162,9 +162,61 @@ describe('HomeComponent', () => {
   });
 
   it('(AC4 10.4) HomeComponent.createTeamAndNavigate no-entry guard returns cleanly', async () => {
-    component.selectedCatalogEntry$.next(null);
+    component.selectedNamespace$.next(null);
     await component.createTeamAndNavigate();
     expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
+  });
+
+  // --- Story 1.9 — namespace picker wiring --------------------------------
+
+  it('(AC1 1.9) ngOnInit loads namespaces via getNamespaces and selects the first', async () => {
+    apiSpy.getNamespaces.and.returnValue(
+      Promise.resolve([
+        { namespace: 'agent-team-v1', name: 'Agent Team', description: 'Default' },
+        { namespace: 'rag-team-v1', name: 'RAG Team', description: 'With RAG' },
+      ]),
+    );
+    await component.ngOnInit();
+    expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(1);
+    expect(component.namespaces$.value.length).toBe(2);
+    expect(component.selectedNamespace$.value?.namespace).toBe('agent-team-v1');
+  });
+
+  it('(AC3 1.9) createTeam sends the selected namespace to apiService.createTeam', async () => {
+    component.selectedNamespace$.next({
+      namespace: 'agent-team-v1',
+      name: 'Agent Team',
+      description: 'Default',
+    });
+    apiSpy.createTeam.calls.reset();
+    await component.createTeam();
+    expect(apiSpy.createTeam).toHaveBeenCalledOnceWith('agent-team-v1');
+  });
+
+  it('(AC3 1.9) createTeamAndNavigate passes selected.namespace (not an id lookup)', async () => {
+    component.selectedNamespace$.next({
+      namespace: 'rag-team-v1',
+      name: 'RAG Team',
+      description: 'With RAG',
+    });
+    contextSpy.createTeamAndNavigate.calls.reset();
+    await component.createTeamAndNavigate();
+    expect(contextSpy.createTeamAndNavigate).toHaveBeenCalledOnceWith('rag-team-v1');
+  });
+
+  it('(AC5 1.9) empty namespace list leaves the dropdown empty and no selection', async () => {
+    apiSpy.getNamespaces.and.returnValue(Promise.resolve([]));
+    await component.ngOnInit();
+    expect(component.namespaces$.value).toEqual([]);
+    expect(component.selectedNamespace$.value).toBeNull();
+  });
+
+  it('(AC5 1.9) getNamespaces failure does not crash ngOnInit', async () => {
+    apiSpy.getNamespaces.and.returnValue(Promise.reject(new Error('boom')));
+    const consoleErrorSpy = spyOn(console, 'error');
+    await expectAsync(component.ngOnInit()).toBeResolved();
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    expect(component.namespaces$.value).toEqual([]);
   });
 
   // --- AC9 ---------------------------------------------------------------
