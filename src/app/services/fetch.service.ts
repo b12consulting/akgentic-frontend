@@ -2,6 +2,21 @@ import { Injectable, inject } from '@angular/core';
 import { MessageService } from 'primeng/api';
 import { ConfigService } from './config.service';
 
+/**
+ * `responseType` controls how the response body is parsed.
+ *
+ * - `'json'` (default) — preserves the long-standing behaviour of calling
+ *   `response.json()`. Every existing caller keeps working unchanged.
+ * - `'text'` — calls `response.text()` instead. Needed for endpoints that
+ *   return `application/yaml` (e.g. admin namespace export), on which
+ *   `response.json()` would raise `SyntaxError`.
+ *
+ * Option A (single `fetch()` method with a new option) was chosen over a
+ * sibling `fetchText()` method to avoid duplicating the error-notification,
+ * `credentials: 'include'`, and 204/empty-body branches at two sites.
+ */
+export type FetchResponseType = 'json' | 'text';
+
 @Injectable({
   providedIn: 'root',
 })
@@ -9,16 +24,28 @@ export class FetchService {
   messageService: MessageService = inject(MessageService);
   private config = inject(ConfigService);
 
+  /**
+   * Issue a fetch, handle notifications, and parse the body.
+   *
+   * The error path (non-OK status), `credentials: 'include'` injection, and
+   * 204/`content-length: 0` empty-body branch are identical for every
+   * `responseType` — only the final body-parse call differs.
+   *
+   * @param responseType `'json'` (default) returns `response.json()`;
+   *   `'text'` returns `response.text()` as a string.
+   */
   async fetch({
     url,
     options,
     successMessage,
     errorMessage,
+    responseType = 'json',
   }: {
     url: string;
     options?: RequestInit;
     successMessage?: string;
     errorMessage?: string;
+    responseType?: FetchResponseType;
   }): Promise<any> {
     options = this.config.hideLogin
       ? options
@@ -64,7 +91,7 @@ export class FetchService {
       return undefined;
     }
 
-    return response.json();
+    return responseType === 'text' ? response.text() : response.json();
   }
 
   showNotification(

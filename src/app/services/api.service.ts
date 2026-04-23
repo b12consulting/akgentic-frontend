@@ -11,7 +11,11 @@ import {
   EventListResponse,
   toTeamContext,
 } from '../models/team.interface';
-import { NamespaceSummary } from '../models/catalog.interface';
+import {
+  Entry,
+  NamespaceSummary,
+  NamespaceValidationReport,
+} from '../models/catalog.interface';
 
 @Injectable({
   providedIn: 'root',
@@ -163,6 +167,73 @@ export class ApiService {
   async getNamespaces(): Promise<NamespaceSummary[]> {
     return await this.fetchService.fetch({
       url: `${this.apiUrl}/admin/catalog/namespaces`,
+    });
+  }
+
+  /**
+   * Export a catalog namespace as raw YAML text.
+   *
+   * Hits `GET /admin/catalog/namespace/{namespace}/export` which returns
+   * `application/yaml` — the response is consumed as text (not JSON).
+   */
+  async exportNamespace(namespace: string): Promise<string> {
+    return await this.fetchService.fetch({
+      url: `${this.apiUrl}/admin/catalog/namespace/${namespace}/export`,
+      responseType: 'text',
+    });
+  }
+
+  /**
+   * Import (persist) a catalog namespace from YAML text.
+   *
+   * Hits `POST /admin/catalog/namespace/import`. The YAML is sent verbatim
+   * as the request body with `Content-Type: application/yaml` — it is NOT
+   * JSON-stringified or wrapped in any envelope. The response is parsed as
+   * `Entry[]`.
+   */
+  async importNamespace(yaml: string): Promise<Entry[]> {
+    return await this.fetchService.fetch({
+      url: `${this.apiUrl}/admin/catalog/namespace/import`,
+      options: {
+        method: 'POST',
+        body: yaml,
+        headers: { 'Content-Type': 'application/yaml' },
+      },
+    });
+  }
+
+  /**
+   * Validate a persisted catalog namespace by name.
+   *
+   * Hits `GET /admin/catalog/namespace/{namespace}/validate` and returns
+   * the structured `NamespaceValidationReport`.
+   */
+  async validatePersistedNamespace(
+    namespace: string
+  ): Promise<NamespaceValidationReport> {
+    return await this.fetchService.fetch({
+      url: `${this.apiUrl}/admin/catalog/namespace/${namespace}/validate`,
+    });
+  }
+
+  /**
+   * Validate an in-memory YAML buffer against catalog invariants without
+   * persisting it.
+   *
+   * Hits `POST /admin/catalog/namespace/validate` with the YAML verbatim as
+   * the request body and `Content-Type: application/yaml`. Returns a
+   * `NamespaceValidationReport`.
+   */
+  async validateNamespaceBuffer(
+    yaml: string
+  ): Promise<NamespaceValidationReport> {
+    return await this.fetchService.fetch({
+      url: `${this.apiUrl}/admin/catalog/namespace/validate`,
+      options: {
+        method: 'POST',
+        body: yaml,
+        headers: { 'Content-Type': 'application/yaml' },
+      },
     });
   }
 
