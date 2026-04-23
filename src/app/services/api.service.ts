@@ -162,7 +162,7 @@ export class ApiService {
    */
   async getNamespaces(): Promise<NamespaceSummary[]> {
     return await this.fetchService.fetch({
-      url: `${this.apiUrl}/catalog/namespaces`,
+      url: `${this.apiUrl}/admin/catalog/namespaces`,
     });
   }
 
