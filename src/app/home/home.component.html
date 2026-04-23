@@ -28,6 +28,19 @@
       class="extra-small-button"
     ></button>
     &nbsp;
+    <!-- Story 11.2 — Edit namespace YAML button; opens the Monaco panel in a dialog. -->
+    <button
+      pButton
+      size="small"
+      type="button"
+      label="Edit namespace YAML"
+      icon="pi pi-pencil"
+      [disabled]="!(selectedNamespace$ | async)"
+      (click)="namespacePanelVisible = true"
+      class="extra-small-button"
+      data-test="edit-namespace-yaml-btn"
+    ></button>
+    &nbsp;
     <button
       pButton
       size="small"
@@ -182,3 +195,24 @@
     </p-table>
   </div>
 </section>
+
+<!--
+  Story 11.2 — Namespace Panel dialog wrapper.
+
+  `@defer (when namespacePanelVisible)` guarantees the NamespacePanelComponent
+  (and its Monaco-editor chunk) is fetched only on first open. The initial
+  home-page bundle stays Monaco-free.
+-->
+<p-dialog
+  [(visible)]="namespacePanelVisible"
+  [modal]="true"
+  [style]="{ width: '90vw', height: '90vh' }"
+  [header]="((selectedNamespace$ | async)?.name) ?? ((selectedNamespace$ | async)?.namespace) ?? 'Namespace'"
+>
+  @defer (when namespacePanelVisible) {
+    <app-namespace-panel
+      [namespace]="((selectedNamespace$ | async)?.namespace) ?? ''"
+      (closed)="namespacePanelVisible = false"
+    />
+  }
+</p-dialog>

@@ -1,0 +1,37 @@
+<div class="namespace-panel">
+  <!-- Loading spinner branch -->
+  <div *ngIf="loading" class="namespace-panel__loading">
+    <i class="pi pi-spinner pi-spin"></i>
+    <span>Loading namespace…</span>
+  </div>
+
+  <!-- Empty / error branch: no server YAML and not loading -->
+  <div
+    *ngIf="!loading && serverYaml === ''"
+    class="namespace-panel__empty"
+  >
+    Unable to load namespace '{{ namespace }}'
+  </div>
+
+  <!-- Editor branch: we have content -->
+  <ng-container *ngIf="!loading && serverYaml !== ''">
+    <nu-monaco-editor
+      class="namespace-panel__editor"
+      [options]="editorOptions"
+      [(ngModel)]="buffer"
+      [height]="'calc(90vh - 120px)'"
+    ></nu-monaco-editor>
+
+    <div class="namespace-panel__actions">
+      <button
+        *ngIf="mode === 'view'"
+        pButton
+        type="button"
+        size="small"
+        label="Edit"
+        icon="pi pi-pencil"
+        (click)="onEditClick()"
+      ></button>
+    </div>
+  </ng-container>
+</div>

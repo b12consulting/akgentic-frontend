@@ -19,6 +19,13 @@ import { AuthService } from '../services/auth.service';
 import { ConfigService } from '../services/config.service';
 import { ContextService } from '../services/context.service';
 
+// Story 11.2 — Listed in @Component.imports so Angular's @defer block can
+// resolve <app-namespace-panel>. The `@defer (when ...)` block in the
+// template ensures the component's compiled code (and its Monaco chunk)
+// lives in a deferred chunk that is only loaded on first opening of the
+// namespace-editor dialog — the initial home-page bundle stays Monaco-free.
+import { NamespacePanelComponent } from '../admin/catalog/namespace-panel/namespace-panel.component';
+
 @Component({
   selector: 'app-home',
   imports: [
@@ -30,6 +37,7 @@ import { ContextService } from '../services/context.service';
     CommonModule,
     DialogModule,
     InputTextModule,
+    NamespacePanelComponent,
   ],
   templateUrl: './home.component.html',
   styleUrl: './home.component.scss',
@@ -50,6 +58,11 @@ export class HomeComponent {
   restoringTeams = new Set<string>();
   editingDescriptionFor: string | null = null;
   descriptionDrafts = new Map<string, string>();
+
+  // Story 11.2 — controls the Namespace Panel dialog visibility. The panel
+  // component is mounted lazily via @defer in home.component.html so its
+  // Monaco-editor dependency is NOT part of the initial home-page chunk.
+  namespacePanelVisible: boolean = false;
 
   @ViewChildren('descriptionInput') descriptionInputs!: QueryList<ElementRef>;
 
