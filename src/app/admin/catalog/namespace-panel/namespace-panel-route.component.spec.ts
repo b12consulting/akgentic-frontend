@@ -17,6 +17,7 @@ import { ButtonModule } from 'primeng/button';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
+import { TooltipModule } from 'primeng/tooltip';
 
 import {
   NamespaceSummary,
@@ -138,6 +139,7 @@ describe('NamespacePanelRouteComponent (Story 11.6)', () => {
             ConfirmDialogModule,
             DialogModule,
             InputTextModule,
+            TooltipModule,
             StubMonacoEditorComponent,
             ValidationReportComponent,
           ],
@@ -430,5 +432,80 @@ entries: {}
     panel.onEditClick();
     panel.buffer = 'key: modified\n';
     expect(panel.hasUnsavedChanges()).toBeTrue();
+  });
+
+  // ---------------------------------------------------------------------
+  // Story 11.7 AC 8, 9, 10 — route-shell dirty indicator (FR15)
+  // ---------------------------------------------------------------------
+
+  it('(11.7 AC8, AC9) route shell renders dirty indicator with aria-label when panel is dirty', async () => {
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('key: value\n'));
+
+    await buildFixture('foo');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const panel = component.panel!;
+    panel.onEditClick();
+    panel.buffer = 'key: modified\n';
+    fixture.detectChanges();
+
+    const indicator = fixture.nativeElement.querySelector(
+      '[data-test="dirty-indicator-route"]',
+    ) as HTMLElement | null;
+    expect(indicator).not.toBeNull();
+    expect(indicator!.getAttribute('aria-label')).toBe('Unsaved changes');
+    expect(indicator!.textContent?.trim()).toBe('●');
+  });
+
+  it('(11.7 AC10) route shell dirty indicator absent when panel is clean', async () => {
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('key: value\n'));
+
+    await buildFixture('foo');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const panel = component.panel!;
+    expect(panel.hasUnsavedChanges()).toBeFalse();
+
+    const indicator = fixture.nativeElement.querySelector(
+      '[data-test="dirty-indicator-route"]',
+    );
+    expect(indicator).toBeNull();
+  });
+
+  it('(11.7 AC10) route shell dirty indicator removed after Save 2xx (panel flips back to view)', async () => {
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('key: value\n'));
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+
+    await buildFixture('foo');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const panel = component.panel!;
+    panel.onEditClick();
+    panel.buffer = 'key: modified\n';
+    fixture.detectChanges();
+    expect(
+      fixture.nativeElement.querySelector(
+        '[data-test="dirty-indicator-route"]',
+      ),
+    ).not.toBeNull();
+
+    await panel.onSaveClick();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(panel.mode).toBe('view');
+    expect(panel.hasUnsavedChanges()).toBeFalse();
+    expect(
+      fixture.nativeElement.querySelector(
+        '[data-test="dirty-indicator-route"]',
+      ),
+    ).toBeNull();
   });
 });

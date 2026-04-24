@@ -2,12 +2,14 @@ import { CommonModule } from '@angular/common';
 import {
   Component,
   DestroyRef,
+  ElementRef,
   EventEmitter,
   Input,
   OnChanges,
   OnInit,
   Output,
   SimpleChanges,
+  ViewChild,
   inject,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
@@ -18,6 +20,7 @@ import { ButtonModule } from 'primeng/button';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
+import { TooltipModule } from 'primeng/tooltip';
 
 import { NamespaceValidationReport } from '../../../models/catalog.interface';
 import { ApiService } from '../../../services/api.service';
@@ -69,6 +72,7 @@ import { ValidationReportComponent } from './validation-report/validation-report
     DialogModule,
     InputTextModule,
     NuMonacoEditorModule,
+    TooltipModule,
     ValidationReportComponent,
   ],
   // ConfirmationService is provided locally per PrimeNG v19 pattern — scopes
@@ -177,6 +181,45 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
    */
   lastCloneError: Error | null = null;
 
+  // -------------------------------------------------------------------
+  // Story 11.7 — UX-polish state (FR14 gate, FR16 a11y, FR17 Clone modal,
+  // FR21 inline error)
+  // -------------------------------------------------------------------
+
+  /**
+   * Story 11.7 FR16 — visually-hidden polite live-region payload. The
+   * template renders this string inside a `role="status" aria-live="polite"
+   * aria-atomic="true"` <div>; assistive-tech announces every change.
+   * Writes happen at FOUR sites: `flashValidated` (Validation passed),
+   * `announceValidationOutcome` (Validation found N issues),
+   * `onSaveClick` 2xx branch (Namespace saved),
+   * `onCloneConfirmClick` 2xx branch (Cloned to namespace 'X').
+   */
+  a11yAnnouncement: string = '';
+
+  /**
+   * Story 11.7 FR17 (AC 21) — inline error text for the Clone modal's
+   * unstructured-422 branch. When non-null, rendered as a `role="alert"`
+   * <small> immediately below the destination input. Cleared by
+   * `onCloneDestNsChange()` (any keystroke) and by `onCloneDialogHide()`.
+   */
+  cloneInlineError: string | null = null;
+
+  /**
+   * Story 11.7 FR17 (AC 19) — outer Clone button reference. Used by
+   * `onCloneDialogHide()` to return focus to this button after the modal
+   * closes (Cancel / Escape / X / outside click / Confirm).
+   */
+  @ViewChild('cloneBtn', { read: ElementRef })
+  cloneBtnRef?: ElementRef<HTMLButtonElement>;
+
+  /**
+   * Story 11.7 FR17 (AC 16) — destination input reference. Used by
+   * `onCloneDialogShow()` to autofocus the input on modal open.
+   */
+  @ViewChild('cloneDestInput', { read: ElementRef })
+  cloneDestInputRef?: ElementRef<HTMLInputElement>;
+
   /**
    * Destroy guard consumed by the async load + save flows so a late-resolving
    * promise cannot write to state on a destroyed component (AC 13).
@@ -211,6 +254,9 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
     }
     this.validationFlashPersisted = target === 'persisted';
     this.validationFlashBuffer = target === 'buffer';
+    // Story 11.7 AC 11 — pair the visual flash with an aria-live
+    // announcement so screen-reader users get the same outcome.
+    this.a11yAnnouncement = 'Validation passed';
     this.flashTimeoutId = setTimeout(() => {
       this.flashTimeoutId = undefined;
       if (this.destroyed) {
@@ -220,6 +266,27 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       this.validationFlashBuffer = false;
       this.validatedBuffer = null;
     }, 2500);
+  }
+
+  /**
+   * Story 11.7 AC 12 — write the failing-validation announcement into the
+   * live region. Called from THREE sites that populate `lastValidation`
+   * with a non-clean report: `onValidatePersistedClick` failing branch,
+   * `onValidateBufferClick` failing branch, and the Save / Clone 422
+   * structured branches in `handleSaveError` / `handleCloneError`.
+   *
+   * Plural form is fixed at "issues" (e.g. "Validation found 1 issues") for
+   * announcement-text simplicity — assistive-tech audiences tolerate the
+   * unidiomatic phrasing better than two announcement variants would
+   * tolerate inconsistent rendering. `?? 0` defends against a malformed
+   * report missing one of the arrays (test-double sloppiness or a future
+   * schema change).
+   */
+  private announceValidationOutcome(report: NamespaceValidationReport): void {
+    const total =
+      (report.global_errors?.length ?? 0) +
+      (report.entry_issues?.length ?? 0);
+    this.a11yAnnouncement = `Validation found ${total} issues`;
   }
 
   /**
@@ -248,6 +315,15 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
         clearTimeout(this.flashTimeoutId);
         this.flashTimeoutId = undefined;
       }
+    }
+    // Story 11.7 AC 3 — clear stale save error on any keystroke so the
+    // FR14 gate auto-lifts. Unconditional (any keystroke is the operator
+    // declaring "I am editing — re-evaluate"). The corresponding
+    // `lastValidation` clear remains conditional (only when
+    // `value !== validatedBuffer`) to preserve Story 11.4 green-flash
+    // semantics.
+    if (this.rawSaveError !== null) {
+      this.rawSaveError = null;
     }
   }
 
@@ -388,6 +464,9 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       }
       this.serverYaml = savedBuffer;
       this.setMode('view');
+      // Story 11.7 AC 13 — pair the success toast with an aria-live
+      // announcement so screen-reader users get the same outcome.
+      this.a11yAnnouncement = 'Namespace saved';
       this.saved.emit();
       this.messageService.add({
         severity: 'success',
@@ -438,6 +517,8 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
         this.flashValidated('persisted');
       } else {
         this.lastValidation = report;
+        // Story 11.7 AC 12 — announce the failing-validation outcome.
+        this.announceValidationOutcome(report);
       }
     } catch (err) {
       if (this.destroyed) {
@@ -483,6 +564,8 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
         this.flashValidated('buffer');
       } else {
         this.lastValidation = report;
+        // Story 11.7 AC 12 — announce the failing-validation outcome.
+        this.announceValidationOutcome(report);
       }
     } catch (err) {
       if (this.destroyed) {
@@ -534,6 +617,8 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
         // Promote the 422 body into the findings pane — matches the
         // ok:false-on-200 rendering path.
         this.lastValidation = body;
+        // Story 11.7 AC 12 — announce the failing-validation outcome.
+        this.announceValidationOutcome(body);
         return;
       }
       // Fall through to a generic toast when the 422 body isn't a report
@@ -565,6 +650,8 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       if (this.isValidationReport(body)) {
         this.lastValidation = body;
         this.rawSaveError = null;
+        // Story 11.7 AC 12 — announce the failing-validation outcome.
+        this.announceValidationOutcome(body);
       } else {
         this.rawSaveError =
           typeof body === 'string' ? body : JSON.stringify(body, null, 2);
@@ -642,7 +729,13 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
     if (this.existingNamespaces.includes(trimmed)) {
       return true;
     }
-    return this.cloning;
+    if (this.cloning) {
+      return true;
+    }
+    // Story 11.7 AC 7 — the Clone modal Confirm button inherits the
+    // FR14 gate so an operator cannot bypass the outer Clone button's
+    // disabled state by opening the modal first.
+    return this.isCloneGated;
   }
 
   /**
@@ -662,6 +755,113 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       return `Namespace '${trimmed}' already exists`;
     }
     return null;
+  }
+
+  // -------------------------------------------------------------------
+  // Story 11.7 — FR14 Save/Clone gate getters + tooltip helpers
+  // -------------------------------------------------------------------
+
+  /**
+   * Story 11.7 AC 1, 2, 6 — Save gate predicate. True iff the panel has
+   * a known-bad signal: either a structured-422 / 200-with-issues report
+   * (`lastValidation.ok === false`) or an unstructured-422 raw-error
+   * fallback (`rawSaveError !== null`).
+   *
+   * Fresh untouched state (`lastValidation === null && rawSaveError ===
+   * null`) returns `false` — Save / Clone are enabled by default.
+   * Option B (gate-on-known-bad) is the explicit UX choice; see story
+   * Dev Notes "Why option B".
+   *
+   * Two getters (`isSaveGated` + `isCloneGated`) instead of one shared
+   * getter so call-site tooltips can be specific (Save's tooltip says
+   * "saving"; Clone's says "cloning") without leaking unrelated logic.
+   */
+  get isSaveGated(): boolean {
+    return (
+      (this.lastValidation !== null && !this.lastValidation.ok) ||
+      this.rawSaveError !== null
+    );
+  }
+
+  /** Story 11.7 AC 1, 2, 6 — Clone gate predicate (same body as Save). */
+  get isCloneGated(): boolean {
+    return (
+      (this.lastValidation !== null && !this.lastValidation.ok) ||
+      this.rawSaveError !== null
+    );
+  }
+
+  /**
+   * Story 11.7 AC 1 — Save tooltip text. Returns the explanatory string
+   * ONLY when the gate is the active reason for disabling. PrimeNG's
+   * `pTooltip` directive suppresses the tooltip on `null` / empty string,
+   * so unrelated disable reasons (clean buffer, in-flight save) get no
+   * tooltip — avoiding contradictory messaging.
+   */
+  get saveTooltip(): string | null {
+    if (
+      this.isSaveGated &&
+      !this.saving &&
+      this.buffer !== this.serverYaml
+    ) {
+      return 'Fix validation issues before saving.';
+    }
+    return null;
+  }
+
+  /**
+   * Story 11.7 AC 1 — Clone tooltip text. Same idiom as `saveTooltip`:
+   * returns the gate-explanatory string only when the gate is the active
+   * reason for disabling.
+   */
+  get cloneTooltip(): string | null {
+    if (this.isCloneGated && !this.cloning && !this.saving) {
+      return 'Fix validation issues before cloning.';
+    }
+    return null;
+  }
+
+  // -------------------------------------------------------------------
+  // Story 11.7 — Clone modal a11y handlers (FR17 + FR21)
+  // -------------------------------------------------------------------
+
+  /**
+   * Story 11.7 AC 16 — `(onShow)` handler for the Clone modal. Defers
+   * the focus call to the next microtask so PrimeNG has time to mount
+   * the input element in its overlay. Idempotent + null-safe.
+   */
+  onCloneDialogShow(): void {
+    setTimeout(() => {
+      this.cloneDestInputRef?.nativeElement.focus();
+    }, 0);
+  }
+
+  /**
+   * Story 11.7 AC 18, 19, 21 — `(onHide)` handler for the Clone modal.
+   * Runs the same cleanup as `onCloneCancelClick` PLUS clears
+   * `cloneInlineError` and returns focus to the outer Clone button.
+   * Defers the focus call by one microtask so any post-hide CD settles
+   * (and PrimeNG's exit animation completes) before the focus moves.
+   */
+  onCloneDialogHide(): void {
+    this.cloneDestNs = '';
+    this.cloneInlineError = null;
+    setTimeout(() => {
+      this.cloneBtnRef?.nativeElement.focus();
+    }, 0);
+  }
+
+  /**
+   * Story 11.7 AC 21 — destination-input change handler. Clears the
+   * unstructured-422 inline error so the operator can edit and retry
+   * without first dismissing a stale alert. The existing
+   * `cloneValidationError` getter (Story 11.5) is computed-on-getter and
+   * does not need a separate clear-on-input handler.
+   */
+  onCloneDestNsChange(): void {
+    if (this.cloneInlineError !== null) {
+      this.cloneInlineError = null;
+    }
   }
 
   /**
@@ -706,11 +906,16 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       // re-exports the bundle and flips mode to view (Story 11.2).
       this.cloneDialogVisible = false;
       this.cloneDestNs = '';
+      this.cloneInlineError = null;
       this.saved.emit();
       this.namespace = destNs;
       // Fire-and-forget: loadNamespace owns its own loading flag and
       // destroy guard. AC 14 budgets this second fetch explicitly.
       void this.loadNamespace(destNs);
+      // Story 11.7 AC 14 — pair the success toast with an aria-live
+      // announcement using the captured destNs (avoids racing with
+      // any later mutation of `this.cloneDestNs`).
+      this.a11yAnnouncement = `Cloned to namespace '${destNs}'`;
       this.messageService.add({
         severity: 'success',
         summary: `Cloned to namespace '${destNs}'`,
@@ -753,12 +958,26 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
     if (status === 422) {
       const body = (err as HttpError).body;
       if (this.isValidationReport(body)) {
+        // Story 11.7 AC 20 — structured 422 closes the Clone modal and
+        // surfaces the findings in the parent panel's findings pane (the
+        // single canonical findings surface). The outer Clone button is
+        // then gated by FR14.
         this.lastValidation = body;
         this.rawSaveError = null;
+        this.cloneDialogVisible = false;
+        this.cloneDestNs = '';
+        this.cloneInlineError = null;
+        // AC 12 — announce the failing-validation outcome.
+        this.announceValidationOutcome(body);
       } else {
-        this.rawSaveError =
+        // Story 11.7 AC 21 — unstructured 422 keeps the modal open with
+        // an inline `role="alert"` error. We deliberately do NOT touch
+        // `lastValidation` or `rawSaveError` (the parent's FR14 gate is
+        // reserved for SAVE failures). The inline alert handles its own
+        // assistive-tech announcement, so no live-region write here
+        // (avoids duplicate announcements).
+        this.cloneInlineError =
           typeof body === 'string' ? body : JSON.stringify(body, null, 2);
-        this.lastValidation = null;
       }
       return;
     }

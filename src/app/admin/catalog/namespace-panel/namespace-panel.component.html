@@ -68,7 +68,14 @@
         data-test="validate-persisted-btn"
       ></button>
 
-      <!-- Edit mode: Save + Cancel. Save is disabled until buffer !== serverYaml (AC 2). -->
+      <!--
+        Edit mode: Save + Cancel. Save is disabled until buffer !==
+        serverYaml (Story 11.3 AC 2). Story 11.7 AC 1, 2 — extended
+        with `isSaveGated` (FR14: known-bad validation OR
+        unstructured-422 raw save error). The pTooltip getter returns
+        null when the gate is NOT the active disable reason — PrimeNG
+        suppresses tooltip on null/empty.
+      -->
       <button
         *ngIf="mode === 'edit'"
         pButton
@@ -76,7 +83,8 @@
         size="small"
         label="Save"
         [icon]="saving ? 'pi pi-spinner pi-spin' : 'pi pi-save'"
-        [disabled]="buffer === serverYaml || saving"
+        [disabled]="buffer === serverYaml || saving || isSaveGated"
+        [pTooltip]="saveTooltip"
         (click)="onSaveClick()"
         data-test="save-btn"
       ></button>
@@ -135,15 +143,19 @@
       <!-- Clone button (Story 11.5 AC 1): visible in BOTH view and edit
            modes (Clone supports "Save As" semantics over a dirty buffer —
            AC 5). Hidden automatically while loading or in the empty state
-           because the outer *ngIf gates `serverYaml !== ''`. -->
+           because the outer *ngIf gates `serverYaml !== ''`. Story 11.7
+           AC 1, 2, 19 — extended with `isCloneGated` (FR14) and a
+           template-ref so `onCloneDialogHide()` can return focus here. -->
       <button
+        #cloneBtn
         pButton
         type="button"
         size="small"
         severity="secondary"
         label="Clone"
         icon="pi pi-copy"
-        [disabled]="cloning || saving"
+        [disabled]="cloning || saving || isCloneGated"
+        [pTooltip]="cloneTooltip"
         (click)="onCloneClick()"
         data-test="clone-btn"
       ></button>
@@ -163,21 +175,35 @@
        preserve NFR6 (host-agnostic): the panel owns the dialog, the form,
        the validation, and the confirm handler. The host supplies only
        `[existingNamespaces]` for the pre-flight collision check. -->
+  <!--
+    Story 11.7 AC 16 — `(onShow)` defers focus to the destination input
+    after PrimeNG mounts the overlay (programmatic focus from the host
+    component, fallback for [focusOnShow] which requires the input to be
+    the first focusable in the dialog tree).
+    Story 11.7 AC 18, 19, 21 — `(onHide)` runs the cleanup (clears
+    `cloneDestNs` + `cloneInlineError`) and returns focus to the outer
+    Clone button.
+  -->
   <p-dialog
     [visible]="cloneDialogVisible"
     (visibleChange)="onCloneDialogVisibleChange($event)"
+    (onShow)="onCloneDialogShow()"
+    (onHide)="onCloneDialogHide()"
     [modal]="true"
     [style]="{ width: '30rem' }"
     header="Clone namespace"
+    data-test="clone-dialog"
   >
     <div class="namespace-panel__clone-body">
       <label for="clone-dest-ns-input">Destination namespace name</label>
       <input
+        #cloneDestInput
         id="clone-dest-ns-input"
         type="text"
         pInputText
         name="cloneDestNs"
         [(ngModel)]="cloneDestNs"
+        (ngModelChange)="onCloneDestNsChange()"
         data-test="clone-destns-input"
         autocomplete="off"
       />
@@ -188,6 +214,15 @@
       >
         {{ cloneValidationError }}
       </div>
+      <!-- Story 11.7 AC 21 — inline alert for the unstructured-422 branch.
+           role="alert" implies aria-live="assertive" + aria-atomic="true"
+           so the message is announced as soon as the element appears. -->
+      <small
+        *ngIf="cloneInlineError !== null"
+        class="namespace-panel__clone-inline-error"
+        role="alert"
+        data-test="clone-inline-error"
+      >{{ cloneInlineError }}</small>
     </div>
     <div class="namespace-panel__clone-actions">
       <button
@@ -207,11 +242,29 @@
         label="Confirm"
         [icon]="cloning ? 'pi pi-spinner pi-spin' : 'pi pi-copy'"
         [disabled]="cloneConfirmDisabled"
+        [pTooltip]="cloneTooltip"
         (click)="onCloneConfirmClick()"
         data-test="clone-confirm-btn"
       ></button>
     </div>
   </p-dialog>
+
+  <!--
+    Story 11.7 AC 11–15 — visually-hidden polite live region (FR16).
+    role="status" + aria-live="polite" is the WCAG-recommended pattern
+    for non-disruptive operator feedback. aria-atomic="true" forces a
+    full re-announce on every text change (avoids partial diff
+    announcements on some screen readers). The element stays in the
+    DOM and accessibility tree but is clipped from view via the
+    .namespace-panel__a11y-live class.
+  -->
+  <div
+    class="namespace-panel__a11y-live"
+    role="status"
+    aria-live="polite"
+    aria-atomic="true"
+    data-test="a11y-live-region"
+  >{{ a11yAnnouncement }}</div>
 
   <!-- PrimeNG ConfirmDialog — scoped to this component via `providers:
        [ConfirmationService]` so the dialog and future route presentations

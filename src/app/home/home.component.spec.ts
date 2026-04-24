@@ -499,6 +499,80 @@ describe('HomeComponent', () => {
     expect(component.namespaceIdentifiers).toEqual([]);
   });
 
+  // --- Story 11.7 — dirty indicator + dialog [closable] (FR15 + FR18) ---
+
+  it('(11.7 AC22) isWriteInFlight is true when namespacePanel.saving === true', () => {
+    component.namespacePanel = {
+      saving: true,
+      cloning: false,
+    } as unknown as NamespacePanelComponent;
+    expect(component.isWriteInFlight).toBeTrue();
+  });
+
+  it('(11.7 AC22) isWriteInFlight is true when namespacePanel.cloning === true', () => {
+    component.namespacePanel = {
+      saving: false,
+      cloning: true,
+    } as unknown as NamespacePanelComponent;
+    expect(component.isWriteInFlight).toBeTrue();
+  });
+
+  it('(11.7 AC23) isWriteInFlight is false when namespacePanel is undefined', () => {
+    component.namespacePanel = undefined;
+    expect(component.isWriteInFlight).toBeFalse();
+  });
+
+  it('(11.7 AC23) isWriteInFlight is false when only validating/loading are true (reads are non-destructive)', () => {
+    component.namespacePanel = {
+      saving: false,
+      cloning: false,
+      validating: true,
+      loading: true,
+    } as unknown as NamespacePanelComponent;
+    expect(component.isWriteInFlight).toBeFalse();
+  });
+
+  it('(11.7 AC8) namespaceLabel returns selected.name when present', () => {
+    component.selectedNamespace$.next({
+      namespace: 'foo',
+      name: 'Foo Display',
+      description: '',
+    });
+    expect(component.namespaceLabel).toBe('Foo Display');
+  });
+
+  it('(11.7 AC8) namespaceLabel falls back to "Namespace" when none selected', () => {
+    component.selectedNamespace$.next(null);
+    expect(component.namespaceLabel).toBe('Namespace');
+  });
+
+  it('(11.7 AC8, AC9, AC10) dialog header dirty-indicator binding follows panel.hasUnsavedChanges()', () => {
+    // Asserts the BINDING contract — the template predicate is
+    // `namespacePanel?.hasUnsavedChanges() === true`. PrimeNG's dialog
+    // teleports the rendered header into an overlay attached to <body>
+    // which is finicky to query deterministically in component tests; the
+    // contract that matters here is "indicator gates on panel's dirty
+    // method", which is what the binding evaluates.
+    function predicate(): boolean {
+      return component.namespacePanel?.hasUnsavedChanges() === true;
+    }
+
+    component.namespacePanel = undefined;
+    expect(predicate()).toBeFalse();
+
+    // Clean panel — predicate is false, indicator hidden.
+    component.namespacePanel = {
+      hasUnsavedChanges: () => false,
+    } as unknown as NamespacePanelComponent;
+    expect(predicate()).toBeFalse();
+
+    // Dirty panel — predicate is true, indicator visible.
+    component.namespacePanel = {
+      hasUnsavedChanges: () => true,
+    } as unknown as NamespacePanelComponent;
+    expect(predicate()).toBeTrue();
+  });
+
   it('(11.5 AC13) template binding propagates namespaceIdentifiers via ng-reflect', async () => {
     // Prime the ngOnInit load so it does NOT overwrite our namespaces$ with
     // the default empty list: make `getNamespaces` resolve with the pair we

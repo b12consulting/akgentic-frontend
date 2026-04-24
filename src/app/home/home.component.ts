@@ -308,5 +308,39 @@ export class HomeComponent {
     return (this.namespaces$.value ?? []).map((n) => n.namespace);
   }
 
+  /**
+   * Story 11.7 AC 22, 23 — write-in-flight predicate (FR18). True iff the
+   * panel is currently saving OR cloning. Reads (validate / load) are
+   * NON-destructive and intentionally excluded so the operator can dismiss
+   * the dialog while a Validate request is mid-flight.
+   *
+   * Used by the dialog's `[closable]` / `[closeOnEscape]` /
+   * `[dismissableMask]` bindings to lock all dismissal channels during
+   * an in-flight write. Existing destroyed-guard pattern in the panel
+   * (Story 11.3 AC 13 + 11.5 AC 16) absorbs late resolutions; this gate
+   * just prevents the operator from hitting that race in the first place.
+   */
+  get isWriteInFlight(): boolean {
+    return (
+      this.namespacePanel?.saving === true ||
+      this.namespacePanel?.cloning === true
+    );
+  }
+
+  /**
+   * Story 11.7 AC 8 — namespace label for the dialog header. Inlined
+   * resolution of (selectedNamespace.name ?? selectedNamespace.namespace ??
+   * 'Namespace') from the existing async pipe. Wrapped in a getter so the
+   * dialog's `<ng-template pTemplate="header">` block can render it
+   * alongside the conditional dirty indicator without two async pipes.
+   */
+  get namespaceLabel(): string {
+    const selected = this.selectedNamespace$.value;
+    if (selected === null) {
+      return 'Namespace';
+    }
+    return selected.name ?? selected.namespace ?? 'Namespace';
+  }
+
   visible = false;
 }

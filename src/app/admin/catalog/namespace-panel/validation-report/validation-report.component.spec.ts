@@ -210,6 +210,42 @@ describe('ValidationReportComponent', () => {
   // -------------------------------------------------------------------
   // clearRequested output fires on Clear button click, no input mutation.
   // -------------------------------------------------------------------
+  // -------------------------------------------------------------------
+  // Story 11.7 AC 25 — findings-pane bounded height (NFR10)
+  // -------------------------------------------------------------------
+  it('(11.7 AC25) findings pane caps height at min(30vh, 240px) with internal overflow-y: auto', () => {
+    build();
+    const report: NamespaceValidationReport = {
+      namespace: 'foo',
+      ok: false,
+      // 50 global errors — the findings list is far longer than the cap.
+      global_errors: Array.from({ length: 50 }, (_, i) => `error ${i}`),
+      entry_issues: [],
+    };
+    fixture.componentRef.setInput('report', report);
+    fixture.componentRef.setInput('rawError', null);
+    fixture.detectChanges();
+
+    // Attach the host to the live document body so getComputedStyle and
+    // getBoundingClientRect return real layout dimensions.
+    const host = fixture.nativeElement as HTMLElement;
+    document.body.appendChild(host);
+    try {
+      const styles = window.getComputedStyle(host);
+      expect(styles.overflowY).toBe('auto');
+      const rect = host.getBoundingClientRect();
+      // The host is capped at min(30vh, 240px); under any viewport the
+      // upper bound is 240. Allow a 1-px tolerance for rounding.
+      expect(rect.height).toBeLessThanOrEqual(241);
+    } finally {
+      // Karma keeps the document around between tests — clean up so the
+      // next test isn't polluted by a stray host element.
+      if (host.parentElement === document.body) {
+        document.body.removeChild(host);
+      }
+    }
+  });
+
   it('(11.4 AC8) Clear button emits clearRequested and never mutates inputs', () => {
     build();
     const report: NamespaceValidationReport = {
