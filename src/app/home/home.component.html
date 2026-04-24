@@ -203,8 +203,16 @@
   (and its Monaco-editor chunk) is fetched only on first open. The initial
   home-page bundle stays Monaco-free.
 -->
+<!--
+  Story 11.3 — split [(visible)] into [visible] + (visibleChange) so the
+  dirty-close guard can intercept dismissals. A separate <p-confirmDialog />
+  is mounted at the end of this template so PrimeNG's ConfirmationService
+  can target it (first PrimeNG ConfirmDialog in HomeComponent — scoped to
+  the component, not app-root).
+-->
 <p-dialog
-  [(visible)]="namespacePanelVisible"
+  [visible]="namespacePanelVisible"
+  (visibleChange)="onNamespacePanelVisibleChange($event)"
   [modal]="true"
   [style]="{ width: '90vw', height: '90vh' }"
   [header]="((selectedNamespace$ | async)?.name) ?? ((selectedNamespace$ | async)?.namespace) ?? 'Namespace'"
@@ -213,6 +221,9 @@
     <app-namespace-panel
       [namespace]="((selectedNamespace$ | async)?.namespace) ?? ''"
       (closed)="namespacePanelVisible = false"
+      (saved)="onNamespaceSaved()"
     />
   }
 </p-dialog>
+
+<p-confirmDialog></p-confirmDialog>

@@ -19,10 +19,11 @@
       class="namespace-panel__editor"
       [options]="editorOptions"
       [(ngModel)]="buffer"
-      [height]="'calc(90vh - 120px)'"
+      [height]="'calc(90vh - 240px)'"
     ></nu-monaco-editor>
 
     <div class="namespace-panel__actions">
+      <!-- View mode: Edit only. Hidden while mode === 'edit' (AC 1). -->
       <button
         *ngIf="mode === 'view'"
         pButton
@@ -31,7 +32,96 @@
         label="Edit"
         icon="pi pi-pencil"
         (click)="onEditClick()"
+        data-test="edit-btn"
+      ></button>
+
+      <!-- Edit mode: Save + Cancel. Save is disabled until buffer !== serverYaml (AC 2). -->
+      <button
+        *ngIf="mode === 'edit'"
+        pButton
+        type="button"
+        size="small"
+        label="Save"
+        [icon]="saving ? 'pi pi-spinner pi-spin' : 'pi pi-save'"
+        [disabled]="buffer === serverYaml || saving"
+        (click)="onSaveClick()"
+        data-test="save-btn"
+      ></button>
+      <button
+        *ngIf="mode === 'edit'"
+        pButton
+        type="button"
+        size="small"
+        severity="secondary"
+        label="Cancel"
+        icon="pi pi-times"
+        [disabled]="saving"
+        (click)="onCancelClick()"
+        data-test="cancel-btn"
+      ></button>
+
+      <!-- Action-row Retry (AC 8): rendered when the previous save attempt
+           failed with a non-422 error. The mutation is never auto-retried —
+           the operator decides. In-toast Retry was considered (see AC 8
+           allowance) but PrimeNG v19's default <p-toast> renders text-only
+           without a custom template, so the action-row button is simpler
+           and equally satisfies the AC. -->
+      <button
+        *ngIf="mode === 'edit' && lastSaveError !== null"
+        pButton
+        type="button"
+        size="small"
+        severity="warn"
+        label="Retry Save"
+        icon="pi pi-refresh"
+        [disabled]="saving"
+        (click)="onSaveClick()"
+        data-test="retry-save-btn"
       ></button>
     </div>
+
+    <!-- Validation-report rendering — minimal inline list (Story 11.4 polishes). -->
+    <div
+      *ngIf="lastValidation"
+      class="namespace-panel__validation"
+      data-test="validation-report"
+    >
+      <h4>
+        Validation report
+        ({{ lastValidation.ok ? 'OK' : 'issues' }})
+      </h4>
+      <ul *ngIf="lastValidation.global_errors.length > 0" class="global-errors">
+        <li *ngFor="let msg of lastValidation.global_errors">
+          <strong>global</strong>: {{ msg }}
+        </li>
+      </ul>
+      <ul
+        *ngIf="lastValidation.entry_issues.length > 0"
+        class="entry-issues"
+      >
+        <li *ngFor="let issue of lastValidation.entry_issues">
+          <strong>{{ issue.kind }}</strong> {{ issue.entry_id }}:
+          <span *ngFor="let msg of issue.errors; let last = last">
+            {{ msg }}<ng-container *ngIf="!last">; </ng-container>
+          </span>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Fallback: server 422 with a non-structured body renders verbatim
+         (AC 7 fallback branch). Story 11.4 owns the polish. -->
+    <div
+      *ngIf="rawSaveError"
+      class="namespace-panel__raw-error"
+      data-test="raw-save-error"
+    >
+      <h4>Server returned an unstructured error</h4>
+      <pre>{{ rawSaveError }}</pre>
+    </div>
   </ng-container>
+
+  <!-- PrimeNG ConfirmDialog — scoped to this component via `providers:
+       [ConfirmationService]` so the dialog and future route presentations
+       both get an instance without app-root wiring. -->
+  <p-confirmDialog></p-confirmDialog>
 </div>

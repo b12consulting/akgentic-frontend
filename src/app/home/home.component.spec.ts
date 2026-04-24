@@ -3,6 +3,7 @@ import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { Router } from '@angular/router';
+import { ConfirmationService } from 'primeng/api';
 import { BehaviorSubject, of } from 'rxjs';
 
 import { ApiService } from '../services/api.service';
@@ -10,6 +11,7 @@ import { AuthService } from '../services/auth.service';
 import { ConfigService } from '../services/config.service';
 import { ContextService } from '../services/context.service';
 import { TeamContext } from '../models/team.interface';
+import { NamespacePanelComponent } from '../admin/catalog/namespace-panel/namespace-panel.component';
 import { HomeComponent } from './home.component';
 
 function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
@@ -35,6 +37,7 @@ describe('HomeComponent', () => {
   };
   let authSpy: jasmine.SpyObj<AuthService>;
   let routerSpy: jasmine.SpyObj<Router>;
+  let confirmationSpy: jasmine.SpyObj<ConfirmationService>;
 
   beforeEach(async () => {
     teams$ = new BehaviorSubject<TeamContext[]>([]);
@@ -72,6 +75,13 @@ describe('HomeComponent', () => {
     routerSpy = jasmine.createSpyObj('Router', ['navigate']);
     routerSpy.navigate.and.returnValue(Promise.resolve(true));
 
+    // Use a REAL ConfirmationService instance (so its `requireConfirmation$`
+    // Subject is wired) and spy on `.confirm` to observe calls. Using a bare
+    // `jasmine.createSpyObj` breaks PrimeNG's `<p-confirmDialog>` constructor
+    // because it subscribes to `requireConfirmation$` on instantiation.
+    confirmationSpy = new ConfirmationService() as jasmine.SpyObj<ConfirmationService>;
+    spyOn(confirmationSpy, 'confirm').and.callThrough();
+
     await TestBed.configureTestingModule({
       imports: [HomeComponent, CommonModule, NoopAnimationsModule],
       providers: [
@@ -82,7 +92,17 @@ describe('HomeComponent', () => {
         { provide: Router, useValue: routerSpy },
       ],
       schemas: [CUSTOM_ELEMENTS_SCHEMA],
-    }).compileComponents();
+    })
+      // Swap the HomeComponent's locally-provided ConfirmationService for a
+      // spy so the Story 11.3 dirty-close guard is testable deterministically.
+      .overrideComponent(HomeComponent, {
+        set: {
+          providers: [
+            { provide: ConfirmationService, useValue: confirmationSpy },
+          ],
+        },
+      })
+      .compileComponents();
 
     fixture = TestBed.createComponent(HomeComponent);
     component = fixture.componentInstance;
@@ -379,5 +399,88 @@ describe('HomeComponent', () => {
     // until destroyed below. Destroy it and then assert no residual observers.
     fixture.destroy();
     expect(teams$.observed).toBeFalse();
+  });
+
+  // --- Story 11.3 — dialog dirty-close guard + (saved) re-fetch -------
+
+  it('(11.3 AC10) onNamespacePanelVisibleChange(true) is a no-op (opening the dialog)', () => {
+    component.namespacePanelVisible = true;
+    component.onNamespacePanelVisibleChange(true);
+    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+    expect(component.namespacePanelVisible).toBeTrue();
+  });
+
+  it('(11.3 AC10) onNamespacePanelVisibleChange(false) with clean panel closes without confirm', () => {
+    component.namespacePanelVisible = true;
+    // Simulate a mounted-but-clean panel.
+    component.namespacePanel = {
+      hasUnsavedChanges: () => false,
+    } as unknown as NamespacePanelComponent;
+
+    component.onNamespacePanelVisibleChange(false);
+
+    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+    expect(component.namespacePanelVisible).toBeFalse();
+  });
+
+  it('(11.3 AC10) onNamespacePanelVisibleChange(false) with no mounted panel closes without confirm', () => {
+    component.namespacePanelVisible = true;
+    component.namespacePanel = undefined;
+
+    component.onNamespacePanelVisibleChange(false);
+
+    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+    expect(component.namespacePanelVisible).toBeFalse();
+  });
+
+  it('(11.3 AC10) onNamespacePanelVisibleChange(false) with dirty panel requests confirm and keeps dialog open', () => {
+    component.namespacePanelVisible = true;
+    component.namespacePanel = {
+      hasUnsavedChanges: () => true,
+    } as unknown as NamespacePanelComponent;
+
+    component.onNamespacePanelVisibleChange(false);
+
+    expect(confirmationSpy.confirm).toHaveBeenCalledTimes(1);
+    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
+    expect(args.message as string).toContain('unsaved changes');
+    // Re-asserted visibility to keep the dialog open during the confirm.
+    expect(component.namespacePanelVisible).toBeTrue();
+
+    // Accept → the dialog truly closes.
+    args.accept!();
+    expect(component.namespacePanelVisible).toBeFalse();
+  });
+
+  it('(11.3 AC10) dismissing the confirm (reject) leaves the dialog open, buffer intact', () => {
+    component.namespacePanelVisible = true;
+    component.namespacePanel = {
+      hasUnsavedChanges: () => true,
+    } as unknown as NamespacePanelComponent;
+
+    component.onNamespacePanelVisibleChange(false);
+
+    // Reject is optional in ConfirmationService; the call-site does not
+    // register one, so dismissing leaves state unchanged.
+    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
+    expect(args.reject).toBeUndefined();
+    // Visibility is still true (re-asserted by the handler).
+    expect(component.namespacePanelVisible).toBeTrue();
+  });
+
+  it('(11.3 AC6) onNamespaceSaved re-invokes getNamespaces and pushes the result into namespaces$', async () => {
+    // First load pushed [] from beforeEach spy setup. Now prime a new list
+    // and invoke the (saved) handler — the dropdown must refresh.
+    const updated = [
+      { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
+      { namespace: 'rag-team-v1', name: 'RAG Team', description: 'd2' },
+    ];
+    apiSpy.getNamespaces.calls.reset();
+    apiSpy.getNamespaces.and.returnValue(Promise.resolve(updated));
+
+    await component.onNamespaceSaved();
+
+    expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(1);
+    expect(component.namespaces$.value).toEqual(updated);
   });
 });

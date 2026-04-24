@@ -13,45 +13,69 @@ import {
 import { FormsModule } from '@angular/forms';
 
 import { NuMonacoEditorModule } from '@ng-util/monaco-editor';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 
 import { NamespaceValidationReport } from '../../../models/catalog.interface';
 import { ApiService } from '../../../services/api.service';
+import { HttpError } from '../../../services/fetch.service';
 
 /**
  * NamespacePanelComponent — host-agnostic view of a catalog namespace YAML.
  *
- * Story 11.2 delivers the read-only scaffold: input-driven load via
- * `apiService.exportNamespace`, Monaco YAML editor mounted read-only,
- * empty/loading/error branches in the template, and a placeholder Edit
- * button whose handler is filled in by Story 11.3.
+ * Story 11.2 delivered the read-only scaffold. Story 11.3 adds:
+ *   - Edit / Cancel / Save action row (Edit replaced by Cancel+Save in edit mode).
+ *   - `hasUnsavedChanges()` is now a real buffer-vs-serverYaml comparison.
+ *   - Save flow posts directly to `apiService.importNamespace` — NO
+ *     pre-save `validate` round-trip (ADR-011 D4).
+ *   - 422 → populate `lastValidation` (structured) or `rawSaveError`
+ *     (fallback); stay in edit mode, buffer preserved.
+ *   - 5xx / 4xx (other than 401/422) → sticky error toast + in-panel Retry
+ *     button; stay in edit mode, buffer preserved.
+ *   - 401 → no panel-specific behaviour; the FetchService global toast
+ *     surfaces the failure, the app-wide handler (if any) runs. Panel only
+ *     clears `saving` in `finally`.
+ *   - PrimeNG `ConfirmDialog` guards Cancel-with-dirty-buffer.
  *
- * The component is presentation-only: it has NO conditional logic on its
- * host (no references to `Router`, `ActivatedRoute`, `MAT_DIALOG_DATA`,
- * etc.). The dialog wrapper (HomeComponent) and the future deep-link
- * route (Story 11.6) mount it identically.
+ * The component remains presentation-only: no `Router`, `ActivatedRoute`,
+ * `MAT_DIALOG_DATA`, etc. The dialog wrapper (HomeComponent) and the future
+ * deep-link route (Story 11.6) mount it identically.
  *
  * Public surface contract (stable across Epic 11):
  *   - @Input() namespace: string          — required, drives the load flow.
  *   - @Output() closed: EventEmitter<void> — asks the host to dismiss.
- *   - hasUnsavedChanges(): boolean         — dirty-state predicate.
- *     Always returns false in Story 11.2 (view-only); Story 11.3 replaces
- *     the body with the real buffer-vs-serverYaml comparison.
+ *   - @Output() saved: EventEmitter<void>  — emitted once per successful
+ *     import; hosts re-fetch derived lists (e.g. HomeComponent's dropdown).
+ *   - hasUnsavedChanges(): boolean         — dirty-state predicate. Returns
+ *     true iff `mode === 'edit' && buffer !== serverYaml`. Story 11.6's
+ *     `CanDeactivate` guard consumes the same method.
  */
 @Component({
   selector: 'app-namespace-panel',
   standalone: true,
-  imports: [CommonModule, FormsModule, ButtonModule, NuMonacoEditorModule],
+  imports: [
+    CommonModule,
+    FormsModule,
+    ButtonModule,
+    ConfirmDialogModule,
+    NuMonacoEditorModule,
+  ],
+  // ConfirmationService is provided locally per PrimeNG v19 pattern — scopes
+  // the confirm dialog to this component (dialog + future route both get
+  // their own scoped instance).
+  providers: [ConfirmationService],
   templateUrl: './namespace-panel.component.html',
   styleUrls: ['./namespace-panel.component.scss'],
 })
 export class NamespacePanelComponent implements OnInit, OnChanges {
   @Input() namespace!: string;
   @Output() closed = new EventEmitter<void>();
+  @Output() saved = new EventEmitter<void>();
 
   private apiService: ApiService = inject(ApiService);
   private messageService: MessageService = inject(MessageService);
+  private confirmationService: ConfirmationService = inject(ConfirmationService);
   private destroyRef: DestroyRef = inject(DestroyRef);
 
   // Internal state — initial values per AC 2.
@@ -61,9 +85,28 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   lastValidation: NamespaceValidationReport | null = null;
   loading: boolean = false;
 
+  // Story 11.3 — Save flow state.
+  /** True while an `importNamespace` request is in flight (AC 5). */
+  saving: boolean = false;
   /**
-   * Destroy guard consumed by the async load flow so a late-resolving
-   * promise cannot write to state on a destroyed component (AC 12).
+   * Raw (non-structured) server error body surfaced by a 422 whose payload
+   * is not a `NamespaceValidationReport` (AC 7 fallback branch).
+   * `null` means no unstructured error pending.
+   */
+  rawSaveError: string | null = null;
+  /**
+   * Tracks the most recent Save error (non-422). When non-null, an in-panel
+   * Retry button is rendered in the action row (AC 8). This implementation
+   * — action-row Retry rather than in-toast Retry — is chosen because
+   * PrimeNG v19's default `<p-toast>` does not surface clickable actions
+   * without a custom template; the action-row button satisfies the AC's
+   * "operator can retry with one click, mutation is not auto-retried".
+   */
+  lastSaveError: Error | null = null;
+
+  /**
+   * Destroy guard consumed by the async load + save flows so a late-resolving
+   * promise cannot write to state on a destroyed component (AC 13).
    */
   private destroyed = false;
   /**
@@ -111,24 +154,155 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
 
   /**
    * Dirty-state predicate — single source of truth for confirm-on-close
-   * and Save-enabled checks. Always false in Story 11.2 (no edit mode
-   * exists yet). Story 11.3 replaces the body with
-   * `this.buffer !== this.serverYaml`. The method NAME and SIGNATURE are
-   * part of Epic 11's stable surface — do not rename or retype.
+   * and Save-enabled checks. True iff the panel is in edit mode AND the
+   * buffer diverges from the last server snapshot. Method NAME + SIGNATURE
+   * are part of Epic 11's stable surface (Story 11.6's `CanDeactivate`
+   * guard consumes the same method).
    */
   hasUnsavedChanges(): boolean {
-    return false;
+    return this.mode === 'edit' && this.buffer !== this.serverYaml;
   }
 
   /**
-   * Placeholder Edit handler. Story 11.3 replaces the body to flip
-   * `mode` to `'edit'` (and stamp `buffer` for the diff). Keep the name
-   * `onEditClick` stable across Epic 11 so the template binding does
-   * not need to move.
+   * Flip the panel into edit mode. Monaco's `readOnly` flips via the
+   * `editorOptions` getter (derived from `mode`). Cancel / Save buttons
+   * replace the Edit button in the action row.
    */
   onEditClick(): void {
-    // TODO Story 11.3 — flip to edit mode (set this.mode = 'edit').
-    console.log('[NamespacePanel] Edit clicked — Story 11.3 activates edit.');
+    this.mode = 'edit';
+  }
+
+  /**
+   * Cancel the edit. Clean buffer → flip to view directly. Dirty buffer →
+   * PrimeNG confirm dialog; on accept revert buffer + flip to view, on
+   * reject keep state unchanged (AC 3 + AC 4).
+   */
+  onCancelClick(): void {
+    if (this.buffer === this.serverYaml) {
+      this.mode = 'view';
+      return;
+    }
+    this.confirmationService.confirm({
+      message: 'Discard unsaved changes?',
+      accept: () => {
+        if (this.destroyed) {
+          return;
+        }
+        this.buffer = this.serverYaml;
+        this.mode = 'view';
+      },
+      // `reject` intentionally omitted — dismissing the confirm leaves the
+      // panel exactly as it was (AC 3 dismiss branch).
+    });
+  }
+
+  /**
+   * Save handler — posts the current buffer directly to
+   * `apiService.importNamespace` (NO pre-save validate, per ADR-011 D4).
+   *
+   * Success (2xx): `serverYaml` snapshots the just-saved buffer, mode flips
+   * to view, toast success, `saved` emits so the host refreshes derived
+   * lists.
+   *
+   * 422: populate `lastValidation` when the body is structurally a
+   * `NamespaceValidationReport`, else stash the raw body into
+   * `rawSaveError` for a verbatim `<pre>` rendering. Stay in edit mode,
+   * buffer preserved, saving resets.
+   *
+   * 401: silent at the panel level. FetchService has already surfaced a
+   * global toast; the app-wide 401 handler (if any) runs. The panel only
+   * clears `saving` so a subsequent click is not stuck in a spinner.
+   *
+   * Other (4xx/5xx/network): sticky error toast + action-row Retry button
+   * so the operator can retry with one click. `importNamespace` is NEVER
+   * auto-retried by the panel (AC 8).
+   */
+  async onSaveClick(): Promise<void> {
+    if (!this.hasUnsavedChanges() || this.saving) {
+      return;
+    }
+    // Snapshot the buffer at click time so typing during the request does
+    // NOT race the success branch (AC 2.3 guidance).
+    const savedBuffer = this.buffer;
+    this.saving = true;
+    this.rawSaveError = null;
+    this.lastSaveError = null;
+    // Clear any stale validation from a prior save attempt so the UI does
+    // not display outdated issues while the request is in flight.
+    this.lastValidation = null;
+    try {
+      await this.apiService.importNamespace(savedBuffer);
+      if (this.destroyed) {
+        return;
+      }
+      this.serverYaml = savedBuffer;
+      this.mode = 'view';
+      this.saved.emit();
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Namespace saved successfully',
+      });
+    } catch (err) {
+      if (this.destroyed) {
+        return;
+      }
+      this.handleSaveError(err);
+    } finally {
+      if (!this.destroyed) {
+        this.saving = false;
+      }
+    }
+  }
+
+  /**
+   * Narrows the caught Save error into one of four branches: 401 silent,
+   * 422 structured, 422 fallback, other (toast + retry).
+   */
+  private handleSaveError(err: unknown): void {
+    const status = (err as { status?: number })?.status;
+    if (status === 401) {
+      // Silent at the panel — FetchService already fired a global toast and
+      // the app-wide 401 handler (if any) runs. The panel does not mutate
+      // `mode` / `buffer` / `lastValidation` on 401 (AC 9).
+      return;
+    }
+    if (status === 422) {
+      const body = (err as HttpError).body;
+      if (this.isValidationReport(body)) {
+        this.lastValidation = body;
+        this.rawSaveError = null;
+      } else {
+        this.rawSaveError =
+          typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+        this.lastValidation = null;
+      }
+      return;
+    }
+    // Other (4xx / 5xx / network). Record the error so the action-row
+    // Retry button renders, and surface a sticky error toast.
+    this.lastSaveError = err instanceof Error ? err : new Error(String(err));
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Save failed',
+      detail: this.lastSaveError.message,
+      sticky: true,
+    });
+  }
+
+  /** Structural check: does `body` satisfy `NamespaceValidationReport`? */
+  private isValidationReport(
+    body: unknown,
+  ): body is NamespaceValidationReport {
+    if (body === null || typeof body !== 'object') {
+      return false;
+    }
+    const shape = body as Record<string, unknown>;
+    return (
+      'ok' in shape &&
+      typeof shape['ok'] === 'boolean' &&
+      Array.isArray(shape['global_errors']) &&
+      Array.isArray(shape['entry_issues'])
+    );
   }
 
   /**
@@ -153,6 +327,8 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       this.buffer = yaml;
       this.mode = 'view';
       this.lastValidation = null;
+      this.rawSaveError = null;
+      this.lastSaveError = null;
     } catch (err) {
       if (this.destroyed || seq !== this.loadSeq) {
         return;

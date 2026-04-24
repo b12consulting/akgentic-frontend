@@ -1,4 +1,11 @@
-import { Component, inject, ViewChildren, QueryList, ElementRef } from '@angular/core';
+import {
+  Component,
+  inject,
+  ViewChild,
+  ViewChildren,
+  QueryList,
+  ElementRef,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { BehaviorSubject, firstValueFrom } from 'rxjs';
@@ -8,7 +15,9 @@ import { TeamContext, isRunning } from '../models/team.interface';
 import { NamespaceSummary } from '../models/catalog.interface';
 
 import { CommonModule } from '@angular/common';
+import { ConfirmationService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { SelectModule } from 'primeng/select';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
@@ -36,9 +45,15 @@ import { NamespacePanelComponent } from '../admin/catalog/namespace-panel/namesp
     TagModule,
     CommonModule,
     DialogModule,
+    ConfirmDialogModule,
     InputTextModule,
     NamespacePanelComponent,
   ],
+  // First PrimeNG ConfirmDialog in the HomeComponent — scoped locally for
+  // the dirty-close guard (Story 11.3 AC 10). The NamespacePanelComponent
+  // provides its OWN ConfirmationService for its Cancel-with-dirty-buffer
+  // confirm, so they don't collide.
+  providers: [ConfirmationService],
   templateUrl: './home.component.html',
   styleUrl: './home.component.scss',
 })
@@ -47,6 +62,7 @@ export class HomeComponent {
   contextService: ContextService = inject(ContextService);
   router: Router = inject(Router);
   authService: AuthService = inject(AuthService);
+  private confirmationService: ConfirmationService = inject(ConfirmationService);
   private config = inject(ConfigService);
 
   // Catalog namespaces for the team creation dropdown
@@ -66,22 +82,19 @@ export class HomeComponent {
 
   @ViewChildren('descriptionInput') descriptionInputs!: QueryList<ElementRef>;
 
+  // Story 11.3 — @ViewChild on the @defer-rendered panel. The reference is
+  // `undefined` until the user opens the dialog (the @defer block only
+  // mounts the child when `namespacePanelVisible` flips true), so the close
+  // handler MUST null-check. `{ static: false }` is the default for
+  // @ViewChild on conditionally-rendered children; no explicit option needed.
+  @ViewChild(NamespacePanelComponent)
+  namespacePanel?: NamespacePanelComponent;
+
   // Expose isRunning to template
   isRunning = isRunning;
 
   async ngOnInit() {
-    // Load catalog namespaces for the team creation dropdown.
-    // The endpoint always returns a list (possibly empty); no defensive
-    // branching needed for dict/array shape.
-    try {
-      const namespaces = await this.apiService.getNamespaces();
-      this.namespaces$.next(namespaces);
-      if (namespaces.length > 0) {
-        this.selectedNamespace$.next(namespaces[0]);
-      }
-    } catch (error) {
-      console.error('Failed to load namespaces:', error);
-    }
+    await this.loadNamespaces();
 
     // Populate _context$; return value reused for the hideHome branch.
     const teams = await this.contextService.getTeams();
@@ -102,6 +115,23 @@ export class HomeComponent {
     }
 
     this.authService.checkAuth().subscribe();
+  }
+
+  /**
+   * Load catalog namespaces for the dropdown. Extracted so the 2xx save
+   * branch (Story 11.3 AC 6) can re-invoke the same code path without
+   * duplicating the error handling.
+   */
+  private async loadNamespaces(): Promise<void> {
+    try {
+      const namespaces = await this.apiService.getNamespaces();
+      this.namespaces$.next(namespaces);
+      if (namespaces.length > 0 && !this.selectedNamespace$.value) {
+        this.selectedNamespace$.next(namespaces[0]);
+      }
+    } catch (error) {
+      console.error('Failed to load namespaces:', error);
+    }
   }
 
   async createTeam() {
@@ -218,6 +248,53 @@ export class HomeComponent {
     } catch (error) {
       console.error('Failed to update description:', error);
     }
+  }
+
+  /**
+   * Story 11.3 AC 10 — dialog dirty-close guard.
+   *
+   * The `p-dialog` binding is split into `[visible]` + `(visibleChange)` so
+   * this handler can intercept close attempts. When the user dismisses the
+   * dialog and the panel reports unsaved changes, re-assert
+   * `namespacePanelVisible = true` and trigger a PrimeNG ConfirmDialog. On
+   * confirm, flip visibility to false. On dismiss, leave the dialog open.
+   *
+   * `this.namespacePanel` may be `undefined` (the panel is mounted lazily
+   * via @defer) — when it is not mounted there is nothing to discard, so
+   * the close proceeds without a confirm.
+   */
+  onNamespacePanelVisibleChange(visible: boolean): void {
+    if (visible) {
+      // The dialog is being opened — the Edit button click already flipped
+      // `namespacePanelVisible = true`. No-op.
+      return;
+    }
+    const panel = this.namespacePanel;
+    if (!panel || !panel.hasUnsavedChanges()) {
+      this.namespacePanelVisible = false;
+      return;
+    }
+    // Dirty panel — re-assert visibility to keep the dialog open while the
+    // confirm runs. The confirm's accept callback then truly closes.
+    this.namespacePanelVisible = true;
+    this.confirmationService.confirm({
+      message: 'You have unsaved changes. Discard?',
+      accept: () => {
+        this.namespacePanelVisible = false;
+      },
+      // `reject` intentionally omitted — dismissing keeps the dialog open
+      // (AC 10 dismiss branch).
+    });
+  }
+
+  /**
+   * Story 11.3 AC 6 — `(saved)` output handler. Re-fetches namespaces so
+   * any summary-metadata changes (e.g. renamed description) propagate to
+   * the dropdown. Shares `loadNamespaces()` with `ngOnInit` to keep the
+   * fetch logic in one place.
+   */
+  async onNamespaceSaved(): Promise<void> {
+    await this.loadNamespaces();
   }
 
   visible = false;

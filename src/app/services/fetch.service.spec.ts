@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { MessageService } from 'primeng/api';
 
 import { ConfigService } from './config.service';
-import { FetchService } from './fetch.service';
+import { FetchService, HttpError } from './fetch.service';
 
 /** Build a minimal `Response`-like object usable by `FetchService.fetch`. */
 function makeResponse({
@@ -137,10 +137,14 @@ describe('FetchService', () => {
         })
       );
 
-      await service.fetch({
-        url: 'https://x/admin/catalog/namespace/foo/export',
-        responseType: 'text',
-      });
+      // Non-OK responses now throw HttpError (Story 11.3) — the toast still
+      // fires as a side-effect before the throw.
+      await expectAsync(
+        service.fetch({
+          url: 'https://x/admin/catalog/namespace/foo/export',
+          responseType: 'text',
+        })
+      ).toBeRejected();
 
       expect(messageServiceSpy.add).toHaveBeenCalledTimes(1);
       const call = messageServiceSpy.add.calls.first().args[0];
@@ -177,6 +181,114 @@ describe('FetchService', () => {
 
       const opts = fetchSpy.calls.first().args[1] as RequestInit;
       expect(opts.credentials).toBe('include');
+    });
+  });
+
+  // --- Story 11.3 — HttpError thrown on non-OK ---------------------------
+
+  describe('HttpError on non-OK (Story 11.3)', () => {
+    it('throws an HttpError with status and parsed JSON body on 422', async () => {
+      const errBody = {
+        namespace: 'foo',
+        ok: false,
+        global_errors: ['bad'],
+        entry_issues: [],
+      };
+      globalThis.fetch = jasmine.createSpy('fetch').and.resolveTo(
+        makeResponse({
+          ok: false,
+          status: 422,
+          statusText: 'Unprocessable Entity',
+          jsonValue: errBody,
+          textValue: JSON.stringify(errBody),
+        }),
+      );
+
+      let caught: unknown = null;
+      try {
+        await service.fetch({ url: 'https://x/admin/catalog/namespace/import' });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeTruthy();
+      expect(caught instanceof HttpError).toBeTrue();
+      const httpErr = caught as HttpError;
+      expect(httpErr.status).toBe(422);
+      expect(httpErr.body).toEqual(errBody);
+      expect(httpErr.name).toBe('HttpError');
+      // `.message` must still match the existing notification text shape,
+      // so existing Error-catching callers keep receiving the same string.
+      expect(httpErr.message).toContain('Request failed');
+    });
+
+    it('throws HttpError on 500 with raw-text body when JSON parse fails', async () => {
+      globalThis.fetch = jasmine.createSpy('fetch').and.resolveTo(
+        makeResponse({
+          ok: false,
+          status: 500,
+          statusText: 'Internal Server Error',
+          textValue: 'boom',
+          throwOnJson: true,
+        }),
+      );
+
+      let caught: unknown = null;
+      try {
+        await service.fetch({ url: 'https://x/api' });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught instanceof HttpError).toBeTrue();
+      const httpErr = caught as HttpError;
+      expect(httpErr.status).toBe(500);
+      expect(httpErr.body).toBe('boom');
+    });
+
+    it('HttpError preserves the existing `.message` shape for backwards-compat', async () => {
+      globalThis.fetch = jasmine.createSpy('fetch').and.resolveTo(
+        makeResponse({
+          ok: false,
+          status: 403,
+          statusText: 'Forbidden',
+          jsonValue: { detail: 'Nope' },
+          textValue: JSON.stringify({ detail: 'Nope' }),
+        }),
+      );
+
+      await expectAsync(service.fetch({ url: 'https://x/api' })).toBeRejected();
+
+      // The surface the notification uses must still be the same shape
+      // ("Request failed: ...\n\n<detail>") so existing callers' catch-on-
+      // Error branches see the same message.
+      const toastArgs = messageServiceSpy.add.calls.first().args[0];
+      expect(toastArgs.summary as string).toContain('Request failed');
+      expect(toastArgs.summary as string).toContain('Nope');
+    });
+
+    it('throws HttpError carrying status 401 without suppressing the toast', async () => {
+      globalThis.fetch = jasmine.createSpy('fetch').and.resolveTo(
+        makeResponse({
+          ok: false,
+          status: 401,
+          statusText: 'Unauthorized',
+          textValue: '',
+          throwOnJson: true,
+        }),
+      );
+
+      let caught: unknown = null;
+      try {
+        await service.fetch({ url: 'https://x/api' });
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught instanceof HttpError).toBeTrue();
+      expect((caught as HttpError).status).toBe(401);
+      // Existing toast-on-error behaviour preserved — the panel's save
+      // handler relies on the global toast fired here for 401 fall-through.
+      expect(messageServiceSpy.add).toHaveBeenCalledTimes(1);
     });
   });
 });
