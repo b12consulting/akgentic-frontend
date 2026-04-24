@@ -121,25 +121,6 @@
         data-test="validate-buffer-btn"
       ></button>
 
-      <!-- Action-row Retry (AC 8): rendered when the previous save attempt
-           failed with a non-422 error. The mutation is never auto-retried —
-           the operator decides. In-toast Retry was considered (see AC 8
-           allowance) but PrimeNG v19's default <p-toast> renders text-only
-           without a custom template, so the action-row button is simpler
-           and equally satisfies the AC. -->
-      <button
-        *ngIf="mode === 'edit' && lastSaveError !== null"
-        pButton
-        type="button"
-        size="small"
-        severity="warn"
-        label="Retry Save"
-        icon="pi pi-refresh"
-        [disabled]="saving"
-        (click)="onSaveClick()"
-        data-test="retry-save-btn"
-      ></button>
-
       <!-- Clone button (Story 11.5 AC 1): visible in BOTH view and edit
            modes (Clone supports "Save As" semantics over a dirty buffer —
            AC 5). Hidden automatically while loading or in the empty state

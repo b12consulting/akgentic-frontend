@@ -447,10 +447,15 @@ describe('NamespacePanelComponent', () => {
   });
 
   // ---------------------------------------------------------------------
-  // Story 11.3 — Save 5xx failure path with retry (AC 8)
+  // Story 11.3 — Save 5xx failure path (AC 8)
+  // Retry affordance is the regular Save button itself — re-click retries.
+  // The dedicated "Retry Save" action-row button from the first 11.3 draft
+  // was removed as redundant; Save stays enabled (buffer still dirty) so
+  // clicking it again IS the retry. Toast is sticky so the outcome is
+  // visible post-dismiss.
   // ---------------------------------------------------------------------
 
-  it('(11.3 AC8) Save 5xx — sticky toast + retry callback invokes importNamespace again', async () => {
+  it('(11.3 AC8) Save 5xx — sticky toast; re-clicking Save retries with the same buffer', async () => {
     await loadedEditMode('foo: 1\n');
     component.onEditClick();
     component.buffer = 'foo: 2\n';
@@ -461,19 +466,24 @@ describe('NamespacePanelComponent', () => {
     expect(component.mode).toBe('edit');
     expect(component.buffer).toBe('foo: 2\n');
     expect(component.saving).toBe(false);
-    expect(component.lastSaveError).not.toBeNull();
 
-    // Verify the sticky error toast fired.
+    // Sticky error toast fired.
     const errorToast = messageSpy.add.calls.mostRecent().args[0];
     expect(errorToast.severity).toBe('error');
     expect(errorToast.sticky).toBeTrue();
 
-    // Retry button renders in the action row when lastSaveError is set.
+    // No dedicated Retry Save button renders — removed as redundant with Save.
     fixture.detectChanges();
     const retryBtn = fixture.nativeElement.querySelector(
       'button[data-test="retry-save-btn"]',
     ) as HTMLButtonElement | null;
-    expect(retryBtn).not.toBeNull();
+    expect(retryBtn).toBeNull();
+
+    // Save button stays enabled (buffer still !== serverYaml, not saving).
+    const saveBtn = fixture.nativeElement.querySelector(
+      'button[data-test="save-btn"]',
+    ) as HTMLButtonElement;
+    expect(saveBtn.disabled).toBeFalse();
 
     // Second click — this time a 2xx success — retries with the same buffer.
     apiSpy.importNamespace.calls.reset();

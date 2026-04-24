@@ -147,16 +147,6 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
    * `null` means no unstructured error pending.
    */
   rawSaveError: string | null = null;
-  /**
-   * Tracks the most recent Save error (non-422). When non-null, an in-panel
-   * Retry button is rendered in the action row (AC 8). This implementation
-   * — action-row Retry rather than in-toast Retry — is chosen because
-   * PrimeNG v19's default `<p-toast>` does not surface clickable actions
-   * without a custom template; the action-row button satisfies the AC's
-   * "operator can retry with one click, mutation is not auto-retried".
-   */
-  lastSaveError: Error | null = null;
-
   // Story 11.5 — Clone flow state.
   /** Controls visibility of the Clone sub-dialog (AC 2, AC 3). */
   cloneDialogVisible: boolean = false;
@@ -174,10 +164,10 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
    */
   cloning: boolean = false;
   /**
-   * Tracks the most recent non-HTTP / non-422 / non-401 clone error. Mirrors
-   * `lastSaveError`; the field is populated on the default failure branch
-   * (AC 9) but deliberately NOT surfaced via an action-row Retry button —
-   * re-clicking Clone Confirm is the natural retry path.
+   * Tracks the most recent non-HTTP / non-422 / non-401 clone error. The
+   * field is populated on the default failure branch (AC 9) for surfacing
+   * the error via a non-sticky toast; no in-panel action-row Retry button
+   * — re-clicking Clone Confirm is the natural retry path.
    */
   lastCloneError: Error | null = null;
 
@@ -440,9 +430,11 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
    * global toast; the app-wide 401 handler (if any) runs. The panel only
    * clears `saving` so a subsequent click is not stuck in a spinner.
    *
-   * Other (4xx/5xx/network): sticky error toast + action-row Retry button
-   * so the operator can retry with one click. `importNamespace` is NEVER
-   * auto-retried by the panel (AC 8).
+   * Other (4xx/5xx/network): sticky error toast. The operator retries by
+   * clicking the regular Save button again (buffer is still dirty post-
+   * failure, so Save remains enabled) — there is no dedicated Retry button
+   * in the action row. `importNamespace` is NEVER auto-retried by the
+   * panel (AC 8).
    */
   async onSaveClick(): Promise<void> {
     if (!this.hasUnsavedChanges() || this.saving) {
@@ -453,7 +445,6 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
     const savedBuffer = this.buffer;
     this.saving = true;
     this.rawSaveError = null;
-    this.lastSaveError = null;
     // Clear any stale validation from a prior save attempt so the UI does
     // not display outdated issues while the request is in flight.
     this.lastValidation = null;
@@ -659,13 +650,14 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       }
       return;
     }
-    // Other (4xx / 5xx / network). Record the error so the action-row
-    // Retry button renders, and surface a sticky error toast.
-    this.lastSaveError = err instanceof Error ? err : new Error(String(err));
+    // Other (4xx / 5xx / network) — surface a sticky error toast. The
+    // regular Save button stays enabled (buffer is still dirty), so clicking
+    // it again retries; there is no dedicated action-row Retry button.
+    const saveError = err instanceof Error ? err : new Error(String(err));
     this.messageService.add({
       severity: 'error',
       summary: 'Save failed',
-      detail: this.lastSaveError.message,
+      detail: saveError.message,
       sticky: true,
     });
   }
@@ -1033,7 +1025,6 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       this.setMode('view');
       this.lastValidation = null;
       this.rawSaveError = null;
-      this.lastSaveError = null;
     } catch (err) {
       if (this.destroyed || seq !== this.loadSeq) {
         return;
