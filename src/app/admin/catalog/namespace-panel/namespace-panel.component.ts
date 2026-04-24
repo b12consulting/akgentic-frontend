@@ -424,6 +424,12 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       if (this.destroyed) {
         return;
       }
+      // Defensive: if the API layer resolved to undefined (e.g. network
+      // fallback in FetchService) or an unexpected shape, surface a clear
+      // toast instead of throwing a TypeError on `report.ok`.
+      if (!this.isValidationReport(report)) {
+        throw new Error('Server returned no validation report.');
+      }
       // Clean report → keep the pane hidden and flash the button green for a
       // brief ack. Non-clean report → populate `lastValidation` so the
       // ValidationReportComponent renders the findings.
@@ -466,6 +472,9 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       if (this.destroyed) {
         return;
       }
+      if (!this.isValidationReport(report)) {
+        throw new Error('Server returned no validation report.');
+      }
       // Clean buffer → flash the edit-mode Validate button. Non-clean →
       // render findings via `lastValidation` as before.
       if (report.ok) {
@@ -498,12 +507,20 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   }
 
   /**
-   * Handle a rejected Validate call. 401 is silent (FetchService / the
-   * app-wide handler owns the surface). Other statuses emit a non-sticky
-   * error toast — re-clicking the Validate button is the natural retry,
-   * so no Retry action is attached (AC 11). Validate never writes Save's
-   * fallback fields (`rawSaveError`) or the current report
-   * (`lastValidation` stays as it was — preserved across error paths).
+   * Handle a rejected Validate call.
+   *
+   * - **401** — silent (FetchService / the app-wide handler owns the
+   *   surface).
+   * - **422 with a structured `NamespaceValidationReport` body** — render
+   *   the findings in the panel (same affordance as a 200 with ok:false).
+   *   Pydantic-level validation errors from the catalog service commonly
+   *   land on 422 even though the operational outcome is the same as a
+   *   200 ok:false — the user wants to see the issues, not a toast.
+   * - **Other statuses / errors** — non-sticky toast. Re-clicking Validate
+   *   is the natural retry, so no Retry action is attached (AC 11).
+   *
+   * Validate never writes Save's fallback fields (`rawSaveError`) — those
+   * belong to the Save flow.
    */
   private handleValidateError(err: unknown): void {
     const status = (err as { status?: number })?.status;
@@ -511,14 +528,24 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       // Silent — FetchService already fired a global toast.
       return;
     }
+    if (status === 422) {
+      const body = (err as HttpError).body;
+      if (this.isValidationReport(body)) {
+        // Promote the 422 body into the findings pane — matches the
+        // ok:false-on-200 rendering path.
+        this.lastValidation = body;
+        return;
+      }
+      // Fall through to a generic toast when the 422 body isn't a report
+      // (e.g. a YAML-parse error surfaced as a plain string / FastAPI
+      // detail envelope — not structured enough to render as findings).
+    }
     // Non-sticky toast: Validate is idempotent, re-clicking is the retry.
     this.messageService.add({
       severity: 'error',
       summary: 'Validation failed',
       detail: (err as Error)?.message ?? String(err),
     });
-    // Validate never writes Save's fallback fields — they belong to the
-    // Save flow.
   }
 
   /**

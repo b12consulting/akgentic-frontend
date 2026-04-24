@@ -829,6 +829,61 @@ describe('NamespacePanelComponent', () => {
     expect(component.lastValidation).toBe(prior);
   });
 
+  // ----- Validate 422 with structured body → findings rendered (no toast) -----
+
+  it('Validate 422 with NamespaceValidationReport body populates lastValidation (findings pane, no toast)', async () => {
+    await loadedEditMode('foo: 1\n');
+    const report: NamespaceValidationReport = {
+      namespace: 'foo',
+      ok: false,
+      global_errors: ["bundle root missing required key 'entries'"],
+      entry_issues: [],
+    };
+    apiSpy.validatePersistedNamespace.and.returnValue(
+      Promise.reject(makeHttpError(422, report)),
+    );
+
+    await component.onValidatePersistedClick();
+
+    expect(component.lastValidation).toEqual(report);
+    // No error toast — the pane is the UI for findings.
+    expect(messageSpy.add).not.toHaveBeenCalled();
+    expect(component.validationFlashPersisted).toBeFalse();
+  });
+
+  it('Validate 422 with non-report body falls through to the generic toast', async () => {
+    await loadedEditMode('foo: 1\n');
+    apiSpy.validateNamespaceBuffer.and.returnValue(
+      Promise.reject(makeHttpError(422, 'yaml parse error at line 5')),
+    );
+    component.onEditClick();
+    component.buffer = 'garbage: [\n';
+
+    await component.onValidateBufferClick();
+
+    // lastValidation untouched (no structured report to render).
+    expect(component.lastValidation).toBeNull();
+    // Generic error toast fired instead.
+    expect(messageSpy.add).toHaveBeenCalled();
+  });
+
+  it('Validate resolved to undefined (network fallback) throws a clear toast, not TypeError', async () => {
+    await loadedEditMode('foo: 1\n');
+    // Simulate FetchService's network-fallback branch (returns undefined).
+    apiSpy.validatePersistedNamespace.and.returnValue(
+      Promise.resolve(undefined as unknown as NamespaceValidationReport),
+    );
+
+    await component.onValidatePersistedClick();
+
+    expect(messageSpy.add).toHaveBeenCalled();
+    const call = messageSpy.add.calls.mostRecent().args[0];
+    expect(call.summary).toBe('Validation failed');
+    // The detail must NOT be the cryptic TypeError message.
+    expect(call.detail).not.toContain("reading 'ok'");
+    expect(component.validationFlashPersisted).toBeFalse();
+  });
+
   // ----- Validate 5xx → toast, state unchanged — AC 11 -----
 
   it('(11.4 AC11) Validate 5xx — error toast, lastValidation unchanged, validating resets', async () => {

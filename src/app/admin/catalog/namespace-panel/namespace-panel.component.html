@@ -47,13 +47,20 @@
            double the request count (NFR7 enforcement). Flips to PrimeNG
            `success` (green) for ~2.5s after a clean report (replaces the
            panel's "Validation passed" banner — findings still render
-           in-pane). -->
+           in-pane).
+           Severity is kept static at `secondary`; the success colour is
+           applied via `[class.p-button-success]` because PrimeNG's own
+           `[severity]` binding does not strip the prior class when the
+           input reverts (verified in the browser — both classes linger),
+           so the button stays green past the timeout. Angular's class
+           binding owns the class exclusively and restores correctly. -->
       <button
         *ngIf="mode === 'view'"
         pButton
         type="button"
         size="small"
-        [severity]="validationFlashPersisted ? 'success' : 'secondary'"
+        severity="secondary"
+        [class.p-button-success]="validationFlashPersisted"
         label="Validate persisted state"
         [icon]="validationFlashPersisted ? 'pi pi-check' : 'pi pi-check-circle'"
         [disabled]="validating"
@@ -89,14 +96,16 @@
       <!-- Edit mode (11.4 AC 3): Validate buffer. Disabled while a save OR
            validate is in flight. Save's own `[disabled]` binding
            intentionally ignores `validating` — Validate never gates Save
-           (AC 5). Flips to `success` for ~2.5s on a clean report — same
-           polish as the view-mode Validate button. -->
+           (AC 5). Same flash pattern as view-mode Validate — see comment
+           above for why we toggle `p-button-success` via class binding
+           instead of PrimeNG's `[severity]`. -->
       <button
         *ngIf="mode === 'edit'"
         pButton
         type="button"
         size="small"
-        [severity]="validationFlashBuffer ? 'success' : 'secondary'"
+        severity="secondary"
+        [class.p-button-success]="validationFlashBuffer"
         label="Validate buffer"
         [icon]="validationFlashBuffer ? 'pi pi-check' : 'pi pi-check-square'"
         [disabled]="saving || validating"
