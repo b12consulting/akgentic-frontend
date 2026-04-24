@@ -1536,7 +1536,7 @@ entries:
     expect(component.lastValidation).toBeNull();
     expect(component.rawSaveError).toBeNull();
     expect(component.isCloneGated).toBeFalse();
-    expect(component.cloneTooltip).toBeNull();
+    expect(component.cloneTooltip).toBeUndefined();
 
     const cloneBtn = fixture.nativeElement.querySelector(
       'button[data-test="clone-btn"]',
@@ -1544,7 +1544,7 @@ entries:
     expect(cloneBtn.disabled).toBeFalse();
   });
 
-  it('(11.7 AC1) saveTooltip returns null when gate is NOT the active disable reason', async () => {
+  it('(11.7 AC1) saveTooltip returns undefined when gate is NOT the active disable reason', async () => {
     await loadedEditMode('foo: 1\n');
     component.onEditClick();
     // Clean buffer — Save disabled because buffer === serverYaml, NOT gate.
@@ -1553,7 +1553,9 @@ entries:
     component.rawSaveError = null;
     fixture.detectChanges();
 
-    expect(component.saveTooltip).toBeNull();
+    // Tooltip is `undefined` (not null) so PrimeNG's pTooltip input
+    // (`string | TemplateRef | undefined`) accepts it under strictTemplates.
+    expect(component.saveTooltip).toBeUndefined();
   });
 
   // ----- AC 3 — gate auto-lifts on onBufferChange -----

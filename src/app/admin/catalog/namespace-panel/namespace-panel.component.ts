@@ -785,12 +785,14 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
 
   /**
    * Story 11.7 AC 1 — Save tooltip text. Returns the explanatory string
-   * ONLY when the gate is the active reason for disabling. PrimeNG's
-   * `pTooltip` directive suppresses the tooltip on `null` / empty string,
-   * so unrelated disable reasons (clean buffer, in-flight save) get no
+   * ONLY when the gate is the active reason for disabling; returns
+   * `undefined` otherwise so PrimeNG's `pTooltip` input (whose type is
+   * `string | TemplateRef | undefined`) accepts it under strictTemplates.
+   * PrimeNG suppresses the tooltip on `undefined` / empty string, so
+   * unrelated disable reasons (clean buffer, in-flight save) get no
    * tooltip — avoiding contradictory messaging.
    */
-  get saveTooltip(): string | null {
+  get saveTooltip(): string | undefined {
     if (
       this.isSaveGated &&
       !this.saving &&
@@ -798,19 +800,19 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
     ) {
       return 'Fix validation issues before saving.';
     }
-    return null;
+    return undefined;
   }
 
   /**
    * Story 11.7 AC 1 — Clone tooltip text. Same idiom as `saveTooltip`:
    * returns the gate-explanatory string only when the gate is the active
-   * reason for disabling.
+   * reason for disabling; `undefined` otherwise (pTooltip-type-compatible).
    */
-  get cloneTooltip(): string | null {
+  get cloneTooltip(): string | undefined {
     if (this.isCloneGated && !this.cloning && !this.saving) {
       return 'Fix validation issues before cloning.';
     }
-    return null;
+    return undefined;
   }
 
   // -------------------------------------------------------------------
