@@ -111,6 +111,22 @@
         (click)="onSaveClick()"
         data-test="retry-save-btn"
       ></button>
+
+      <!-- Clone button (Story 11.5 AC 1): visible in BOTH view and edit
+           modes (Clone supports "Save As" semantics over a dirty buffer —
+           AC 5). Hidden automatically while loading or in the empty state
+           because the outer *ngIf gates `serverYaml !== ''`. -->
+      <button
+        pButton
+        type="button"
+        size="small"
+        severity="secondary"
+        label="Clone"
+        icon="pi pi-copy"
+        [disabled]="cloning || saving"
+        (click)="onCloneClick()"
+        data-test="clone-btn"
+      ></button>
     </div>
 
     <!-- Validation-report sub-component (11.4 AC 9): renders the clean
@@ -122,6 +138,60 @@
       (clearRequested)="onClearValidationClick()"
     ></app-validation-report>
   </ng-container>
+
+  <!-- Story 11.5 — Clone sub-dialog (AC 3). Kept INSIDE the panel to
+       preserve NFR6 (host-agnostic): the panel owns the dialog, the form,
+       the validation, and the confirm handler. The host supplies only
+       `[existingNamespaces]` for the pre-flight collision check. -->
+  <p-dialog
+    [visible]="cloneDialogVisible"
+    (visibleChange)="onCloneDialogVisibleChange($event)"
+    [modal]="true"
+    [style]="{ width: '30rem' }"
+    header="Clone namespace"
+  >
+    <div class="namespace-panel__clone-body">
+      <label for="clone-dest-ns-input">Destination namespace name</label>
+      <input
+        id="clone-dest-ns-input"
+        type="text"
+        pInputText
+        name="cloneDestNs"
+        [(ngModel)]="cloneDestNs"
+        data-test="clone-destns-input"
+        autocomplete="off"
+      />
+      <div
+        *ngIf="cloneValidationError"
+        class="namespace-panel__clone-error"
+        data-test="clone-validation-error"
+      >
+        {{ cloneValidationError }}
+      </div>
+    </div>
+    <div class="namespace-panel__clone-actions">
+      <button
+        pButton
+        type="button"
+        size="small"
+        severity="secondary"
+        label="Cancel"
+        [disabled]="cloning"
+        (click)="onCloneCancelClick()"
+        data-test="clone-cancel-btn"
+      ></button>
+      <button
+        pButton
+        type="button"
+        size="small"
+        label="Confirm"
+        [icon]="cloning ? 'pi pi-spinner pi-spin' : 'pi pi-copy'"
+        [disabled]="cloneConfirmDisabled"
+        (click)="onCloneConfirmClick()"
+        data-test="clone-confirm-btn"
+      ></button>
+    </div>
+  </p-dialog>
 
   <!-- PrimeNG ConfirmDialog — scoped to this component via `providers:
        [ConfirmationService]` so the dialog and future route presentations

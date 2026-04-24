@@ -220,6 +220,7 @@
   @defer (when namespacePanelVisible) {
     <app-namespace-panel
       [namespace]="((selectedNamespace$ | async)?.namespace) ?? ''"
+      [existingNamespaces]="namespaceIdentifiers"
       (closed)="namespacePanelVisible = false"
       (saved)="onNamespaceSaved()"
     />

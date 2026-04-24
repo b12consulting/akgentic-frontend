@@ -10,6 +10,8 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { DialogModule } from 'primeng/dialog';
+import { InputTextModule } from 'primeng/inputtext';
 
 import { ApiService } from '../../../services/api.service';
 import { HttpError } from '../../../services/fetch.service';
@@ -128,6 +130,8 @@ describe('NamespacePanelComponent — import atomicity (NFR5)', () => {
             FormsModule,
             ButtonModule,
             ConfirmDialogModule,
+            DialogModule,
+            InputTextModule,
             StubMonacoEditorComponent,
             ValidationReportComponent,
           ],

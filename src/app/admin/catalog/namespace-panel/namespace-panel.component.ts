@@ -16,10 +16,16 @@ import { NuMonacoEditorModule } from '@ng-util/monaco-editor';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { DialogModule } from 'primeng/dialog';
+import { InputTextModule } from 'primeng/inputtext';
 
 import { NamespaceValidationReport } from '../../../models/catalog.interface';
 import { ApiService } from '../../../services/api.service';
 import { HttpError } from '../../../services/fetch.service';
+import {
+  CloneYamlError,
+  rewriteNamespaceInYaml,
+} from '../../../services/yaml-clone.helper';
 import { ValidationReportComponent } from './validation-report/validation-report.component';
 
 /**
@@ -60,6 +66,8 @@ import { ValidationReportComponent } from './validation-report/validation-report
     FormsModule,
     ButtonModule,
     ConfirmDialogModule,
+    DialogModule,
+    InputTextModule,
     NuMonacoEditorModule,
     ValidationReportComponent,
   ],
@@ -72,6 +80,14 @@ import { ValidationReportComponent } from './validation-report/validation-report
 })
 export class NamespacePanelComponent implements OnInit, OnChanges {
   @Input() namespace!: string;
+  /**
+   * Story 11.5 — existing namespace identifiers, supplied by the host, used
+   * by the Clone dialog's pre-flight collision check (AC 4). The panel
+   * NEVER re-fetches this list itself (NFR7 — the collision check is a UX
+   * courtesy, not a correctness guarantee; see ADR-011 D5
+   * Collision-on-race).
+   */
+  @Input() existingNamespaces: string[] = [];
   @Output() closed = new EventEmitter<void>();
   @Output() saved = new EventEmitter<void>();
 
@@ -113,6 +129,30 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
    * "operator can retry with one click, mutation is not auto-retried".
    */
   lastSaveError: Error | null = null;
+
+  // Story 11.5 — Clone flow state.
+  /** Controls visibility of the Clone sub-dialog (AC 2, AC 3). */
+  cloneDialogVisible: boolean = false;
+  /**
+   * Destination namespace name typed into the Clone dialog (AC 3). Two-way
+   * bound via `[(ngModel)]`; reset to `''` on dialog dismiss AND on
+   * successful clone (AC 3, AC 8, AC 12).
+   */
+  cloneDestNs: string = '';
+  /**
+   * True while a clone-import request is in flight (AC 8 + AC 14). Gates
+   * the Confirm button (defence in depth alongside the pre-flight
+   * validation) and the outer Clone button so the operator cannot
+   * double-submit.
+   */
+  cloning: boolean = false;
+  /**
+   * Tracks the most recent non-HTTP / non-422 / non-401 clone error. Mirrors
+   * `lastSaveError`; the field is populated on the default failure branch
+   * (AC 9) but deliberately NOT surfaced via an action-row Retry button —
+   * re-clicking Clone Confirm is the natural retry path.
+   */
+  lastCloneError: Error | null = null;
 
   /**
    * Destroy guard consumed by the async load + save flows so a late-resolving
@@ -416,6 +456,198 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       severity: 'error',
       summary: 'Save failed',
       detail: this.lastSaveError.message,
+      sticky: true,
+    });
+  }
+
+  // -------------------------------------------------------------------
+  // Story 11.5 — Clone flow (AC 1–AC 12)
+  // -------------------------------------------------------------------
+
+  /**
+   * Open the Clone sub-dialog (AC 2). Pure UI flip — does NOT fire a
+   * network request, does NOT mutate `buffer` / `serverYaml` / `mode` /
+   * `lastValidation` / `rawSaveError`. No-op when `cloning === true`
+   * (defence in depth — the outer Clone button is `[disabled]` in that
+   * state, so this path is unreachable in practice).
+   */
+  onCloneClick(): void {
+    if (this.cloning) {
+      return;
+    }
+    this.cloneDialogVisible = true;
+  }
+
+  /**
+   * Cancel the Clone sub-dialog (AC 3). Resets `cloneDestNs`; does NOT
+   * mutate `cloning` — an in-flight clone request keeps settling via its
+   * own try/catch/finally (Story 11.4's destroy-guard idiom).
+   */
+  onCloneCancelClick(): void {
+    this.cloneDialogVisible = false;
+    this.cloneDestNs = '';
+  }
+
+  /**
+   * `(visibleChange)` handler for the Clone sub-dialog. Mirrors Cancel's
+   * reset: when the dialog dismisses (visible = false, e.g. ESC or the
+   * close X), we zero `cloneDestNs` so the next open starts clean (AC 3).
+   * `cloning` is intentionally unchanged — an in-flight request keeps
+   * settling regardless of dialog visibility.
+   */
+  onCloneDialogVisibleChange(visible: boolean): void {
+    this.cloneDialogVisible = visible;
+    if (!visible) {
+      this.cloneDestNs = '';
+    }
+  }
+
+  /**
+   * Pre-flight predicate for the Clone Confirm button (AC 4). True iff any
+   * of: destNs is empty-trimmed, destNs equals the source namespace, destNs
+   * already appears in `existingNamespaces` (case-sensitive), or a clone is
+   * already in flight.
+   */
+  get cloneConfirmDisabled(): boolean {
+    const trimmed = this.cloneDestNs.trim();
+    if (trimmed === '') {
+      return true;
+    }
+    if (trimmed === this.namespace) {
+      return true;
+    }
+    if (this.existingNamespaces.includes(trimmed)) {
+      return true;
+    }
+    return this.cloning;
+  }
+
+  /**
+   * Inline validation message for the Clone dialog (AC 4). Returns `null`
+   * while the destNs is an unused, non-colliding value — so the template
+   * can gate the error block with `*ngIf`.
+   */
+  get cloneValidationError(): string | null {
+    const trimmed = this.cloneDestNs.trim();
+    if (trimmed === '') {
+      return 'Destination namespace required';
+    }
+    if (trimmed === this.namespace) {
+      return 'Destination must differ from source namespace';
+    }
+    if (this.existingNamespaces.includes(trimmed)) {
+      return `Namespace '${trimmed}' already exists`;
+    }
+    return null;
+  }
+
+  /**
+   * Clone handler — "Save As" semantics (AC 5). Captures the CURRENT buffer
+   * (NOT `serverYaml`) so an operator editing mid-view and clicking Clone
+   * sees their dirty edits in the rewritten bundle. Rewrites the root
+   * `namespace` field via {@link rewriteNamespaceInYaml}, then reuses the
+   * Save path (`apiService.importNamespace`) — no new endpoint.
+   *
+   * Branches (AC 8–AC 12):
+   *   - `CloneYamlError` before the network call → toast + dialog stays
+   *     open, `cloning` resets, `importNamespace` NEVER called.
+   *   - 2xx → dismiss dialog, emit `(saved)`, switch to destNs, re-load via
+   *     `loadNamespace(destNs)` (Story 11.2 contract — lands in view mode).
+   *   - 401 silent (FetchService surfaces the global toast).
+   *   - 422 structured → populate `lastValidation`; dialog stays open.
+   *   - 422 unstructured → stash raw body in `rawSaveError`; dialog stays
+   *     open.
+   *   - Other (4xx / 5xx / network) → sticky error toast + `lastCloneError`;
+   *     dialog stays open.
+   *
+   * In every failure branch: `namespace` / `serverYaml` / `buffer` / `mode`
+   * are unchanged (AC 10). Destroy-guard mirrors Story 11.3's `onSaveClick`.
+   */
+  async onCloneConfirmClick(): Promise<void> {
+    if (this.cloneConfirmDisabled) {
+      return;
+    }
+    const destNs = this.cloneDestNs.trim();
+    const sourceYaml = this.buffer;
+    this.cloning = true;
+    this.lastCloneError = null;
+    try {
+      const rewrittenYaml = rewriteNamespaceInYaml(sourceYaml, destNs);
+      await this.apiService.importNamespace(rewrittenYaml);
+      if (this.destroyed) {
+        return;
+      }
+      // 2xx happy path: dismiss dialog, emit saved, switch namespace +
+      // re-load. Programmatic self-writes to an @Input() field do NOT
+      // trigger ngOnChanges, so we invoke loadNamespace explicitly — it
+      // re-exports the bundle and flips mode to view (Story 11.2).
+      this.cloneDialogVisible = false;
+      this.cloneDestNs = '';
+      this.saved.emit();
+      this.namespace = destNs;
+      // Fire-and-forget: loadNamespace owns its own loading flag and
+      // destroy guard. AC 14 budgets this second fetch explicitly.
+      void this.loadNamespace(destNs);
+      this.messageService.add({
+        severity: 'success',
+        summary: `Cloned to namespace '${destNs}'`,
+      });
+    } catch (err) {
+      if (this.destroyed) {
+        return;
+      }
+      this.handleCloneError(err);
+    } finally {
+      if (!this.destroyed) {
+        this.cloning = false;
+      }
+    }
+  }
+
+  /**
+   * Narrow the caught Clone error (AC 9 + AC 11). Branch order MUST match
+   * AC 11 exactly: `CloneYamlError` FIRST (client-side rewrite failure,
+   * `importNamespace` never fired), then 401 silent, then 422 structured /
+   * 422 unstructured, then default sticky toast.
+   */
+  private handleCloneError(err: unknown): void {
+    if (err instanceof CloneYamlError) {
+      // Client-side rewrite failure — `lastCloneError` is NOT set (that
+      // field tracks server errors; the operator can fix the buffer and
+      // retry). Non-sticky toast; dialog stays open.
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Clone failed',
+        detail: err.message,
+      });
+      return;
+    }
+    const status = (err as { status?: number })?.status;
+    if (status === 401) {
+      // Silent — FetchService already fired a global toast.
+      return;
+    }
+    if (status === 422) {
+      const body = (err as HttpError).body;
+      if (this.isValidationReport(body)) {
+        this.lastValidation = body;
+        this.rawSaveError = null;
+      } else {
+        this.rawSaveError =
+          typeof body === 'string' ? body : JSON.stringify(body, null, 2);
+        this.lastValidation = null;
+      }
+      return;
+    }
+    // Default: 4xx / 5xx / network. Sticky toast + `lastCloneError` so a
+    // future story could wire an in-panel Retry-Clone button. This story
+    // deliberately does NOT add a Retry button — re-clicking Clone Confirm
+    // is the natural retry path, and the action row is already dense.
+    this.lastCloneError = err instanceof Error ? err : new Error(String(err));
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Clone failed',
+      detail: this.lastCloneError.message,
       sticky: true,
     });
   }

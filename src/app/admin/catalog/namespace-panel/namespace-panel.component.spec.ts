@@ -7,9 +7,12 @@ import {
   NG_VALUE_ACCESSOR,
 } from '@angular/forms';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import yaml from 'js-yaml';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { DialogModule } from 'primeng/dialog';
+import { InputTextModule } from 'primeng/inputtext';
 
 import { NamespaceValidationReport } from '../../../models/catalog.interface';
 import { ApiService } from '../../../services/api.service';
@@ -101,6 +104,8 @@ describe('NamespacePanelComponent', () => {
             FormsModule,
             ButtonModule,
             ConfirmDialogModule,
+            DialogModule,
+            InputTextModule,
             StubMonacoEditorComponent,
             ValidationReportComponent,
           ],
@@ -885,5 +890,418 @@ describe('NamespacePanelComponent', () => {
 
     expect(component.lastValidation).toBeNull();
     expect(component.rawSaveError).toBeNull();
+  });
+
+  // ---------------------------------------------------------------------
+  // Story 11.5 — Clone flow (AC 1–AC 16)
+  // ---------------------------------------------------------------------
+
+  /**
+   * Bundle YAML fixture used by the Clone-flow tests below. The bundle
+   * conforms to the v2 wire format: root `namespace` + `user_id` +
+   * `entries` map. `payload.description` deliberately mentions "src" so
+   * the rewrite helper's structured-rewrite contract is exercised — that
+   * string MUST NOT be touched.
+   */
+  const cloneSrcYaml = `namespace: src
+user_id: null
+entries:
+  team-1:
+    kind: team
+    model_type: BaseTeamModel
+    payload:
+      description: "configured for src namespace"
+`;
+
+  async function loadedWithCloneSrc(
+    existing: string[] = ['src'],
+  ): Promise<void> {
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve(cloneSrcYaml));
+    await buildFixture('src');
+    fixture.componentRef.setInput('existingNamespaces', existing);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  // ----- Clone button visibility (AC 1) -----
+
+  it('(11.5 AC1) Clone button is visible in view mode', async () => {
+    await loadedWithCloneSrc();
+    const btn = fixture.nativeElement.querySelector(
+      'button[data-test="clone-btn"]',
+    );
+    expect(btn).not.toBeNull();
+  });
+
+  it('(11.5 AC1) Clone button is visible in edit mode', async () => {
+    await loadedWithCloneSrc();
+    component.onEditClick();
+    fixture.detectChanges();
+    const btn = fixture.nativeElement.querySelector(
+      'button[data-test="clone-btn"]',
+    );
+    expect(btn).not.toBeNull();
+  });
+
+  it('(11.5 AC1) Clone button is hidden while loading', async () => {
+    // Pending export — loading stays true.
+    apiSpy.exportNamespace.and.returnValue(new Promise<string>(() => {}));
+    await buildFixture('src');
+    fixture.detectChanges();
+    const btn = fixture.nativeElement.querySelector(
+      'button[data-test="clone-btn"]',
+    );
+    expect(btn).toBeNull();
+  });
+
+  it('(11.5 AC1) Clone button is hidden in the empty / error state (serverYaml === "")', async () => {
+    apiSpy.exportNamespace.and.returnValue(Promise.reject(new Error('boom')));
+    await buildFixture('src');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const btn = fixture.nativeElement.querySelector(
+      'button[data-test="clone-btn"]',
+    );
+    expect(btn).toBeNull();
+  });
+
+  // ----- Clicking Clone opens the dialog (AC 2) -----
+
+  it('(11.5 AC2) onCloneClick opens the dialog without a network call', async () => {
+    await loadedWithCloneSrc();
+    const bufferBefore = component.buffer;
+    const modeBefore = component.mode;
+    const serverYamlBefore = component.serverYaml;
+    apiSpy.importNamespace.calls.reset();
+
+    component.onCloneClick();
+    fixture.detectChanges();
+
+    expect(component.cloneDialogVisible).toBeTrue();
+    expect(component.buffer).toBe(bufferBefore);
+    expect(component.mode).toBe(modeBefore);
+    expect(component.serverYaml).toBe(serverYamlBefore);
+    expect(apiSpy.importNamespace).not.toHaveBeenCalled();
+  });
+
+  it('(11.5 AC2) onCloneClick is a no-op when cloning === true', async () => {
+    await loadedWithCloneSrc();
+    component.cloning = true;
+    component.cloneDialogVisible = false;
+
+    component.onCloneClick();
+
+    expect(component.cloneDialogVisible).toBeFalse();
+  });
+
+  // ----- Pre-flight dialog validation (AC 4) -----
+
+  it('(11.5 AC4) Confirm button disabled — empty destNs', async () => {
+    await loadedWithCloneSrc();
+    component.onCloneClick();
+    component.cloneDestNs = '';
+    fixture.detectChanges();
+
+    expect(component.cloneConfirmDisabled).toBeTrue();
+    expect(component.cloneValidationError).toBe(
+      'Destination namespace required',
+    );
+  });
+
+  it('(11.5 AC4) Confirm button disabled — destNs equals source namespace', async () => {
+    await loadedWithCloneSrc();
+    component.onCloneClick();
+    component.cloneDestNs = 'src';
+
+    expect(component.cloneConfirmDisabled).toBeTrue();
+    expect(component.cloneValidationError).toBe(
+      'Destination must differ from source namespace',
+    );
+  });
+
+  it('(11.5 AC4) Confirm button disabled — destNs collides with existingNamespaces', async () => {
+    await loadedWithCloneSrc(['src', 'already-there']);
+    component.onCloneClick();
+    component.cloneDestNs = 'already-there';
+
+    expect(component.cloneConfirmDisabled).toBeTrue();
+    expect(component.cloneValidationError).toBe(
+      "Namespace 'already-there' already exists",
+    );
+  });
+
+  it('(11.5 AC4) Confirm button disabled while cloning === true', async () => {
+    await loadedWithCloneSrc();
+    component.onCloneClick();
+    component.cloneDestNs = 'dst';
+    component.cloning = true;
+
+    expect(component.cloneConfirmDisabled).toBeTrue();
+  });
+
+  it('(11.5 AC4) Confirm button enabled when all checks pass', async () => {
+    await loadedWithCloneSrc();
+    component.onCloneClick();
+    component.cloneDestNs = 'dst';
+
+    expect(component.cloneConfirmDisabled).toBeFalse();
+    expect(component.cloneValidationError).toBeNull();
+  });
+
+  // ----- Clone takes buffer, not serverYaml (AC 5) -----
+
+  it('(11.5 AC5) onCloneConfirmClick captures buffer (not serverYaml) as the clone source', async () => {
+    await loadedWithCloneSrc();
+    component.onEditClick();
+    // Operator edits the buffer — add an extra entry that is NOT in
+    // serverYaml to uniquely distinguish the two sources.
+    component.buffer = `namespace: src
+user_id: null
+entries:
+  team-1:
+    kind: team
+    model_type: BaseTeamModel
+    payload:
+      description: "configured for src namespace"
+  extra-entry:
+    kind: agent
+    model_type: BaseAgentModel
+    payload:
+      role: helper
+`;
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+    apiSpy.exportNamespace.and.returnValue(
+      Promise.resolve('namespace: dst\nuser_id: null\nentries: {}\n'),
+    );
+
+    component.onCloneClick();
+    component.cloneDestNs = 'dst';
+    await component.onCloneConfirmClick();
+    await fixture.whenStable();
+
+    expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
+    const sent = apiSpy.importNamespace.calls.mostRecent().args[0] as string;
+    const parsed = yaml.load(sent) as Record<string, unknown>;
+    expect(parsed['namespace']).toBe('dst');
+    const entries = parsed['entries'] as Record<string, unknown>;
+    expect(entries['extra-entry']).toBeDefined();
+  });
+
+  // ----- Clone Confirm happy path (AC 8, AC 12, AC 14) -----
+
+  it('(11.5 AC8+12+14) Clone Confirm happy path — import then re-export, land on destNs in view mode', async () => {
+    await loadedWithCloneSrc(['src']);
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+
+    const exportedFresh = 'namespace: dst\nuser_id: null\nentries: {}\n';
+    // After the clone re-load, exportNamespace is called with 'dst'.
+    apiSpy.exportNamespace.and.callFake((ns: string) =>
+      Promise.resolve(ns === 'dst' ? exportedFresh : cloneSrcYaml),
+    );
+    const savedEmit = spyOn(component.saved, 'emit');
+
+    component.onCloneClick();
+    component.cloneDestNs = 'dst';
+    await component.onCloneConfirmClick();
+    // onCloneConfirmClick fires `loadNamespace(destNs)` as fire-and-forget;
+    // drain microtasks so it resolves before assertions.
+    await fixture.whenStable();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
+    // exportNamespace called twice: once on mount (cloneSrcYaml), once for
+    // the re-load (exportedFresh).
+    expect(apiSpy.exportNamespace).toHaveBeenCalledTimes(2);
+    expect(apiSpy.exportNamespace.calls.mostRecent().args).toEqual(['dst']);
+    expect(component.namespace).toBe('dst');
+    expect(component.mode).toBe('view');
+    expect(component.cloneDialogVisible).toBeFalse();
+    expect(component.cloneDestNs).toBe('');
+    expect(component.cloning).toBeFalse();
+    expect(savedEmit).toHaveBeenCalledTimes(1);
+    // Success toast fired exactly once with the destNs-interpolated summary.
+    const toasts = messageSpy.add.calls.allArgs().map((a) => a[0]);
+    const success = toasts.find((t) => t.severity === 'success');
+    expect(success).toBeDefined();
+    expect(success!.summary).toContain("'dst'");
+  });
+
+  // ----- Clone 422 structured (AC 9) -----
+
+  it('(11.5 AC9) Clone 422 structured — lastValidation populated, dialog stays open, source intact', async () => {
+    await loadedWithCloneSrc();
+    const report: NamespaceValidationReport = {
+      namespace: 'dst',
+      ok: false,
+      global_errors: ['invalid entry'],
+      entry_issues: [],
+    };
+    apiSpy.importNamespace.and.returnValue(
+      Promise.reject(makeHttpError(422, report)),
+    );
+
+    component.onCloneClick();
+    component.cloneDestNs = 'dst';
+    await component.onCloneConfirmClick();
+
+    expect(component.lastValidation).toEqual(report);
+    expect(component.rawSaveError).toBeNull();
+    expect(component.cloneDialogVisible).toBeTrue();
+    expect(component.namespace).toBe('src');
+    expect(component.mode).toBe('view');
+    expect(component.buffer).toBe(cloneSrcYaml);
+    expect(component.serverYaml).toBe(cloneSrcYaml);
+    expect(component.cloning).toBeFalse();
+  });
+
+  // ----- Clone 422 unstructured (AC 9) -----
+
+  it('(11.5 AC9) Clone 422 unstructured — rawSaveError populated, dialog stays open, source intact', async () => {
+    await loadedWithCloneSrc();
+    apiSpy.importNamespace.and.returnValue(
+      Promise.reject(makeHttpError(422, 'FastAPI detail string')),
+    );
+
+    component.onCloneClick();
+    component.cloneDestNs = 'dst';
+    await component.onCloneConfirmClick();
+
+    expect(component.rawSaveError).toBe('FastAPI detail string');
+    expect(component.lastValidation).toBeNull();
+    expect(component.cloneDialogVisible).toBeTrue();
+    expect(component.namespace).toBe('src');
+    expect(component.cloning).toBeFalse();
+  });
+
+  // ----- Clone 5xx (AC 9, AC 10) -----
+
+  it('(11.5 AC9+10) Clone 5xx — sticky toast, lastCloneError populated, source intact', async () => {
+    await loadedWithCloneSrc();
+    // Seed dirty edit state so AC 10's "source intact" check covers mode +
+    // buffer too.
+    component.onEditClick();
+    component.buffer = cloneSrcYaml + '# edited marker\n';
+    const editedBuffer = component.buffer;
+    apiSpy.importNamespace.and.returnValue(
+      Promise.reject(makeHttpError(500, '')),
+    );
+    messageSpy.add.calls.reset();
+
+    component.onCloneClick();
+    component.cloneDestNs = 'dst';
+    await component.onCloneConfirmClick();
+
+    expect(component.lastCloneError).not.toBeNull();
+    expect(component.cloning).toBeFalse();
+    expect(component.cloneDialogVisible).toBeTrue();
+    // Source state intact.
+    expect(component.namespace).toBe('src');
+    expect(component.mode).toBe('edit');
+    expect(component.buffer).toBe(editedBuffer);
+    expect(component.serverYaml).toBe(cloneSrcYaml);
+    // Sticky error toast fired.
+    const lastToast = messageSpy.add.calls.mostRecent().args[0];
+    expect(lastToast.severity).toBe('error');
+    expect(lastToast.sticky).toBeTrue();
+  });
+
+  // ----- Clone 401 silent (AC 9) -----
+
+  it('(11.5 AC9) Clone 401 — no panel toast, dialog stays open, cloning resets', async () => {
+    await loadedWithCloneSrc();
+    apiSpy.importNamespace.and.returnValue(
+      Promise.reject(makeHttpError(401)),
+    );
+    messageSpy.add.calls.reset();
+
+    component.onCloneClick();
+    component.cloneDestNs = 'dst';
+    await component.onCloneConfirmClick();
+
+    expect(messageSpy.add).not.toHaveBeenCalled();
+    expect(component.cloning).toBeFalse();
+    expect(component.cloneDialogVisible).toBeTrue();
+    expect(component.lastCloneError).toBeNull();
+  });
+
+  // ----- Clone CloneYamlError (AC 11) -----
+
+  it('(11.5 AC11) CloneYamlError — no import call, toast fired, cloning resets, lastCloneError NOT set', async () => {
+    await loadedWithCloneSrc();
+    component.onEditClick();
+    // Buffer is NOT a valid bundle root mapping — forces
+    // rewriteNamespaceInYaml to throw CloneYamlError before the network
+    // call.
+    component.buffer = '- not a mapping\n';
+    apiSpy.importNamespace.calls.reset();
+    messageSpy.add.calls.reset();
+
+    component.onCloneClick();
+    component.cloneDestNs = 'dst';
+    await component.onCloneConfirmClick();
+
+    expect(apiSpy.importNamespace).not.toHaveBeenCalled();
+    expect(component.cloning).toBeFalse();
+    expect(component.lastCloneError).toBeNull();
+    expect(messageSpy.add).toHaveBeenCalledTimes(1);
+    const toast = messageSpy.add.calls.mostRecent().args[0];
+    expect(toast.severity).toBe('error');
+  });
+
+  // ----- NFR7 budget (AC 14) -----
+
+  it('(11.5 AC14) NFR7 — clone happy path = 1 import + 2 exports total, no other spy calls', async () => {
+    await loadedWithCloneSrc();
+    // 1 export fired during mount; now clone.
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+    apiSpy.exportNamespace.and.callFake((ns: string) =>
+      Promise.resolve(`namespace: ${ns}\nuser_id: null\nentries: {}\n`),
+    );
+
+    component.onCloneClick();
+    component.cloneDestNs = 'dst';
+    await component.onCloneConfirmClick();
+    await fixture.whenStable();
+    await fixture.whenStable();
+
+    expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
+    expect(apiSpy.exportNamespace).toHaveBeenCalledTimes(2);
+    expect(apiSpy.validateNamespaceBuffer).not.toHaveBeenCalled();
+    expect(apiSpy.validatePersistedNamespace).not.toHaveBeenCalled();
+  });
+
+  // ----- Destroy-during-clone (AC 16) -----
+
+  it('(11.5 AC16) destroy-during-clone — late-resolving import does not write state', async () => {
+    await loadedWithCloneSrc();
+    let resolveLate!: (value: unknown) => void;
+    apiSpy.importNamespace.and.returnValue(
+      new Promise<unknown>((r) => {
+        resolveLate = r;
+      }) as unknown as Promise<never>,
+    );
+    apiSpy.exportNamespace.and.returnValue(
+      Promise.resolve('namespace: dst\nuser_id: null\nentries: {}\n'),
+    );
+
+    const consoleErrorSpy = spyOn(console, 'error');
+    component.onCloneClick();
+    component.cloneDestNs = 'dst';
+    const clonePromise = component.onCloneConfirmClick();
+    expect(component.cloning).toBeTrue();
+
+    fixture.destroy();
+
+    resolveLate([]);
+    await clonePromise;
+    await Promise.resolve();
+
+    // No state writes on the destroyed instance.
+    expect(component.namespace).toBe('src');
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
   });
 });

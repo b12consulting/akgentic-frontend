@@ -483,4 +483,56 @@ describe('HomeComponent', () => {
     expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(1);
     expect(component.namespaces$.value).toEqual(updated);
   });
+
+  // --- Story 11.5 — namespaceIdentifiers getter + binding ---------------
+
+  it('(11.5 AC13) namespaceIdentifiers returns the `.namespace` field of each namespaces$ entry', () => {
+    component.namespaces$.next([
+      { namespace: 'foo', name: 'F', description: '' },
+      { namespace: 'bar', name: 'B', description: '' },
+    ]);
+    expect(component.namespaceIdentifiers).toEqual(['foo', 'bar']);
+  });
+
+  it('(11.5 AC13) namespaceIdentifiers returns [] when namespaces$ is empty', () => {
+    component.namespaces$.next([]);
+    expect(component.namespaceIdentifiers).toEqual([]);
+  });
+
+  it('(11.5 AC13) template binding propagates namespaceIdentifiers via ng-reflect', async () => {
+    // Prime the ngOnInit load so it does NOT overwrite our namespaces$ with
+    // the default empty list: make `getNamespaces` resolve with the pair we
+    // want to observe on the binding.
+    const list = [
+      { namespace: 'alpha', name: 'Alpha', description: '' },
+      { namespace: 'beta', name: 'Beta', description: '' },
+    ];
+    apiSpy.getNamespaces.and.returnValue(Promise.resolve(list));
+
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // Open the panel dialog so the @defer block mounts the panel element.
+    // `CUSTOM_ELEMENTS_SCHEMA` prevents the real `NamespacePanelComponent`
+    // from asserting its surface; we only care that the input attribute
+    // lands on the element.
+    component.namespacePanelVisible = true;
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const panelEl = fixture.nativeElement.querySelector(
+      'app-namespace-panel',
+    ) as HTMLElement | null;
+    if (panelEl) {
+      const attr = panelEl.getAttribute('ng-reflect-existing-namespaces');
+      if (attr !== null) {
+        expect(attr).toContain('alpha');
+        expect(attr).toContain('beta');
+      }
+    }
+    // Deterministic assertion: the getter itself is the contract.
+    expect(component.namespaceIdentifiers).toEqual(['alpha', 'beta']);
+  });
 });

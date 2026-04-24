@@ -297,5 +297,16 @@ export class HomeComponent {
     await this.loadNamespaces();
   }
 
+  /**
+   * Story 11.5 AC 13 — pure derivation of namespace identifiers from the
+   * synchronous current value of `namespaces$`. Supplied to the panel via
+   * `[existingNamespaces]` for the Clone dialog's pre-flight collision
+   * check (panel's AC 4). Getter instead of a dedicated stream because
+   * BehaviorSubject exposes `.value` synchronously; no pipe / async needed.
+   */
+  get namespaceIdentifiers(): string[] {
+    return (this.namespaces$.value ?? []).map((n) => n.namespace);
+  }
+
   visible = false;
 }
