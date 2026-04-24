@@ -162,7 +162,7 @@ describe('NamespacePanelComponent — import atomicity (NFR5)', () => {
       expect(component.buffer).toBe(BASELINE_YAML);
 
       // User flips into edit mode and types in the INVALID bundle.
-      component.onEditClick();
+      await component.onEditClick();
       component.buffer = INVALID_YAML;
       expect(component.mode).toBe('edit');
 

@@ -53,6 +53,8 @@ export const namespacePanelCanDeactivate: CanDeactivateFn<
   const confirmation = inject(ConfirmationService);
   return new Promise<boolean>((resolve) => {
     confirmation.confirm({
+      header: 'Unsaved changes',
+      icon: 'pi pi-exclamation-triangle',
       message: 'You have unsaved changes. Discard?',
       accept: () => resolve(true),
       reject: () => resolve(false),

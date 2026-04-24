@@ -134,6 +134,15 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   private flashTimeoutId: ReturnType<typeof setTimeout> | undefined = undefined;
 
   /**
+   * Post-review UX refinement — set while the Edit button's drift check
+   * is in flight (one `exportNamespace` call before flipping to edit
+   * mode). Gates the Edit button's `[disabled]` + spinner-icon swap so
+   * the operator cannot double-click during the async round trip. See
+   * `onEditClick()`.
+   */
+  refreshingForEdit: boolean = false;
+
+  /**
    * Snapshot of the buffer value at the moment a Validate-buffer request
    * returned a clean report. If the user then modifies the buffer, the
    * flash is cancelled via `onBufferChange` — a green "validated" ack must
@@ -381,12 +390,104 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   }
 
   /**
-   * Flip the panel into edit mode. Monaco's `readOnly` flips via the
-   * `editorOptions` getter (derived from `mode`). Cancel / Save buttons
-   * replace the Edit button in the action row.
+   * Enter edit mode.
+   *
+   * Post-review refinement — re-fetches the server namespace (single
+   * `exportNamespace` call) before flipping to `edit`. If the server has
+   * drifted since the initial load, prompts the operator to reload;
+   * accept replaces `serverYaml` + `buffer` with the latest and enters
+   * edit mode against the fresh state, reject stays in view mode with
+   * the stale state visible (operator can re-click Edit or close).
+   *
+   * On network error the drift check falls through to edit mode with a
+   * warning toast — operators shouldn't be blocked by a hiccup from
+   * editing their last-known version; the server still validates on
+   * save, so a genuinely-stale edit can only land a known-bad bundle.
+   *
+   * Monaco's `readOnly` flips via the `editorOptions` field (reassigned
+   * in `setMode`). Save / Reset / Cancel replace the Edit / Clone pair
+   * in the action row.
    */
-  onEditClick(): void {
-    this.setMode('edit');
+  async onEditClick(): Promise<void> {
+    if (this.refreshingForEdit) {
+      return;
+    }
+    this.refreshingForEdit = true;
+    try {
+      const latestYaml = await this.apiService.exportNamespace(this.namespace);
+      if (this.destroyed) {
+        return;
+      }
+      if (latestYaml === this.serverYaml) {
+        this.setMode('edit');
+        return;
+      }
+      // Drift detected — prompt the operator before silently replacing
+      // the snapshot the panel is showing.
+      this.confirmationService.confirm({
+        header: 'Namespace modified',
+        icon: 'pi pi-exclamation-triangle',
+        message:
+          'The namespace was modified on the server since it was loaded. Reload the latest version to edit?',
+        accept: () => {
+          if (this.destroyed) {
+            return;
+          }
+          this.serverYaml = latestYaml;
+          this.buffer = latestYaml;
+          this.lastValidation = null;
+          this.rawSaveError = null;
+          this.validatedBuffer = null;
+          this.setMode('edit');
+        },
+        // reject intentionally omitted — dismissing keeps the operator
+        // in view mode with the stale state visible; re-clicking Edit
+        // will re-check.
+      });
+    } catch (err) {
+      if (this.destroyed) {
+        return;
+      }
+      // Non-blocking: warn and proceed to edit against last-known state.
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Could not verify namespace state',
+        detail: 'Editing against the last-known version. Save will re-validate on the server.',
+      });
+      this.setMode('edit');
+    } finally {
+      if (!this.destroyed) {
+        this.refreshingForEdit = false;
+      }
+    }
+  }
+
+  /**
+   * Post-review new feature — revert the buffer to `serverYaml` without
+   * exiting edit mode. Mirrors Cancel's dirty-state guard (confirm
+   * "Discard unsaved changes?") but keeps `mode === 'edit'` on accept
+   * so the operator can keep working. Clean buffer path is guarded at
+   * the template level (`[disabled]="buffer === serverYaml"`).
+   */
+  onResetClick(): void {
+    if (this.buffer === this.serverYaml) {
+      return;
+    }
+    this.confirmationService.confirm({
+      header: 'Unsaved changes',
+      icon: 'pi pi-exclamation-triangle',
+      message: 'Discard unsaved changes?',
+      accept: () => {
+        if (this.destroyed) {
+          return;
+        }
+        this.buffer = this.serverYaml;
+        this.lastValidation = null;
+        this.rawSaveError = null;
+        this.validatedBuffer = null;
+        // Stay in edit mode — Reset differs from Cancel here.
+      },
+    });
   }
 
   /**
@@ -400,6 +501,8 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       return;
     }
     this.confirmationService.confirm({
+      header: 'Unsaved changes',
+      icon: 'pi pi-exclamation-triangle',
       message: 'Discard unsaved changes?',
       accept: () => {
         if (this.destroyed) {

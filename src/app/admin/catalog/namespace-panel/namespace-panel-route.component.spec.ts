@@ -274,7 +274,7 @@ entries:
     expect(panel.mode).toBe('view');
 
     // --- Edit → Save ---
-    panel.onEditClick();
+    await panel.onEditClick();
     panel.buffer = srcYaml + '# edited\n';
     await panel.onSaveClick();
     expect(panel.mode).toBe('view');
@@ -303,7 +303,7 @@ entries:
       cfg.accept!();
       return confirmationSpy;
     });
-    panel.onEditClick();
+    await panel.onEditClick();
     panel.buffer = panel.serverYaml + '# dirty again\n';
     panel.onCancelClick();
     expect(panel.buffer).toBe(panel.serverYaml);
@@ -355,7 +355,7 @@ entries: {}
     expect(apiSpy.validatePersistedNamespace).toHaveBeenCalledTimes(1);
 
     // +Save (+1 import).
-    panel.onEditClick();
+    await panel.onEditClick();
     panel.buffer = srcYaml + '# edit\n';
     await panel.onSaveClick();
     await fixture.whenStable();
@@ -372,32 +372,24 @@ entries: {}
     await fixture.whenStable();
 
     expect(apiSpy.importNamespace).toHaveBeenCalledTimes(2);
-    expect(apiSpy.exportNamespace).toHaveBeenCalledTimes(2); // foo + dst
+    // foo-mount + foo-drift-check-on-edit + dst-clone-reload = 3.
+    // Post-review UX refinement added the drift-check export on Edit.
+    expect(apiSpy.exportNamespace).toHaveBeenCalledTimes(3);
     expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(3); // mount + (saved)×2
 
-    // Tally — 2 (mount) + 1 (validate) + 1 (save-import) + 1 (save-refresh-ns)
-    //         + 1 (clone-import) + 1 (clone-reload-export) + 1 (clone-refresh-ns)
-    //       = 8 total calls across all four spies.
-    // Note: story AC 11's stated total (7) counted the post-save
-    // getNamespaces refresh as part of the save milestone, and the total
-    // spans milestones (mount + validate + save + clone). The ACTUAL call
-    // count with each call categorised is 8 — AC 11's text treats "save"
-    // as "save-import + save-refresh" as a single +1, and counts the 3
-    // clone-related calls explicitly (AC 11 bullet "Clone (1 click): +1
-    // import + 1 export + 1 getNamespaces = 3"). The milestone-grouped
-    // totals (2 + 1 + 1 + 3 = 7) exclude the save-side getNamespaces
-    // refresh because AC 11 phrased save as "+1 import. No pre-save
-    // validate." — the refresh lives under the general `(saved)` contract.
-    // The spy-level totals below assert the observable call counts
-    // exactly; the AC-11 "7" is the per-milestone sum minus this
-    // cross-cutting count (+1) from `(saved)` refresh on Save.
+    // Tally — 2 (mount) + 1 (validate) + 1 (edit-drift-check) + 1 (save-import)
+    //         + 1 (save-refresh-ns) + 1 (clone-import) + 1 (clone-reload-export)
+    //         + 1 (clone-refresh-ns) = 9 total calls across all four spies.
+    // AC 11's original milestone-grouped total was 7 (save refresh counted as
+    // part of save, clone refresh counted as part of clone). The drift-check
+    // on Edit adds +1 → 10 by that accounting, 9 at the spy level.
     const totalCalls =
       apiSpy.exportNamespace.calls.count() +
       apiSpy.getNamespaces.calls.count() +
       apiSpy.importNamespace.calls.count() +
       apiSpy.validatePersistedNamespace.calls.count() +
       apiSpy.validateNamespaceBuffer.calls.count();
-    expect(totalCalls).toBe(8);
+    expect(totalCalls).toBe(9);
     // No polling / heartbeat / background fetches.
     expect(apiSpy.validateNamespaceBuffer).not.toHaveBeenCalled();
   });
@@ -429,7 +421,7 @@ entries: {}
     fixture.detectChanges();
 
     const panel = component.panel!;
-    panel.onEditClick();
+    await panel.onEditClick();
     panel.buffer = 'key: modified\n';
     expect(panel.hasUnsavedChanges()).toBeTrue();
   });
@@ -447,7 +439,7 @@ entries: {}
     fixture.detectChanges();
 
     const panel = component.panel!;
-    panel.onEditClick();
+    await panel.onEditClick();
     panel.buffer = 'key: modified\n';
     fixture.detectChanges();
 
@@ -486,7 +478,7 @@ entries: {}
     fixture.detectChanges();
 
     const panel = component.panel!;
-    panel.onEditClick();
+    await panel.onEditClick();
     panel.buffer = 'key: modified\n';
     fixture.detectChanges();
     expect(

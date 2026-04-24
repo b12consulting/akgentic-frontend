@@ -278,6 +278,8 @@ export class HomeComponent {
     // confirm runs. The confirm's accept callback then truly closes.
     this.namespacePanelVisible = true;
     this.confirmationService.confirm({
+      header: 'Unsaved changes',
+      icon: 'pi pi-exclamation-triangle',
       message: 'You have unsaved changes. Discard?',
       accept: () => {
         this.namespacePanelVisible = false;

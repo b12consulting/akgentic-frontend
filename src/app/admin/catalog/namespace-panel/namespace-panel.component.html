@@ -29,31 +29,21 @@
       [height]="'calc(90vh - 240px)'"
     ></nu-monaco-editor>
 
+    <!--
+      Action row.
+      VIEW mode order (post-review UX refinement): Validate · Edit · Clone.
+      EDIT mode order (post-review UX refinement): Validate · Save · Reset · Cancel.
+      Clone is NO LONGER rendered in edit mode — "Save As from a dirty buffer" was a
+      confusing mental model (the clone captures in-memory state, not the server
+      state the operator sees in view mode). Operators save first, then clone.
+    -->
     <div class="namespace-panel__actions">
-      <!-- View mode: Edit only. Hidden while mode === 'edit' (AC 1). -->
-      <button
-        *ngIf="mode === 'view'"
-        pButton
-        type="button"
-        size="small"
-        label="Edit"
-        icon="pi pi-pencil"
-        (click)="onEditClick()"
-        data-test="edit-btn"
-      ></button>
+      <!-- VIEW mode: Validate · Edit · Clone (in that order) -->
 
-      <!-- View mode (11.4 AC 1): Validate persisted state. Disabled while
-           a validate request is already in flight so double-click cannot
-           double the request count (NFR7 enforcement). Flips to PrimeNG
-           `success` (green) for ~2.5s after a clean report (replaces the
-           panel's "Validation passed" banner — findings still render
-           in-pane).
-           Severity is kept static at `secondary`; the success colour is
-           applied via `[class.p-button-success]` because PrimeNG's own
-           `[severity]` binding does not strip the prior class when the
-           input reverts (verified in the browser — both classes linger),
-           so the button stays green past the timeout. Angular's class
-           binding owns the class exclusively and restores correctly. -->
+      <!-- Validate persisted state. Flash-to-green pattern on clean report
+           via `[class.p-button-success]` — PrimeNG's own `[severity]`
+           binding does not strip the prior class on revert, so we toggle
+           the class explicitly. -->
       <button
         *ngIf="mode === 'view'"
         pButton
@@ -68,45 +58,41 @@
         data-test="validate-persisted-btn"
       ></button>
 
-      <!--
-        Edit mode: Save + Cancel. Save is disabled until buffer !==
-        serverYaml (Story 11.3 AC 2). Story 11.7 AC 1, 2 — extended
-        with `isSaveGated` (FR14: known-bad validation OR
-        unstructured-422 raw save error). The pTooltip getter returns
-        null when the gate is NOT the active disable reason — PrimeNG
-        suppresses tooltip on null/empty.
-      -->
+      <!-- Edit. Post-review refinement: re-fetches the server namespace
+           on click and prompts the operator to reload if it drifted since
+           the initial load. Shows a spinner while the drift check is in
+           flight. See `onEditClick()` in the component. -->
       <button
-        *ngIf="mode === 'edit'"
+        *ngIf="mode === 'view'"
         pButton
         type="button"
         size="small"
-        label="Save"
-        [icon]="saving ? 'pi pi-spinner pi-spin' : 'pi pi-save'"
-        [disabled]="buffer === serverYaml || saving || isSaveGated"
-        [pTooltip]="saveTooltip"
-        (click)="onSaveClick()"
-        data-test="save-btn"
+        label="Edit"
+        [icon]="refreshingForEdit ? 'pi pi-spinner pi-spin' : 'pi pi-pencil'"
+        [disabled]="refreshingForEdit"
+        (click)="onEditClick()"
+        data-test="edit-btn"
       ></button>
+
+      <!-- Clone. VIEW-MODE ONLY per post-review UX refinement. -->
       <button
-        *ngIf="mode === 'edit'"
+        *ngIf="mode === 'view'"
+        #cloneBtn
         pButton
         type="button"
         size="small"
         severity="secondary"
-        label="Cancel"
-        icon="pi pi-times"
-        [disabled]="saving"
-        (click)="onCancelClick()"
-        data-test="cancel-btn"
+        label="Clone"
+        icon="pi pi-copy"
+        [disabled]="cloning || isCloneGated"
+        [pTooltip]="cloneTooltip"
+        (click)="onCloneClick()"
+        data-test="clone-btn"
       ></button>
 
-      <!-- Edit mode (11.4 AC 3): Validate buffer. Disabled while a save OR
-           validate is in flight. Save's own `[disabled]` binding
-           intentionally ignores `validating` — Validate never gates Save
-           (AC 5). Same flash pattern as view-mode Validate — see comment
-           above for why we toggle `p-button-success` via class binding
-           instead of PrimeNG's `[severity]`. -->
+      <!-- EDIT mode: Validate · Save · Reset · Cancel (in that order) -->
+
+      <!-- Validate buffer. Same flash pattern as the view-mode counterpart. -->
       <button
         *ngIf="mode === 'edit'"
         pButton
@@ -121,24 +107,50 @@
         data-test="validate-buffer-btn"
       ></button>
 
-      <!-- Clone button (Story 11.5 AC 1): visible in BOTH view and edit
-           modes (Clone supports "Save As" semantics over a dirty buffer —
-           AC 5). Hidden automatically while loading or in the empty state
-           because the outer *ngIf gates `serverYaml !== ''`. Story 11.7
-           AC 1, 2, 19 — extended with `isCloneGated` (FR14) and a
-           template-ref so `onCloneDialogHide()` can return focus here. -->
+      <!-- Save. Disabled when the buffer matches serverYaml, during save,
+           or when the FR14 gate is active (known-bad validation). -->
       <button
-        #cloneBtn
+        *ngIf="mode === 'edit'"
+        pButton
+        type="button"
+        size="small"
+        label="Save"
+        [icon]="saving ? 'pi pi-spinner pi-spin' : 'pi pi-save'"
+        [disabled]="buffer === serverYaml || saving || isSaveGated"
+        [pTooltip]="saveTooltip"
+        (click)="onSaveClick()"
+        data-test="save-btn"
+      ></button>
+
+      <!-- Reset. Post-review new feature — revert the buffer to the last
+           server snapshot WITHOUT exiting edit mode. Dirty buffer triggers
+           a confirm (same "Discard unsaved changes?" prompt as Cancel);
+           clean buffer is a no-op and the button is disabled. -->
+      <button
+        *ngIf="mode === 'edit'"
         pButton
         type="button"
         size="small"
         severity="secondary"
-        label="Clone"
-        icon="pi pi-copy"
-        [disabled]="cloning || saving || isCloneGated"
-        [pTooltip]="cloneTooltip"
-        (click)="onCloneClick()"
-        data-test="clone-btn"
+        label="Reset"
+        icon="pi pi-undo"
+        [disabled]="buffer === serverYaml || saving"
+        (click)="onResetClick()"
+        data-test="reset-btn"
+      ></button>
+
+      <!-- Cancel. Same dirty-state guard as the dialog-close X (Story 11.3). -->
+      <button
+        *ngIf="mode === 'edit'"
+        pButton
+        type="button"
+        size="small"
+        severity="secondary"
+        label="Cancel"
+        icon="pi pi-times"
+        [disabled]="saving"
+        (click)="onCancelClick()"
+        data-test="cancel-btn"
       ></button>
     </div>
 
