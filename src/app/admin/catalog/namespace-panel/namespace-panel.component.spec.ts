@@ -504,6 +504,55 @@ describe('NamespacePanelComponent', () => {
   });
 
   // ---------------------------------------------------------------------
+  // Post-review guardrail — refuse to Save when the buffer's namespace
+  // field has been edited away from the panel's namespace (use Clone).
+  // ---------------------------------------------------------------------
+
+  it('Save refuses when buffer namespace has been edited — shows error toast, no import', async () => {
+    // Load a bundle whose root namespace matches the panel's namespace.
+    await loadedEditMode('namespace: foo\nuser_id: null\nentries: {}\n');
+    await component.onEditClick();
+    // Operator edits the namespace field to something else.
+    component.buffer = 'namespace: bar\nuser_id: null\nentries: {}\n';
+
+    await component.onSaveClick();
+
+    // Import must NOT have fired.
+    expect(apiSpy.importNamespace).not.toHaveBeenCalled();
+
+    // A sticky error toast with the namespace-change guardrail message
+    // was surfaced.
+    expect(messageSpy.add).toHaveBeenCalled();
+    const toast = messageSpy.add.calls.mostRecent().args[0];
+    expect(toast.severity).toBe('error');
+    expect(toast.sticky).toBeTrue();
+    expect(toast.detail).toContain('Clone');
+  });
+
+  it('Save proceeds when the buffer namespace matches the panel namespace (guardrail is a no-op)', async () => {
+    await loadedEditMode('namespace: foo\nuser_id: null\nentries: {}\n');
+    await component.onEditClick();
+    component.buffer = 'namespace: foo\nuser_id: null\nentries:\n  x: 1\n';
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+
+    await component.onSaveClick();
+
+    expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
+  });
+
+  it('Save falls through the guardrail when the buffer is unparseable — server decides', async () => {
+    await loadedEditMode('namespace: foo\nuser_id: null\nentries: {}\n');
+    await component.onEditClick();
+    // Unparseable YAML — our helper returns null, guardrail skips.
+    component.buffer = 'namespace: foo\nentries: [\n  unclosed\n';
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+
+    await component.onSaveClick();
+
+    expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
+  });
+
+  // ---------------------------------------------------------------------
   // Story 11.3 — Save 401 silent (AC 9)
   // ---------------------------------------------------------------------
 

@@ -89,3 +89,31 @@ export function rewriteNamespaceInYaml(input: string, destNs: string): string {
 
   return yaml.dump(doc, { sortKeys: false, lineWidth: -1, noRefs: true });
 }
+
+/**
+ * Best-effort extraction of the top-level `namespace:` field from a bundle
+ * YAML string. Returns `null` when the input cannot be parsed, the root
+ * is not a mapping, or the `namespace` key is missing / not a string.
+ *
+ * Used by `NamespacePanelComponent.onSaveClick` to guard against saving a
+ * buffer whose namespace has been edited away from the panel's namespace
+ * — the import endpoint treats the YAML's namespace as authoritative, so
+ * a naive save would silently create or overwrite a DIFFERENT namespace.
+ * Returning `null` on parse failure intentionally defers the decision to
+ * the server (which will reject with 422), so a malformed buffer does
+ * not get double-reported — operator sees one clear error from the
+ * server path rather than a speculative frontend one.
+ */
+export function extractYamlNamespace(input: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = yaml.load(input);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return null;
+  }
+  const ns = (parsed as Record<string, unknown>)['namespace'];
+  return typeof ns === 'string' ? ns : null;
+}

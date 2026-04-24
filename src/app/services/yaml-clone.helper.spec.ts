@@ -1,6 +1,10 @@
 import yaml from 'js-yaml';
 
-import { CloneYamlError, rewriteNamespaceInYaml } from './yaml-clone.helper';
+import {
+  CloneYamlError,
+  extractYamlNamespace,
+  rewriteNamespaceInYaml,
+} from './yaml-clone.helper';
 
 /**
  * Unit tests for {@link rewriteNamespaceInYaml} — pure-function, no TestBed.
@@ -182,5 +186,29 @@ entries:
       CloneYamlError,
       'destNs must be a non-empty string',
     );
+  });
+});
+
+describe('extractYamlNamespace', () => {
+  it('returns the top-level namespace string on a well-formed bundle', () => {
+    const input = 'namespace: foo\nuser_id: null\nentries: {}\n';
+    expect(extractYamlNamespace(input)).toBe('foo');
+  });
+
+  it('returns null on malformed YAML (defers to the server)', () => {
+    const malformed = 'namespace: foo\nentries: [\n  unclosed\n';
+    expect(extractYamlNamespace(malformed)).toBeNull();
+  });
+
+  it('returns null when the root is not a mapping', () => {
+    expect(extractYamlNamespace('- 1\n- 2\n')).toBeNull();
+  });
+
+  it('returns null when the mapping has no namespace key', () => {
+    expect(extractYamlNamespace('user_id: null\nentries: {}\n')).toBeNull();
+  });
+
+  it('returns null when namespace is not a string (e.g. a number)', () => {
+    expect(extractYamlNamespace('namespace: 42\nentries: {}\n')).toBeNull();
   });
 });

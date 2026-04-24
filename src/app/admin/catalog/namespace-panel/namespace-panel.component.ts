@@ -27,6 +27,7 @@ import { ApiService } from '../../../services/api.service';
 import { HttpError } from '../../../services/fetch.service';
 import {
   CloneYamlError,
+  extractYamlNamespace,
   rewriteNamespaceInYaml,
 } from '../../../services/yaml-clone.helper';
 import { ValidationReportComponent } from './validation-report/validation-report.component';
@@ -546,6 +547,25 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
     // Snapshot the buffer at click time so typing during the request does
     // NOT race the success branch (AC 2.3 guidance).
     const savedBuffer = this.buffer;
+
+    // Post-review guardrail — refuse to Save when the buffer's top-level
+    // `namespace:` field has been edited away from the panel's namespace.
+    // The server's import endpoint treats the YAML's namespace as
+    // authoritative, so saving here would accidentally create or overwrite
+    // a DIFFERENT namespace — the operator almost certainly means to Clone.
+    // Parse failure returns `null` → skip the guard and let the server
+    // reject the bundle with a 422 (handled in the catch branch below).
+    const bufferNamespace = extractYamlNamespace(savedBuffer);
+    if (bufferNamespace !== null && bufferNamespace !== this.namespace) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Cannot change namespace on Save',
+        detail: `The buffer's namespace is "${bufferNamespace}" but the panel is editing "${this.namespace}". Use Clone to save under a new namespace name.`,
+        sticky: true,
+      });
+      return;
+    }
+
     this.saving = true;
     this.rawSaveError = null;
     // Clear any stale validation from a prior save attempt so the UI does
