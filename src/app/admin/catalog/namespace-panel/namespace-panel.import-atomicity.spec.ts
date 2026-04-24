@@ -14,6 +14,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ApiService } from '../../../services/api.service';
 import { HttpError } from '../../../services/fetch.service';
 import { NamespacePanelComponent } from './namespace-panel.component';
+import { ValidationReportComponent } from './validation-report/validation-report.component';
 
 /**
  * Story 11.3 AC 12 — import-atomicity focused spec (NFR5 / ADR-011 D4).
@@ -128,6 +129,7 @@ describe('NamespacePanelComponent — import atomicity (NFR5)', () => {
             ButtonModule,
             ConfirmDialogModule,
             StubMonacoEditorComponent,
+            ValidationReportComponent,
           ],
           providers: [
             { provide: ConfirmationService, useValue: confirmationSpy },

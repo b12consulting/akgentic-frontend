@@ -27,29 +27,4 @@
     gap: 0.5rem;
     padding-top: 0.75rem;
   }
-
-  &__validation,
-  &__raw-error {
-    margin-top: 1rem;
-    padding: 0.75rem 1rem;
-    border: 1px solid #e57373;
-    background: #fff3f3;
-    border-radius: 4px;
-
-    h4 {
-      margin: 0 0 0.5rem 0;
-    }
-
-    ul {
-      margin: 0;
-      padding-left: 1.25rem;
-    }
-
-    pre {
-      white-space: pre-wrap;
-      word-break: break-word;
-      font-size: 0.85rem;
-      margin: 0;
-    }
-  }
 }

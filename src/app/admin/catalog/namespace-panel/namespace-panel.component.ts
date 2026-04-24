@@ -20,6 +20,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { NamespaceValidationReport } from '../../../models/catalog.interface';
 import { ApiService } from '../../../services/api.service';
 import { HttpError } from '../../../services/fetch.service';
+import { ValidationReportComponent } from './validation-report/validation-report.component';
 
 /**
  * NamespacePanelComponent — host-agnostic view of a catalog namespace YAML.
@@ -60,6 +61,7 @@ import { HttpError } from '../../../services/fetch.service';
     ButtonModule,
     ConfirmDialogModule,
     NuMonacoEditorModule,
+    ValidationReportComponent,
   ],
   // ConfirmationService is provided locally per PrimeNG v19 pattern — scopes
   // the confirm dialog to this component (dialog + future route both get
@@ -88,6 +90,14 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   // Story 11.3 — Save flow state.
   /** True while an `importNamespace` request is in flight (AC 5). */
   saving: boolean = false;
+
+  // Story 11.4 — Validate flow state.
+  /**
+   * True while a `validatePersistedNamespace` or `validateNamespaceBuffer`
+   * request is in flight. Independent from `saving` / `loading` — see
+   * Story 11.4 Dev Notes "Why three separate flags".
+   */
+  validating: boolean = false;
   /**
    * Raw (non-structured) server error body surfaced by a 422 whose payload
    * is not a `NamespaceValidationReport` (AC 7 fallback branch).
@@ -273,6 +283,106 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
         this.saving = false;
       }
     }
+  }
+
+  /**
+   * Validate the persisted namespace (view mode). Calls
+   * `apiService.validatePersistedNamespace(this.namespace)` exactly once,
+   * populates `this.lastValidation` on success, never mutates
+   * `serverYaml` / `mode` / `buffer` / `rawSaveError` (Validate is never
+   * a Save gate — ADR-011 D3 / D4).
+   */
+  async onValidatePersistedClick(): Promise<void> {
+    if (this.validating) {
+      return;
+    }
+    this.validating = true;
+    try {
+      const report = await this.apiService.validatePersistedNamespace(
+        this.namespace,
+      );
+      if (this.destroyed) {
+        return;
+      }
+      this.lastValidation = report;
+    } catch (err) {
+      if (this.destroyed) {
+        return;
+      }
+      this.handleValidateError(err);
+    } finally {
+      if (!this.destroyed) {
+        this.validating = false;
+      }
+    }
+  }
+
+  /**
+   * Validate the current edit buffer without persisting. Snapshots
+   * `this.buffer` at click time (`bufferAtClick`) so Monaco's live
+   * `[(ngModel)]` mutation during the in-flight request cannot race the
+   * request args (mirrors Story 11.3's `savedBuffer` pattern).
+   *
+   * Validate never mutates `mode`, `serverYaml`, or `buffer` — the
+   * handler touches only `validating` and `lastValidation`.
+   */
+  async onValidateBufferClick(): Promise<void> {
+    if (this.validating) {
+      return;
+    }
+    const bufferAtClick = this.buffer;
+    this.validating = true;
+    try {
+      const report =
+        await this.apiService.validateNamespaceBuffer(bufferAtClick);
+      if (this.destroyed) {
+        return;
+      }
+      this.lastValidation = report;
+    } catch (err) {
+      if (this.destroyed) {
+        return;
+      }
+      this.handleValidateError(err);
+    } finally {
+      if (!this.destroyed) {
+        this.validating = false;
+      }
+    }
+  }
+
+  /**
+   * Parent-owned clear for the `ValidationReportComponent` output. Nulls
+   * both `lastValidation` and `rawSaveError` so the sub-component emits
+   * no DOM on the next CD tick (branch (a) — AC 8).
+   */
+  onClearValidationClick(): void {
+    this.lastValidation = null;
+    this.rawSaveError = null;
+  }
+
+  /**
+   * Handle a rejected Validate call. 401 is silent (FetchService / the
+   * app-wide handler owns the surface). Other statuses emit a non-sticky
+   * error toast — re-clicking the Validate button is the natural retry,
+   * so no Retry action is attached (AC 11). Validate never writes Save's
+   * fallback fields (`rawSaveError`) or the current report
+   * (`lastValidation` stays as it was — preserved across error paths).
+   */
+  private handleValidateError(err: unknown): void {
+    const status = (err as { status?: number })?.status;
+    if (status === 401) {
+      // Silent — FetchService already fired a global toast.
+      return;
+    }
+    // Non-sticky toast: Validate is idempotent, re-clicking is the retry.
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Validation failed',
+      detail: (err as Error)?.message ?? String(err),
+    });
+    // Validate never writes Save's fallback fields — they belong to the
+    // Save flow.
   }
 
   /**

@@ -15,6 +15,7 @@ import { NamespaceValidationReport } from '../../../models/catalog.interface';
 import { ApiService } from '../../../services/api.service';
 import { HttpError } from '../../../services/fetch.service';
 import { NamespacePanelComponent } from './namespace-panel.component';
+import { ValidationReportComponent } from './validation-report/validation-report.component';
 
 /**
  * Stand-in for <nu-monaco-editor> used in component tests. Implements
@@ -71,6 +72,7 @@ describe('NamespacePanelComponent', () => {
       'exportNamespace',
       'importNamespace',
       'validateNamespaceBuffer',
+      'validatePersistedNamespace',
     ]);
     messageSpy = jasmine.createSpyObj('MessageService', ['add']);
     // Use a REAL ConfirmationService instance (its `requireConfirmation$`
@@ -100,6 +102,7 @@ describe('NamespacePanelComponent', () => {
             ButtonModule,
             ConfirmDialogModule,
             StubMonacoEditorComponent,
+            ValidationReportComponent,
           ],
           // Swap the locally-provided real ConfirmationService for a spy so
           // the Cancel + confirm-dialog flow is testable deterministically.
@@ -555,5 +558,332 @@ describe('NamespacePanelComponent', () => {
     expect(component.serverYaml).toBe('foo: 1\n');
     expect(component.mode).toBe('edit');
     expect(consoleErrorSpy).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------
+  // Story 11.4 — Validate flows (buttons, handlers, state, errors)
+  // ---------------------------------------------------------------------
+
+  function cleanReport(namespace = 'foo'): NamespaceValidationReport {
+    return {
+      namespace,
+      ok: true,
+      global_errors: [],
+      entry_issues: [],
+    };
+  }
+
+  // ----- Button visibility per mode (AC 1 / AC 3) -----
+
+  it('(11.4 AC1) Validate-persisted button visible in view mode, hidden in edit', async () => {
+    await loadedEditMode('foo: 1\n');
+
+    let viewBtn = fixture.nativeElement.querySelector(
+      'button[data-test="validate-persisted-btn"]',
+    );
+    expect(viewBtn).not.toBeNull();
+
+    component.onEditClick();
+    fixture.detectChanges();
+
+    viewBtn = fixture.nativeElement.querySelector(
+      'button[data-test="validate-persisted-btn"]',
+    );
+    expect(viewBtn).toBeNull();
+  });
+
+  it('(11.4 AC3) Validate-buffer button visible in edit mode, hidden in view', async () => {
+    await loadedEditMode('foo: 1\n');
+
+    let editBtn = fixture.nativeElement.querySelector(
+      'button[data-test="validate-buffer-btn"]',
+    );
+    expect(editBtn).toBeNull();
+
+    component.onEditClick();
+    fixture.detectChanges();
+
+    editBtn = fixture.nativeElement.querySelector(
+      'button[data-test="validate-buffer-btn"]',
+    );
+    expect(editBtn).not.toBeNull();
+  });
+
+  // ----- Validate-persisted click — AC 2 -----
+
+  it('(11.4 AC2) onValidatePersistedClick calls validatePersistedNamespace exactly once, populates lastValidation', async () => {
+    await loadedEditMode('foo: 1\n');
+    const report = cleanReport();
+    apiSpy.validatePersistedNamespace.and.returnValue(Promise.resolve(report));
+
+    await component.onValidatePersistedClick();
+
+    expect(apiSpy.validatePersistedNamespace).toHaveBeenCalledOnceWith('foo');
+    expect(component.lastValidation).toEqual(report);
+    // Save's fallback field stays untouched.
+    expect(component.rawSaveError).toBeNull();
+    // No other ApiService spy invoked on this path (beyond the load's export).
+    expect(apiSpy.importNamespace).not.toHaveBeenCalled();
+    expect(apiSpy.validateNamespaceBuffer).not.toHaveBeenCalled();
+  });
+
+  // ----- Validate-buffer click — AC 4 -----
+
+  it('(11.4 AC4) onValidateBufferClick passes snapshot-at-click buffer; live edits post-click do NOT change args', async () => {
+    await loadedEditMode('foo: 1\n');
+    component.onEditClick();
+    component.buffer = 'foo: 2\n';
+
+    let resolveValidate!: (v: NamespaceValidationReport) => void;
+    apiSpy.validateNamespaceBuffer.and.returnValue(
+      new Promise<NamespaceValidationReport>((r) => {
+        resolveValidate = r;
+      }),
+    );
+
+    const validatePromise = component.onValidateBufferClick();
+    // Simulate user typing AFTER click but BEFORE the promise resolves.
+    component.buffer = 'foo: 99\n';
+
+    resolveValidate(cleanReport());
+    await validatePromise;
+
+    // Spy was called with the pre-edit (snapshot-at-click) buffer.
+    expect(apiSpy.validateNamespaceBuffer).toHaveBeenCalledOnceWith('foo: 2\n');
+    expect(component.lastValidation).not.toBeNull();
+    // Validate never mutates buffer; the live edit is still present.
+    expect(component.buffer).toBe('foo: 99\n');
+  });
+
+  it('(11.4 AC4) Validate-buffer does NOT mutate mode, serverYaml, buffer, or call importNamespace', async () => {
+    await loadedEditMode('foo: 1\n');
+    component.onEditClick();
+    component.buffer = 'foo: 2\n';
+    apiSpy.validateNamespaceBuffer.and.returnValue(
+      Promise.resolve(cleanReport()),
+    );
+
+    await component.onValidateBufferClick();
+
+    expect(component.mode).toBe('edit');
+    expect(component.buffer).toBe('foo: 2\n');
+    expect(component.serverYaml).toBe('foo: 1\n');
+    expect(apiSpy.importNamespace).not.toHaveBeenCalled();
+    expect(component.rawSaveError).toBeNull();
+  });
+
+  // ----- Validate does not gate Save — AC 5 -----
+
+  it('(11.4 AC5) Validate-buffer does NOT gate Save — Save stays enabled iff buffer !== serverYaml', async () => {
+    await loadedEditMode('foo: 1\n');
+    component.onEditClick();
+    component.buffer = 'foo: 2\n';
+    fixture.detectChanges();
+
+    const report: NamespaceValidationReport = {
+      namespace: 'foo',
+      ok: false,
+      global_errors: ['x'],
+      entry_issues: [],
+    };
+    apiSpy.validateNamespaceBuffer.and.returnValue(Promise.resolve(report));
+
+    await component.onValidateBufferClick();
+    fixture.detectChanges();
+
+    // Save button still enabled (buffer !== serverYaml, saving === false).
+    const saveBtn = fixture.nativeElement.querySelector(
+      'button[data-test="save-btn"]',
+    ) as HTMLButtonElement;
+    expect(saveBtn.disabled).toBeFalse();
+    // importNamespace never invoked by the validate path.
+    expect(apiSpy.importNamespace).not.toHaveBeenCalled();
+  });
+
+  // ----- lastValidation preserved across mode flips — AC 10 -----
+
+  it('(11.4 AC10) onEditClick does NOT mutate lastValidation (view → edit)', async () => {
+    await loadedEditMode('foo: 1\n');
+    const prior = cleanReport();
+    component.lastValidation = prior;
+
+    component.onEditClick();
+
+    expect(component.mode).toBe('edit');
+    expect(component.lastValidation).toBe(prior);
+  });
+
+  it('(11.4 AC10) onCancelClick dirty-accept does NOT mutate lastValidation', async () => {
+    await loadedEditMode('foo: 1\n');
+    const prior = cleanReport();
+    component.onEditClick();
+    component.buffer = 'foo: 2\n';
+    component.lastValidation = prior;
+
+    component.onCancelClick();
+    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
+    args.accept!();
+
+    expect(component.mode).toBe('view');
+    expect(component.lastValidation).toBe(prior);
+  });
+
+  it('(11.4 AC10) onCancelClick clean-flip does NOT mutate lastValidation', async () => {
+    await loadedEditMode('foo: 1\n');
+    const prior = cleanReport();
+    component.onEditClick();
+    // Clean buffer — direct flip, no confirm.
+    component.lastValidation = prior;
+
+    component.onCancelClick();
+
+    expect(component.mode).toBe('view');
+    expect(component.lastValidation).toBe(prior);
+  });
+
+  // ----- Validate 5xx → toast, state unchanged — AC 11 -----
+
+  it('(11.4 AC11) Validate 5xx — error toast, lastValidation unchanged, validating resets', async () => {
+    await loadedEditMode('foo: 1\n');
+    const prior = cleanReport();
+    component.lastValidation = prior;
+    apiSpy.validatePersistedNamespace.and.returnValue(
+      Promise.reject(makeHttpError(500)),
+    );
+
+    await component.onValidatePersistedClick();
+
+    expect(component.lastValidation).toBe(prior);
+    expect(component.validating).toBe(false);
+    expect(component.rawSaveError).toBeNull();
+    // One error toast fired (non-sticky).
+    const toast = messageSpy.add.calls.mostRecent().args[0];
+    expect(toast.severity).toBe('error');
+    expect(toast.summary).toBe('Validation failed');
+    expect(toast.sticky).toBeFalsy();
+  });
+
+  // ----- Validate 401 silent — AC 12 -----
+
+  it('(11.4 AC12) Validate 401 — no panel toast, state unchanged, validating resets', async () => {
+    await loadedEditMode('foo: 1\n');
+    const prior = cleanReport();
+    component.lastValidation = prior;
+    messageSpy.add.calls.reset();
+    apiSpy.validatePersistedNamespace.and.returnValue(
+      Promise.reject(makeHttpError(401)),
+    );
+
+    await component.onValidatePersistedClick();
+
+    expect(component.lastValidation).toBe(prior);
+    expect(component.validating).toBe(false);
+    expect(component.mode).toBe('view');
+    expect(messageSpy.add).not.toHaveBeenCalled();
+  });
+
+  // ----- Destroy-during-validate — AC 13 -----
+
+  it('(11.4 AC13) destroy-during-validate — late-resolving validate does not write state', async () => {
+    await loadedEditMode('foo: 1\n');
+    let resolveLate!: (v: NamespaceValidationReport) => void;
+    apiSpy.validatePersistedNamespace.and.returnValue(
+      new Promise<NamespaceValidationReport>((r) => {
+        resolveLate = r;
+      }),
+    );
+
+    const consoleErrorSpy = spyOn(console, 'error');
+    const validatePromise = component.onValidatePersistedClick();
+    expect(component.validating).toBe(true);
+
+    fixture.destroy();
+
+    resolveLate(cleanReport('bar'));
+    await validatePromise;
+    await Promise.resolve();
+
+    // lastValidation was not written post-destroy.
+    expect(component.lastValidation).toBeNull();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+  });
+
+  // ----- NFR7 — exact REST call budget — AC 14 -----
+
+  it('(11.4 AC14) NFR7 scenario — 1 export + 2 validate-persisted + 1 validate-buffer + 1 import = 5 calls', async () => {
+    // Arrange: load with exportSpy.
+    await loadedEditMode('foo: 1\n');
+    expect(apiSpy.exportNamespace).toHaveBeenCalledTimes(1);
+
+    // Validate-persisted x2.
+    apiSpy.validatePersistedNamespace.and.returnValue(
+      Promise.resolve(cleanReport()),
+    );
+    await component.onValidatePersistedClick();
+    await component.onValidatePersistedClick();
+
+    // Flip to edit, set dirty buffer, Validate-buffer x1.
+    component.onEditClick();
+    component.buffer = 'foo: 2\n';
+    apiSpy.validateNamespaceBuffer.and.returnValue(
+      Promise.resolve(cleanReport()),
+    );
+    await component.onValidateBufferClick();
+
+    // Save x1 (success).
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+    await component.onSaveClick();
+
+    // Tally.
+    expect(apiSpy.exportNamespace).toHaveBeenCalledTimes(1);
+    expect(apiSpy.validatePersistedNamespace).toHaveBeenCalledTimes(2);
+    expect(apiSpy.validateNamespaceBuffer).toHaveBeenCalledTimes(1);
+    expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
+  });
+
+  // ----- editorOptions reference stability — AC 15 -----
+
+  it('(11.4 AC15) editorOptions is reference-stable on a stable mode (regression lock for the getter idiom)', async () => {
+    await loadedEditMode('foo: 1\n');
+    const first = component.editorOptions;
+    const second = component.editorOptions;
+    expect(first).toBe(second);
+
+    // Flipping mode creates exactly one new reference.
+    component.onEditClick();
+    const afterEdit = component.editorOptions;
+    expect(afterEdit).not.toBe(first);
+    // And the field stays stable on that new mode too.
+    expect(component.editorOptions).toBe(afterEdit);
+  });
+
+  // ----- onClearValidationClick nulls both fields — AC 8 -----
+
+  it('(11.4 AC8) onClearValidationClick nulls lastValidation AND rawSaveError', async () => {
+    await loadedEditMode('foo: 1\n');
+    component.lastValidation = cleanReport();
+    component.rawSaveError = 'some raw';
+
+    component.onClearValidationClick();
+
+    expect(component.lastValidation).toBeNull();
+    expect(component.rawSaveError).toBeNull();
+  });
+
+  it('(11.4 AC8) ValidationReportComponent clearRequested output triggers onClearValidationClick', async () => {
+    await loadedEditMode('foo: 1\n');
+    component.lastValidation = cleanReport();
+    component.rawSaveError = null;
+    fixture.detectChanges();
+
+    const clearBtn = fixture.nativeElement.querySelector(
+      '[data-test="clear-results-btn"]',
+    ) as HTMLButtonElement;
+    expect(clearBtn).not.toBeNull();
+    clearBtn.click();
+    fixture.detectChanges();
+
+    expect(component.lastValidation).toBeNull();
+    expect(component.rawSaveError).toBeNull();
   });
 });

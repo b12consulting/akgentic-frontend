@@ -35,6 +35,22 @@
         data-test="edit-btn"
       ></button>
 
+      <!-- View mode (11.4 AC 1): Validate persisted state. Disabled while
+           a validate request is already in flight so double-click cannot
+           double the request count (NFR7 enforcement). -->
+      <button
+        *ngIf="mode === 'view'"
+        pButton
+        type="button"
+        size="small"
+        severity="secondary"
+        label="Validate persisted state"
+        icon="pi pi-check-circle"
+        [disabled]="validating"
+        (click)="onValidatePersistedClick()"
+        data-test="validate-persisted-btn"
+      ></button>
+
       <!-- Edit mode: Save + Cancel. Save is disabled until buffer !== serverYaml (AC 2). -->
       <button
         *ngIf="mode === 'edit'"
@@ -60,6 +76,23 @@
         data-test="cancel-btn"
       ></button>
 
+      <!-- Edit mode (11.4 AC 3): Validate buffer. Disabled while a save OR
+           validate is in flight. Save's own `[disabled]` binding
+           intentionally ignores `validating` — Validate never gates Save
+           (AC 5). -->
+      <button
+        *ngIf="mode === 'edit'"
+        pButton
+        type="button"
+        size="small"
+        severity="secondary"
+        label="Validate buffer"
+        icon="pi pi-check-square"
+        [disabled]="saving || validating"
+        (click)="onValidateBufferClick()"
+        data-test="validate-buffer-btn"
+      ></button>
+
       <!-- Action-row Retry (AC 8): rendered when the previous save attempt
            failed with a non-422 error. The mutation is never auto-retried —
            the operator decides. In-toast Retry was considered (see AC 8
@@ -80,44 +113,14 @@
       ></button>
     </div>
 
-    <!-- Validation-report rendering — minimal inline list (Story 11.4 polishes). -->
-    <div
-      *ngIf="lastValidation"
-      class="namespace-panel__validation"
-      data-test="validation-report"
-    >
-      <h4>
-        Validation report
-        ({{ lastValidation.ok ? 'OK' : 'issues' }})
-      </h4>
-      <ul *ngIf="lastValidation.global_errors.length > 0" class="global-errors">
-        <li *ngFor="let msg of lastValidation.global_errors">
-          <strong>global</strong>: {{ msg }}
-        </li>
-      </ul>
-      <ul
-        *ngIf="lastValidation.entry_issues.length > 0"
-        class="entry-issues"
-      >
-        <li *ngFor="let issue of lastValidation.entry_issues">
-          <strong>{{ issue.kind }}</strong> {{ issue.entry_id }}:
-          <span *ngFor="let msg of issue.errors; let last = last">
-            {{ msg }}<ng-container *ngIf="!last">; </ng-container>
-          </span>
-        </li>
-      </ul>
-    </div>
-
-    <!-- Fallback: server 422 with a non-structured body renders verbatim
-         (AC 7 fallback branch). Story 11.4 owns the polish. -->
-    <div
-      *ngIf="rawSaveError"
-      class="namespace-panel__raw-error"
-      data-test="raw-save-error"
-    >
-      <h4>Server returned an unstructured error</h4>
-      <pre>{{ rawSaveError }}</pre>
-    </div>
+    <!-- Validation-report sub-component (11.4 AC 9): renders the clean
+         pass / findings / unstructured fallback / nothing branches. The
+         clearRequested output nulls both parent fields on click. -->
+    <app-validation-report
+      [report]="lastValidation"
+      [rawError]="rawSaveError"
+      (clearRequested)="onClearValidationClick()"
+    ></app-validation-report>
   </ng-container>
 
   <!-- PrimeNG ConfirmDialog — scoped to this component via `providers:
