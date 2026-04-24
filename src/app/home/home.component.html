@@ -28,6 +28,19 @@
       class="extra-small-button"
     ></button>
     &nbsp;
+    <!-- Story 11.2 — Edit namespace YAML button; opens the Monaco panel in a dialog. -->
+    <button
+      pButton
+      size="small"
+      type="button"
+      label="Edit namespace YAML"
+      icon="pi pi-pencil"
+      [disabled]="!(selectedNamespace$ | async)"
+      (click)="namespacePanelVisible = true"
+      class="extra-small-button"
+      data-test="edit-namespace-yaml-btn"
+    ></button>
+    &nbsp;
     <button
       pButton
       size="small"
@@ -182,3 +195,58 @@
     </p-table>
   </div>
 </section>
+
+<!--
+  Story 11.2 — Namespace Panel dialog wrapper.
+
+  `@defer (when namespacePanelVisible)` guarantees the NamespacePanelComponent
+  (and its Monaco-editor chunk) is fetched only on first open. The initial
+  home-page bundle stays Monaco-free.
+-->
+<!--
+  Story 11.3 — split [(visible)] into [visible] + (visibleChange) so the
+  dirty-close guard can intercept dismissals. A separate <p-confirmDialog />
+  is mounted at the end of this template so PrimeNG's ConfirmationService
+  can target it (first PrimeNG ConfirmDialog in HomeComponent — scoped to
+  the component, not app-root).
+-->
+<!--
+  Story 11.7 AC 8, 9, 10 — replace the [header]="..." string binding with
+  a <ng-template pTemplate="header"> block so we can render the namespace
+  name AND the conditional FR15 dirty indicator inside the same header.
+  Story 11.7 AC 22, 23 — lock all three dismissal channels (close X,
+  Escape, dismissable mask) during an in-flight write (saving OR
+  cloning). Reads (validate / load) stay dismissable — `isWriteInFlight`
+  intentionally excludes `validating` / `loading`.
+-->
+<p-dialog
+  [visible]="namespacePanelVisible"
+  (visibleChange)="onNamespacePanelVisibleChange($event)"
+  [modal]="true"
+  [style]="{ width: '90vw', height: '90vh' }"
+  [closable]="!isWriteInFlight"
+  [closeOnEscape]="!isWriteInFlight"
+  [dismissableMask]="!isWriteInFlight"
+>
+  <ng-template pTemplate="header">
+    <span class="p-dialog-title">
+      {{ namespaceLabel }}
+      <span
+        *ngIf="namespacePanel?.hasUnsavedChanges() === true"
+        class="namespace-panel__dirty-indicator"
+        aria-label="Unsaved changes"
+        data-test="dirty-indicator-dialog"
+      >●</span>
+    </span>
+  </ng-template>
+  @defer (when namespacePanelVisible) {
+    <app-namespace-panel
+      [namespace]="((selectedNamespace$ | async)?.namespace) ?? ''"
+      [existingNamespaces]="namespaceIdentifiers"
+      (closed)="namespacePanelVisible = false"
+      (saved)="onNamespaceSaved()"
+    />
+  }
+</p-dialog>
+
+<p-confirmDialog></p-confirmDialog>
