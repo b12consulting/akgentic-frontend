@@ -46,14 +46,62 @@
     border: 0;
   }
 
+}
+
+// -------------------------------------------------------------------
+// Clone modal styles — must live OUTSIDE `.namespace-panel { }` and use
+// `:host ::ng-deep` because PrimeNG's `<p-dialog>` teleports its content
+// to `document.body` via the CDK overlay. View-encapsulated selectors
+// (scoped via `[_ngcontent-xxx]` attribute suffix) do not match the
+// teleported DOM — so nested-inside-.namespace-panel rules silently
+// no-op. Same pattern Amelia used in Story 11-7 for the dialog header.
+// -------------------------------------------------------------------
+:host ::ng-deep {
+  // Clone modal body — flex-column stacks the label + input + error
+  // blocks with breathing room; the input spans the full modal width so
+  // the operator has room to type a long namespace slug.
+  .namespace-panel__clone-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding-top: 0.25rem;
+
+    label {
+      display: block;
+      font-weight: 500;
+    }
+
+    input {
+      width: 100%;
+    }
+  }
+
+  // Pre-flight validation hint (empty / same-as-source / collision).
+  // Muted red, smaller than body text so it reads as helper text, not a
+  // critical alert — the operator can still re-type.
+  .namespace-panel__clone-error {
+    color: #dc2626;
+    font-size: 0.875rem;
+    line-height: 1.25;
+  }
+
   // Story 11.7 AC 21 — inline error in the Clone modal for the
-  // unstructured-422 fallback. Uses the same red as PrimeNG severity-error
-  // tokens (#dc2626 — meets WCAG AA against the dialog's white surface).
-  &__clone-inline-error {
+  // unstructured-422 fallback. Same red token; `display: block` so it
+  // takes its own line beneath the input.
+  .namespace-panel__clone-inline-error {
     display: block;
     margin-top: 0.4rem;
     color: #dc2626;
     font-size: 0.875rem;
     line-height: 1.25;
+  }
+
+  // Clone modal action row — right-aligned Cancel + Confirm with a small
+  // gap and a top separator so they don't crowd the input.
+  .namespace-panel__clone-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    padding-top: 1rem;
   }
 }
