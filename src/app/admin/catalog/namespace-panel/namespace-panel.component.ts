@@ -138,18 +138,39 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   }
 
   /**
-   * Monaco editor options — `readOnly` is derived from `mode` so the same
-   * getter serves both Story 11.2 (always view) and Story 11.3 (flips on
-   * Edit click). `automaticLayout: true` is load-bearing for dialog hosting
-   * (the editor otherwise renders at 0×0 when its container mounts late).
+   * Monaco editor options.
+   *
+   * MUST be a stable object reference between mode changes. `nu-monaco-editor`
+   * receives `[options]` as a signal input (reference-equality semantics) —
+   * returning a fresh object every change-detection tick (the previous getter
+   * implementation) fires the input on every CD, causes `updateOptions()` to
+   * run repeatedly, and drives a CD / layout feedback loop that freezes the
+   * tab. The field is reassigned ONLY when `mode` flips (via `setMode`).
+   *
+   * `automaticLayout: true` is load-bearing for dialog hosting — the editor
+   * otherwise renders at 0×0 when its container mounts late.
    */
-  get editorOptions(): Record<string, unknown> {
+  editorOptions: Record<string, unknown> = this.buildEditorOptions();
+
+  private buildEditorOptions(): Record<string, unknown> {
     return {
       theme: 'vs',
       language: 'yaml',
       automaticLayout: true,
       readOnly: this.mode === 'view',
     };
+  }
+
+  /**
+   * Single write path for `mode` — keeps `editorOptions` in lock-step so the
+   * Monaco signal input sees exactly one new reference per real mode flip.
+   */
+  private setMode(next: 'view' | 'edit'): void {
+    if (this.mode === next) {
+      return;
+    }
+    this.mode = next;
+    this.editorOptions = this.buildEditorOptions();
   }
 
   /**
@@ -169,7 +190,7 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
    * replace the Edit button in the action row.
    */
   onEditClick(): void {
-    this.mode = 'edit';
+    this.setMode('edit');
   }
 
   /**
@@ -179,7 +200,7 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
    */
   onCancelClick(): void {
     if (this.buffer === this.serverYaml) {
-      this.mode = 'view';
+      this.setMode('view');
       return;
     }
     this.confirmationService.confirm({
@@ -189,7 +210,7 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
           return;
         }
         this.buffer = this.serverYaml;
-        this.mode = 'view';
+        this.setMode('view');
       },
       // `reject` intentionally omitted — dismissing the confirm leaves the
       // panel exactly as it was (AC 3 dismiss branch).
@@ -236,7 +257,7 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
         return;
       }
       this.serverYaml = savedBuffer;
-      this.mode = 'view';
+      this.setMode('view');
       this.saved.emit();
       this.messageService.add({
         severity: 'success',
@@ -325,7 +346,7 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       }
       this.serverYaml = yaml;
       this.buffer = yaml;
-      this.mode = 'view';
+      this.setMode('view');
       this.lastValidation = null;
       this.rawSaveError = null;
       this.lastSaveError = null;
