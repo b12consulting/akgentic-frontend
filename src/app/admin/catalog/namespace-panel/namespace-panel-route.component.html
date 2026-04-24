@@ -1,0 +1,18 @@
+<section class="namespace-panel-route">
+  <header class="namespace-panel-route__header">
+    <a
+      class="namespace-panel-route__back"
+      routerLink="/"
+      data-test="namespace-panel-route-back-home"
+      >&larr; Back to home</a
+    >
+    <h1 class="namespace-panel-route__title">
+      Namespace: {{ currentNamespace }}
+    </h1>
+  </header>
+  <app-namespace-panel
+    [namespace]="currentNamespace"
+    [existingNamespaces]="existingNamespaces"
+    (saved)="onSaved()"
+  ></app-namespace-panel>
+</section>

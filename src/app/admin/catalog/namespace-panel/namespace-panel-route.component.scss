@@ -1,0 +1,33 @@
+// Story 11.6 — full-page admin layout wrapper for the namespace-panel
+// deep-link route. Minimal chrome; the panel owns its own styles.
+
+.namespace-panel-route {
+  display: flex;
+  flex-direction: column;
+  min-height: calc(100vh - 4rem);
+  padding: 1.5rem 2rem;
+  gap: 1rem;
+  box-sizing: border-box;
+
+  &__header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  &__back {
+    color: var(--primary-color, #2563eb);
+    text-decoration: none;
+    font-size: 0.875rem;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+}
