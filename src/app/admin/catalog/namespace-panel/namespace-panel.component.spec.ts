@@ -1,6 +1,11 @@
 import { CommonModule } from '@angular/common';
 import { Component, forwardRef, Input } from '@angular/core';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import {
+  ComponentFixture,
+  fakeAsync,
+  TestBed,
+  tick,
+} from '@angular/core/testing';
 import {
   ControlValueAccessor,
   FormsModule,
@@ -616,7 +621,7 @@ describe('NamespacePanelComponent', () => {
 
   // ----- Validate-persisted click — AC 2 -----
 
-  it('(11.4 AC2) onValidatePersistedClick calls validatePersistedNamespace exactly once, populates lastValidation', async () => {
+  it('(11.4 AC2) onValidatePersistedClick calls validatePersistedNamespace exactly once; clean report hides pane and flashes the view-mode button', async () => {
     await loadedEditMode('foo: 1\n');
     const report = cleanReport();
     apiSpy.validatePersistedNamespace.and.returnValue(Promise.resolve(report));
@@ -624,13 +629,54 @@ describe('NamespacePanelComponent', () => {
     await component.onValidatePersistedClick();
 
     expect(apiSpy.validatePersistedNamespace).toHaveBeenCalledOnceWith('foo');
-    expect(component.lastValidation).toEqual(report);
+    // Clean reports no longer render the "Validation passed" pane — the
+    // button-flash UX replaces it. `lastValidation` stays null.
+    expect(component.lastValidation).toBeNull();
+    expect(component.validationFlashPersisted).toBeTrue();
+    expect(component.validationFlashBuffer).toBeFalse();
     // Save's fallback field stays untouched.
     expect(component.rawSaveError).toBeNull();
     // No other ApiService spy invoked on this path (beyond the load's export).
     expect(apiSpy.importNamespace).not.toHaveBeenCalled();
     expect(apiSpy.validateNamespaceBuffer).not.toHaveBeenCalled();
   });
+
+  it('onValidatePersistedClick non-clean report still populates lastValidation (findings pane renders)', async () => {
+    await loadedEditMode('foo: 1\n');
+    const report: NamespaceValidationReport = {
+      namespace: 'foo',
+      ok: false,
+      global_errors: ['schema mismatch'],
+      entry_issues: [],
+    };
+    apiSpy.validatePersistedNamespace.and.returnValue(Promise.resolve(report));
+
+    await component.onValidatePersistedClick();
+
+    expect(component.lastValidation).toEqual(report);
+    expect(component.validationFlashPersisted).toBeFalse();
+  });
+
+  it('clean-report flash on Validate auto-reverts after 2500ms', fakeAsync(() => {
+    void buildFixture('foo');
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: 1\n'));
+    apiSpy.validatePersistedNamespace.and.returnValue(
+      Promise.resolve(cleanReport()),
+    );
+    fixture.detectChanges();
+    tick();
+
+    void component.onValidatePersistedClick();
+    tick();
+    expect(component.validationFlashPersisted).toBeTrue();
+    // Halfway through the window — still flashing.
+    tick(1000);
+    expect(component.validationFlashPersisted).toBeTrue();
+    // Past the 2500ms window — flag auto-reverts.
+    tick(1600);
+    expect(component.validationFlashPersisted).toBeFalse();
+    expect(component.validationFlashBuffer).toBeFalse();
+  }));
 
   // ----- Validate-buffer click — AC 4 -----
 
@@ -655,9 +701,46 @@ describe('NamespacePanelComponent', () => {
 
     // Spy was called with the pre-edit (snapshot-at-click) buffer.
     expect(apiSpy.validateNamespaceBuffer).toHaveBeenCalledOnceWith('foo: 2\n');
-    expect(component.lastValidation).not.toBeNull();
+    // Clean report → pane hidden, edit-mode button flashes `success`.
+    expect(component.lastValidation).toBeNull();
+    expect(component.validationFlashBuffer).toBeTrue();
+    expect(component.validationFlashPersisted).toBeFalse();
     // Validate never mutates buffer; the live edit is still present.
     expect(component.buffer).toBe('foo: 99\n');
+  });
+
+  it('editing the buffer after a clean Validate-buffer clears the flash immediately', async () => {
+    await loadedEditMode('foo: 1\n');
+    component.onEditClick();
+    component.buffer = 'foo: 2\n';
+    apiSpy.validateNamespaceBuffer.and.returnValue(
+      Promise.resolve(cleanReport()),
+    );
+
+    await component.onValidateBufferClick();
+    expect(component.validationFlashBuffer).toBeTrue();
+
+    // User edits the YAML after the clean ack — the green state is now
+    // stale, the button must revert to secondary immediately rather than
+    // linger until the 2500ms timer elapses.
+    component.onBufferChange('foo: 2\n# edited\n');
+
+    expect(component.buffer).toBe('foo: 2\n# edited\n');
+    expect(component.validationFlashBuffer).toBeFalse();
+  });
+
+  it('editing buffer does NOT clear the flash on the view-mode persisted button (persisted validates server state, not buffer)', async () => {
+    await loadedEditMode('foo: 1\n');
+    apiSpy.validatePersistedNamespace.and.returnValue(
+      Promise.resolve(cleanReport()),
+    );
+    await component.onValidatePersistedClick();
+    expect(component.validationFlashPersisted).toBeTrue();
+
+    // Even if buffer changes (e.g. user flips to edit later), the persisted
+    // flash is not bound to the buffer — it stays.
+    component.onBufferChange('foo: 99\n');
+    expect(component.validationFlashPersisted).toBeTrue();
   });
 
   it('(11.4 AC4) Validate-buffer does NOT mutate mode, serverYaml, buffer, or call importNamespace', async () => {

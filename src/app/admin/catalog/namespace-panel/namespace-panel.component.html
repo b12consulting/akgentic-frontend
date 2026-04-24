@@ -15,10 +15,17 @@
 
   <!-- Editor branch: we have content -->
   <ng-container *ngIf="!loading && serverYaml !== ''">
+    <!--
+      ngModel is split into [ngModel] + (ngModelChange) so the change
+      handler can invalidate the edit-mode Validate-buffer success flash
+      as soon as the user modifies the YAML — a clean-report ack should
+      not outlive the buffer it validated.
+    -->
     <nu-monaco-editor
       class="namespace-panel__editor"
       [options]="editorOptions"
-      [(ngModel)]="buffer"
+      [ngModel]="buffer"
+      (ngModelChange)="onBufferChange($event)"
       [height]="'calc(90vh - 240px)'"
     ></nu-monaco-editor>
 
@@ -37,15 +44,18 @@
 
       <!-- View mode (11.4 AC 1): Validate persisted state. Disabled while
            a validate request is already in flight so double-click cannot
-           double the request count (NFR7 enforcement). -->
+           double the request count (NFR7 enforcement). Flips to PrimeNG
+           `success` (green) for ~2.5s after a clean report (replaces the
+           panel's "Validation passed" banner — findings still render
+           in-pane). -->
       <button
         *ngIf="mode === 'view'"
         pButton
         type="button"
         size="small"
-        severity="secondary"
+        [severity]="validationFlashPersisted ? 'success' : 'secondary'"
         label="Validate persisted state"
-        icon="pi pi-check-circle"
+        [icon]="validationFlashPersisted ? 'pi pi-check' : 'pi pi-check-circle'"
         [disabled]="validating"
         (click)="onValidatePersistedClick()"
         data-test="validate-persisted-btn"
@@ -79,15 +89,16 @@
       <!-- Edit mode (11.4 AC 3): Validate buffer. Disabled while a save OR
            validate is in flight. Save's own `[disabled]` binding
            intentionally ignores `validating` — Validate never gates Save
-           (AC 5). -->
+           (AC 5). Flips to `success` for ~2.5s on a clean report — same
+           polish as the view-mode Validate button. -->
       <button
         *ngIf="mode === 'edit'"
         pButton
         type="button"
         size="small"
-        severity="secondary"
+        [severity]="validationFlashBuffer ? 'success' : 'secondary'"
         label="Validate buffer"
-        icon="pi pi-check-square"
+        [icon]="validationFlashBuffer ? 'pi pi-check' : 'pi pi-check-square'"
         [disabled]="saving || validating"
         (click)="onValidateBufferClick()"
         data-test="validate-buffer-btn"

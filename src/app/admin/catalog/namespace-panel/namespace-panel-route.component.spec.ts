@@ -279,8 +279,11 @@ entries:
     expect(panel.serverYaml).toBe(srcYaml + '# edited\n');
 
     // --- Validate persisted ---
+    // Clean reports now flash the view-mode Validate button instead of
+    // populating the "Validation passed" pane — lastValidation stays null.
     await panel.onValidatePersistedClick();
-    expect(panel.lastValidation?.ok).toBeTrue();
+    expect(panel.lastValidation).toBeNull();
+    expect(panel.validationFlashPersisted).toBeTrue();
 
     // --- Clone (valid bundle yaml in buffer) ---
     // Set buffer to a clean bundle root mapping so rewriteNamespaceInYaml

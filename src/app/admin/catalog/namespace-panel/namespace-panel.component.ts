@@ -114,6 +114,29 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
    * Story 11.4 Dev Notes "Why three separate flags".
    */
   validating: boolean = false;
+
+  // UX polish: replaces the intrusive "Validation passed" panel on clean
+  // reports. When a Validate click returns `ok: true`, the clicked button
+  // briefly flips to PrimeNG's `success` severity (green) and then reverts.
+  // The report pane stays hidden in this path — findings-only.
+  //
+  //   - `validationFlashPersisted` — true while the view-mode Validate button
+  //     shows the success-flash state.
+  //   - `validationFlashBuffer`    — same, for the edit-mode Validate button.
+  //   - `flashTimeoutId` — handle so repeated clicks cancel the prior timer
+  //     and the destroy hook cleans up any pending callback.
+  validationFlashPersisted: boolean = false;
+  validationFlashBuffer: boolean = false;
+  private flashTimeoutId: ReturnType<typeof setTimeout> | undefined = undefined;
+
+  /**
+   * Snapshot of the buffer value at the moment a Validate-buffer request
+   * returned a clean report. If the user then modifies the buffer, the
+   * flash is cancelled via `onBufferChange` — a green "validated" ack must
+   * not outlive the exact YAML it validated.
+   */
+  private validatedBuffer: string | null = null;
+
   /**
    * Raw (non-structured) server error body surfaced by a 422 whose payload
    * is not a `NamespaceValidationReport` (AC 7 fallback branch).
@@ -168,7 +191,64 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   constructor() {
     this.destroyRef.onDestroy(() => {
       this.destroyed = true;
+      if (this.flashTimeoutId !== undefined) {
+        clearTimeout(this.flashTimeoutId);
+        this.flashTimeoutId = undefined;
+      }
     });
+  }
+
+  /**
+   * Briefly flash the clicked Validate button as `success` (green) — the
+   * UX-light alternative to rendering a "Validation passed" panel for clean
+   * reports. Repeated clicks during the flash window cancel the pending
+   * timer and restart fresh. The destroyed guard prevents a post-destroy
+   * write if the timer fires after teardown.
+   */
+  private flashValidated(target: 'persisted' | 'buffer'): void {
+    if (this.flashTimeoutId !== undefined) {
+      clearTimeout(this.flashTimeoutId);
+    }
+    this.validationFlashPersisted = target === 'persisted';
+    this.validationFlashBuffer = target === 'buffer';
+    this.flashTimeoutId = setTimeout(() => {
+      this.flashTimeoutId = undefined;
+      if (this.destroyed) {
+        return;
+      }
+      this.validationFlashPersisted = false;
+      this.validationFlashBuffer = false;
+      this.validatedBuffer = null;
+    }, 2500);
+  }
+
+  /**
+   * Single write path for `buffer` driven from the Monaco editor's
+   * `(ngModelChange)`. Writes-through to `this.buffer` AND invalidates the
+   * edit-mode Validate-buffer flash when the value diverges from the
+   * snapshot captured at the last successful validate. Modifying the YAML
+   * after a clean ack makes the ack stale — the button must revert to
+   * secondary immediately rather than keep its green state for the full
+   * 2500ms window.
+   *
+   * Direct assignments to `this.buffer` elsewhere in the component (load,
+   * save-success, clone-navigate) bypass this handler — the flash flag is
+   * already `false` in those paths, so no invalidation is needed.
+   */
+  onBufferChange(value: string): void {
+    this.buffer = value;
+    if (
+      this.validationFlashBuffer &&
+      this.validatedBuffer !== null &&
+      value !== this.validatedBuffer
+    ) {
+      this.validationFlashBuffer = false;
+      this.validatedBuffer = null;
+      if (this.flashTimeoutId !== undefined) {
+        clearTimeout(this.flashTimeoutId);
+        this.flashTimeoutId = undefined;
+      }
+    }
   }
 
   ngOnInit(): void {
@@ -344,7 +424,15 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       if (this.destroyed) {
         return;
       }
-      this.lastValidation = report;
+      // Clean report → keep the pane hidden and flash the button green for a
+      // brief ack. Non-clean report → populate `lastValidation` so the
+      // ValidationReportComponent renders the findings.
+      if (report.ok) {
+        this.lastValidation = null;
+        this.flashValidated('persisted');
+      } else {
+        this.lastValidation = report;
+      }
     } catch (err) {
       if (this.destroyed) {
         return;
@@ -378,7 +466,15 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       if (this.destroyed) {
         return;
       }
-      this.lastValidation = report;
+      // Clean buffer → flash the edit-mode Validate button. Non-clean →
+      // render findings via `lastValidation` as before.
+      if (report.ok) {
+        this.lastValidation = null;
+        this.validatedBuffer = bufferAtClick;
+        this.flashValidated('buffer');
+      } else {
+        this.lastValidation = report;
+      }
     } catch (err) {
       if (this.destroyed) {
         return;
