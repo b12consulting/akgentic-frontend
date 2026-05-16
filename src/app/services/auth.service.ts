@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 import { BehaviorSubject, from, Observable, of } from 'rxjs';
-import { catchError, switchMap, tap } from 'rxjs/operators';
+import { catchError, tap } from 'rxjs/operators';
 import { ConfigService } from './config.service';
 
 const ANONYMOUS_USER = { user_id: 'anonymous', email: '', name: 'Anonymous' };
@@ -64,29 +64,31 @@ export class AuthService {
    * browser; the session cookie set by the backend is the sole post-login
    * credential, exactly as on the OAuth path.
    *
-   * On a successful (non-error) response, `checkAuth()` refreshes
-   * `currentUserSubject` from `GET /auth/me` and the observable completes with
-   * the resolved user. On a non-OK response (e.g. HTTP 401 for an invalid,
-   * unknown, or expired key) the observable errors so the caller can surface
-   * the message.
+   * On an HTTP `2xx` response the backend returns a `200` JSON body
+   * (`{"success": true, "user": {...}}`) — no redirect. The JSON body itself
+   * is the success signal: its `user` is used to refresh `currentUserSubject`
+   * and the observable completes with that user. On a non-OK response (e.g.
+   * HTTP 401 for an invalid, unknown, or expired key) the observable errors so
+   * the caller can surface the message.
    */
   loginWithApiKey(apiKey: string): Observable<any> {
     const url = `${this.config.api}/auth/login/apikey?apikey=${encodeURIComponent(apiKey)}`;
     const options: RequestInit = { credentials: 'include' };
     return from(
-      fetch(url, options).then((r) => {
-        // The backend 302-redirects on success; `fetch` follows it
-        // transparently, so a non-error final response means the session
-        // cookie was set. A 401 (invalid/unknown/expired key) is not ok.
+      fetch(url, options).then(async (r) => {
+        // A 401 (invalid/unknown/expired key) is not ok — error the observable.
         if (!r.ok) {
           throw new Error('Invalid API key');
         }
-        return r;
+        // Success: the backend binds the session and returns a 200 JSON body.
+        const body = await r.json();
+        const user = body?.user ?? ANONYMOUS_USER;
+        if (user && !user.name) {
+          user.name = user.email || user.user_id || 'User';
+        }
+        this.currentUserSubject.next(user);
+        return user;
       })
-    ).pipe(
-      // Refresh currentUserSubject from GET /auth/me using the new session
-      // cookie, then complete with the resolved user.
-      switchMap(() => this.checkAuth())
     );
   }
 
