@@ -6,10 +6,12 @@ import { ConfigService } from '../services/config.service';
 import { LoginComponent } from './login.component';
 
 /**
- * Specs for {@link LoginComponent.loginWithApiKey} (Story 1.8).
+ * Specs for {@link LoginComponent.loginWithApiKey} (Stories 1.8, 1.9).
  *
  * `AuthService` and `Router` are replaced with `jasmine.SpyObj` stubs — no
- * real navigation or backend call occurs.
+ * real navigation or backend call occurs. `AuthService.loginWithApiKey` now
+ * emits the authenticated user object on success; the component ignores the
+ * value and navigates to `/`.
  */
 describe('LoginComponent', () => {
   let component: LoginComponent;
@@ -67,7 +69,7 @@ describe('LoginComponent', () => {
     });
   });
 
-  describe('loginWithApiKey — error (AC #4)', () => {
+  describe('loginWithApiKey — error (AC #3)', () => {
     it('surfaces the backend message, resets loading, and does not navigate', () => {
       authSpy.loginWithApiKey.and.returnValue(
         throwError(() => new Error('Invalid API key')),

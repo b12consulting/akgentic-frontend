@@ -4,11 +4,13 @@ import { AuthService } from './auth.service';
 import { ConfigService } from './config.service';
 
 /**
- * Specs for {@link AuthService.loginWithApiKey} (Story 1.8).
+ * Specs for {@link AuthService.loginWithApiKey} (Stories 1.8, 1.9).
  *
  * The network boundary is the global `fetch`, which is stubbed via a Jasmine
- * spy — no real server is contacted. Both the API-key login request and the
- * follow-up `GET /auth/me` (issued by `checkAuth()`) go through the same spy.
+ * spy — no real server is contacted. The backend returns a `200` JSON body
+ * (`{"success": true, "user": {...}}`) on success; the body itself is the
+ * success signal — no redirect is followed and no `/auth/me` round-trip is
+ * issued.
  */
 describe('AuthService', () => {
   let service: AuthService;
@@ -40,12 +42,11 @@ describe('AuthService', () => {
     fetchSpy = spyOn(window, 'fetch');
   });
 
-  describe('loginWithApiKey — success path (AC #1, #3)', () => {
+  describe('loginWithApiKey — success path (AC #2, #4, #5)', () => {
     it('calls /auth/login/apikey with the key URL-encoded and credentials: include', async () => {
-      // First call: the apikey login. Second call: checkAuth() -> /auth/me.
-      fetchSpy.and.returnValues(
-        Promise.resolve(makeResponse(true)),
-        Promise.resolve(makeResponse(true, { user_id: 'u1', name: 'Op' })),
+      // One call only — the 200 JSON body is the success signal, no /auth/me.
+      fetchSpy.and.returnValue(
+        Promise.resolve(makeResponse(true, { success: true, user: { user_id: 'u1', name: 'Op' } })),
       );
 
       await firstValueFrom(service.loginWithApiKey('secret key/+&'));
@@ -57,24 +58,22 @@ describe('AuthService', () => {
       expect((loginCall[1] as RequestInit).credentials).toBe('include');
     });
 
-    it('triggers checkAuth() so currentUser$ reflects the resolved user', async () => {
+    it('reads the 200 JSON body so currentUser$ reflects the response user', async () => {
       const resolvedUser = { user_id: 'u1', email: 'op@test', name: 'Operator' };
-      fetchSpy.and.returnValues(
-        Promise.resolve(makeResponse(true)),
-        Promise.resolve(makeResponse(true, resolvedUser)),
+      fetchSpy.and.returnValue(
+        Promise.resolve(makeResponse(true, { success: true, user: resolvedUser })),
       );
 
-      await firstValueFrom(service.loginWithApiKey('valid-key'));
+      const result = await firstValueFrom(service.loginWithApiKey('valid-key'));
 
-      // checkAuth() hits GET /auth/me with credentials.
-      const meCall = fetchSpy.calls.argsFor(1);
-      expect(meCall[0]).toBe(`${API}/auth/me`);
-      expect((meCall[1] as RequestInit).credentials).toBe('include');
+      // Single request — no followed redirect, no /auth/me round-trip.
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(result).toEqual(resolvedUser);
       expect(service.currentUserValue).toEqual(resolvedUser);
     });
   });
 
-  describe('loginWithApiKey — error path (AC #4)', () => {
+  describe('loginWithApiKey — error path (AC #3)', () => {
     it('errors the observable on an HTTP 401 response', async () => {
       fetchSpy.and.returnValue(Promise.resolve(makeResponse(false)));
 
@@ -96,12 +95,11 @@ describe('AuthService', () => {
     });
   });
 
-  describe('no client-side key persistence (AC #2)', () => {
+  describe('no client-side key persistence (AC #6)', () => {
     it('never writes the API key to localStorage or sessionStorage', async () => {
       const localSpy = spyOn(Storage.prototype, 'setItem').and.callThrough();
-      fetchSpy.and.returnValues(
-        Promise.resolve(makeResponse(true)),
-        Promise.resolve(makeResponse(true, { user_id: 'u1', name: 'Op' })),
+      fetchSpy.and.returnValue(
+        Promise.resolve(makeResponse(true, { success: true, user: { user_id: 'u1', name: 'Op' } })),
       );
 
       await firstValueFrom(service.loginWithApiKey('top-secret-key'));
@@ -113,7 +111,7 @@ describe('AuthService', () => {
     });
 
     it('exposes no key-storage methods — the removed stubs are gone', () => {
-      // Regression guard for AC #2: the deprecated stubs were deleted.
+      // Regression guard for AC #6: the deprecated stubs were deleted.
       const s = service as unknown as Record<string, unknown>;
       expect(s['setApiKey']).toBeUndefined();
       expect(s['getApiKey']).toBeUndefined();
