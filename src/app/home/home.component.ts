@@ -5,6 +5,7 @@ import { BehaviorSubject, firstValueFrom } from 'rxjs';
 
 import { ApiService } from '../services/api.service';
 import { TeamContext, isRunning } from '../models/team.interface';
+import { NamespaceSummary } from '../models/catalog.interface';
 
 import { CommonModule } from '@angular/common';
 import { ButtonModule } from 'primeng/button';
@@ -40,9 +41,9 @@ export class HomeComponent {
   authService: AuthService = inject(AuthService);
   private config = inject(ConfigService);
 
-  // Catalog entries for the team creation dropdown
-  catalogEntries$ = new BehaviorSubject<any[]>([]);
-  selectedCatalogEntry$ = new BehaviorSubject<any>(null);
+  // Catalog namespaces for the team creation dropdown
+  namespaces$ = new BehaviorSubject<NamespaceSummary[]>([]);
+  selectedNamespace$ = new BehaviorSubject<NamespaceSummary | null>(null);
   isCreatingTeam = false;
   isRefreshing = false;
   stoppingTeams = new Set<string>();
@@ -56,30 +57,28 @@ export class HomeComponent {
   isRunning = isRunning;
 
   async ngOnInit() {
-    // Load catalog entries for team creation dropdown
+    // Load catalog namespaces for the team creation dropdown.
+    // The endpoint always returns a list (possibly empty); no defensive
+    // branching needed for dict/array shape.
     try {
-      const catalogResponse = await this.apiService.getTeamConfigs();
-      const entries = Array.isArray(catalogResponse)
-        ? catalogResponse
-        : Object.keys(catalogResponse).map((key) => ({ id: key, name: key }));
-      this.catalogEntries$.next(entries);
-      if (entries.length > 0) {
-        this.selectedCatalogEntry$.next(entries[0]);
+      const namespaces = await this.apiService.getNamespaces();
+      this.namespaces$.next(namespaces);
+      if (namespaces.length > 0) {
+        this.selectedNamespace$.next(namespaces[0]);
       }
     } catch (error) {
-      console.error('Failed to load catalog entries:', error);
+      console.error('Failed to load namespaces:', error);
     }
 
     // Populate _context$; return value reused for the hideHome branch.
     const teams = await this.contextService.getTeams();
 
     if (this.config.hideHome) {
-      // If no team exists, create one using the first catalog entry.
+      // If no team exists, create one using the first namespace.
       if (!teams || teams.length === 0) {
-        const entry = this.selectedCatalogEntry$.value;
-        if (entry) {
-          const catalogEntryId = entry.id ?? entry.name ?? '';
-          await this.contextService.createTeamAndNavigate(catalogEntryId);
+        const selected = this.selectedNamespace$.value;
+        if (selected) {
+          await this.contextService.createTeamAndNavigate(selected.namespace);
         }
       }
       // If a team exists, navigate to its process page.
@@ -95,13 +94,12 @@ export class HomeComponent {
   async createTeam() {
     this.isCreatingTeam = true;
     try {
-      const entry = this.selectedCatalogEntry$.value;
-      if (!entry) {
-        console.warn('No catalog entry selected');
+      const selected = this.selectedNamespace$.value;
+      if (!selected) {
+        console.warn('No namespace selected');
         return;
       }
-      const catalogEntryId = entry.id ?? entry.name ?? '';
-      await this.apiService.createTeam(catalogEntryId);
+      await this.apiService.createTeam(selected.namespace);
       await this.contextService.getTeams();
     } catch (error) {
       console.error('Failed to create team:', error);
@@ -111,13 +109,12 @@ export class HomeComponent {
   }
 
   async createTeamAndNavigate() {
-    const entry = this.selectedCatalogEntry$.value;
-    if (!entry) {
-      console.warn('No catalog entry selected');
+    const selected = this.selectedNamespace$.value;
+    if (!selected) {
+      console.warn('No namespace selected');
       return;
     }
-    const catalogEntryId = entry.id ?? entry.name ?? '';
-    await this.contextService.createTeamAndNavigate(catalogEntryId);
+    await this.contextService.createTeamAndNavigate(selected.namespace);
   }
 
   async deleteTeam(teamId: string) {

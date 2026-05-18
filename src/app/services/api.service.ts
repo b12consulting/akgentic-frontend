@@ -11,6 +11,7 @@ import {
   EventListResponse,
   toTeamContext,
 } from '../models/team.interface';
+import { NamespaceSummary } from '../models/catalog.interface';
 
 @Injectable({
   providedIn: 'root',
@@ -40,12 +41,12 @@ export class ApiService {
     return toTeamContext(response);
   }
 
-  async createTeam(catalogEntryId: string): Promise<TeamResponse> {
+  async createTeam(namespace: string): Promise<TeamResponse> {
     return await this.fetchService.fetch({
       url: `${this.apiUrl}/teams`,
       options: {
         method: 'POST',
-        body: JSON.stringify({ catalog_entry_id: catalogEntryId }),
+        body: JSON.stringify({ catalog_namespace: namespace, params: {} }),
         headers: { 'Content-Type': 'application/json' },
       },
     });
@@ -151,11 +152,17 @@ export class ApiService {
     return response?.events ?? [];
   }
 
-  // --- Catalog (AC4) ---
+  // --- Catalog ---
 
-  async getTeamConfigs(): Promise<any> {
+  /**
+   * List catalog namespaces (flat summary) — powers the home-screen team
+   * creation dropdown. Consumes catalog Story 16.6's `GET /catalog/namespaces`
+   * endpoint, which returns `NamespaceSummary[]` directly (always a list,
+   * even when empty).
+   */
+  async getNamespaces(): Promise<NamespaceSummary[]> {
     return await this.fetchService.fetch({
-      url: `${this.apiUrl}/admin/catalog/teams`,
+      url: `${this.apiUrl}/admin/catalog/namespaces`,
     });
   }
 

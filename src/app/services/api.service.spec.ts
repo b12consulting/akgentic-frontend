@@ -42,6 +42,36 @@ describe('ApiService', () => {
     });
   });
 
+  describe('getNamespaces (Story 1.9)', () => {
+    it('hits GET /catalog/namespaces and returns the array', async () => {
+      const payload = [
+        { namespace: 'agent-team-v1', name: 'Agent Team', description: 'Default' },
+      ];
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve(payload));
+
+      const result = await service.getNamespaces();
+
+      expect(fetchServiceSpy.fetch).toHaveBeenCalledTimes(1);
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.url).toMatch(/\/catalog\/namespaces$/);
+      expect(result).toEqual(payload);
+    });
+  });
+
+  describe('createTeam (Story 1.9)', () => {
+    it('POSTs {catalog_namespace, params:{}} — not catalog_entry_id', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve({} as any));
+
+      await service.createTeam('agent-team-v1');
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.url).toMatch(/\/teams$/);
+      expect(callArgs.options?.method).toBe('POST');
+      const body = JSON.parse(callArgs.options?.body as string);
+      expect(body).toEqual({ catalog_namespace: 'agent-team-v1', params: {} });
+    });
+  });
+
   describe('sendMessage (existing)', () => {
     it('should broadcast when no agentName provided', async () => {
       await service.sendMessage('team-1', 'broadcast msg');
