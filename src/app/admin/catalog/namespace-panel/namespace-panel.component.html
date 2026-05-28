@@ -186,7 +186,7 @@
     data-test="clone-dialog"
   >
     <div class="namespace-panel__clone-body">
-      <label for="clone-dest-ns-input">Destination namespace name</label>
+      <label for="clone-dest-ns-input">Destination namespace</label>
       <input
         #cloneDestInput
         id="clone-dest-ns-input"
@@ -196,6 +196,17 @@
         [(ngModel)]="cloneDestNs"
         (ngModelChange)="onCloneDestNsChange()"
         data-test="clone-destns-input"
+        autocomplete="off"
+      />
+      <label for="clone-dest-name-input">Destination name</label>
+      <input
+        id="clone-dest-name-input"
+        type="text"
+        pInputText
+        name="cloneDestName"
+        [(ngModel)]="cloneDestName"
+        (ngModelChange)="onCloneDestNsChange()"
+        data-test="clone-destname-input"
         autocomplete="off"
       />
       <div
