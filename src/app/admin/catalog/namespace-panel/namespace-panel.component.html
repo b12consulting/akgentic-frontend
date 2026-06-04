@@ -89,6 +89,22 @@
         data-test="clone-btn"
       ></button>
 
+      <!-- Delete. VIEW-MODE ONLY (Story 14.1 / ADR-028 frontend leg). Dark-red
+           destructive action; opens a confirm naming the namespace before
+           issuing DELETE. Disabled while a delete is in flight. -->
+      <button
+        *ngIf="mode === 'view'"
+        pButton
+        type="button"
+        size="small"
+        severity="danger"
+        label="Delete"
+        icon="pi pi-trash"
+        [disabled]="deleting"
+        (click)="onDeleteClick()"
+        data-test="delete-ns-btn"
+      ></button>
+
       <!-- EDIT mode: Validate · Save · Reset · Cancel (in that order) -->
 
       <!-- Validate buffer. Same flash pattern as the view-mode counterpart. -->

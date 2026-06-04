@@ -168,6 +168,22 @@ describe('ApiService', () => {
     });
   });
 
+  describe('deleteNamespace (Story 14.1)', () => {
+    it('DELETEs /admin/catalog/namespace/{ns} and resolves void', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve(undefined));
+
+      const result = await service.deleteNamespace('foo');
+
+      expect(fetchServiceSpy.fetch).toHaveBeenCalledTimes(1);
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.url).toMatch(/\/admin\/catalog\/namespace\/foo$/);
+      expect(callArgs.options?.method).toBe('DELETE');
+      // The panel owns the success toast — no successMessage passed here.
+      expect(callArgs.successMessage).toBeUndefined();
+      expect(result).toBeUndefined();
+    });
+  });
+
   describe('sendMessage (existing)', () => {
     it('should broadcast when no agentName provided', async () => {
       await service.sendMessage('team-1', 'broadcast msg');
