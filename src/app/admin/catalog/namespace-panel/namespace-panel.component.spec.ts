@@ -18,6 +18,7 @@ import { ButtonModule } from 'primeng/button';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
+import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 
 import { NamespaceValidationReport } from '../../../models/catalog.interface';
@@ -113,6 +114,7 @@ describe('NamespacePanelComponent', () => {
             ConfirmDialogModule,
             DialogModule,
             InputTextModule,
+            ToggleSwitchModule,
             TooltipModule,
             StubMonacoEditorComponent,
             ValidationReportComponent,
@@ -1939,7 +1941,6 @@ entries:
     document.body.removeChild(stub);
   }));
 
-  // ---------------------------------------------------------------------
   // Story 14.1 — Delete-namespace button + confirmation (ADR-028 frontend leg)
   // ---------------------------------------------------------------------
 
@@ -2172,5 +2173,194 @@ entries:
 
     expect(savedEmit).not.toHaveBeenCalled();
     expect(consoleErrorSpy).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------
+  // Story 12.2 — Clone modal shareable / public toggles (AC 7–AC 13)
+  // ---------------------------------------------------------------------
+
+  /** Bundle YAML carrying explicit shareable / public flags. */
+  const cloneSrcYamlWithFlags = `namespace: src
+name: Src
+shareable: true
+public: false
+entries: {}
+`;
+
+  // ----- Default state + reset parity (AC 7) -----
+
+  it('(12.2 AC7) cloneShareable / clonePublic initialize to false', async () => {
+    await loadedWithCloneSrc();
+    expect(component.cloneShareable).toBeFalse();
+    expect(component.clonePublic).toBeFalse();
+  });
+
+  it('(12.2 AC7) onCloneCancelClick resets both toggles to false', async () => {
+    await loadedWithCloneSrc();
+    component.cloneShareable = true;
+    component.clonePublic = true;
+
+    component.onCloneCancelClick();
+
+    expect(component.cloneShareable).toBeFalse();
+    expect(component.clonePublic).toBeFalse();
+  });
+
+  it('(12.2 AC7) onCloneDialogVisibleChange(false) resets both toggles to false', async () => {
+    await loadedWithCloneSrc();
+    component.cloneShareable = true;
+    component.clonePublic = true;
+
+    component.onCloneDialogVisibleChange(false);
+
+    expect(component.cloneShareable).toBeFalse();
+    expect(component.clonePublic).toBeFalse();
+  });
+
+  it('(12.2 AC7) onCloneDialogHide resets both toggles to false', async () => {
+    await loadedWithCloneSrc();
+    component.cloneShareable = true;
+    component.clonePublic = true;
+
+    component.onCloneDialogHide();
+
+    expect(component.cloneShareable).toBeFalse();
+    expect(component.clonePublic).toBeFalse();
+  });
+
+  // ----- Pre-fill from buffer (AC 8) -----
+
+  it('(12.2 AC8) onCloneClick pre-fills both toggles from the buffer flags', async () => {
+    apiSpy.exportNamespace.and.returnValue(
+      Promise.resolve(cloneSrcYamlWithFlags),
+    );
+    await buildFixture('src');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    component.onCloneClick();
+
+    expect(component.cloneShareable).toBeTrue();
+    expect(component.clonePublic).toBeFalse();
+    // Story 12.1 name/namespace pre-fill remains (additive).
+    expect(component.cloneDestNs).toMatch(/^src_/);
+    expect(component.cloneDestName).toBe('Src_copy');
+  });
+
+  it('(12.2 AC8) onCloneClick defaults both toggles to false when the buffer omits the flags', async () => {
+    // cloneSrcYaml has neither shareable nor public.
+    await loadedWithCloneSrc();
+    component.cloneShareable = true;
+    component.clonePublic = true;
+
+    component.onCloneClick();
+
+    expect(component.cloneShareable).toBeFalse();
+    expect(component.clonePublic).toBeFalse();
+  });
+
+  // ----- Confirm wires both toggle values through (AC 9) -----
+
+  it('(12.2 AC9) onCloneConfirmClick passes both toggle values into the import YAML', async () => {
+    await loadedWithCloneSrc(['src']);
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+    apiSpy.exportNamespace.and.callFake((ns: string) =>
+      Promise.resolve(`namespace: ${ns}\nuser_id: null\nentries: {}\n`),
+    );
+
+    component.onCloneClick();
+    component.cloneDestNs = 'dst';
+    component.cloneDestName = 'Dest';
+    component.cloneShareable = true;
+    component.clonePublic = false;
+
+    await component.onCloneConfirmClick();
+    await fixture.whenStable();
+
+    expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
+    const sent = apiSpy.importNamespace.calls.mostRecent().args[0] as string;
+    const parsed = yaml.load(sent) as Record<string, unknown>;
+    expect(parsed['shareable']).toBe(true);
+    expect(parsed['public']).toBe(false);
+    expect(parsed['namespace']).toBe('dst');
+    expect(parsed['name']).toBe('Dest');
+    // Both toggles reset after the successful import.
+    expect(component.cloneShareable).toBeFalse();
+    expect(component.clonePublic).toBeFalse();
+  });
+
+  // ----- Toggles do NOT affect the Confirm gate (AC 10) -----
+
+  it('(12.2 AC10) toggle combinations never change cloneConfirmDisabled or cloneValidationError', async () => {
+    await loadedWithCloneSrc(['src']);
+    component.onCloneClick();
+    component.cloneDestNs = 'dst';
+    component.cloneDestName = 'Dest';
+
+    const combos: [boolean, boolean][] = [
+      [true, true],
+      [true, false],
+      [false, true],
+      [false, false],
+    ];
+    for (const [s, p] of combos) {
+      component.cloneShareable = s;
+      component.clonePublic = p;
+      expect(component.cloneConfirmDisabled).toBeFalse();
+      expect(component.cloneValidationError).toBeNull();
+    }
+  });
+
+  // ----- Template render + field order + hints (AC 11, AC 13) -----
+
+  it('(12.2 AC11) both toggles render after the inputs with distinguishing hints', async () => {
+    await loadedWithCloneSrc(['src']);
+    component.onCloneClick();
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    const shareable = root.querySelector(
+      '[data-test="clone-shareable-toggle"]',
+    );
+    const isPublic = root.querySelector('[data-test="clone-public-toggle"]');
+    expect(shareable).not.toBeNull();
+    expect(isPublic).not.toBeNull();
+
+    // Field order: name → namespace → shareable → public.
+    const ordered = Array.from(
+      root.querySelectorAll(
+        '[data-test="clone-destname-input"],' +
+          '[data-test="clone-destns-input"],' +
+          '[data-test="clone-shareable-toggle"],' +
+          '[data-test="clone-public-toggle"]',
+      ),
+    ).map((el) => el.getAttribute('data-test'));
+    expect(ordered).toEqual([
+      'clone-destname-input',
+      'clone-destns-input',
+      'clone-shareable-toggle',
+      'clone-public-toggle',
+    ]);
+
+    // Each toggle is name-accessible via a label/inputId pair.
+    expect(
+      root.querySelector('label[for="clone-shareable-toggle"]'),
+    ).not.toBeNull();
+    expect(
+      root.querySelector('label[for="clone-public-toggle"]'),
+    ).not.toBeNull();
+
+    // The two hints distinguish referenceability from listing/cloning.
+    const shareableHint =
+      root.querySelector('#clone-shareable-hint')?.textContent?.toLowerCase() ??
+      '';
+    const publicHint =
+      root.querySelector('#clone-public-hint')?.textContent?.toLowerCase() ??
+      '';
+    expect(shareableHint).toContain('reference');
+    expect(shareableHint).not.toContain('clone');
+    expect(publicHint).toContain('clone');
+    expect(publicHint).toMatch(/list|read/);
   });
 });
