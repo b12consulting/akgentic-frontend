@@ -20,6 +20,7 @@ import { ButtonModule } from 'primeng/button';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
+import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 
 import { NamespaceValidationReport } from '../../../models/catalog.interface';
@@ -29,6 +30,8 @@ import {
   CloneYamlError,
   extractYamlName,
   extractYamlNamespace,
+  extractYamlPublic,
+  extractYamlShareable,
   rewriteNamespaceInYaml,
   suggestDestName,
   suggestDestNamespace,
@@ -76,6 +79,7 @@ import { ValidationReportComponent } from './validation-report/validation-report
     DialogModule,
     InputTextModule,
     NuMonacoEditorModule,
+    ToggleSwitchModule,
     TooltipModule,
     ValidationReportComponent,
   ],
@@ -177,6 +181,24 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
    * clone, mirroring `cloneDestNs`.
    */
   cloneDestName: string = '';
+  /**
+   * Story 12.2 — Clone visibility/sharing toggles, two-way bound via
+   * `[(ngModel)]` to the modal's `p-toggleswitch` controls. The two flags
+   * are ORTHOGONAL:
+   *   - `cloneShareable` → root `shareable`: other namespaces may reference
+   *     entries in this one cross-namespace (referenceability).
+   *   - `clonePublic`    → root `public`: non-owner users may list, read, and
+   *     clone this namespace (listability/cloneability).
+   *
+   * Both pre-fill from the source buffer on `onCloneClick` and follow the
+   * SAME reset-parity contract as `cloneDestName`: wherever
+   * `cloneDestName = ''` resets on a dismiss/success path, both toggles reset
+   * to `false` alongside it (`onCloneCancelClick`,
+   * `onCloneDialogVisibleChange(false)`, `onCloneDialogHide`, and the 2xx
+   * success branch of `onCloneConfirmClick`).
+   */
+  cloneShareable: boolean = false;
+  clonePublic: boolean = false;
   /**
    * True while a clone-import request is in flight (AC 8 + AC 14). Gates
    * the Confirm button (defence in depth alongside the pre-flight
@@ -819,6 +841,10 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
     const srcName = extractYamlName(this.buffer) ?? srcNs;
     this.cloneDestNs = suggestDestNamespace(srcNs);
     this.cloneDestName = suggestDestName(srcName);
+    // Story 12.2 — pre-fill the visibility/sharing toggles from the same
+    // buffer. Absent / non-boolean / unparseable → default to false.
+    this.cloneShareable = extractYamlShareable(this.buffer) ?? false;
+    this.clonePublic = extractYamlPublic(this.buffer) ?? false;
     this.cloneDialogVisible = true;
   }
 
@@ -831,6 +857,8 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
     this.cloneDialogVisible = false;
     this.cloneDestNs = '';
     this.cloneDestName = '';
+    this.cloneShareable = false;
+    this.clonePublic = false;
   }
 
   /**
@@ -845,6 +873,8 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
     if (!visible) {
       this.cloneDestNs = '';
       this.cloneDestName = '';
+      this.cloneShareable = false;
+      this.clonePublic = false;
     }
   }
 
@@ -990,6 +1020,8 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   onCloneDialogHide(): void {
     this.cloneDestNs = '';
     this.cloneDestName = '';
+    this.cloneShareable = false;
+    this.clonePublic = false;
     this.cloneInlineError = null;
     setTimeout(() => {
       this.cloneBtnRef?.nativeElement.focus();
@@ -1037,11 +1069,22 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
     }
     const destNs = this.cloneDestNs.trim();
     const destName = this.cloneDestName.trim();
+    // Story 12.2 — capture the toggle values once at the top (mirroring the
+    // destNs / destName trim-once capture) so they are stable across the
+    // async boundary. `isPublic` avoids the reserved-ish local name `public`.
+    const shareable = this.cloneShareable;
+    const isPublic = this.clonePublic;
     const sourceYaml = this.buffer;
     this.cloning = true;
     this.lastCloneError = null;
     try {
-      const rewrittenYaml = rewriteNamespaceInYaml(sourceYaml, destNs, destName);
+      const rewrittenYaml = rewriteNamespaceInYaml(
+        sourceYaml,
+        destNs,
+        destName,
+        shareable,
+        isPublic,
+      );
       await this.apiService.importNamespace(rewrittenYaml);
       if (this.destroyed) {
         return;
@@ -1053,6 +1096,8 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       this.cloneDialogVisible = false;
       this.cloneDestNs = '';
       this.cloneDestName = '';
+      this.cloneShareable = false;
+      this.clonePublic = false;
       this.cloneInlineError = null;
       this.saved.emit();
       this.namespace = destNs;
