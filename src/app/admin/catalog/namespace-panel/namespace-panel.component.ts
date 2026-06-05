@@ -215,6 +215,19 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   lastCloneError: Error | null = null;
 
   // -------------------------------------------------------------------
+  // Story 14.1 — Delete-namespace flow (ADR-028 §Decision 5, frontend leg).
+  // -------------------------------------------------------------------
+
+  /**
+   * True while a `deleteNamespace` request is in flight (AC 4). Mirrors the
+   * `cloning` gate: disables the Delete button (`[disabled]="deleting"`) and
+   * makes both `onDeleteClick()` and `onDeleteConfirm()` no-ops, guarding
+   * against double-submit. Cleared in a `finally` block guarded by the
+   * `destroyed` idiom.
+   */
+  deleting: boolean = false;
+
+  // -------------------------------------------------------------------
   // Story 11.7 — UX-polish state (FR14 gate, FR16 a11y, FR17 Clone modal,
   // FR21 inline error)
   // -------------------------------------------------------------------
@@ -1183,6 +1196,125 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       summary: 'Clone failed',
       detail: this.lastCloneError.message,
       sticky: true,
+    });
+  }
+
+  // -------------------------------------------------------------------
+  // Story 14.1 — Delete flow (ADR-028 §Decision 5, frontend leg). The
+  // backend authorizes the request (owner-or-admin); this client only
+  // issues the DELETE and reacts to the status code — no role/ownership
+  // logic lives here (ADR-028 §Decision 6).
+  // -------------------------------------------------------------------
+
+  /**
+   * View-mode Delete handler (AC 3). No-op while a delete is in flight
+   * (defence in depth alongside `[disabled]="deleting"`). Opens the PrimeNG
+   * confirm naming the current namespace; `accept` runs `onDeleteConfirm()`.
+   * No `reject` — cancelling is a no-op (panel unchanged, no network call).
+   */
+  onDeleteClick(): void {
+    if (this.deleting) {
+      return;
+    }
+    this.confirmationService.confirm({
+      header: 'Delete namespace',
+      icon: 'pi pi-trash',
+      message: `Delete namespace "${this.namespace}" and all its entries? This cannot be undone.`,
+      accept: () => {
+        void this.onDeleteConfirm();
+      },
+      // `reject` intentionally omitted — cancelling leaves the panel exactly
+      // as it was and fires no network request (AC 3).
+    });
+  }
+
+  /**
+   * Issues the DELETE and runs the result paths (AC 6–AC 10). No-op while a
+   * delete is in flight. Success (`204`): emit `saved` (host refreshes the
+   * namespace list) AND `closed` (Home dialog dismisses; route-shell ignores
+   * `closed` harmlessly) — Option A, zero host edits. Failure branches
+   * delegate to `handleDeleteError`; in every failure branch `namespace`,
+   * `serverYaml`, `buffer`, and `mode` are unchanged. The `deleting` flag is
+   * always cleared in `finally`, guarded by the `destroyed` idiom.
+   */
+  async onDeleteConfirm(): Promise<void> {
+    if (this.deleting) {
+      return;
+    }
+    this.deleting = true;
+    try {
+      await this.apiService.deleteNamespace(this.namespace);
+      if (this.destroyed) {
+        return;
+      }
+      // Success path mirrors the Clone-success UX (AC 6).
+      this.a11yAnnouncement = `Namespace '${this.namespace}' deleted`;
+      this.saved.emit();
+      this.closed.emit();
+      this.messageService.add({
+        severity: 'success',
+        summary: `Namespace '${this.namespace}' deleted`,
+      });
+    } catch (err) {
+      if (this.destroyed) {
+        return;
+      }
+      this.handleDeleteError(err);
+    } finally {
+      if (!this.destroyed) {
+        this.deleting = false;
+      }
+    }
+  }
+
+  /**
+   * Narrow the caught Delete error (AC 7–AC 9). Branches:
+   *   - `401` → silent return (FetchService already fired the global toast;
+   *     the panel does not mutate `mode` / `buffer` / `serverYaml`).
+   *   - `403` → non-sticky not-authorized toast; panel stays open. NOT
+   *     retried. (Community never returns 403; gated tiers do.)
+   *   - `409` / `422` → inbound-reference blocker. If the body is a
+   *     structured `NamespaceValidationReport`, route it through the findings
+   *     pane (`lastValidation` + `announceValidationOutcome`); otherwise
+   *     surface the raw detail via a non-sticky error toast. Panel stays open.
+   *   - default (other 4xx / 5xx / network) → non-sticky error toast.
+   */
+  private handleDeleteError(err: unknown): void {
+    const status = (err as { status?: number })?.status;
+    if (status === 401) {
+      // Silent — FetchService already fired a global toast.
+      return;
+    }
+    if (status === 403) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'You are not authorized to delete this namespace',
+      });
+      return;
+    }
+    if (status === 409 || status === 422) {
+      const body = (err as HttpError).body;
+      if (this.isValidationReport(body)) {
+        this.lastValidation = body;
+        this.rawSaveError = null;
+        this.announceValidationOutcome(body);
+        return;
+      }
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Cannot delete namespace',
+        detail:
+          typeof body === 'string'
+            ? body
+            : ((err as Error)?.message ?? String(err)),
+      });
+      return;
+    }
+    // Default: other 4xx / 5xx / network.
+    this.messageService.add({
+      severity: 'error',
+      summary: 'Delete failed',
+      detail: (err as Error)?.message ?? String(err),
     });
   }
 

@@ -83,6 +83,7 @@ describe('NamespacePanelComponent', () => {
       'importNamespace',
       'validateNamespaceBuffer',
       'validatePersistedNamespace',
+      'deleteNamespace',
     ]);
     messageSpy = jasmine.createSpyObj('MessageService', ['add']);
     // Use a REAL ConfirmationService instance (its `requireConfirmation$`
@@ -1939,6 +1940,240 @@ entries:
     expect(document.activeElement).toBe(stub);
     document.body.removeChild(stub);
   }));
+
+  // Story 14.1 — Delete-namespace button + confirmation (ADR-028 frontend leg)
+  // ---------------------------------------------------------------------
+
+  /**
+   * Capture the config object passed to ConfirmationService.confirm and
+   * invoke its `accept` callback — drives the delete-confirm branch
+   * deterministically (mirrors the existing clone/cancel confirm tests).
+   */
+  function acceptLastConfirm(): void {
+    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
+    args.accept!();
+  }
+
+  // ----- Button render: view mode vs edit mode (AC 11) -----
+
+  it('(14.1 AC11) Delete button renders in view mode', async () => {
+    await loadedEditMode('foo: 1\n');
+    const btn = fixture.nativeElement.querySelector(
+      'button[data-test="delete-ns-btn"]',
+    );
+    expect(btn).not.toBeNull();
+  });
+
+  it('(14.1 AC11) Delete button is absent in edit mode', async () => {
+    await loadedEditMode('foo: 1\n');
+    await component.onEditClick();
+    fixture.detectChanges();
+    const btn = fixture.nativeElement.querySelector(
+      'button[data-test="delete-ns-btn"]',
+    );
+    expect(btn).toBeNull();
+  });
+
+  // ----- Confirm open + accept/cancel (AC 12) -----
+
+  it('(14.1 AC12) clicking Delete opens the confirmation; accepting calls deleteNamespace once with the current namespace', async () => {
+    await loadedEditMode('foo: 1\n');
+    apiSpy.deleteNamespace.and.returnValue(Promise.resolve());
+
+    component.onDeleteClick();
+    expect(confirmationSpy.confirm).toHaveBeenCalledTimes(1);
+    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
+    expect(args.header).toBe('Delete namespace');
+    expect(args.icon).toBe('pi pi-trash');
+    expect(args.message as string).toContain('foo');
+
+    acceptLastConfirm();
+    await fixture.whenStable();
+
+    expect(apiSpy.deleteNamespace).toHaveBeenCalledOnceWith('foo');
+  });
+
+  it('(14.1 AC12) cancelling the confirm does NOT call deleteNamespace (no reject side effects)', async () => {
+    await loadedEditMode('foo: 1\n');
+
+    component.onDeleteClick();
+    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
+    // No reject callback is wired — cancel = pure no-op.
+    expect(args.reject).toBeUndefined();
+    // Simulate cancel: never call accept.
+    expect(apiSpy.deleteNamespace).not.toHaveBeenCalled();
+  });
+
+  // ----- 204 success path (AC 13, AC 6) -----
+
+  it('(14.1 AC13) 204 success — emits saved + closed and shows a success toast', async () => {
+    await loadedEditMode('foo: 1\n');
+    apiSpy.deleteNamespace.and.returnValue(Promise.resolve());
+    const savedEmit = spyOn(component.saved, 'emit');
+    const closedEmit = spyOn(component.closed, 'emit');
+
+    await component.onDeleteConfirm();
+
+    expect(apiSpy.deleteNamespace).toHaveBeenCalledOnceWith('foo');
+    expect(savedEmit).toHaveBeenCalledTimes(1);
+    expect(closedEmit).toHaveBeenCalledTimes(1);
+    expect(component.deleting).toBeFalse();
+    const toast = messageSpy.add.calls.mostRecent().args[0];
+    expect(toast.severity).toBe('success');
+    expect(toast.summary).toContain('foo');
+    // a11y live-region announcement set.
+    expect(component.a11yAnnouncement).toBe("Namespace 'foo' deleted");
+  });
+
+  // ----- 403 not-authorized (AC 14) -----
+
+  it('(14.1 AC14) 403 — not-authorized toast, panel open, state unchanged, single call (not retried)', async () => {
+    await loadedEditMode('foo: 1\n');
+    const savedEmit = spyOn(component.saved, 'emit');
+    apiSpy.deleteNamespace.and.returnValue(
+      Promise.reject(makeHttpError(403)),
+    );
+    messageSpy.add.calls.reset();
+
+    await component.onDeleteConfirm();
+
+    expect(apiSpy.deleteNamespace).toHaveBeenCalledTimes(1);
+    expect(savedEmit).not.toHaveBeenCalled();
+    // Panel state untouched.
+    expect(component.mode).toBe('view');
+    expect(component.serverYaml).toBe('foo: 1\n');
+    expect(component.buffer).toBe('foo: 1\n');
+    expect(component.deleting).toBeFalse();
+    // Not-authorized error toast (non-sticky).
+    const toast = messageSpy.add.calls.mostRecent().args[0];
+    expect(toast.severity).toBe('error');
+    expect(toast.summary).toContain('not authorized');
+    expect(toast.sticky).toBeFalsy();
+  });
+
+  // ----- 409 / 422 inbound-reference blocker (AC 15) -----
+
+  it('(14.1 AC15) 422 structured NamespaceValidationReport — findings surfaced, panel open', async () => {
+    await loadedEditMode('foo: 1\n');
+    const report: NamespaceValidationReport = {
+      namespace: 'foo',
+      ok: false,
+      global_errors: ["namespace 'bar' references 'foo'"],
+      entry_issues: [],
+    };
+    apiSpy.deleteNamespace.and.returnValue(
+      Promise.reject(makeHttpError(422, report)),
+    );
+
+    await component.onDeleteConfirm();
+
+    expect(component.lastValidation).toEqual(report);
+    expect(component.rawSaveError).toBeNull();
+    expect(component.mode).toBe('view');
+    expect(component.serverYaml).toBe('foo: 1\n');
+    expect(component.a11yAnnouncement).toBe('Validation found 1 issues');
+  });
+
+  it('(14.1 AC15) 409 with unstructured body — error toast surfaces the detail, panel open', async () => {
+    await loadedEditMode('foo: 1\n');
+    apiSpy.deleteNamespace.and.returnValue(
+      Promise.reject(makeHttpError(409, 'referenced by namespace bar')),
+    );
+    messageSpy.add.calls.reset();
+
+    await component.onDeleteConfirm();
+
+    expect(component.lastValidation).toBeNull();
+    const toast = messageSpy.add.calls.mostRecent().args[0];
+    expect(toast.severity).toBe('error');
+    expect(toast.detail).toContain('referenced by namespace bar');
+    expect(component.mode).toBe('view');
+  });
+
+  // ----- 401 falls through (no panel-specific handling, AC 9) -----
+
+  it('(14.1 AC9) 401 — no panel toast, state unchanged', async () => {
+    await loadedEditMode('foo: 1\n');
+    apiSpy.deleteNamespace.and.returnValue(
+      Promise.reject(makeHttpError(401)),
+    );
+    messageSpy.add.calls.reset();
+
+    await component.onDeleteConfirm();
+
+    expect(messageSpy.add).not.toHaveBeenCalled();
+    expect(component.mode).toBe('view');
+    expect(component.serverYaml).toBe('foo: 1\n');
+    expect(component.deleting).toBeFalse();
+  });
+
+  // ----- In-flight guard (AC 16) -----
+
+  it('(14.1 AC16) in-flight guard — button disabled while deleting; second confirm does not fire a second call', async () => {
+    await loadedEditMode('foo: 1\n');
+    let resolveDelete!: () => void;
+    apiSpy.deleteNamespace.and.returnValue(
+      new Promise<void>((r) => {
+        resolveDelete = r;
+      }),
+    );
+
+    const firstCall = component.onDeleteConfirm();
+    expect(component.deleting).toBeTrue();
+    fixture.detectChanges();
+
+    // Button is disabled while the delete is pending.
+    const btn = fixture.nativeElement.querySelector(
+      'button[data-test="delete-ns-btn"]',
+    ) as HTMLButtonElement;
+    expect(btn.disabled).toBeTrue();
+
+    // A second confirm during the in-flight window is a no-op.
+    void component.onDeleteConfirm();
+    // And clicking again is gated too.
+    component.onDeleteClick();
+    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+
+    resolveDelete();
+    await firstCall;
+
+    expect(apiSpy.deleteNamespace).toHaveBeenCalledTimes(1);
+    expect(component.deleting).toBeFalse();
+  });
+
+  it('(14.1 AC10) onDeleteClick is a no-op while a delete is in flight', async () => {
+    await loadedEditMode('foo: 1\n');
+    component.deleting = true;
+
+    component.onDeleteClick();
+
+    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+  });
+
+  // ----- Destroy safety — late-resolving delete does not write state -----
+
+  it('(14.1 AC10) destroy-during-delete — late resolution does not write state', async () => {
+    await loadedEditMode('foo: 1\n');
+    let resolveLate!: () => void;
+    apiSpy.deleteNamespace.and.returnValue(
+      new Promise<void>((r) => {
+        resolveLate = r;
+      }),
+    );
+    const savedEmit = spyOn(component.saved, 'emit');
+    const consoleErrorSpy = spyOn(console, 'error');
+
+    const deletePromise = component.onDeleteConfirm();
+    expect(component.deleting).toBeTrue();
+
+    fixture.destroy();
+    resolveLate();
+    await deletePromise;
+    await Promise.resolve();
+
+    expect(savedEmit).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+  });
 
   // ---------------------------------------------------------------------
   // Story 12.2 — Clone modal shareable / public toggles (AC 7–AC 13)
