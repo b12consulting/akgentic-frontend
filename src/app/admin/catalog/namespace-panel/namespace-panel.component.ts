@@ -25,6 +25,7 @@ import { TooltipModule } from 'primeng/tooltip';
 
 import { NamespaceValidationReport } from '../../../models/catalog.interface';
 import { ApiService } from '../../../services/api.service';
+import { AuthService } from '../../../services/auth.service';
 import { HttpError } from '../../../services/fetch.service';
 import {
   CloneYamlError,
@@ -32,6 +33,7 @@ import {
   extractYamlNamespace,
   extractYamlPublic,
   extractYamlShareable,
+  extractYamlUserId,
   rewriteNamespaceInYaml,
   suggestDestName,
   suggestDestNamespace,
@@ -100,12 +102,24 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
    * Collision-on-race).
    */
   @Input() existingNamespaces: string[] = [];
+  /**
+   * Story 14.4 — admin "show all" context, propagated from the home toggle
+   * (`showAllNamespaces`). When `true`, the panel's entry-read
+   * (`exportNamespace`) carries `?all=true` so an admin can open a
+   * foreign-owned namespace surfaced by the "show all" list. `all=true` is
+   * honoured server-side only for admins (the `/admin/catalog/*` mount
+   * unscopes admin GETs — see ADR-028 §Decision 9); for a non-admin (or when
+   * the host toggle is off) it is the normal owner-scoped read. Default
+   * `false` keeps every existing caller on the unchanged owner-scoped path.
+   */
+  @Input() showAll: boolean = false;
   @Output() closed = new EventEmitter<void>();
   @Output() saved = new EventEmitter<void>();
 
   private apiService: ApiService = inject(ApiService);
   private messageService: MessageService = inject(MessageService);
   private confirmationService: ConfirmationService = inject(ConfirmationService);
+  private authService: AuthService = inject(AuthService);
   private destroyRef: DestroyRef = inject(DestroyRef);
 
   // Internal state — initial values per AC 2.
@@ -461,7 +475,12 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
     }
     this.refreshingForEdit = true;
     try {
-      const latestYaml = await this.apiService.exportNamespace(this.namespace);
+      // Story 14.4 — the Edit drift-check re-read must also carry the admin
+      // "show all" flag, else an admin editing a foreign-owned namespace would
+      // hit an owner-scoped read here and fail the drift check.
+      const latestYaml = await this.apiService.exportNamespace(this.namespace, {
+        all: this.showAll,
+      });
       if (this.destroyed) {
         return;
       }
@@ -607,6 +626,27 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
         severity: 'error',
         summary: 'Cannot change namespace on Save',
         detail: `The buffer's namespace is "${bufferNamespace}" but the panel is editing "${this.namespace}". Use Clone to save under a new namespace name.`,
+        sticky: true,
+      });
+      return;
+    }
+
+    // Advisory pre-flight (NOT the security boundary — the infra import gate
+    // is). Mirror the namespace-change guard above: block obviously-doomed
+    // Saves with a clear message instead of letting the server bounce a 403.
+    // This check lives in the browser and can be bypassed (devtools, direct
+    // API call), so it must NEVER be relied upon for enforcement — the
+    // server's owner-or-admin import gate is authoritative. Admin is checked
+    // first; an unresolvable owner (null) falls through to the server.
+    const me = this.authService.currentUserValue;
+    const namespaceOwner = extractYamlUserId(savedBuffer);
+    const isAdmin = me?.roles?.includes('admin') === true;
+    const isOwner = namespaceOwner !== null && namespaceOwner === me?.user_id;
+    if (!isAdmin && !isOwner && namespaceOwner !== null) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Cannot save changes to this namespace',
+        detail: 'You can only save changes to namespaces you own.',
         sticky: true,
       });
       return;
@@ -1348,7 +1388,12 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
     this.serverYaml = '';
     this.buffer = '';
     try {
-      const yaml = await this.apiService.exportNamespace(namespace);
+      // Story 14.4 — carry the admin "show all" flag so an admin opening a
+      // foreign-owned namespace from the home "show all" list can read it
+      // (the export GET is unscoped server-side for admins when all=true).
+      const yaml = await this.apiService.exportNamespace(namespace, {
+        all: this.showAll,
+      });
       if (this.destroyed || seq !== this.loadSeq) {
         return;
       }
