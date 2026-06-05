@@ -18,6 +18,7 @@ import { ButtonModule } from 'primeng/button';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
+import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 
 import { NamespaceValidationReport } from '../../../models/catalog.interface';
@@ -88,6 +89,7 @@ describe('NamespacePanelComponent', () => {
       'importNamespace',
       'validateNamespaceBuffer',
       'validatePersistedNamespace',
+      'deleteNamespace',
     ]);
     messageSpy = jasmine.createSpyObj('MessageService', ['add']);
     // Use a REAL ConfirmationService instance (its `requireConfirmation$`
@@ -120,6 +122,7 @@ describe('NamespacePanelComponent', () => {
             ConfirmDialogModule,
             DialogModule,
             InputTextModule,
+            ToggleSwitchModule,
             TooltipModule,
             StubMonacoEditorComponent,
             ValidationReportComponent,
@@ -2090,4 +2093,427 @@ entries:
     expect(document.activeElement).toBe(stub);
     document.body.removeChild(stub);
   }));
+
+  // Story 14.1 — Delete-namespace button + confirmation (ADR-028 frontend leg)
+  // ---------------------------------------------------------------------
+
+  /**
+   * Capture the config object passed to ConfirmationService.confirm and
+   * invoke its `accept` callback — drives the delete-confirm branch
+   * deterministically (mirrors the existing clone/cancel confirm tests).
+   */
+  function acceptLastConfirm(): void {
+    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
+    args.accept!();
+  }
+
+  // ----- Button render: view mode vs edit mode (AC 11) -----
+
+  it('(14.1 AC11) Delete button renders in view mode', async () => {
+    await loadedEditMode('foo: 1\n');
+    const btn = fixture.nativeElement.querySelector(
+      'button[data-test="delete-ns-btn"]',
+    );
+    expect(btn).not.toBeNull();
+  });
+
+  it('(14.1 AC11) Delete button is absent in edit mode', async () => {
+    await loadedEditMode('foo: 1\n');
+    await component.onEditClick();
+    fixture.detectChanges();
+    const btn = fixture.nativeElement.querySelector(
+      'button[data-test="delete-ns-btn"]',
+    );
+    expect(btn).toBeNull();
+  });
+
+  // ----- Confirm open + accept/cancel (AC 12) -----
+
+  it('(14.1 AC12) clicking Delete opens the confirmation; accepting calls deleteNamespace once with the current namespace', async () => {
+    await loadedEditMode('foo: 1\n');
+    apiSpy.deleteNamespace.and.returnValue(Promise.resolve());
+
+    component.onDeleteClick();
+    expect(confirmationSpy.confirm).toHaveBeenCalledTimes(1);
+    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
+    expect(args.header).toBe('Delete namespace');
+    expect(args.icon).toBe('pi pi-trash');
+    expect(args.message as string).toContain('foo');
+
+    acceptLastConfirm();
+    await fixture.whenStable();
+
+    expect(apiSpy.deleteNamespace).toHaveBeenCalledOnceWith('foo');
+  });
+
+  it('(14.1 AC12) cancelling the confirm does NOT call deleteNamespace (no reject side effects)', async () => {
+    await loadedEditMode('foo: 1\n');
+
+    component.onDeleteClick();
+    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
+    // No reject callback is wired — cancel = pure no-op.
+    expect(args.reject).toBeUndefined();
+    // Simulate cancel: never call accept.
+    expect(apiSpy.deleteNamespace).not.toHaveBeenCalled();
+  });
+
+  // ----- 204 success path (AC 13, AC 6) -----
+
+  it('(14.1 AC13) 204 success — emits saved + closed and shows a success toast', async () => {
+    await loadedEditMode('foo: 1\n');
+    apiSpy.deleteNamespace.and.returnValue(Promise.resolve());
+    const savedEmit = spyOn(component.saved, 'emit');
+    const closedEmit = spyOn(component.closed, 'emit');
+
+    await component.onDeleteConfirm();
+
+    expect(apiSpy.deleteNamespace).toHaveBeenCalledOnceWith('foo');
+    expect(savedEmit).toHaveBeenCalledTimes(1);
+    expect(closedEmit).toHaveBeenCalledTimes(1);
+    expect(component.deleting).toBeFalse();
+    const toast = messageSpy.add.calls.mostRecent().args[0];
+    expect(toast.severity).toBe('success');
+    expect(toast.summary).toContain('foo');
+    // a11y live-region announcement set.
+    expect(component.a11yAnnouncement).toBe("Namespace 'foo' deleted");
+  });
+
+  // ----- 403 not-authorized (AC 14) -----
+
+  it('(14.1 AC14) 403 — not-authorized toast, panel open, state unchanged, single call (not retried)', async () => {
+    await loadedEditMode('foo: 1\n');
+    const savedEmit = spyOn(component.saved, 'emit');
+    apiSpy.deleteNamespace.and.returnValue(
+      Promise.reject(makeHttpError(403)),
+    );
+    messageSpy.add.calls.reset();
+
+    await component.onDeleteConfirm();
+
+    expect(apiSpy.deleteNamespace).toHaveBeenCalledTimes(1);
+    expect(savedEmit).not.toHaveBeenCalled();
+    // Panel state untouched.
+    expect(component.mode).toBe('view');
+    expect(component.serverYaml).toBe('foo: 1\n');
+    expect(component.buffer).toBe('foo: 1\n');
+    expect(component.deleting).toBeFalse();
+    // Not-authorized error toast (non-sticky).
+    const toast = messageSpy.add.calls.mostRecent().args[0];
+    expect(toast.severity).toBe('error');
+    expect(toast.summary).toContain('not authorized');
+    expect(toast.sticky).toBeFalsy();
+  });
+
+  // ----- 409 / 422 inbound-reference blocker (AC 15) -----
+
+  it('(14.1 AC15) 422 structured NamespaceValidationReport — findings surfaced, panel open', async () => {
+    await loadedEditMode('foo: 1\n');
+    const report: NamespaceValidationReport = {
+      namespace: 'foo',
+      ok: false,
+      global_errors: ["namespace 'bar' references 'foo'"],
+      entry_issues: [],
+    };
+    apiSpy.deleteNamespace.and.returnValue(
+      Promise.reject(makeHttpError(422, report)),
+    );
+
+    await component.onDeleteConfirm();
+
+    expect(component.lastValidation).toEqual(report);
+    expect(component.rawSaveError).toBeNull();
+    expect(component.mode).toBe('view');
+    expect(component.serverYaml).toBe('foo: 1\n');
+    expect(component.a11yAnnouncement).toBe('Validation found 1 issues');
+  });
+
+  it('(14.1 AC15) 409 with unstructured body — error toast surfaces the detail, panel open', async () => {
+    await loadedEditMode('foo: 1\n');
+    apiSpy.deleteNamespace.and.returnValue(
+      Promise.reject(makeHttpError(409, 'referenced by namespace bar')),
+    );
+    messageSpy.add.calls.reset();
+
+    await component.onDeleteConfirm();
+
+    expect(component.lastValidation).toBeNull();
+    const toast = messageSpy.add.calls.mostRecent().args[0];
+    expect(toast.severity).toBe('error');
+    expect(toast.detail).toContain('referenced by namespace bar');
+    expect(component.mode).toBe('view');
+  });
+
+  // ----- 401 falls through (no panel-specific handling, AC 9) -----
+
+  it('(14.1 AC9) 401 — no panel toast, state unchanged', async () => {
+    await loadedEditMode('foo: 1\n');
+    apiSpy.deleteNamespace.and.returnValue(
+      Promise.reject(makeHttpError(401)),
+    );
+    messageSpy.add.calls.reset();
+
+    await component.onDeleteConfirm();
+
+    expect(messageSpy.add).not.toHaveBeenCalled();
+    expect(component.mode).toBe('view');
+    expect(component.serverYaml).toBe('foo: 1\n');
+    expect(component.deleting).toBeFalse();
+  });
+
+  // ----- In-flight guard (AC 16) -----
+
+  it('(14.1 AC16) in-flight guard — button disabled while deleting; second confirm does not fire a second call', async () => {
+    await loadedEditMode('foo: 1\n');
+    let resolveDelete!: () => void;
+    apiSpy.deleteNamespace.and.returnValue(
+      new Promise<void>((r) => {
+        resolveDelete = r;
+      }),
+    );
+
+    const firstCall = component.onDeleteConfirm();
+    expect(component.deleting).toBeTrue();
+    fixture.detectChanges();
+
+    // Button is disabled while the delete is pending.
+    const btn = fixture.nativeElement.querySelector(
+      'button[data-test="delete-ns-btn"]',
+    ) as HTMLButtonElement;
+    expect(btn.disabled).toBeTrue();
+
+    // A second confirm during the in-flight window is a no-op.
+    void component.onDeleteConfirm();
+    // And clicking again is gated too.
+    component.onDeleteClick();
+    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+
+    resolveDelete();
+    await firstCall;
+
+    expect(apiSpy.deleteNamespace).toHaveBeenCalledTimes(1);
+    expect(component.deleting).toBeFalse();
+  });
+
+  it('(14.1 AC10) onDeleteClick is a no-op while a delete is in flight', async () => {
+    await loadedEditMode('foo: 1\n');
+    component.deleting = true;
+
+    component.onDeleteClick();
+
+    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+  });
+
+  // ----- Destroy safety — late-resolving delete does not write state -----
+
+  it('(14.1 AC10) destroy-during-delete — late resolution does not write state', async () => {
+    await loadedEditMode('foo: 1\n');
+    let resolveLate!: () => void;
+    apiSpy.deleteNamespace.and.returnValue(
+      new Promise<void>((r) => {
+        resolveLate = r;
+      }),
+    );
+    const savedEmit = spyOn(component.saved, 'emit');
+    const consoleErrorSpy = spyOn(console, 'error');
+
+    const deletePromise = component.onDeleteConfirm();
+    expect(component.deleting).toBeTrue();
+
+    fixture.destroy();
+    resolveLate();
+    await deletePromise;
+    await Promise.resolve();
+
+    expect(savedEmit).not.toHaveBeenCalled();
+    expect(consoleErrorSpy).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------
+  // Story 12.2 — Clone modal shareable / public toggles (AC 7–AC 13)
+  // ---------------------------------------------------------------------
+
+  /** Bundle YAML carrying explicit shareable / public flags. */
+  const cloneSrcYamlWithFlags = `namespace: src
+name: Src
+shareable: true
+public: false
+entries: {}
+`;
+
+  // ----- Default state + reset parity (AC 7) -----
+
+  it('(12.2 AC7) cloneShareable / clonePublic initialize to false', async () => {
+    await loadedWithCloneSrc();
+    expect(component.cloneShareable).toBeFalse();
+    expect(component.clonePublic).toBeFalse();
+  });
+
+  it('(12.2 AC7) onCloneCancelClick resets both toggles to false', async () => {
+    await loadedWithCloneSrc();
+    component.cloneShareable = true;
+    component.clonePublic = true;
+
+    component.onCloneCancelClick();
+
+    expect(component.cloneShareable).toBeFalse();
+    expect(component.clonePublic).toBeFalse();
+  });
+
+  it('(12.2 AC7) onCloneDialogVisibleChange(false) resets both toggles to false', async () => {
+    await loadedWithCloneSrc();
+    component.cloneShareable = true;
+    component.clonePublic = true;
+
+    component.onCloneDialogVisibleChange(false);
+
+    expect(component.cloneShareable).toBeFalse();
+    expect(component.clonePublic).toBeFalse();
+  });
+
+  it('(12.2 AC7) onCloneDialogHide resets both toggles to false', async () => {
+    await loadedWithCloneSrc();
+    component.cloneShareable = true;
+    component.clonePublic = true;
+
+    component.onCloneDialogHide();
+
+    expect(component.cloneShareable).toBeFalse();
+    expect(component.clonePublic).toBeFalse();
+  });
+
+  // ----- Pre-fill from buffer (AC 8) -----
+
+  it('(12.2 AC8) onCloneClick pre-fills both toggles from the buffer flags', async () => {
+    apiSpy.exportNamespace.and.returnValue(
+      Promise.resolve(cloneSrcYamlWithFlags),
+    );
+    await buildFixture('src');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    component.onCloneClick();
+
+    expect(component.cloneShareable).toBeTrue();
+    expect(component.clonePublic).toBeFalse();
+    // Story 12.1 name/namespace pre-fill remains (additive).
+    expect(component.cloneDestNs).toMatch(/^src_/);
+    expect(component.cloneDestName).toBe('Src_copy');
+  });
+
+  it('(12.2 AC8) onCloneClick defaults both toggles to false when the buffer omits the flags', async () => {
+    // cloneSrcYaml has neither shareable nor public.
+    await loadedWithCloneSrc();
+    component.cloneShareable = true;
+    component.clonePublic = true;
+
+    component.onCloneClick();
+
+    expect(component.cloneShareable).toBeFalse();
+    expect(component.clonePublic).toBeFalse();
+  });
+
+  // ----- Confirm wires both toggle values through (AC 9) -----
+
+  it('(12.2 AC9) onCloneConfirmClick passes both toggle values into the import YAML', async () => {
+    await loadedWithCloneSrc(['src']);
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+    apiSpy.exportNamespace.and.callFake((ns: string) =>
+      Promise.resolve(`namespace: ${ns}\nuser_id: null\nentries: {}\n`),
+    );
+
+    component.onCloneClick();
+    component.cloneDestNs = 'dst';
+    component.cloneDestName = 'Dest';
+    component.cloneShareable = true;
+    component.clonePublic = false;
+
+    await component.onCloneConfirmClick();
+    await fixture.whenStable();
+
+    expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
+    const sent = apiSpy.importNamespace.calls.mostRecent().args[0] as string;
+    const parsed = yaml.load(sent) as Record<string, unknown>;
+    expect(parsed['shareable']).toBe(true);
+    expect(parsed['public']).toBe(false);
+    expect(parsed['namespace']).toBe('dst');
+    expect(parsed['name']).toBe('Dest');
+    // Both toggles reset after the successful import.
+    expect(component.cloneShareable).toBeFalse();
+    expect(component.clonePublic).toBeFalse();
+  });
+
+  // ----- Toggles do NOT affect the Confirm gate (AC 10) -----
+
+  it('(12.2 AC10) toggle combinations never change cloneConfirmDisabled or cloneValidationError', async () => {
+    await loadedWithCloneSrc(['src']);
+    component.onCloneClick();
+    component.cloneDestNs = 'dst';
+    component.cloneDestName = 'Dest';
+
+    const combos: [boolean, boolean][] = [
+      [true, true],
+      [true, false],
+      [false, true],
+      [false, false],
+    ];
+    for (const [s, p] of combos) {
+      component.cloneShareable = s;
+      component.clonePublic = p;
+      expect(component.cloneConfirmDisabled).toBeFalse();
+      expect(component.cloneValidationError).toBeNull();
+    }
+  });
+
+  // ----- Template render + field order + hints (AC 11, AC 13) -----
+
+  it('(12.2 AC11) both toggles render after the inputs with distinguishing hints', async () => {
+    await loadedWithCloneSrc(['src']);
+    component.onCloneClick();
+    fixture.detectChanges();
+
+    const root = fixture.nativeElement as HTMLElement;
+    const shareable = root.querySelector(
+      '[data-test="clone-shareable-toggle"]',
+    );
+    const isPublic = root.querySelector('[data-test="clone-public-toggle"]');
+    expect(shareable).not.toBeNull();
+    expect(isPublic).not.toBeNull();
+
+    // Field order: name → namespace → shareable → public.
+    const ordered = Array.from(
+      root.querySelectorAll(
+        '[data-test="clone-destname-input"],' +
+          '[data-test="clone-destns-input"],' +
+          '[data-test="clone-shareable-toggle"],' +
+          '[data-test="clone-public-toggle"]',
+      ),
+    ).map((el) => el.getAttribute('data-test'));
+    expect(ordered).toEqual([
+      'clone-destname-input',
+      'clone-destns-input',
+      'clone-shareable-toggle',
+      'clone-public-toggle',
+    ]);
+
+    // Each toggle is name-accessible via a label/inputId pair.
+    expect(
+      root.querySelector('label[for="clone-shareable-toggle"]'),
+    ).not.toBeNull();
+    expect(
+      root.querySelector('label[for="clone-public-toggle"]'),
+    ).not.toBeNull();
+
+    // The two hints distinguish referenceability from listing/cloning.
+    const shareableHint =
+      root.querySelector('#clone-shareable-hint')?.textContent?.toLowerCase() ??
+      '';
+    const publicHint =
+      root.querySelector('#clone-public-hint')?.textContent?.toLowerCase() ??
+      '';
+    expect(shareableHint).toContain('reference');
+    expect(shareableHint).not.toContain('clone');
+    expect(publicHint).toContain('clone');
+    expect(publicHint).toMatch(/list|read/);
+  });
 });

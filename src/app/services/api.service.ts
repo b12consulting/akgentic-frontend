@@ -257,6 +257,24 @@ export class ApiService {
     });
   }
 
+  /**
+   * Delete a catalog namespace and all its entries.
+   *
+   * Hits `DELETE /admin/catalog/namespace/{namespace}` (ADR-028 §Decision 5).
+   * A `204` resolves with no body (FetchService returns `undefined` for
+   * 204 / empty-body responses). NO `successMessage` is passed — the panel
+   * owns the success toast / live-region announcement so the messaging stays
+   * consistent with the Clone flow. Non-2xx responses reject with an
+   * `HttpError` carrying `.status` / `.body` so the caller can branch on
+   * `403` (not-authorized), `409`/`422` (inbound-reference blocker), etc.
+   */
+  async deleteNamespace(namespace: string): Promise<void> {
+    await this.fetchService.fetch({
+      url: `${this.apiUrl}/admin/catalog/namespace/${namespace}`,
+      options: { method: 'DELETE' },
+    });
+  }
+
   /** No-op stub: description editing is not available in V2. */
   async updateTeamDescription(
     _teamId: string,
