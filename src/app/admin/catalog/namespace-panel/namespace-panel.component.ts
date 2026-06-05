@@ -24,11 +24,13 @@ import { TooltipModule } from 'primeng/tooltip';
 
 import { NamespaceValidationReport } from '../../../models/catalog.interface';
 import { ApiService } from '../../../services/api.service';
+import { AuthService } from '../../../services/auth.service';
 import { HttpError } from '../../../services/fetch.service';
 import {
   CloneYamlError,
   extractYamlName,
   extractYamlNamespace,
+  extractYamlUserId,
   rewriteNamespaceInYaml,
   suggestDestName,
   suggestDestNamespace,
@@ -102,6 +104,7 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   private apiService: ApiService = inject(ApiService);
   private messageService: MessageService = inject(MessageService);
   private confirmationService: ConfirmationService = inject(ConfirmationService);
+  private authService: AuthService = inject(AuthService);
   private destroyRef: DestroyRef = inject(DestroyRef);
 
   // Internal state — initial values per AC 2.
@@ -572,6 +575,27 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
         severity: 'error',
         summary: 'Cannot change namespace on Save',
         detail: `The buffer's namespace is "${bufferNamespace}" but the panel is editing "${this.namespace}". Use Clone to save under a new namespace name.`,
+        sticky: true,
+      });
+      return;
+    }
+
+    // Advisory pre-flight (NOT the security boundary — the infra import gate
+    // is). Mirror the namespace-change guard above: block obviously-doomed
+    // Saves with a clear message instead of letting the server bounce a 403.
+    // This check lives in the browser and can be bypassed (devtools, direct
+    // API call), so it must NEVER be relied upon for enforcement — the
+    // server's owner-or-admin import gate is authoritative. Admin is checked
+    // first; an unresolvable owner (null) falls through to the server.
+    const me = this.authService.currentUserValue;
+    const namespaceOwner = extractYamlUserId(savedBuffer);
+    const isAdmin = me?.roles?.includes('admin') === true;
+    const isOwner = namespaceOwner !== null && namespaceOwner === me?.user_id;
+    if (!isAdmin && !isOwner && namespaceOwner !== null) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Cannot save changes to this namespace',
+        detail: 'You can only save changes to namespaces you own.',
         sticky: true,
       });
       return;

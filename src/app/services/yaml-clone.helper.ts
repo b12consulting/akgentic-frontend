@@ -154,6 +154,34 @@ export function extractYamlName(input: string): string | null {
   return typeof name === 'string' ? name : null;
 }
 
+/**
+ * Best-effort extraction of the top-level `user_id:` field (the namespace
+ * owner anchor) from a bundle YAML string. Returns `null` when the input
+ * cannot be parsed, the root is not a mapping, or the `user_id` key is
+ * missing / not a string.
+ *
+ * Powers the advisory owner-or-admin pre-check in
+ * `NamespacePanelComponent.onSaveClick`: the panel compares this owner
+ * against the current user to surface a friendly "you don't own this"
+ * message before the import fires. Returning `null` (unknown ownership)
+ * intentionally defers the decision to the server — the frontend guard is
+ * advisory only and the server's import gate is the real boundary, so a
+ * missing/`null` owner must NOT pre-block a legitimate first-save/create.
+ */
+export function extractYamlUserId(input: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = yaml.load(input);
+  } catch {
+    return null;
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return null;
+  }
+  const userId = (parsed as Record<string, unknown>)['user_id'];
+  return typeof userId === 'string' ? userId : null;
+}
+
 const RANDOM_SUFFIX_RE = /_[A-Za-z0-9]{5}$/;
 const RANDOM_SUFFIX_ALPHABET =
   'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';

@@ -22,6 +22,7 @@ import { TooltipModule } from 'primeng/tooltip';
 
 import { NamespaceValidationReport } from '../../../models/catalog.interface';
 import { ApiService } from '../../../services/api.service';
+import { AuthService } from '../../../services/auth.service';
 import { HttpError } from '../../../services/fetch.service';
 import { NamespacePanelComponent } from './namespace-panel.component';
 import { ValidationReportComponent } from './validation-report/validation-report.component';
@@ -69,6 +70,11 @@ describe('NamespacePanelComponent', () => {
   let apiSpy: jasmine.SpyObj<ApiService>;
   let messageSpy: jasmine.SpyObj<MessageService>;
   let confirmationSpy: jasmine.SpyObj<ConfirmationService>;
+  // Minimal AuthService stub exposing only a settable `currentUserValue`
+  // (the sole surface the panel's advisory owner pre-check reads). Defaults
+  // to the anonymous user so pre-existing Save tests — whose buffers carry
+  // `user_id: null` (unresolvable owner → defer to server) — are unaffected.
+  let authStub: { currentUserValue: { user_id: string; roles?: string[] } };
 
   async function buildFixture(namespace: string) {
     fixture = TestBed.createComponent(NamespacePanelComponent);
@@ -91,12 +97,14 @@ describe('NamespacePanelComponent', () => {
     confirmationSpy =
       new ConfirmationService() as jasmine.SpyObj<ConfirmationService>;
     spyOn(confirmationSpy, 'confirm').and.callThrough();
+    authStub = { currentUserValue: { user_id: 'anonymous' } };
 
     await TestBed.configureTestingModule({
       imports: [NamespacePanelComponent, NoopAnimationsModule],
       providers: [
         { provide: ApiService, useValue: apiSpy },
         { provide: MessageService, useValue: messageSpy },
+        { provide: AuthService, useValue: authStub },
       ],
     })
       // Swap the real NuMonacoEditor for a lightweight stub that honours
@@ -550,6 +558,112 @@ describe('NamespacePanelComponent', () => {
     await component.onSaveClick();
 
     expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
+  });
+
+  // ---------------------------------------------------------------------
+  // Story 14.3 — Advisory owner-or-admin pre-flight guard on Edit-Save.
+  // The buffer's namespace MUST match the panel's (`foo`) so the existing
+  // namespace-change guard is a no-op and the ownership guard is reached.
+  // ---------------------------------------------------------------------
+
+  it('(14.3 AC2/AC10) owner can Save — import fires, no owner-block toast', async () => {
+    authStub.currentUserValue = { user_id: 'alice', roles: [] };
+    await loadedEditMode('namespace: foo\nuser_id: alice\nentries: {}\n');
+    await component.onEditClick();
+    component.buffer = 'namespace: foo\nuser_id: alice\nentries:\n  x: 1\n';
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+
+    await component.onSaveClick();
+
+    expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
+    const ownerBlocked = messageSpy.add.calls
+      .allArgs()
+      .some((args) => args[0]?.summary === 'Cannot save changes to this namespace');
+    expect(ownerBlocked).toBeFalse();
+  });
+
+  it('(14.3 AC1/AC4/AC11) non-owner non-admin is blocked — no import, sticky toast, stays edit', async () => {
+    authStub.currentUserValue = { user_id: 'bob', roles: [] };
+    await loadedEditMode('namespace: foo\nuser_id: alice\nentries: {}\n');
+    await component.onEditClick();
+    component.buffer = 'namespace: foo\nuser_id: alice\nentries:\n  x: 1\n';
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+
+    await component.onSaveClick();
+
+    expect(apiSpy.importNamespace).not.toHaveBeenCalled();
+    const toast = messageSpy.add.calls.mostRecent().args[0];
+    expect(toast.severity).toBe('error');
+    expect(toast.sticky).toBeTrue();
+    expect(toast.summary).toBe('Cannot save changes to this namespace');
+    expect(component.mode).toBe('edit');
+    expect(component.saving).toBeFalse();
+  });
+
+  it('(14.3 AC3/AC12) admin can Save another user\'s namespace — import fires, no block', async () => {
+    authStub.currentUserValue = { user_id: 'bob', roles: ['admin'] };
+    await loadedEditMode('namespace: foo\nuser_id: alice\nentries: {}\n');
+    await component.onEditClick();
+    component.buffer = 'namespace: foo\nuser_id: alice\nentries:\n  x: 1\n';
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+
+    await component.onSaveClick();
+
+    expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
+    const ownerBlocked = messageSpy.add.calls
+      .allArgs()
+      .some((args) => args[0]?.summary === 'Cannot save changes to this namespace');
+    expect(ownerBlocked).toBeFalse();
+  });
+
+  it('(14.3 AC5/AC13) community anonymous can Save anonymous-owned namespace — no block', async () => {
+    authStub.currentUserValue = { user_id: 'anonymous' };
+    await loadedEditMode('namespace: foo\nuser_id: anonymous\nentries: {}\n');
+    await component.onEditClick();
+    component.buffer = 'namespace: foo\nuser_id: anonymous\nentries:\n  x: 1\n';
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+
+    await component.onSaveClick();
+
+    expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
+    const ownerBlocked = messageSpy.add.calls
+      .allArgs()
+      .some((args) => args[0]?.summary === 'Cannot save changes to this namespace');
+    expect(ownerBlocked).toBeFalse();
+  });
+
+  it('(14.3 AC7/AC14) unresolvable owner defers to server for non-admin — import fires', async () => {
+    authStub.currentUserValue = { user_id: 'bob', roles: [] };
+    // No root user_id → extractYamlUserId returns null → fall through.
+    await loadedEditMode('namespace: foo\nentries: {}\n');
+    await component.onEditClick();
+    component.buffer = 'namespace: foo\nentries:\n  x: 1\n';
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+
+    await component.onSaveClick();
+
+    expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
+    const ownerBlocked = messageSpy.add.calls
+      .allArgs()
+      .some((args) => args[0]?.summary === 'Cannot save changes to this namespace');
+    expect(ownerBlocked).toBeFalse();
+  });
+
+  it('(14.3 AC8/AC15) namespace-change guard still wins over ownership guard', async () => {
+    // Non-owner AND namespace changed — the namespace-change guard fires
+    // first with its own message; the ownership message is never reached.
+    authStub.currentUserValue = { user_id: 'bob', roles: [] };
+    await loadedEditMode('namespace: foo\nuser_id: alice\nentries: {}\n');
+    await component.onEditClick();
+    component.buffer = 'namespace: bar\nuser_id: alice\nentries: {}\n';
+
+    await component.onSaveClick();
+
+    expect(apiSpy.importNamespace).not.toHaveBeenCalled();
+    const toast = messageSpy.add.calls.mostRecent().args[0];
+    expect(toast.summary).toBe('Cannot change namespace on Save');
+    expect(toast.severity).toBe('error');
+    expect(toast.sticky).toBeTrue();
   });
 
   // ---------------------------------------------------------------------

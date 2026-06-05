@@ -4,6 +4,7 @@ import {
   CloneYamlError,
   extractYamlName,
   extractYamlNamespace,
+  extractYamlUserId,
   rewriteNamespaceInYaml,
   suggestDestName,
   suggestDestNamespace,
@@ -213,6 +214,34 @@ describe('extractYamlNamespace', () => {
 
   it('returns null when namespace is not a string (e.g. a number)', () => {
     expect(extractYamlNamespace('namespace: 42\nentries: {}\n')).toBeNull();
+  });
+});
+
+describe('extractYamlUserId', () => {
+  it('returns the top-level user_id string on a well-formed bundle', () => {
+    const input = 'namespace: foo\nuser_id: alice\nentries: {}\n';
+    expect(extractYamlUserId(input)).toBe('alice');
+  });
+
+  it('returns null on malformed YAML (defers to the server)', () => {
+    const malformed = 'namespace: foo\nentries: [\n  unclosed\n';
+    expect(extractYamlUserId(malformed)).toBeNull();
+  });
+
+  it('returns null when the root is not a mapping', () => {
+    expect(extractYamlUserId('- 1\n- 2\n')).toBeNull();
+  });
+
+  it('returns null when the mapping has no user_id key', () => {
+    expect(extractYamlUserId('namespace: foo\nentries: {}\n')).toBeNull();
+  });
+
+  it('returns null when user_id is null (unknown ownership)', () => {
+    expect(extractYamlUserId('namespace: foo\nuser_id: null\nentries: {}\n')).toBeNull();
+  });
+
+  it('returns null when user_id is not a string (e.g. a number)', () => {
+    expect(extractYamlUserId('namespace: foo\nuser_id: 42\nentries: {}\n')).toBeNull();
   });
 });
 
