@@ -121,13 +121,28 @@ export class HomeComponent {
    * Load catalog namespaces for the dropdown. Extracted so the 2xx save
    * branch (Story 11.3 AC 6) can re-invoke the same code path without
    * duplicating the error handling.
+   *
+   * Story 14.2 — drop a stale selection / preserve a valid one. After
+   * refreshing the options, reconcile the current selection against the
+   * freshly-fetched list, comparing on the stable `namespace` identifier
+   * (NOT object reference — every fetch returns new objects — and NOT the
+   * display `name`, which two summaries may share). If the current
+   * selection is no longer present (e.g. it was just deleted), re-select
+   * the first remaining namespace, or `null` when the list is empty. If it
+   * is still present, leave the subject untouched to avoid a gratuitous
+   * dropdown flicker on an unrelated refresh. A `null` current selection
+   * is "not present", so a non-empty list still auto-selects `namespaces[0]`
+   * (preserves the Story 1.9 initial-load behavior).
    */
   private async loadNamespaces(): Promise<void> {
     try {
       const namespaces = await this.apiService.getNamespaces();
       this.namespaces$.next(namespaces);
-      if (namespaces.length > 0 && !this.selectedNamespace$.value) {
-        this.selectedNamespace$.next(namespaces[0]);
+      const current = this.selectedNamespace$.value;
+      const stillExists =
+        current != null && namespaces.some((n) => n.namespace === current.namespace);
+      if (!stillExists) {
+        this.selectedNamespace$.next(namespaces.length > 0 ? namespaces[0] : null);
       }
     } catch (error) {
       console.error('Failed to load namespaces:', error);

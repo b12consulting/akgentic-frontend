@@ -344,6 +344,12 @@ describe('HomeComponent', () => {
   });
 
   it('(AC14 11.2) "Edit namespace YAML" button is enabled when a namespace is selected', async () => {
+    // The refreshed list (driven by ngOnInit's loadNamespaces) must contain
+    // the seeded selection — otherwise the Story 14.2 reconciliation correctly
+    // drops a selection absent from the fetched list, clearing it to null.
+    apiSpy.getNamespaces.and.returnValue(
+      Promise.resolve([{ namespace: 'foo', name: 'Foo', description: '' }]),
+    );
     component.selectedNamespace$.next({
       namespace: 'foo',
       name: 'Foo',
@@ -359,6 +365,11 @@ describe('HomeComponent', () => {
   });
 
   it('(AC14 11.2) clicking the button sets namespacePanelVisible = true', async () => {
+    // See note above: keep the seeded selection present in the fetched list so
+    // the Story 14.2 reconciliation does not drop it during ngOnInit.
+    apiSpy.getNamespaces.and.returnValue(
+      Promise.resolve([{ namespace: 'foo', name: 'Foo', description: '' }]),
+    );
     component.selectedNamespace$.next({
       namespace: 'foo',
       name: 'Foo',
@@ -482,6 +493,112 @@ describe('HomeComponent', () => {
 
     expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(1);
     expect(component.namespaces$.value).toEqual(updated);
+  });
+
+  // --- Story 14.2 — stale-selection drop on refresh --------------------
+
+  it('(14.2 AC8) stale selection (deleted ns) is dropped → advances to first remaining', async () => {
+    // Seed a selection that the refreshed list no longer contains.
+    component.selectedNamespace$.next({
+      namespace: 'agent-team-v1_copy',
+      name: 'Agent Team_copy',
+      description: 'clone',
+    });
+    const refreshed = [
+      { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
+      { namespace: 'rag-team-v1', name: 'RAG Team', description: 'd2' },
+    ];
+    apiSpy.getNamespaces.and.returnValue(Promise.resolve(refreshed));
+
+    // Drive loadNamespaces via the public (saved) handler.
+    await component.onNamespaceSaved();
+
+    expect(component.selectedNamespace$.value?.namespace).toBe('agent-team-v1');
+  });
+
+  it('(14.2 AC9) still-present selection is preserved by `namespace` identity, untouched (no re-set)', async () => {
+    // Seed the ORIGINAL object instance.
+    const original = {
+      namespace: 'rag-team-v1',
+      name: 'RAG Team',
+      description: 'original',
+    };
+    component.selectedNamespace$.next(original);
+
+    // Refresh returns a DIFFERENT object instance with the SAME namespace —
+    // proves identity is compared on `namespace`, not object reference.
+    const refreshed = [
+      { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
+      { namespace: 'rag-team-v1', name: 'RAG Team', description: 'refreshed copy' },
+    ];
+    apiSpy.getNamespaces.and.returnValue(Promise.resolve(refreshed));
+
+    await component.onNamespaceSaved();
+
+    // The subject must hold the EXACT original object (reference-equal) —
+    // confirming no `.next()` re-set fired for a still-valid selection.
+    expect(component.selectedNamespace$.value).toBe(original);
+  });
+
+  it('(14.2 AC10) deleting the last namespace → null selection + placeholder', async () => {
+    component.selectedNamespace$.next({
+      namespace: 'only-team-v1',
+      name: 'Only Team',
+      description: 'last one',
+    });
+    apiSpy.getNamespaces.and.returnValue(Promise.resolve([]));
+
+    await component.onNamespaceSaved();
+
+    expect(component.selectedNamespace$.value).toBeNull();
+
+    // Render the template on a null selection — must not throw, and the
+    // Create / Edit buttons must be disabled.
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const createBtn = fixture.nativeElement.querySelector(
+      'button[label="Create"]',
+    ) as HTMLButtonElement | null;
+    const editBtn = fixture.nativeElement.querySelector(
+      'button[data-test="edit-namespace-yaml-btn"]',
+    ) as HTMLButtonElement | null;
+    expect(editBtn).not.toBeNull();
+    expect(editBtn!.disabled).toBeTrue();
+    if (createBtn) {
+      expect(createBtn.disabled).toBeTrue();
+    }
+  });
+
+  it('(14.2 AC6) initial-load auto-select still works (null → first of non-empty list)', async () => {
+    // selectedNamespace$ starts null; loadNamespaces via ngOnInit selects first.
+    expect(component.selectedNamespace$.value).toBeNull();
+    apiSpy.getNamespaces.and.returnValue(
+      Promise.resolve([
+        { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
+        { namespace: 'rag-team-v1', name: 'RAG Team', description: 'd2' },
+      ]),
+    );
+
+    await component.ngOnInit();
+
+    expect(component.selectedNamespace$.value?.namespace).toBe('agent-team-v1');
+  });
+
+  it('(14.2 AC7) getNamespaces failure leaves namespaces$ unchanged and logs', async () => {
+    component.namespaces$.next([
+      { namespace: 'existing-v1', name: 'Existing', description: 'd' },
+    ]);
+    apiSpy.getNamespaces.and.returnValue(Promise.reject(new Error('boom')));
+    const consoleErrorSpy = spyOn(console, 'error');
+
+    await expectAsync(component.onNamespaceSaved()).toBeResolved();
+
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    expect(component.namespaces$.value).toEqual([
+      { namespace: 'existing-v1', name: 'Existing', description: 'd' },
+    ]);
   });
 
   // --- Story 11.5 — namespaceIdentifiers getter + binding ---------------
