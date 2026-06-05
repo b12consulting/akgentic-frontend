@@ -146,12 +146,45 @@ describe('NamespacePanelComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(apiSpy.exportNamespace).toHaveBeenCalledOnceWith('foo');
+    // Story 14.4 — exportNamespace now carries the admin "show all" flag
+    // ({ all: showAll }); default showAll=false ⇒ owner-scoped read.
+    expect(apiSpy.exportNamespace).toHaveBeenCalledOnceWith('foo', {
+      all: false,
+    });
     expect(component.serverYaml).toBe('key: value\n');
     expect(component.buffer).toBe('key: value\n');
     expect(component.mode).toBe('view');
     expect(component.lastValidation).toBeNull();
     expect(component.loading).toBe(false);
+  });
+
+  it('(14.4 AC8, AC17) admin foreign-open — showAll=true threads all:true into the entry read', async () => {
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('key: value\n'));
+
+    await buildFixture('foreign-ns');
+    fixture.componentRef.setInput('showAll', true);
+    fixture.detectChanges(); // triggers ngOnInit / loadNamespace
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(apiSpy.exportNamespace).toHaveBeenCalledOnceWith('foreign-ns', {
+      all: true,
+    });
+    expect(component.serverYaml).toBe('key: value\n');
+  });
+
+  it('(14.4 AC8) toggle off — showAll=false keeps the normal owner-scoped entry read', async () => {
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('key: value\n'));
+
+    await buildFixture('owned-ns');
+    fixture.componentRef.setInput('showAll', false);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(apiSpy.exportNamespace).toHaveBeenCalledOnceWith('owned-ns', {
+      all: false,
+    });
   });
 
   it('(AC13) load flow (error) — leaves buffers empty, toasts, and renders empty state', async () => {
@@ -198,7 +231,10 @@ describe('NamespacePanelComponent', () => {
     fixture.detectChanges();
 
     expect(apiSpy.exportNamespace).toHaveBeenCalledTimes(2);
-    expect(apiSpy.exportNamespace.calls.mostRecent().args).toEqual(['bar']);
+    expect(apiSpy.exportNamespace.calls.mostRecent().args).toEqual([
+      'bar',
+      { all: false },
+    ]);
     expect(component.loading).toBe(true);
     expect(component.serverYaml).toBe('');
     expect(component.buffer).toBe('');
@@ -1435,7 +1471,10 @@ entries:
     // exportNamespace called twice: once on mount (cloneSrcYaml), once for
     // the re-load (exportedFresh).
     expect(apiSpy.exportNamespace).toHaveBeenCalledTimes(2);
-    expect(apiSpy.exportNamespace.calls.mostRecent().args).toEqual(['dst']);
+    expect(apiSpy.exportNamespace.calls.mostRecent().args).toEqual([
+      'dst',
+      { all: false },
+    ]);
     expect(component.namespace).toBe('dst');
     expect(component.mode).toBe('view');
     expect(component.cloneDialogVisible).toBeFalse();

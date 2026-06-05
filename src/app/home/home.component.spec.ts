@@ -35,7 +35,13 @@ describe('HomeComponent', () => {
   let contextSpy: jasmine.SpyObj<ContextService> & {
     teams$: BehaviorSubject<TeamContext[]>;
   };
-  let authSpy: jasmine.SpyObj<AuthService>;
+  let authSpy: jasmine.SpyObj<AuthService> & {
+    currentUser$: BehaviorSubject<any>;
+    currentUserValue: any;
+  };
+  // Story 14.4 — settable auth subject so the reactive admin predicate
+  // (isAdmin$ derived from currentUser$) can be driven from tests.
+  let currentUser$: BehaviorSubject<any>;
   let routerSpy: jasmine.SpyObj<Router>;
   let confirmationSpy: jasmine.SpyObj<ConfirmationService>;
 
@@ -69,7 +75,18 @@ describe('HomeComponent', () => {
     contextSpy.createTeamAndNavigate.and.returnValue(Promise.resolve());
     contextSpy.stopTeamAndAwait.and.returnValue(Promise.resolve());
 
-    authSpy = jasmine.createSpyObj('AuthService', ['checkAuth']);
+    // Story 14.4 — anonymous by default (no `roles`), so isAdmin$ resolves
+    // false and the toggle is hidden unless a test pushes an admin user.
+    currentUser$ = new BehaviorSubject<any>({ user_id: 'anonymous' });
+    authSpy = jasmine.createSpyObj('AuthService', ['checkAuth'], {
+      currentUser$,
+      get currentUserValue() {
+        return currentUser$.value;
+      },
+    }) as jasmine.SpyObj<AuthService> & {
+      currentUser$: BehaviorSubject<any>;
+      currentUserValue: any;
+    };
     authSpy.checkAuth.and.returnValue(of(true as any));
 
     routerSpy = jasmine.createSpyObj('Router', ['navigate']);
@@ -725,5 +742,159 @@ describe('HomeComponent', () => {
     }
     // Deterministic assertion: the getter itself is the contract.
     expect(component.namespaceIdentifiers).toEqual(['alpha', 'beta']);
+  });
+
+  // --- Story 14.4 — admin "show all namespaces" toggle -----------------
+
+  function toggleEl(): HTMLElement | null {
+    return fixture.nativeElement.querySelector(
+      '[data-test="show-all-namespaces-toggle"]',
+    ) as HTMLElement | null;
+  }
+
+  it('(14.4 AC1, AC11) toggle is hidden for a non-admin (roles: [])', async () => {
+    currentUser$.next({ user_id: 'alice', roles: [] });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(toggleEl()).toBeNull();
+  });
+
+  it('(14.4 AC1, AC11) toggle is hidden for the anonymous user (roles absent)', async () => {
+    currentUser$.next({ user_id: 'anonymous' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(toggleEl()).toBeNull();
+  });
+
+  it('(14.4 AC1, AC12) toggle is visible for an admin (roles: ["admin"])', async () => {
+    currentUser$.next({ user_id: 'gpiroux', roles: ['admin'] });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(toggleEl()).not.toBeNull();
+  });
+
+  it('(14.4 AC7, AC12) toggle appears reactively after a deferred admin /auth/me resolves', async () => {
+    // Starts anonymous (seeded in beforeEach) — toggle hidden.
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(toggleEl()).toBeNull();
+
+    // The deferred /auth/me resolves an admin → toggle becomes visible
+    // WITHOUT a manual refresh (reactive predicate via currentUser$).
+    currentUser$.next({ user_id: 'gpiroux', roles: ['admin'] });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(toggleEl()).not.toBeNull();
+  });
+
+  it('(14.4 AC2, AC15) default off on init — first getNamespaces call omits all=true', async () => {
+    currentUser$.next({ user_id: 'gpiroux', roles: ['admin'] });
+    apiSpy.getNamespaces.calls.reset();
+    apiSpy.getNamespaces.and.returnValue(
+      Promise.resolve([
+        { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd' },
+      ]),
+    );
+
+    await component.ngOnInit();
+
+    expect(component.showAllNamespaces).toBeFalse();
+    expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(1);
+    expect(apiSpy.getNamespaces.calls.first().args[0]).toEqual({ all: false });
+  });
+
+  it('(14.4 AC3) toggling on re-fetches with all=true and surfaces a foreign namespace', async () => {
+    currentUser$.next({ user_id: 'gpiroux', roles: ['admin'] });
+    const foreign = {
+      namespace: 'other-tenant-ns',
+      name: 'Other Tenant',
+      description: 'foreign-owned',
+    };
+    apiSpy.getNamespaces.and.returnValue(Promise.resolve([foreign]));
+    apiSpy.getNamespaces.calls.reset();
+
+    await component.onToggleShowAll(true);
+
+    expect(component.showAllNamespaces).toBeTrue();
+    expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(1);
+    expect(apiSpy.getNamespaces.calls.mostRecent().args[0]).toEqual({
+      all: true,
+    });
+    expect(
+      component.namespaces$.value.some(
+        (n) => n.namespace === 'other-tenant-ns',
+      ),
+    ).toBeTrue();
+  });
+
+  it('(14.4 AC4) toggling off re-fetches the normal owner+public list', async () => {
+    currentUser$.next({ user_id: 'gpiroux', roles: ['admin'] });
+    apiSpy.getNamespaces.and.returnValue(Promise.resolve([]));
+
+    await component.onToggleShowAll(true);
+    apiSpy.getNamespaces.calls.reset();
+
+    await component.onToggleShowAll(false);
+
+    expect(component.showAllNamespaces).toBeFalse();
+    expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(1);
+    expect(apiSpy.getNamespaces.calls.mostRecent().args[0]).toEqual({
+      all: false,
+    });
+  });
+
+  it('(14.4 AC6, AC18) toggle re-fetch still runs the Story 14.2 selection reconciliation', async () => {
+    currentUser$.next({ user_id: 'gpiroux', roles: ['admin'] });
+    // Seed a selection that the toggled-on list no longer contains — the
+    // reconciliation must drop it and advance to the first remaining ns.
+    component.selectedNamespace$.next({
+      namespace: 'stale-ns',
+      name: 'Stale',
+      description: 'gone',
+    });
+    const refreshed = [
+      { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
+      { namespace: 'rag-team-v1', name: 'RAG Team', description: 'd2' },
+    ];
+    apiSpy.getNamespaces.and.returnValue(Promise.resolve(refreshed));
+
+    await component.onToggleShowAll(true);
+
+    // AC3: the call carried all=true.
+    expect(apiSpy.getNamespaces.calls.mostRecent().args[0]).toEqual({
+      all: true,
+    });
+    // AC18: stale selection dropped, advanced to first remaining (Story 14.2).
+    expect(component.selectedNamespace$.value?.namespace).toBe('agent-team-v1');
+  });
+
+  it('(14.4 AC6, AC18) toggle re-fetch preserves a still-present selection by identity', async () => {
+    currentUser$.next({ user_id: 'gpiroux', roles: ['admin'] });
+    const original = {
+      namespace: 'rag-team-v1',
+      name: 'RAG Team',
+      description: 'original',
+    };
+    component.selectedNamespace$.next(original);
+    apiSpy.getNamespaces.and.returnValue(
+      Promise.resolve([
+        { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
+        { namespace: 'rag-team-v1', name: 'RAG Team', description: 'refreshed' },
+      ]),
+    );
+
+    await component.onToggleShowAll(true);
+
+    // Still-present selection left untouched (reference-equal) — Story 14.2.
+    expect(component.selectedNamespace$.value).toBe(original);
   });
 });
