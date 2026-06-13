@@ -26,11 +26,11 @@ import { IngestionService } from '../../../components/process/event/ingestion.se
 
 // Import the shared GraphDataService
 import { makeAgentNameUserFriendly } from '../../../shared/util/util';
-import { GraphDataService } from '../../../services/graph-data.service';
+import { GraphDataService } from '../../../components/process/selectors/graph.selector';
 import {
   Selectable,
   SelectionService,
-} from '../../../services/selection.service';
+} from '../../../components/process/ui-state/selection.service';
 import { HumanRequestComponent } from '../../human-request.component';
 
 echarts.use([

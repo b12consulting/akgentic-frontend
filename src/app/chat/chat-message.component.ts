@@ -2,7 +2,7 @@ import { CommonModule, DatePipe } from '@angular/common';
 import { Component, computed, EventEmitter, input, Output } from '@angular/core';
 import { ButtonModule } from 'primeng/button';
 import { MarkdownModule } from 'ngx-markdown';
-import { buildPreview, ChatMessage } from '../models/chat-message.model';
+import { buildPreview, ChatMessage } from '../components/process/selectors/chat-message.model';
 
 @Component({
   selector: 'app-chat-message',

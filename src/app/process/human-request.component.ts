@@ -6,8 +6,8 @@ import { DialogModule } from 'primeng/dialog';
 import { TextareaModule } from 'primeng/textarea';
 import { BehaviorSubject } from 'rxjs';
 
-import { GraphDataService } from '../services/graph-data.service';
-import { SelectionService } from '../services/selection.service';
+import { GraphDataService } from '../components/process/selectors/graph.selector';
+import { SelectionService } from '../components/process/ui-state/selection.service';
 
 import { SentMessage } from '../protocol/message.types';
 import { LineBreakPipe } from '../shared/pipes/line_break.pipe';

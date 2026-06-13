@@ -31,7 +31,7 @@ import { EChartsCoreOption } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { NgxEchartsDirective, provideEchartsCore } from 'ngx-echarts';
 
-import { KGStateReducer } from '../../services/kg-state.reducer';
+import { KGStateReducer } from '../../components/process/selectors/knowledge-graph.selector';
 import { IngestionService } from '../../components/process/event/ingestion.service';
 
 echarts.use([

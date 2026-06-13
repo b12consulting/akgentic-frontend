@@ -5,12 +5,12 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { isRunning } from '../core/context/team.interface';
 import { AkgentService } from '../core/ui/akgent.service';
 import { ContextService } from '../core/context/context.service';
-import { KGStateReducer } from '../services/kg-state.reducer';
+import { KGStateReducer } from '../components/process/selectors/knowledge-graph.selector';
 import { MessageLogService } from '../components/process/event/message-log.service';
 import { IngestionService } from '../components/process/event/ingestion.service';
 import { PerAgentStoreRegistry } from '../components/process/event/per-agent-store';
-import { SystemPromptSelector } from '../services/system-prompt.selector';
-import { ToolPresenceService } from '../services/tool-presence.service';
+import { SystemPromptSelector } from '../components/process/selectors/system-prompt.selector';
+import { ToolPresenceService } from '../components/process/selectors/tool-presence.selector';
 
 import { AgentTabsComponent } from './agent-tabs/agent-tabs.component';
 import { TeamTabsComponent } from './team-tabs/team-tabs.component';
@@ -25,10 +25,10 @@ import { TabsModule } from 'primeng/tabs';
 import { BehaviorSubject, combineLatest, Observable, of, Subscription } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { ChatPanelComponent } from '../chat/chat-panel.component';
-import { ChatService } from '../services/chat.service';
-import { FeedbackService } from '../services/feedback.service';
-import { GraphDataService } from '../services/graph-data.service';
-import { SelectionService } from '../services/selection.service';
+import { ChatService } from '../components/process/selectors/chat.selector';
+import { FeedbackService } from '../components/process/ui-state/feedback.service';
+import { GraphDataService } from '../components/process/selectors/graph.selector';
+import { SelectionService } from '../components/process/ui-state/selection.service';
 import { ViewService } from '../core/ui/view.service';
 
 interface VisualizationOption {

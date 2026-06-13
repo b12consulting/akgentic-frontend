@@ -1,8 +1,8 @@
 import { inject, Injectable } from '@angular/core';
 import { map, Observable, shareReplay } from 'rxjs';
 
-import { AkgenticMessage, isEventMessage } from '../protocol/message.types';
-import { MessageLogService } from '../components/process/event/message-log.service';
+import { AkgenticMessage, isEventMessage } from '../../../protocol/message.types';
+import { MessageLogService } from '../event/message-log.service';
 
 /**
  * V2 Knowledge Graph wire types.

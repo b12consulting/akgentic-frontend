@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { firstValueFrom } from 'rxjs';
 
-import { ChatMessage, ENTRY_POINT_NAME } from '../models/chat-message.model';
+import { ChatMessage, ENTRY_POINT_NAME } from './chat-message.model';
 import {
   ActorAddress,
   AkgenticMessage,
@@ -12,7 +12,7 @@ import {
   SentMessage,
   StartMessage,
   StateChangedMessage,
-} from '../protocol/message.types';
+} from '../../../protocol/message.types';
 import {
   chatFold,
   ChatService,
@@ -20,8 +20,8 @@ import {
   chatStep,
   computePendingNotifications,
   EMPTY_CHAT,
-} from './chat.service';
-import { MessageLogService } from '../components/process/event/message-log.service';
+} from './chat.selector';
+import { MessageLogService } from '../event/message-log.service';
 
 // ---------------------------------------------------------------------------
 // Fixture helpers

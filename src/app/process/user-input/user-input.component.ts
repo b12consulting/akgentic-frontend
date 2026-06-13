@@ -14,12 +14,12 @@ import { makeAgentNameUserFriendly } from '../../shared/util/util';
 import { ConfigService } from '../../core/config/config.service';
 
 import { ApiService } from '../../core/http/api.service';
-import { ChatService } from '../../services/chat.service';
+import { ChatService } from '../../components/process/selectors/chat.selector';
 import { ContextService } from '../../core/context/context.service';
-import { GraphDataService, HUMAN_ROLE } from '../../services/graph-data.service';
+import { GraphDataService, HUMAN_ROLE } from '../../components/process/selectors/graph.selector';
 import { IngestionService } from '../../components/process/event/ingestion.service';
 
-import { ENTRY_POINT_NAME } from '../../models/chat-message.model';
+import { ENTRY_POINT_NAME } from '../../components/process/selectors/chat-message.model';
 import { CommandDescriptor } from '../../protocol/message.types';
 import { NodeInterface } from '../../components/process/models/types';
 

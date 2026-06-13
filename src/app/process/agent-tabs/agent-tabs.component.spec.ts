@@ -5,11 +5,11 @@ import { WebSocketSubject } from 'rxjs/webSocket';
 
 import { AgentTabsComponent } from './agent-tabs.component';
 import { Akgent, AkgentService } from '../../core/ui/akgent.service';
-import { GraphDataService } from '../../services/graph-data.service';
+import { GraphDataService } from '../../components/process/selectors/graph.selector';
 import { IngestionService } from '../../components/process/event/ingestion.service';
 import { MessageLogService } from '../../components/process/event/message-log.service';
 import { PerAgentStoreRegistry } from '../../components/process/event/per-agent-store';
-import { ChatService } from '../../services/chat.service';
+import { ChatService } from '../../components/process/selectors/chat.selector';
 import { ApiService } from '../../core/http/api.service';
 
 /**

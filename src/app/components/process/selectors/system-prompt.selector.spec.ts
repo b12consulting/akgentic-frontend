@@ -1,12 +1,12 @@
 import { TestBed } from '@angular/core/testing';
 import { MessageService } from 'primeng/api';
 
-import { AkgenticMessage } from '../protocol/message.types';
-import { ApiService } from '../core/http/api.service';
-import { ChatService } from './chat.service';
-import { MessageLogService } from '../components/process/event/message-log.service';
-import { IngestionService } from '../components/process/event/ingestion.service';
-import { PerAgentStore, PerAgentStoreRegistry } from '../components/process/event/per-agent-store';
+import { AkgenticMessage } from '../../../protocol/message.types';
+import { ApiService } from '../../../core/http/api.service';
+import { ChatService } from './chat.selector';
+import { MessageLogService } from '../event/message-log.service';
+import { IngestionService } from '../event/ingestion.service';
+import { PerAgentStore, PerAgentStoreRegistry } from '../event/per-agent-store';
 import {
   SystemPromptRow,
   SystemPromptSelector,

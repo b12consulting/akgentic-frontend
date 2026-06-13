@@ -9,13 +9,13 @@ import {
   ChatService,
   computePendingNotifications,
   ThinkingState,
-} from '../services/chat.service';
-import { SelectionService } from '../services/selection.service';
+} from '../components/process/selectors/chat.selector';
+import { SelectionService } from '../components/process/ui-state/selection.service';
 import { ActorAddress, SentMessage, AkgenticMessage, StartMessage, isSentMessage } from '../protocol/message.types';
-import { ChatMessage, classifyMessage } from '../models/chat-message.model';
+import { ChatMessage, classifyMessage } from '../components/process/selectors/chat-message.model';
 import { ApiService } from '../core/http/api.service';
 import { AkgentService } from '../core/ui/akgent.service';
-import { GraphDataService } from '../services/graph-data.service';
+import { GraphDataService } from '../components/process/selectors/graph.selector';
 import { IngestionService } from '../components/process/event/ingestion.service';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {

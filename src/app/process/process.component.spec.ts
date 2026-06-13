@@ -7,18 +7,18 @@ import { BehaviorSubject } from 'rxjs';
 
 import { StartMessage, StopMessage } from '../protocol/message.types';
 import { AkgentService } from '../core/ui/akgent.service';
-import { ChatService } from '../services/chat.service';
+import { ChatService } from '../components/process/selectors/chat.selector';
 import { ContextService } from '../core/context/context.service';
-import { FeedbackService } from '../services/feedback.service';
-import { GraphDataService } from '../services/graph-data.service';
-import { KGStateReducer } from '../services/kg-state.reducer';
+import { FeedbackService } from '../components/process/ui-state/feedback.service';
+import { GraphDataService } from '../components/process/selectors/graph.selector';
+import { KGStateReducer } from '../components/process/selectors/knowledge-graph.selector';
 import { MessageLogService } from '../components/process/event/message-log.service';
 import { IngestionService } from '../components/process/event/ingestion.service';
-import { SelectionService } from '../services/selection.service';
+import { SelectionService } from '../components/process/ui-state/selection.service';
 import {
   KG_ACTOR_NAME,
   ToolPresenceService,
-} from '../services/tool-presence.service';
+} from '../components/process/selectors/tool-presence.selector';
 import { TeamContext } from '../core/context/team.interface';
 import { ViewService } from '../core/ui/view.service';
 import { ProcessComponent } from './process.component';

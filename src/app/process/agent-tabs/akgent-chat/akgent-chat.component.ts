@@ -32,7 +32,7 @@ import { IngestionService } from '../../../components/process/event/ingestion.se
 import {
   SystemPromptRow,
   SystemPromptSelector,
-} from '../../../services/system-prompt.selector';
+} from '../../../components/process/selectors/system-prompt.selector';
 import { CommandDescriptor } from '../../../protocol/message.types';
 
 import { CopyButtonComponent } from '../../../shared/components/copy-button/copy-button.component';

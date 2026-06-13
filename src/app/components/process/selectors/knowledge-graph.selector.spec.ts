@@ -1,14 +1,14 @@
 import { TestBed } from '@angular/core/testing';
 
-import { AkgenticMessage } from '../protocol/message.types';
+import { AkgenticMessage } from '../../../protocol/message.types';
 import {
   kgFold,
   KGStateReducer,
   KnowledgeGraphData,
   KnowledgeGraphEntity,
   KnowledgeGraphRelation,
-} from './kg-state.reducer';
-import { MessageLogService } from '../components/process/event/message-log.service';
+} from './knowledge-graph.selector';
+import { MessageLogService } from '../event/message-log.service';
 
 // ---------------------------------------------------------------------
 // Fixture helpers

@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
 import { ChatThinkingComponent } from './chat-thinking.component';
-import { ThinkingState } from '../services/chat.service';
+import { ThinkingState } from '../components/process/selectors/chat.selector';
 
 function makeState(overrides: Partial<ThinkingState> = {}): ThinkingState {
   return {

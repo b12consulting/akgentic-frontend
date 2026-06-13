@@ -1,7 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import { BehaviorSubject, distinctUntilChanged, map, Observable, shareReplay } from 'rxjs';
 
-import { ENTRY_POINT_NAME } from '../models/chat-message.model';
+import { ENTRY_POINT_NAME } from './chat-message.model';
 import {
   AkgenticMessage,
   ErrorMessage,
@@ -16,10 +16,10 @@ import {
   SentMessage,
   StartMessage,
   StopMessage,
-} from '../protocol/message.types';
-import { EdgeInterface, NodeInterface } from '../components/process/models/types';
-import { CategoryService } from '../core/ui/category.service';
-import { MessageLogService } from '../components/process/event/message-log.service';
+} from '../../../protocol/message.types';
+import { EdgeInterface, NodeInterface } from '../models/types';
+import { CategoryService } from '../../../core/ui/category.service';
+import { MessageLogService } from '../event/message-log.service';
 
 export const HUMAN_ROLE = 'Human';
 export const ORCHESTRATOR_CLASS = 'akgentic.core.orchestrator.Orchestrator';

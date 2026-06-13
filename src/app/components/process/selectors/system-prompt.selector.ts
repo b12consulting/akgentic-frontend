@@ -1,8 +1,8 @@
 import { inject, Injectable } from '@angular/core';
 import { map, Observable } from 'rxjs';
 
-import { IngestionService } from '../components/process/event/ingestion.service';
-import { SystemPromptRow } from '../components/process/event/per-agent-specs';
+import { IngestionService } from '../event/ingestion.service';
+import { SystemPromptRow } from '../event/per-agent-specs';
 
 /**
  * Re-export the system-prompt reducer surface from its new home in the
@@ -15,12 +15,12 @@ import { SystemPromptRow } from '../components/process/event/per-agent-specs';
 export type {
   SystemPromptRow,
   SystemPromptValue,
-} from '../components/process/event/per-agent-specs';
+} from '../event/per-agent-specs';
 export {
   systemPromptLabel,
   systemPromptMatch,
   systemPromptReduce,
-} from '../components/process/event/per-agent-specs';
+} from '../event/per-agent-specs';
 
 /**
  * SystemPromptSelector — Story 16-1 (ADR-004 §5b step 1), thin façade since

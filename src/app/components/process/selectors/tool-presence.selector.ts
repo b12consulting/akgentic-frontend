@@ -5,8 +5,8 @@ import {
   AkgenticMessage,
   isStartMessage,
   isStopMessage,
-} from '../protocol/message.types';
-import { MessageLogService } from '../components/process/event/message-log.service';
+} from '../../../protocol/message.types';
+import { MessageLogService } from '../event/message-log.service';
 
 /**
  * Canonical name for the Knowledge Graph tool actor (ADR-004 §Decision 4).

@@ -15,7 +15,7 @@ import {
   SystemPromptValue,
   systemPromptMatch,
   systemPromptReduce,
-} from '../../../services/system-prompt.selector';
+} from '../../../components/process/selectors/system-prompt.selector';
 import {
   AkgenticMessage,
   CommandDescriptor,

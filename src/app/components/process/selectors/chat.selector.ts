@@ -11,7 +11,7 @@ import {
   ChatMessage,
   classifyMessage,
   ENTRY_POINT_NAME,
-} from '../models/chat-message.model';
+} from './chat-message.model';
 import {
   AkgenticMessage,
   EventMessage,
@@ -23,8 +23,8 @@ import {
   ProcessedMessage,
   ReceivedMessage,
   SentMessage,
-} from '../protocol/message.types';
-import { MessageLogService } from '../components/process/event/message-log.service';
+} from '../../../protocol/message.types';
+import { MessageLogService } from '../event/message-log.service';
 
 const HUMAN_ROLE = 'Human';
 const ACTOR_SYSTEM_ROLE = 'ActorSystem';

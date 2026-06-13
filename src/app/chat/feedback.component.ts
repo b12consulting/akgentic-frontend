@@ -5,8 +5,8 @@ import { Button } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { Textarea } from 'primeng/textarea';
 import { BehaviorSubject } from 'rxjs';
-import { ChatMessage } from '../models/chat-message.model';
-import { Feedback, FeedbackService } from '../services/feedback.service';
+import { ChatMessage } from '../components/process/selectors/chat-message.model';
+import { Feedback, FeedbackService } from '../components/process/ui-state/feedback.service';
 
 @Component({
   selector: 'app-feedback',

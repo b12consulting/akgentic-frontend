@@ -1,12 +1,12 @@
 import { inject, Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
-import { AkgentService } from '../core/ui/akgent.service';
-import { ApiService } from '../core/http/api.service';
-import { ChatService } from './chat.service';
-import { ContextService } from '../core/context/context.service';
+import { AkgentService } from '../../../core/ui/akgent.service';
+import { ApiService } from '../../../core/http/api.service';
+import { ChatService } from '../selectors/chat.selector';
+import { ContextService } from '../../../core/context/context.service';
 
-import { SentMessage } from '../protocol/message.types';
-import { ChatMessageInterface, NodeInterface } from '../components/process/models/types';
+import { SentMessage } from '../../../protocol/message.types';
+import { ChatMessageInterface, NodeInterface } from '../models/types';
 
 export interface Selectable {
   type: 'tree-node' | 'message' | 'graph-node';

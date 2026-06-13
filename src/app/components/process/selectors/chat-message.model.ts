@@ -2,8 +2,8 @@ import {
   ActorAddress,
   isWelcomeAnnouncement,
   SentMessage,
-} from '../protocol/message.types';
-import { makeAgentNameUserFriendly } from '../shared/util/util';
+} from '../../../protocol/message.types';
+import { makeAgentNameUserFriendly } from '../../../shared/util/util';
 
 export const ENTRY_POINT_NAME = '@Human';
 

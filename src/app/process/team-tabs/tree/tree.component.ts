@@ -10,11 +10,11 @@ import { TreeModule } from 'primeng/tree';
 import { Subscription } from 'rxjs';
 import { makeAgentNameUserFriendly } from '../../../shared/util/util';
 import { ApiService } from '../../../core/http/api.service';
-import { GraphDataService } from '../../../services/graph-data.service';
+import { GraphDataService } from '../../../components/process/selectors/graph.selector';
 import {
   Selectable,
   SelectionService,
-} from '../../../services/selection.service';
+} from '../../../components/process/ui-state/selection.service';
 import { HumanRequestComponent } from '../../human-request.component';
 import { EdgeInterface, NodeInterface } from '../../../components/process/models/types';
 

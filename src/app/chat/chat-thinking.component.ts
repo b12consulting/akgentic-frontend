@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, input, output } from '@angular/core';
 
-import { ThinkingState, ThinkingToolEntry } from '../services/chat.service';
+import { ThinkingState, ThinkingToolEntry } from '../components/process/selectors/chat.selector';
 
 /**
  * Story 4-8: Per-agent thinking bubble with tool-call history.

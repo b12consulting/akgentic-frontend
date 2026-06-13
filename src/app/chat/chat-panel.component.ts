@@ -12,12 +12,12 @@ import {
 } from '@angular/core';
 import { combineLatest, Subscription } from 'rxjs';
 
-import { ChatMessage } from '../models/chat-message.model';
+import { ChatMessage } from '../components/process/selectors/chat-message.model';
 import { ActorAddress } from '../protocol/message.types';
 import { ApiService } from '../core/http/api.service';
-import { ChatService, ThinkingState } from '../services/chat.service';
+import { ChatService, ThinkingState } from '../components/process/selectors/chat.selector';
 import { IngestionService } from '../components/process/event/ingestion.service';
-import { Selectable, SelectionService } from '../services/selection.service';
+import { Selectable, SelectionService } from '../components/process/ui-state/selection.service';
 import {
   AnsweredRequest,
   ChatHumanModalComponent,

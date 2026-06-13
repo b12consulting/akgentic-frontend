@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
-import { environment } from '../../environments/environment';
-import { ConfigService } from '../core/config/config.service';
-import { FetchService } from '../core/http/fetch.service';
+import { environment } from '../../../../environments/environment';
+import { ConfigService } from '../../../core/config/config.service';
+import { FetchService } from '../../../core/http/fetch.service';
 import {
   MAX_UPLOAD_SIZE_BYTES,
   WorkspaceService,

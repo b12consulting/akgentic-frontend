@@ -5,7 +5,7 @@ import { WebSocketSubject } from 'rxjs/webSocket';
 
 import { IngestionService } from './ingestion.service';
 import { ApiService } from '../../../core/http/api.service';
-import { ChatService } from '../../../services/chat.service';
+import { ChatService } from '../selectors/chat.selector';
 import { MessageLogService } from './message-log.service';
 import { PerAgentStore, PerAgentStoreRegistry } from './per-agent-store';
 import { ActorAddress } from '../../../protocol/message.types';

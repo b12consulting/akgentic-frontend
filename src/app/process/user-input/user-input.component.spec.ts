@@ -4,9 +4,9 @@ import { BehaviorSubject } from 'rxjs';
 
 import { ProcessUserInputComponent } from './user-input.component';
 import { ApiService } from '../../core/http/api.service';
-import { ChatService } from '../../services/chat.service';
+import { ChatService } from '../../components/process/selectors/chat.selector';
 import { ContextService } from '../../core/context/context.service';
-import { GraphDataService } from '../../services/graph-data.service';
+import { GraphDataService } from '../../components/process/selectors/graph.selector';
 import { IngestionService } from '../../components/process/event/ingestion.service';
 import { ActorAddress, CommandDescriptor } from '../../protocol/message.types';
 import { NodeInterface } from '../../components/process/models/types';

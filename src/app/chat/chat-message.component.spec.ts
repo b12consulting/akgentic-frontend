@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideMarkdown } from 'ngx-markdown';
 import { ChatMessageComponent } from './chat-message.component';
-import { ChatMessage } from '../models/chat-message.model';
+import { ChatMessage } from '../components/process/selectors/chat-message.model';
 import { ActorAddress } from '../protocol/message.types';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {

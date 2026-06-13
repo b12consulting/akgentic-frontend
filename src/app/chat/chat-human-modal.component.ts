@@ -6,7 +6,7 @@ import { DialogModule } from 'primeng/dialog';
 import { TextareaModule } from 'primeng/textarea';
 import { MarkdownModule } from 'ngx-markdown';
 
-import { ChatMessage } from '../models/chat-message.model';
+import { ChatMessage } from '../components/process/selectors/chat-message.model';
 import { ActorAddress } from '../protocol/message.types';
 import { makeAgentNameUserFriendly } from '../shared/util/util';
 

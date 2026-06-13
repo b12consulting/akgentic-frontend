@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { firstValueFrom } from 'rxjs';
 
-import { ENTRY_POINT_NAME } from '../models/chat-message.model';
+import { ENTRY_POINT_NAME } from './chat-message.model';
 import {
   ActorAddress,
   AkgenticMessage,
@@ -13,9 +13,9 @@ import {
   StartMessage,
   StateChangedMessage,
   StopMessage,
-} from '../protocol/message.types';
-import { NodeInterface } from '../components/process/models/types';
-import { CategoryService } from '../core/ui/category.service';
+} from '../../../protocol/message.types';
+import { NodeInterface } from '../models/types';
+import { CategoryService } from '../../../core/ui/category.service';
 import {
   EMPTY_GRAPH,
   GraphBuilder,
@@ -25,8 +25,8 @@ import {
   graphStep,
   HUMAN_ROLE,
   ORCHESTRATOR_CLASS,
-} from './graph-data.service';
-import { MessageLogService } from '../components/process/event/message-log.service';
+} from './graph.selector';
+import { MessageLogService } from '../event/message-log.service';
 
 // ---------------------------------------------------------------------------
 // Fixture helpers

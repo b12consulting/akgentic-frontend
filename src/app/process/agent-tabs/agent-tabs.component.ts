@@ -13,7 +13,7 @@ import { AkgentService } from '../../core/ui/akgent.service';
 import {
   GraphDataService,
   HUMAN_ROLE as HUMAN_PROXY_ROLE,
-} from '../../services/graph-data.service';
+} from '../../components/process/selectors/graph.selector';
 
 import { IngestionService } from '../../components/process/event/ingestion.service';
 

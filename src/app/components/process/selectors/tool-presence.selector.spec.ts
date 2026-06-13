@@ -4,13 +4,13 @@ import {
   AkgenticMessage,
   StartMessage,
   StopMessage,
-} from '../protocol/message.types';
-import { MessageLogService } from '../components/process/event/message-log.service';
+} from '../../../protocol/message.types';
+import { MessageLogService } from '../event/message-log.service';
 import {
   KG_ACTOR_NAME,
   presenceReduce,
   ToolPresenceService,
-} from './tool-presence.service';
+} from './tool-presence.selector';
 
 // ---------------------------------------------------------------------
 // Fixture helpers

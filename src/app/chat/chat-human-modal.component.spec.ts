@@ -7,7 +7,7 @@ import {
   ChatHumanModalComponent,
   HumanModalReply,
 } from './chat-human-modal.component';
-import { ChatMessage } from '../models/chat-message.model';
+import { ChatMessage } from '../components/process/selectors/chat-message.model';
 import { ActorAddress } from '../protocol/message.types';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
