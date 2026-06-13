@@ -7,6 +7,7 @@ import { ActorMessageService } from './message.service';
 import { ApiService } from './api.service';
 import { ChatService } from './chat.service';
 import { MessageLogService } from './message-log.service';
+import { PerAgentStoreRegistry } from './per-agent-store';
 import { ActorAddress } from '../models/message.types';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
@@ -51,6 +52,7 @@ describe('ActorMessageService.init — loadingProcess$ spinner window (Story 4-1
     TestBed.configureTestingModule({
       providers: [
         MessageLogService,
+        PerAgentStoreRegistry,
         ActorMessageService,
         ChatService,
         {
@@ -284,6 +286,7 @@ describe('ActorMessageService — Story 6.1 (frame-batched log ingestion)', () =
     TestBed.configureTestingModule({
       providers: [
         MessageLogService,
+        PerAgentStoreRegistry,
         ActorMessageService,
         ChatService,
         {
@@ -356,8 +359,8 @@ describe('ActorMessageService — Story 6.1 (frame-batched log ingestion)', () =
     sub.unsubscribe();
   });
 
-  // ---------- AC4 ----------
-  it('AC4: batched subscriber updates stateDict$ and contextDict$ in same pass', async () => {
+  // ---------- AC4 (Epic 17) ----------
+  it('AC4: batched frame folds state + context off log$ in same pass', async () => {
     await service.init('proc-1', true);
 
     const stateChanged = {
@@ -406,16 +409,16 @@ describe('ActorMessageService — Story 6.1 (frame-batched log ingestion)', () =
     fakeSocket.next(llmEvent);
     jasmine.clock().tick(17);
 
-    // Both dicts populated by the BATCHED subscriber path.
-    expect(service.stateDict$['agent-X']).toBeDefined();
-    expect(service.stateDict$['agent-X'].value.state).toEqual({ phase: 'thinking' });
-    expect(service.contextDict$['agent-Y']).toBeDefined();
-    // NOTE: PR 1 is parallel populate — the per-__model__ dispatch in
-    // webSocket.subscribe.next ALSO appends to contextDict$ (existing
-    // handleEventMessage). So the ctx array may contain the same message
-    // twice (batched + existing). The invariant we care about for AC4 is
-    // that AT LEAST one update happened in the batched pass.
-    expect(service.contextDict$['agent-Y'].value.length).toBeGreaterThanOrEqual(1);
+    // Epic 17: both stores folded off log$ by the registry's single
+    // subscription — `state` is latest-wins `{ schema, state }`, `context`
+    // is the appended inner `message[]`.
+    expect(service.state.snapshot('agent-X')).toEqual({
+      schema: {},
+      state: { phase: 'thinking' },
+    });
+    expect(service.context.snapshot('agent-Y')).toEqual([
+      { role: 'assistant', content: 'hi' },
+    ]);
     // Log also contains both messages in arrival order.
     expect(log.snapshot().length).toBe(2);
   });
@@ -598,6 +601,7 @@ describe('ActorMessageService — commandsByAgent$ (Story 15-1, ADR-013)', () =>
     TestBed.configureTestingModule({
       providers: [
         MessageLogService,
+        PerAgentStoreRegistry,
         ActorMessageService,
         ChatService,
         {
@@ -727,19 +731,22 @@ describe('ActorMessageService — commandsByAgent$ (Story 15-1, ADR-013)', () =>
 // ---------------------------------------------------------------------------
 // Story 6.4 (AC5) — sanctioned-exceptions invariant (NFR9)
 //
-// ADR-005 §Decision 5: stateDict$ and contextDict$ were the ONLY imperative
-// state containers on ActorMessageService after the Story 6.4 refactor.
+// ADR-005 §Decision 5: stateDict$ / contextDict$ / commandsByAgent$ were the
+// imperative per-agent state containers on ActorMessageService.
 // "Adding an exception requires a new ADR. This test is the automated guard."
-// ADR-013 adds a third sanctioned exception, commandsByAgent$ (the per-agent
-// slash-command store driven by CommandsAnnouncedEvent).
+// Epic 17 (ADR-014) migrated `state` and `context` to PerAgentStore instances
+// (folded off log$ by the registry — NOT BehaviorSubject fields), so the probe
+// now sees only the remaining bespoke exception, commandsByAgent$ (Story 17-3
+// migrates it next). The invariant test itself is RETIRED in Story 17-4; this
+// is the minimal symbol-count adjustment to keep it compiling + green.
 // ---------------------------------------------------------------------------
 
 /**
  * Probe the public surface of an `ActorMessageService` (or subclass) and
  * return the set of own-property names whose runtime shape is an imperative
- * state container — either a direct `BehaviorSubject` field, or a per-agent
- * dict `{ [k: string]: BehaviorSubject<...> }` (the `stateDict$` /
- * `contextDict$` shape; counted as ONE exception each, regardless of cardinality).
+ * state container — a direct `BehaviorSubject` field, or a per-agent dict
+ * `{ [k: string]: BehaviorSubject<...> }`. PerAgentStore instances (the
+ * Epic 17 `state` / `context`) are NOT BehaviorSubjects and are not counted.
  */
 function probeStateContainers(service: object): string[] {
   return Object.getOwnPropertyNames(service).filter((name) => {
@@ -747,22 +754,22 @@ function probeStateContainers(service: object): string[] {
     if (v instanceof BehaviorSubject) return true;
     if (v && typeof v === 'object' && !Array.isArray(v)) {
       const values = Object.values(v);
-      // Empty dicts that match the documented dict-name suffix still count
-      // — the contract is structural, not population-dependent.
-      if (values.length === 0) {
-        return /(stateDict|contextDict)\$$/.test(name);
-      }
+      // Empty dicts cannot be distinguished structurally from other empty
+      // objects, so the empty case is not counted (the only remaining
+      // exception, commandsByAgent$, is a populated BehaviorSubject).
+      if (values.length === 0) return false;
       return values.every((x) => x instanceof BehaviorSubject);
     }
     return false;
   });
 }
 
-describe('ActorMessageService — sanctioned-exceptions invariant (Story 6.4, NFR9; ADR-013)', () => {
+describe('ActorMessageService — sanctioned-exceptions invariant (Story 6.4, NFR9; ADR-014)', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
         MessageLogService,
+        PerAgentStoreRegistry,
         ActorMessageService,
         ChatService,
         {
@@ -776,29 +783,25 @@ describe('ActorMessageService — sanctioned-exceptions invariant (Story 6.4, NF
     });
   });
 
-  it('public data surface is exactly {stateDict$, contextDict$, commandsByAgent$}', () => {
+  it('public data surface is exactly {commandsByAgent$}', () => {
     const service = TestBed.inject(ActorMessageService);
-    // AC5 spec: the probe MUST NOT rely on a name allow-list — it walks
+    // The probe MUST NOT rely on a name allow-list — it walks
     // `Object.getOwnPropertyNames` with a runtime `instanceof` check so that
     // any new `BehaviorSubject` field (regardless of name) forces this test
-    // to fail. Per ADR-005 §Decision 5, adding an exception requires a new
-    // ADR — ADR-013 sanctioned commandsByAgent$ (the third exception).
+    // to fail. Epic 17 (ADR-014) moved state/context to PerAgentStore
+    // instances; commandsByAgent$ is the last bespoke exception (Story 17-3).
     const containers = probeStateContainers(service);
-    expect(new Set(containers)).toEqual(
-      new Set(['stateDict$', 'contextDict$', 'commandsByAgent$']),
-    );
+    expect(new Set(containers)).toEqual(new Set(['commandsByAgent$']));
   });
 
-  it('negative probe: adding a fourth exception fails the invariant', () => {
+  it('negative probe: adding another exception fails the invariant', () => {
     const service = TestBed.inject(ActorMessageService);
     // Simulate the "someone added a new BehaviorSubject" diff.
     (service as any).extraDict$ = { agent: new BehaviorSubject<any>(null) };
     const containers = probeStateContainers(service);
     // The probe MUST detect the addition (set is no longer the documented
-    // trio). Without this guard, the invariant test would silently pass.
-    expect(new Set(containers)).not.toEqual(
-      new Set(['stateDict$', 'contextDict$', 'commandsByAgent$']),
-    );
+    // singleton). Without this guard, the invariant test would silently pass.
+    expect(new Set(containers)).not.toEqual(new Set(['commandsByAgent$']));
     expect(containers).toContain('extraDict$');
   });
 
@@ -830,6 +833,7 @@ describe('ActorMessageService — Story 8-2 (persistent disconnect toast)', () =
     TestBed.configureTestingModule({
       providers: [
         MessageLogService,
+        PerAgentStoreRegistry,
         ActorMessageService,
         ChatService,
         {
@@ -959,5 +963,240 @@ describe('ActorMessageService — Story 8-2 (persistent disconnect toast)', () =
 
     // flipOnFirstEvent was called — spinner is now false.
     expect(chatService.loadingProcess$.value).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Epic 17 / Story 17-2 (ADR-014) — `state` + `context` PerAgentStore instances
+//
+// Behavior-parity for the migrated state/context surface: the deleted
+// stateDict$ produced `{ schema: {}, state }` latest-wins per agent; the
+// deleted contextDict$ appended the inner `message` per LlmMessageEvent. These
+// tests drive the same fixtures through the live WS path and the REST replay
+// path and assert identical `forAgent`/`snapshot` results, plus automatic
+// reset-on-team-switch and O(Δ) (no per-message re-fold). They drive the real
+// log fold (no store mocking) per the story's testing standards.
+// ---------------------------------------------------------------------------
+
+describe('ActorMessageService — state + context PerAgentStore (Story 17-2)', () => {
+  let service: ActorMessageService;
+  let registry: PerAgentStoreRegistry;
+  let log: MessageLogService;
+  let fakeSocket: Subject<any>;
+
+  function mkStateChanged(agentId: string, state: any, id: string): any {
+    return {
+      id,
+      parent_id: null,
+      team_id: 'team-X',
+      timestamp: '2026-06-13T00:00:00Z',
+      sender: makeAddress({ name: '@' + agentId, agent_id: agentId }),
+      display_type: 'other',
+      content: null,
+      __model__: 'akgentic.core.messages.orchestrator.StateChangedMessage',
+      state,
+    };
+  }
+
+  function mkLlmEvent(agentId: string, message: any, id: string): any {
+    return {
+      id,
+      parent_id: null,
+      team_id: 'team-X',
+      timestamp: '2026-06-13T00:00:00Z',
+      sender: makeAddress({ name: '@' + agentId, agent_id: agentId }),
+      display_type: 'other',
+      content: null,
+      __model__: 'akgentic.core.messages.orchestrator.EventMessage',
+      event: {
+        __model__: 'akgentic.llm.event.LlmMessageEvent',
+        message,
+      },
+    };
+  }
+
+  /** An EventMessage carrying an LlmMessageEvent with NO inner message — must
+   *  be skipped by the context spec (mirrors the old guard). */
+  function mkLlmEventNoMessage(agentId: string, id: string): any {
+    const e = mkLlmEvent(agentId, null, id);
+    delete e.event.message;
+    return e;
+  }
+
+  beforeEach(() => {
+    jasmine.clock().install();
+    jasmine.clock().mockDate(new Date(0));
+
+    fakeSocket = new Subject<any>();
+
+    TestBed.configureTestingModule({
+      providers: [
+        MessageLogService,
+        PerAgentStoreRegistry,
+        ActorMessageService,
+        ChatService,
+        {
+          provide: ApiService,
+          useValue: {
+            getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+          },
+        },
+        { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
+      ],
+    });
+    service = TestBed.inject(ActorMessageService);
+    registry = TestBed.inject(PerAgentStoreRegistry);
+    log = TestBed.inject(MessageLogService);
+
+    spyOn<any>(service, 'createWebSocket').and.returnValue(
+      fakeSocket as unknown as WebSocketSubject<any>,
+    );
+  });
+
+  afterEach(() => {
+    try {
+      fakeSocket.complete();
+    } catch {
+      /* already closed */
+    }
+    jasmine.clock().uninstall();
+  });
+
+  it('AC1: state is latest-wins {schema:{}, state}; context is the appended inner message[]', async () => {
+    await service.init('proc-1', true);
+
+    fakeSocket.next(mkStateChanged('agent-X', { phase: 'a' }, 's1'));
+    fakeSocket.next(mkStateChanged('agent-X', { phase: 'b' }, 's2'));
+    fakeSocket.next(mkLlmEvent('agent-X', { role: 'user', content: 'hi' }, 'e1'));
+    fakeSocket.next(
+      mkLlmEvent('agent-X', { role: 'assistant', content: 'yo' }, 'e2'),
+    );
+    jasmine.clock().tick(17);
+
+    // state: latest-wins, schema is an empty object literal exactly as the old
+    // dict produced.
+    expect(service.state.snapshot('agent-X')).toEqual({
+      schema: {},
+      state: { phase: 'b' },
+    });
+    // context: ordered array of the inner `message` objects.
+    expect(service.context.snapshot('agent-X')).toEqual([
+      { role: 'user', content: 'hi' },
+      { role: 'assistant', content: 'yo' },
+    ]);
+  });
+
+  it('AC1: an LlmMessageEvent with no inner message is skipped (mirror old guard)', async () => {
+    await service.init('proc-1', true);
+
+    fakeSocket.next(mkLlmEventNoMessage('agent-X', 'e0'));
+    fakeSocket.next(mkLlmEvent('agent-X', { role: 'user', content: 'kept' }, 'e1'));
+    jasmine.clock().tick(17);
+
+    expect(service.context.snapshot('agent-X')).toEqual([
+      { role: 'user', content: 'kept' },
+    ]);
+  });
+
+  it('AC4: stopped-team REST replay yields the SAME state/context as the live WS path', async () => {
+    // Live WS ingestion of a fixture sequence.
+    await service.init('proc-live', true);
+    fakeSocket.next(mkStateChanged('A', { v: 1 }, 's1'));
+    fakeSocket.next(mkLlmEvent('A', { role: 'user', content: 'm1' }, 'e1'));
+    fakeSocket.next(mkStateChanged('A', { v: 2 }, 's2'));
+    fakeSocket.next(mkLlmEvent('B', { role: 'user', content: 'm2' }, 'e2'));
+    jasmine.clock().tick(17);
+    const liveStateA = service.state.snapshot('A');
+    const liveCtxA = service.context.snapshot('A');
+    const liveCtxB = service.context.snapshot('B');
+
+    // REST replay of the SAME ordered events as one getEvents() batch.
+    const apiService = TestBed.inject(ApiService) as any;
+    apiService.getEvents.and.resolveTo([
+      { event: mkStateChanged('A', { v: 1 }, 'r-s1') },
+      { event: mkLlmEvent('A', { role: 'user', content: 'm1' }, 'r-e1') },
+      { event: mkStateChanged('A', { v: 2 }, 'r-s2') },
+      { event: mkLlmEvent('B', { role: 'user', content: 'm2' }, 'r-e2') },
+    ]);
+    const socketB = new Subject<any>();
+    (service as any).createWebSocket = jasmine
+      .createSpy('createWebSocket')
+      .and.returnValue(socketB as unknown as WebSocketSubject<any>);
+    await service.init('proc-stopped', false);
+
+    expect(service.state.snapshot('A')).toEqual(liveStateA);
+    expect(service.context.snapshot('A')).toEqual(liveCtxA);
+    expect(service.context.snapshot('B')).toEqual(liveCtxB);
+    expect(service.state.snapshot('A')).toEqual({ schema: {}, state: { v: 2 } });
+    socketB.complete();
+  });
+
+  it('AC5: a team switch (init reset) clears state/context — no process-A leak into process-B', async () => {
+    await service.init('proc-A', true);
+    fakeSocket.next(mkStateChanged('A', { v: 1 }, 's1'));
+    fakeSocket.next(mkLlmEvent('A', { role: 'user', content: 'm1' }, 'e1'));
+    jasmine.clock().tick(17);
+    expect(service.state.snapshot('A')).toEqual({ schema: {}, state: { v: 1 } });
+    expect(service.context.snapshot('A')).toEqual([
+      { role: 'user', content: 'm1' },
+    ]);
+
+    // Re-init (team switch) → log.reset() → registry clears its maps.
+    const socketB = new Subject<any>();
+    (service as any).createWebSocket = jasmine
+      .createSpy('createWebSocket')
+      .and.returnValue(socketB as unknown as WebSocketSubject<any>);
+    await service.init('proc-B', true);
+
+    expect(service.state.snapshot('A')).toBeUndefined();
+    expect(service.context.snapshot('A')).toBeUndefined();
+    socketB.complete();
+  });
+
+  it('AC6: context append is O(Δ)/frame — cursor advances by tail length, no re-fold', async () => {
+    await service.init('proc-1', true);
+
+    // Frame 1: two messages → cursor advances by 2.
+    fakeSocket.next(mkLlmEvent('A', { role: 'user', content: 'm1' }, 'e1'));
+    fakeSocket.next(mkLlmEvent('A', { role: 'user', content: 'm2' }, 'e2'));
+    jasmine.clock().tick(17);
+    expect(registry.cursor).toBe(2);
+
+    // Frame 2: one more message → cursor advances by exactly 1 (only the new
+    // tail is folded; the prior two are NOT re-walked).
+    fakeSocket.next(mkLlmEvent('A', { role: 'user', content: 'm3' }, 'e3'));
+    jasmine.clock().tick(17);
+    expect(registry.cursor).toBe(3);
+    expect(service.context.snapshot('A')).toEqual([
+      { role: 'user', content: 'm1' },
+      { role: 'user', content: 'm2' },
+      { role: 'user', content: 'm3' },
+    ]);
+  });
+
+  it('AC7: state/context are PerAgentStore instances, NOT BehaviorSubject fields', () => {
+    // The bespoke dicts are gone; no `stateDict$` / `contextDict$` own property.
+    expect((service as any).stateDict$).toBeUndefined();
+    expect((service as any).contextDict$).toBeUndefined();
+    // The migrated surface exposes forAgent/snapshot, not a dict of subjects.
+    expect(typeof service.state.forAgent).toBe('function');
+    expect(typeof service.context.forAgent).toBe('function');
+  });
+
+  it('AC2/AC3: forAgent delivers the current value to a late subscriber (shareReplay)', async () => {
+    await service.init('proc-1', true);
+    fakeSocket.next(mkStateChanged('A', { v: 9 }, 's1'));
+    fakeSocket.next(mkLlmEvent('A', { role: 'user', content: 'late' }, 'e1'));
+    jasmine.clock().tick(17);
+
+    let state: any = 'unset';
+    let ctx: any = 'unset';
+    const subS = service.state.forAgent('A').subscribe((v) => (state = v));
+    const subC = service.context.forAgent('A').subscribe((v) => (ctx = v));
+    // Late subscribe still sees the current value immediately.
+    expect(state).toEqual({ schema: {}, state: { v: 9 } });
+    expect(ctx).toEqual([{ role: 'user', content: 'late' }]);
+    subS.unsubscribe();
+    subC.unsubscribe();
   });
 });

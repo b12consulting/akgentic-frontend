@@ -7,14 +7,47 @@ import { ConfigService } from './config.service';
 import {
   AkgenticMessage,
   CommandDescriptor,
+  EventMessage,
   isCommandsAnnouncedEvent,
+  isEventMessage,
+  isStateChangedMessage,
+  StateChangedMessage,
 } from '../models/message.types';
 import { EventResponse } from '../models/team.interface';
 
 import { ApiService } from '../services/api.service';
 import { ChatService } from './chat.service';
 import { MessageLogService } from './message-log.service';
+import {
+  appendWith,
+  PerAgentStore,
+  PerAgentStoreRegistry,
+  replaceWith,
+} from './per-agent-store';
 import { MessageService } from 'primeng/api';
+
+/**
+ * Per-agent `state` value shape (Epic 17 / ADR-014 §5). Mirrors what the
+ * deleted `stateDict$` produced for `AkgentStateComponent.generateForm`:
+ * V2 sends an empty schema and the raw state is rendered as JSON.
+ */
+interface AgentStateValue {
+  schema: object;
+  state: unknown;
+}
+
+/**
+ * Inner-event reader for the `context` instance (Epic 17 / ADR-014 §5).
+ * Mirrors the exact predicate the deleted `applyEventMessageDicts` /
+ * replay loop used: an `EventMessage` whose inner `__model__` includes
+ * `LlmMessageEvent` AND whose inner `message` is present. Returns the inner
+ * `message` to append, or `undefined` when the guard does not hold.
+ */
+function innerLlmMessage(msg: AkgenticMessage): unknown {
+  const inner = (msg as EventMessage).event;
+  if (!inner?.__model__?.includes('LlmMessageEvent')) return undefined;
+  return inner.message ?? undefined;
+}
 
 /**
  * Story 4-10 (AC7): minimum visible duration of the loading spinner.
@@ -25,21 +58,20 @@ import { MessageService } from 'primeng/api';
 const SPINNER_MIN_VISIBLE_MS = 500;
 
 /**
- * `ActorMessageService` — minimal ingestion surface (post Story 6.4):
- *   - REST init replays events into `MessageLogService.log$` and seeds the
- *     two per-agent exception dicts (`stateDict$`, `contextDict$`).
- *   - WS `bufferTime(16)` ingestion appends to the log + per-agent dicts.
+ * `ActorMessageService` — minimal ingestion surface (post Story 6.4 / Epic 17):
+ *   - REST init replays events into `MessageLogService.log$`; the registry
+ *     folds that replay tail exactly as it folds live WS frames.
+ *   - WS `bufferTime(16)` ingestion appends to the log; the registry derives
+ *     per-agent `state` / `context` from `log$` (O(Δ), automatic replay/reset).
  *   - Spinner floor (`loadingProcess$` on `ChatService`, AC7) — UX concern.
  *
- * Three documented exceptions (NFR9 / ADR-005 §Decision 5; ADR-013):
- *   - `stateDict$`       — driven by `StateChangedMessage`
- *   - `contextDict$`     — driven by `LlmMessageEvent`
- *   - `commandsByAgent$` — driven by `CommandsAnnouncedEvent` (ADR-013); the
- *     per-agent slash-command store consumed by the `/` mention. ADR-005
- *     §Decision 5 requires a new ADR to add an exception — ADR-013 is that ADR.
- *
- * Adding a fourth exception requires a new ADR.
- * `message.service.spec.ts` enforces this invariant by test (Story 6.4 AC5).
+ * Per-agent state (Epic 17 / ADR-014): `state` and `context` are now
+ * `PerAgentStore` instances owned by the component-scoped
+ * `PerAgentStoreRegistry` (single `log$` subscription, replay + reset for
+ * free). `commandsByAgent$` remains the last bespoke per-agent exception
+ * (driven by `CommandsAnnouncedEvent`, ADR-013) until Story 17-3 migrates it.
+ * `message.service.spec.ts` enforces the remaining-exception invariant by test
+ * (its full retirement is Story 17-4).
  */
 @Injectable()
 export class ActorMessageService {
@@ -57,10 +89,46 @@ export class ActorMessageService {
    */
   private log: MessageLogService = inject(MessageLogService);
 
+  /**
+   * Epic 17 (ADR-014): component-scoped registry that folds `log$` into the
+   * per-agent `state` / `context` maps (single subscription, O(Δ), automatic
+   * replay + reset). Provided on `ProcessComponent` alongside
+   * `MessageLogService`. Owns the maps the deleted dicts used to hold.
+   */
+  private registry: PerAgentStoreRegistry = inject(PerAgentStoreRegistry);
+
   webSocket: WebSocketSubject<any> = new WebSocketSubject({ url: '' });
 
-  contextDict$: { [key: string]: BehaviorSubject<any[]> } = {};
-  stateDict$: { [key: string]: BehaviorSubject<any> } = {};
+  /**
+   * Epic 17 (ADR-014 §5): per-agent latest `{ schema, state }` derived from
+   * `StateChangedMessage`. Replaces the bespoke `stateDict$`. Default key
+   * `sender.agent_id`; `schema` is an empty object literal exactly as before
+   * (V2 sends an empty schema; raw state rendered as JSON). Read via
+   * `state.forAgent(id)`.
+   */
+  readonly state: PerAgentStore<AgentStateValue> =
+    this.registry.register<AgentStateValue>({
+      name: 'state',
+      match: isStateChangedMessage,
+      reduce: replaceWith<AgentStateValue>((m) => ({
+        schema: {},
+        state: (m as StateChangedMessage).state,
+      })),
+    });
+
+  /**
+   * Epic 17 (ADR-014 §5): per-agent ordered conversation array derived by
+   * appending each `LlmMessageEvent` envelope's inner `message`. Replaces the
+   * bespoke `contextDict$`. Default key `sender.agent_id`; the append is
+   * O(Δ)/frame (the registry walks only `log.slice(processedCount)` and
+   * `appendWith` concats once per new message). Read via `context.forAgent(id)`.
+   */
+  readonly context: PerAgentStore<unknown[]> =
+    this.registry.register<unknown[]>({
+      name: 'context',
+      match: (m) => isEventMessage(m) && innerLlmMessage(m) !== undefined,
+      reduce: appendWith((m) => innerLlmMessage(m)),
+    });
 
   /**
    * ADR-013 (third NFR9 exception): per-agent slash-command store, keyed by
@@ -127,11 +195,11 @@ export class ActorMessageService {
     // `resetForTeam()` calls required.
 
     // --- ADR-005 §Decision 6 step (b) ---------------------------------
-    // Reset the log and clear the per-agent exception dicts BEFORE any
-    // replay / WS wiring so process-A state cannot leak into process-B.
+    // Reset the log BEFORE any replay / WS wiring so process-A state cannot
+    // leak into process-B. Epic 17 (ADR-014 §Decision 3): the `state` /
+    // `context` registry detects this log shrink, clears its maps, and rewinds
+    // its cursor automatically — no bespoke per-store reset needed.
     this.log.reset();
-    this.stateDict$ = {};
-    this.contextDict$ = {};
     // ADR-013: clear the per-agent slash-command store so process-A's
     // announced commands cannot leak into process-B.
     this.commandsByAgent$.next({});
@@ -157,67 +225,35 @@ export class ActorMessageService {
         await this.apiService.getEvents(processId);
 
       // --- ADR-005 §Decision 6 step (c) -------------------------------
-      // log.appendAll runs FIRST (atomic snapshot of the full replay),
-      // BEFORE per-dict seeding. Story 6.1 Task 3.2 documents this choice:
-      // selectors in PR 2/3 fold `log$`; the per-agent dicts are imperative
-      // side state and are seeded by the loop below in the same synchronous
-      // pass.
+      // log.appendAll is the ONLY replay seeding for state/context now.
+      // Epic 17 (ADR-014 §Decision 3): the registry folds this replay tail
+      // exactly as it folds live WS frames, so `state` / `context` are
+      // reconstructed for free — replay is just another `log$` tail. The
+      // bespoke `latestStates` / `contextArrays` reconstruction is deleted.
       const replayMessages: AkgenticMessage[] = eventResponses
         .map((er: EventResponse) => er.event as AkgenticMessage)
         .filter((evt) => !!evt && !!evt.__model__);
       this.log.appendAll(replayMessages);
 
-      // Reconstruct stateDict$ and contextDict$ from persisted events.
-      // Events arrive sorted by sequence (ascending) from the API.
-      // - StateChangedMessage: later events overwrite earlier (keeps latest state per agent)
-      // - LlmMessageEvent: messages appended in chronological order (ordered context)
-      const latestStates: { [agentId: string]: any } = {};
-      const contextArrays: { [agentId: string]: any[] } = {};
-      // ADR-013: rebuild the per-agent slash-command store from persisted
-      // events too, so a stopped-team reopen still shows the `/` list. Keyed
-      // by agent friendly name; a later replay event REPLACES the entry
-      // (consistent with the live replace-on-reannounce semantics).
+      // ADR-013 (Story 17-3 scope): rebuild the per-agent slash-command store
+      // from persisted events so a stopped-team reopen still shows the `/`
+      // list. Keyed by agent friendly name; a later replay event REPLACES the
+      // entry (consistent with the live replace-on-reannounce semantics).
       const commandsByAgent: Record<string, CommandDescriptor[]> = {};
 
       for (const er of eventResponses) {
         const evt = er.event;
         if (!evt || !evt.__model__) continue;
-
-        if (evt.__model__.includes('StateChangedMessage')) {
-          const agentId = evt.sender?.agent_id;
-          if (agentId) {
-            latestStates[agentId] = evt.state;
-          }
-        } else if (evt.__model__.includes('EventMessage')) {
-          const inner = evt.event;
-          if (inner?.__model__?.includes('LlmMessageEvent')) {
-            const agentId = evt.sender?.agent_id;
-            if (agentId && inner.message) {
-              if (!contextArrays[agentId]) contextArrays[agentId] = [];
-              contextArrays[agentId].push(inner.message);
-            }
-          } else if (isCommandsAnnouncedEvent(inner)) {
-            const agentName = inner.agent?.name;
-            if (agentName) commandsByAgent[agentName] = inner.commands ?? [];
-          }
-          // Story 6.2 (ADR-005 §Decision 4): `ToolStateEvent` is now folded
-          // into `knowledgeGraph$` via `kgFold` over `log$` (seeded above by
-          // `log.appendAll`). No explicit reducer drive required.
+        if (!evt.__model__.includes('EventMessage')) continue;
+        const inner = evt.event;
+        if (isCommandsAnnouncedEvent(inner)) {
+          const agentName = inner.agent?.name;
+          if (agentName) commandsByAgent[agentName] = inner.commands ?? [];
         }
       }
 
       if (Object.keys(commandsByAgent).length > 0) {
         this.commandsByAgent$.next(commandsByAgent);
-      }
-
-      for (const [agentId, state] of Object.entries(latestStates)) {
-        this.initDict(this.stateDict$, agentId, null);
-        this.stateDict$[agentId].next({ schema: {}, state });
-      }
-
-      for (const [agentId, msgs] of Object.entries(contextArrays)) {
-        this.initDict(this.contextDict$, agentId, []);
-        this.contextDict$[agentId].next(msgs);
       }
 
       // Story 6.4 (AC1): `GRAPH_RELEVANT_MODELS` filtering and the
@@ -362,9 +398,9 @@ export class ActorMessageService {
    * Story 6.1 (ADR-005 §Decision 3 + §Decision 5): frame-batched consumer
    * of the raw WS inbound stream. `bufferTime(16)` coalesces every message
    * that lands in a single 16ms window into one `log.appendAll` call and
-   * one `log$` emission (AC3). Per-agent exception-dict updates
-   * (`stateDict$`, `contextDict$`) run in the SAME synchronous pass inside
-   * the subscriber callback (AC4).
+   * one `log$` emission (AC3). Epic 17 (ADR-014): `state` / `context` are now
+   * folded off `log$` by the registry, so the only remaining per-message
+   * dispatch is the `commandsByAgent$` arm (Story 17-3 scope).
    */
   private setupBatchedSubscriber(): void {
     this.bufferSub = this._wsInbound$
@@ -376,9 +412,7 @@ export class ActorMessageService {
         this.log.appendAll(batch);
         for (const msg of batch) {
           if (!msg.__model__) continue;
-          if (msg.__model__.includes('StateChangedMessage')) {
-            this.applyStateChanged(msg as any);
-          } else if (msg.__model__.includes('EventMessage')) {
+          if (msg.__model__.includes('EventMessage')) {
             this.applyEventMessageDicts(msg as any);
           }
         }
@@ -399,40 +433,18 @@ export class ActorMessageService {
   }
 
   /**
-   * Story 6.1 (Task 2.4): apply a `StateChangedMessage` to `stateDict$`.
-   * Extracted from the bufferSub callback to keep the subscribe body <10
-   * LoC (CLAUDE.md ~50-line ceiling).
-   */
-  private applyStateChanged(event: any): void {
-    const agentId = event?.sender?.agent_id;
-    if (!agentId) return;
-    this.initDict(this.stateDict$, agentId, null);
-    this.stateDict$[agentId].next({ schema: {}, state: event.state });
-  }
-
-  /**
-   * Story 6.1 (Task 2.4): apply an `EventMessage` carrying an
-   * `LlmMessageEvent` / `ToolStateEvent` to the exception dicts and to the
-   * KG reducer. Story 6.4 made the batched subscriber the SOLE producer of
-   * dict updates (the parallel per-message dispatch in `webSocket.subscribe`
-   * has been deleted).
+   * Story 6.1 (Task 2.4) / Epic 17 (ADR-014): apply the inner-event arms of
+   * an `EventMessage` that are NOT yet folded off `log$`. The `LlmMessageEvent`
+   * arm has been deleted — `context` is now a `PerAgentStore` instance. Only
+   * the `CommandsAnnouncedEvent` arm remains (Story 17-3 scope). `ToolStateEvent`
+   * is covered by `KGStateReducer.knowledgeGraph$` (pure selector over `log$`).
    */
   private applyEventMessageDicts(event: any): void {
     const inner = event?.event;
     if (!inner?.__model__) return;
-    if (inner.__model__.includes('LlmMessageEvent')) {
-      const agentId = event.sender?.agent_id;
-      if (agentId && inner.message) {
-        this.initDict(this.contextDict$, agentId, []);
-        const current = this.contextDict$[agentId].getValue();
-        this.contextDict$[agentId].next([...current, inner.message]);
-      }
-    } else if (isCommandsAnnouncedEvent(inner)) {
+    if (isCommandsAnnouncedEvent(inner)) {
       this.applyCommandsAnnounced(inner);
     }
-    // Story 6.2 (ADR-005 §Decision 4): `ToolStateEvent` is now covered
-    // entirely by `KGStateReducer.knowledgeGraph$` (pure selector over
-    // `log$`). The batched subscriber no longer drives the reducer.
   }
 
   /**
@@ -514,15 +526,6 @@ export class ActorMessageService {
       sticky: true,
       closable: false,
     });
-  }
-
-  initDict(
-    dict: { [key: string]: BehaviorSubject<any[]> },
-    key: string,
-    defaultValue: any
-  ) {
-    if (dict[key]) return;
-    dict[key] = new BehaviorSubject<any>(defaultValue);
   }
 
   ngOnDestroy() {
