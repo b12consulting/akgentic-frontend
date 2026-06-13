@@ -4,9 +4,9 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { BehaviorSubject } from 'rxjs';
 
 import { AkgentChatComponent } from './akgent-chat.component';
-import { ApiService } from '../../../services/api.service';
-import { UtilService } from '../../../services/utils.service';
-import { ContextService } from '../../../services/context.service';
+import { ApiService } from '../../../core/http/api.service';
+import { UtilService } from '../../../core/ui/utils.service';
+import { ContextService } from '../../../core/context/context.service';
 import { ActorMessageService } from '../../../services/message.service';
 import { MessageLogService } from '../../../services/message-log.service';
 import { PerAgentStoreRegistry } from '../../../services/per-agent-store';
@@ -19,7 +19,7 @@ import {
 import {
   AkgenticMessage,
   CommandDescriptor,
-} from '../../../models/message.types';
+} from '../../../protocol/message.types';
 
 /**
  * Story 15-1 (ADR-013) — member-chat `/` slash-command mention. The member

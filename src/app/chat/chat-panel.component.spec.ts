@@ -11,10 +11,10 @@ import {
   ThinkingState,
 } from '../services/chat.service';
 import { SelectionService } from '../services/selection.service';
-import { ActorAddress, SentMessage, AkgenticMessage, StartMessage, isSentMessage } from '../models/message.types';
+import { ActorAddress, SentMessage, AkgenticMessage, StartMessage, isSentMessage } from '../protocol/message.types';
 import { ChatMessage, classifyMessage } from '../models/chat-message.model';
-import { ApiService } from '../services/api.service';
-import { AkgentService } from '../services/akgent.service';
+import { ApiService } from '../core/http/api.service';
+import { AkgentService } from '../core/ui/akgent.service';
 import { GraphDataService } from '../services/graph-data.service';
 import { ActorMessageService } from '../services/message.service';
 

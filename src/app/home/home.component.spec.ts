@@ -6,11 +6,11 @@ import { Router } from '@angular/router';
 import { ConfirmationService } from 'primeng/api';
 import { BehaviorSubject, of } from 'rxjs';
 
-import { ApiService } from '../services/api.service';
-import { AuthService } from '../services/auth.service';
-import { ConfigService } from '../services/config.service';
-import { ContextService } from '../services/context.service';
-import { TeamContext } from '../models/team.interface';
+import { ApiService } from '../core/http/api.service';
+import { AuthService } from '../core/auth/auth.service';
+import { ConfigService } from '../core/config/config.service';
+import { ContextService } from '../core/context/context.service';
+import { TeamContext } from '../core/context/team.interface';
 import { NamespacePanelComponent } from '../admin/catalog/namespace-panel/namespace-panel.component';
 import { HomeComponent } from './home.component';
 

@@ -2,9 +2,9 @@ import { CommonModule } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { AuthService } from '../services/auth.service';
-import { ConfigService } from '../services/config.service';
-import { AuthProvider } from '../models/auth.types';
+import { AuthService } from '../core/auth/auth.service';
+import { ConfigService } from '../core/config/config.service';
+import { AuthProvider } from '../core/auth/auth.types';
 
 @Component({
   selector: 'app-login',

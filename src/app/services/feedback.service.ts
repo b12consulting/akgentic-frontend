@@ -1,9 +1,9 @@
 import { inject, Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
-import { ConfigService } from './config.service';
+import { ConfigService } from '../core/config/config.service';
 import { ChatMessage } from '../models/chat-message.model';
 import { chatFold } from './chat.service';
-import { FetchService } from './fetch.service';
+import { FetchService } from '../core/http/fetch.service';
 import { MessageLogService } from './message-log.service';
 
 export interface Feedback {

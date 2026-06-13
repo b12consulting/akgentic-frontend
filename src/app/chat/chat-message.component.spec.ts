@@ -3,7 +3,7 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideMarkdown } from 'ngx-markdown';
 import { ChatMessageComponent } from './chat-message.component';
 import { ChatMessage } from '../models/chat-message.model';
-import { ActorAddress } from '../models/message.types';
+import { ActorAddress } from '../protocol/message.types';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {

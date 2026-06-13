@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { MessageService } from 'primeng/api';
 
-import { ConfigService } from './config.service';
+import { ConfigService } from '../config/config.service';
 import { FetchService, HttpError } from './fetch.service';
 
 /** Build a minimal `Response`-like object usable by `FetchService.fetch`. */

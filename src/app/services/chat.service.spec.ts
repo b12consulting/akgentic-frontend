@@ -12,7 +12,7 @@ import {
   SentMessage,
   StartMessage,
   StateChangedMessage,
-} from '../models/message.types';
+} from '../protocol/message.types';
 import {
   chatFold,
   ChatService,

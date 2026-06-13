@@ -9,7 +9,7 @@ import {
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
-import { ApiService } from '../../../services/api.service';
+import { ApiService } from '../../../core/http/api.service';
 import { NamespacePanelComponent } from './namespace-panel.component';
 
 /**

@@ -4,13 +4,13 @@ import { MessageService } from 'primeng/api';
 import { WebSocketSubject } from 'rxjs/webSocket';
 
 import { AgentTabsComponent } from './agent-tabs.component';
-import { Akgent, AkgentService } from '../../services/akgent.service';
+import { Akgent, AkgentService } from '../../core/ui/akgent.service';
 import { GraphDataService } from '../../services/graph-data.service';
 import { ActorMessageService } from '../../services/message.service';
 import { MessageLogService } from '../../services/message-log.service';
 import { PerAgentStoreRegistry } from '../../services/per-agent-store';
 import { ChatService } from '../../services/chat.service';
-import { ApiService } from '../../services/api.service';
+import { ApiService } from '../../core/http/api.service';
 
 /**
  * Story 17-2 (ADR-014) — the agent-state panel and agent-chat context view are

@@ -13,8 +13,8 @@ import {
 import { combineLatest, Subscription } from 'rxjs';
 
 import { ChatMessage } from '../models/chat-message.model';
-import { ActorAddress } from '../models/message.types';
-import { ApiService } from '../services/api.service';
+import { ActorAddress } from '../protocol/message.types';
+import { ApiService } from '../core/http/api.service';
 import { ChatService, ThinkingState } from '../services/chat.service';
 import { Selectable, SelectionService } from '../services/selection.service';
 import {

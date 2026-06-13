@@ -3,7 +3,7 @@ import { inject, Injectable } from '@angular/core';
 import { Subject, Subscription } from 'rxjs';
 import { bufferTime, filter, take } from 'rxjs/operators';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
-import { ConfigService } from './config.service';
+import { ConfigService } from '../core/config/config.service';
 import {
   AkgenticMessage,
   CommandDescriptor,
@@ -13,10 +13,10 @@ import {
   isEventMessage,
   isStateChangedMessage,
   StateChangedMessage,
-} from '../models/message.types';
-import { EventResponse } from '../models/team.interface';
+} from '../protocol/message.types';
+import { EventResponse } from '../core/context/team.interface';
 
-import { ApiService } from '../services/api.service';
+import { ApiService } from '../core/http/api.service';
 import { ChatService } from './chat.service';
 import { MessageLogService } from './message-log.service';
 import {

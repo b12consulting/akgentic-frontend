@@ -15,8 +15,8 @@ import { ButtonModule } from 'primeng/button';
 import { TextareaModule } from 'primeng/textarea';
 import { MessageService } from 'primeng/api';
 
-import { AkgentService } from '../../../services/akgent.service';
-import { ConfigService } from '../../../services/config.service';
+import { AkgentService } from '../../../core/ui/akgent.service';
+import { ConfigService } from '../../../core/config/config.service';
 import { ActorMessageService } from '../../../services/message.service';
 
 @Component({

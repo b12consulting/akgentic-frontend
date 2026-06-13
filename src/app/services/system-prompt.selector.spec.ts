@@ -1,8 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { MessageService } from 'primeng/api';
 
-import { AkgenticMessage } from '../models/message.types';
-import { ApiService } from './api.service';
+import { AkgenticMessage } from '../protocol/message.types';
+import { ApiService } from '../core/http/api.service';
 import { ChatService } from './chat.service';
 import { MessageLogService } from './message-log.service';
 import { ActorMessageService } from './message.service';

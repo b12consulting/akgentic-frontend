@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { MessageService } from 'primeng/api';
-import { ConfigService } from './config.service';
+import { ConfigService } from '../config/config.service';
 
 /**
  * `responseType` controls how the response body is parsed.

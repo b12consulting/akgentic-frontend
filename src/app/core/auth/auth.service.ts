@@ -1,7 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import { BehaviorSubject, from, Observable, of } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
-import { ConfigService } from './config.service';
+import { ConfigService } from '../config/config.service';
 
 const ANONYMOUS_USER = { user_id: 'anonymous', email: '', name: 'Anonymous' };
 

@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
-import { ConfigService } from './config.service';
-import { FetchService } from './fetch.service';
+import { ConfigService } from '../core/config/config.service';
+import { FetchService } from '../core/http/fetch.service';
 
 export interface FileNode {
   name: string;

@@ -17,7 +17,7 @@ import {
   FileNode,
   FileContent,
 } from '../../services/workspace.service';
-import { ContextService } from '../../services/context.service';
+import { ContextService } from '../../core/context/context.service';
 import { UploadModalComponent } from './upload-modal/upload-modal.component';
 
 @Component({

@@ -2,9 +2,9 @@ import { AsyncPipe, CommonModule } from '@angular/common';
 import { Component, inject, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 
-import { isRunning } from '../models/team.interface';
-import { AkgentService } from '../services/akgent.service';
-import { ContextService } from '../services/context.service';
+import { isRunning } from '../core/context/team.interface';
+import { AkgentService } from '../core/ui/akgent.service';
+import { ContextService } from '../core/context/context.service';
 import { KGStateReducer } from '../services/kg-state.reducer';
 import { MessageLogService } from '../services/message-log.service';
 import { ActorMessageService } from '../services/message.service';
@@ -29,7 +29,7 @@ import { ChatService } from '../services/chat.service';
 import { FeedbackService } from '../services/feedback.service';
 import { GraphDataService } from '../services/graph-data.service';
 import { SelectionService } from '../services/selection.service';
-import { ViewService } from '../view.service';
+import { ViewService } from '../core/ui/view.service';
 
 interface VisualizationOption {
   label: string;

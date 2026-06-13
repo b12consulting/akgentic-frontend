@@ -16,9 +16,9 @@ import {
   SentMessage,
   StartMessage,
   StopMessage,
-} from '../models/message.types';
+} from '../protocol/message.types';
 import { EdgeInterface, NodeInterface } from '../models/types';
-import { CategoryService } from './category.service';
+import { CategoryService } from '../core/ui/category.service';
 import { MessageLogService } from './message-log.service';
 
 export const HUMAN_ROLE = 'Human';

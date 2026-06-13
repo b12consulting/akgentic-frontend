@@ -6,15 +6,15 @@ import { FieldsetModule } from 'primeng/fieldset';
 import { Table, TableModule } from 'primeng/table';
 import { MessageService } from 'primeng/api';
 
-import { CapitalizePipe } from '../../pipes/capitalise.pipe';
-import { CategoryService } from '../../services/category.service';
-import { UtilService } from '../../services/utils.service';
+import { CapitalizePipe } from '../../shared/pipes/capitalise.pipe';
+import { CategoryService } from '../../core/ui/category.service';
+import { UtilService } from '../../core/ui/utils.service';
 
 import { combineLatest, Subscription } from 'rxjs';
-import { AkgentService } from '../../services/akgent.service';
+import { AkgentService } from '../../core/ui/akgent.service';
 import { MessageLogService } from '../../services/message-log.service';
-import { isWelcomeAnnouncement } from '../../models/message.types';
-import { CopyButtonComponent } from '../copy-button/copy-button.component';
+import { isWelcomeAnnouncement } from '../../protocol/message.types';
+import { CopyButtonComponent } from '../../shared/components/copy-button/copy-button.component';
 
 @Component({
   selector: 'app-message-list',

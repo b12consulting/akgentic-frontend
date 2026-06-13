@@ -1,8 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 import { Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
-import { AuthService } from '../services/auth.service';
-import { ConfigService } from '../services/config.service';
+import { AuthService } from '../core/auth/auth.service';
+import { ConfigService } from '../core/config/config.service';
 import { LoginComponent } from './login.component';
 
 /**

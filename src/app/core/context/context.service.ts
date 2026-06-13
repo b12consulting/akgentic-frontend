@@ -18,8 +18,8 @@ import {
   takeUntil,
   timeout,
 } from 'rxjs/operators';
-import { ApiService } from './api.service';
-import { isRunning, TeamContext, toTeamContext } from '../models/team.interface';
+import { ApiService } from '../http/api.service';
+import { isRunning, TeamContext, toTeamContext } from './team.interface';
 
 @Injectable({
   providedIn: 'root',

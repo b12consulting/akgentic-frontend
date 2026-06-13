@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 
-import { AkgenticMessage } from '../models/message.types';
+import { AkgenticMessage } from '../protocol/message.types';
 import {
   kgFold,
   KGStateReducer,

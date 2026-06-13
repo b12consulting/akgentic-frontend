@@ -9,7 +9,7 @@ import { map, takeUntil } from 'rxjs/operators';
 import { TabsModule } from 'primeng/tabs';
 import { DropdownModule } from 'primeng/dropdown';
 
-import { AkgentService } from '../../services/akgent.service';
+import { AkgentService } from '../../core/ui/akgent.service';
 import {
   GraphDataService,
   HUMAN_ROLE as HUMAN_PROXY_ROLE,

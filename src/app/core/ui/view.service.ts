@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
-import { ConfigService } from './services/config.service';
+import { ConfigService } from '../config/config.service';
 
 @Injectable({
   providedIn: 'root',

@@ -8,8 +8,8 @@ import { TabViewModule } from 'primeng/tabview';
 import { TextareaModule } from 'primeng/textarea';
 import { TreeModule } from 'primeng/tree';
 import { Subscription } from 'rxjs';
-import { makeAgentNameUserFriendly } from '../../../lib/util';
-import { ApiService } from '../../../services/api.service';
+import { makeAgentNameUserFriendly } from '../../../shared/util/util';
+import { ApiService } from '../../../core/http/api.service';
 import { GraphDataService } from '../../../services/graph-data.service';
 import {
   Selectable,

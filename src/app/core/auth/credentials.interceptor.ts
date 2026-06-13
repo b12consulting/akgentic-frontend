@@ -6,7 +6,7 @@ import {
 } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Observable } from 'rxjs';
-import { ConfigService } from './services/config.service';
+import { ConfigService } from '../config/config.service';
 
 @Injectable()
 export class CredentialsInterceptor implements HttpInterceptor {

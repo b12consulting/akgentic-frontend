@@ -13,9 +13,9 @@ import {
   StartMessage,
   StateChangedMessage,
   StopMessage,
-} from '../models/message.types';
+} from '../protocol/message.types';
 import { NodeInterface } from '../models/types';
-import { CategoryService } from './category.service';
+import { CategoryService } from '../core/ui/category.service';
 import {
   EMPTY_GRAPH,
   GraphBuilder,

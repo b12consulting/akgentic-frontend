@@ -5,10 +5,10 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { BehaviorSubject } from 'rxjs';
 
-import { StartMessage, StopMessage } from '../models/message.types';
-import { AkgentService } from '../services/akgent.service';
+import { StartMessage, StopMessage } from '../protocol/message.types';
+import { AkgentService } from '../core/ui/akgent.service';
 import { ChatService } from '../services/chat.service';
-import { ContextService } from '../services/context.service';
+import { ContextService } from '../core/context/context.service';
 import { FeedbackService } from '../services/feedback.service';
 import { GraphDataService } from '../services/graph-data.service';
 import { KGStateReducer } from '../services/kg-state.reducer';
@@ -19,8 +19,8 @@ import {
   KG_ACTOR_NAME,
   ToolPresenceService,
 } from '../services/tool-presence.service';
-import { TeamContext } from '../models/team.interface';
-import { ViewService } from '../view.service';
+import { TeamContext } from '../core/context/team.interface';
+import { ViewService } from '../core/ui/view.service';
 import { ProcessComponent } from './process.component';
 
 // --------------------------------------------------------------------

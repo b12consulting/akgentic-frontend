@@ -10,17 +10,17 @@ import { MultiSelectModule } from 'primeng/multiselect';
 import { TextareaModule } from 'primeng/textarea';
 import { MentionModule } from 'angular-mentions';
 
-import { makeAgentNameUserFriendly } from '../../lib/util';
-import { ConfigService } from '../../services/config.service';
+import { makeAgentNameUserFriendly } from '../../shared/util/util';
+import { ConfigService } from '../../core/config/config.service';
 
-import { ApiService } from '../../services/api.service';
+import { ApiService } from '../../core/http/api.service';
 import { ChatService } from '../../services/chat.service';
-import { ContextService } from '../../services/context.service';
+import { ContextService } from '../../core/context/context.service';
 import { GraphDataService, HUMAN_ROLE } from '../../services/graph-data.service';
 import { ActorMessageService } from '../../services/message.service';
 
 import { ENTRY_POINT_NAME } from '../../models/chat-message.model';
-import { CommandDescriptor } from '../../models/message.types';
+import { CommandDescriptor } from '../../protocol/message.types';
 import { NodeInterface } from '../../models/types';
 
 @Component({

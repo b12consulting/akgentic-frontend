@@ -7,7 +7,7 @@ import {
   isEventMessage,
   isLlmSystemPromptEvent,
   SystemPromptPartSnapshot,
-} from '../models/message.types';
+} from '../protocol/message.types';
 import { ActorMessageService } from './message.service';
 
 /**

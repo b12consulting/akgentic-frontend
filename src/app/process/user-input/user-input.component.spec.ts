@@ -3,14 +3,14 @@ import { FormsModule } from '@angular/forms';
 import { BehaviorSubject } from 'rxjs';
 
 import { ProcessUserInputComponent } from './user-input.component';
-import { ApiService } from '../../services/api.service';
+import { ApiService } from '../../core/http/api.service';
 import { ChatService } from '../../services/chat.service';
-import { ContextService } from '../../services/context.service';
+import { ContextService } from '../../core/context/context.service';
 import { GraphDataService } from '../../services/graph-data.service';
 import { ActorMessageService } from '../../services/message.service';
-import { ActorAddress, CommandDescriptor } from '../../models/message.types';
+import { ActorAddress, CommandDescriptor } from '../../protocol/message.types';
 import { NodeInterface } from '../../models/types';
-import { makeAgentNameUserFriendly } from '../../lib/util';
+import { makeAgentNameUserFriendly } from '../../shared/util/util';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {

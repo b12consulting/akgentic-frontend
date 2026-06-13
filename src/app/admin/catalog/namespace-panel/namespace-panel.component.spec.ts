@@ -22,9 +22,9 @@ import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 
 import { NamespaceValidationReport } from '../../../models/catalog.interface';
-import { ApiService } from '../../../services/api.service';
-import { AuthService } from '../../../services/auth.service';
-import { HttpError } from '../../../services/fetch.service';
+import { ApiService } from '../../../core/http/api.service';
+import { AuthService } from '../../../core/auth/auth.service';
+import { HttpError } from '../../../core/http/fetch.service';
 import { NamespacePanelComponent } from './namespace-panel.component';
 import { ValidationReportComponent } from './validation-report/validation-report.component';
 

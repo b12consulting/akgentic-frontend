@@ -6,7 +6,7 @@ import { MessageService } from 'primeng/api';
 
 import { MessageListComponent } from './message-list.component';
 import { MessageLogService } from '../../services/message-log.service';
-import { AkgenticMessage, SentMessage } from '../../models/message.types';
+import { AkgenticMessage, SentMessage } from '../../protocol/message.types';
 
 // ---------------------------------------------------------------------------
 // Fixture helpers

@@ -19,13 +19,13 @@ import { EChartsCoreOption } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { NgxEchartsDirective, provideEchartsCore } from 'ngx-echarts';
 
-import { AkgentService } from '../../../services/akgent.service';
-import { ApiService } from '../../../services/api.service';
-import { CategoryService } from '../../../services/category.service';
+import { AkgentService } from '../../../core/ui/akgent.service';
+import { ApiService } from '../../../core/http/api.service';
+import { CategoryService } from '../../../core/ui/category.service';
 import { ActorMessageService } from '../../../services/message.service';
 
 // Import the shared GraphDataService
-import { makeAgentNameUserFriendly } from '../../../lib/util';
+import { makeAgentNameUserFriendly } from '../../../shared/util/util';
 import { GraphDataService } from '../../../services/graph-data.service';
 import {
   Selectable,

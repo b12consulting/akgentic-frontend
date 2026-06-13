@@ -7,7 +7,7 @@ import {
   ChatMessage,
   SYSTEM_MESSAGE_LABEL,
 } from './chat-message.model';
-import { ActorAddress, SentMessage, BaseMessage } from './message.types';
+import { ActorAddress, SentMessage, BaseMessage } from '../protocol/message.types';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {

@@ -5,7 +5,7 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { TreeNode } from 'primeng/api';
 import { BehaviorSubject } from 'rxjs';
 
-import { ContextService } from '../../services/context.service';
+import { ContextService } from '../../core/context/context.service';
 import { FileNode, WorkspaceService } from '../../services/workspace.service';
 import { UploadModalComponent } from './upload-modal/upload-modal.component';
 import { WorkspaceExplorerComponent } from './workspace-explorer.component';

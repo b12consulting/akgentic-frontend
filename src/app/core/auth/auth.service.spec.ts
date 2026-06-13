@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { firstValueFrom } from 'rxjs';
 import { AuthService } from './auth.service';
-import { ConfigService } from './config.service';
+import { ConfigService } from '../config/config.service';
 
 /**
  * Specs for {@link AuthService.loginWithApiKey} (Stories 1.8, 1.9).

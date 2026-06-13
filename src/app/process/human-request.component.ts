@@ -9,8 +9,8 @@ import { BehaviorSubject } from 'rxjs';
 import { GraphDataService } from '../services/graph-data.service';
 import { SelectionService } from '../services/selection.service';
 
-import { SentMessage } from '../models/message.types';
-import { LineBreakPipe } from '../pipes/line_break.pipe';
+import { SentMessage } from '../protocol/message.types';
+import { LineBreakPipe } from '../shared/pipes/line_break.pipe';
 
 @Component({
   selector: 'app-human-request',

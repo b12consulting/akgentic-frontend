@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { ApiService } from './api.service';
 import { FetchService } from './fetch.service';
-import { AuthService } from './auth.service';
+import { AuthService } from '../auth/auth.service';
 import { Router } from '@angular/router';
 
 describe('ApiService', () => {

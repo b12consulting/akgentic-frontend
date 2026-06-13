@@ -2,9 +2,9 @@ import { fakeAsync, flushMicrotasks, TestBed, tick } from '@angular/core/testing
 import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
-import { ApiService } from './api.service';
+import { ApiService } from '../http/api.service';
 import { ContextService } from './context.service';
-import { TeamContext, TeamResponse } from '../models/team.interface';
+import { TeamContext, TeamResponse } from './team.interface';
 
 function makeTeam(
   teamId: string,

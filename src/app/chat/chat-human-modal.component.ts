@@ -7,8 +7,8 @@ import { TextareaModule } from 'primeng/textarea';
 import { MarkdownModule } from 'ngx-markdown';
 
 import { ChatMessage } from '../models/chat-message.model';
-import { ActorAddress } from '../models/message.types';
-import { makeAgentNameUserFriendly } from '../lib/util';
+import { ActorAddress } from '../protocol/message.types';
+import { makeAgentNameUserFriendly } from '../shared/util/util';
 
 export interface HumanModalReply {
   content: string;

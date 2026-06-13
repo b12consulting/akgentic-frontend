@@ -1,7 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import { Router } from '@angular/router';
-import { AuthService } from './auth.service';
-import { ConfigService } from './config.service';
+import { AuthService } from '../auth/auth.service';
+import { ConfigService } from '../config/config.service';
 import { FetchService } from './fetch.service';
 import {
   TeamContext,
@@ -10,12 +10,12 @@ import {
   EventResponse,
   EventListResponse,
   toTeamContext,
-} from '../models/team.interface';
+} from '../context/team.interface';
 import {
   Entry,
   NamespaceSummary,
   NamespaceValidationReport,
-} from '../models/catalog.interface';
+} from '../../models/catalog.interface';
 
 @Injectable({
   providedIn: 'root',

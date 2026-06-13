@@ -4,7 +4,7 @@ import {
   AkgenticMessage,
   StartMessage,
   StopMessage,
-} from '../models/message.types';
+} from '../protocol/message.types';
 import { MessageLogService } from './message-log.service';
 import {
   KG_ACTOR_NAME,

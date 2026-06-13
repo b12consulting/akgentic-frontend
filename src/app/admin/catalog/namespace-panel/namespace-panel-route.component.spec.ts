@@ -24,8 +24,8 @@ import {
   NamespaceSummary,
   NamespaceValidationReport,
 } from '../../../models/catalog.interface';
-import { ApiService } from '../../../services/api.service';
-import { HttpError } from '../../../services/fetch.service';
+import { ApiService } from '../../../core/http/api.service';
+import { HttpError } from '../../../core/http/fetch.service';
 import { NamespacePanelComponent } from './namespace-panel.component';
 import { NamespacePanelRouteComponent } from './namespace-panel-route.component';
 import { ValidationReportComponent } from './validation-report/validation-report.component';

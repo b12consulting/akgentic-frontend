@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
-import { Environment, AuthProvider } from '../models/auth.types';
-import { environment } from '../../environments/environment';
+import { Environment, AuthProvider } from '../auth/auth.types';
+import { environment } from '../../../environments/environment';
 
 /**
  * Runtime configuration service.

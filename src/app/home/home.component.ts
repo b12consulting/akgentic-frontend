@@ -11,8 +11,8 @@ import { Router } from '@angular/router';
 import { BehaviorSubject, firstValueFrom, Observable } from 'rxjs';
 import { map } from 'rxjs/operators';
 
-import { ApiService } from '../services/api.service';
-import { TeamContext, isRunning } from '../models/team.interface';
+import { ApiService } from '../core/http/api.service';
+import { TeamContext, isRunning } from '../core/context/team.interface';
 import { NamespaceSummary } from '../models/catalog.interface';
 
 import { CommonModule } from '@angular/common';
@@ -26,9 +26,9 @@ import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 
-import { AuthService } from '../services/auth.service';
-import { ConfigService } from '../services/config.service';
-import { ContextService } from '../services/context.service';
+import { AuthService } from '../core/auth/auth.service';
+import { ConfigService } from '../core/config/config.service';
+import { ContextService } from '../core/context/context.service';
 
 // Story 11.2 — Listed in @Component.imports so Angular's @defer block can
 // resolve <app-namespace-panel>. The `@defer (when ...)` block in the

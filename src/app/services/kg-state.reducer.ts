@@ -1,7 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import { map, Observable, shareReplay } from 'rxjs';
 
-import { AkgenticMessage, isEventMessage } from '../models/message.types';
+import { AkgenticMessage, isEventMessage } from '../protocol/message.types';
 import { MessageLogService } from './message-log.service';
 
 /**

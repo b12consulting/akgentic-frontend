@@ -24,18 +24,18 @@ import { MentionModule } from 'angular-mentions';
 
 import { BehaviorSubject, Observable } from 'rxjs';
 
-import { CapitalizePipe } from '../../../pipes/capitalise.pipe';
-import { ApiService } from '../../../services/api.service';
-import { UtilService } from '../../../services/utils.service';
-import { ContextService } from '../../../services/context.service';
+import { CapitalizePipe } from '../../../shared/pipes/capitalise.pipe';
+import { ApiService } from '../../../core/http/api.service';
+import { UtilService } from '../../../core/ui/utils.service';
+import { ContextService } from '../../../core/context/context.service';
 import { ActorMessageService } from '../../../services/message.service';
 import {
   SystemPromptRow,
   SystemPromptSelector,
 } from '../../../services/system-prompt.selector';
-import { CommandDescriptor } from '../../../models/message.types';
+import { CommandDescriptor } from '../../../protocol/message.types';
 
-import { CopyButtonComponent } from '../../copy-button/copy-button.component';
+import { CopyButtonComponent } from '../../../shared/components/copy-button/copy-button.component';
 
 /**
  * AkgentChatComponent - Displays chat messages with JSON-formatted arguments using Monaco Editor
