@@ -543,12 +543,195 @@ describe('ActorMessageService — Story 6.1 (frame-batched log ingestion)', () =
 });
 
 // ---------------------------------------------------------------------------
-// Story 6.4 (AC5) — two-exceptions invariant (NFR9)
+// Epic 15 / Story 15-1 (ADR-013) — commandsByAgent$ from CommandsAnnouncedEvent
+// ---------------------------------------------------------------------------
+
+describe('ActorMessageService — commandsByAgent$ (Story 15-1, ADR-013)', () => {
+  let service: ActorMessageService;
+  let chatService: ChatService;
+  let fakeSocket: Subject<any>;
+
+  function mkCommandsEvent(
+    agentName: string,
+    commands: any[],
+    id = 'cmd-evt',
+  ): any {
+    return {
+      id,
+      parent_id: null,
+      team_id: 'team-X',
+      timestamp: '2026-06-13T00:00:00Z',
+      sender: makeAddress({ name: agentName, agent_id: 'a-' + agentName }),
+      display_type: 'other',
+      content: null,
+      __model__: 'akgentic.core.messages.orchestrator.EventMessage',
+      event: {
+        __model__: 'akgentic.tool.commands.CommandsAnnouncedEvent',
+        agent: makeAddress({ name: agentName, agent_id: 'a-' + agentName }),
+        commands,
+      },
+    };
+  }
+
+  const HIRE = {
+    name: 'hire_member',
+    description: 'Hire a new team member',
+    args: [
+      { name: 'role', type: 'string', required: true },
+      { name: 'name', type: 'string', required: false },
+    ],
+    tool_card: 'TeamTool',
+  };
+  const ROSTER = {
+    name: 'roster',
+    description: 'List the current team roster',
+    args: [],
+    tool_card: 'TeamTool',
+  };
+
+  beforeEach(() => {
+    jasmine.clock().install();
+    jasmine.clock().mockDate(new Date(0));
+
+    fakeSocket = new Subject<any>();
+
+    TestBed.configureTestingModule({
+      providers: [
+        MessageLogService,
+        ActorMessageService,
+        ChatService,
+        {
+          provide: ApiService,
+          useValue: {
+            getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+          },
+        },
+        { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
+      ],
+    });
+    service = TestBed.inject(ActorMessageService);
+    chatService = TestBed.inject(ChatService);
+
+    spyOn<any>(service, 'createWebSocket').and.returnValue(
+      fakeSocket as unknown as WebSocketSubject<any>,
+    );
+  });
+
+  afterEach(() => {
+    try {
+      fakeSocket.complete();
+    } catch {
+      /* already closed */
+    }
+    jasmine.clock().uninstall();
+  });
+
+  it('AC-1: a CommandsAnnouncedEvent accumulates the agent\'s descriptors under its name', async () => {
+    await service.init('proc-1', true);
+
+    fakeSocket.next(mkCommandsEvent('@Manager', [HIRE, ROSTER]));
+    jasmine.clock().tick(17);
+
+    const byAgent = service.commandsByAgent$.getValue();
+    expect(byAgent['@Manager']).toBeDefined();
+    expect(byAgent['@Manager'].map((c) => c.name)).toEqual([
+      'hire_member',
+      'roster',
+    ]);
+  });
+
+  it('AC-1: a later event for the same agent REPLACES that entry', async () => {
+    await service.init('proc-1', true);
+
+    fakeSocket.next(mkCommandsEvent('@Manager', [HIRE, ROSTER], 'e1'));
+    jasmine.clock().tick(17);
+    expect(service.commandsByAgent$.getValue()['@Manager'].length).toBe(2);
+
+    // Re-announce with a shorter list — must replace, not merge.
+    fakeSocket.next(mkCommandsEvent('@Manager', [ROSTER], 'e2'));
+    jasmine.clock().tick(17);
+
+    const byAgent = service.commandsByAgent$.getValue();
+    expect(byAgent['@Manager'].map((c) => c.name)).toEqual(['roster']);
+  });
+
+  it('AC-1: events for different agents are kept under distinct keys', async () => {
+    await service.init('proc-1', true);
+
+    fakeSocket.next(mkCommandsEvent('@Manager', [HIRE], 'e1'));
+    fakeSocket.next(mkCommandsEvent('@Developer', [ROSTER], 'e2'));
+    jasmine.clock().tick(17);
+
+    const byAgent = service.commandsByAgent$.getValue();
+    expect(Object.keys(byAgent).sort()).toEqual(['@Developer', '@Manager']);
+    expect(byAgent['@Manager'].map((c) => c.name)).toEqual(['hire_member']);
+    expect(byAgent['@Developer'].map((c) => c.name)).toEqual(['roster']);
+  });
+
+  it('Task 1.3: init() resets commandsByAgent$ to {}', async () => {
+    await service.init('proc-A', true);
+    fakeSocket.next(mkCommandsEvent('@Manager', [HIRE]));
+    jasmine.clock().tick(17);
+    expect(Object.keys(service.commandsByAgent$.getValue()).length).toBe(1);
+
+    // Re-init (team switch) — store must be cleared synchronously.
+    const socketB = new Subject<any>();
+    (service as any).createWebSocket = jasmine
+      .createSpy('createWebSocket')
+      .and.returnValue(socketB as unknown as WebSocketSubject<any>);
+    await service.init('proc-B', true);
+
+    expect(service.commandsByAgent$.getValue()).toEqual({});
+    socketB.complete();
+  });
+
+  it('AC-1: a CommandsAnnouncedEvent without an agent name is ignored (no partial populate)', async () => {
+    await service.init('proc-1', true);
+
+    fakeSocket.next({
+      id: 'bad',
+      parent_id: null,
+      team_id: 'team-X',
+      timestamp: '2026-06-13T00:00:00Z',
+      sender: makeAddress(),
+      display_type: 'other',
+      content: null,
+      __model__: 'akgentic.core.messages.orchestrator.EventMessage',
+      event: {
+        __model__: 'akgentic.tool.commands.CommandsAnnouncedEvent',
+        commands: [HIRE],
+      },
+    });
+    jasmine.clock().tick(17);
+
+    expect(service.commandsByAgent$.getValue()).toEqual({});
+  });
+
+  it('Replay: stopped-team getEvents() rebuilds commandsByAgent$', async () => {
+    const apiService = TestBed.inject(ApiService) as any;
+    apiService.getEvents.and.resolveTo([
+      { event: mkCommandsEvent('@Manager', [HIRE, ROSTER], 'r1') },
+      // Later replay event for @Manager replaces the earlier one.
+      { event: mkCommandsEvent('@Manager', [ROSTER], 'r2') },
+      { event: mkCommandsEvent('@Developer', [HIRE], 'r3') },
+    ]);
+
+    await service.init('proc-stopped', false);
+
+    const byAgent = service.commandsByAgent$.getValue();
+    expect(byAgent['@Manager'].map((c) => c.name)).toEqual(['roster']);
+    expect(byAgent['@Developer'].map((c) => c.name)).toEqual(['hire_member']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 6.4 (AC5) — sanctioned-exceptions invariant (NFR9)
 //
-// ADR-005 §Decision 5: stateDict$ and contextDict$ are the ONLY imperative
+// ADR-005 §Decision 5: stateDict$ and contextDict$ were the ONLY imperative
 // state containers on ActorMessageService after the Story 6.4 refactor.
-// "Adding a third exception requires a new ADR. This test is the automated
-// guard."
+// "Adding an exception requires a new ADR. This test is the automated guard."
+// ADR-013 adds a third sanctioned exception, commandsByAgent$ (the per-agent
+// slash-command store driven by CommandsAnnouncedEvent).
 // ---------------------------------------------------------------------------
 
 /**
@@ -575,7 +758,7 @@ function probeStateContainers(service: object): string[] {
   });
 }
 
-describe('ActorMessageService — two-exceptions invariant (Story 6.4, NFR9)', () => {
+describe('ActorMessageService — sanctioned-exceptions invariant (Story 6.4, NFR9; ADR-013)', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
@@ -593,26 +776,28 @@ describe('ActorMessageService — two-exceptions invariant (Story 6.4, NFR9)', (
     });
   });
 
-  it('public data surface is exactly {stateDict$, contextDict$}', () => {
+  it('public data surface is exactly {stateDict$, contextDict$, commandsByAgent$}', () => {
     const service = TestBed.inject(ActorMessageService);
     // AC5 spec: the probe MUST NOT rely on a name allow-list — it walks
     // `Object.getOwnPropertyNames` with a runtime `instanceof` check so that
     // any new `BehaviorSubject` field (regardless of name) forces this test
-    // to fail. Per ADR-005 §Decision 5, adding a third exception requires a
-    // new ADR.
+    // to fail. Per ADR-005 §Decision 5, adding an exception requires a new
+    // ADR — ADR-013 sanctioned commandsByAgent$ (the third exception).
     const containers = probeStateContainers(service);
-    expect(new Set(containers)).toEqual(new Set(['stateDict$', 'contextDict$']));
+    expect(new Set(containers)).toEqual(
+      new Set(['stateDict$', 'contextDict$', 'commandsByAgent$']),
+    );
   });
 
-  it('negative probe: adding a third exception fails the invariant', () => {
+  it('negative probe: adding a fourth exception fails the invariant', () => {
     const service = TestBed.inject(ActorMessageService);
     // Simulate the "someone added a new BehaviorSubject" diff.
     (service as any).extraDict$ = { agent: new BehaviorSubject<any>(null) };
     const containers = probeStateContainers(service);
     // The probe MUST detect the addition (set is no longer the documented
-    // pair). Without this guard, the invariant test would silently pass.
+    // trio). Without this guard, the invariant test would silently pass.
     expect(new Set(containers)).not.toEqual(
-      new Set(['stateDict$', 'contextDict$']),
+      new Set(['stateDict$', 'contextDict$', 'commandsByAgent$']),
     );
     expect(containers).toContain('extraDict$');
   });

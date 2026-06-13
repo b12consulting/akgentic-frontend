@@ -4,7 +4,11 @@ import { BehaviorSubject, Subject, Subscription } from 'rxjs';
 import { bufferTime, filter, take } from 'rxjs/operators';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 import { ConfigService } from './config.service';
-import { AkgenticMessage } from '../models/message.types';
+import {
+  AkgenticMessage,
+  CommandDescriptor,
+  isCommandsAnnouncedEvent,
+} from '../models/message.types';
 import { EventResponse } from '../models/team.interface';
 
 import { ApiService } from '../services/api.service';
@@ -27,11 +31,14 @@ const SPINNER_MIN_VISIBLE_MS = 500;
  *   - WS `bufferTime(16)` ingestion appends to the log + per-agent dicts.
  *   - Spinner floor (`loadingProcess$` on `ChatService`, AC7) — UX concern.
  *
- * Two documented exceptions (NFR9 / ADR-005 §Decision 5):
- *   - `stateDict$`  — driven by `StateChangedMessage`
- *   - `contextDict$` — driven by `LlmMessageEvent`
+ * Three documented exceptions (NFR9 / ADR-005 §Decision 5; ADR-013):
+ *   - `stateDict$`       — driven by `StateChangedMessage`
+ *   - `contextDict$`     — driven by `LlmMessageEvent`
+ *   - `commandsByAgent$` — driven by `CommandsAnnouncedEvent` (ADR-013); the
+ *     per-agent slash-command store consumed by the `/` mention. ADR-005
+ *     §Decision 5 requires a new ADR to add an exception — ADR-013 is that ADR.
  *
- * Adding a third exception requires a new ADR.
+ * Adding a fourth exception requires a new ADR.
  * `message.service.spec.ts` enforces this invariant by test (Story 6.4 AC5).
  */
 @Injectable()
@@ -54,6 +61,18 @@ export class ActorMessageService {
 
   contextDict$: { [key: string]: BehaviorSubject<any[]> } = {};
   stateDict$: { [key: string]: BehaviorSubject<any> } = {};
+
+  /**
+   * ADR-013 (third NFR9 exception): per-agent slash-command store, keyed by
+   * agent friendly name (the `@`-prefixed actor `name`, e.g. `@Manager`).
+   * Driven by `CommandsAnnouncedEvent` riding the existing `EventMessage`
+   * passthrough; a later event for an agent REPLACES that agent's entry (the
+   * backend re-emits the full list on change). Consumed by the `/` mention's
+   * targeted-agent selector. Reset on every `init()` alongside the other
+   * per-team dicts.
+   */
+  commandsByAgent$: BehaviorSubject<Record<string, CommandDescriptor[]>> =
+    new BehaviorSubject<Record<string, CommandDescriptor[]>>({});
 
   processId: string = '';
 
@@ -113,6 +132,9 @@ export class ActorMessageService {
     this.log.reset();
     this.stateDict$ = {};
     this.contextDict$ = {};
+    // ADR-013: clear the per-agent slash-command store so process-A's
+    // announced commands cannot leak into process-B.
+    this.commandsByAgent$.next({});
 
     // Story 8-2: clear any stale toasts from a prior init() cycle
     // so process-A's warnings do not persist into process-B.
@@ -151,6 +173,11 @@ export class ActorMessageService {
       // - LlmMessageEvent: messages appended in chronological order (ordered context)
       const latestStates: { [agentId: string]: any } = {};
       const contextArrays: { [agentId: string]: any[] } = {};
+      // ADR-013: rebuild the per-agent slash-command store from persisted
+      // events too, so a stopped-team reopen still shows the `/` list. Keyed
+      // by agent friendly name; a later replay event REPLACES the entry
+      // (consistent with the live replace-on-reannounce semantics).
+      const commandsByAgent: Record<string, CommandDescriptor[]> = {};
 
       for (const er of eventResponses) {
         const evt = er.event;
@@ -169,11 +196,18 @@ export class ActorMessageService {
               if (!contextArrays[agentId]) contextArrays[agentId] = [];
               contextArrays[agentId].push(inner.message);
             }
+          } else if (isCommandsAnnouncedEvent(inner)) {
+            const agentName = inner.agent?.name;
+            if (agentName) commandsByAgent[agentName] = inner.commands ?? [];
           }
           // Story 6.2 (ADR-005 §Decision 4): `ToolStateEvent` is now folded
           // into `knowledgeGraph$` via `kgFold` over `log$` (seeded above by
           // `log.appendAll`). No explicit reducer drive required.
         }
+      }
+
+      if (Object.keys(commandsByAgent).length > 0) {
+        this.commandsByAgent$.next(commandsByAgent);
       }
 
       for (const [agentId, state] of Object.entries(latestStates)) {
@@ -393,10 +427,32 @@ export class ActorMessageService {
         const current = this.contextDict$[agentId].getValue();
         this.contextDict$[agentId].next([...current, inner.message]);
       }
+    } else if (isCommandsAnnouncedEvent(inner)) {
+      this.applyCommandsAnnounced(inner);
     }
     // Story 6.2 (ADR-005 §Decision 4): `ToolStateEvent` is now covered
     // entirely by `KGStateReducer.knowledgeGraph$` (pure selector over
     // `log$`). The batched subscriber no longer drives the reducer.
+  }
+
+  /**
+   * ADR-013: fold a `CommandsAnnouncedEvent` into `commandsByAgent$`. Keyed by
+   * the announcing agent's friendly `name` (the `@`-prefixed actor name, which
+   * the `/`-mention selector matches against the Send-to / panel agent). A
+   * later event for the same agent REPLACES that agent's entry. Ignored when
+   * the event carries no agent name (defensive — never partially populate).
+   */
+  private applyCommandsAnnounced(inner: {
+    agent?: { name?: string };
+    commands?: CommandDescriptor[];
+  }): void {
+    const agentName = inner.agent?.name;
+    if (!agentName) return;
+    const current = this.commandsByAgent$.getValue();
+    this.commandsByAgent$.next({
+      ...current,
+      [agentName]: inner.commands ?? [],
+    });
   }
 
   /**
@@ -493,6 +549,9 @@ export class ActorMessageService {
     this.bufferSub?.unsubscribe();
     this.spinnerSub?.unsubscribe();
     this._wsInbound$.complete();
+    // ADR-013: complete the slash-command store on teardown so no leaked
+    // subscriber survives the component.
+    this.commandsByAgent$.complete();
     if (this.spinnerFlipTimer !== null) {
       clearTimeout(this.spinnerFlipTimer);
       this.spinnerFlipTimer = null;

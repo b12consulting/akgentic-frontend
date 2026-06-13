@@ -7,7 +7,8 @@ import { ApiService } from '../../services/api.service';
 import { ChatService } from '../../services/chat.service';
 import { ContextService } from '../../services/context.service';
 import { GraphDataService } from '../../services/graph-data.service';
-import { ActorAddress } from '../../models/message.types';
+import { ActorMessageService } from '../../services/message.service';
+import { ActorAddress, CommandDescriptor } from '../../models/message.types';
 import { NodeInterface } from '../../models/types';
 import { makeAgentNameUserFriendly } from '../../lib/util';
 
@@ -44,6 +45,7 @@ describe('ProcessUserInputComponent', () => {
   let chatServiceMock: any;
   let contextServiceStub: { currentTeamRunning$: BehaviorSubject<boolean> };
   let nodesSubject: BehaviorSubject<NodeInterface[]>;
+  let commandsByAgentSubject: BehaviorSubject<Record<string, CommandDescriptor[]>>;
 
   beforeEach(async () => {
     apiServiceSpy = jasmine.createSpyObj('ApiService', ['sendMessage', 'sendMessageFromTo']);
@@ -67,6 +69,13 @@ describe('ProcessUserInputComponent', () => {
       nodes$: nodesSubject,
     };
 
+    commandsByAgentSubject = new BehaviorSubject<
+      Record<string, CommandDescriptor[]>
+    >({});
+    const messageServiceStub = {
+      commandsByAgent$: commandsByAgentSubject,
+    };
+
     await TestBed.configureTestingModule({
       imports: [FormsModule, ProcessUserInputComponent],
       providers: [
@@ -74,6 +83,7 @@ describe('ProcessUserInputComponent', () => {
         { provide: ChatService, useValue: chatServiceMock },
         { provide: ContextService, useValue: contextServiceStub },
         { provide: GraphDataService, useValue: graphDataService },
+        { provide: ActorMessageService, useValue: messageServiceStub },
       ],
     }).compileComponents();
 
@@ -701,6 +711,136 @@ describe('ProcessUserInputComponent', () => {
       expect(
         style.justifyContent === 'flex-end' || style.marginLeft === 'auto',
       ).toBeTrue();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Story 15-1 (ADR-013) — `/` slash-command mention
+  // -------------------------------------------------------------------------
+
+  function mkDescriptor(
+    name: string,
+    overrides: Partial<CommandDescriptor> = {},
+  ): CommandDescriptor {
+    return {
+      name,
+      description: `${name} description`,
+      args: [],
+      tool_card: 'TeamTool',
+      ...overrides,
+    };
+  }
+
+  describe('slash-command mention (Story 15-1)', () => {
+    const HIRE = mkDescriptor('hire_member', {
+      description: 'Hire a new team member',
+      args: [
+        { name: 'role', type: 'string', required: true },
+        { name: 'name', type: 'string', required: false },
+      ],
+    });
+    const ROSTER = mkDescriptor('roster', {
+      description: 'List the current team roster',
+    });
+
+    it('AC-3: with exactly one Send-to recipient, commandItems are that agent\'s commands', () => {
+      nodesSubject.next([
+        makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
+        makeNode({ name: 'dev-1', actorName: '@Developer', role: 'Worker' }),
+      ]);
+      commandsByAgentSubject.next({ '@Manager': [HIRE, ROSTER] });
+      component.selectedAgents = ['@Manager'];
+
+      expect(component.commandItems.map((c) => c.name)).toEqual([
+        'hire_member',
+        'roster',
+      ]);
+    });
+
+    it('AC-3: with zero recipients, defaults to the supervisor (child of @Human entry point)', () => {
+      nodesSubject.next([
+        makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
+        makeNode({
+          name: 'mgr-1',
+          actorName: '@Manager',
+          role: 'Worker',
+          parentId: 'human-1',
+        }),
+        makeNode({
+          name: 'dev-1',
+          actorName: '@Developer',
+          role: 'Worker',
+          parentId: 'mgr-1',
+        }),
+      ]);
+      commandsByAgentSubject.next({
+        '@Manager': [HIRE],
+        '@Developer': [ROSTER],
+      });
+      component.selectedAgents = [];
+
+      // Supervisor = the agent whose parent is @Human → @Manager.
+      expect(component.commandItems.map((c) => c.name)).toEqual(['hire_member']);
+    });
+
+    it('AC-4: with multiple Send-to recipients, the / list is empty', () => {
+      nodesSubject.next([
+        makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
+        makeNode({ name: 'dev-1', actorName: '@Developer', role: 'Worker' }),
+      ]);
+      commandsByAgentSubject.next({ '@Manager': [HIRE], '@Developer': [ROSTER] });
+      component.selectedAgents = ['@Manager', '@Developer'];
+
+      expect(component.commandItems).toEqual([]);
+    });
+
+    it('AC-6: no CommandsAnnouncedEvent for the target → empty / list', () => {
+      nodesSubject.next([
+        makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
+      ]);
+      // commandsByAgent$ stays {} (no event arrived yet).
+      component.selectedAgents = ['@Manager'];
+
+      expect(component.commandItems).toEqual([]);
+    });
+
+    it('selectCommand inserts `/${name} ` (leading slash, trailing space, no send)', () => {
+      const text = component.selectCommand({ name: 'hire_member' });
+      expect(text).toBe('/hire_member ');
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('AC-5: `/command args` text is sent verbatim via the existing send path', async () => {
+      component.selectedAgents = ['@Manager'];
+      component.userInput = '/hire_member Developer "Alice"';
+
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+        'test-team-id',
+        '/hire_member Developer "Alice"',
+        '@Manager',
+      );
+    });
+
+    it('commandArgsHint renders required in <> and optional in [] in order', () => {
+      expect(component.commandArgsHint(HIRE.args)).toBe('<role> [name]');
+      expect(component.commandArgsHint(ROSTER.args)).toBe('');
+    });
+
+    it('AC-7: mentionConfig still exposes the unchanged @ trigger alongside /', () => {
+      const triggers = component.mentionConfig.mentions.map((m) => m.triggerChar);
+      expect(triggers).toContain('@');
+      expect(triggers).toContain('/');
+      const at = component.mentionConfig.mentions.find((m) => m.triggerChar === '@');
+      expect(at!.mentionSelect).toBe(component.selectAgent);
+      expect(at!.allowSpace).toBeTrue();
+    });
+
+    it('AC-7: selectAgent behavior is unchanged (inserts friendly name + space)', () => {
+      expect(component.selectAgent({ name: 'Manager [Manager]' })).toBe(
+        'Manager [Manager] ',
+      );
     });
   });
 });

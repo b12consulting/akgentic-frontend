@@ -114,6 +114,49 @@ export interface WelcomeMessage extends BaseMessage {
   content: string;
 }
 
+/**
+ * One argument of a slash-command, mirroring akgentic-tool `CommandArg`
+ * (ADR-028 §Decision 3). Ordered position in `CommandDescriptor.args` drives
+ * both the backend positional parsing and the frontend args hint.
+ */
+export interface CommandArg {
+  name: string;
+  /** JSON-schema type name: "string", "integer", "boolean", … */
+  type: string;
+  required: boolean;
+  description?: string | null;
+}
+
+/**
+ * Metadata for one slash-command supported by an agent, mirroring
+ * akgentic-tool `CommandDescriptor` (ADR-028 §Decision 3). Sourced from
+ * `CommandsAnnouncedEvent` and rendered in the `/` mention dropdown.
+ */
+export interface CommandDescriptor {
+  /** Canonical command name, e.g. "hire_member". */
+  name: string;
+  /** Human-readable description (from the callable docstring). */
+  description: string;
+  /** Ordered argument list — drives the dropdown args hint. */
+  args: CommandArg[];
+  /** Provenance, e.g. "TeamTool". */
+  tool_card: string;
+}
+
+/**
+ * Inner event payload announcing the full command set for one agent
+ * (akgentic-tool `CommandsAnnouncedEvent`, ADR-028 §Decision 3). It rides the
+ * existing `EventMessage` passthrough; the frontend discriminates it by the
+ * inner `__model__` (ADR-013). A later event for the same agent replaces the
+ * previous set.
+ */
+export interface CommandsAnnouncedEvent {
+  __model__: string; // contains 'CommandsAnnouncedEvent'
+  /** The agent that executes these commands. */
+  agent: ActorAddress;
+  commands: CommandDescriptor[];
+}
+
 // Union type for all possible messages
 export type AkgenticMessage =
   | SentMessage
@@ -177,6 +220,20 @@ export function isResultMessage(msg: BaseMessage): msg is ResultMessage {
  */
 export function isWelcomeMessage(msg: BaseMessage): msg is WelcomeMessage {
   return msg.__model__.includes('WelcomeMessage');
+}
+
+/**
+ * Inner-event check (ADR-013): true when the inner event carried by an
+ * `EventMessage` is a `CommandsAnnouncedEvent`. Matches on the inner
+ * `__model__`, the same discrimination already used for `LlmMessageEvent` /
+ * `ToolCallEvent` / `ToolStateEvent`. `event` is the `EventMessage.event`
+ * payload (loosely typed on the wire); the guard narrows it to
+ * `CommandsAnnouncedEvent`.
+ */
+export function isCommandsAnnouncedEvent(
+  event: { __model__?: string } | null | undefined,
+): event is CommandsAnnouncedEvent {
+  return !!event?.__model__?.includes('CommandsAnnouncedEvent');
 }
 
 /**

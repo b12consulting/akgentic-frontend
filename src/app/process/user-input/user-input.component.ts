@@ -17,8 +17,10 @@ import { ApiService } from '../../services/api.service';
 import { ChatService } from '../../services/chat.service';
 import { ContextService } from '../../services/context.service';
 import { GraphDataService, HUMAN_ROLE } from '../../services/graph-data.service';
+import { ActorMessageService } from '../../services/message.service';
 
 import { ENTRY_POINT_NAME } from '../../models/chat-message.model';
+import { CommandDescriptor } from '../../models/message.types';
 import { NodeInterface } from '../../models/types';
 
 @Component({
@@ -43,12 +45,27 @@ export class ProcessUserInputComponent implements OnInit {
   chatService: ChatService = inject(ChatService);
   contextService: ContextService = inject(ContextService);
   graphDataService: GraphDataService = inject(GraphDataService);
+  messageService: ActorMessageService = inject(ActorMessageService);
   private config = inject(ConfigService);
   userInput: string = '';
   userInputEnterKeySubmit: boolean = this.config.userInputEnterKeySubmit;
 
   // Mention configuration
   mentionItems: { name: string; actorName: string; agentId: string }[] = [];
+
+  /**
+   * ADR-013: latest per-agent slash-command store (keyed by raw actor
+   * `name`, e.g. `@Manager-…`). Snapshot of `ActorMessageService
+   * .commandsByAgent$`; read by the targeted-agent selector to build the `/`
+   * mention list. Empty until a `CommandsAnnouncedEvent` arrives (AC-6).
+   */
+  commandsByAgent: Record<string, CommandDescriptor[]> = {};
+
+  /**
+   * ADR-013: live snapshot of the graph nodes — used to derive the
+   * supervisor / entry-point default target for the main chat (Task 2.1).
+   */
+  private nodes: NodeInterface[] = [];
   // Dropdown configuration
   dropdownAgents: { label: string; value: string }[] = [];
   selectedAgents: string[] = [];
@@ -59,10 +76,20 @@ export class ProcessUserInputComponent implements OnInit {
   private destroyRef = inject(DestroyRef);
 
   ngOnInit() {
+    // ADR-013: keep a live snapshot of the per-agent slash-command store so
+    // the `/` mention list (built by the targeted-agent selector) reflects the
+    // latest CommandsAnnouncedEvent. Component-scoped (NFR1).
+    this.messageService.commandsByAgent$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((byAgent) => {
+        this.commandsByAgent = byAgent;
+      });
+
     // Subscribe to nodes to populate mention items and dropdown agents
     this.graphDataService.nodes$
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((nodes) => {
+        this.nodes = nodes;
         const agents = nodes.filter(
           (n) => n.actorName.startsWith('@') && n.actorName !== ENTRY_POINT_NAME,
         );
@@ -168,4 +195,112 @@ export class ProcessUserInputComponent implements OnInit {
   selectAgent = (item: any) => {
     return `${item.name} `;
   };
+
+  /**
+   * ADR-013 §3 — resolve the SINGLE agent the `/` command list targets in the
+   * MAIN chat, by raw actor `name` (the `commandsByAgent$` / Send-to key):
+   *   - exactly one "Send to" recipient   → that recipient;
+   *   - zero recipients                   → supervisor / entry-point default;
+   *   - multiple recipients (broadcast)   → null (no single target, AC-4).
+   * Returns null when no single target resolves (the `/` list is then empty).
+   */
+  private resolveTargetedAgent(): string | null {
+    if (this.selectedAgents.length > 1) return null;
+    if (this.selectedAgents.length === 1) return this.selectedAgents[0];
+    return this.defaultSupervisorTarget();
+  }
+
+  /**
+   * ADR-013 §3 — supervisor / entry-point default for the main chat when no
+   * "Send to" recipient is selected. Derived from existing graph state (no new
+   * backend field): the agent whose parent is the `@Human` entry-point node.
+   * Falls back to the first non-human agent when the parent link is absent,
+   * and to null when no candidate agent exists.
+   */
+  private defaultSupervisorTarget(): string | null {
+    const candidates = this.nodes.filter(
+      (n) => n.actorName.startsWith('@') && n.actorName !== ENTRY_POINT_NAME,
+    );
+    if (candidates.length === 0) return null;
+    const entry = this.nodes.find((n) => n.actorName === ENTRY_POINT_NAME);
+    if (entry) {
+      const child = candidates.find((n) => n.parentId === entry.name);
+      if (child) return child.actorName;
+    }
+    return candidates[0].actorName;
+  }
+
+  /**
+   * ADR-013 — the `/` mention candidate list: the resolved targeted agent's
+   * command descriptors, mapped to dropdown items (`name` + `description` +
+   * ordered `args`). Empty when no single target resolves (none/ambiguous,
+   * AC-4) or no CommandsAnnouncedEvent has arrived yet for it (AC-6).
+   */
+  get commandItems(): {
+    name: string;
+    description: string;
+    args: CommandDescriptor['args'];
+  }[] {
+    const target = this.resolveTargetedAgent();
+    if (!target) return [];
+    const descriptors = this.commandsByAgent[target] ?? [];
+    return descriptors.map((d) => ({
+      name: d.name,
+      description: d.description,
+      args: d.args,
+    }));
+  }
+
+  /**
+   * ADR-013 §2 — multi-trigger `angular-mentions` config. The `@` entry is
+   * unchanged (AC-7); the `/` entry lists the targeted agent's commands and
+   * inserts `/${name} ` via `selectCommand`. `allowSpace: false` closes the
+   * dropdown at the first space (after the command name) so the user types
+   * args freely; `maxItems`/`dropUp` mirror the `@` list.
+   */
+  get mentionConfig() {
+    return {
+      mentions: [
+        {
+          triggerChar: '@',
+          labelKey: 'name',
+          returnTrigger: true,
+          allowSpace: true,
+          mentionSelect: this.selectAgent,
+          dropUp: true,
+          maxItems: 10,
+          items: this.mentionItems,
+        },
+        {
+          triggerChar: '/',
+          labelKey: 'name',
+          allowSpace: false,
+          mentionSelect: this.selectCommand,
+          dropUp: true,
+          maxItems: 10,
+          items: this.commandItems,
+        },
+      ],
+    };
+  }
+
+  /**
+   * ADR-013 §2 — insert `/${name} ` (leading slash + trailing space) for the
+   * chosen command so the user keeps typing arguments. Does NOT send; the
+   * literal text is sent verbatim on the existing Enter path (AC-5).
+   */
+  selectCommand = (item: { name: string }) => {
+    return `/${item.name} `;
+  };
+
+  /**
+   * ADR-013 §2 — render an args hint for a command dropdown row, e.g.
+   * `<role> [name]`: required args in angle brackets, optional in square
+   * brackets, in declared order. Empty string when the command takes no args.
+   */
+  commandArgsHint(args: CommandDescriptor['args']): string {
+    return args
+      .map((a) => (a.required ? `<${a.name}>` : `[${a.name}]`))
+      .join(' ');
+  }
 }

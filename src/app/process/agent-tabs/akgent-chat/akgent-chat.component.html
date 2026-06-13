@@ -78,9 +78,23 @@
           cols="50"
           [(ngModel)]="userInput"
           (click)="scroll()"
+          [mentionConfig]="mentionConfig"
+          [mentionListTemplate]="mentionItemTemplate"
         ></textarea>
         <label for="on_label">Chat input</label>
       </div>
+      <!--
+        ADR-013: `/` command mention item template — renders the command name
+        prominently, an optional args hint (`<role> [name]`), and the
+        description as secondary text.
+      -->
+      <ng-template #mentionItemTemplate let-item="item">
+        <span class="mention-item-name">{{ item.name }}</span>
+        <span *ngIf="item.args?.length" class="mention-item-args">
+          {{ commandArgsHint(item.args) }}
+        </span>
+        <span *ngIf="item.description" class="mention-item-desc">{{ item.description }}</span>
+      </ng-template>
       <div class="input-row-buttons">
         <button
           pButton
