@@ -1,3 +1,29 @@
+<!--
+  ADR-004 §5b step 2 — head system block. Rendered ABOVE the conversation table
+  and independently of `context.length`, sourced ONCE from `systemPrompt$`
+  (SystemPromptSelector, Story 16-1). Latest-wins: shows the most recent
+  rendering across runs. `*ngIf ... as rows` + `rows.length` guard renders
+  nothing when there are no system rows (AC8). Reuses the existing system-block
+  fieldset markup so it is visually identical to how system blocks rendered
+  before. `async` keeps it OnPush-safe and self-unsubscribing.
+-->
+<div
+  class="head-system-container"
+  *ngIf="systemPrompt$ | async as rows"
+>
+  <ng-container *ngIf="rows.length">
+    <div class="card-container" *ngFor="let row of rows">
+      <div class="card-header">{{ row.type | capitalize }} : {{ row.name }}</div>
+      <div class="fieldset-body">
+        <p-fieldset legend="Content" [toggleable]="false">
+          <app-copy-button (click)="utilService.copyToClipboard(row.content)" />
+          <div class="text-container" [innerHTML]="row.content"></div>
+        </p-fieldset>
+      </div>
+    </div>
+  </ng-container>
+</div>
+
 <!-- Collapsible Arrow and Button -->
 <div class="collapsible-container" *ngIf="context.length">
   <div class="collapsible">

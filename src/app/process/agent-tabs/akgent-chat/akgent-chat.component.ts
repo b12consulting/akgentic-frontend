@@ -12,13 +12,17 @@ import { Table, TableModule } from 'primeng/table';
 import { TextareaModule } from 'primeng/textarea';
 import { MentionModule } from 'angular-mentions';
 
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, Observable } from 'rxjs';
 
 import { CapitalizePipe } from '../../../pipes/capitalise.pipe';
 import { ApiService } from '../../../services/api.service';
 import { UtilService } from '../../../services/utils.service';
 import { ContextService } from '../../../services/context.service';
 import { ActorMessageService } from '../../../services/message.service';
+import {
+  SystemPromptRow,
+  SystemPromptSelector,
+} from '../../../services/system-prompt.selector';
 import { CommandDescriptor } from '../../../models/message.types';
 
 import { CopyButtonComponent } from '../../copy-button/copy-button.component';
@@ -56,11 +60,27 @@ export class AkgentChatComponent {
   utilService: UtilService = inject(UtilService);
   contextService: ContextService = inject(ContextService);
   messageService: ActorMessageService = inject(ActorMessageService);
+  // ADR-004 §5b: component-scoped selector provided on ProcessComponent.providers
+  // (Story 16-1) — resolves the same MessageLogService instance as this subtree.
+  private systemPromptSelector: SystemPromptSelector = inject(
+    SystemPromptSelector
+  );
   private destroyRef = inject(DestroyRef);
 
   collapsedMessages$ = new BehaviorSubject<boolean>(true);
 
   context: any[] = [];
+
+  /**
+   * ADR-004 §5b step 2 — the head system block, derived once from the unified
+   * log by `SystemPromptSelector.latestSystemPrompt$`. Bound in the template via
+   * the `async` pipe (OnPush-safe; self-unsubscribes). Latest-wins MVP: the
+   * trace is a flat list, so this shows the most recent rendering. The selector
+   * already does latest-wins, the FR2 fallback for pre-event teams, and the
+   * `dynamic_ref → name` labelling — the component consumes `row.name` /
+   * `row.content` directly and renders nothing for an empty array.
+   */
+  systemPrompt$!: Observable<SystemPromptRow[]>;
 
   /**
    * ADR-013: latest per-agent slash-command store (keyed by raw actor
@@ -71,6 +91,12 @@ export class AkgentChatComponent {
   commandsByAgent: Record<string, CommandDescriptor[]> = {};
 
   ngOnInit(): void {
+    // ADR-004 §5b step 2 — head system block for this panel's agent. Rendered
+    // in the template via `async`, above the conversation table.
+    this.systemPrompt$ = this.systemPromptSelector.latestSystemPrompt$(
+      this.agentId
+    );
+
     // Subscribe to context$ for the selected agent
     this.context$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((ctx) => {
       if (this.isLoading) {
@@ -160,18 +186,14 @@ export class AkgentChatComponent {
       // Handle new parts-based protocol
       if (message.parts && Array.isArray(message.parts)) {
         message.parts.forEach((part: any) => {
-          if (
-            part.part_kind === 'system-prompt' ||
-            part.part_kind === 'user-prompt'
-          ) {
+          // ADR-004 §5b step 3 — the `system-prompt` arm is intentionally gone:
+          // the head system block is the SINGLE source (via systemPrompt$), so
+          // the run-1 double-carry renders once. Only `user-prompt` is handled
+          // here now; the system label/`dynamic_ref` logic moved to the selector.
+          if (part.part_kind === 'user-prompt') {
             msg.push({
-              type: part.part_kind === 'system-prompt' ? 'system' : 'human',
-              name:
-                part.part_kind === 'system-prompt'
-                  ? part.dynamic_ref
-                    ? part.dynamic_ref.split('.').pop()
-                    : 'System'
-                  : 'User',
+              type: 'human',
+              name: 'User',
               content: part.content,
               timestamp: part.timestamp,
             });
