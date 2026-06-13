@@ -16,6 +16,7 @@ import { ChatMessage, classifyMessage } from '../models/chat-message.model';
 import { ApiService } from '../services/api.service';
 import { AkgentService } from '../services/akgent.service';
 import { GraphDataService } from '../services/graph-data.service';
+import { ActorMessageService } from '../services/message.service';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {
@@ -113,6 +114,12 @@ describe('ChatPanelComponent', () => {
       nodes$: of([]),
     };
 
+    // Story 15-1 (ADR-013): the embedded <app-user-input> now injects
+    // ActorMessageService for its `commandsByAgent$` (the `/` mention store).
+    const messageService = {
+      commandsByAgent$: new BehaviorSubject<Record<string, any[]>>({}),
+    };
+
     await TestBed.configureTestingModule({
       imports: [ChatPanelComponent, NoopAnimationsModule],
       providers: [
@@ -122,6 +129,7 @@ describe('ChatPanelComponent', () => {
         { provide: ApiService, useValue: apiService },
         { provide: AkgentService, useValue: akgentService },
         { provide: GraphDataService, useValue: graphDataService },
+        { provide: ActorMessageService, useValue: messageService },
       ],
     }).compileComponents();
 

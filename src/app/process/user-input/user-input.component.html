@@ -15,20 +15,26 @@
         (keydown.enter)="userInputEnterKeySubmit ? sendMessage() : null"
         (keydown.meta.enter)="sendMessage()"
         (keydown.control.enter)="sendMessage()"
-        [mention]="mentionItems"
-        [mentionConfig]="{
-          triggerChar: '@',
-          labelKey: 'name',
-          returnTrigger: true,
-          allowSpace: true,
-          mentionSelect: selectAgent,
-          dropUp: true,
-          maxItems: 10
-        }"
+        [mentionConfig]="mentionConfig"
+        [mentionListTemplate]="mentionItemTemplate"
       ></textarea>
       <label for="on_label">Process input</label>
     </div>
   </p-floatlabel>
+
+  <!--
+    ADR-013: shared mention-list item template. `@` items carry only `name`
+    (description/args absent → those rows simply do not render); `/` command
+    items render `name` prominently plus `description` and an optional args
+    hint (e.g. `<role> [name]`).
+  -->
+  <ng-template #mentionItemTemplate let-item="item">
+    <span class="mention-item-name">{{ item.name }}</span>
+    <span *ngIf="item.args?.length" class="mention-item-args">
+      {{ commandArgsHint(item.args) }}
+    </span>
+    <span *ngIf="item.description" class="mention-item-desc">{{ item.description }}</span>
+  </ng-template>
 
   <div class="button-group">
     @if (humanAgents.length > 1) {

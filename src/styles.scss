@@ -137,6 +137,28 @@ chat-wrapper {
   transform: translateY(calc(-100% - 2.5rem));
 }
 
+// ADR-013: slash-command mention dropdown rows. The `angular-mentions`
+// `mention-list` component is created via ViewContainerRef, so its rows live
+// outside the input component's scoped styles — these rules are global.
+// `@` rows carry only `.mention-item-name`; `/` command rows add an args hint
+// and a secondary description line.
+.mention-item-name {
+  font-weight: 600;
+}
+
+.mention-item-args {
+  margin-left: 0.4rem;
+  font-size: 0.8rem;
+  color: #64748b;
+  font-family: monospace;
+}
+
+.mention-item-desc {
+  display: block;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
 // markdown styles
 markdown {
 

@@ -10,6 +10,7 @@ import { FloatLabelModule } from 'primeng/floatlabel';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import { Table, TableModule } from 'primeng/table';
 import { TextareaModule } from 'primeng/textarea';
+import { MentionModule } from 'angular-mentions';
 
 import { BehaviorSubject } from 'rxjs';
 
@@ -18,6 +19,7 @@ import { ApiService } from '../../../services/api.service';
 import { UtilService } from '../../../services/utils.service';
 import { ContextService } from '../../../services/context.service';
 import { ActorMessageService } from '../../../services/message.service';
+import { CommandDescriptor } from '../../../models/message.types';
 
 import { CopyButtonComponent } from '../../copy-button/copy-button.component';
 
@@ -37,6 +39,7 @@ import { CopyButtonComponent } from '../../copy-button/copy-button.component';
     FloatLabelModule,
     ButtonModule,
     ProgressSpinnerModule,
+    MentionModule,
     CapitalizePipe,
     CopyButtonComponent,
   ],
@@ -59,6 +62,14 @@ export class AkgentChatComponent {
 
   context: any[] = [];
 
+  /**
+   * ADR-013: latest per-agent slash-command store (keyed by raw actor
+   * `name`). Snapshot of `ActorMessageService.commandsByAgent$`; read by
+   * `commandItems` to build this panel's `/` mention list. Empty until a
+   * `CommandsAnnouncedEvent` arrives for this agent (AC-6).
+   */
+  commandsByAgent: Record<string, CommandDescriptor[]> = {};
+
   ngOnInit(): void {
     // Subscribe to context$ for the selected agent
     this.context$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((ctx) => {
@@ -68,6 +79,72 @@ export class AkgentChatComponent {
       this.isLoading = false;
       this.updateContext(ctx);
     });
+
+    // ADR-013: keep a live snapshot of the per-agent slash-command store so
+    // this panel's `/` mention reflects the latest CommandsAnnouncedEvent.
+    this.messageService.commandsByAgent$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((byAgent) => {
+        this.commandsByAgent = byAgent;
+      });
+  }
+
+  /**
+   * ADR-013 §3 — member chat target is unambiguous: this panel's own agent
+   * (`agentName`). The `/` list is that agent's command descriptors, mapped to
+   * dropdown items. Empty until a CommandsAnnouncedEvent arrives (AC-6).
+   */
+  get commandItems(): {
+    name: string;
+    description: string;
+    args: CommandDescriptor['args'];
+  }[] {
+    const descriptors = this.commandsByAgent[this.agentName] ?? [];
+    return descriptors.map((d) => ({
+      name: d.name,
+      description: d.description,
+      args: d.args,
+    }));
+  }
+
+  /**
+   * ADR-013 §2 — single `/` mention trigger for the member chat. Inserts
+   * `/${name} ` via `selectCommand`; `allowSpace: false` closes the dropdown
+   * after the command name so the user types args freely. The send path is
+   * unchanged — text is sent verbatim (AC-5).
+   */
+  get mentionConfig() {
+    return {
+      mentions: [
+        {
+          triggerChar: '/',
+          labelKey: 'name',
+          allowSpace: false,
+          mentionSelect: this.selectCommand,
+          dropUp: true,
+          maxItems: 10,
+          items: this.commandItems,
+        },
+      ],
+    };
+  }
+
+  /**
+   * ADR-013 §2 — insert `/${name} ` (leading slash + trailing space); does NOT
+   * send. The literal text is sent verbatim on submit (AC-5).
+   */
+  selectCommand = (item: { name: string }) => {
+    return `/${item.name} `;
+  };
+
+  /**
+   * ADR-013 §2 — args hint for a command row, e.g. `<role> [name]`: required
+   * in angle brackets, optional in square brackets, declared order.
+   */
+  commandArgsHint(args: CommandDescriptor['args']): string {
+    return args
+      .map((a) => (a.required ? `<${a.name}>` : `[${a.name}]`))
+      .join(' ');
   }
 
   updateContext(context: any[]) {
