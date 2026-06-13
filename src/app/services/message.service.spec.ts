@@ -546,16 +546,26 @@ describe('ActorMessageService — Story 6.1 (frame-batched log ingestion)', () =
 });
 
 // ---------------------------------------------------------------------------
-// Epic 15 / Story 15-1 (ADR-013) — commandsByAgent$ from CommandsAnnouncedEvent
+// Epic 17 / Story 17-3 (ADR-014 §5, ADR-013) — `commands` PerAgentStore
+//
+// Re-homes Story 15-1/15-2: the bespoke `commandsByAgent$` (name-keyed) is gone;
+// `commands` is a PerAgentStore folded off log$ by the registry, keyed by the
+// emitting agent's `sender.agent_id` (the ADR-013 keying fix). These tests drive
+// the REAL log fold (no store mocking) per the story's testing standards:
+// announce a CommandsAnnouncedEvent EventMessage, read commands.snapshot(id) /
+// forAgent(id); replace-on-re-announce; replay-vs-live parity; reset-on-switch;
+// and the name-reuse non-bleed correctness proof.
 // ---------------------------------------------------------------------------
 
-describe('ActorMessageService — commandsByAgent$ (Story 15-1, ADR-013)', () => {
+describe('ActorMessageService — commands PerAgentStore (Story 17-3, ADR-014/ADR-013)', () => {
   let service: ActorMessageService;
-  let chatService: ChatService;
   let fakeSocket: Subject<any>;
 
+  /** A CommandsAnnouncedEvent EventMessage. The outer `sender.agent_id` is the
+   *  registry key; the inner `agent` mirrors it (sender === emitting agent). */
   function mkCommandsEvent(
     agentName: string,
+    agentId: string,
     commands: any[],
     id = 'cmd-evt',
   ): any {
@@ -564,13 +574,13 @@ describe('ActorMessageService — commandsByAgent$ (Story 15-1, ADR-013)', () =>
       parent_id: null,
       team_id: 'team-X',
       timestamp: '2026-06-13T00:00:00Z',
-      sender: makeAddress({ name: agentName, agent_id: 'a-' + agentName }),
+      sender: makeAddress({ name: agentName, agent_id: agentId }),
       display_type: 'other',
       content: null,
       __model__: 'akgentic.core.messages.orchestrator.EventMessage',
       event: {
         __model__: 'akgentic.tool.commands.CommandsAnnouncedEvent',
-        agent: makeAddress({ name: agentName, agent_id: 'a-' + agentName }),
+        agent: makeAddress({ name: agentName, agent_id: agentId }),
         commands,
       },
     };
@@ -614,7 +624,6 @@ describe('ActorMessageService — commandsByAgent$ (Story 15-1, ADR-013)', () =>
       ],
     });
     service = TestBed.inject(ActorMessageService);
-    chatService = TestBed.inject(ChatService);
 
     spyOn<any>(service, 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
@@ -630,101 +639,136 @@ describe('ActorMessageService — commandsByAgent$ (Story 15-1, ADR-013)', () =>
     jasmine.clock().uninstall();
   });
 
-  it('AC-1: a CommandsAnnouncedEvent accumulates the agent\'s descriptors under its name', async () => {
+  it('AC1: a CommandsAnnouncedEvent yields the agent\'s descriptors keyed by agent_id', async () => {
     await service.init('proc-1', true);
 
-    fakeSocket.next(mkCommandsEvent('@Manager', [HIRE, ROSTER]));
+    fakeSocket.next(mkCommandsEvent('@Manager', 'agent-mgr', [HIRE, ROSTER]));
     jasmine.clock().tick(17);
 
-    const byAgent = service.commandsByAgent$.getValue();
-    expect(byAgent['@Manager']).toBeDefined();
-    expect(byAgent['@Manager'].map((c) => c.name)).toEqual([
+    // Keyed by agent_id, NOT by name.
+    expect(service.commands.snapshot('agent-mgr')?.map((c) => c.name)).toEqual([
       'hire_member',
+      'roster',
+    ]);
+    expect(service.commands.snapshot('@Manager')).toBeUndefined();
+  });
+
+  it('AC1: forAgent(id) delivers the current list to a late subscriber', async () => {
+    await service.init('proc-1', true);
+    fakeSocket.next(mkCommandsEvent('@Manager', 'agent-mgr', [HIRE]));
+    jasmine.clock().tick(17);
+
+    let seen: any = 'unset';
+    const sub = service.commands.forAgent('agent-mgr').subscribe((v) => (seen = v));
+    expect((seen as any[]).map((c) => c.name)).toEqual(['hire_member']);
+    sub.unsubscribe();
+  });
+
+  it('AC1: a later event for the same agent_id REPLACES that list', async () => {
+    await service.init('proc-1', true);
+
+    fakeSocket.next(mkCommandsEvent('@Manager', 'agent-mgr', [HIRE, ROSTER], 'e1'));
+    jasmine.clock().tick(17);
+    expect(service.commands.snapshot('agent-mgr')?.length).toBe(2);
+
+    // Re-announce with a shorter list — must replace, not merge.
+    fakeSocket.next(mkCommandsEvent('@Manager', 'agent-mgr', [ROSTER], 'e2'));
+    jasmine.clock().tick(17);
+
+    expect(service.commands.snapshot('agent-mgr')?.map((c) => c.name)).toEqual([
       'roster',
     ]);
   });
 
-  it('AC-1: a later event for the same agent REPLACES that entry', async () => {
+  it('AC1: events for different agent_ids are kept under distinct keys', async () => {
     await service.init('proc-1', true);
 
-    fakeSocket.next(mkCommandsEvent('@Manager', [HIRE, ROSTER], 'e1'));
-    jasmine.clock().tick(17);
-    expect(service.commandsByAgent$.getValue()['@Manager'].length).toBe(2);
-
-    // Re-announce with a shorter list — must replace, not merge.
-    fakeSocket.next(mkCommandsEvent('@Manager', [ROSTER], 'e2'));
+    fakeSocket.next(mkCommandsEvent('@Manager', 'agent-mgr', [HIRE], 'e1'));
+    fakeSocket.next(mkCommandsEvent('@Developer', 'agent-dev', [ROSTER], 'e2'));
     jasmine.clock().tick(17);
 
-    const byAgent = service.commandsByAgent$.getValue();
-    expect(byAgent['@Manager'].map((c) => c.name)).toEqual(['roster']);
+    expect(service.commands.snapshot('agent-mgr')?.map((c) => c.name)).toEqual([
+      'hire_member',
+    ]);
+    expect(service.commands.snapshot('agent-dev')?.map((c) => c.name)).toEqual([
+      'roster',
+    ]);
   });
 
-  it('AC-1: events for different agents are kept under distinct keys', async () => {
+  it('AC2: name-reuse non-bleed — same display name, different agent_ids stay separate', async () => {
     await service.init('proc-1', true);
 
-    fakeSocket.next(mkCommandsEvent('@Manager', [HIRE], 'e1'));
-    fakeSocket.next(mkCommandsEvent('@Developer', [ROSTER], 'e2'));
+    // Two agents that have shared the display name '@Manager' at different times
+    // (fire/re-hire) but have DISTINCT agent_ids. Each announces its own list.
+    fakeSocket.next(mkCommandsEvent('@Manager', 'agent-old', [HIRE], 'e1'));
+    fakeSocket.next(mkCommandsEvent('@Manager', 'agent-new', [ROSTER], 'e2'));
     jasmine.clock().tick(17);
 
-    const byAgent = service.commandsByAgent$.getValue();
-    expect(Object.keys(byAgent).sort()).toEqual(['@Developer', '@Manager']);
-    expect(byAgent['@Manager'].map((c) => c.name)).toEqual(['hire_member']);
-    expect(byAgent['@Developer'].map((c) => c.name)).toEqual(['roster']);
+    // A name-keyed store would have collapsed these into one wrong entry; the
+    // agent_id-keyed store keeps them separate (the ADR-013 keying fix).
+    expect(service.commands.snapshot('agent-old')?.map((c) => c.name)).toEqual([
+      'hire_member',
+    ]);
+    expect(service.commands.snapshot('agent-new')?.map((c) => c.name)).toEqual([
+      'roster',
+    ]);
   });
 
-  it('Task 1.3: init() resets commandsByAgent$ to {}', async () => {
+  it('AC6/AC7: a team switch (init reset) clears commands — no process-A leak', async () => {
     await service.init('proc-A', true);
-    fakeSocket.next(mkCommandsEvent('@Manager', [HIRE]));
+    fakeSocket.next(mkCommandsEvent('@Manager', 'agent-mgr', [HIRE]));
     jasmine.clock().tick(17);
-    expect(Object.keys(service.commandsByAgent$.getValue()).length).toBe(1);
+    expect(service.commands.snapshot('agent-mgr')?.length).toBe(1);
 
-    // Re-init (team switch) — store must be cleared synchronously.
+    // Re-init (team switch) → log.reset() → registry clears its maps.
     const socketB = new Subject<any>();
     (service as any).createWebSocket = jasmine
       .createSpy('createWebSocket')
       .and.returnValue(socketB as unknown as WebSocketSubject<any>);
     await service.init('proc-B', true);
 
-    expect(service.commandsByAgent$.getValue()).toEqual({});
+    expect(service.commands.snapshot('agent-mgr')).toBeUndefined();
     socketB.complete();
   });
 
-  it('AC-1: a CommandsAnnouncedEvent without an agent name is ignored (no partial populate)', async () => {
-    await service.init('proc-1', true);
-
-    fakeSocket.next({
-      id: 'bad',
-      parent_id: null,
-      team_id: 'team-X',
-      timestamp: '2026-06-13T00:00:00Z',
-      sender: makeAddress(),
-      display_type: 'other',
-      content: null,
-      __model__: 'akgentic.core.messages.orchestrator.EventMessage',
-      event: {
-        __model__: 'akgentic.tool.commands.CommandsAnnouncedEvent',
-        commands: [HIRE],
-      },
-    });
+  it('AC6: stopped-team REST replay yields the SAME commands as the live WS path', async () => {
+    // Live WS ingestion of a fixture sequence.
+    await service.init('proc-live', true);
+    fakeSocket.next(mkCommandsEvent('@Manager', 'agent-mgr', [HIRE, ROSTER], 'e1'));
+    // Later live event for the same agent_id replaces the earlier one.
+    fakeSocket.next(mkCommandsEvent('@Manager', 'agent-mgr', [ROSTER], 'e2'));
+    fakeSocket.next(mkCommandsEvent('@Developer', 'agent-dev', [HIRE], 'e3'));
     jasmine.clock().tick(17);
+    const liveMgr = service.commands.snapshot('agent-mgr');
+    const liveDev = service.commands.snapshot('agent-dev');
 
-    expect(service.commandsByAgent$.getValue()).toEqual({});
-  });
-
-  it('Replay: stopped-team getEvents() rebuilds commandsByAgent$', async () => {
+    // REST replay of the SAME ordered events as one getEvents() batch.
     const apiService = TestBed.inject(ApiService) as any;
     apiService.getEvents.and.resolveTo([
-      { event: mkCommandsEvent('@Manager', [HIRE, ROSTER], 'r1') },
-      // Later replay event for @Manager replaces the earlier one.
-      { event: mkCommandsEvent('@Manager', [ROSTER], 'r2') },
-      { event: mkCommandsEvent('@Developer', [HIRE], 'r3') },
+      { event: mkCommandsEvent('@Manager', 'agent-mgr', [HIRE, ROSTER], 'r1') },
+      { event: mkCommandsEvent('@Manager', 'agent-mgr', [ROSTER], 'r2') },
+      { event: mkCommandsEvent('@Developer', 'agent-dev', [HIRE], 'r3') },
     ]);
-
+    const socketB = new Subject<any>();
+    (service as any).createWebSocket = jasmine
+      .createSpy('createWebSocket')
+      .and.returnValue(socketB as unknown as WebSocketSubject<any>);
     await service.init('proc-stopped', false);
 
-    const byAgent = service.commandsByAgent$.getValue();
-    expect(byAgent['@Manager'].map((c) => c.name)).toEqual(['roster']);
-    expect(byAgent['@Developer'].map((c) => c.name)).toEqual(['hire_member']);
+    expect(service.commands.snapshot('agent-mgr')).toEqual(liveMgr);
+    expect(service.commands.snapshot('agent-dev')).toEqual(liveDev);
+    expect(service.commands.snapshot('agent-mgr')?.map((c) => c.name)).toEqual([
+      'roster',
+    ]);
+    socketB.complete();
+  });
+
+  it('AC8: commandsByAgent$ field no longer exists on the service', async () => {
+    await service.init('proc-1', true);
+    expect((service as any).commandsByAgent$).toBeUndefined();
+    // The migrated surface exposes forAgent/snapshot, not a dict of subjects.
+    expect(typeof service.commands.forAgent).toBe('function');
+    expect(typeof service.commands.snapshot).toBe('function');
   });
 });
 
@@ -734,11 +778,12 @@ describe('ActorMessageService — commandsByAgent$ (Story 15-1, ADR-013)', () =>
 // ADR-005 §Decision 5: stateDict$ / contextDict$ / commandsByAgent$ were the
 // imperative per-agent state containers on ActorMessageService.
 // "Adding an exception requires a new ADR. This test is the automated guard."
-// Epic 17 (ADR-014) migrated `state` and `context` to PerAgentStore instances
-// (folded off log$ by the registry — NOT BehaviorSubject fields), so the probe
-// now sees only the remaining bespoke exception, commandsByAgent$ (Story 17-3
-// migrates it next). The invariant test itself is RETIRED in Story 17-4; this
-// is the minimal symbol-count adjustment to keep it compiling + green.
+// Epic 17 (ADR-014) migrated `state` + `context` (Story 17-2) and `commands`
+// (Story 17-3) to PerAgentStore instances (folded off log$ by the registry —
+// NOT BehaviorSubject fields), so the probe now sees ZERO bespoke per-agent
+// exceptions. The invariant test itself is RETIRED in Story 17-4; this is the
+// minimal symbol-count adjustment (singleton → empty set) to keep it compiling
+// + green now that the last exception (commandsByAgent$) is gone.
 // ---------------------------------------------------------------------------
 
 /**
@@ -746,7 +791,8 @@ describe('ActorMessageService — commandsByAgent$ (Story 15-1, ADR-013)', () =>
  * return the set of own-property names whose runtime shape is an imperative
  * state container — a direct `BehaviorSubject` field, or a per-agent dict
  * `{ [k: string]: BehaviorSubject<...> }`. PerAgentStore instances (the
- * Epic 17 `state` / `context`) are NOT BehaviorSubjects and are not counted.
+ * Epic 17 `state` / `context` / `commands`) are NOT BehaviorSubjects and are
+ * not counted.
  */
 function probeStateContainers(service: object): string[] {
   return Object.getOwnPropertyNames(service).filter((name) => {
@@ -755,8 +801,9 @@ function probeStateContainers(service: object): string[] {
     if (v && typeof v === 'object' && !Array.isArray(v)) {
       const values = Object.values(v);
       // Empty dicts cannot be distinguished structurally from other empty
-      // objects, so the empty case is not counted (the only remaining
-      // exception, commandsByAgent$, is a populated BehaviorSubject).
+      // objects, so the empty case is not counted. With commandsByAgent$ now
+      // migrated to the `commands` PerAgentStore (Story 17-3), no bespoke
+      // populated per-agent BehaviorSubject dict remains.
       if (values.length === 0) return false;
       return values.every((x) => x instanceof BehaviorSubject);
     }
@@ -783,15 +830,15 @@ describe('ActorMessageService — sanctioned-exceptions invariant (Story 6.4, NF
     });
   });
 
-  it('public data surface is exactly {commandsByAgent$}', () => {
+  it('public data surface has NO bespoke per-agent BehaviorSubject exception', () => {
     const service = TestBed.inject(ActorMessageService);
     // The probe MUST NOT rely on a name allow-list — it walks
     // `Object.getOwnPropertyNames` with a runtime `instanceof` check so that
     // any new `BehaviorSubject` field (regardless of name) forces this test
-    // to fail. Epic 17 (ADR-014) moved state/context to PerAgentStore
-    // instances; commandsByAgent$ is the last bespoke exception (Story 17-3).
+    // to fail. Epic 17 (ADR-014) moved state/context (17-2) and commands (17-3)
+    // to PerAgentStore instances, so the bespoke-exception set is now EMPTY.
     const containers = probeStateContainers(service);
-    expect(new Set(containers)).toEqual(new Set(['commandsByAgent$']));
+    expect(new Set(containers)).toEqual(new Set([]));
   });
 
   it('negative probe: adding another exception fails the invariant', () => {
@@ -799,9 +846,9 @@ describe('ActorMessageService — sanctioned-exceptions invariant (Story 6.4, NF
     // Simulate the "someone added a new BehaviorSubject" diff.
     (service as any).extraDict$ = { agent: new BehaviorSubject<any>(null) };
     const containers = probeStateContainers(service);
-    // The probe MUST detect the addition (set is no longer the documented
-    // singleton). Without this guard, the invariant test would silently pass.
-    expect(new Set(containers)).not.toEqual(new Set(['commandsByAgent$']));
+    // The probe MUST detect the addition (set is no longer empty). Without
+    // this guard, the invariant test would silently pass.
+    expect(new Set(containers)).not.toEqual(new Set([]));
     expect(containers).toContain('extraDict$');
   });
 

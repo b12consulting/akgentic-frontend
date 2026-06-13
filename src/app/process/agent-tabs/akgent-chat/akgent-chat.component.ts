@@ -91,14 +91,6 @@ export class AkgentChatComponent {
    */
   systemPrompt$!: Observable<SystemPromptRow[]>;
 
-  /**
-   * ADR-013: latest per-agent slash-command store (keyed by raw actor
-   * `name`). Snapshot of `ActorMessageService.commandsByAgent$`; read by
-   * `commandItems` to build this panel's `/` mention list. Empty until a
-   * `CommandsAnnouncedEvent` arrives for this agent (AC-6).
-   */
-  commandsByAgent: Record<string, CommandDescriptor[]> = {};
-
   ngOnInit(): void {
     // ADR-004 §5b step 2 — head system block for this panel's agent. Rendered
     // in the template via `async`, above the conversation table.
@@ -114,27 +106,22 @@ export class AkgentChatComponent {
       this.isLoading = false;
       this.updateContext(ctx);
     });
-
-    // ADR-013: keep a live snapshot of the per-agent slash-command store so
-    // this panel's `/` mention reflects the latest CommandsAnnouncedEvent.
-    this.messageService.commandsByAgent$
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((byAgent) => {
-        this.commandsByAgent = byAgent;
-      });
   }
 
   /**
-   * ADR-013 §3 — member chat target is unambiguous: this panel's own agent
-   * (`agentName`). The `/` list is that agent's command descriptors, mapped to
-   * dropdown items. Empty until a CommandsAnnouncedEvent arrives (AC-6).
+   * ADR-013 §3 / Epic 17 (ADR-014) — member chat target is unambiguous: this
+   * panel's own agent. The `/` list is that agent's command descriptors, read
+   * from `store.commands` by the panel's `agent_id` (`@Input() agentId`) and
+   * mapped to dropdown items. Keying by `agent_id` (not the friendly name) is
+   * the ADR-013 keying fix. Empty until a CommandsAnnouncedEvent arrives (AC-6).
    */
   get commandItems(): {
     name: string;
     description: string;
     args: CommandDescriptor['args'];
   }[] {
-    const descriptors = this.commandsByAgent[this.agentName] ?? [];
+    const descriptors =
+      this.messageService.commands.snapshot(this.agentId) ?? [];
     return descriptors
       // `_`-prefixed commands (e.g. `_expand_media_refs`) are internal, not
       // user-invocable — keep them out of the `/` dropdown.

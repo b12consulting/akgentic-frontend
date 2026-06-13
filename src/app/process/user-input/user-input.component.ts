@@ -54,14 +54,6 @@ export class ProcessUserInputComponent implements OnInit {
   mentionItems: { name: string; actorName: string; agentId: string }[] = [];
 
   /**
-   * ADR-013: latest per-agent slash-command store (keyed by raw actor
-   * `name`, e.g. `@Manager-…`). Snapshot of `ActorMessageService
-   * .commandsByAgent$`; read by the targeted-agent selector to build the `/`
-   * mention list. Empty until a `CommandsAnnouncedEvent` arrives (AC-6).
-   */
-  commandsByAgent: Record<string, CommandDescriptor[]> = {};
-
-  /**
    * ADR-013: live snapshot of the graph nodes — used to derive the
    * supervisor / entry-point default target for the main chat (Task 2.1).
    */
@@ -76,15 +68,6 @@ export class ProcessUserInputComponent implements OnInit {
   private destroyRef = inject(DestroyRef);
 
   ngOnInit() {
-    // ADR-013: keep a live snapshot of the per-agent slash-command store so
-    // the `/` mention list (built by the targeted-agent selector) reflects the
-    // latest CommandsAnnouncedEvent. Component-scoped (NFR1).
-    this.messageService.commandsByAgent$
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((byAgent) => {
-        this.commandsByAgent = byAgent;
-      });
-
     // Subscribe to nodes to populate mention items and dropdown agents
     this.graphDataService.nodes$
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -198,7 +181,8 @@ export class ProcessUserInputComponent implements OnInit {
 
   /**
    * ADR-013 §3 — resolve the SINGLE agent the `/` command list targets in the
-   * MAIN chat, by raw actor `name` (the `commandsByAgent$` / Send-to key):
+   * MAIN chat, by raw actor `name` (the Send-to key); `targetedAgentId()` then
+   * maps that name to the agent's `agent_id` for the `store.commands` lookup:
    *   - exactly one "Send to" recipient   → that recipient;
    *   - zero recipients                   → supervisor / entry-point default;
    *   - multiple recipients (broadcast)   → null (no single target, AC-4).
@@ -231,19 +215,37 @@ export class ProcessUserInputComponent implements OnInit {
   }
 
   /**
-   * ADR-013 — the `/` mention candidate list: the resolved targeted agent's
-   * command descriptors, mapped to dropdown items (`name` + `description` +
-   * ordered `args`). Empty when no single target resolves (none/ambiguous,
-   * AC-4) or no CommandsAnnouncedEvent has arrived yet for it (AC-6).
+   * Epic 17 (ADR-014 §2 / ADR-013 §3) — resolve the `/` target to its immutable
+   * `agent_id`. `resolveTargetedAgent()` still returns an actor `name`; this maps
+   * that name → the matching graph node's `name` field (which IS the `agent_id`
+   * UUID, the same value placed in `mentionItems[i].agentId`). A name that does
+   * not resolve to a live node yields `null` → empty `/` list (acceptable
+   * transient, same posture as the just-hired case, ADR-013 §3). Keying by
+   * `agent_id` (not the friendly name) is the ADR-013 keying fix: a display-name
+   * reused after a fire/re-hire can never serve the wrong agent's commands.
+   */
+  private targetedAgentId(): string | null {
+    const target = this.resolveTargetedAgent();
+    if (!target) return null;
+    const node = this.nodes.find((n) => n.actorName === target);
+    return node ? node.name : null;
+  }
+
+  /**
+   * ADR-013 / Epic 17 (ADR-014) — the `/` mention candidate list: the resolved
+   * targeted agent's command descriptors (read from `store.commands` by
+   * `agent_id`), mapped to dropdown items (`name` + `description` + ordered
+   * `args`). Empty when no single target resolves (none/ambiguous, AC-4) or no
+   * CommandsAnnouncedEvent has arrived yet for it (AC-6).
    */
   get commandItems(): {
     name: string;
     description: string;
     args: CommandDescriptor['args'];
   }[] {
-    const target = this.resolveTargetedAgent();
-    if (!target) return [];
-    const descriptors = this.commandsByAgent[target] ?? [];
+    const agentId = this.targetedAgentId();
+    if (!agentId) return [];
+    const descriptors = this.messageService.commands.snapshot(agentId) ?? [];
     return descriptors
       // `_`-prefixed commands (e.g. `_expand_media_refs`) are internal, not
       // user-invocable — keep them out of the `/` dropdown.

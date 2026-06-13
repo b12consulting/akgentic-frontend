@@ -1,12 +1,13 @@
 import { inject, Injectable } from '@angular/core';
 
-import { BehaviorSubject, Subject, Subscription } from 'rxjs';
+import { Subject, Subscription } from 'rxjs';
 import { bufferTime, filter, take } from 'rxjs/operators';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 import { ConfigService } from './config.service';
 import {
   AkgenticMessage,
   CommandDescriptor,
+  CommandsAnnouncedEvent,
   EventMessage,
   isCommandsAnnouncedEvent,
   isEventMessage,
@@ -50,6 +51,19 @@ function innerLlmMessage(msg: AkgenticMessage): unknown {
 }
 
 /**
+ * Inner-event reader for the `commands` instance (Epic 17 / ADR-014 §5).
+ * Mirrors `innerLlmMessage`: reads the inner `event` of an `EventMessage` and
+ * returns it iff it passes `isCommandsAnnouncedEvent`, else `undefined`. Keeps
+ * the `commands` spec's `match` and `reduce` reading the SAME inner payload.
+ */
+function innerCommandsEvent(
+  msg: AkgenticMessage,
+): CommandsAnnouncedEvent | undefined {
+  const inner = (msg as EventMessage).event;
+  return isCommandsAnnouncedEvent(inner) ? inner : undefined;
+}
+
+/**
  * Story 4-10 (AC7): minimum visible duration of the loading spinner.
  * When the first event / WS error / stopped-team replay lands before this
  * floor, the flip to `loadingProcess$.next(false)` is deferred so users
@@ -65,13 +79,13 @@ const SPINNER_MIN_VISIBLE_MS = 500;
  *     per-agent `state` / `context` from `log$` (O(Δ), automatic replay/reset).
  *   - Spinner floor (`loadingProcess$` on `ChatService`, AC7) — UX concern.
  *
- * Per-agent state (Epic 17 / ADR-014): `state` and `context` are now
- * `PerAgentStore` instances owned by the component-scoped
+ * Per-agent state (Epic 17 / ADR-014): `state`, `context`, and `commands` are
+ * all `PerAgentStore` instances owned by the component-scoped
  * `PerAgentStoreRegistry` (single `log$` subscription, replay + reset for
- * free). `commandsByAgent$` remains the last bespoke per-agent exception
- * (driven by `CommandsAnnouncedEvent`, ADR-013) until Story 17-3 migrates it.
- * `message.service.spec.ts` enforces the remaining-exception invariant by test
- * (its full retirement is Story 17-4).
+ * free). Story 17-3 migrated `commands` (driven by `CommandsAnnouncedEvent`,
+ * ADR-013) off the bespoke `commandsByAgent$` `BehaviorSubject` and re-keyed it
+ * by `sender.agent_id`, removing the last per-agent dict exception. Only the
+ * `SystemPromptSelector` façade remains pending (Story 17-4).
  */
 @Injectable()
 export class ActorMessageService {
@@ -131,16 +145,26 @@ export class ActorMessageService {
     });
 
   /**
-   * ADR-013 (third NFR9 exception): per-agent slash-command store, keyed by
-   * agent friendly name (the `@`-prefixed actor `name`, e.g. `@Manager`).
-   * Driven by `CommandsAnnouncedEvent` riding the existing `EventMessage`
-   * passthrough; a later event for an agent REPLACES that agent's entry (the
-   * backend re-emits the full list on change). Consumed by the `/` mention's
-   * targeted-agent selector. Reset on every `init()` alongside the other
-   * per-team dicts.
+   * Epic 17 (ADR-014 §5): per-agent slash-command store derived from
+   * `CommandsAnnouncedEvent` riding the `EventMessage` passthrough. Replaces
+   * the bespoke `commandsByAgent$`. Default key `sender.agent_id` (ADR-013
+   * keying fix — the emitting agent is the outer sender, so
+   * `sender.agent_id === inner.agent.agent_id`, ADR-014 §2), so a fired/re-hired
+   * display-name reuse can never serve the wrong agent's commands. `replaceWith`
+   * gives the same replace-on-re-announce semantics the backend relies on (the
+   * full list is re-emitted on change). Read via `commands.forAgent(id)` /
+   * `commands.snapshot(id)` by the `/` mention consumers.
    */
-  commandsByAgent$: BehaviorSubject<Record<string, CommandDescriptor[]>> =
-    new BehaviorSubject<Record<string, CommandDescriptor[]>>({});
+  readonly commands: PerAgentStore<CommandDescriptor[]> =
+    this.registry.register<CommandDescriptor[]>({
+      name: 'commands',
+      match: (m) =>
+        isEventMessage(m) &&
+        isCommandsAnnouncedEvent((m as EventMessage).event),
+      reduce: replaceWith<CommandDescriptor[]>(
+        (m) => innerCommandsEvent(m)?.commands ?? [],
+      ),
+    });
 
   processId: string = '';
 
@@ -197,12 +221,9 @@ export class ActorMessageService {
     // --- ADR-005 §Decision 6 step (b) ---------------------------------
     // Reset the log BEFORE any replay / WS wiring so process-A state cannot
     // leak into process-B. Epic 17 (ADR-014 §Decision 3): the `state` /
-    // `context` registry detects this log shrink, clears its maps, and rewinds
-    // its cursor automatically — no bespoke per-store reset needed.
+    // `context` / `commands` registry detects this log shrink, clears its maps,
+    // and rewinds its cursor automatically — no bespoke per-store reset needed.
     this.log.reset();
-    // ADR-013: clear the per-agent slash-command store so process-A's
-    // announced commands cannot leak into process-B.
-    this.commandsByAgent$.next({});
 
     // Story 8-2: clear any stale toasts from a prior init() cycle
     // so process-A's warnings do not persist into process-B.
@@ -225,36 +246,16 @@ export class ActorMessageService {
         await this.apiService.getEvents(processId);
 
       // --- ADR-005 §Decision 6 step (c) -------------------------------
-      // log.appendAll is the ONLY replay seeding for state/context now.
-      // Epic 17 (ADR-014 §Decision 3): the registry folds this replay tail
-      // exactly as it folds live WS frames, so `state` / `context` are
-      // reconstructed for free — replay is just another `log$` tail. The
-      // bespoke `latestStates` / `contextArrays` reconstruction is deleted.
+      // log.appendAll is the ONLY replay seeding now. Epic 17 (ADR-014
+      // §Decision 3): the registry folds this replay tail exactly as it folds
+      // live WS frames, so `state` / `context` / `commands` are reconstructed
+      // for free — replay is just another `log$` tail. The bespoke
+      // `latestStates` / `contextArrays` / `commandsByAgent` reconstruction
+      // loops are deleted (Story 17-2 / 17-3).
       const replayMessages: AkgenticMessage[] = eventResponses
         .map((er: EventResponse) => er.event as AkgenticMessage)
         .filter((evt) => !!evt && !!evt.__model__);
       this.log.appendAll(replayMessages);
-
-      // ADR-013 (Story 17-3 scope): rebuild the per-agent slash-command store
-      // from persisted events so a stopped-team reopen still shows the `/`
-      // list. Keyed by agent friendly name; a later replay event REPLACES the
-      // entry (consistent with the live replace-on-reannounce semantics).
-      const commandsByAgent: Record<string, CommandDescriptor[]> = {};
-
-      for (const er of eventResponses) {
-        const evt = er.event;
-        if (!evt || !evt.__model__) continue;
-        if (!evt.__model__.includes('EventMessage')) continue;
-        const inner = evt.event;
-        if (isCommandsAnnouncedEvent(inner)) {
-          const agentName = inner.agent?.name;
-          if (agentName) commandsByAgent[agentName] = inner.commands ?? [];
-        }
-      }
-
-      if (Object.keys(commandsByAgent).length > 0) {
-        this.commandsByAgent$.next(commandsByAgent);
-      }
 
       // Story 6.4 (AC1): `GRAPH_RELEVANT_MODELS` filtering and the
       // `createAgentGraph$` / `messages$` emits below are deleted along with
@@ -398,9 +399,9 @@ export class ActorMessageService {
    * Story 6.1 (ADR-005 §Decision 3 + §Decision 5): frame-batched consumer
    * of the raw WS inbound stream. `bufferTime(16)` coalesces every message
    * that lands in a single 16ms window into one `log.appendAll` call and
-   * one `log$` emission (AC3). Epic 17 (ADR-014): `state` / `context` are now
-   * folded off `log$` by the registry, so the only remaining per-message
-   * dispatch is the `commandsByAgent$` arm (Story 17-3 scope).
+   * one `log$` emission (AC3). Epic 17 (ADR-014): `state` / `context` /
+   * `commands` are all folded off `log$` by the registry, so there is no
+   * remaining per-message dispatch — the batched subscriber only feeds the log.
    */
   private setupBatchedSubscriber(): void {
     this.bufferSub = this._wsInbound$
@@ -410,12 +411,6 @@ export class ActorMessageService {
       )
       .subscribe((batch: AkgenticMessage[]) => {
         this.log.appendAll(batch);
-        for (const msg of batch) {
-          if (!msg.__model__) continue;
-          if (msg.__model__.includes('EventMessage')) {
-            this.applyEventMessageDicts(msg as any);
-          }
-        }
       });
   }
 
@@ -430,41 +425,6 @@ export class ActorMessageService {
     this.spinnerSub = this._wsInbound$
       .pipe(take(1))
       .subscribe(() => this.scheduleSpinnerFlipFalse());
-  }
-
-  /**
-   * Story 6.1 (Task 2.4) / Epic 17 (ADR-014): apply the inner-event arms of
-   * an `EventMessage` that are NOT yet folded off `log$`. The `LlmMessageEvent`
-   * arm has been deleted — `context` is now a `PerAgentStore` instance. Only
-   * the `CommandsAnnouncedEvent` arm remains (Story 17-3 scope). `ToolStateEvent`
-   * is covered by `KGStateReducer.knowledgeGraph$` (pure selector over `log$`).
-   */
-  private applyEventMessageDicts(event: any): void {
-    const inner = event?.event;
-    if (!inner?.__model__) return;
-    if (isCommandsAnnouncedEvent(inner)) {
-      this.applyCommandsAnnounced(inner);
-    }
-  }
-
-  /**
-   * ADR-013: fold a `CommandsAnnouncedEvent` into `commandsByAgent$`. Keyed by
-   * the announcing agent's friendly `name` (the `@`-prefixed actor name, which
-   * the `/`-mention selector matches against the Send-to / panel agent). A
-   * later event for the same agent REPLACES that agent's entry. Ignored when
-   * the event carries no agent name (defensive — never partially populate).
-   */
-  private applyCommandsAnnounced(inner: {
-    agent?: { name?: string };
-    commands?: CommandDescriptor[];
-  }): void {
-    const agentName = inner.agent?.name;
-    if (!agentName) return;
-    const current = this.commandsByAgent$.getValue();
-    this.commandsByAgent$.next({
-      ...current,
-      [agentName]: inner.commands ?? [],
-    });
   }
 
   /**
@@ -552,9 +512,9 @@ export class ActorMessageService {
     this.bufferSub?.unsubscribe();
     this.spinnerSub?.unsubscribe();
     this._wsInbound$.complete();
-    // ADR-013: complete the slash-command store on teardown so no leaked
-    // subscriber survives the component.
-    this.commandsByAgent$.complete();
+    // Epic 17 (ADR-014): the `commands` store is owned by the registry; its
+    // single `log$` subscription is torn down by `PerAgentStoreRegistry`'s own
+    // ngOnDestroy — no per-store completion needed here.
     if (this.spinnerFlipTimer !== null) {
       clearTimeout(this.spinnerFlipTimer);
       this.spinnerFlipTimer = null;

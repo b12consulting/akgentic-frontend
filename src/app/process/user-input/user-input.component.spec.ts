@@ -45,7 +45,10 @@ describe('ProcessUserInputComponent', () => {
   let chatServiceMock: any;
   let contextServiceStub: { currentTeamRunning$: BehaviorSubject<boolean> };
   let nodesSubject: BehaviorSubject<NodeInterface[]>;
-  let commandsByAgentSubject: BehaviorSubject<Record<string, CommandDescriptor[]>>;
+  // Story 17-3: the service now exposes a `commands` PerAgentStore keyed by
+  // agent_id. The stub holds a plain agent_id → descriptors map and a
+  // `snapshot(id)` reader matching the real store's synchronous getter shape.
+  let commandsById: Record<string, CommandDescriptor[]>;
 
   beforeEach(async () => {
     apiServiceSpy = jasmine.createSpyObj('ApiService', ['sendMessage', 'sendMessageFromTo']);
@@ -69,11 +72,12 @@ describe('ProcessUserInputComponent', () => {
       nodes$: nodesSubject,
     };
 
-    commandsByAgentSubject = new BehaviorSubject<
-      Record<string, CommandDescriptor[]>
-    >({});
+    commandsById = {};
     const messageServiceStub = {
-      commandsByAgent$: commandsByAgentSubject,
+      commands: {
+        snapshot: (id: string): CommandDescriptor[] | undefined =>
+          commandsById[id],
+      },
     };
 
     await TestBed.configureTestingModule({
@@ -743,12 +747,13 @@ describe('ProcessUserInputComponent', () => {
       description: 'List the current team roster',
     });
 
-    it('AC-3: with exactly one Send-to recipient, commandItems are that agent\'s commands', () => {
+    it('AC-3: with exactly one Send-to recipient, commandItems are that agent\'s commands (keyed by agent_id)', () => {
       nodesSubject.next([
         makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
         makeNode({ name: 'dev-1', actorName: '@Developer', role: 'Worker' }),
       ]);
-      commandsByAgentSubject.next({ '@Manager': [HIRE, ROSTER] });
+      // Seed under the node's agent_id (`name`), NOT the friendly actor name.
+      commandsById['mgr-1'] = [HIRE, ROSTER];
       component.selectedAgents = ['@Manager'];
 
       expect(component.commandItems.map((c) => c.name)).toEqual([
@@ -765,7 +770,7 @@ describe('ProcessUserInputComponent', () => {
       nodesSubject.next([
         makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
       ]);
-      commandsByAgentSubject.next({ '@Manager': [INTERNAL, HIRE, ROSTER] });
+      commandsById['mgr-1'] = [INTERNAL, HIRE, ROSTER];
       component.selectedAgents = ['@Manager'];
 
       // `_expand_media_refs` is internal — only user commands remain.
@@ -791,14 +796,29 @@ describe('ProcessUserInputComponent', () => {
           parentId: 'mgr-1',
         }),
       ]);
-      commandsByAgentSubject.next({
-        '@Manager': [HIRE],
-        '@Developer': [ROSTER],
-      });
+      commandsById['mgr-1'] = [HIRE];
+      commandsById['dev-1'] = [ROSTER];
       component.selectedAgents = [];
 
-      // Supervisor = the agent whose parent is @Human → @Manager.
+      // Supervisor = the agent whose parent is @Human → @Manager (agent_id mgr-1).
       expect(component.commandItems.map((c) => c.name)).toEqual(['hire_member']);
+    });
+
+    it('AC-2: name-reuse non-bleed — same display name, different agent_ids resolve correctly', () => {
+      // Two nodes have shared the display name '@Manager' history but the LIVE
+      // roster carries the re-hired one (agent_id mgr-new). The list must be the
+      // resolved node's agent_id list, never a stale name-keyed entry.
+      nodesSubject.next([
+        makeNode({ name: 'mgr-new', actorName: '@Manager', role: 'Worker' }),
+      ]);
+      // The fired agent (mgr-old) still has a seeded entry; the re-hired one a
+      // different list. The resolved target's agent_id is mgr-new.
+      commandsById['mgr-old'] = [HIRE];
+      commandsById['mgr-new'] = [ROSTER];
+      component.selectedAgents = ['@Manager'];
+
+      // Correct agent's commands (mgr-new → roster), no bleed from mgr-old.
+      expect(component.commandItems.map((c) => c.name)).toEqual(['roster']);
     });
 
     it('AC-4: with multiple Send-to recipients, the / list is empty', () => {
@@ -806,7 +826,8 @@ describe('ProcessUserInputComponent', () => {
         makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
         makeNode({ name: 'dev-1', actorName: '@Developer', role: 'Worker' }),
       ]);
-      commandsByAgentSubject.next({ '@Manager': [HIRE], '@Developer': [ROSTER] });
+      commandsById['mgr-1'] = [HIRE];
+      commandsById['dev-1'] = [ROSTER];
       component.selectedAgents = ['@Manager', '@Developer'];
 
       expect(component.commandItems).toEqual([]);
@@ -816,7 +837,7 @@ describe('ProcessUserInputComponent', () => {
       nodesSubject.next([
         makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
       ]);
-      // commandsByAgent$ stays {} (no event arrived yet).
+      // commands store is empty (no event arrived yet).
       component.selectedAgents = ['@Manager'];
 
       expect(component.commandItems).toEqual([]);
@@ -879,10 +900,13 @@ describe('ProcessUserInputComponent', () => {
         makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
       ]);
       // Stored order: TeamTool first, PlanningTool names reversed — neither
-      // tool-grouped nor globally alphabetical.
-      commandsByAgentSubject.next({
-        '@Manager': [TEAM_ROSTER, PLAN_BREAKDOWN, TEAM_HIRE, PLAN_AUDIT],
-      });
+      // tool-grouped nor globally alphabetical. Seeded under agent_id mgr-1.
+      commandsById['mgr-1'] = [
+        TEAM_ROSTER,
+        PLAN_BREAKDOWN,
+        TEAM_HIRE,
+        PLAN_AUDIT,
+      ];
       component.selectedAgents = ['@Manager'];
 
       // PlanningTool family (audit, breakdown) before TeamTool family
