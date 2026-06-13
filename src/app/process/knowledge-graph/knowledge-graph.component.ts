@@ -32,7 +32,7 @@ import { CanvasRenderer } from 'echarts/renderers';
 import { NgxEchartsDirective, provideEchartsCore } from 'ngx-echarts';
 
 import { KGStateReducer } from '../../services/kg-state.reducer';
-import { ActorMessageService } from '../../components/process/event/message.service';
+import { IngestionService } from '../../components/process/event/ingestion.service';
 
 echarts.use([
   CanvasRenderer,
@@ -121,7 +121,7 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
 
   zone: NgZone = inject(NgZone);
   route: ActivatedRoute = inject(ActivatedRoute);
-  messageService: ActorMessageService = inject(ActorMessageService);
+  messageService: IngestionService = inject(IngestionService);
   // Story 6.2 (ADR-005 §Decision 4): subscribe to the pure selector instead
   // of the former `messageService.knowledgeGraph$` passthrough (deleted).
   private readonly kgReducer: KGStateReducer = inject(KGStateReducer);

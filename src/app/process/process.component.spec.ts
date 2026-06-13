@@ -13,7 +13,7 @@ import { FeedbackService } from '../services/feedback.service';
 import { GraphDataService } from '../services/graph-data.service';
 import { KGStateReducer } from '../services/kg-state.reducer';
 import { MessageLogService } from '../components/process/event/message-log.service';
-import { ActorMessageService } from '../components/process/event/message.service';
+import { IngestionService } from '../components/process/event/ingestion.service';
 import { SelectionService } from '../services/selection.service';
 import {
   KG_ACTOR_NAME,
@@ -93,7 +93,7 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
     };
 
     // Story 6.4 (AC1): `messages$` / `message$` / `createAgentGraph$` were
-    // deleted from `ActorMessageService`; the stub no longer references them.
+    // deleted from `IngestionService`; the stub no longer references them.
     // Code review fix: `knowledgeGraphLoading$` deleted (dead state, never
     // `.next()`-ed and its `isLoading$` consumer was never read in the KG
     // component template — collapsed into the two-exceptions invariant purity).
@@ -145,7 +145,7 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
         ToolPresenceService,
         KGStateReducer,
         { provide: ContextService, useValue: contextService },
-        { provide: ActorMessageService, useValue: messageService },
+        { provide: IngestionService, useValue: messageService },
         { provide: AkgentService, useValue: akgentService },
         { provide: GraphDataService, useValue: graphDataService },
         { provide: ChatService, useValue: chatService },
@@ -347,7 +347,7 @@ describe('ProcessComponent (Story 10-2 — single-fetch navigation)', () => {
         ToolPresenceService,
         KGStateReducer,
         { provide: ContextService, useValue: contextService },
-        { provide: ActorMessageService, useValue: messageService },
+        { provide: IngestionService, useValue: messageService },
         { provide: AkgentService, useValue: akgentService },
         { provide: GraphDataService, useValue: graphDataService },
         { provide: ChatService, useValue: chatService },

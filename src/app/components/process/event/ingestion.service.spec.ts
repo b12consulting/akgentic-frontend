@@ -3,7 +3,7 @@ import { MessageService } from 'primeng/api';
 import { BehaviorSubject, Subject } from 'rxjs';
 import { WebSocketSubject } from 'rxjs/webSocket';
 
-import { ActorMessageService } from './message.service';
+import { IngestionService } from './ingestion.service';
 import { ApiService } from '../../../core/http/api.service';
 import { ChatService } from '../../../services/chat.service';
 import { MessageLogService } from './message-log.service';
@@ -29,13 +29,13 @@ function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
 
 // Story 6.3 (AC9, Task 7.4): `applyThinkingLifecycle`,
 // `dispatchToolEventToThinking`, and `handleEventMessage` were deleted from
-// `ActorMessageService`. The thinking-bubble lifecycle is now reconstructed
+// `IngestionService`. The thinking-bubble lifecycle is now reconstructed
 // by `chatFold` over `log$` — coverage lives in `chat.service.spec.ts`
 // (ReceivedMessage → ToolCallEvent → ToolReturnEvent → SentMessage fold
 // scenarios, integration + FR11 + AC7 + late-subscriber).
 
-describe('ActorMessageService.init — loadingProcess$ spinner window (Story 4-10)', () => {
-  let service: ActorMessageService;
+describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)', () => {
+  let service: IngestionService;
   let chatService: ChatService;
   let fakeSocket: Subject<any>;
 
@@ -53,7 +53,7 @@ describe('ActorMessageService.init — loadingProcess$ spinner window (Story 4-1
       providers: [
         MessageLogService,
         PerAgentStoreRegistry,
-        ActorMessageService,
+        IngestionService,
         ChatService,
         {
           provide: ApiService,
@@ -65,7 +65,7 @@ describe('ActorMessageService.init — loadingProcess$ spinner window (Story 4-1
         { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
       ],
     });
-    service = TestBed.inject(ActorMessageService);
+    service = TestBed.inject(IngestionService);
     chatService = TestBed.inject(ChatService);
 
     // Stub the service's protected WS factory so init() wires the
@@ -250,8 +250,8 @@ describe('ActorMessageService.init — loadingProcess$ spinner window (Story 4-1
 // Story 6.1 — MessageLogService integration + frame-batched ingestion (AC1-8)
 // ---------------------------------------------------------------------------
 
-describe('ActorMessageService — Story 6.1 (frame-batched log ingestion)', () => {
-  let service: ActorMessageService;
+describe('IngestionService — Story 6.1 (frame-batched log ingestion)', () => {
+  let service: IngestionService;
   let log: MessageLogService;
   let chatService: ChatService;
   let fakeSocket: Subject<any>;
@@ -287,7 +287,7 @@ describe('ActorMessageService — Story 6.1 (frame-batched log ingestion)', () =
       providers: [
         MessageLogService,
         PerAgentStoreRegistry,
-        ActorMessageService,
+        IngestionService,
         ChatService,
         {
           provide: ApiService,
@@ -298,7 +298,7 @@ describe('ActorMessageService — Story 6.1 (frame-batched log ingestion)', () =
         { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
       ],
     });
-    service = TestBed.inject(ActorMessageService);
+    service = TestBed.inject(IngestionService);
     log = TestBed.inject(MessageLogService);
     chatService = TestBed.inject(ChatService);
 
@@ -557,8 +557,8 @@ describe('ActorMessageService — Story 6.1 (frame-batched log ingestion)', () =
 // and the name-reuse non-bleed correctness proof.
 // ---------------------------------------------------------------------------
 
-describe('ActorMessageService — commands PerAgentStore (Story 17-3, ADR-014/ADR-013)', () => {
-  let service: ActorMessageService;
+describe('IngestionService — commands PerAgentStore (Story 17-3, ADR-014/ADR-013)', () => {
+  let service: IngestionService;
   let fakeSocket: Subject<any>;
 
   /** A CommandsAnnouncedEvent EventMessage. The outer `sender.agent_id` is the
@@ -612,7 +612,7 @@ describe('ActorMessageService — commands PerAgentStore (Story 17-3, ADR-014/AD
       providers: [
         MessageLogService,
         PerAgentStoreRegistry,
-        ActorMessageService,
+        IngestionService,
         ChatService,
         {
           provide: ApiService,
@@ -623,7 +623,7 @@ describe('ActorMessageService — commands PerAgentStore (Story 17-3, ADR-014/AD
         { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
       ],
     });
-    service = TestBed.inject(ActorMessageService);
+    service = TestBed.inject(IngestionService);
 
     spyOn<any>(service, 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
@@ -780,7 +780,7 @@ describe('ActorMessageService — commands PerAgentStore (Story 17-3, ADR-014/AD
 // instances (state/context — 17-2; commands — 17-3; systemPrompt — 17-4), the
 // "count bespoke exceptions" framing is obsolete. The structural guarantee now
 // is: the four per-agent derived values are PerAgentStore instances owned by
-// the single PerAgentStoreRegistry, and ActorMessageService introduces NO
+// the single PerAgentStoreRegistry, and IngestionService introduces NO
 // per-agent BehaviorSubject of its own. The negative guard still bites: adding
 // a bespoke per-agent BehaviorSubject field MUST be detected.
 //
@@ -789,7 +789,7 @@ describe('ActorMessageService — commands PerAgentStore (Story 17-3, ADR-014/AD
 // ---------------------------------------------------------------------------
 
 /**
- * Probe the public surface of an `ActorMessageService` (or subclass) and return
+ * Probe the public surface of an `IngestionService` (or subclass) and return
  * the own-property names whose runtime shape is a bespoke per-agent
  * `BehaviorSubject` state container — a direct `BehaviorSubject` field, or a
  * dict `{ [k: string]: BehaviorSubject<...> }`. `PerAgentStore` instances (the
@@ -813,13 +813,13 @@ function probePerAgentBehaviorSubjects(service: object): string[] {
   });
 }
 
-describe('ActorMessageService — registry is the only per-agent owner (Epic 17, ADR-014)', () => {
+describe('IngestionService — registry is the only per-agent owner (Epic 17, ADR-014)', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
         MessageLogService,
         PerAgentStoreRegistry,
-        ActorMessageService,
+        IngestionService,
         ChatService,
         {
           provide: ApiService,
@@ -833,7 +833,7 @@ describe('ActorMessageService — registry is the only per-agent owner (Epic 17,
   });
 
   it('the four per-agent concerns are registry-owned PerAgentStore instances', () => {
-    const service = TestBed.inject(ActorMessageService);
+    const service = TestBed.inject(IngestionService);
     expect(service.state).toBeInstanceOf(PerAgentStore);
     expect(service.context).toBeInstanceOf(PerAgentStore);
     expect(service.commands).toBeInstanceOf(PerAgentStore);
@@ -841,7 +841,7 @@ describe('ActorMessageService — registry is the only per-agent owner (Epic 17,
   });
 
   it('introduces NO bespoke per-agent BehaviorSubject of its own', () => {
-    const service = TestBed.inject(ActorMessageService);
+    const service = TestBed.inject(IngestionService);
     // Runtime structural probe: any per-agent BehaviorSubject field (regardless
     // of name) would surface here. PerAgentStore instances are not counted —
     // the registry is the sole per-agent-map owner.
@@ -850,7 +850,7 @@ describe('ActorMessageService — registry is the only per-agent owner (Epic 17,
   });
 
   it('negative guard: adding a bespoke per-agent BehaviorSubject fails the probe', () => {
-    const service = TestBed.inject(ActorMessageService);
+    const service = TestBed.inject(IngestionService);
     // Simulate the regression the old invariant policed: a new per-agent
     // BehaviorSubject field bypassing the registry.
     (service as any).extraDict$ = { agent: new BehaviorSubject<any>(null) };
@@ -860,7 +860,7 @@ describe('ActorMessageService — registry is the only per-agent owner (Epic 17,
   });
 
   it('non-state observables (Subjects, Subscriptions, WebSocketSubject) are NOT counted', () => {
-    const service = TestBed.inject(ActorMessageService);
+    const service = TestBed.inject(IngestionService);
     const containers = probePerAgentBehaviorSubjects(service);
     expect(containers).not.toContain('_wsInbound$');
     expect(containers).not.toContain('bufferSub');
@@ -873,8 +873,8 @@ describe('ActorMessageService — registry is the only per-agent owner (Epic 17,
 // Story 8-2 — Persistent WebSocket disconnect warning toast (AC1–AC5)
 // ---------------------------------------------------------------------------
 
-describe('ActorMessageService — Story 8-2 (persistent disconnect toast)', () => {
-  let service: ActorMessageService;
+describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
+  let service: IngestionService;
   let msgService: any;
   let fakeSocket: Subject<any>;
 
@@ -888,7 +888,7 @@ describe('ActorMessageService — Story 8-2 (persistent disconnect toast)', () =
       providers: [
         MessageLogService,
         PerAgentStoreRegistry,
-        ActorMessageService,
+        IngestionService,
         ChatService,
         {
           provide: ApiService,
@@ -899,7 +899,7 @@ describe('ActorMessageService — Story 8-2 (persistent disconnect toast)', () =
         { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
       ],
     });
-    service = TestBed.inject(ActorMessageService);
+    service = TestBed.inject(IngestionService);
     msgService = TestBed.inject(MessageService);
 
     spyOn<any>(service, 'createWebSocket').and.returnValue(
@@ -1032,8 +1032,8 @@ describe('ActorMessageService — Story 8-2 (persistent disconnect toast)', () =
 // log fold (no store mocking) per the story's testing standards.
 // ---------------------------------------------------------------------------
 
-describe('ActorMessageService — state + context PerAgentStore (Story 17-2)', () => {
-  let service: ActorMessageService;
+describe('IngestionService — state + context PerAgentStore (Story 17-2)', () => {
+  let service: IngestionService;
   let registry: PerAgentStoreRegistry;
   let log: MessageLogService;
   let fakeSocket: Subject<any>;
@@ -1087,7 +1087,7 @@ describe('ActorMessageService — state + context PerAgentStore (Story 17-2)', (
       providers: [
         MessageLogService,
         PerAgentStoreRegistry,
-        ActorMessageService,
+        IngestionService,
         ChatService,
         {
           provide: ApiService,
@@ -1098,7 +1098,7 @@ describe('ActorMessageService — state + context PerAgentStore (Story 17-2)', (
         { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
       ],
     });
-    service = TestBed.inject(ActorMessageService);
+    service = TestBed.inject(IngestionService);
     registry = TestBed.inject(PerAgentStoreRegistry);
     log = TestBed.inject(MessageLogService);
 

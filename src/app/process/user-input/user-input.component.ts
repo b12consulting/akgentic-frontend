@@ -17,7 +17,7 @@ import { ApiService } from '../../core/http/api.service';
 import { ChatService } from '../../services/chat.service';
 import { ContextService } from '../../core/context/context.service';
 import { GraphDataService, HUMAN_ROLE } from '../../services/graph-data.service';
-import { ActorMessageService } from '../../components/process/event/message.service';
+import { IngestionService } from '../../components/process/event/ingestion.service';
 
 import { ENTRY_POINT_NAME } from '../../models/chat-message.model';
 import { CommandDescriptor } from '../../protocol/message.types';
@@ -45,7 +45,7 @@ export class ProcessUserInputComponent implements OnInit {
   chatService: ChatService = inject(ChatService);
   contextService: ContextService = inject(ContextService);
   graphDataService: GraphDataService = inject(GraphDataService);
-  messageService: ActorMessageService = inject(ActorMessageService);
+  messageService: IngestionService = inject(IngestionService);
   private config = inject(ConfigService);
   userInput: string = '';
   userInputEnterKeySubmit: boolean = this.config.userInputEnterKeySubmit;

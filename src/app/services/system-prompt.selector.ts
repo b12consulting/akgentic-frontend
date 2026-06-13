@@ -8,7 +8,7 @@ import {
   isLlmSystemPromptEvent,
   SystemPromptPartSnapshot,
 } from '../protocol/message.types';
-import { ActorMessageService } from '../components/process/event/message.service';
+import { IngestionService } from '../components/process/event/ingestion.service';
 
 /**
  * One rendered row of the trace head system block. Mirrors the shape the
@@ -28,7 +28,7 @@ export interface SystemPromptRow {
 // These are the SINGLE implementation of the system-prompt mapping + part
 // extraction logic. They are shared by the `systemPromptReduce` per-message
 // reducer (registered on the `systemPrompt` PerAgentStore in
-// `ActorMessageService`, Epic 17 / ADR-014) — there is no longer a whole-log
+// `IngestionService`, Epic 17 / ADR-014) — there is no longer a whole-log
 // fold. Each maps to a fresh array; none mutates its input; none throws.
 // ---------------------------------------------------------------------------
 
@@ -177,7 +177,7 @@ export function systemPromptMatch(msg: AkgenticMessage): boolean {
  * Epic 17 / Story 17-4 (ADR-014).
  *
  * `latestSystemPrompt$(agentId)` now DELEGATES to the `systemPrompt`
- * `PerAgentStore` instance owned by `ActorMessageService` (registered on the
+ * `PerAgentStore` instance owned by `IngestionService` (registered on the
  * single `PerAgentStoreRegistry` alongside `state` / `context` / `commands`).
  * The selector holds NO per-agent state of its own and no `log$` fold pipeline —
  * the latest-wins + FR2 fallback + row-mapping logic lives in
@@ -190,12 +190,12 @@ export function systemPromptMatch(msg: AkgenticMessage): boolean {
  * (AC-4 parity with the old fold's `[]`-for-no-rows contract).
  *
  * Scope: component-scoped (NOT `providedIn: 'root'`) — it injects the
- * component-scoped `ActorMessageService` from `ProcessComponent.providers`.
+ * component-scoped `IngestionService` from `ProcessComponent.providers`.
  */
 @Injectable()
 export class SystemPromptSelector {
-  private readonly messageService: ActorMessageService =
-    inject(ActorMessageService);
+  private readonly messageService: IngestionService =
+    inject(IngestionService);
 
   latestSystemPrompt$(agentId: string): Observable<SystemPromptRow[]> {
     return this.messageService.systemPrompt

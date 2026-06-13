@@ -16,7 +16,7 @@ import { ChatMessage, classifyMessage } from '../models/chat-message.model';
 import { ApiService } from '../core/http/api.service';
 import { AkgentService } from '../core/ui/akgent.service';
 import { GraphDataService } from '../services/graph-data.service';
-import { ActorMessageService } from '../components/process/event/message.service';
+import { IngestionService } from '../components/process/event/ingestion.service';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {
@@ -75,7 +75,7 @@ describe('ChatPanelComponent', () => {
     messagesSubject = new BehaviorSubject<AkgenticMessage[]>([]);
 
     // Story 6.4 (AC3): `ChatPanelComponent` no longer injects
-    // `ActorMessageService`. The spec feeds SentMessages via
+    // `IngestionService`. The spec feeds SentMessages via
     // `messagesSubject` and projects them through the same classification
     // `chatFold` performs in production — the component now reads the
     // derived `chatService.messages$` directly.
@@ -115,7 +115,7 @@ describe('ChatPanelComponent', () => {
     };
 
     // Story 15-1 (ADR-013) / Epic 17 (ADR-014): the embedded <app-user-input>
-    // injects ActorMessageService for its `commands` PerAgentStore (the `/`
+    // injects IngestionService for its `commands` PerAgentStore (the `/`
     // mention store). Story 17-3 removed the bespoke `commandsByAgent$`; this
     // stub mirrors the current surface — a `commands`-shaped object exposing
     // `snapshot(id)` (returns `[]` here: the empty-selection scenarios in this
@@ -133,7 +133,7 @@ describe('ChatPanelComponent', () => {
         { provide: ApiService, useValue: apiService },
         { provide: AkgentService, useValue: akgentService },
         { provide: GraphDataService, useValue: graphDataService },
-        { provide: ActorMessageService, useValue: messageService },
+        { provide: IngestionService, useValue: messageService },
       ],
     }).compileComponents();
 

@@ -7,7 +7,7 @@ import { AkgentChatComponent } from './akgent-chat.component';
 import { ApiService } from '../../../core/http/api.service';
 import { UtilService } from '../../../core/ui/utils.service';
 import { ContextService } from '../../../core/context/context.service';
-import { ActorMessageService } from '../../../components/process/event/message.service';
+import { IngestionService } from '../../../components/process/event/ingestion.service';
 import { MessageLogService } from '../../../components/process/event/message-log.service';
 import { PerAgentStoreRegistry } from '../../../components/process/event/per-agent-store';
 import {
@@ -65,14 +65,14 @@ describe('AkgentChatComponent — slash-command mention (Story 15-1 / 17-3)', ()
         },
         // Story 16-2 / Epic 17 (17-4): AkgentChatComponent injects
         // SystemPromptSelector, now a thin façade over
-        // `ActorMessageService.systemPrompt`. Provide a stub service exposing the
+        // `IngestionService.systemPrompt`. Provide a stub service exposing the
         // `commands` snapshot the `/` mention reads PLUS a REAL `systemPrompt`
         // PerAgentStore (registered on a real registry over the same
         // MessageLogService) so the façade resolves against a live store.
         MessageLogService,
         PerAgentStoreRegistry,
         {
-          provide: ActorMessageService,
+          provide: IngestionService,
           useFactory: (registry: PerAgentStoreRegistry) => ({
             commands: {
               snapshot: (id: string): CommandDescriptor[] | undefined =>
@@ -323,14 +323,14 @@ describe('AkgentChatComponent — head system block (Story 16-2)', () => {
         },
         // Story 17-3 / Epic 17 (17-4): member chat reads
         // `commands.snapshot(agentId)`; the head block reads the
-        // SystemPromptSelector façade over `ActorMessageService.systemPrompt`.
+        // SystemPromptSelector façade over `IngestionService.systemPrompt`.
         // The stub exposes `commands` PLUS a REAL `systemPrompt` PerAgentStore
         // (registered on a real registry over the same MessageLogService) so the
         // head block renders from the actual log-driven fold.
         MessageLogService,
         PerAgentStoreRegistry,
         {
-          provide: ActorMessageService,
+          provide: IngestionService,
           useFactory: (registry: PerAgentStoreRegistry) => ({
             commands: {
               snapshot: (_id: string): CommandDescriptor[] | undefined =>

@@ -353,7 +353,7 @@ export function graphFold(
  * as sliced projections for downstream compatibility. Imperative state
  * (`isLoading$`) is preserved — it reflects UX concerns, not message state
  * (AC10; NFR9 "two exceptions" invariant is unaffected because it lives on
- * `GraphDataService`, not `ActorMessageService`).
+ * `GraphDataService`, not `IngestionService`).
  */
 @Injectable()
 export class GraphDataService {
@@ -381,7 +381,7 @@ export class GraphDataService {
   /**
    * AC10 — intentionally imperative UX state (external async loading
    * indicator). NOT one of ADR-005's two exceptions — those live on
-   * `ActorMessageService`, so NFR9's invariant is unaffected.
+   * `IngestionService`, so NFR9's invariant is unaffected.
    */
   isLoading$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
 

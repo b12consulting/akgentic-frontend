@@ -77,7 +77,7 @@ function innerCommandsEvent(
 const SPINNER_MIN_VISIBLE_MS = 500;
 
 /**
- * `ActorMessageService` — minimal ingestion surface (post Story 6.4 / Epic 17):
+ * `IngestionService` — minimal ingestion surface (post Story 6.4 / Epic 17):
  *   - REST init replays events into `MessageLogService.log$`; the registry
  *     folds that replay tail exactly as it folds live WS frames.
  *   - WS `bufferTime(16)` ingestion appends to the log; the registry derives
@@ -98,7 +98,7 @@ const SPINNER_MIN_VISIBLE_MS = 500;
  * `register({...})` call.
  */
 @Injectable()
-export class ActorMessageService {
+export class IngestionService {
   apiService: ApiService = inject(ApiService);
   chatService: ChatService = inject(ChatService);
   messageService: MessageService = inject(MessageService);

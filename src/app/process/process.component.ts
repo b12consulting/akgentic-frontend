@@ -7,7 +7,7 @@ import { AkgentService } from '../core/ui/akgent.service';
 import { ContextService } from '../core/context/context.service';
 import { KGStateReducer } from '../services/kg-state.reducer';
 import { MessageLogService } from '../components/process/event/message-log.service';
-import { ActorMessageService } from '../components/process/event/message.service';
+import { IngestionService } from '../components/process/event/ingestion.service';
 import { PerAgentStoreRegistry } from '../components/process/event/per-agent-store';
 import { SystemPromptSelector } from '../services/system-prompt.selector';
 import { ToolPresenceService } from '../services/tool-presence.service';
@@ -60,11 +60,11 @@ interface VisualizationOption {
     SystemPromptSelector,
     // Epic 17 (ADR-014): component-scoped registry that derives per-agent
     // `state` / `context` from `log$`. Must be provided BEFORE
-    // ActorMessageService (which injects it). Never `providedIn: 'root'` —
+    // IngestionService (which injects it). Never `providedIn: 'root'` —
     // a team switch destroys this component, destroying the registry and its
     // single `log$` subscription (same lifecycle guarantee as MessageLogService).
     PerAgentStoreRegistry,
-    ActorMessageService,
+    IngestionService,
     GraphDataService,
     ChatService,
     SelectionService,
@@ -79,7 +79,7 @@ export class ProcessComponent implements OnDestroy {
 
   akgentService: AkgentService = inject(AkgentService);
   contextService: ContextService = inject(ContextService);
-  messageService: ActorMessageService = inject(ActorMessageService);
+  messageService: IngestionService = inject(IngestionService);
   graphDataService: GraphDataService = inject(GraphDataService);
   viewService: ViewService = inject(ViewService);
   toolPresenceService: ToolPresenceService = inject(ToolPresenceService);

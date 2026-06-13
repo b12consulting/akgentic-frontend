@@ -5,7 +5,7 @@ import { AkgenticMessage } from '../protocol/message.types';
 import { ApiService } from '../core/http/api.service';
 import { ChatService } from './chat.service';
 import { MessageLogService } from '../components/process/event/message-log.service';
-import { ActorMessageService } from '../components/process/event/message.service';
+import { IngestionService } from '../components/process/event/ingestion.service';
 import { PerAgentStore, PerAgentStoreRegistry } from '../components/process/event/per-agent-store';
 import {
   SystemPromptRow,
@@ -25,7 +25,7 @@ import {
 // Story 17-4 (Epic 17 / ADR-014): the whole-log `latestSystemPromptFold` is
 // retired; the latest-wins + FR2-fallback + row-mapping logic now lives in
 // `systemPromptReduce`, registered as the `systemPrompt` PerAgentStore instance
-// on `ActorMessageService`. These fixtures are the parity oracle — they are
+// on `IngestionService`. These fixtures are the parity oracle — they are
 // driven through `MessageLogService` and read via `store.systemPrompt` and the
 // `SystemPromptSelector` façade, exercising the REAL fold (no mocking).
 // ---------------------------------------------------------------------
@@ -127,7 +127,7 @@ function makeUnknownEnvelope(id: string): AkgenticMessage {
 
 function configureBed(): {
   log: MessageLogService;
-  service: ActorMessageService;
+  service: IngestionService;
   selector: SystemPromptSelector;
 } {
   TestBed.resetTestingModule();
@@ -135,7 +135,7 @@ function configureBed(): {
     providers: [
       MessageLogService,
       PerAgentStoreRegistry,
-      ActorMessageService,
+      IngestionService,
       SystemPromptSelector,
       ChatService,
       {
@@ -155,7 +155,7 @@ function configureBed(): {
   });
   return {
     log: TestBed.inject(MessageLogService),
-    service: TestBed.inject(ActorMessageService),
+    service: TestBed.inject(IngestionService),
     selector: TestBed.inject(SystemPromptSelector),
   };
 }

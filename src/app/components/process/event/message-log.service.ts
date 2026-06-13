@@ -26,7 +26,7 @@ export function messageListFold(log: AkgenticMessage[]): AkgenticMessage[] {
  * Story 6.1 — MessageLogService (ADR-005 §Decision 1).
  *
  * Append-only ordered buffer of every WS/REST-replay message received by
- * `ActorMessageService`. Deliberately domain-agnostic: no `__model__`
+ * `IngestionService`. Deliberately domain-agnostic: no `__model__`
  * discriminators, no routing, no knowledge of message types. Consumers
  * (Stories 6.2–6.4) derive their reactive state by folding `log$`.
  *
@@ -80,14 +80,14 @@ export class MessageLogService {
     this._log$.next([...current, ...newMsgs]);
   }
 
-  /** Reset the log to empty. Called in `ActorMessageService.init()` step (b)
+  /** Reset the log to empty. Called in `IngestionService.init()` step (b)
    *  on every team switch. */
   reset(): void {
     this._log$.next([]);
   }
 
   /** Synchronous accessor for the current log contents. Matches
-   *  `ActorMessageService.messages$.value` ergonomics for tests / imperative
+   *  `IngestionService.messages$.value` ergonomics for tests / imperative
    *  callers. */
   snapshot(): AkgenticMessage[] {
     return this._log$.value;

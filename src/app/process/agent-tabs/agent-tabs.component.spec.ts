@@ -6,7 +6,7 @@ import { WebSocketSubject } from 'rxjs/webSocket';
 import { AgentTabsComponent } from './agent-tabs.component';
 import { Akgent, AkgentService } from '../../core/ui/akgent.service';
 import { GraphDataService } from '../../services/graph-data.service';
-import { ActorMessageService } from '../../components/process/event/message.service';
+import { IngestionService } from '../../components/process/event/ingestion.service';
 import { MessageLogService } from '../../components/process/event/message-log.service';
 import { PerAgentStoreRegistry } from '../../components/process/event/per-agent-store';
 import { ChatService } from '../../services/chat.service';
@@ -24,7 +24,7 @@ import { ApiService } from '../../core/http/api.service';
 describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)', () => {
   let component: AgentTabsComponent;
   let log: MessageLogService;
-  let messageService: ActorMessageService;
+  let messageService: IngestionService;
   let selectedAkgent$: BehaviorSubject<Akgent | null>;
   let nodes$: BehaviorSubject<any[]>;
   let categories$: BehaviorSubject<any[]>;
@@ -86,7 +86,7 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
       providers: [
         MessageLogService,
         PerAgentStoreRegistry,
-        ActorMessageService,
+        IngestionService,
         ChatService,
         {
           provide: ApiService,
@@ -109,7 +109,7 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
       ],
     });
 
-    messageService = TestBed.inject(ActorMessageService);
+    messageService = TestBed.inject(IngestionService);
     log = TestBed.inject(MessageLogService);
     spyOn<any>(messageService, 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,

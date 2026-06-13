@@ -15,7 +15,7 @@ import {
   HUMAN_ROLE as HUMAN_PROXY_ROLE,
 } from '../../services/graph-data.service';
 
-import { ActorMessageService } from '../../components/process/event/message.service';
+import { IngestionService } from '../../components/process/event/ingestion.service';
 
 import { AkgentChatComponent } from './akgent-chat/akgent-chat.component';
 import { AkgentStateComponent } from './akgent-state/akgent-state.component';
@@ -37,7 +37,7 @@ import { AkgentStateComponent } from './akgent-state/akgent-state.component';
 export class AgentTabsComponent implements OnInit {
   akgentService: AkgentService = inject(AkgentService);
   graphDataService: GraphDataService = inject(GraphDataService);
-  messageService: ActorMessageService = inject(ActorMessageService);
+  messageService: IngestionService = inject(IngestionService);
   private destroyRef = inject(DestroyRef);
 
   akgentId: string = '';

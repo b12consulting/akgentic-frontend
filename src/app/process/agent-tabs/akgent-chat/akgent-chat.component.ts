@@ -28,7 +28,7 @@ import { CapitalizePipe } from '../../../shared/pipes/capitalise.pipe';
 import { ApiService } from '../../../core/http/api.service';
 import { UtilService } from '../../../core/ui/utils.service';
 import { ContextService } from '../../../core/context/context.service';
-import { ActorMessageService } from '../../../components/process/event/message.service';
+import { IngestionService } from '../../../components/process/event/ingestion.service';
 import {
   SystemPromptRow,
   SystemPromptSelector,
@@ -71,7 +71,7 @@ export class AkgentChatComponent implements OnInit, OnChanges {
   apiService: ApiService = inject(ApiService);
   utilService: UtilService = inject(UtilService);
   contextService: ContextService = inject(ContextService);
-  messageService: ActorMessageService = inject(ActorMessageService);
+  messageService: IngestionService = inject(IngestionService);
   // ADR-004 §5b: component-scoped selector provided on ProcessComponent.providers
   // (Story 16-1) — resolves the same MessageLogService instance as this subtree.
   private systemPromptSelector: SystemPromptSelector = inject(

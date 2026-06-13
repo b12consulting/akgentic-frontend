@@ -318,7 +318,7 @@ export function chatFold(log: AkgenticMessage[]): ChatState {
  * story forward (FR7).
  *
  * `loadingProcess$` stays imperative (spinner state driven by
- * `ActorMessageService`, analogous to AC10 for `GraphDataService.isLoading$`).
+ * `IngestionService`, analogous to AC10 for `GraphDataService.isLoading$`).
  */
 @Injectable()
 export class ChatService {
@@ -349,7 +349,7 @@ export class ChatService {
   /**
    * Intentionally imperative (analogous to AC10 for
    * `GraphDataService.isLoading$`): reflects spinner state driven by
-   * `ActorMessageService`, not message-log state.
+   * `IngestionService`, not message-log state.
    */
   loadingProcess$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(
     false,

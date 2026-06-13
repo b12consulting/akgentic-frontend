@@ -7,7 +7,7 @@ import { ApiService } from '../../core/http/api.service';
 import { ChatService } from '../../services/chat.service';
 import { ContextService } from '../../core/context/context.service';
 import { GraphDataService } from '../../services/graph-data.service';
-import { ActorMessageService } from '../../components/process/event/message.service';
+import { IngestionService } from '../../components/process/event/ingestion.service';
 import { ActorAddress, CommandDescriptor } from '../../protocol/message.types';
 import { NodeInterface } from '../../components/process/models/types';
 import { makeAgentNameUserFriendly } from '../../shared/util/util';
@@ -87,7 +87,7 @@ describe('ProcessUserInputComponent', () => {
         { provide: ChatService, useValue: chatServiceMock },
         { provide: ContextService, useValue: contextServiceStub },
         { provide: GraphDataService, useValue: graphDataService },
-        { provide: ActorMessageService, useValue: messageServiceStub },
+        { provide: IngestionService, useValue: messageServiceStub },
       ],
     }).compileComponents();
 
