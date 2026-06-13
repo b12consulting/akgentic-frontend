@@ -8,7 +8,6 @@ import { map, takeUntil } from 'rxjs/operators';
 
 import { TabsModule } from 'primeng/tabs';
 import { DropdownModule } from 'primeng/dropdown';
-import { ProgressSpinnerModule } from 'primeng/progressspinner';
 
 import { AkgentService } from '../../services/akgent.service';
 import {
@@ -29,7 +28,6 @@ import { AkgentStateComponent } from './akgent-state/akgent-state.component';
     FormsModule,
     TabsModule,
     DropdownModule,
-    ProgressSpinnerModule,
     AkgentChatComponent,
     AkgentStateComponent,
   ],
@@ -46,7 +44,6 @@ export class AgentTabsComponent implements OnInit {
   akgentName: string = '';
   agentsByCategory: any[] = [];
   selectedAgent: any = null;
-  isLoading: boolean = false;
 
   context$: BehaviorSubject<any[]> = new BehaviorSubject<any[]>([]);
   state$: BehaviorSubject<any> = new BehaviorSubject<any>(null);
@@ -162,7 +159,6 @@ export class AgentTabsComponent implements OnInit {
   }
 
   onAgentSelect(event: any): void {
-    this.isLoading = true;
     const agent = event.value;
     if (agent && agent.agent) {
       this.akgentService.select(agent.agent.name, agent.agent.actorName);

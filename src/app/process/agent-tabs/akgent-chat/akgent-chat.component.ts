@@ -3,6 +3,9 @@ import {
   ElementRef,
   inject,
   Input,
+  OnChanges,
+  OnInit,
+  SimpleChanges,
   ViewChild,
   DestroyRef,
 } from '@angular/core';
@@ -57,7 +60,7 @@ import { CopyButtonComponent } from '../../copy-button/copy-button.component';
   templateUrl: './akgent-chat.component.html',
   styleUrl: './akgent-chat.component.scss',
 })
-export class AkgentChatComponent {
+export class AkgentChatComponent implements OnInit, OnChanges {
   // The single trace scroll region (head system block + conversation). Auto
   // scroll-to-bottom targets this element so new messages stay in view.
   @ViewChild('traceScroll') traceScroll?: ElementRef<HTMLElement>;
@@ -76,8 +79,6 @@ export class AkgentChatComponent {
   );
   private destroyRef = inject(DestroyRef);
 
-  collapsedMessages$ = new BehaviorSubject<boolean>(true);
-
   context: any[] = [];
 
   /**
@@ -91,14 +92,27 @@ export class AkgentChatComponent {
    */
   systemPrompt$!: Observable<SystemPromptRow[]>;
 
-  ngOnInit(): void {
-    // ADR-004 §5b step 2 — head system block for this panel's agent. Rendered
-    // in the template via `async`, above the conversation table.
-    this.systemPrompt$ = this.systemPromptSelector.latestSystemPrompt$(
-      this.agentId
-    );
+  /**
+   * The agent-tabs dropdown REUSES this component across member selections (it
+   * lives under `*ngIf="context$.length"`, which stays truthy when switching
+   * between agents that both have context), so `ngOnInit` does NOT re-run on a
+   * switch. Re-bind the head system block to the newly-selected agent here, or
+   * it stays pinned to the first-opened agent. The initial bind is done in
+   * `ngOnInit` (which also covers unit tests that set `agentId` directly), so
+   * skip the first change to avoid binding twice.
+   */
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['agentId'] && !changes['agentId'].firstChange) {
+      this.bindSystemPrompt();
+    }
+  }
 
-    // Subscribe to context$ for the selected agent
+  ngOnInit(): void {
+    // Initial head system block for this panel's agent (ADR-004 §5b step 2).
+    // Subsequent agent switches re-bind it in ngOnChanges — see above.
+    this.bindSystemPrompt();
+
+    // Subscribe to context$ for the selected agent.
     this.context$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((ctx) => {
       if (this.isLoading) {
         setTimeout(() => this.scroll(), 10);
@@ -106,6 +120,14 @@ export class AkgentChatComponent {
       this.isLoading = false;
       this.updateContext(ctx);
     });
+  }
+
+  /** Point `systemPrompt$` at the current `agentId`'s head system block. The
+   *  async pipe in the template resubscribes to the new stream on reassignment. */
+  private bindSystemPrompt(): void {
+    this.systemPrompt$ = this.systemPromptSelector.latestSystemPrompt$(
+      this.agentId
+    );
   }
 
   /**
@@ -368,9 +390,5 @@ export class AkgentChatComponent {
     if (el && !this.isMouseOverTable && !this.initialLoad) {
       el.scrollTo({ top: el.scrollHeight, behavior });
     }
-  }
-
-  toggleCollapse() {
-    this.collapsedMessages$.next(!this.collapsedMessages$.value);
   }
 }

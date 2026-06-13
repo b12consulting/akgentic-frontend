@@ -1,3 +1,4 @@
+import { SimpleChange } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { BehaviorSubject } from 'rxjs';
@@ -398,6 +399,26 @@ describe('AkgentChatComponent — head system block (Story 16-2)', () => {
     expect(headBodies(fixture)).toEqual(['roster v2', 'backstory']);
     // No system row leaked into the conversation table.
     expect(component.context.some((m) => m.type === 'system')).toBeFalse();
+  });
+
+  it('regression: switching agentId (component reused) rebinds the head block to the new agent', () => {
+    const { fixture, component, log } = setup();
+    const OTHER = 'b-other';
+    log.appendAll([
+      systemPromptEnvelope(AGENT, [{ dynamic_ref: null, content: 'A backstory' }]),
+      systemPromptEnvelope(OTHER, [{ dynamic_ref: null, content: 'B backstory' }]),
+    ]);
+    fixture.detectChanges();
+    expect(headBodies(fixture)).toEqual(['A backstory']);
+
+    // The agent-tabs dropdown REUSES this component when switching members, so
+    // ngOnInit does not re-run — ngOnChanges must re-point systemPrompt$ at the
+    // new agent. Without the fix the head block stays pinned to 'A backstory'.
+    component.agentId = OTHER;
+    component.ngOnChanges({ agentId: new SimpleChange(AGENT, OTHER, false) });
+    fixture.detectChanges();
+
+    expect(headBodies(fixture)).toEqual(['B backstory']);
   });
 
   it('AC2 single source: updateContext() emits NO system row from a system-prompt part', () => {
