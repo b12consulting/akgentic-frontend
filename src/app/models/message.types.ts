@@ -157,6 +157,36 @@ export interface CommandsAnnouncedEvent {
   commands: CommandDescriptor[];
 }
 
+/**
+ * Immutable snapshot of one rendered system-prompt part, mirroring the
+ * akgentic-llm `SystemPromptPartSnapshot` frozen dataclass (ADR-004 §Decision 1).
+ * `dynamic_ref` is the pydantic-ai dynamic-prompt function name (e.g.
+ * `current_date`) or `null` for static parts; `content` is the rendered text
+ * actually sent to the model. `__model__` is the serializer-injected tag
+ * (`akgentic.llm.event.SystemPromptPartSnapshot`) and is optional on read.
+ */
+export interface SystemPromptPartSnapshot {
+  __model__?: string;
+  dynamic_ref: string | null;
+  content: string;
+}
+
+/**
+ * Inner event payload announcing the effective system-prompt rendering for one
+ * run, mirroring the akgentic-llm `LlmSystemPromptEvent` frozen dataclass
+ * (ADR-004 §Decision 1). It rides the standard `EventMessage` envelope (outer
+ * `sender.agent_id` identifies the agent) and is discriminated frontend-side by
+ * the inner `__model__` — exactly like `LlmMessageEvent` / `ToolStateEvent` /
+ * `CommandsAnnouncedEvent`. A later event for the same agent supersedes the
+ * previous rendering (latest-wins). See ADR-004 §5a for the wire JSON.
+ */
+export interface LlmSystemPromptEvent {
+  __model__: string; // contains 'LlmSystemPromptEvent'
+  run_id: string;
+  content_hash: string;
+  parts: SystemPromptPartSnapshot[];
+}
+
 // Union type for all possible messages
 export type AkgenticMessage =
   | SentMessage
@@ -234,6 +264,19 @@ export function isCommandsAnnouncedEvent(
   event: { __model__?: string } | null | undefined,
 ): event is CommandsAnnouncedEvent {
   return !!event?.__model__?.includes('CommandsAnnouncedEvent');
+}
+
+/**
+ * Inner-event check (ADR-004 §5a): true when the inner event carried by an
+ * `EventMessage` is a `LlmSystemPromptEvent`. Matches on the inner `__model__`,
+ * the same discrimination used for `LlmMessageEvent` / `ToolStateEvent` /
+ * `CommandsAnnouncedEvent`. `event` is the `EventMessage.event` payload (loosely
+ * typed on the wire); the guard narrows it to `LlmSystemPromptEvent`.
+ */
+export function isLlmSystemPromptEvent(
+  event: { __model__?: string } | null | undefined,
+): event is LlmSystemPromptEvent {
+  return !!event?.__model__?.includes('LlmSystemPromptEvent');
 }
 
 /**

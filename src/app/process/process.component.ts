@@ -8,6 +8,7 @@ import { ContextService } from '../services/context.service';
 import { KGStateReducer } from '../services/kg-state.reducer';
 import { MessageLogService } from '../services/message-log.service';
 import { ActorMessageService } from '../services/message.service';
+import { SystemPromptSelector } from '../services/system-prompt.selector';
 import { ToolPresenceService } from '../services/tool-presence.service';
 
 import { AgentTabsComponent } from './agent-tabs/agent-tabs.component';
@@ -55,6 +56,7 @@ interface VisualizationOption {
     MessageLogService,
     ToolPresenceService,
     KGStateReducer,
+    SystemPromptSelector,
     ActorMessageService,
     GraphDataService,
     ChatService,
