@@ -8,6 +8,7 @@ import { ContextService } from '../services/context.service';
 import { KGStateReducer } from '../services/kg-state.reducer';
 import { MessageLogService } from '../services/message-log.service';
 import { ActorMessageService } from '../services/message.service';
+import { PerAgentStoreRegistry } from '../services/per-agent-store';
 import { SystemPromptSelector } from '../services/system-prompt.selector';
 import { ToolPresenceService } from '../services/tool-presence.service';
 
@@ -57,6 +58,12 @@ interface VisualizationOption {
     ToolPresenceService,
     KGStateReducer,
     SystemPromptSelector,
+    // Epic 17 (ADR-014): component-scoped registry that derives per-agent
+    // `state` / `context` from `log$`. Must be provided BEFORE
+    // ActorMessageService (which injects it). Never `providedIn: 'root'` —
+    // a team switch destroys this component, destroying the registry and its
+    // single `log$` subscription (same lifecycle guarantee as MessageLogService).
+    PerAgentStoreRegistry,
     ActorMessageService,
     GraphDataService,
     ChatService,

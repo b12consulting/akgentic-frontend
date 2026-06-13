@@ -114,10 +114,14 @@ describe('ChatPanelComponent', () => {
       nodes$: of([]),
     };
 
-    // Story 15-1 (ADR-013): the embedded <app-user-input> now injects
-    // ActorMessageService for its `commandsByAgent$` (the `/` mention store).
+    // Story 15-1 (ADR-013) / Epic 17 (ADR-014): the embedded <app-user-input>
+    // injects ActorMessageService for its `commands` PerAgentStore (the `/`
+    // mention store). Story 17-3 removed the bespoke `commandsByAgent$`; this
+    // stub mirrors the current surface — a `commands`-shaped object exposing
+    // `snapshot(id)` (returns `[]` here: the empty-selection scenarios in this
+    // spec short-circuit before any command lookup).
     const messageService = {
-      commandsByAgent$: new BehaviorSubject<Record<string, any[]>>({}),
+      commands: { snapshot: (_id: string) => [] as any[] },
     };
 
     await TestBed.configureTestingModule({

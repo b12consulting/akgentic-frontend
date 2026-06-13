@@ -1,3 +1,4 @@
+import { SimpleChange } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { BehaviorSubject } from 'rxjs';
@@ -8,7 +9,13 @@ import { UtilService } from '../../../services/utils.service';
 import { ContextService } from '../../../services/context.service';
 import { ActorMessageService } from '../../../services/message.service';
 import { MessageLogService } from '../../../services/message-log.service';
-import { SystemPromptSelector } from '../../../services/system-prompt.selector';
+import { PerAgentStoreRegistry } from '../../../services/per-agent-store';
+import {
+  SystemPromptSelector,
+  SystemPromptValue,
+  systemPromptMatch,
+  systemPromptReduce,
+} from '../../../services/system-prompt.selector';
 import {
   AkgenticMessage,
   CommandDescriptor,
@@ -19,11 +26,11 @@ import {
  * chat targets exactly one agent (its own `agentName`), so the `/` list is
  * unconditionally that agent's commands.
  */
-describe('AkgentChatComponent — slash-command mention (Story 15-1)', () => {
+describe('AkgentChatComponent — slash-command mention (Story 15-1 / 17-3)', () => {
   let component: AkgentChatComponent;
-  let commandsByAgentSubject: BehaviorSubject<
-    Record<string, CommandDescriptor[]>
-  >;
+  // Story 17-3: the member chat reads `commands.snapshot(this.agentId)` keyed by
+  // agent_id. The stub holds an agent_id → descriptors map + a `snapshot(id)`.
+  let commandsById: Record<string, CommandDescriptor[]>;
 
   const HIRE: CommandDescriptor = {
     name: 'hire_member',
@@ -42,9 +49,7 @@ describe('AkgentChatComponent — slash-command mention (Story 15-1)', () => {
   };
 
   beforeEach(() => {
-    commandsByAgentSubject = new BehaviorSubject<
-      Record<string, CommandDescriptor[]>
-    >({});
+    commandsById = {};
 
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
@@ -58,13 +63,29 @@ describe('AkgentChatComponent — slash-command mention (Story 15-1)', () => {
             currentProcessId$: new BehaviorSubject<string>('proc-1'),
           },
         },
+        // Story 16-2 / Epic 17 (17-4): AkgentChatComponent injects
+        // SystemPromptSelector, now a thin façade over
+        // `ActorMessageService.systemPrompt`. Provide a stub service exposing the
+        // `commands` snapshot the `/` mention reads PLUS a REAL `systemPrompt`
+        // PerAgentStore (registered on a real registry over the same
+        // MessageLogService) so the façade resolves against a live store.
+        MessageLogService,
+        PerAgentStoreRegistry,
         {
           provide: ActorMessageService,
-          useValue: { commandsByAgent$: commandsByAgentSubject },
+          useFactory: (registry: PerAgentStoreRegistry) => ({
+            commands: {
+              snapshot: (id: string): CommandDescriptor[] | undefined =>
+                commandsById[id],
+            },
+            systemPrompt: registry.register<SystemPromptValue>({
+              name: 'systemPrompt',
+              match: systemPromptMatch,
+              reduce: systemPromptReduce,
+            }),
+          }),
+          deps: [PerAgentStoreRegistry],
         },
-        // Story 16-2: AkgentChatComponent now injects the component-scoped
-        // SystemPromptSelector (over MessageLogService). Provide the real pair.
-        MessageLogService,
         SystemPromptSelector,
       ],
     });
@@ -77,8 +98,9 @@ describe('AkgentChatComponent — slash-command mention (Story 15-1)', () => {
     fixture.detectChanges();
   });
 
-  it('AC-2: commandItems are the panel agent\'s commands', () => {
-    commandsByAgentSubject.next({ '@Manager': [HIRE, ROSTER] });
+  it('AC-4: commandItems are the panel agent\'s commands (keyed by agent_id)', () => {
+    // Seed under the panel's agent_id (`component.agentId`), not the friendly name.
+    commandsById['a-mgr'] = [HIRE, ROSTER];
     expect(component.commandItems.map((c) => c.name)).toEqual([
       'hire_member',
       'roster',
@@ -92,7 +114,7 @@ describe('AkgentChatComponent — slash-command mention (Story 15-1)', () => {
       args: [{ name: 'prompt', type: 'string', required: true }],
       tool_card: 'MediaTool',
     };
-    commandsByAgentSubject.next({ '@Manager': [INTERNAL, HIRE, ROSTER] });
+    commandsById['a-mgr'] = [INTERNAL, HIRE, ROSTER];
     // `_expand_media_refs` is internal — only user commands remain.
     expect(component.commandItems.map((c) => c.name)).toEqual([
       'hire_member',
@@ -102,7 +124,8 @@ describe('AkgentChatComponent — slash-command mention (Story 15-1)', () => {
 
   it('AC-6: empty / list until a CommandsAnnouncedEvent arrives for this agent', () => {
     expect(component.commandItems).toEqual([]);
-    commandsByAgentSubject.next({ '@Other': [HIRE] });
+    // A different agent_id's commands must not bleed into this panel.
+    commandsById['a-other'] = [HIRE];
     expect(component.commandItems).toEqual([]);
   });
 
@@ -139,9 +162,8 @@ describe('AkgentChatComponent — slash-command mention (Story 15-1)', () => {
     };
     // Stored order: TeamTool first, PlanningTool names reversed — neither
     // tool-grouped nor globally alphabetical, so a naive sort can't fake it.
-    commandsByAgentSubject.next({
-      '@Manager': [ROSTER, PLAN_BREAKDOWN, HIRE, PLAN_AUDIT],
-    });
+    // Seeded under the panel's agent_id (a-mgr).
+    commandsById['a-mgr'] = [ROSTER, PLAN_BREAKDOWN, HIRE, PLAN_AUDIT];
 
     // PlanningTool family (audit, breakdown) before TeamTool family
     // (hire_member, roster); alphabetical within each family.
@@ -299,15 +321,29 @@ describe('AkgentChatComponent — head system block (Story 16-2)', () => {
             currentProcessId$: new BehaviorSubject<string>('proc-1'),
           },
         },
+        // Story 17-3 / Epic 17 (17-4): member chat reads
+        // `commands.snapshot(agentId)`; the head block reads the
+        // SystemPromptSelector façade over `ActorMessageService.systemPrompt`.
+        // The stub exposes `commands` PLUS a REAL `systemPrompt` PerAgentStore
+        // (registered on a real registry over the same MessageLogService) so the
+        // head block renders from the actual log-driven fold.
+        MessageLogService,
+        PerAgentStoreRegistry,
         {
           provide: ActorMessageService,
-          useValue: {
-            commandsByAgent$: new BehaviorSubject<
-              Record<string, CommandDescriptor[]>
-            >({}),
-          },
+          useFactory: (registry: PerAgentStoreRegistry) => ({
+            commands: {
+              snapshot: (_id: string): CommandDescriptor[] | undefined =>
+                undefined,
+            },
+            systemPrompt: registry.register<SystemPromptValue>({
+              name: 'systemPrompt',
+              match: systemPromptMatch,
+              reduce: systemPromptReduce,
+            }),
+          }),
+          deps: [PerAgentStoreRegistry],
         },
-        MessageLogService,
         SystemPromptSelector,
         // PrimeNG p-fieldset registers a synthetic animation listener.
         provideNoopAnimations(),
@@ -363,6 +399,26 @@ describe('AkgentChatComponent — head system block (Story 16-2)', () => {
     expect(headBodies(fixture)).toEqual(['roster v2', 'backstory']);
     // No system row leaked into the conversation table.
     expect(component.context.some((m) => m.type === 'system')).toBeFalse();
+  });
+
+  it('regression: switching agentId (component reused) rebinds the head block to the new agent', () => {
+    const { fixture, component, log } = setup();
+    const OTHER = 'b-other';
+    log.appendAll([
+      systemPromptEnvelope(AGENT, [{ dynamic_ref: null, content: 'A backstory' }]),
+      systemPromptEnvelope(OTHER, [{ dynamic_ref: null, content: 'B backstory' }]),
+    ]);
+    fixture.detectChanges();
+    expect(headBodies(fixture)).toEqual(['A backstory']);
+
+    // The agent-tabs dropdown REUSES this component when switching members, so
+    // ngOnInit does not re-run — ngOnChanges must re-point systemPrompt$ at the
+    // new agent. Without the fix the head block stays pinned to 'A backstory'.
+    component.agentId = OTHER;
+    component.ngOnChanges({ agentId: new SimpleChange(AGENT, OTHER, false) });
+    fixture.detectChanges();
+
+    expect(headBodies(fixture)).toEqual(['B backstory']);
   });
 
   it('AC2 single source: updateContext() emits NO system row from a system-prompt part', () => {

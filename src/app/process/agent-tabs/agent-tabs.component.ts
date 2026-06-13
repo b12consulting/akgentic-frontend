@@ -3,12 +3,11 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 
-import { BehaviorSubject, combineLatest, Subject, Subscription } from 'rxjs';
-import { takeUntil } from 'rxjs/operators';
+import { BehaviorSubject, combineLatest, Subject } from 'rxjs';
+import { map, takeUntil } from 'rxjs/operators';
 
 import { TabsModule } from 'primeng/tabs';
 import { DropdownModule } from 'primeng/dropdown';
-import { ProgressSpinnerModule } from 'primeng/progressspinner';
 
 import { AkgentService } from '../../services/akgent.service';
 import {
@@ -29,7 +28,6 @@ import { AkgentStateComponent } from './akgent-state/akgent-state.component';
     FormsModule,
     TabsModule,
     DropdownModule,
-    ProgressSpinnerModule,
     AkgentChatComponent,
     AkgentStateComponent,
   ],
@@ -46,7 +44,6 @@ export class AgentTabsComponent implements OnInit {
   akgentName: string = '';
   agentsByCategory: any[] = [];
   selectedAgent: any = null;
-  isLoading: boolean = false;
 
   context$: BehaviorSubject<any[]> = new BehaviorSubject<any[]>([]);
   state$: BehaviorSubject<any> = new BehaviorSubject<any>(null);
@@ -64,27 +61,31 @@ export class AgentTabsComponent implements OnInit {
         this.akgentId = akgent?.agentId || '';
         this.akgentName = akgent?.name || '';
         if (akgent) {
-          this.initDict(this.messageService.contextDict$, akgent.agentId, []);
-          this.initDict(this.messageService.stateDict$, akgent.agentId, null);
-          // Subscribe to context observable for the selected agent
-          // Use takeUntil to properly clean up when agent changes
-          this.messageService.contextDict$[akgent.agentId]
-            .pipe(takeUntil(this.agentSubscriptions$))
+          // Epic 17 (ADR-014): source `context` / `state` from the
+          // PerAgentStore instances instead of the deleted dicts. `forAgent`'s
+          // `shareReplay(1)` delivers the current value on subscribe, so the
+          // explicit immediate `.value` push is no longer needed. Map
+          // `undefined` → the existing defaults (`[]` / `null`) so the template
+          // guards (`(context$ | async)?.length`, `state$ | async`) behave
+          // identically.
+          this.messageService.context
+            .forAgent(akgent.agentId)
+            .pipe(
+              map((context) => context ?? []),
+              takeUntil(this.agentSubscriptions$),
+            )
             .subscribe((context) => {
               this.context$.next(context);
             });
-          this.messageService.stateDict$[akgent.agentId]
-            .pipe(takeUntil(this.agentSubscriptions$))
+          this.messageService.state
+            .forAgent(akgent.agentId)
+            .pipe(
+              map((state) => state ?? null),
+              takeUntil(this.agentSubscriptions$),
+            )
             .subscribe((state) => {
               this.state$.next(state);
             });
-          // Immediately update with the latest context value
-          this.context$.next(
-            this.messageService.contextDict$[akgent.agentId].value
-          );
-          this.state$.next(
-            this.messageService.stateDict$[akgent.agentId].value
-          );
           // Select the agent in the dropdown
           this.set_dropdown_selected_agent(akgent.agentId);
         } else {
@@ -157,17 +158,7 @@ export class AgentTabsComponent implements OnInit {
       dropdownItems.find((item: any) => item.value === agent_id) || null;
   }
 
-  initDict(
-    dict: { [key: string]: BehaviorSubject<any[]> },
-    key: string,
-    defaultValue: any
-  ) {
-    if (dict[key]) return;
-    dict[key] = new BehaviorSubject<any>(defaultValue);
-  }
-
   onAgentSelect(event: any): void {
-    this.isLoading = true;
     const agent = event.value;
     if (agent && agent.agent) {
       this.akgentService.select(agent.agent.name, agent.agent.actorName);

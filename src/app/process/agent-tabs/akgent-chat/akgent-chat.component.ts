@@ -3,6 +3,9 @@ import {
   ElementRef,
   inject,
   Input,
+  OnChanges,
+  OnInit,
+  SimpleChanges,
   ViewChild,
   DestroyRef,
 } from '@angular/core';
@@ -57,7 +60,7 @@ import { CopyButtonComponent } from '../../copy-button/copy-button.component';
   templateUrl: './akgent-chat.component.html',
   styleUrl: './akgent-chat.component.scss',
 })
-export class AkgentChatComponent {
+export class AkgentChatComponent implements OnInit, OnChanges {
   // The single trace scroll region (head system block + conversation). Auto
   // scroll-to-bottom targets this element so new messages stay in view.
   @ViewChild('traceScroll') traceScroll?: ElementRef<HTMLElement>;
@@ -76,8 +79,6 @@ export class AkgentChatComponent {
   );
   private destroyRef = inject(DestroyRef);
 
-  collapsedMessages$ = new BehaviorSubject<boolean>(true);
-
   context: any[] = [];
 
   /**
@@ -92,21 +93,26 @@ export class AkgentChatComponent {
   systemPrompt$!: Observable<SystemPromptRow[]>;
 
   /**
-   * ADR-013: latest per-agent slash-command store (keyed by raw actor
-   * `name`). Snapshot of `ActorMessageService.commandsByAgent$`; read by
-   * `commandItems` to build this panel's `/` mention list. Empty until a
-   * `CommandsAnnouncedEvent` arrives for this agent (AC-6).
+   * The agent-tabs dropdown REUSES this component across member selections (it
+   * lives under `*ngIf="context$.length"`, which stays truthy when switching
+   * between agents that both have context), so `ngOnInit` does NOT re-run on a
+   * switch. Re-bind the head system block to the newly-selected agent here, or
+   * it stays pinned to the first-opened agent. The initial bind is done in
+   * `ngOnInit` (which also covers unit tests that set `agentId` directly), so
+   * skip the first change to avoid binding twice.
    */
-  commandsByAgent: Record<string, CommandDescriptor[]> = {};
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['agentId'] && !changes['agentId'].firstChange) {
+      this.bindSystemPrompt();
+    }
+  }
 
   ngOnInit(): void {
-    // ADR-004 §5b step 2 — head system block for this panel's agent. Rendered
-    // in the template via `async`, above the conversation table.
-    this.systemPrompt$ = this.systemPromptSelector.latestSystemPrompt$(
-      this.agentId
-    );
+    // Initial head system block for this panel's agent (ADR-004 §5b step 2).
+    // Subsequent agent switches re-bind it in ngOnChanges — see above.
+    this.bindSystemPrompt();
 
-    // Subscribe to context$ for the selected agent
+    // Subscribe to context$ for the selected agent.
     this.context$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((ctx) => {
       if (this.isLoading) {
         setTimeout(() => this.scroll(), 10);
@@ -114,27 +120,30 @@ export class AkgentChatComponent {
       this.isLoading = false;
       this.updateContext(ctx);
     });
+  }
 
-    // ADR-013: keep a live snapshot of the per-agent slash-command store so
-    // this panel's `/` mention reflects the latest CommandsAnnouncedEvent.
-    this.messageService.commandsByAgent$
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((byAgent) => {
-        this.commandsByAgent = byAgent;
-      });
+  /** Point `systemPrompt$` at the current `agentId`'s head system block. The
+   *  async pipe in the template resubscribes to the new stream on reassignment. */
+  private bindSystemPrompt(): void {
+    this.systemPrompt$ = this.systemPromptSelector.latestSystemPrompt$(
+      this.agentId
+    );
   }
 
   /**
-   * ADR-013 §3 — member chat target is unambiguous: this panel's own agent
-   * (`agentName`). The `/` list is that agent's command descriptors, mapped to
-   * dropdown items. Empty until a CommandsAnnouncedEvent arrives (AC-6).
+   * ADR-013 §3 / Epic 17 (ADR-014) — member chat target is unambiguous: this
+   * panel's own agent. The `/` list is that agent's command descriptors, read
+   * from `store.commands` by the panel's `agent_id` (`@Input() agentId`) and
+   * mapped to dropdown items. Keying by `agent_id` (not the friendly name) is
+   * the ADR-013 keying fix. Empty until a CommandsAnnouncedEvent arrives (AC-6).
    */
   get commandItems(): {
     name: string;
     description: string;
     args: CommandDescriptor['args'];
   }[] {
-    const descriptors = this.commandsByAgent[this.agentName] ?? [];
+    const descriptors =
+      this.messageService.commands.snapshot(this.agentId) ?? [];
     return descriptors
       // `_`-prefixed commands (e.g. `_expand_media_refs`) are internal, not
       // user-invocable — keep them out of the `/` dropdown.
@@ -381,9 +390,5 @@ export class AkgentChatComponent {
     if (el && !this.isMouseOverTable && !this.initialLoad) {
       el.scrollTo({ top: el.scrollHeight, behavior });
     }
-  }
-
-  toggleCollapse() {
-    this.collapsedMessages$.next(!this.collapsedMessages$.value);
   }
 }
