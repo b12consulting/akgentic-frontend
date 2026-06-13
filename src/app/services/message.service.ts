@@ -25,6 +25,11 @@ import {
   PerAgentStoreRegistry,
   replaceWith,
 } from './per-agent-store';
+import {
+  SystemPromptValue,
+  systemPromptMatch,
+  systemPromptReduce,
+} from './system-prompt.selector';
 import { MessageService } from 'primeng/api';
 
 /**
@@ -79,13 +84,18 @@ const SPINNER_MIN_VISIBLE_MS = 500;
  *     per-agent `state` / `context` from `log$` (O(Δ), automatic replay/reset).
  *   - Spinner floor (`loadingProcess$` on `ChatService`, AC7) — UX concern.
  *
- * Per-agent state (Epic 17 / ADR-014): `state`, `context`, and `commands` are
- * all `PerAgentStore` instances owned by the component-scoped
- * `PerAgentStoreRegistry` (single `log$` subscription, replay + reset for
- * free). Story 17-3 migrated `commands` (driven by `CommandsAnnouncedEvent`,
- * ADR-013) off the bespoke `commandsByAgent$` `BehaviorSubject` and re-keyed it
- * by `sender.agent_id`, removing the last per-agent dict exception. Only the
- * `SystemPromptSelector` façade remains pending (Story 17-4).
+ * Per-agent state (Epic 17 / ADR-014): `state`, `context`, `commands`, and
+ * `systemPrompt` are ALL `PerAgentStore` instances owned by the
+ * component-scoped `PerAgentStoreRegistry` (single `log$` subscription, replay +
+ * reset for free). Story 17-3 migrated `commands` (driven by
+ * `CommandsAnnouncedEvent`, ADR-013) off the bespoke `commandsByAgent$`
+ * `BehaviorSubject` and re-keyed it by `sender.agent_id`. Story 17-4 migrated
+ * the last per-agent concern — the system-prompt head block — onto the
+ * `systemPrompt` instance (custom reducer: latest `LlmSystemPromptEvent` parts
+ * win, else first `LlmMessageEvent` system parts) and turned
+ * `SystemPromptSelector` into a thin delegating façade. The registry is now the
+ * SOLE owner of per-agent maps: adding a new per-agent event is a single
+ * `register({...})` call.
  */
 @Injectable()
 export class ActorMessageService {
@@ -164,6 +174,26 @@ export class ActorMessageService {
       reduce: replaceWith<CommandDescriptor[]>(
         (m) => innerCommandsEvent(m)?.commands ?? [],
       ),
+    });
+
+  /**
+   * Epic 17 (ADR-014 §5): per-agent system-prompt head block derived from
+   * `LlmSystemPromptEvent` (primary, latest-wins, FR1) with a first
+   * `LlmMessageEvent` system-part fallback (FR2). Replaces the bespoke
+   * `SystemPromptSelector` `log$` fold — the selector is now a thin façade that
+   * delegates to `systemPrompt.forAgent(id)`. The reducer is a custom one
+   * (`systemPromptReduce`) because the precedence is "latest primary OR first
+   * fallback", not a stock factory; `match` (`systemPromptMatch`) admits BOTH
+   * `LlmSystemPromptEvent` and `LlmMessageEvent` inners so both reach the
+   * reducer. Default key `sender.agent_id`. Read via the façade or directly via
+   * `systemPrompt.forAgent(id)` (value `{ rows, hasPrimary }`; the façade
+   * projects `.rows`).
+   */
+  readonly systemPrompt: PerAgentStore<SystemPromptValue> =
+    this.registry.register<SystemPromptValue>({
+      name: 'systemPrompt',
+      match: systemPromptMatch,
+      reduce: systemPromptReduce,
     });
 
   processId: string = '';

@@ -8,7 +8,13 @@ import { UtilService } from '../../../services/utils.service';
 import { ContextService } from '../../../services/context.service';
 import { ActorMessageService } from '../../../services/message.service';
 import { MessageLogService } from '../../../services/message-log.service';
-import { SystemPromptSelector } from '../../../services/system-prompt.selector';
+import { PerAgentStoreRegistry } from '../../../services/per-agent-store';
+import {
+  SystemPromptSelector,
+  SystemPromptValue,
+  systemPromptMatch,
+  systemPromptReduce,
+} from '../../../services/system-prompt.selector';
 import {
   AkgenticMessage,
   CommandDescriptor,
@@ -56,18 +62,29 @@ describe('AkgentChatComponent — slash-command mention (Story 15-1 / 17-3)', ()
             currentProcessId$: new BehaviorSubject<string>('proc-1'),
           },
         },
+        // Story 16-2 / Epic 17 (17-4): AkgentChatComponent injects
+        // SystemPromptSelector, now a thin façade over
+        // `ActorMessageService.systemPrompt`. Provide a stub service exposing the
+        // `commands` snapshot the `/` mention reads PLUS a REAL `systemPrompt`
+        // PerAgentStore (registered on a real registry over the same
+        // MessageLogService) so the façade resolves against a live store.
+        MessageLogService,
+        PerAgentStoreRegistry,
         {
           provide: ActorMessageService,
-          useValue: {
+          useFactory: (registry: PerAgentStoreRegistry) => ({
             commands: {
               snapshot: (id: string): CommandDescriptor[] | undefined =>
                 commandsById[id],
             },
-          },
+            systemPrompt: registry.register<SystemPromptValue>({
+              name: 'systemPrompt',
+              match: systemPromptMatch,
+              reduce: systemPromptReduce,
+            }),
+          }),
+          deps: [PerAgentStoreRegistry],
         },
-        // Story 16-2: AkgentChatComponent now injects the component-scoped
-        // SystemPromptSelector (over MessageLogService). Provide the real pair.
-        MessageLogService,
         SystemPromptSelector,
       ],
     });
@@ -303,17 +320,29 @@ describe('AkgentChatComponent — head system block (Story 16-2)', () => {
             currentProcessId$: new BehaviorSubject<string>('proc-1'),
           },
         },
+        // Story 17-3 / Epic 17 (17-4): member chat reads
+        // `commands.snapshot(agentId)`; the head block reads the
+        // SystemPromptSelector façade over `ActorMessageService.systemPrompt`.
+        // The stub exposes `commands` PLUS a REAL `systemPrompt` PerAgentStore
+        // (registered on a real registry over the same MessageLogService) so the
+        // head block renders from the actual log-driven fold.
+        MessageLogService,
+        PerAgentStoreRegistry,
         {
           provide: ActorMessageService,
-          useValue: {
-            // Story 17-3: member chat reads `commands.snapshot(agentId)`.
+          useFactory: (registry: PerAgentStoreRegistry) => ({
             commands: {
               snapshot: (_id: string): CommandDescriptor[] | undefined =>
                 undefined,
             },
-          },
+            systemPrompt: registry.register<SystemPromptValue>({
+              name: 'systemPrompt',
+              match: systemPromptMatch,
+              reduce: systemPromptReduce,
+            }),
+          }),
+          deps: [PerAgentStoreRegistry],
         },
-        MessageLogService,
         SystemPromptSelector,
         // PrimeNG p-fieldset registers a synthetic animation listener.
         provideNoopAnimations(),

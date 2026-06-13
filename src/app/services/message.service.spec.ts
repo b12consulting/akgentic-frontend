@@ -7,7 +7,7 @@ import { ActorMessageService } from './message.service';
 import { ApiService } from './api.service';
 import { ChatService } from './chat.service';
 import { MessageLogService } from './message-log.service';
-import { PerAgentStoreRegistry } from './per-agent-store';
+import { PerAgentStore, PerAgentStoreRegistry } from './per-agent-store';
 import { ActorAddress } from '../models/message.types';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
@@ -773,37 +773,39 @@ describe('ActorMessageService — commands PerAgentStore (Story 17-3, ADR-014/AD
 });
 
 // ---------------------------------------------------------------------------
-// Story 6.4 (AC5) — sanctioned-exceptions invariant (NFR9)
+// Epic 17 (ADR-014) — registry-is-the-only-per-agent-owner invariant
 //
-// ADR-005 §Decision 5: stateDict$ / contextDict$ / commandsByAgent$ were the
-// imperative per-agent state containers on ActorMessageService.
-// "Adding an exception requires a new ADR. This test is the automated guard."
-// Epic 17 (ADR-014) migrated `state` + `context` (Story 17-2) and `commands`
-// (Story 17-3) to PerAgentStore instances (folded off log$ by the registry —
-// NOT BehaviorSubject fields), so the probe now sees ZERO bespoke per-agent
-// exceptions. The invariant test itself is RETIRED in Story 17-4; this is the
-// minimal symbol-count adjustment (singleton → empty set) to keep it compiling
-// + green now that the last exception (commandsByAgent$) is gone.
+// Supersedes the retired ADR-005 §Decision 5 "≤2 sanctioned exceptions" probe
+// (Story 6.4, NFR9). With all four per-agent concerns migrated to PerAgentStore
+// instances (state/context — 17-2; commands — 17-3; systemPrompt — 17-4), the
+// "count bespoke exceptions" framing is obsolete. The structural guarantee now
+// is: the four per-agent derived values are PerAgentStore instances owned by
+// the single PerAgentStoreRegistry, and ActorMessageService introduces NO
+// per-agent BehaviorSubject of its own. The negative guard still bites: adding
+// a bespoke per-agent BehaviorSubject field MUST be detected.
+//
+// This is a runtime STRUCTURAL probe (instance types + a BehaviorSubject
+// own-property scan), never a documentation/ADR-string assertion.
 // ---------------------------------------------------------------------------
 
 /**
- * Probe the public surface of an `ActorMessageService` (or subclass) and
- * return the set of own-property names whose runtime shape is an imperative
- * state container — a direct `BehaviorSubject` field, or a per-agent dict
- * `{ [k: string]: BehaviorSubject<...> }`. PerAgentStore instances (the
- * Epic 17 `state` / `context` / `commands`) are NOT BehaviorSubjects and are
- * not counted.
+ * Probe the public surface of an `ActorMessageService` (or subclass) and return
+ * the own-property names whose runtime shape is a bespoke per-agent
+ * `BehaviorSubject` state container — a direct `BehaviorSubject` field, or a
+ * dict `{ [k: string]: BehaviorSubject<...> }`. `PerAgentStore` instances (the
+ * Epic 17 `state` / `context` / `commands` / `systemPrompt`) are NOT
+ * `BehaviorSubject`s and are explicitly NOT counted — they are the sanctioned,
+ * registry-owned mechanism. Probed via `instanceof`, never a name allow-list.
  */
-function probeStateContainers(service: object): string[] {
+function probePerAgentBehaviorSubjects(service: object): string[] {
   return Object.getOwnPropertyNames(service).filter((name) => {
     const v = (service as any)[name];
+    if (v instanceof PerAgentStore) return false;
     if (v instanceof BehaviorSubject) return true;
     if (v && typeof v === 'object' && !Array.isArray(v)) {
       const values = Object.values(v);
       // Empty dicts cannot be distinguished structurally from other empty
-      // objects, so the empty case is not counted. With commandsByAgent$ now
-      // migrated to the `commands` PerAgentStore (Story 17-3), no bespoke
-      // populated per-agent BehaviorSubject dict remains.
+      // objects, so the empty case is not counted.
       if (values.length === 0) return false;
       return values.every((x) => x instanceof BehaviorSubject);
     }
@@ -811,7 +813,7 @@ function probeStateContainers(service: object): string[] {
   });
 }
 
-describe('ActorMessageService — sanctioned-exceptions invariant (Story 6.4, NFR9; ADR-014)', () => {
+describe('ActorMessageService — registry is the only per-agent owner (Epic 17, ADR-014)', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
       providers: [
@@ -830,31 +832,36 @@ describe('ActorMessageService — sanctioned-exceptions invariant (Story 6.4, NF
     });
   });
 
-  it('public data surface has NO bespoke per-agent BehaviorSubject exception', () => {
+  it('the four per-agent concerns are registry-owned PerAgentStore instances', () => {
     const service = TestBed.inject(ActorMessageService);
-    // The probe MUST NOT rely on a name allow-list — it walks
-    // `Object.getOwnPropertyNames` with a runtime `instanceof` check so that
-    // any new `BehaviorSubject` field (regardless of name) forces this test
-    // to fail. Epic 17 (ADR-014) moved state/context (17-2) and commands (17-3)
-    // to PerAgentStore instances, so the bespoke-exception set is now EMPTY.
-    const containers = probeStateContainers(service);
+    expect(service.state).toBeInstanceOf(PerAgentStore);
+    expect(service.context).toBeInstanceOf(PerAgentStore);
+    expect(service.commands).toBeInstanceOf(PerAgentStore);
+    expect(service.systemPrompt).toBeInstanceOf(PerAgentStore);
+  });
+
+  it('introduces NO bespoke per-agent BehaviorSubject of its own', () => {
+    const service = TestBed.inject(ActorMessageService);
+    // Runtime structural probe: any per-agent BehaviorSubject field (regardless
+    // of name) would surface here. PerAgentStore instances are not counted —
+    // the registry is the sole per-agent-map owner.
+    const containers = probePerAgentBehaviorSubjects(service);
     expect(new Set(containers)).toEqual(new Set([]));
   });
 
-  it('negative probe: adding another exception fails the invariant', () => {
+  it('negative guard: adding a bespoke per-agent BehaviorSubject fails the probe', () => {
     const service = TestBed.inject(ActorMessageService);
-    // Simulate the "someone added a new BehaviorSubject" diff.
+    // Simulate the regression the old invariant policed: a new per-agent
+    // BehaviorSubject field bypassing the registry.
     (service as any).extraDict$ = { agent: new BehaviorSubject<any>(null) };
-    const containers = probeStateContainers(service);
-    // The probe MUST detect the addition (set is no longer empty). Without
-    // this guard, the invariant test would silently pass.
+    const containers = probePerAgentBehaviorSubjects(service);
     expect(new Set(containers)).not.toEqual(new Set([]));
     expect(containers).toContain('extraDict$');
   });
 
-  it('non-state observables (Subjects, Subscriptions, WebSocketSubject) are NOT counted as exceptions', () => {
+  it('non-state observables (Subjects, Subscriptions, WebSocketSubject) are NOT counted', () => {
     const service = TestBed.inject(ActorMessageService);
-    const containers = probeStateContainers(service);
+    const containers = probePerAgentBehaviorSubjects(service);
     expect(containers).not.toContain('_wsInbound$');
     expect(containers).not.toContain('bufferSub');
     expect(containers).not.toContain('spinnerSub');

@@ -1,13 +1,14 @@
 import { inject, Injectable } from '@angular/core';
-import { distinctUntilChanged, map, Observable, shareReplay } from 'rxjs';
+import { map, Observable } from 'rxjs';
 
 import {
   AkgenticMessage,
+  EventMessage,
   isEventMessage,
   isLlmSystemPromptEvent,
   SystemPromptPartSnapshot,
 } from '../models/message.types';
-import { MessageLogService } from './message-log.service';
+import { ActorMessageService } from './message.service';
 
 /**
  * One rendered row of the trace head system block. Mirrors the shape the
@@ -23,7 +24,12 @@ export interface SystemPromptRow {
 
 // ---------------------------------------------------------------------------
 // Module-scope pure helpers (ADR-005 §Decision 4; ADR-004 §5b).
-// The fold allocates a fresh result array per call; it never mutates `log`.
+//
+// These are the SINGLE implementation of the system-prompt mapping + part
+// extraction logic. They are shared by the `systemPromptReduce` per-message
+// reducer (registered on the `systemPrompt` PerAgentStore in
+// `ActorMessageService`, Epic 17 / ADR-014) — there is no longer a whole-log
+// fold. Each maps to a fresh array; none mutates its input; none throws.
 // ---------------------------------------------------------------------------
 
 /**
@@ -59,106 +65,141 @@ function mapPartsToRows(
 }
 
 /**
- * Primary path (FR1, latest-wins): the `parts` of the LAST
- * `EventMessage(LlmSystemPromptEvent)` for `agentId`, in log order. Returns
- * `undefined` when the agent has no such event (so the caller can fall back).
- * The log is append-only and ordered — latest-wins is "last by position", not
- * a sort on `run_id`.
+ * Primary-path extraction (FR1): if `msg` is an
+ * `EventMessage(LlmSystemPromptEvent)`, return its `parts` (possibly undefined
+ * for a malformed event); otherwise `undefined`. Latest-wins is applied by the
+ * reducer (the LAST such event replaces the value), so this only reads ONE
+ * message's parts.
  */
-function latestSystemPromptParts(
-  log: AkgenticMessage[],
-  agentId: string,
+function systemPromptEventParts(
+  msg: AkgenticMessage,
 ): SystemPromptPartSnapshot[] | undefined {
-  let latest: SystemPromptPartSnapshot[] | undefined;
-  for (const msg of log) {
-    if (!isEventMessage(msg)) continue;
-    const inner = (msg as { event?: unknown }).event as
-      | { __model__?: string; parts?: SystemPromptPartSnapshot[] }
-      | undefined;
-    if (!isLlmSystemPromptEvent(inner)) continue;
-    if (msg.sender?.agent_id !== agentId) continue;
-    latest = inner.parts;
-  }
-  return latest;
+  if (!isEventMessage(msg)) return undefined;
+  const inner = (msg as EventMessage).event as
+    | { __model__?: string; parts?: SystemPromptPartSnapshot[] }
+    | undefined;
+  if (!isLlmSystemPromptEvent(inner)) return undefined;
+  return inner.parts;
 }
 
 /**
- * Fallback path (FR2): the `system-prompt` parts of the FIRST
- * `EventMessage(LlmMessageEvent)` for `agentId` (pre-event teams whose logs
- * predate `LlmSystemPromptEvent`). Mirrors the `contextDict$` seeding read in
- * `message.service.ts` (inner is the `ModelRequest`, whose `.parts` carry
- * `part_kind`). Returns `undefined` when no such message exists for the agent.
+ * Fallback-path extraction (FR2): if `msg` is an
+ * `EventMessage(LlmMessageEvent)` whose inner `message.parts` contain
+ * `part_kind === 'system-prompt'` entries, return those system parts; otherwise
+ * `undefined`. Mirrors the pre-event seeding read in `message.service.ts`
+ * (inner is the `ModelRequest`, whose `.parts` carry `part_kind`).
  */
-function fallbackSystemPromptParts(
-  log: AkgenticMessage[],
-  agentId: string,
+function llmMessageSystemParts(
+  msg: AkgenticMessage,
 ): Array<{ dynamic_ref?: string | null; content?: string }> | undefined {
-  for (const msg of log) {
-    if (!isEventMessage(msg)) continue;
-    const inner = (msg as { event?: unknown }).event as
-      | { __model__?: string; message?: { parts?: unknown[] } }
-      | undefined;
-    if (!inner?.__model__?.includes('LlmMessageEvent')) continue;
-    if (msg.sender?.agent_id !== agentId) continue;
-    const parts = (inner.message?.parts ?? []) as Array<{
-      part_kind?: string;
-      dynamic_ref?: string | null;
-      content?: string;
-    }>;
-    const systemParts = parts.filter((p) => p?.part_kind === 'system-prompt');
-    if (systemParts.length > 0) return systemParts;
-  }
-  return undefined;
+  if (!isEventMessage(msg)) return undefined;
+  const inner = (msg as EventMessage).event as
+    | { __model__?: string; message?: { parts?: unknown[] } }
+    | undefined;
+  if (!inner?.__model__?.includes('LlmMessageEvent')) return undefined;
+  const parts = (inner.message?.parts ?? []) as Array<{
+    part_kind?: string;
+    dynamic_ref?: string | null;
+    content?: string;
+  }>;
+  const systemParts = parts.filter((p) => p?.part_kind === 'system-prompt');
+  return systemParts.length > 0 ? systemParts : undefined;
 }
 
 /**
- * Pure fold over the message log producing the current head system block for
- * one agent (ADR-004 §5b step 1). Primary source: the LAST
- * `LlmSystemPromptEvent` for the agent (latest-wins, FR1). Fallback (FR2, only
- * when the agent has ZERO `LlmSystemPromptEvent`s): the system-prompt parts of
- * the FIRST `LlmMessageEvent` for the agent. Unknown/unrelated `__model__`s
- * pass through silently; never throws; allocates a fresh array per call.
+ * Per-agent reduced value for the `systemPrompt` store (Epic 17 / ADR-014). The
+ * incremental reducer cannot be a stock factory because the precedence is
+ * "latest primary OR first fallback" — it must remember whether a primary
+ * (`LlmSystemPromptEvent`) has ever been seen for the agent so a later
+ * `LlmMessageEvent` cannot clobber a primary, and a second `LlmMessageEvent`
+ * cannot overwrite an earlier fallback.
  *
- * Exported so tests can import it directly (no TestBed required).
+ * - `rows`       — the rendered head block (what the façade exposes).
+ * - `hasPrimary` — true once any `LlmSystemPromptEvent` has been folded for the
+ *                  agent (primary supersedes fallback from that point on).
  */
-export function latestSystemPromptFold(
-  log: AkgenticMessage[],
-  agentId: string,
-): SystemPromptRow[] {
-  const primary = latestSystemPromptParts(log, agentId);
-  if (primary !== undefined) return mapPartsToRows(primary);
-  return mapPartsToRows(fallbackSystemPromptParts(log, agentId));
-}
-
-/** Structural comparator so identical head blocks across no-op `log$` ticks do
- *  not re-emit (OnPush), while a real change emits a fresh reference (AC9). */
-function rowsEqual(a: SystemPromptRow[], b: SystemPromptRow[]): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
+export interface SystemPromptValue {
+  rows: SystemPromptRow[];
+  hasPrimary: boolean;
 }
 
 /**
- * SystemPromptSelector — Story 16-1 (ADR-004 §5b step 1).
+ * Incremental per-message reducer (the store's `(prev, msg) => next` contract,
+ * ADR-014 §Decision 1 custom reducer) that reproduces EXACTLY the precedence of
+ * the old whole-log fold:
  *
- * Exposes `latestSystemPrompt$(agentId)` as a pure selector over
- * `MessageLogService.log$`, mirroring `KGStateReducer.knowledgeGraph$`. NO new
- * imperative per-agent dict / `BehaviorSubject` — the head block is derived by
- * folding the unified log, preserving frontend ADR-005's two-exception
- * invariant (NFR1). `shareReplay(1)` gives late subscribers the current block
- * synchronously (AC8); the structural `distinctUntilChanged` suppresses no-op
- * re-emissions while still emitting a fresh array on real change (AC9).
+ *   1. Primary (latest-wins, FR1): a `LlmSystemPromptEvent` always replaces the
+ *      value with its parts and marks `hasPrimary` — the LAST one wins.
+ *   2. Fallback (FR2, ONLY while `!hasPrimary`): the FIRST `LlmMessageEvent`
+ *      with system parts captures the value; once captured, later
+ *      `LlmMessageEvent`s do NOT overwrite it (first-wins fallback). A
+ *      `LlmMessageEvent` never overrides a primary.
+ *   3. Anything else (unrelated inner, no system parts) → passthrough `prev`.
+ *
+ * Malformed/empty parts map to `[]` without throwing (defensive `mapPartsToRows`).
+ * Returns a FRESH `rows` array on real change (OnPush safety).
+ */
+export function systemPromptReduce(
+  prev: SystemPromptValue | undefined,
+  msg: AkgenticMessage,
+): SystemPromptValue | undefined {
+  const primary = systemPromptEventParts(msg);
+  if (primary !== undefined) {
+    return { rows: mapPartsToRows(primary), hasPrimary: true };
+  }
+  // Primary already established → a message-event fallback never overrides it.
+  if (prev?.hasPrimary) return prev;
+  // Fallback already captured → first-wins; later message events do not replace.
+  if (prev !== undefined) return prev;
+  const fallback = llmMessageSystemParts(msg);
+  if (fallback !== undefined) {
+    return { rows: mapPartsToRows(fallback), hasPrimary: false };
+  }
+  return prev;
+}
+
+/**
+ * `match` predicate for the `systemPrompt` spec: admit BOTH inner model types
+ * so both reach `systemPromptReduce` (the reducer — not `match` — decides
+ * primary-vs-fallback). Any `EventMessage` whose inner is a
+ * `LlmSystemPromptEvent` OR a `LlmMessageEvent` is folded.
+ */
+export function systemPromptMatch(msg: AkgenticMessage): boolean {
+  if (!isEventMessage(msg)) return false;
+  return (
+    systemPromptEventParts(msg) !== undefined ||
+    llmMessageSystemParts(msg) !== undefined
+  );
+}
+
+/**
+ * SystemPromptSelector — Story 16-1 (ADR-004 §5b step 1), thin façade since
+ * Epic 17 / Story 17-4 (ADR-014).
+ *
+ * `latestSystemPrompt$(agentId)` now DELEGATES to the `systemPrompt`
+ * `PerAgentStore` instance owned by `ActorMessageService` (registered on the
+ * single `PerAgentStoreRegistry` alongside `state` / `context` / `commands`).
+ * The selector holds NO per-agent state of its own and no `log$` fold pipeline —
+ * the latest-wins + FR2 fallback + row-mapping logic lives in
+ * `systemPromptReduce`. `forAgent` already applies a reference
+ * `distinctUntilChanged` + `shareReplay({ bufferSize: 1, refCount: true })` with
+ * a lazy current-value replay, covering the late-subscriber + no-op-suppression
+ * + fresh-array-on-change semantics the head block relies on. The façade
+ * coalesces the store's `undefined` (agent never folded) to `[]` so the
+ * head-block consumer always receives `SystemPromptRow[]`, never `undefined`
+ * (AC-4 parity with the old fold's `[]`-for-no-rows contract).
  *
  * Scope: component-scoped (NOT `providedIn: 'root'`) — it injects the
- * component-scoped `MessageLogService` from `ProcessComponent.providers`.
+ * component-scoped `ActorMessageService` from `ProcessComponent.providers`.
  */
 @Injectable()
 export class SystemPromptSelector {
-  private readonly log: MessageLogService = inject(MessageLogService);
+  private readonly messageService: ActorMessageService =
+    inject(ActorMessageService);
 
   latestSystemPrompt$(agentId: string): Observable<SystemPromptRow[]> {
-    return this.log.log$.pipe(
-      map((log) => latestSystemPromptFold(log, agentId)),
-      distinctUntilChanged(rowsEqual),
-      shareReplay(1),
-    );
+    return this.messageService.systemPrompt
+      .forAgent(agentId)
+      .pipe(map((value) => value?.rows ?? []));
   }
 }
