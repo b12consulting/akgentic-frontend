@@ -757,6 +757,24 @@ describe('ProcessUserInputComponent', () => {
       ]);
     });
 
+    it('hides internal `_`-prefixed commands from the / list', () => {
+      const INTERNAL = mkDescriptor('_expand_media_refs', {
+        description: 'Expand glob tokens into binary image content',
+        args: [{ name: 'prompt', type: 'string', required: true }],
+      });
+      nodesSubject.next([
+        makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
+      ]);
+      commandsByAgentSubject.next({ '@Manager': [INTERNAL, HIRE, ROSTER] });
+      component.selectedAgents = ['@Manager'];
+
+      // `_expand_media_refs` is internal — only user commands remain.
+      expect(component.commandItems.map((c) => c.name)).toEqual([
+        'hire_member',
+        'roster',
+      ]);
+    });
+
     it('AC-3: with zero recipients, defaults to the supervisor (child of @Human entry point)', () => {
       nodesSubject.next([
         makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
@@ -841,6 +859,48 @@ describe('ProcessUserInputComponent', () => {
       expect(component.selectAgent({ name: 'Manager [Manager]' })).toBe(
         'Manager [Manager] ',
       );
+    });
+
+    // Story 15-3 (AC-4) — tool-family ordering: commands order by `tool_card`
+    // then `name`, so each tool family is contiguous and alphabetical within
+    // it, and the `/` mentionConfig entry opts out of angular-mentions' own
+    // label sort (`disableSort: true`) so the selector's order survives.
+    it('AC-4: orders commandItems by tool_card then name (tool families contiguous)', () => {
+      // Deliberately interleave two tool families AND list them out of order so
+      // a naive global-name sort would NOT reproduce the grouped result.
+      const PLAN_BREAKDOWN = mkDescriptor('breakdown', {
+        tool_card: 'PlanningTool',
+      });
+      const PLAN_AUDIT = mkDescriptor('audit', { tool_card: 'PlanningTool' });
+      const TEAM_HIRE = mkDescriptor('hire_member', { tool_card: 'TeamTool' });
+      const TEAM_ROSTER = mkDescriptor('roster', { tool_card: 'TeamTool' });
+
+      nodesSubject.next([
+        makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
+      ]);
+      // Stored order: TeamTool first, PlanningTool names reversed — neither
+      // tool-grouped nor globally alphabetical.
+      commandsByAgentSubject.next({
+        '@Manager': [TEAM_ROSTER, PLAN_BREAKDOWN, TEAM_HIRE, PLAN_AUDIT],
+      });
+      component.selectedAgents = ['@Manager'];
+
+      // PlanningTool family (audit, breakdown) before TeamTool family
+      // (hire_member, roster); alphabetical within each family.
+      expect(component.commandItems.map((c) => c.name)).toEqual([
+        'audit',
+        'breakdown',
+        'hire_member',
+        'roster',
+      ]);
+    });
+
+    it('AC-4: the `/` mentionConfig entry sets disableSort === true', () => {
+      const slash = component.mentionConfig.mentions.find(
+        (m) => m.triggerChar === '/',
+      );
+      expect(slash).toBeTruthy();
+      expect((slash as any).disableSort).toBeTrue();
     });
   });
 });
