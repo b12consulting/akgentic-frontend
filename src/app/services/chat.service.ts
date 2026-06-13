@@ -1,6 +1,5 @@
 import { inject, Injectable } from '@angular/core';
 import {
-  BehaviorSubject,
   distinctUntilChanged,
   map,
   Observable,
@@ -317,8 +316,9 @@ export function chatFold(log: AkgenticMessage[]): ChatState {
  * `finaliseOrDiscard`) are deleted — the fold owns the lifecycle from this
  * story forward (FR7).
  *
- * `loadingProcess$` stays imperative (spinner state driven by
- * `IngestionService`, analogous to AC10 for `GraphDataService.isLoading$`).
+ * Epic 18 (ADR-015 §2): the imperative `loadingProcess$` spinner field moved
+ * ONTO `IngestionService` (which drives the spinner-floor timing), leaving
+ * `ChatService` a pure selector over `MessageLogService.log$`.
  */
 @Injectable()
 export class ChatService {
@@ -344,14 +344,5 @@ export class ChatService {
    *  contract (same `Observable<Set<string>>` shape). */
   readonly pendingNotifications$: Observable<Set<string>> = this.messages$.pipe(
     map(computePendingNotifications),
-  );
-
-  /**
-   * Intentionally imperative (analogous to AC10 for
-   * `GraphDataService.isLoading$`): reflects spinner state driven by
-   * `IngestionService`, not message-log state.
-   */
-  loadingProcess$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(
-    false,
   );
 }

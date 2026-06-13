@@ -1,72 +1,30 @@
 import { inject, Injectable } from '@angular/core';
 
-import { Subject, Subscription } from 'rxjs';
+import { BehaviorSubject, Subject, Subscription } from 'rxjs';
 import { bufferTime, filter, take } from 'rxjs/operators';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 import { ConfigService } from '../../../core/config/config.service';
 import {
   AkgenticMessage,
   CommandDescriptor,
-  CommandsAnnouncedEvent,
-  EventMessage,
-  isCommandsAnnouncedEvent,
-  isEventMessage,
-  isStateChangedMessage,
-  StateChangedMessage,
 } from '../../../protocol/message.types';
 import { EventResponse } from '../../../core/context/team.interface';
 
 import { ApiService } from '../../../core/http/api.service';
-import { ChatService } from '../../../services/chat.service';
 import { MessageLogService } from './message-log.service';
 import {
-  appendWith,
   PerAgentStore,
   PerAgentStoreRegistry,
-  replaceWith,
 } from './per-agent-store';
 import {
+  AgentStateValue,
+  commandsSpec,
+  contextSpec,
+  stateSpec,
+  systemPromptSpec,
   SystemPromptValue,
-  systemPromptMatch,
-  systemPromptReduce,
-} from '../../../services/system-prompt.selector';
+} from './per-agent-specs';
 import { MessageService } from 'primeng/api';
-
-/**
- * Per-agent `state` value shape (Epic 17 / ADR-014 §5). Mirrors what the
- * deleted `stateDict$` produced for `AkgentStateComponent.generateForm`:
- * V2 sends an empty schema and the raw state is rendered as JSON.
- */
-interface AgentStateValue {
-  schema: object;
-  state: unknown;
-}
-
-/**
- * Inner-event reader for the `context` instance (Epic 17 / ADR-014 §5).
- * Mirrors the exact predicate the deleted `applyEventMessageDicts` /
- * replay loop used: an `EventMessage` whose inner `__model__` includes
- * `LlmMessageEvent` AND whose inner `message` is present. Returns the inner
- * `message` to append, or `undefined` when the guard does not hold.
- */
-function innerLlmMessage(msg: AkgenticMessage): unknown {
-  const inner = (msg as EventMessage).event;
-  if (!inner?.__model__?.includes('LlmMessageEvent')) return undefined;
-  return inner.message ?? undefined;
-}
-
-/**
- * Inner-event reader for the `commands` instance (Epic 17 / ADR-014 §5).
- * Mirrors `innerLlmMessage`: reads the inner `event` of an `EventMessage` and
- * returns it iff it passes `isCommandsAnnouncedEvent`, else `undefined`. Keeps
- * the `commands` spec's `match` and `reduce` reading the SAME inner payload.
- */
-function innerCommandsEvent(
-  msg: AkgenticMessage,
-): CommandsAnnouncedEvent | undefined {
-  const inner = (msg as EventMessage).event;
-  return isCommandsAnnouncedEvent(inner) ? inner : undefined;
-}
 
 /**
  * Story 4-10 (AC7): minimum visible duration of the loading spinner.
@@ -82,7 +40,7 @@ const SPINNER_MIN_VISIBLE_MS = 500;
  *     folds that replay tail exactly as it folds live WS frames.
  *   - WS `bufferTime(16)` ingestion appends to the log; the registry derives
  *     per-agent `state` / `context` from `log$` (O(Δ), automatic replay/reset).
- *   - Spinner floor (`loadingProcess$` on `ChatService`, AC7) — UX concern.
+ *   - Spinner floor (`loadingProcess$`, AC7) — UX concern owned by ingestion.
  *
  * Per-agent state (Epic 17 / ADR-014): `state`, `context`, `commands`, and
  * `systemPrompt` are ALL `PerAgentStore` instances owned by the
@@ -100,9 +58,17 @@ const SPINNER_MIN_VISIBLE_MS = 500;
 @Injectable()
 export class IngestionService {
   apiService: ApiService = inject(ApiService);
-  chatService: ChatService = inject(ChatService);
   messageService: MessageService = inject(MessageService);
   private config: ConfigService = inject(ConfigService);
+
+  /**
+   * Story 4-10 (AC7) / Epic 18 (ADR-015 §2): the loading-spinner state.
+   * Owned by `IngestionService` (which drives the spinner-floor timing) rather
+   * than `ChatService` — the sole reader (`ChatPanelComponent`) reads it from
+   * here. Initial value `false`, same as the prior `ChatService` field.
+   */
+  readonly loadingProcess$: BehaviorSubject<boolean> =
+    new BehaviorSubject<boolean>(false);
 
   /**
    * Story 6.1 (ADR-005 §Decision 1): component-scoped append-only log of
@@ -131,14 +97,7 @@ export class IngestionService {
    * `state.forAgent(id)`.
    */
   readonly state: PerAgentStore<AgentStateValue> =
-    this.registry.register<AgentStateValue>({
-      name: 'state',
-      match: isStateChangedMessage,
-      reduce: replaceWith<AgentStateValue>((m) => ({
-        schema: {},
-        state: (m as StateChangedMessage).state,
-      })),
-    });
+    this.registry.register<AgentStateValue>(stateSpec);
 
   /**
    * Epic 17 (ADR-014 §5): per-agent ordered conversation array derived by
@@ -148,11 +107,7 @@ export class IngestionService {
    * `appendWith` concats once per new message). Read via `context.forAgent(id)`.
    */
   readonly context: PerAgentStore<unknown[]> =
-    this.registry.register<unknown[]>({
-      name: 'context',
-      match: (m) => isEventMessage(m) && innerLlmMessage(m) !== undefined,
-      reduce: appendWith((m) => innerLlmMessage(m)),
-    });
+    this.registry.register<unknown[]>(contextSpec);
 
   /**
    * Epic 17 (ADR-014 §5): per-agent slash-command store derived from
@@ -166,15 +121,7 @@ export class IngestionService {
    * `commands.snapshot(id)` by the `/` mention consumers.
    */
   readonly commands: PerAgentStore<CommandDescriptor[]> =
-    this.registry.register<CommandDescriptor[]>({
-      name: 'commands',
-      match: (m) =>
-        isEventMessage(m) &&
-        isCommandsAnnouncedEvent((m as EventMessage).event),
-      reduce: replaceWith<CommandDescriptor[]>(
-        (m) => innerCommandsEvent(m)?.commands ?? [],
-      ),
-    });
+    this.registry.register<CommandDescriptor[]>(commandsSpec);
 
   /**
    * Epic 17 (ADR-014 §5): per-agent system-prompt head block derived from
@@ -190,11 +137,7 @@ export class IngestionService {
    * projects `.rows`).
    */
   readonly systemPrompt: PerAgentStore<SystemPromptValue> =
-    this.registry.register<SystemPromptValue>({
-      name: 'systemPrompt',
-      match: systemPromptMatch,
-      reduce: systemPromptReduce,
-    });
+    this.registry.register<SystemPromptValue>(systemPromptSpec);
 
   processId: string = '';
 
@@ -268,7 +211,7 @@ export class IngestionService {
       this.spinnerFlipTimer = null;
     }
     this.spinnerShownAt = Date.now();
-    this.chatService.loadingProcess$.next(true);
+    this.loadingProcess$.next(true);
 
     if (!running) {
       // V2: use getEvents() for stopped teams
@@ -479,14 +422,14 @@ export class IngestionService {
     // extra redundant `false` emission, breaking Story 4-10 AC1's "subsequent
     // events do not re-emit false" test.
     if (
-      this.chatService.loadingProcess$.value === false &&
+      this.loadingProcess$.value === false &&
       this.spinnerFlipTimer === null
     ) {
       return;
     }
     const elapsed = Date.now() - this.spinnerShownAt;
     if (elapsed >= SPINNER_MIN_VISIBLE_MS) {
-      this.chatService.loadingProcess$.next(false);
+      this.loadingProcess$.next(false);
       return;
     }
     // Clear any pending timer (should normally be null here because the
@@ -497,7 +440,7 @@ export class IngestionService {
     }
     this.spinnerFlipTimer = setTimeout(() => {
       this.spinnerFlipTimer = null;
-      this.chatService.loadingProcess$.next(false);
+      this.loadingProcess$.next(false);
     }, SPINNER_MIN_VISIBLE_MS - elapsed);
   }
 

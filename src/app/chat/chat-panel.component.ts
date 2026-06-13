@@ -16,6 +16,7 @@ import { ChatMessage } from '../models/chat-message.model';
 import { ActorAddress } from '../protocol/message.types';
 import { ApiService } from '../core/http/api.service';
 import { ChatService, ThinkingState } from '../services/chat.service';
+import { IngestionService } from '../components/process/event/ingestion.service';
 import { Selectable, SelectionService } from '../services/selection.service';
 import {
   AnsweredRequest,
@@ -51,13 +52,15 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   private scrollContainer!: ElementRef;
 
   chatService: ChatService = inject(ChatService);
+  ingestionService: IngestionService = inject(IngestionService);
   selectionService: SelectionService = inject(SelectionService);
   apiService: ApiService = inject(ApiService);
 
   chatMessages: ChatMessage[] = [];
   thinkingStates: ThinkingState[] = [];
   displayItems: DisplayItem[] = [];
-  loadingProcess$ = this.chatService.loadingProcess$;
+  // Epic 18 (ADR-015 §2): spinner state now lives on IngestionService.
+  loadingProcess$ = this.ingestionService.loadingProcess$;
 
   // Modal state for Rule 3 notification dialog
   modalVisible = false;

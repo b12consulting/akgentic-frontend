@@ -91,7 +91,6 @@ describe('ChatPanelComponent', () => {
     const thinkingAgentsSubj = new BehaviorSubject<ThinkingState[]>([]);
     const chatService = {
       messages$: classifiedMessages$,
-      loadingProcess$: new BehaviorSubject<boolean>(false),
       pendingNotifications$: classifiedMessages$.pipe(
         map(computePendingNotifications),
       ),
@@ -122,6 +121,9 @@ describe('ChatPanelComponent', () => {
     // spec short-circuit before any command lookup).
     const messageService = {
       commands: { snapshot: (_id: string) => [] as any[] },
+      // Epic 18 (ADR-015 §2): the spinner state moved off ChatService onto
+      // IngestionService; the component now reads `loadingProcess$` from here.
+      loadingProcess$: new BehaviorSubject<boolean>(false),
     };
 
     await TestBed.configureTestingModule({

@@ -97,12 +97,12 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
     await service.init('proc-1', true);
 
     // Socket is open but no events yet → spinner MUST stay on.
-    expect(chatService.loadingProcess$.value).toBe(true);
+    expect(service.loadingProcess$.value).toBe(true);
   });
 
   it('AC1: loadingProcess$ flips to false on the first WS event (past the 500ms floor)', async () => {
     await service.init('proc-1', true);
-    expect(chatService.loadingProcess$.value).toBe(true);
+    expect(service.loadingProcess$.value).toBe(true);
 
     // Advance past the SPINNER_MIN_VISIBLE_MS floor so the first-event flip
     // fires immediately (AC7 immediate-flip branch).
@@ -114,13 +114,13 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
       __model__: 'akgentic.core.messages.orchestrator.StartMessage',
     });
 
-    expect(chatService.loadingProcess$.value).toBe(false);
+    expect(service.loadingProcess$.value).toBe(false);
   });
 
   it('AC1: subsequent events do not re-emit false (guard is single-shot)', async () => {
     await service.init('proc-1', true);
     const emitted: boolean[] = [];
-    chatService.loadingProcess$.subscribe((v) => emitted.push(v));
+    service.loadingProcess$.subscribe((v) => emitted.push(v));
     // Start: BehaviorSubject replays current value (true).
     expect(emitted).toEqual([true]);
 
@@ -136,12 +136,12 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
 
   it('AC3: WS error before any event flips loadingProcess$ to false (past the floor)', async () => {
     await service.init('proc-1', true);
-    expect(chatService.loadingProcess$.value).toBe(true);
+    expect(service.loadingProcess$.value).toBe(true);
 
     jasmine.clock().tick(600);
     fakeSocket.error(new Error('connect refused'));
 
-    expect(chatService.loadingProcess$.value).toBe(false);
+    expect(service.loadingProcess$.value).toBe(false);
   });
 
   it('AC2: running=false (stopped team) flips loadingProcess$ to false before WS wiring', async () => {
@@ -152,7 +152,7 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
     // the flag to `false`. Subscribing to track values after await captures
     // the current BehaviorSubject state without needing to push any events.
     const emitted: boolean[] = [];
-    const sub = chatService.loadingProcess$.subscribe((v) => emitted.push(v));
+    const sub = service.loadingProcess$.subscribe((v) => emitted.push(v));
 
     await service.init('proc-1', false);
     // Drive the 500ms floor so the deferred flip can actually fire.
@@ -161,7 +161,7 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
     // No WS events pushed → stopped-team path MUST have already flipped it,
     // AND the sequence must include at least one `true` (spinner on during
     // getEvents()) followed by `false` (before WS wiring).
-    expect(chatService.loadingProcess$.value).toBe(false);
+    expect(service.loadingProcess$.value).toBe(false);
     expect(emitted).toContain(true);
     expect(emitted[emitted.length - 1]).toBe(false);
 
@@ -174,7 +174,7 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
 
   it('AC8: first event at 100ms → flag still true at 400ms → false at 500ms (deferred flip)', async () => {
     await service.init('proc-1', true);
-    expect(chatService.loadingProcess$.value).toBe(true);
+    expect(service.loadingProcess$.value).toBe(true);
 
     // First event arrives at 100ms — well before the 500ms floor.
     jasmine.clock().tick(100);
@@ -182,48 +182,48 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
 
     // At 400ms total, the deferred timer has NOT fired yet.
     jasmine.clock().tick(300);
-    expect(chatService.loadingProcess$.value).toBe(true);
+    expect(service.loadingProcess$.value).toBe(true);
 
     // Crossing the 500ms floor triggers the pending setTimeout.
     jasmine.clock().tick(100);
-    expect(chatService.loadingProcess$.value).toBe(false);
+    expect(service.loadingProcess$.value).toBe(false);
   });
 
   it('AC8: first event at 800ms → flag becomes false immediately (past floor, no extra delay)', async () => {
     await service.init('proc-1', true);
-    expect(chatService.loadingProcess$.value).toBe(true);
+    expect(service.loadingProcess$.value).toBe(true);
 
     // First event well past the 500ms floor — flip must be immediate.
     jasmine.clock().tick(800);
     fakeSocket.next({ __model__: 'StartMessage' });
 
     // No further tick needed: immediate branch of scheduleSpinnerFlipFalse.
-    expect(chatService.loadingProcess$.value).toBe(false);
+    expect(service.loadingProcess$.value).toBe(false);
   });
 
   it('AC8: WS error at 100ms → flag still true at 400ms → false at 500ms (failure path respects floor)', async () => {
     await service.init('proc-1', true);
-    expect(chatService.loadingProcess$.value).toBe(true);
+    expect(service.loadingProcess$.value).toBe(true);
 
     jasmine.clock().tick(100);
     fakeSocket.error(new Error('connect refused'));
 
     jasmine.clock().tick(300);
-    expect(chatService.loadingProcess$.value).toBe(true);
+    expect(service.loadingProcess$.value).toBe(true);
 
     jasmine.clock().tick(100);
-    expect(chatService.loadingProcess$.value).toBe(false);
+    expect(service.loadingProcess$.value).toBe(false);
   });
 
   it('AC8: re-init while a deferred flip is pending cancels the pending timer (no late false clobber)', async () => {
     await service.init('proc-1', true);
-    expect(chatService.loadingProcess$.value).toBe(true);
+    expect(service.loadingProcess$.value).toBe(true);
 
     // Schedule a deferred flip for t=500ms via an early first event.
     jasmine.clock().tick(100);
     fakeSocket.next({ __model__: 'StartMessage' });
     // Pending timer exists; flag still true.
-    expect(chatService.loadingProcess$.value).toBe(true);
+    expect(service.loadingProcess$.value).toBe(true);
 
     // Re-init (team switch) before the pending timer fires — swap in a new
     // fake socket so the fresh init() has something to subscribe to.
@@ -234,13 +234,13 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
     await service.init('proc-2', true);
 
     // Fresh cycle: flag is back to true.
-    expect(chatService.loadingProcess$.value).toBe(true);
+    expect(service.loadingProcess$.value).toBe(true);
 
     // Advance past the ORIGINAL scheduled time (t=500ms from first init).
     // If the pending timer had not been cancelled, it would fire here and
     // clobber the fresh spinner cycle with a stale `false`.
     jasmine.clock().tick(500);
-    expect(chatService.loadingProcess$.value).toBe(true);
+    expect(service.loadingProcess$.value).toBe(true);
 
     secondSocket.complete();
   });
@@ -458,7 +458,7 @@ describe('IngestionService — Story 6.1 (frame-batched log ingestion)', () => {
     jasmine.clock().tick(600);
 
     const emitted: boolean[] = [];
-    const sub = chatService.loadingProcess$.subscribe((v) => emitted.push(v));
+    const sub = service.loadingProcess$.subscribe((v) => emitted.push(v));
     expect(emitted).toEqual([true]);
 
     // Fire 5 events synchronously — take(1) must trigger ONLY ONE flip.
@@ -796,9 +796,17 @@ describe('IngestionService — commands PerAgentStore (Story 17-3, ADR-014/ADR-0
  * Epic 17 `state` / `context` / `commands` / `systemPrompt`) are NOT
  * `BehaviorSubject`s and are explicitly NOT counted — they are the sanctioned,
  * registry-owned mechanism. Probed via `instanceof`, never a name allow-list.
+ *
+ * Epic 18 (ADR-015 §2): the single `loadingProcess$` spinner BehaviorSubject
+ * moved off `ChatService` onto ingestion. It is a global UX flag, NOT per-agent
+ * state, so it is the ONE sanctioned non-per-agent `BehaviorSubject` and is
+ * excluded by name — exactly as the `_wsInbound$` Subject and `webSocket` are
+ * not per-agent containers. The negative guard below still bites any OTHER
+ * bespoke per-agent `BehaviorSubject` field.
  */
 function probePerAgentBehaviorSubjects(service: object): string[] {
   return Object.getOwnPropertyNames(service).filter((name) => {
+    if (name === 'loadingProcess$') return false;
     const v = (service as any)[name];
     if (v instanceof PerAgentStore) return false;
     if (v instanceof BehaviorSubject) return true;
@@ -1009,14 +1017,14 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
   it('AC5: WS error still calls flipOnFirstEvent (spinner falls through)', async () => {
     const chatService = TestBed.inject(ChatService);
     await service.init('proc-1', true);
-    expect(chatService.loadingProcess$.value).toBe(true);
+    expect(service.loadingProcess$.value).toBe(true);
 
     // Past the spinner floor so flip is immediate.
     jasmine.clock().tick(600);
     fakeSocket.error(new Error('connect refused'));
 
     // flipOnFirstEvent was called — spinner is now false.
-    expect(chatService.loadingProcess$.value).toBe(false);
+    expect(service.loadingProcess$.value).toBe(false);
   });
 });
 
