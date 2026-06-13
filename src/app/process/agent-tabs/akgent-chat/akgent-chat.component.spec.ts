@@ -85,6 +85,21 @@ describe('AkgentChatComponent — slash-command mention (Story 15-1)', () => {
     ]);
   });
 
+  it('hides internal `_`-prefixed commands from the / list', () => {
+    const INTERNAL: CommandDescriptor = {
+      name: '_expand_media_refs',
+      description: 'Expand glob tokens into binary image content',
+      args: [{ name: 'prompt', type: 'string', required: true }],
+      tool_card: 'MediaTool',
+    };
+    commandsByAgentSubject.next({ '@Manager': [INTERNAL, HIRE, ROSTER] });
+    // `_expand_media_refs` is internal — only user commands remain.
+    expect(component.commandItems.map((c) => c.name)).toEqual([
+      'hire_member',
+      'roster',
+    ]);
+  });
+
   it('AC-6: empty / list until a CommandsAnnouncedEvent arrives for this agent', () => {
     expect(component.commandItems).toEqual([]);
     commandsByAgentSubject.next({ '@Other': [HIRE] });
@@ -103,6 +118,47 @@ describe('AkgentChatComponent — slash-command mention (Story 15-1)', () => {
   it('commandArgsHint renders required in <> and optional in []', () => {
     expect(component.commandArgsHint(HIRE.args)).toBe('<role> [name]');
     expect(component.commandArgsHint(ROSTER.args)).toBe('');
+  });
+
+  // Story 15-3 (AC-4) — tool-family ordering: the member chat's commandItems
+  // order by `tool_card` then `name` (families contiguous, alphabetical
+  // within), and the single `/` mentionConfig entry sets `disableSort: true`
+  // so angular-mentions' label sort does not clobber that order.
+  it('AC-4: orders commandItems by tool_card then name (tool families contiguous)', () => {
+    const PLAN_BREAKDOWN: CommandDescriptor = {
+      name: 'breakdown',
+      description: 'Break a goal into tasks',
+      args: [],
+      tool_card: 'PlanningTool',
+    };
+    const PLAN_AUDIT: CommandDescriptor = {
+      name: 'audit',
+      description: 'Audit the current plan',
+      args: [],
+      tool_card: 'PlanningTool',
+    };
+    // Stored order: TeamTool first, PlanningTool names reversed — neither
+    // tool-grouped nor globally alphabetical, so a naive sort can't fake it.
+    commandsByAgentSubject.next({
+      '@Manager': [ROSTER, PLAN_BREAKDOWN, HIRE, PLAN_AUDIT],
+    });
+
+    // PlanningTool family (audit, breakdown) before TeamTool family
+    // (hire_member, roster); alphabetical within each family.
+    expect(component.commandItems.map((c) => c.name)).toEqual([
+      'audit',
+      'breakdown',
+      'hire_member',
+      'roster',
+    ]);
+  });
+
+  it('AC-4: the `/` mentionConfig entry sets disableSort === true', () => {
+    const slash = component.mentionConfig.mentions.find(
+      (m) => m.triggerChar === '/',
+    );
+    expect(slash).toBeTruthy();
+    expect((slash as any).disableSort).toBeTrue();
   });
 });
 

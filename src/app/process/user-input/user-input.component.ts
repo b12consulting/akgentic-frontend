@@ -244,11 +244,23 @@ export class ProcessUserInputComponent implements OnInit {
     const target = this.resolveTargetedAgent();
     if (!target) return [];
     const descriptors = this.commandsByAgent[target] ?? [];
-    return descriptors.map((d) => ({
-      name: d.name,
-      description: d.description,
-      args: d.args,
-    }));
+    return descriptors
+      // `_`-prefixed commands (e.g. `_expand_media_refs`) are internal, not
+      // user-invocable — keep them out of the `/` dropdown.
+      .filter((d) => !d.name.startsWith('_'))
+      // `angular-mentions` renders a single flat list with no group headers, so
+      // the best we can do is keep tool families adjacent: order by provenance
+      // (`tool_card`) then command name. `.filter()` above returns a fresh
+      // array, so sorting in place does not mutate the stored descriptors.
+      .sort(
+        (a, b) =>
+          a.tool_card.localeCompare(b.tool_card) || a.name.localeCompare(b.name),
+      )
+      .map((d) => ({
+        name: d.name,
+        description: d.description,
+        args: d.args,
+      }));
   }
 
   /**
@@ -278,6 +290,11 @@ export class ProcessUserInputComponent implements OnInit {
           mentionSelect: this.selectCommand,
           dropUp: true,
           maxItems: 10,
+          // `angular-mentions` re-sorts every list by `labelKey` (here `name`)
+          // unless told not to — that would clobber the tool-family ordering
+          // `commandItems` builds. Opt out so our `tool_card`-then-name order
+          // survives to the dropdown.
+          disableSort: true,
           items: this.commandItems,
         },
       ],
