@@ -25,7 +25,7 @@ import {
   ReceivedMessage,
   SentMessage,
 } from '../protocol/message.types';
-import { MessageLogService } from './message-log.service';
+import { MessageLogService } from '../components/process/event/message-log.service';
 
 const HUMAN_ROLE = 'Human';
 const ACTOR_SYSTEM_ROLE = 'ActorSystem';

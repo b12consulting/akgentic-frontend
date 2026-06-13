@@ -28,7 +28,7 @@ import { CapitalizePipe } from '../../../shared/pipes/capitalise.pipe';
 import { ApiService } from '../../../core/http/api.service';
 import { UtilService } from '../../../core/ui/utils.service';
 import { ContextService } from '../../../core/context/context.service';
-import { ActorMessageService } from '../../../services/message.service';
+import { ActorMessageService } from '../../../components/process/event/message.service';
 import {
   SystemPromptRow,
   SystemPromptSelector,

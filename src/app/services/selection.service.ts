@@ -6,7 +6,7 @@ import { ChatService } from './chat.service';
 import { ContextService } from '../core/context/context.service';
 
 import { SentMessage } from '../protocol/message.types';
-import { ChatMessageInterface, NodeInterface } from '../models/types';
+import { ChatMessageInterface, NodeInterface } from '../components/process/models/types';
 
 export interface Selectable {
   type: 'tree-node' | 'message' | 'graph-node';

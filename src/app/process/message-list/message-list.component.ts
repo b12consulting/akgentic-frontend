@@ -12,7 +12,7 @@ import { UtilService } from '../../core/ui/utils.service';
 
 import { combineLatest, Subscription } from 'rxjs';
 import { AkgentService } from '../../core/ui/akgent.service';
-import { MessageLogService } from '../../services/message-log.service';
+import { MessageLogService } from '../../components/process/event/message-log.service';
 import { isWelcomeAnnouncement } from '../../protocol/message.types';
 import { CopyButtonComponent } from '../../shared/components/copy-button/copy-button.component';
 

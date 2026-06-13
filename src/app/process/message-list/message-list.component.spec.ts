@@ -5,7 +5,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { MessageService } from 'primeng/api';
 
 import { MessageListComponent } from './message-list.component';
-import { MessageLogService } from '../../services/message-log.service';
+import { MessageLogService } from '../../components/process/event/message-log.service';
 import { AkgenticMessage, SentMessage } from '../../protocol/message.types';
 
 // ---------------------------------------------------------------------------

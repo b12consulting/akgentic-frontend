@@ -4,9 +4,9 @@ import { MessageService } from 'primeng/api';
 import { AkgenticMessage } from '../protocol/message.types';
 import { ApiService } from '../core/http/api.service';
 import { ChatService } from './chat.service';
-import { MessageLogService } from './message-log.service';
-import { ActorMessageService } from './message.service';
-import { PerAgentStore, PerAgentStoreRegistry } from './per-agent-store';
+import { MessageLogService } from '../components/process/event/message-log.service';
+import { ActorMessageService } from '../components/process/event/message.service';
+import { PerAgentStore, PerAgentStoreRegistry } from '../components/process/event/per-agent-store';
 import {
   SystemPromptRow,
   SystemPromptSelector,

@@ -8,7 +8,7 @@ import {
   Subscription,
 } from 'rxjs';
 
-import { AkgenticMessage } from '../protocol/message.types';
+import { AkgenticMessage } from '../../../protocol/message.types';
 import { MessageLogService } from './message-log.service';
 
 /**

@@ -32,7 +32,7 @@ import { CanvasRenderer } from 'echarts/renderers';
 import { NgxEchartsDirective, provideEchartsCore } from 'ngx-echarts';
 
 import { KGStateReducer } from '../../services/kg-state.reducer';
-import { ActorMessageService } from '../../services/message.service';
+import { ActorMessageService } from '../../components/process/event/message.service';
 
 echarts.use([
   CanvasRenderer,

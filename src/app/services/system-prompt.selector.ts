@@ -8,7 +8,7 @@ import {
   isLlmSystemPromptEvent,
   SystemPromptPartSnapshot,
 } from '../protocol/message.types';
-import { ActorMessageService } from './message.service';
+import { ActorMessageService } from '../components/process/event/message.service';
 
 /**
  * One rendered row of the trace head system block. Mirrors the shape the

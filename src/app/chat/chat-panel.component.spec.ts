@@ -16,7 +16,7 @@ import { ChatMessage, classifyMessage } from '../models/chat-message.model';
 import { ApiService } from '../core/http/api.service';
 import { AkgentService } from '../core/ui/akgent.service';
 import { GraphDataService } from '../services/graph-data.service';
-import { ActorMessageService } from '../services/message.service';
+import { ActorMessageService } from '../components/process/event/message.service';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {

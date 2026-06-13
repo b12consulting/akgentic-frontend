@@ -6,9 +6,9 @@ import { isRunning } from '../core/context/team.interface';
 import { AkgentService } from '../core/ui/akgent.service';
 import { ContextService } from '../core/context/context.service';
 import { KGStateReducer } from '../services/kg-state.reducer';
-import { MessageLogService } from '../services/message-log.service';
-import { ActorMessageService } from '../services/message.service';
-import { PerAgentStoreRegistry } from '../services/per-agent-store';
+import { MessageLogService } from '../components/process/event/message-log.service';
+import { ActorMessageService } from '../components/process/event/message.service';
+import { PerAgentStoreRegistry } from '../components/process/event/per-agent-store';
 import { SystemPromptSelector } from '../services/system-prompt.selector';
 import { ToolPresenceService } from '../services/tool-presence.service';
 

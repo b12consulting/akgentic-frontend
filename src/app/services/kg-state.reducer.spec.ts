@@ -8,7 +8,7 @@ import {
   KnowledgeGraphEntity,
   KnowledgeGraphRelation,
 } from './kg-state.reducer';
-import { MessageLogService } from './message-log.service';
+import { MessageLogService } from '../components/process/event/message-log.service';
 
 // ---------------------------------------------------------------------
 // Fixture helpers

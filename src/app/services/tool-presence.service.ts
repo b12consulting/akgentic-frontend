@@ -6,7 +6,7 @@ import {
   isStartMessage,
   isStopMessage,
 } from '../protocol/message.types';
-import { MessageLogService } from './message-log.service';
+import { MessageLogService } from '../components/process/event/message-log.service';
 
 /**
  * Canonical name for the Knowledge Graph tool actor (ADR-004 §Decision 4).

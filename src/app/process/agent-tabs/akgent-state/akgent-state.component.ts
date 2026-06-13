@@ -17,7 +17,7 @@ import { MessageService } from 'primeng/api';
 
 import { AkgentService } from '../../../core/ui/akgent.service';
 import { ConfigService } from '../../../core/config/config.service';
-import { ActorMessageService } from '../../../services/message.service';
+import { ActorMessageService } from '../../../components/process/event/message.service';
 
 @Component({
   selector: 'app-akgent-state',

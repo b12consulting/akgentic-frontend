@@ -15,7 +15,7 @@ import {
   HUMAN_ROLE as HUMAN_PROXY_ROLE,
 } from '../../services/graph-data.service';
 
-import { ActorMessageService } from '../../services/message.service';
+import { ActorMessageService } from '../../components/process/event/message.service';
 
 import { AkgentChatComponent } from './akgent-chat/akgent-chat.component';
 import { AkgentStateComponent } from './akgent-state/akgent-state.component';

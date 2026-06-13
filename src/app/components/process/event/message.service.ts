@@ -3,7 +3,7 @@ import { inject, Injectable } from '@angular/core';
 import { Subject, Subscription } from 'rxjs';
 import { bufferTime, filter, take } from 'rxjs/operators';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
-import { ConfigService } from '../core/config/config.service';
+import { ConfigService } from '../../../core/config/config.service';
 import {
   AkgenticMessage,
   CommandDescriptor,
@@ -13,11 +13,11 @@ import {
   isEventMessage,
   isStateChangedMessage,
   StateChangedMessage,
-} from '../protocol/message.types';
-import { EventResponse } from '../core/context/team.interface';
+} from '../../../protocol/message.types';
+import { EventResponse } from '../../../core/context/team.interface';
 
-import { ApiService } from '../core/http/api.service';
-import { ChatService } from './chat.service';
+import { ApiService } from '../../../core/http/api.service';
+import { ChatService } from '../../../services/chat.service';
 import { MessageLogService } from './message-log.service';
 import {
   appendWith,
@@ -29,7 +29,7 @@ import {
   SystemPromptValue,
   systemPromptMatch,
   systemPromptReduce,
-} from './system-prompt.selector';
+} from '../../../services/system-prompt.selector';
 import { MessageService } from 'primeng/api';
 
 /**

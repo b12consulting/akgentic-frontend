@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, distinctUntilChanged, map, Observable } from 'rxjs';
 
-import { AkgenticMessage, isWelcomeAnnouncement } from '../protocol/message.types';
+import { AkgenticMessage, isWelcomeAnnouncement } from '../../../protocol/message.types';
 
 /**
  * Story 6.4 (AC4) — pure selector over the log producing the inputs for

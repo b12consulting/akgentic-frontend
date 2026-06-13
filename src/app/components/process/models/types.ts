@@ -1,4 +1,4 @@
-import { SentMessage } from '../protocol/message.types';
+import { SentMessage } from '../../../protocol/message.types';
 
 export interface ChatMessageInterface {
   name: string;

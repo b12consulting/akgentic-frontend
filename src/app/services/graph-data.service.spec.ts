@@ -14,7 +14,7 @@ import {
   StateChangedMessage,
   StopMessage,
 } from '../protocol/message.types';
-import { NodeInterface } from '../models/types';
+import { NodeInterface } from '../components/process/models/types';
 import { CategoryService } from '../core/ui/category.service';
 import {
   EMPTY_GRAPH,
@@ -26,7 +26,7 @@ import {
   HUMAN_ROLE,
   ORCHESTRATOR_CLASS,
 } from './graph-data.service';
-import { MessageLogService } from './message-log.service';
+import { MessageLogService } from '../components/process/event/message-log.service';
 
 // ---------------------------------------------------------------------------
 // Fixture helpers

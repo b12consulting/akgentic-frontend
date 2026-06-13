@@ -5,7 +5,7 @@ import {
   StartMessage,
   StopMessage,
 } from '../protocol/message.types';
-import { MessageLogService } from './message-log.service';
+import { MessageLogService } from '../components/process/event/message-log.service';
 import {
   KG_ACTOR_NAME,
   presenceReduce,

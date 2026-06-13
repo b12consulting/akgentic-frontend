@@ -16,7 +16,7 @@ import {
   SelectionService,
 } from '../../../services/selection.service';
 import { HumanRequestComponent } from '../../human-request.component';
-import { EdgeInterface, NodeInterface } from '../../../models/types';
+import { EdgeInterface, NodeInterface } from '../../../components/process/models/types';
 
 @Component({
   selector: 'app-tree',

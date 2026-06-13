@@ -7,9 +7,9 @@ import { ApiService } from '../../core/http/api.service';
 import { ChatService } from '../../services/chat.service';
 import { ContextService } from '../../core/context/context.service';
 import { GraphDataService } from '../../services/graph-data.service';
-import { ActorMessageService } from '../../services/message.service';
+import { ActorMessageService } from '../../components/process/event/message.service';
 import { ActorAddress, CommandDescriptor } from '../../protocol/message.types';
-import { NodeInterface } from '../../models/types';
+import { NodeInterface } from '../../components/process/models/types';
 import { makeAgentNameUserFriendly } from '../../shared/util/util';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {

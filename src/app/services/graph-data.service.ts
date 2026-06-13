@@ -17,9 +17,9 @@ import {
   StartMessage,
   StopMessage,
 } from '../protocol/message.types';
-import { EdgeInterface, NodeInterface } from '../models/types';
+import { EdgeInterface, NodeInterface } from '../components/process/models/types';
 import { CategoryService } from '../core/ui/category.service';
-import { MessageLogService } from './message-log.service';
+import { MessageLogService } from '../components/process/event/message-log.service';
 
 export const HUMAN_ROLE = 'Human';
 export const ORCHESTRATOR_CLASS = 'akgentic.core.orchestrator.Orchestrator';

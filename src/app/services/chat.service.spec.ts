@@ -21,7 +21,7 @@ import {
   computePendingNotifications,
   EMPTY_CHAT,
 } from './chat.service';
-import { MessageLogService } from './message-log.service';
+import { MessageLogService } from '../components/process/event/message-log.service';
 
 // ---------------------------------------------------------------------------
 // Fixture helpers

@@ -6,9 +6,9 @@ import { WebSocketSubject } from 'rxjs/webSocket';
 import { AgentTabsComponent } from './agent-tabs.component';
 import { Akgent, AkgentService } from '../../core/ui/akgent.service';
 import { GraphDataService } from '../../services/graph-data.service';
-import { ActorMessageService } from '../../services/message.service';
-import { MessageLogService } from '../../services/message-log.service';
-import { PerAgentStoreRegistry } from '../../services/per-agent-store';
+import { ActorMessageService } from '../../components/process/event/message.service';
+import { MessageLogService } from '../../components/process/event/message-log.service';
+import { PerAgentStoreRegistry } from '../../components/process/event/per-agent-store';
 import { ChatService } from '../../services/chat.service';
 import { ApiService } from '../../core/http/api.service';
 

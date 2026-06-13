@@ -22,7 +22,7 @@ import { NgxEchartsDirective, provideEchartsCore } from 'ngx-echarts';
 import { AkgentService } from '../../../core/ui/akgent.service';
 import { ApiService } from '../../../core/http/api.service';
 import { CategoryService } from '../../../core/ui/category.service';
-import { ActorMessageService } from '../../../services/message.service';
+import { ActorMessageService } from '../../../components/process/event/message.service';
 
 // Import the shared GraphDataService
 import { makeAgentNameUserFriendly } from '../../../shared/util/util';

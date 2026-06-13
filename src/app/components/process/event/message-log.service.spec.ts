@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 
-import { AkgenticMessage, SentMessage } from '../protocol/message.types';
+import { AkgenticMessage, SentMessage } from '../../../protocol/message.types';
 import { MessageLogService, messageListFold } from './message-log.service';
 
 function msg(

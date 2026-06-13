@@ -12,8 +12,8 @@ import { ContextService } from '../core/context/context.service';
 import { FeedbackService } from '../services/feedback.service';
 import { GraphDataService } from '../services/graph-data.service';
 import { KGStateReducer } from '../services/kg-state.reducer';
-import { MessageLogService } from '../services/message-log.service';
-import { ActorMessageService } from '../services/message.service';
+import { MessageLogService } from '../components/process/event/message-log.service';
+import { ActorMessageService } from '../components/process/event/message.service';
 import { SelectionService } from '../services/selection.service';
 import {
   KG_ACTOR_NAME,

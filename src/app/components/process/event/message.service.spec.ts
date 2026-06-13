@@ -4,11 +4,11 @@ import { BehaviorSubject, Subject } from 'rxjs';
 import { WebSocketSubject } from 'rxjs/webSocket';
 
 import { ActorMessageService } from './message.service';
-import { ApiService } from '../core/http/api.service';
-import { ChatService } from './chat.service';
+import { ApiService } from '../../../core/http/api.service';
+import { ChatService } from '../../../services/chat.service';
 import { MessageLogService } from './message-log.service';
 import { PerAgentStore, PerAgentStoreRegistry } from './per-agent-store';
-import { ActorAddress } from '../protocol/message.types';
+import { ActorAddress } from '../../../protocol/message.types';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {

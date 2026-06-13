@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { Observable } from 'rxjs';
 
-import { AkgenticMessage } from '../protocol/message.types';
+import { AkgenticMessage } from '../../../protocol/message.types';
 import { MessageLogService } from './message-log.service';
 import {
   AgentId,

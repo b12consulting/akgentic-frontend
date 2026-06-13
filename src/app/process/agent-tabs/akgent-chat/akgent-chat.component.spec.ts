@@ -7,9 +7,9 @@ import { AkgentChatComponent } from './akgent-chat.component';
 import { ApiService } from '../../../core/http/api.service';
 import { UtilService } from '../../../core/ui/utils.service';
 import { ContextService } from '../../../core/context/context.service';
-import { ActorMessageService } from '../../../services/message.service';
-import { MessageLogService } from '../../../services/message-log.service';
-import { PerAgentStoreRegistry } from '../../../services/per-agent-store';
+import { ActorMessageService } from '../../../components/process/event/message.service';
+import { MessageLogService } from '../../../components/process/event/message-log.service';
+import { PerAgentStoreRegistry } from '../../../components/process/event/per-agent-store';
 import {
   SystemPromptSelector,
   SystemPromptValue,
