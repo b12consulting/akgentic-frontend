@@ -1,4 +1,11 @@
-import { Component, inject, Input, ViewChild, DestroyRef } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  inject,
+  Input,
+  ViewChild,
+  DestroyRef,
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -8,7 +15,7 @@ import { CardModule } from 'primeng/card';
 import { FieldsetModule } from 'primeng/fieldset';
 import { FloatLabelModule } from 'primeng/floatlabel';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
-import { Table, TableModule } from 'primeng/table';
+import { TableModule } from 'primeng/table';
 import { TextareaModule } from 'primeng/textarea';
 import { MentionModule } from 'angular-mentions';
 
@@ -51,7 +58,9 @@ import { CopyButtonComponent } from '../../copy-button/copy-button.component';
   styleUrl: './akgent-chat.component.scss',
 })
 export class AkgentChatComponent {
-  @ViewChild('dataTable') dataTable!: Table;
+  // The single trace scroll region (head system block + conversation). Auto
+  // scroll-to-bottom targets this element so new messages stay in view.
+  @ViewChild('traceScroll') traceScroll?: ElementRef<HTMLElement>;
   @Input() context$!: BehaviorSubject<any[]>;
   @Input() agentId!: string;
   @Input() agentName!: string;
@@ -350,16 +359,10 @@ export class AkgentChatComponent {
 
   initialLoad = true;
   isMouseOverTable: boolean = false; // Track mouse hover state
-  scroll(behavior: string = 'smooth') {
-    if (!this.isMouseOverTable && this.dataTable && !this.initialLoad) {
-      const body =
-        this.dataTable.containerViewChild?.nativeElement.getElementsByClassName(
-          'p-datatable-table-container'
-        )[0];
-      body.scrollTo({
-        top: body.scrollHeight,
-        behavior: behavior,
-      });
+  scroll(behavior: ScrollBehavior = 'smooth') {
+    const el = this.traceScroll?.nativeElement;
+    if (el && !this.isMouseOverTable && !this.initialLoad) {
+      el.scrollTo({ top: el.scrollHeight, behavior });
     }
   }
 

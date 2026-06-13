@@ -38,6 +38,18 @@
     }
 }
 
+// Single scroll region for the whole trace: the Epic 16 head system block and
+// the conversation scroll together, keeping the chat input pinned below and
+// always reachable. Viewport-relative (not flex:1) because the PrimeNG tab
+// chain above this component does not propagate a usable height. The 370px
+// reserves the tab header, the input row, and surrounding chrome — the same
+// budget the conversation table used before this single region replaced its
+// per-table `scrollHeight`.
+.trace-scroll {
+  height: calc(100vh - 370px);
+  overflow-y: auto;
+}
+
 .card-container {
   margin: 1rem 0;
 }
