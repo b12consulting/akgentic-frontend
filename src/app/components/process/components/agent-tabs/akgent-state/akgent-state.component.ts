@@ -17,7 +17,6 @@ import { MessageService } from 'primeng/api';
 
 import { AkgentService } from '../../../../../core/ui/akgent.service';
 import { ConfigService } from '../../../../../core/config/config.service';
-import { IngestionService } from '../../../event/ingestion.service';
 
 @Component({
   selector: 'app-akgent-state',
@@ -30,7 +29,6 @@ export class AkgentStateComponent {
   @Input() agentId!: string;
 
   akgentService: AkgentService = inject(AkgentService);
-  actorMessageService: IngestionService = inject(IngestionService);
   private config = inject(ConfigService);
   toastService: MessageService = inject(MessageService);
   formBuider: FormBuilder = inject(FormBuilder);

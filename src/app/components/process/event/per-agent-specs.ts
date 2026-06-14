@@ -115,7 +115,7 @@ function systemPromptEventParts(
  * Fallback-path extraction (FR2): if `msg` is an
  * `EventMessage(LlmMessageEvent)` whose inner `message.parts` contain
  * `part_kind === 'system-prompt'` entries, return those system parts; otherwise
- * `undefined`. Mirrors the pre-event seeding read in `message.service.ts`
+ * `undefined`. Mirrors the pre-event seeding read in `ingestion.service.ts`
  * (inner is the `ModelRequest`, whose `.parts` carry `part_kind`).
  */
 function llmMessageSystemParts(
