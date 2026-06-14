@@ -15,7 +15,7 @@ import {
   Entry,
   NamespaceSummary,
   NamespaceValidationReport,
-} from '../../components/catalog/catalog.interface';
+} from '../../protocol/catalog.interface';
 
 @Injectable({
   providedIn: 'root',

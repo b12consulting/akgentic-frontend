@@ -23,7 +23,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import {
   NamespaceSummary,
   NamespaceValidationReport,
-} from '../catalog.interface';
+} from '../../../protocol/catalog.interface';
 import { ApiService } from '../../../core/http/api.service';
 import { HttpError } from '../../../core/http/fetch.service';
 import { NamespacePanelComponent } from './namespace-panel.component';

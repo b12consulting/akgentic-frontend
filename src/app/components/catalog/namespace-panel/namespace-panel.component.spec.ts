@@ -21,7 +21,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 
-import { NamespaceValidationReport } from '../catalog.interface';
+import { NamespaceValidationReport } from '../../../protocol/catalog.interface';
 import { ApiService } from '../../../core/http/api.service';
 import { AuthService } from '../../../core/auth/auth.service';
 import { HttpError } from '../../../core/http/fetch.service';

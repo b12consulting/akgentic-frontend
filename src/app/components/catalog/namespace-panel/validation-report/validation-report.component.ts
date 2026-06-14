@@ -4,7 +4,7 @@ import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { TagModule } from 'primeng/tag';
 import { ButtonModule } from 'primeng/button';
 
-import { NamespaceValidationReport } from '../../catalog.interface';
+import { NamespaceValidationReport } from '../../../../protocol/catalog.interface';
 
 /**
  * ValidationReportComponent — presentational renderer for the four

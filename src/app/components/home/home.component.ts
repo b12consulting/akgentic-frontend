@@ -13,7 +13,7 @@ import { map } from 'rxjs/operators';
 
 import { ApiService } from '../../core/http/api.service';
 import { TeamContext, isRunning } from '../../core/context/team.interface';
-import { NamespaceSummary } from '../catalog/catalog.interface';
+import { NamespaceSummary } from '../../protocol/catalog.interface';
 
 import { CommonModule } from '@angular/common';
 import { ConfirmationService } from 'primeng/api';
