@@ -1199,13 +1199,13 @@ describe('ChatPanelComponent', () => {
       expect(component.indicatorLabel).not.toBe('Auto scrolling');
     });
 
-    it('reaching the bottom hides the pill and clears "unseen"', () => {
+    it('reaching the bottom activates follow ("Auto scrolling") and clears "unseen"', () => {
       const container = installSimple(2000, 500, 200);
       (component as any).unseen = true;
-      component.indicatorLabel = 'New messages';
       container.scrollTop = 1500; // distance 2000-1500-500 = 0 → at bottom
       component.onScroll();
-      expect(component.indicatorLabel).toBeNull();
+      expect((component as any).following).toBe(true);
+      expect(component.indicatorLabel).toBe('Auto scrolling');
       expect((component as any).unseen).toBe(false);
     });
 

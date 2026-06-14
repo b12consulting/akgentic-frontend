@@ -1,5 +1,5 @@
 import { SimpleChange } from '@angular/core';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, fakeAsync, TestBed, tick } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { BehaviorSubject } from 'rxjs';
 
@@ -554,4 +554,177 @@ describe('AkgentChatComponent — head system block (Story 16-2)', () => {
     );
     expect(component.context.some((m) => m.type === 'system')).toBeFalse();
   });
+});
+
+describe('AkgentChatComponent — follow mode + status pill', () => {
+  let running: BehaviorSubject<boolean>;
+
+  function setup(): { component: AkgentChatComponent } {
+    running = new BehaviorSubject<boolean>(true);
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [AkgentChatComponent],
+      providers: [
+        {
+          provide: ApiService,
+          useValue: {
+            sendMessage: jasmine.createSpy('sendMessage').and.resolveTo(undefined),
+          },
+        },
+        {
+          provide: UtilService,
+          useValue: { copyToClipboard: () => {}, formatJSON: (v: any) => v },
+        },
+        {
+          provide: ContextService,
+          useValue: {
+            currentTeamRunning$: running,
+            currentProcessId$: new BehaviorSubject<string>('proc-1'),
+          },
+        },
+        MessageLogService,
+        PerAgentStoreRegistry,
+        {
+          provide: IngestionService,
+          useFactory: (registry: PerAgentStoreRegistry) => ({
+            commands: { snapshot: (_id: string) => undefined },
+            systemPrompt: registry.register<SystemPromptValue>({
+              name: 'systemPrompt',
+              match: systemPromptMatch,
+              reduce: systemPromptReduce,
+            }),
+          }),
+          deps: [PerAgentStoreRegistry],
+        },
+        SystemPromptSelector,
+        provideNoopAnimations(),
+      ],
+    });
+    const fixture = TestBed.createComponent(AkgentChatComponent);
+    const component = fixture.componentInstance;
+    component.context$ = new BehaviorSubject<any[]>([]);
+    component.agentId = 'a-mgr';
+    component.agentName = '@a-mgr';
+    return { component };
+  }
+
+  /** Install a mock trace-scroll element with controllable geometry. */
+  function installScroll(
+    component: AkgentChatComponent,
+    scrollHeight: number,
+    clientHeight: number,
+    scrollTop = 0,
+  ): { scrollHeight: number; clientHeight: number; scrollTop: number } {
+    const el = {
+      scrollHeight,
+      clientHeight,
+      scrollTop,
+      scrollTo(o: { top: number; behavior: ScrollBehavior }) {
+        this.scrollTop = o.top;
+      },
+    };
+    (component as any).traceScroll = { nativeElement: el };
+    return el;
+  }
+
+  it('does NOT auto-scroll a new message when not following', fakeAsync(() => {
+    const { component } = setup();
+    const el = installScroll(component, 2000, 500, 0); // scrolled up, content below
+    component.updateContext([{ type: 'ai', name: 'x', content: 'hi' }] as any);
+    tick(0); // flush the post-render setTimeout
+    expect(el.scrollTop).toBe(0); // stayed put
+    expect(component.indicatorLabel).toBe('Messages'); // newest below the fold
+  }));
+
+  it('submitting enters follow mode and scrolls to the bottom', async () => {
+    const { component } = setup();
+    const el = installScroll(component, 2000, 500, 0);
+    component.userInput = 'hello';
+    await component.sendMessage();
+    expect((component as any).following).toBeTrue();
+    expect(el.scrollTop).toBe(2000);
+    expect(component.indicatorLabel).toBe('Auto scrolling');
+  });
+
+  it('clicking the pill enters follow mode, scrolls down, shows "Auto scrolling"', () => {
+    const { component } = setup();
+    const el = installScroll(component, 2000, 500, 0);
+    component.onFollowLatest();
+    expect((component as any).following).toBeTrue();
+    expect(el.scrollTop).toBe(2000);
+    expect(component.indicatorLabel).toBe('Auto scrolling');
+  });
+
+  it('shows "Messages" when the newest message is below the fold (not following)', () => {
+    const { component } = setup();
+    installScroll(component, 2000, 500, 100); // far from bottom
+    component.onScroll();
+    expect(component.indicatorLabel).toBe('Messages');
+  });
+
+  it('reaching the bottom activates follow ("Auto scrolling")', () => {
+    const { component } = setup();
+    installScroll(component, 2000, 500, 1500); // at the bottom (dist 0)
+    component.onScroll();
+    expect((component as any).following).toBeTrue();
+    expect(component.indicatorLabel).toBe('Auto scrolling');
+  });
+
+  it('a manual upward scroll exits follow mode → "Messages"', () => {
+    const { component } = setup();
+    const el = installScroll(component, 2000, 500, 1500);
+    (component as any).following = true;
+    (component as any).lastScrollTop = 1500;
+    el.scrollTop = 200; // user scrolled up
+    component.onScroll();
+    expect((component as any).following).toBeFalse();
+    expect(component.indicatorLabel).toBe('Messages');
+  });
+
+  it('the smooth tail (moving DOWN) does not exit follow mode', () => {
+    const { component } = setup();
+    const el = installScroll(component, 2000, 500, 1500);
+    (component as any).following = true;
+    (component as any).lastScrollTop = 1000; // tail moved down the page
+    void el;
+    component.onScroll();
+    expect((component as any).following).toBeTrue();
+    expect(component.indicatorLabel).toBe('Auto scrolling');
+  });
+
+  it('does NOT show "Auto scrolling" when the process is stopped', () => {
+    const { component } = setup();
+    running.next(false);
+    installScroll(component, 2000, 500, 1500);
+    (component as any).following = true;
+    component.onScroll();
+    expect(component.indicatorLabel).not.toBe('Auto scrolling');
+  });
+
+  it('in follow mode, a new message tails to the bottom', fakeAsync(() => {
+    const { component } = setup();
+    const el = installScroll(component, 2000, 500, 0);
+    (component as any).following = true;
+    component.updateContext([{ type: 'ai', name: 'x', content: 'hi' }] as any);
+    tick(0);
+    expect(el.scrollTop).toBe(2000);
+  }));
+
+  it('switching member jumps the trace to the TOP (instant), no follow carry-over', fakeAsync(() => {
+    const { component } = setup();
+    const el = installScroll(component, 2000, 500, 1500); // prev agent: scrolled down
+    (component as any).following = true; // was following the previous member
+    component.agentId = 'a-other';
+    component.ngOnChanges({
+      agentId: new SimpleChange('a-mgr', 'a-other', false),
+    });
+    tick(0); // post-render scroll-to-top
+    expect((component as any).following).toBeFalse();
+    expect(el.scrollTop).toBe(0); // jumped to the top
+
+    // The new member's content streams in — it must STAY at the top (not tail).
+    component.updateContext([{ type: 'ai', name: 'x', content: 'hi' }] as any);
+    tick(0);
+    expect(el.scrollTop).toBe(0);
+  }));
 });

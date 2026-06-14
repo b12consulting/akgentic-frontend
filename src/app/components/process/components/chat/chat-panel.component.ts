@@ -115,8 +115,8 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   pendingNotifications: Set<string> = new Set();
 
   // --- scroll state -----------------------------------------------------------
-  /** Reserved height (px) of the trailing spacer; bound imperatively. */
-  spacerHeight = 0;
+  /** Reserved height (px) of the trailing spacer; written to the DOM imperatively. */
+  private spacerHeight = 0;
   /** Status-pill label above the input (template-bound), or null when hidden.
    *  One of: 'Auto scrolling' | 'New messages' | 'Messages'. */
   indicatorLabel: string | null = null;
@@ -288,8 +288,13 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (!c) return;
     const movedUp = c.scrollTop < this.lastScrollTop - 2;
     this.lastScrollTop = c.scrollTop;
-    // The user scrolled up → stop auto-scrolling ("follow until the user scrolls").
-    if (this.following && movedUp) {
+    // Reaching the bottom turns auto-scroll ON; scrolling up turns it off
+    // ("follow until the user scrolls"). The `anchorId` guard keeps a just-sent
+    // anchored turn (message parked at top, spacer below) from counting as
+    // "at the bottom".
+    if (this.anchorId === null && !this.newestMessageBelowFold()) {
+      this.following = true;
+    } else if (this.following && movedUp) {
       this.following = false;
     }
     // Re-derive the pill from the new position (safe directly — outside CD).
@@ -386,13 +391,13 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   /** The status-pill label for the current state (pure). */
-  private computeIndicatorLabel(): string | null {
+  private computeIndicatorLabel(belowFold = this.newestMessageBelowFold()): string | null {
     // "Auto scrolling" only while the process is RUNNING — a stopped team has
     // nothing to follow.
     if (this.following && this.contextService.currentTeamRunning$.value) {
       return 'Auto scrolling';
     }
-    if (!this.newestMessageBelowFold()) return null;
+    if (!belowFold) return null;
     return this.unseen ? 'New messages' : 'Messages';
   }
 
@@ -402,11 +407,12 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     return this.indicatorLabel === 'Auto scrolling' ? 'pi-sync' : 'pi-arrow-down';
   }
 
-  /** Apply the pill label; clears `unseen` once the user is caught up. */
+  /** Apply the pill label; clears `unseen` once the user is at the bottom
+   *  (caught up), whether following or not. */
   private updateIndicator(): void {
-    const label = this.computeIndicatorLabel();
-    if (label === null) this.unseen = false; // newest message back on screen
-    this.indicatorLabel = label;
+    const belowFold = this.newestMessageBelowFold();
+    if (!belowFold) this.unseen = false; // at the bottom → caught up
+    this.indicatorLabel = this.computeIndicatorLabel(belowFold);
   }
 
   /** True when scrollHeight changed since the last check (new content / spacer). */

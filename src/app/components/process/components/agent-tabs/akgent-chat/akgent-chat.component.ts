@@ -104,6 +104,17 @@ export class AkgentChatComponent implements OnInit, OnChanges {
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['agentId'] && !changes['agentId'].firstChange) {
       this.bindSystemPrompt();
+      // Switching members reuses this component (only the table content swaps),
+      // so start FRESH: drop any carried-over follow mode and jump the trace to
+      // the TOP — instantly, after the new content renders. `scrollTop = 0` is the
+      // top regardless of content height.
+      this.following = false;
+      this.lastScrollTop = 0;
+      setTimeout(() => {
+        const el = this.traceScroll?.nativeElement;
+        if (el) el.scrollTop = 0;
+        this.updateIndicator();
+      }, 0);
     }
   }
 
@@ -112,14 +123,21 @@ export class AkgentChatComponent implements OnInit, OnChanges {
     // Subsequent agent switches re-bind it in ngOnChanges — see above.
     this.bindSystemPrompt();
 
-    // Subscribe to context$ for the selected agent.
+    // Subscribe to context$ for the selected agent. No scroll on enter / on every
+    // message — the panel only auto-scrolls while in FOLLOW mode (see updateContext).
     this.context$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((ctx) => {
-      if (this.isLoading) {
-        setTimeout(() => this.scroll(), 10);
-      }
       this.isLoading = false;
       this.updateContext(ctx);
     });
+
+    // "Auto scrolling" only applies to a RUNNING process — exit follow + refresh
+    // the pill when the process stops.
+    this.contextService.currentTeamRunning$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((running) => {
+        if (!running) this.following = false;
+        this.updateIndicator();
+      });
   }
 
   /** Point `systemPrompt$` at the current `agentId`'s head system block. The
@@ -361,8 +379,11 @@ export class AkgentChatComponent implements OnInit, OnChanges {
       (message: any) => message.type !== 'tool_return_data'
     );
 
-    setTimeout(() => this.scroll(), 0);
-    this.initialLoad = false;
+    // Post-render: tail to the bottom ONLY while following; refresh the pill.
+    setTimeout(() => {
+      if (this.following) this.scrollToBottom();
+      this.updateIndicator();
+    }, 0);
   }
 
   userInput = '';
@@ -370,6 +391,9 @@ export class AkgentChatComponent implements OnInit, OnChanges {
   async sendMessage() {
     if (!this.contextService.currentTeamRunning$.value) return;
     this.isLoading = true;
+    // Submitting enters FOLLOW mode and scrolls to the bottom (the input click no
+    // longer scrolls). Subsequent replies tail via updateContext.
+    this.following = true;
     const processId = this.contextService.currentProcessId$.value;
     try {
       await this.apiService.sendMessage(
@@ -381,14 +405,83 @@ export class AkgentChatComponent implements OnInit, OnChanges {
       this.isLoading = false;
     }
     this.userInput = '';
+    this.scrollToBottom();
+    this.updateIndicator();
   }
 
-  initialLoad = true;
-  isMouseOverTable: boolean = false; // Track mouse hover state
-  scroll(behavior: ScrollBehavior = 'smooth') {
+  /** Stable row identity for the trace table. Without it, p-table is given a
+   *  brand-new array on every context update and tears down/rebuilds ALL rows,
+   *  which momentarily shrinks scrollHeight, clamps scrollTop down, and fires a
+   *  spurious scroll event that looks like a user scroll-up (turning off follow
+   *  mid-stream). Index-based identity preserves the DOM on append. */
+  trackByIndex = (index: number): number => index;
+
+  // --- follow mode + "Messages" status pill (simplified member-chat scroll) ----
+  /** FOLLOW mode: auto-scroll to the bottom on every new message. */
+  following = false;
+  /** Status-pill label: 'Auto scrolling' (following + running), 'Messages'
+   *  (newest below the fold, not following), or null (hidden). */
+  indicatorLabel: string | null = null;
+  /** Last scrollTop — tells a user scroll-UP from our own smooth scroll. */
+  private lastScrollTop = 0;
+  /** Within this many px of the bottom counts as "at the bottom". */
+  private readonly NEAR_BOTTOM = 40;
+
+  /** Scroll handler (template `(scroll)`). A user scroll-up exits follow; the
+   *  pill is re-derived from the new position. */
+  onScroll(): void {
     const el = this.traceScroll?.nativeElement;
-    if (el && !this.isMouseOverTable && !this.initialLoad) {
-      el.scrollTo({ top: el.scrollHeight, behavior });
+    if (!el) return;
+    const movedUp = el.scrollTop < this.lastScrollTop - 2;
+    this.lastScrollTop = el.scrollTop;
+    // Reaching the bottom turns auto-scroll ON; scrolling up turns it off.
+    if (!this.newestBelowFold()) {
+      this.following = true;
+    } else if (this.following && movedUp) {
+      this.following = false;
     }
+    this.updateIndicator();
+  }
+
+  /** Pill click — jump to the bottom and start following. */
+  onFollowLatest(): void {
+    this.following = true;
+    this.scrollToBottom();
+    this.updateIndicator();
+  }
+
+  /** True when the newest message is below the visible viewport. No spacer in the
+   *  member chat, so distance-to-bottom is exact. */
+  private newestBelowFold(): boolean {
+    const el = this.traceScroll?.nativeElement;
+    if (!el) return false;
+    return el.scrollHeight - el.scrollTop - el.clientHeight > this.NEAR_BOTTOM;
+  }
+
+  /** Recompute the status-pill label. "Auto scrolling" only while the process is
+   *  running; otherwise "Messages" when the newest message is below the fold. */
+  private updateIndicator(): void {
+    if (this.following && this.contextService.currentTeamRunning$.value) {
+      this.indicatorLabel = 'Auto scrolling';
+    } else {
+      this.indicatorLabel = this.newestBelowFold() ? 'Messages' : null;
+    }
+  }
+
+  /** Icon for the pill — a "following" glyph while auto scrolling, else a down-arrow. */
+  get indicatorIcon(): string {
+    return this.indicatorLabel === 'Auto scrolling' ? 'pi-sync' : 'pi-arrow-down';
+  }
+
+  private scrollToBottom(): void {
+    const el = this.traceScroll?.nativeElement;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: this.scrollBehavior() });
+  }
+
+  /** Smooth by default; instant under reduced motion. */
+  private scrollBehavior(): ScrollBehavior {
+    return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+      ? 'auto'
+      : 'smooth';
   }
 }
