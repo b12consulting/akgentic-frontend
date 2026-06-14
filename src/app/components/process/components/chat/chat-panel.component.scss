@@ -34,6 +34,40 @@
     border-bottom-left-radius: 6px;
     border-bottom-right-radius: 6px;
   }
+
+  // Story 19-3 (ADR-016 §Decision 6): jump-to-latest pill. Absolutely
+  // positioned (the .chat-container is `position: relative`) so it overlays the
+  // bottom edge of the message list, centered, sitting just above the
+  // app-user-input band. High z-index floats it over the message list; it stays
+  // below any modal overlay. It is NOT a flex child of .message-list, so it does
+  // not shift the message list layout or change the scroll container height.
+  .jump-to-latest {
+    position: absolute;
+    left: 50%;
+    bottom: 4.5rem;
+    transform: translateX(-50%);
+    z-index: 5;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.9rem;
+    border: none;
+    border-radius: 999px;
+    background-color: #fff;
+    color: #475569;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+
+    .pi {
+      font-size: 0.85rem;
+    }
+
+    &:hover {
+      background-color: #f2f7f9;
+    }
+  }
 }
 
 .empty-section {

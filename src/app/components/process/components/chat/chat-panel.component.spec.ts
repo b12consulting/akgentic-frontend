@@ -1674,4 +1674,274 @@ describe('ChatPanelComponent', () => {
       expect(container2.scrollToCalls).toBe(1);
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Story 19-3 (ADR-016 §Decision 4/6) — jump-to-latest indicator + opt-in
+  // follow mode. Completes the state machine: `following` is now ENTERED (it
+  // was a reachable-but-unentered placeholder in 19-2).
+  // -------------------------------------------------------------------------
+  describe('Story 19-3: jump-to-latest indicator + follow mode', () => {
+    // Mock container with a recording scrollTo + controllable geometry. The
+    // follow tail writes via `scrollTo`; geometry drives isNearBottom().
+    interface MockContainer {
+      scrollTop: number;
+      scrollHeight: number;
+      clientHeight: number;
+      lastScrollTo: { top: number; behavior: string } | null;
+      scrollToCalls: number;
+      scrollTo(opts: { top: number; behavior: ScrollBehavior }): void;
+    }
+
+    function installMockScrollContainer(
+      scrollHeight = 2000,
+      clientHeight = 400,
+    ): MockContainer {
+      const container: MockContainer = {
+        scrollTop: 0,
+        scrollHeight,
+        clientHeight,
+        lastScrollTo: null,
+        scrollToCalls: 0,
+        scrollTo(opts) {
+          this.scrollToCalls += 1;
+          this.lastScrollTo = { top: opts.top, behavior: opts.behavior };
+          this.scrollTop = opts.top;
+        },
+      };
+      (component as any).scrollContainer = { nativeElement: container };
+      (component as any).lastScrollHeight = scrollHeight;
+      // Mount scroll is irrelevant to these tests — latch it off.
+      (component as any).hasDoneInitialScroll = true;
+      return container;
+    }
+
+    function mockReducedMotion(matches: boolean): void {
+      spyOn(window, 'matchMedia').and.returnValue({ matches } as any);
+    }
+
+    function aiMessage(id: string, content = 'answer') {
+      return makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@Human', role: 'Human' },
+        content,
+        id,
+      );
+    }
+
+    function sendUserTurn(id: string, ts = '2026-06-14T10:00:00Z') {
+      const sent = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'user turn',
+        id,
+      );
+      sent.timestamp = ts;
+      sent.message.timestamp = ts;
+      return sent;
+    }
+
+    // --- AC #1: indicator visibility ----------------------------------------
+    it('AC #1: indicator SHOWN when not following, not at bottom, unseen content', () => {
+      const el = installMockScrollContainer(2000, 400);
+      el.scrollTop = 0; // distanceFromBottom = 2000 - 0 - 400 = 1600 > 100
+      (component as any).scrollMode = 'idle';
+      (component as any).unseenContent = true;
+
+      expect(component.showJumpToLatest).toBe(true);
+
+      // The *ngIf control renders.
+      fixture.detectChanges();
+      const btn = (fixture.nativeElement as HTMLElement).querySelector(
+        '.jump-to-latest',
+      );
+      expect(btn).not.toBeNull();
+    });
+
+    it('AC #1: indicator HIDDEN at bottom (and unseenContent cleared on reaching bottom)', () => {
+      const el = installMockScrollContainer(1000, 400);
+      el.scrollTop = 600; // distanceFromBottom = 1000 - 600 - 400 = 0 <= 100
+      (component as any).scrollMode = 'idle';
+      (component as any).unseenContent = true;
+
+      // At bottom → getter false regardless of the flag.
+      expect(component.showJumpToLatest).toBe(false);
+
+      // Reaching the bottom via a scroll event clears the flag (AC #1).
+      component.onScroll();
+      expect((component as any).unseenContent).toBe(false);
+    });
+
+    it('AC #1: indicator HIDDEN while following even if not at bottom', () => {
+      const el = installMockScrollContainer(2000, 400);
+      el.scrollTop = 0; // not near bottom
+      (component as any).scrollMode = 'following';
+      (component as any).unseenContent = true;
+
+      expect(component.showJumpToLatest).toBe(false);
+    });
+
+    it('AC #1: unseenContent SET on growth while not at bottom + not following', () => {
+      const el = installMockScrollContainer(2000, 400);
+      el.scrollTop = 0; // below the fold
+      (component as any).scrollMode = 'idle';
+
+      messagesSubject.next([aiMessage('grow-1')]);
+      expect((component as any).unseenContent).toBe(true);
+    });
+
+    it('AC #1: unseenContent NOT set on growth while at bottom', () => {
+      const el = installMockScrollContainer(800, 400);
+      el.scrollTop = 400; // distanceFromBottom = 800 - 400 - 400 = 0 (at bottom)
+      (component as any).scrollMode = 'idle';
+
+      messagesSubject.next([aiMessage('grow-2')]);
+      expect((component as any).unseenContent).toBe(false);
+    });
+
+    // --- AC #2: enter follow on click ---------------------------------------
+    it('AC #2: onJumpToLatest enters following, smooth scroll, clears anchor + unseen', () => {
+      mockReducedMotion(false);
+      const el = installMockScrollContainer(2000, 400);
+      el.scrollTop = 0;
+      (component as any).scrollMode = 'anchored';
+      (component as any).anchorMessageId = 'a-1';
+      (component as any).anchorScrollDone = true;
+      (component as any).lastAnchorOffsetTop = 600;
+      component.spacerHeight = 300;
+      (component as any).unseenContent = true;
+
+      component.onJumpToLatest();
+
+      expect((component as any).scrollMode).toBe('following');
+      expect(el.scrollToCalls).toBe(1);
+      expect(el.lastScrollTo?.top).toBe(2000);
+      expect(el.lastScrollTo?.behavior).toBe('smooth');
+      // Anchor bookkeeping cleared.
+      expect((component as any).anchorMessageId).toBeNull();
+      expect(component.spacerHeight).toBe(0);
+      // Unseen flag cleared.
+      expect((component as any).unseenContent).toBe(false);
+    });
+
+    it('AC #2: onJumpToLatest uses instant behavior under prefers-reduced-motion', () => {
+      mockReducedMotion(true);
+      const el = installMockScrollContainer(2000, 400);
+      component.onJumpToLatest();
+      expect(el.lastScrollTo?.behavior).toBe('auto');
+    });
+
+    // --- AC #2: stay pinned while following ----------------------------------
+    it('AC #2: follow tails on EACH subsequent growth (continuous tail)', () => {
+      mockReducedMotion(false);
+      const el = installMockScrollContainer(2000, 400);
+      component.onJumpToLatest();
+      expect((component as any).scrollMode).toBe('following');
+      expect(el.scrollToCalls).toBe(1); // the click's own scroll
+
+      // First growth → tail armed by subscription, fired by post-layout pass.
+      el.scrollHeight = 2400;
+      messagesSubject.next([aiMessage('t-1')]);
+      component.ngAfterViewChecked();
+      expect(el.scrollToCalls).toBe(2);
+      expect(el.lastScrollTo?.top).toBe(2400);
+
+      // Second growth → tails again (not a one-shot).
+      el.scrollHeight = 2800;
+      messagesSubject.next([aiMessage('t-1'), aiMessage('t-2')]);
+      component.ngAfterViewChecked();
+      expect(el.scrollToCalls).toBe(3);
+      expect(el.lastScrollTo?.top).toBe(2800);
+    });
+
+    it('AC #2: follow tail routes through the programmatic guard (does not self-release)', () => {
+      mockReducedMotion(false);
+      const el = installMockScrollContainer(2000, 400);
+      component.onJumpToLatest();
+      // The programmatic guard is armed by the follow write.
+      expect((component as any).isProgrammaticScroll).toBe(true);
+      // The follow write's own `scroll` frame arrives near the top — but the
+      // guard suppresses any exit (re-arms the debounce, returns early).
+      el.scrollTop = 0;
+      component.onScroll();
+      expect((component as any).scrollMode).toBe('following');
+    });
+
+    // --- AC #3: exit follow on scroll up ------------------------------------
+    it('AC #3: a genuine user scroll-up exits following → idle, indicator reappears', () => {
+      const el = installMockScrollContainer(2000, 400);
+      (component as any).scrollMode = 'following';
+      (component as any).isProgrammaticScroll = false;
+      el.scrollTop = 0; // distanceFromBottom = 1600 > 100 (scrolled up)
+
+      component.onScroll();
+
+      expect((component as any).scrollMode).toBe('idle');
+      // The affordance is immediately available (Open Question 5): unseen set.
+      expect((component as any).unseenContent).toBe(true);
+      expect(component.showJumpToLatest).toBe(true);
+    });
+
+    it('AC #3: a near-bottom scroll while following does NOT exit', () => {
+      const el = installMockScrollContainer(1000, 400);
+      (component as any).scrollMode = 'following';
+      (component as any).isProgrammaticScroll = false;
+      el.scrollTop = 550; // distanceFromBottom = 50 <= 100 (still near bottom)
+
+      component.onScroll();
+      expect((component as any).scrollMode).toBe('following');
+    });
+
+    // --- AC #3: exit follow on send -----------------------------------------
+    it('AC #3: a send while following re-anchors (following → anchored)', () => {
+      mockReducedMotion(false);
+      const el = installMockScrollContainer(2000, 500) as any;
+      el.querySelector = (_sel: string) => ({ offsetTop: 800 });
+      component.onJumpToLatest();
+      expect((component as any).scrollMode).toBe('following');
+
+      // A new send: the justSent$ handler resets to idle-intent (supersedes
+      // following), the next matching emission resolves the anchor, and the
+      // post-layout pass sets `anchored`.
+      const key = String(Date.parse('2026-06-14T10:00:01Z'));
+      (component.chatService as any).emitJustSent(key);
+      expect((component as any).scrollMode).toBe('idle');
+      messagesSubject.next([sendUserTurn('snd-1', '2026-06-14T10:05:00Z')]);
+      expect((component as any).anchorMessageId).toBe('snd-1');
+      component.ngAfterViewChecked();
+      expect((component as any).scrollMode).toBe('anchored');
+    });
+
+    // --- AC #4: follow-tail hover defer -------------------------------------
+    it('AC #4: growth while following + hovered owes a follow-tail (no scroll)', () => {
+      mockReducedMotion(false);
+      const el = installMockScrollContainer(2000, 400);
+      component.onJumpToLatest();
+      const callsAfterClick = el.scrollToCalls;
+
+      component.onMouseEnter();
+      el.scrollHeight = 2400;
+      messagesSubject.next([aiMessage('hov-tail-1')]);
+      component.ngAfterViewChecked();
+
+      // Deferred — no scroll fired; the owed kind is the typed follow-tail.
+      expect(el.scrollToCalls).toBe(callsAfterClick);
+      expect((component as any).owedScroll).toBe('follow-tail');
+    });
+
+    it('AC #4: mouseleave replays the follow-tail as a smooth bottom scroll', fakeAsync(() => {
+      mockReducedMotion(false);
+      const el = installMockScrollContainer(2400, 400);
+      (component as any).scrollMode = 'following';
+      (component as any).owedScroll = 'follow-tail';
+
+      component.onMouseLeave();
+      flushMicrotasks();
+
+      expect(el.scrollToCalls).toBe(1);
+      expect(el.lastScrollTo?.top).toBe(2400);
+      expect(el.lastScrollTo?.behavior).toBe('smooth');
+      expect((component as any).owedScroll).toBeNull();
+      flush(); // drain the programmatic-scroll settle timer the replay armed
+    }));
+  });
 });

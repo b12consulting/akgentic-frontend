@@ -80,8 +80,8 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   // Story 19-2 (ADR-016 §Decision 4 item 4): typed hover owed-action. Records
   // WHICH programmatic scroll was deferred by the hover lock so `mouseleave`
   // replays the correct one (the boolean `pendingCatchUpScroll` is retired).
-  // The `'follow-tail'` member is added in Story 19-3.
-  private owedScroll: 'top-anchor' | 'mount-bottom' | null = null;
+  // Story 19-3 adds `'follow-tail'` — a deferred follow-mode tail scroll.
+  private owedScroll: 'top-anchor' | 'mount-bottom' | 'follow-tail' | null = null;
   private expandedMessageIds = new Set<string>();
   /** Story 4-8: per-bubble expansion state (mirrors expandedMessageIds
    *  pattern; persists across thinkingAgents$ re-emissions). */
@@ -117,10 +117,31 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   //   - `idle`      : the view never moves on its own (no autoscroll).
   //   - `anchored`  : a turn is parked at top; turn-triggered growth fills the
   //                   space below the anchor without moving the scroll.
-  //   - `following` : 19-3 placeholder — the transitions can target it but
-  //                   NOTHING enters it in this story (tail/indicator are 19-3).
+  //   - `following` : Story 19-3 — opt-in tail. Entered ONLY by clicking the
+  //                   jump-to-latest indicator (`onJumpToLatest`); pins to the
+  //                   bottom on every `messages$` growth. A manual upward scroll
+  //                   exits to `idle`; a send exits to `anchored` (re-anchor).
+  //
+  // FR12 trace divergence (ADR-016 §Consequences): the main chat panel is now
+  // top-anchored (idle/anchored/following) while the per-agent `akgent-chat`
+  // trace (process/components/agent-tabs/akgent-chat/) deliberately keeps its
+  // own stick-to-bottom autoscroll. The two surfaces diverge intentionally —
+  // see `akgent-chat.component.ts#scroll()`. This is a human navigation note,
+  // not a runtime invariant.
   // ---------------------------------------------------------------------------
   private scrollMode: 'idle' | 'anchored' | 'following' = 'idle';
+  /** Story 19-3 (ADR-016 §Decision 6) — true when content grew while the user
+   *  was below the fold and not following, so the jump-to-latest indicator is
+   *  offered. Set on `messages$` growth while `!isNearBottom()` and not
+   *  following; cleared once the user reaches the bottom (`onScroll`) or enters
+   *  follow mode (`onJumpToLatest`). Drives the `showJumpToLatest` getter. */
+  private unseenContent = false;
+  /** Story 19-3 (AC #2) — set on `messages$` growth while `following` so the
+   *  post-layout pass (`maybeFollowTail` in `ngAfterViewChecked`) tails to the
+   *  bottom AFTER layout settles (reading `scrollHeight` post-layout). Keeping
+   *  the write in `ngAfterViewChecked` co-locates all programmatic scroll writes
+   *  (NFR2) and naturally coalesces frame-batched emissions. */
+  private followTailPending = false;
   /** ADR-016 §Decision 7 — one-shot instant scroll-to-bottom on mount, latched
    *  so it never re-fires on subsequent emissions / view-checks / growth. */
   private hasDoneInitialScroll = false;
@@ -168,7 +189,11 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
       // transition read as `anchored/idle → (send) → anchored`. The actual
       // `anchored` set happens when `applyAnchorScroll` fires in
       // `maybeAnchorTurn()` once the matched element renders.
+      // Story 19-3 (AC #3): a send while `following` ALSO routes here — setting
+      // `idle` here supersedes `following`, so the next matching emission
+      // re-anchors (`following → (send) → anchored`). Drop any pending tail.
       this.scrollMode = 'idle';
+      this.followTailPending = false;
     });
     // Story 4-8: merge chat messages + thinking states into a single sorted
     // displayItems array. Either stream re-triggers rebuild.
@@ -204,6 +229,12 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
       if (this.isHovered && classified.length > previousLength) {
         this.recordOwedScrollDuringHover();
       }
+      // Story 19-3 (AC #1/#2): react to content growth for the follow-mode tail
+      // and the unseen-content indicator flag. Both key off `displayItems`
+      // growth only (no ingestion change, ADR-005).
+      if (classified.length > previousLength) {
+        this.onContentGrew();
+      }
       this.recomputeModalInputs();
     });
   }
@@ -237,6 +268,11 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     // releases to idle on natural scroll-off (AC #3) and sets `scrollMode`.
     this.maybeAnchorTurn();
     this.maybeMountScroll();
+    // Story 19-3 (AC #2): when following, tail to the bottom on each growth.
+    // Runs LAST — `following` is mutually exclusive with an active anchor
+    // (entering follow clears it) and the mount scroll is latched, so this
+    // never fights them.
+    this.maybeFollowTail();
   }
 
   /**
@@ -278,6 +314,10 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
       // tick so Angular can finish any change detection triggered by the
       // isHovered = false assignment before we read scrollHeight.
       queueMicrotask(() => this.scrollToBottom());
+    } else if (owed === 'follow-tail') {
+      // Story 19-3 (AC #4): replay the deferred follow-mode tail as a smooth
+      // bottom scroll, routed through the programmatic guard.
+      queueMicrotask(() => this.followScrollToBottom());
     }
   }
 
@@ -290,6 +330,14 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
    * behavior (mirrors 19-1).
    */
   private recordOwedScrollDuringHover(): void {
+    // Story 19-3 (AC #4): a follow-mode tail deferred by hover owes a
+    // `follow-tail`. `following` is mutually exclusive with an active anchor
+    // (entering follow clears the anchor), so this branch and `top-anchor`
+    // cannot both apply — check `following` first.
+    if (this.scrollMode === 'following') {
+      this.owedScroll = 'follow-tail';
+      return;
+    }
     if (this.anchorMessageId !== null) {
       this.owedScroll = 'top-anchor';
       return;
@@ -312,8 +360,27 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     if (this.isProgrammaticScroll) {
       // Still settling a programmatic write: this `scroll` is one of the
       // animation's own frames. Re-arm the trailing debounce and ignore it —
-      // do NOT classify it as a user exit (the anchor must not release itself).
+      // do NOT classify it as a user exit (the anchor must not release itself,
+      // and the follow tail must not self-cancel `following`).
       this.armProgrammaticScrollSettle();
+      return;
+    }
+    // Story 19-3 (AC #1): reaching the bottom clears the unseen-content flag so
+    // the indicator hides — regardless of the active mode.
+    if (this.isNearBottom()) {
+      this.unseenContent = false;
+    }
+    // Story 19-3 (AC #3): a genuine upward scroll past the threshold while
+    // following exits to `idle` (tailing stops); the indicator re-evaluates
+    // (`showJumpToLatest` shows again if there is unseen content below).
+    if (this.scrollMode === 'following') {
+      if (!this.isNearBottom()) {
+        this.scrollMode = 'idle';
+        this.followTailPending = false;
+        // The user is now below the fold with content beyond the bottom — make
+        // the affordance immediately available (Open Question 5).
+        this.unseenContent = true;
+      }
       return;
     }
     if (this.scrollMode !== 'anchored') return;
@@ -568,6 +635,27 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   /**
+   * Story 19-3 (AC #2/#4, Open Question 2) — SMOOTH bottom scroll for follow
+   * mode (honoring reduced motion). A sibling to the instant `scrollToBottom()`
+   * so the mount path stays byte-stable instant (FR8). The write is
+   * PROGRAMMATIC — bracketed by `beginProgrammaticScroll()` so its async smooth
+   * `scroll` frames do not self-cancel `following` via `onScroll` (AC #2).
+   */
+  private followScrollToBottom(): void {
+    if (!this.scrollContainer) return;
+    try {
+      const el = this.scrollContainer.nativeElement;
+      this.beginProgrammaticScroll();
+      el.scrollTo({
+        top: el.scrollHeight,
+        behavior: this.prefersReducedMotion() ? 'auto' : 'smooth',
+      });
+    } catch (err) {
+      console.warn('Could not follow-scroll to bottom:', err);
+    }
+  }
+
+  /**
    * AC #5 — open the programmatic-scroll guard window around a `scrollTop`/
    * `scrollTo` write. A smooth `scrollTo` dispatches its `scroll` events across
    * many later animation frames, so the flag is NOT cleared on a microtask
@@ -605,6 +693,82 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.anchorScrollDone = false;
     this.lastAnchorOffsetTop = null;
     this.spacerHeight = 0;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Story 19-3 (ADR-016 §Decision 4/6) — opt-in follow mode + jump-to-latest.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * AC #1/#2 — react to `displayItems` growth (called only when the list grew).
+   * In `following`, arm the post-layout tail (`maybeFollowTail`). Otherwise, if
+   * the user is below the fold, flag unseen content so the indicator is offered.
+   */
+  private onContentGrew(): void {
+    if (this.scrollMode === 'following') {
+      this.followTailPending = true;
+      return;
+    }
+    if (!this.isNearBottom()) {
+      this.unseenContent = true;
+    }
+  }
+
+  /**
+   * AC #2 — post-layout follow tail. Runs from `ngAfterViewChecked` after the
+   * mount/anchor passes. Pins to the bottom on every growth while `following`.
+   * Honors the hover lock (defers a `follow-tail` owed action) and routes the
+   * write through the programmatic guard so it does not self-release (AC #2).
+   */
+  private maybeFollowTail(): void {
+    if (this.scrollMode !== 'following' || !this.followTailPending) return;
+    this.followTailPending = false;
+    if (this.isHovered) {
+      // Story 4.4 hover lock: defer the tail until mouseleave (AC #4).
+      this.owedScroll = 'follow-tail';
+      return;
+    }
+    this.followScrollToBottom();
+  }
+
+  /**
+   * AC #2 — enter `following`. Clears any active anchor bookkeeping (follow
+   * supersedes `anchored`) then sets the state. Extracted so the click handler
+   * stays an orchestrator. `releaseAnchor()` would set `idle`, so the order is:
+   * clear anchor fields, THEN set `following`.
+   */
+  private enterFollowMode(): void {
+    this.anchorMessageId = null;
+    this.anchorScrollDone = false;
+    this.lastAnchorOffsetTop = null;
+    this.spacerHeight = 0;
+    this.scrollMode = 'following';
+  }
+
+  /**
+   * AC #1 — derived indicator visibility (cheap, side-effect-free; reads
+   * geometry only, no writes — OnPush/CD safe, NFR3). Shown when NOT following,
+   * NOT at the bottom, and there is unseen content below the fold. The
+   * `!== 'following'` and `!isNearBottom()` terms give "hidden while following"
+   * and "hidden at bottom" for free.
+   */
+  get showJumpToLatest(): boolean {
+    return (
+      this.scrollMode !== 'following' &&
+      !this.isNearBottom() &&
+      this.unseenContent
+    );
+  }
+
+  /**
+   * AC #2 — the indicator's click handler: the ONLY entry into `following`.
+   * Enters follow mode, smooth-scrolls to the newest message (reduced-motion
+   * aware), and clears the unseen-content flag.
+   */
+  onJumpToLatest(): void {
+    this.enterFollowMode();
+    this.unseenContent = false;
+    this.followScrollToBottom();
   }
 
   // ---------------------------------------------------------------------------

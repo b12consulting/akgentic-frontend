@@ -55,6 +55,20 @@
       </div>
     </ng-template>
   </ng-template>
+  <!-- Story 19-3 (ADR-016 §Decision 6): jump-to-latest indicator. Overlays the
+       bottom edge of the message list, above <app-user-input>. OUTSIDE
+       #scrollContainer so it does not change scrollHeight. *ngIf-gated so it is
+       absent from the DOM (and captures no pointer events) when hidden. The
+       click handler is the ONLY entry into follow mode. -->
+  <button
+    *ngIf="showJumpToLatest"
+    type="button"
+    class="jump-to-latest"
+    (click)="onJumpToLatest()"
+  >
+    <i class="pi pi-arrow-down"></i>
+    <span>New messages</span>
+  </button>
   <app-user-input [processId]="processId"></app-user-input>
   <app-chat-human-modal
     [visible]="modalVisible"
