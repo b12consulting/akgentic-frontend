@@ -974,7 +974,14 @@ describe('ChatPanelComponent', () => {
     });
   });
 
-  describe('Hover-aware auto-scroll lock (Story 4.4)', () => {
+  // -------------------------------------------------------------------------
+  // Story 19-2 (ADR-016) — retire default autoscroll, idle/anchored state
+  // machine, one-shot mount scroll, programmatic-vs-user guard, typed hover
+  // owed-action. The legacy Story 4.4 default-autoscroll specs are rewritten
+  // here for the new state machine (the old `shouldScrollToBottom`/
+  // `checkShouldAutoScroll` default re-pin no longer exists).
+  // -------------------------------------------------------------------------
+  describe('Story 19-2: state machine, mount scroll, programmatic guard, hover owed-action', () => {
     // Helper to install a mock scrollContainer with controllable
     // scrollTop/scrollHeight/clientHeight on the component.
     function installMockScrollContainer(
@@ -987,82 +994,208 @@ describe('ChatPanelComponent', () => {
       return mockEl;
     }
 
-    it('(a) auto-scroll fires when NOT hovered and a new message arrives', () => {
-      const mockEl = installMockScrollContainer(1000, 400);
-      // Not hovered (default)
-      expect((component as any).isHovered).toBe(false);
-      // Simulate DOM growth from a new message.
-      mockEl.scrollHeight = 1200;
-      component.ngAfterViewChecked();
-      expect(mockEl.scrollTop).toBe(1200);
-    });
-
-    it('(b) auto-scroll is SUSPENDED when hovered; pendingCatchUpScroll is set', () => {
-      const mockEl = installMockScrollContainer(1000, 400);
-      mockEl.scrollTop = 850; // near bottom so shouldScrollToBottom will be true
-      (component as any).checkShouldAutoScroll();
-      component.onMouseEnter();
-      expect((component as any).isHovered).toBe(true);
-
-      // New message arrives while hovered.
+    function sendUserTurn(id: string, ts = '2026-06-14T10:00:00Z') {
       const sent = makeSentMessage(
         { name: '@Human', role: 'Human' },
         { name: '@Manager', role: 'Manager' },
-        'hovered-arrival',
-        'hov-1',
+        'user turn',
+        id,
       );
-      messagesSubject.next([sent]);
-      mockEl.scrollHeight = 1200;
-      component.ngAfterViewChecked();
+      sent.timestamp = ts;
+      sent.message.timestamp = ts;
+      return sent;
+    }
 
-      // scrollTop was NOT moved to bottom — hover suspends.
-      expect(mockEl.scrollTop).toBe(850);
-      expect((component as any).pendingCatchUpScroll).toBe(true);
+    // --- AC #1: no-jump-while-streaming / idle ---------------------------------
+    it('AC #1: in idle, repeated growth does NOT move scrollTop (no autoscroll)', () => {
+      const mockEl = installMockScrollContainer(1000, 400);
+      mockEl.scrollTop = 200; // user parked somewhere, not at bottom
+      // Latch the mount scroll so it does not fire (we test pure idle growth).
+      (component as any).hasDoneInitialScroll = true;
+      expect((component as any).scrollMode).toBe('idle');
+
+      // Several emissions grow the content.
+      for (const h of [1200, 1500, 1800]) {
+        mockEl.scrollHeight = h;
+        component.ngAfterViewChecked();
+      }
+      // Idle never moves the view on its own.
+      expect(mockEl.scrollTop).toBe(200);
     });
 
-    it('(c) mouseleave performs catch-up when a message arrived during hover', fakeAsync(() => {
+    // --- AC #4: one-shot mount scroll + latch ---------------------------------
+    it('AC #4: mount fires exactly ONE instant scroll-to-bottom, then never again', () => {
+      const mockEl = installMockScrollContainer(1000, 400);
+      expect((component as any).hasDoneInitialScroll).toBe(false);
+
+      component.ngAfterViewChecked();
+      // Instant jump to bottom on the first laid-out view-settle.
+      expect(mockEl.scrollTop).toBe(1000);
+      expect((component as any).hasDoneInitialScroll).toBe(true);
+      // After mount the panel is idle (does not keep tailing).
+      expect((component as any).scrollMode).toBe('idle');
+
+      // Subsequent growth / view-checks must NOT re-fire the mount scroll.
+      mockEl.scrollTop = 300; // user scrolled up
+      mockEl.scrollHeight = 1600;
+      component.ngAfterViewChecked();
+      component.ngAfterViewChecked();
+      expect(mockEl.scrollTop).toBe(300);
+    });
+
+    it('AC #4: mount scroll does not fire while scrollHeight is 0 (not laid out)', () => {
+      const mockEl = installMockScrollContainer(0, 400);
+      component.ngAfterViewChecked();
+      expect((component as any).hasDoneInitialScroll).toBe(false);
+      expect(mockEl.scrollTop).toBe(0);
+
+      // Once content lays out, it fires once.
+      mockEl.scrollHeight = 900;
+      component.ngAfterViewChecked();
+      expect((component as any).hasDoneInitialScroll).toBe(true);
+      expect(mockEl.scrollTop).toBe(900);
+    });
+
+    it('AC #4: anchor precedence — mount scroll is skipped when a turn is anchored', () => {
+      const mockEl = installMockScrollContainer(1000, 400) as any;
+      // The anchor path runs first in ngAfterViewChecked; give the container a
+      // querySelector (anchor not yet rendered → null) so it no-ops cleanly.
+      mockEl.querySelector = (_sel: string) => null;
+      // A send arrived before mount settled.
+      (component as any).anchorMessageId = 'pending-anchor';
+      component.ngAfterViewChecked();
+      // Mount scroll did not fire (anchor owns the first frame).
+      expect((component as any).hasDoneInitialScroll).toBe(false);
+      expect(mockEl.scrollTop).toBe(0);
+    });
+
+    // --- AC #5: programmatic-vs-user scroll discrimination --------------------
+    it('AC #5: a programmatic write does NOT release the anchor', () => {
+      const mockEl = installMockScrollContainer(1000, 400);
+      (component as any).scrollMode = 'anchored';
+      (component as any).anchorMessageId = 'a-1';
+      // Simulate the bracket a programmatic write opens.
+      (component as any).isProgrammaticScroll = true;
+      // The write moved us above the near-bottom threshold...
+      mockEl.scrollTop = 0;
+      component.onScroll();
+      // ...but the guard suppresses the release.
+      expect((component as any).scrollMode).toBe('anchored');
+      expect((component as any).anchorMessageId).toBe('a-1');
+    });
+
+    it('AC #5: a genuine user scroll past the threshold DOES release the anchor', () => {
+      const mockEl = installMockScrollContainer(2000, 400);
+      (component as any).scrollMode = 'anchored';
+      (component as any).anchorMessageId = 'a-2';
+      (component as any).anchorScrollDone = true;
+      (component as any).lastAnchorOffsetTop = 600;
+      component.spacerHeight = 300;
+      (component as any).isProgrammaticScroll = false;
+      // User scrolled to the top — far above the near-bottom threshold
+      // (distanceFromBottom = 2000 - 0 - 400 = 1600 > 100).
+      mockEl.scrollTop = 0;
+
+      component.onScroll();
+
+      expect((component as any).scrollMode).toBe('idle');
+      expect((component as any).anchorMessageId).toBeNull();
+      expect((component as any).anchorScrollDone).toBe(false);
+      expect((component as any).lastAnchorOffsetTop).toBeNull();
+      expect(component.spacerHeight).toBe(0);
+    });
+
+    it('AC #5: a user scroll that stays near the bottom does NOT release', () => {
+      const mockEl = installMockScrollContainer(1000, 400);
+      (component as any).scrollMode = 'anchored';
+      (component as any).anchorMessageId = 'a-3';
+      (component as any).isProgrammaticScroll = false;
+      // distanceFromBottom = 1000 - 550 - 400 = 50 <= 100 (near bottom).
+      mockEl.scrollTop = 550;
+      component.onScroll();
+      expect((component as any).scrollMode).toBe('anchored');
+    });
+
+    it('AC #5: the programmatic guard clears after a microtask so a later user scroll releases', fakeAsync(() => {
+      const mockEl = installMockScrollContainer(2000, 400);
+      (component as any).scrollMode = 'anchored';
+      (component as any).anchorMessageId = 'a-4';
+      // Open the guard window the way scrollToBottom() does.
+      (component as any).beginProgrammaticScroll();
+      expect((component as any).isProgrammaticScroll).toBe(true);
+
+      flushMicrotasks();
+      expect((component as any).isProgrammaticScroll).toBe(false);
+
+      // A genuine user scroll in a later tick now releases.
+      mockEl.scrollTop = 0;
+      component.onScroll();
+      expect((component as any).scrollMode).toBe('idle');
+    }));
+
+    // --- AC #6: typed hover owed-action --------------------------------------
+    it('AC #6: a new message during hover (turn anchored) owes a top-anchor', () => {
       const mockEl = installMockScrollContainer(1000, 400);
       mockEl.scrollTop = 850;
-      (component as any).checkShouldAutoScroll();
-      component.onMouseEnter();
+      (component as any).anchorMessageId = 'hov-anchor';
 
+      component.onMouseEnter();
+      messagesSubject.next([sendUserTurn('hov-1')]);
+      // anchorMessageId stays non-null (already set) — owed kind is top-anchor.
+      expect((component as any).owedScroll).toBe('top-anchor');
+    });
+
+    it('AC #6: a new message during hover (no anchor, near bottom) owes a mount-bottom', () => {
+      const mockEl = installMockScrollContainer(1000, 400);
+      mockEl.scrollTop = 850; // near bottom (distanceFromBottom = 1000-850-400 < 0)
+      (component as any).anchorMessageId = null;
+
+      component.onMouseEnter();
       const sent = makeSentMessage(
-        { name: '@Human', role: 'Human' },
         { name: '@Manager', role: 'Manager' },
-        'catch-up',
-        'cu-1',
+        { name: '@Human', role: 'Human' },
+        'arrival',
+        'mb-1',
       );
       messagesSubject.next([sent]);
-      mockEl.scrollHeight = 1200;
-      component.ngAfterViewChecked();
-      expect(mockEl.scrollTop).toBe(850);
-      expect((component as any).pendingCatchUpScroll).toBe(true);
+      expect((component as any).owedScroll).toBe('mount-bottom');
+    });
+
+    it('AC #6: mouseleave replays a top-anchor owed action via the anchor scroll', fakeAsync(() => {
+      const mockEl = installMockScrollContainer(1200, 500) as any;
+      // Give the container a resolvable anchor element + scrollTo recorder.
+      mockEl.scrollTop = 0;
+      mockEl.lastScrollTo = null;
+      mockEl.scrollTo = (opts: { top: number; behavior: string }) => {
+        mockEl.lastScrollTo = opts;
+        mockEl.scrollTop = opts.top;
+      };
+      mockEl.querySelector = (_sel: string) => ({ offsetTop: 600 });
+      (component as any).anchorMessageId = 'owed-anchor';
+      (component as any).owedScroll = 'top-anchor';
+      spyOn(window, 'matchMedia').and.returnValue({ matches: true } as any);
 
       component.onMouseLeave();
       flushMicrotasks();
 
-      expect(mockEl.scrollTop).toBe(1200);
-      expect((component as any).pendingCatchUpScroll).toBe(false);
-      expect((component as any).isHovered).toBe(false);
+      // The anchor scroll replayed (offsetTop 600 - padding 8 = 592).
+      expect(mockEl.lastScrollTo?.top).toBe(592);
+      expect((component as any).owedScroll).toBeNull();
     }));
 
-    it('(d) mouseleave does NOT catch-up if no message arrived during hover', fakeAsync(() => {
-      const mockEl = installMockScrollContainer(1000, 400);
-      mockEl.scrollTop = 850;
-      (component as any).checkShouldAutoScroll();
+    it('AC #6: mouseleave replays a mount-bottom owed action via scrollToBottom', fakeAsync(() => {
+      const mockEl = installMockScrollContainer(1300, 400);
+      mockEl.scrollTop = 0;
+      (component as any).owedScroll = 'mount-bottom';
 
-      component.onMouseEnter();
-      // No message arrives — scrollHeight unchanged.
-      component.ngAfterViewChecked();
       component.onMouseLeave();
       flushMicrotasks();
 
-      expect(mockEl.scrollTop).toBe(850);
-      expect((component as any).pendingCatchUpScroll).toBe(false);
+      expect(mockEl.scrollTop).toBe(1300);
+      expect((component as any).owedScroll).toBeNull();
     }));
 
-    it('(e) collapse toggle during hover does NOT queue a catch-up', fakeAsync(() => {
-      // Seed a Rule 4 message so we have something to toggle.
+    it('AC #6: collapse toggle during hover does NOT queue an owed scroll', fakeAsync(() => {
       const r4 = makeSentMessage(
         { name: '@Worker', role: 'Worker' },
         { name: '@Manager', role: 'Manager' },
@@ -1074,25 +1207,20 @@ describe('ChatPanelComponent', () => {
 
       const mockEl = installMockScrollContainer(1000, 400);
       mockEl.scrollTop = 850;
-      (component as any).checkShouldAutoScroll();
+      (component as any).hasDoneInitialScroll = true;
 
       component.onMouseEnter();
-
-      // User toggles collapse — this changes DOM height but is NOT a
-      // message-arrival event, so pendingCatchUpScroll MUST remain false.
+      // A collapse toggle changes DOM height but is NOT a message-arrival event.
       component.onToggleCollapse(component.chatMessages[0]);
-      mockEl.scrollHeight = 1100; // toggle grew the bubble
+      mockEl.scrollHeight = 1100;
       component.ngAfterViewChecked();
 
-      // Hover still suspends the scroll.
+      // No owed scroll queued for a collapse toggle; view unmoved.
+      expect((component as any).owedScroll).toBeNull();
       expect(mockEl.scrollTop).toBe(850);
-      // CRITICAL: no catch-up queued for a collapse toggle.
-      expect((component as any).pendingCatchUpScroll).toBe(false);
 
       component.onMouseLeave();
       flushMicrotasks();
-
-      // No catch-up fired — scrollTop still at 850.
       expect(mockEl.scrollTop).toBe(850);
     }));
   });
@@ -1340,6 +1468,168 @@ describe('ChatPanelComponent', () => {
       expect(list!.lastElementChild).toBe(spacer);
       // It is not a DisplayItem — only the message is.
       expect(component.displayItems.length).toBe(1);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Story 19-2 (ADR-016) — anchored-holds / release / re-anchor state
+  // transitions (driven through the anchor mock container, like 19-1).
+  // -------------------------------------------------------------------------
+  describe('Story 19-2: anchored-holds, release, re-anchor transitions', () => {
+    interface MockAnchorEl {
+      offsetTop: number;
+    }
+    interface MockContainer {
+      clientHeight: number;
+      scrollHeight: number;
+      scrollTop: number;
+      lastScrollTo: { top: number; behavior: string } | null;
+      scrollToCalls: number;
+      _anchor: MockAnchorEl | null;
+      querySelector(sel: string): MockAnchorEl | null;
+      scrollTo(opts: { top: number; behavior: ScrollBehavior }): void;
+    }
+
+    function installContainer(
+      anchor: MockAnchorEl | null,
+      clientHeight = 500,
+      scrollHeight = 1200,
+    ): MockContainer {
+      const container: MockContainer = {
+        clientHeight,
+        scrollHeight,
+        scrollTop: 0,
+        lastScrollTo: null,
+        scrollToCalls: 0,
+        _anchor: anchor,
+        querySelector() {
+          return this._anchor;
+        },
+        scrollTo(opts) {
+          this.scrollToCalls += 1;
+          this.lastScrollTo = { top: opts.top, behavior: opts.behavior };
+          this.scrollTop = opts.top;
+        },
+      };
+      (component as any).scrollContainer = { nativeElement: container };
+      return container;
+    }
+
+    function mockReducedMotion(matches: boolean): void {
+      spyOn(window, 'matchMedia').and.returnValue({ matches } as any);
+    }
+
+    function sendUserMessage(id: string, ts = '2026-06-14T10:00:00Z') {
+      const sent = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'user turn',
+        id,
+      );
+      sent.timestamp = ts;
+      sent.message.timestamp = ts;
+      return sent;
+    }
+
+    function seedTurn(
+      id: string,
+      key: string,
+      anchor: MockAnchorEl | null,
+      clientHeight = 500,
+      scrollHeight = 1200,
+    ): MockContainer {
+      (component.chatService as any).emitJustSent(key);
+      messagesSubject.next([sendUserMessage(id)]);
+      return installContainer(anchor, clientHeight, scrollHeight);
+    }
+
+    it('AC #2: first anchor sets scrollMode = anchored', () => {
+      mockReducedMotion(false);
+      seedTurn('a-1', '1000', { offsetTop: 600 });
+      expect((component as any).scrollMode).toBe('idle');
+      component.ngAfterViewChecked();
+      expect((component as any).scrollMode).toBe('anchored');
+    });
+
+    it('AC #1/#2: anchored holds — answer-below growth does not move the scroll', () => {
+      mockReducedMotion(false);
+      const anchorEl = { offsetTop: 600 };
+      const container = seedTurn('hold-1', '1000', anchorEl, 500, 1200);
+      component.ngAfterViewChecked();
+      expect(container.scrollToCalls).toBe(1);
+      const parkedTop = container.scrollTop;
+
+      // Several downstream growths (streamed tokens) — offsetTop unchanged.
+      for (const h of [1600, 2000, 2400]) {
+        container.scrollHeight = h;
+        component.ngAfterViewChecked();
+      }
+      expect(container.scrollToCalls).toBe(1); // no extra scroll writes
+      expect(container.scrollTop).toBe(parkedTop);
+      expect((component as any).scrollMode).toBe('anchored');
+    });
+
+    it('AC #3: a user scroll event past the threshold releases the anchor to idle', () => {
+      mockReducedMotion(false);
+      const container = seedTurn('rel-1', '1000', { offsetTop: 600 }, 500, 2000);
+      component.ngAfterViewChecked();
+      expect((component as any).scrollMode).toBe('anchored');
+
+      // Let the programmatic-guard window close, then simulate a genuine user
+      // scroll to the top (distanceFromBottom = 2000 - 0 - 500 = 1500 > 100).
+      (component as any).isProgrammaticScroll = false;
+      container.scrollTop = 0;
+      component.onScroll();
+
+      expect((component as any).scrollMode).toBe('idle');
+      expect((component as any).anchorMessageId).toBeNull();
+      expect(component.spacerHeight).toBe(0);
+    });
+
+    it('AC #3: natural scroll-off (anchor pushed above the fold) releases to idle', () => {
+      mockReducedMotion(false);
+      const anchorEl = { offsetTop: 600 };
+      const container = seedTurn('off-1', '1000', anchorEl, 500, 1200);
+      component.ngAfterViewChecked();
+      expect((component as any).scrollMode).toBe('anchored');
+
+      // The answer grew so the anchor scrolled above the top of the viewport:
+      // offsetTop - scrollTop < topPadding (8). With scrollTop parked at 592,
+      // an anchor offsetTop of 595 means 595 - 592 = 3 < 8 → scrolled off.
+      anchorEl.offsetTop = 595;
+      component.ngAfterViewChecked();
+
+      expect((component as any).scrollMode).toBe('idle');
+      expect((component as any).anchorMessageId).toBeNull();
+      expect(container.scrollToCalls).toBe(1); // released, NOT re-pinned
+    });
+
+    it('AC #3: re-anchor on send — idle → (send) → anchored', () => {
+      mockReducedMotion(false);
+      const container = seedTurn('re-1', '1000', { offsetTop: 600 }, 500, 2000);
+      component.ngAfterViewChecked();
+      expect((component as any).scrollMode).toBe('anchored');
+
+      // Release via user scroll.
+      (component as any).isProgrammaticScroll = false;
+      container.scrollTop = 0;
+      component.onScroll();
+      expect((component as any).scrollMode).toBe('idle');
+
+      // A new turn is sent → latch resets, scrollMode returns to idle-intent,
+      // and the next matching emission re-anchors.
+      const key2 = String(Date.parse('2026-06-14T10:05:01Z'));
+      (component.chatService as any).emitJustSent(key2);
+      expect((component as any).scrollMode).toBe('idle');
+      messagesSubject.next([
+        sendUserMessage('re-1', '2026-06-14T10:00:00Z'),
+        sendUserMessage('re-2', '2026-06-14T10:06:00Z'),
+      ]);
+      expect((component as any).anchorMessageId).toBe('re-2');
+      const container2 = installContainer({ offsetTop: 800 }, 500, 2000);
+      component.ngAfterViewChecked();
+      expect((component as any).scrollMode).toBe('anchored');
+      expect(container2.scrollToCalls).toBe(1);
     });
   });
 });

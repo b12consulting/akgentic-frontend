@@ -69,15 +69,19 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   modalAnsweredMessages: AnsweredRequest[] = [];
 
   private subscription!: Subscription;
-  private shouldScrollToBottom = true;
   private lastScrollHeight = 0;
   // Story 4.4: hover-aware auto-scroll lock. `isHovered` short-circuits the
   // scroll in ngAfterViewChecked while the user's pointer is over the panel.
-  // `pendingCatchUpScroll` is set ONLY from the messages$ subscription path
-  // (new-message arrival) — never from ngAfterViewChecked height changes —
-  // so collapse/expand toggles during hover do NOT queue a spurious catch-up.
+  // `owedScroll` is set ONLY from the messages$ / mount / anchor paths (a
+  // programmatic scroll suppressed by hover) — never from ngAfterViewChecked
+  // height changes — so collapse/expand toggles during hover do NOT queue a
+  // spurious catch-up.
   private isHovered = false;
-  private pendingCatchUpScroll = false;
+  // Story 19-2 (ADR-016 §Decision 4 item 4): typed hover owed-action. Records
+  // WHICH programmatic scroll was deferred by the hover lock so `mouseleave`
+  // replays the correct one (the boolean `pendingCatchUpScroll` is retired).
+  // The `'follow-tail'` member is added in Story 19-3.
+  private owedScroll: 'top-anchor' | 'mount-bottom' | null = null;
   private expandedMessageIds = new Set<string>();
   /** Story 4-8: per-bubble expansion state (mirrors expandedMessageIds
    *  pattern; persists across thinkingAgents$ re-emissions). */
@@ -106,6 +110,29 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
    *  echoes the `.message-list` 0.5rem/1rem padding rhythm (ADR-016 §Decision 3). */
   private readonly anchorTopPadding = 8;
 
+  // ---------------------------------------------------------------------------
+  // Story 19-2 (ADR-016 §Decision 4) — explicit scroll-mode state machine.
+  // `scrollMode` is the SINGLE source of truth for "what the viewport is
+  // allowed to do", replacing the implicit `shouldScrollToBottom` boolean:
+  //   - `idle`      : the view never moves on its own (no autoscroll).
+  //   - `anchored`  : a turn is parked at top; turn-triggered growth fills the
+  //                   space below the anchor without moving the scroll.
+  //   - `following` : 19-3 placeholder — the transitions can target it but
+  //                   NOTHING enters it in this story (tail/indicator are 19-3).
+  // ---------------------------------------------------------------------------
+  private scrollMode: 'idle' | 'anchored' | 'following' = 'idle';
+  /** ADR-016 §Decision 7 — one-shot instant scroll-to-bottom on mount, latched
+   *  so it never re-fires on subsequent emissions / view-checks / growth. */
+  private hasDoneInitialScroll = false;
+  /** ADR-016 §Decision 4 "critical" — set around every programmatic `scrollTop`/
+   *  `scrollTo` write so the resulting `scroll` event is not mistaken for the
+   *  user scrolling away. Cleared after the event settles (queueMicrotask). */
+  private isProgrammaticScroll = false;
+  /** Reused near-bottom threshold (px) — the constant from the retired
+   *  `checkShouldAutoScroll`. Drives anchor-release classification (and, in
+   *  19-3, the indicator + follow-exit) so they stay consistent. */
+  private readonly nearBottomThreshold = 100;
+
   ngOnInit(): void {
     this.notificationSubscription = this.chatService.pendingNotifications$.subscribe(
       (pending) => {
@@ -123,6 +150,12 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
       this.lastAnchorOffsetTop = null;
       // AC #3: spacer is 0 until the new turn is actually anchored.
       this.spacerHeight = 0;
+      // Story 19-2 (AC #3): re-anchor on send. The latch reset above is the
+      // anchor's own bookkeeping; routing it through the state field makes the
+      // transition read as `anchored/idle → (send) → anchored`. The actual
+      // `anchored` set happens when `applyAnchorScroll` fires in
+      // `maybeAnchorTurn()` once the matched element renders.
+      this.scrollMode = 'idle';
     });
     // Story 4-8: merge chat messages + thinking states into a single sorted
     // displayItems array. Either stream re-triggers rebuild.
@@ -133,8 +166,6 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
       this.chatService.messages$,
       this.chatService.thinkingAgents$,
     ]).subscribe(([classified, thinkingStates]) => {
-      this.checkShouldAutoScroll();
-
       const previousLength = this.chatMessages.length;
       // Preserve per-user expand state across re-emissions (Rule 3 / Rule 4).
       for (const chatMsg of classified) {
@@ -153,10 +184,12 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
       // message at/after the send time. Once resolved, the actual scroll runs
       // post-layout in ngAfterViewChecked (offsetTop must be read post-layout).
       this.resolveAnchorMessageId();
-      // Story 4.4: if a new message arrived while the user is hovering the
-      // panel, remember that a catch-up scroll is owed on mouseleave.
+      // Story 19-2 (AC #6): if a new message arrived while the user is hovering
+      // the panel, remember WHICH scroll is owed on mouseleave (typed). The
+      // `mount-bottom` catch-up preserves the pre-existing "only catch up if
+      // the user was near the bottom at arrival time" intent.
       if (this.isHovered && classified.length > previousLength) {
-        this.pendingCatchUpScroll = true;
+        this.recordOwedScrollDuringHover();
       }
       this.recomputeModalInputs();
     });
@@ -172,20 +205,46 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     }
   }
 
+  /**
+   * Post-layout orchestrator (Story 19-2). Public method coordinates; private
+   * helpers implement. Order: keep `lastScrollHeight` fresh → drive the anchor
+   * (Story 19-1, AC #2/#5) and detect natural scroll-off release (AC #3) →
+   * one-shot mount scroll (AC #4). NO default autoscroll — the legacy
+   * per-emission bottom re-pin is retired (AC #1).
+   */
   ngAfterViewChecked(): void {
     // Always evaluate hasContentChanged() so lastScrollHeight stays fresh —
     // even while hovered — otherwise a collapse/expand during hover would
-    // leave a stale lastScrollHeight that spuriously fires a scroll later.
-    const contentChanged = this.hasContentChanged();
-    // Story 19-1: the top-anchor is independent of the hover lock and the
-    // legacy autoscroll — it runs once per turn (AC #2) and then re-pins only
-    // on the anchor element's own height change (AC #5). It coexists with the
-    // legacy stick-to-bottom until Story 19-2 retires the latter.
+    // leave a stale lastScrollHeight that spuriously fires a scroll later. The
+    // return value no longer gates an autoscroll (AC #1) but keeps the
+    // discrimination geometry current.
+    this.hasContentChanged();
+    // Story 19-1/19-2: the top-anchor runs once per turn (AC #2) and re-pins
+    // only on the anchor element's own height change (AC #5); 19-2 also
+    // releases to idle on natural scroll-off (AC #3) and sets `scrollMode`.
     this.maybeAnchorTurn();
-    if (this.isHovered) return; // Story 4.4: suspended while hovering
-    if (this.shouldScrollToBottom && contentChanged) {
-      this.scrollToBottom();
+    this.maybeMountScroll();
+  }
+
+  /**
+   * AC #4 — one-shot INSTANT scroll-to-bottom on the first view-settle with a
+   * laid-out, non-empty backlog. Latched by `hasDoneInitialScroll` so it never
+   * re-fires. Anchor precedence: if a turn is already anchored (a send arrived
+   * before mount settled), the anchor owns the first frame and the mount scroll
+   * is skipped. After mount the panel stays `idle` (it does not start tailing).
+   */
+  private maybeMountScroll(): void {
+    if (this.hasDoneInitialScroll || this.anchorMessageId !== null) return;
+    if (!this.scrollContainer) return;
+    const el = this.scrollContainer.nativeElement;
+    if (el.scrollHeight <= 0) return; // not laid out yet — retry next pass
+    this.hasDoneInitialScroll = true;
+    if (this.isHovered) {
+      // Story 4.4: defer the programmatic mount scroll until mouseleave.
+      this.owedScroll = 'mount-bottom';
+      return;
     }
+    this.scrollToBottom();
   }
 
   onMouseEnter(): void {
@@ -194,15 +253,53 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   onMouseLeave(): void {
     this.isHovered = false;
-    // Catch-up only if a new message arrived during hover AND the user was
-    // near the bottom at arrival time (preserve pre-existing user-intent).
-    const shouldCatchUp = this.pendingCatchUpScroll && this.shouldScrollToBottom;
-    this.pendingCatchUpScroll = false;
-    if (shouldCatchUp) {
+    // Story 19-2 (AC #6): replay the typed owed scroll, then clear it.
+    const owed = this.owedScroll;
+    this.owedScroll = null;
+    if (owed === 'top-anchor') {
+      // Re-run the anchor scroll once layout settles. `maybeAnchorTurn()` is
+      // idempotent (latched) so it re-pins via the resolved element.
+      queueMicrotask(() => this.maybeAnchorTurn());
+    } else if (owed === 'mount-bottom') {
       // queueMicrotask defers the scroll until after the current event-loop
       // tick so Angular can finish any change detection triggered by the
       // isHovered = false assignment before we read scrollHeight.
       queueMicrotask(() => this.scrollToBottom());
+    }
+  }
+
+  /**
+   * AC #6 — record WHICH programmatic scroll the hover lock deferred. A
+   * `top-anchor` is owed whenever an active turn's anchor scroll is suppressed
+   * by hover; a `mount-bottom` is owed for the deferred mount catch-up, gated
+   * by the pre-existing "user was near the bottom at arrival" intent. The
+   * `top-anchor` kind wins because parking the turn at top is the dominant
+   * behavior (mirrors 19-1).
+   */
+  private recordOwedScrollDuringHover(): void {
+    if (this.anchorMessageId !== null) {
+      this.owedScroll = 'top-anchor';
+      return;
+    }
+    if (this.isNearBottom()) {
+      this.owedScroll = 'mount-bottom';
+    }
+  }
+
+  /**
+   * AC #3/#5 — `scroll` event handler bound via the template `(scroll)`
+   * binding (Open Question 2: template binding chosen — smaller, testable
+   * surface, no manual teardown). Programmatic writes (the anchor write, the
+   * mount-bottom write) are ignored via `isProgrammaticScroll` (primary guard);
+   * the near-bottom threshold is the secondary safety net. A GENUINE user
+   * scroll that moves the position measurably above the near-bottom frame while
+   * anchored releases the anchor to `idle`.
+   */
+  onScroll(): void {
+    if (this.isProgrammaticScroll) return; // programmatic write — not a user exit
+    if (this.scrollMode !== 'anchored') return;
+    if (!this.isNearBottom()) {
+      this.releaseAnchor();
     }
   }
 
@@ -400,16 +497,26 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     return items;
   }
 
-  private checkShouldAutoScroll(): void {
-    if (!this.scrollContainer) {
-      this.shouldScrollToBottom = true;
-      return;
-    }
+  /**
+   * Story 19-2 — distance (px) from the bottom of the scroll container. The
+   * 100px near-bottom threshold from the retired `checkShouldAutoScroll` lives
+   * in `isNearBottom()` below; both reuse this single geometry read.
+   */
+  private distanceFromBottom(): number {
+    if (!this.scrollContainer) return 0;
     const el = this.scrollContainer.nativeElement;
-    const threshold = 100;
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    this.shouldScrollToBottom =
-      distanceFromBottom <= threshold || this.lastScrollHeight === 0;
+    return el.scrollHeight - el.scrollTop - el.clientHeight;
+  }
+
+  /**
+   * Story 19-2 (AC #3/#5) — true when the viewport is within the reused
+   * near-bottom threshold of the bottom. Anchor-release, the mount catch-up
+   * intent, and (19-3) the indicator/follow-exit all key off this constant so
+   * they stay consistent.
+   */
+  private isNearBottom(): boolean {
+    if (!this.scrollContainer) return true;
+    return this.distanceFromBottom() <= this.nearBottomThreshold;
   }
 
   private hasContentChanged(): boolean {
@@ -420,14 +527,47 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     return changed;
   }
 
+  /**
+   * Instant jump to the bottom. Used by the one-shot mount scroll (AC #4) and,
+   * in 19-3, by follow mode. The write is PROGRAMMATIC: it is bracketed by the
+   * `isProgrammaticScroll` guard (AC #5) so the resulting `scroll` event is not
+   * mistaken for a user scroll-away. Mount is instant regardless (FR8).
+   */
   private scrollToBottom(): void {
     if (!this.scrollContainer) return;
     try {
       const el = this.scrollContainer.nativeElement;
+      this.beginProgrammaticScroll();
       el.scrollTop = el.scrollHeight;
     } catch (err) {
       console.warn('Could not scroll to bottom:', err);
     }
+  }
+
+  /**
+   * AC #5 — open the programmatic-scroll guard window around a `scrollTop`/
+   * `scrollTo` write. The `scroll` event fires asynchronously, so the flag is
+   * cleared via `queueMicrotask` after the write (mirroring Story 4.4's
+   * discipline) — long enough to bracket the programmatic `scroll` event,
+   * short enough that a genuine user scroll in a later tick still releases.
+   */
+  private beginProgrammaticScroll(): void {
+    this.isProgrammaticScroll = true;
+    queueMicrotask(() => {
+      this.isProgrammaticScroll = false;
+    });
+  }
+
+  /**
+   * AC #3 — release the anchor to `idle`: stop re-pinning and clear ALL anchor
+   * bookkeeping so `maybeAnchorTurn()` no longer fires until the next send.
+   */
+  private releaseAnchor(): void {
+    this.scrollMode = 'idle';
+    this.anchorMessageId = null;
+    this.anchorScrollDone = false;
+    this.lastAnchorOffsetTop = null;
+    this.spacerHeight = 0;
   }
 
   // ---------------------------------------------------------------------------
@@ -456,26 +596,57 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   /**
-   * AC #2/#4/#5 — drive the top-anchor from the post-layout `ngAfterViewChecked`
-   * pass. Fires the single first-anchor once the matched element renders, then
-   * re-pins only when the anchored element's OWN offset changes (late layout:
-   * image/code-block/late-expanding bubble). Downstream answer growth does not
-   * move the view because it does not change the anchor element's `offsetTop`.
+   * AC #2/#4/#5 (19-1) + AC #3 (19-2) — drive the top-anchor from the
+   * post-layout pass. Fires the single first-anchor once the matched element
+   * renders (sets `scrollMode = 'anchored'`), then re-pins only on the anchored
+   * element's OWN offset change (late layout). 19-2 additions: a hover defer
+   * (owe a `top-anchor` replay), and natural scroll-off release to `idle` when
+   * answer growth pushes the anchor above the fold. Downstream answer growth
+   * does not move the view (it does not change the anchor's `offsetTop`).
    */
   private maybeAnchorTurn(): void {
     if (this.anchorMessageId === null) return;
     const anchorEl = this.resolveAnchorElement(this.anchorMessageId);
     if (!anchorEl) return; // not yet rendered — retry on next emission (AC #4)
 
+    // Story 4.4 hover lock: defer the programmatic anchor write until mouseleave.
+    if (this.isHovered) {
+      this.owedScroll = 'top-anchor';
+      return;
+    }
+
     if (!this.anchorScrollDone) {
       this.applyAnchorScroll(anchorEl);
       this.anchorScrollDone = true;
+      this.scrollMode = 'anchored';
+      return;
+    }
+    // Natural scroll-off (AC #3): the answer grew tall enough that the anchored
+    // message scrolled above the top of the viewport — release, do NOT re-pin.
+    // Disjoint from the AC #5 re-pin below (Open Question 4): scroll-off is
+    // "anchor above the fold" (offsetTop − scrollTop < topPadding), re-pin is
+    // "anchor's OWN offsetTop changed".
+    if (this.isAnchorScrolledOff(anchorEl)) {
+      this.releaseAnchor();
       return;
     }
     // Anchor stability (AC #5): re-pin only on the anchor's OWN geometry change.
     if (anchorEl.offsetTop !== this.lastAnchorOffsetTop) {
       this.applyAnchorScroll(anchorEl);
     }
+  }
+
+  /**
+   * AC #3 (Open Question 4) — true when the anchored element has scrolled above
+   * the top of the viewport (answer growth pushed it off the fold). Uses the
+   * cached geometry vs the live container `scrollTop`, not a brittle per-frame
+   * heuristic. Distinct from the AC #5 re-pin (which keys off the anchor's OWN
+   * `offsetTop` change, not its position relative to the scroll position).
+   */
+  private isAnchorScrolledOff(anchorEl: HTMLElement): boolean {
+    if (!this.scrollContainer) return false;
+    const container = this.scrollContainer.nativeElement;
+    return anchorEl.offsetTop - container.scrollTop < this.anchorTopPadding;
   }
 
   /** Resolve the anchored element inside the scroll container via
@@ -503,7 +674,10 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     // --- derive + write spacer (AC #3) ---
     this.recomputeSpacerHeight(offsetTop);
     // --- write scroll (AC #4/#6) ---
+    // Story 19-2 (AC #5): the anchor write is PROGRAMMATIC — bracket it so the
+    // resulting `scroll` event does not release the anchor as a user-exit.
     const top = offsetTop - this.anchorTopPadding;
+    this.beginProgrammaticScroll();
     container.scrollTo({
       top,
       behavior: this.prefersReducedMotion() ? 'auto' : 'smooth',
