@@ -4,6 +4,7 @@ import {
   map,
   Observable,
   shareReplay,
+  Subject,
 } from 'rxjs';
 
 import {
@@ -345,4 +346,23 @@ export class ChatService {
   readonly pendingNotifications$: Observable<Set<string>> = this.messages$.pipe(
     map(computePendingNotifications),
   );
+
+  /**
+   * Story 19-1 (ADR-016 §Decision 1) — imperative "just-sent" side channel.
+   *
+   * Emits a send-origin key (a send-time timestamp string) the moment the user
+   * dispatches a message from the main chat input. The chat panel subscribes to
+   * latch the top-anchor for the turn. This is the ONLY imperative member on the
+   * service; it deliberately bypasses the pure `chat$`/`chatFold` lifecycle so
+   * the top-anchor trigger is derived from the send ORIGIN, never inferred from
+   * message content (which would be brittle under ADR-005 frame-batching).
+   */
+  private readonly justSentSubject = new Subject<string>();
+  readonly justSent$: Observable<string> = this.justSentSubject.asObservable();
+
+  /** Surface a send as the "just-sent" signal, keyed by `key` (a send-time
+   *  timestamp string). Called once per dispatching `sendMessage()`. */
+  emitJustSent(key: string): void {
+    this.justSentSubject.next(key);
+  }
 }

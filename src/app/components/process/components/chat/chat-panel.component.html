@@ -4,6 +4,7 @@
       <ng-container *ngFor="let item of displayItems; trackBy: trackByDisplayItem">
         <app-chat-message
           *ngIf="item.kind === 'message'"
+          [attr.data-message-id]="item.data.id"
           [message]="item.data"
           [selected]="item.data.id === selectedMessageId"
           [notification]="hasNotification(item.data)"
@@ -19,6 +20,10 @@
           (toggleExpanded)="onToggleThinkingExpanded($event)"
         ></app-chat-thinking>
       </ng-container>
+      <!-- Story 19-1 (ADR-016 §Decision 2): trailing spacer reserves scroll
+           room so the anchored turn can park at the top. Plain element AFTER
+           the *ngFor — never iterated by trackByDisplayItem. -->
+      <div class="message-spacer" [style.min-height.px]="spacerHeight"></div>
     </div>
   </ng-container>
   <ng-template #noMessagesPlaceholder>

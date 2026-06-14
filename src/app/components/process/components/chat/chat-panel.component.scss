@@ -17,6 +17,15 @@
     padding-bottom: 0.5rem;
   }
 
+  // Story 19-1 (ADR-016 §Decision 2): trailing spacer — visually inert flex
+  // child that reserves scroll room below the anchored turn. No background /
+  // border; `overflow-anchor: none` so the browser's scroll-anchoring never
+  // pins to it; non-focusable (a <div> with no tabindex).
+  .message-spacer {
+    flex: 0 0 auto;
+    overflow-anchor: none;
+  }
+
   app-user-input {
     flex: 0 0 auto;
     padding: 0.5rem 1.2rem;

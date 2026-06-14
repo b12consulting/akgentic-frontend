@@ -1,6 +1,6 @@
 import { ComponentFixture, fakeAsync, flushMicrotasks, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
-import { BehaviorSubject, of } from 'rxjs';
+import { BehaviorSubject, of, Subject } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { provideMarkdown } from 'ngx-markdown';
 
@@ -70,9 +70,12 @@ describe('ChatPanelComponent', () => {
   let component: ChatPanelComponent;
   let fixture: ComponentFixture<ChatPanelComponent>;
   let messagesSubject: BehaviorSubject<AkgenticMessage[]>;
+  // Story 19-1 (ADR-016): just-sent side channel feed.
+  let justSentSubject: Subject<string>;
 
   beforeEach(async () => {
     messagesSubject = new BehaviorSubject<AkgenticMessage[]>([]);
+    justSentSubject = new Subject<string>();
 
     // Story 6.4 (AC3): `ChatPanelComponent` no longer injects
     // `IngestionService`. The spec feeds SentMessages via
@@ -95,6 +98,8 @@ describe('ChatPanelComponent', () => {
         map(computePendingNotifications),
       ),
       thinkingAgents$: thinkingAgentsSubj,
+      justSent$: justSentSubject.asObservable(),
+      emitJustSent: (key: string) => justSentSubject.next(key),
     };
 
     const selectionService = jasmine.createSpyObj('SelectionService', [
@@ -1090,5 +1095,251 @@ describe('ChatPanelComponent', () => {
       // No catch-up fired — scrollTop still at 850.
       expect(mockEl.scrollTop).toBe(850);
     }));
+  });
+
+  // -------------------------------------------------------------------------
+  // Story 19-1 (ADR-016) — top-anchor primitive
+  // -------------------------------------------------------------------------
+  describe('top-anchor primitive (Story 19-1)', () => {
+    // A mock scroll container whose querySelector returns a controllable
+    // anchor element (data-message-id lookup), with controllable client/scroll
+    // heights and a recording scrollTo.
+    interface MockAnchorEl {
+      offsetTop: number;
+    }
+    interface MockContainer {
+      clientHeight: number;
+      scrollHeight: number;
+      scrollTop: number;
+      lastScrollTo: { top: number; behavior: string } | null;
+      scrollToCalls: number;
+      querySelectorCalls: string[];
+      _anchor: MockAnchorEl | null;
+      querySelector(sel: string): MockAnchorEl | null;
+      scrollTo(opts: { top: number; behavior: ScrollBehavior }): void;
+    }
+
+    function installContainer(
+      anchor: MockAnchorEl | null,
+      clientHeight = 500,
+      scrollHeight = 1200,
+    ): MockContainer {
+      const container: MockContainer = {
+        clientHeight,
+        scrollHeight,
+        scrollTop: 0,
+        lastScrollTo: null,
+        scrollToCalls: 0,
+        querySelectorCalls: [],
+        _anchor: anchor,
+        querySelector(sel: string) {
+          this.querySelectorCalls.push(sel);
+          return this._anchor;
+        },
+        scrollTo(opts) {
+          this.scrollToCalls += 1;
+          this.lastScrollTo = { top: opts.top, behavior: opts.behavior };
+          this.scrollTop = opts.top;
+        },
+      };
+      (component as any).scrollContainer = { nativeElement: container };
+      return container;
+    }
+
+    function mockReducedMotion(matches: boolean): void {
+      spyOn(window, 'matchMedia').and.returnValue({
+        matches,
+        media: '(prefers-reduced-motion: reduce)',
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => false,
+      } as any);
+    }
+
+    function sendUserMessage(id: string, ts = '2026-06-14T10:00:00Z') {
+      const sent = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'user turn',
+        id,
+      );
+      sent.timestamp = ts;
+      sent.message.timestamp = ts;
+      return sent;
+    }
+
+    // Seed a turn WITHOUT change detection: emit the just-sent key, push the
+    // user message through the log (the BehaviorSubject pipe runs synchronously,
+    // so `chatMessages`/`displayItems` update and the anchor id resolves), then
+    // install the controllable mock container. We deliberately avoid
+    // `fixture.detectChanges()` here so Angular's lifecycle does not run
+    // `ngAfterViewChecked` against the real @ViewChild('scrollContainer') and
+    // fire the anchor before the mock is in place — the test drives the
+    // post-layout pass explicitly via `component.ngAfterViewChecked()`.
+    function seedTurn(
+      msgs: AkgenticMessage[],
+      key: string,
+      anchor: MockAnchorEl | null,
+      clientHeight = 500,
+      scrollHeight = 1200,
+    ): MockContainer {
+      (component.chatService as any).emitJustSent(key);
+      messagesSubject.next(msgs);
+      return installContainer(anchor, clientHeight, scrollHeight);
+    }
+
+    it('AC #2: first id-matched emission fires a single top-anchor, no re-fire on same turn', () => {
+      mockReducedMotion(false);
+      const container = seedTurn([sendUserMessage('u-1')], '1000', {
+        offsetTop: 600,
+      });
+
+      component.ngAfterViewChecked();
+      expect(container.scrollToCalls).toBe(1);
+      // offsetTop(600) - topPadding(8) = 592
+      expect(container.lastScrollTo?.top).toBe(592);
+
+      // A subsequent same-turn emission (more streamed content) must NOT re-anchor.
+      component.ngAfterViewChecked();
+      component.ngAfterViewChecked();
+      expect(container.scrollToCalls).toBe(1);
+    });
+
+    it('AC #2: latch resets on a new just-sent so the next turn can anchor', () => {
+      mockReducedMotion(false);
+      const container = seedTurn([sendUserMessage('turn-1')], '1000', {
+        offsetTop: 600,
+      });
+      component.ngAfterViewChecked();
+      expect(container.scrollToCalls).toBe(1);
+
+      // New turn: the latch resets; spacer resets to 0 on the new just-sent.
+      // Key the new send AFTER turn-1's timestamp so the matcher picks turn-2.
+      const turn2Key = String(Date.parse('2026-06-14T10:00:01Z'));
+      (component.chatService as any).emitJustSent(turn2Key);
+      expect(component.spacerHeight).toBe(0);
+      messagesSubject.next([
+        sendUserMessage('turn-1', '2026-06-14T10:00:00Z'),
+        sendUserMessage('turn-2', '2026-06-14T10:05:00Z'),
+      ]);
+      // The matcher must have resolved turn-2 (first Rule-1 at/after the key).
+      expect((component as any).anchorMessageId).toBe('turn-2');
+      const container2 = installContainer({ offsetTop: 800 });
+      component.ngAfterViewChecked();
+      expect(container2.scrollToCalls).toBe(1);
+      expect(container2.lastScrollTo?.top).toBe(792);
+    });
+
+    it('AC #4: resolves via data-message-id and is a no-op when not yet rendered', () => {
+      mockReducedMotion(false);
+      // No anchor element resolvable yet (querySelector returns null).
+      const container = seedTurn([sendUserMessage('late-1')], '1000', null);
+      component.ngAfterViewChecked();
+
+      expect(container.scrollToCalls).toBe(0);
+      expect((component as any).anchorScrollDone).toBe(false);
+      expect(container.querySelectorCalls.some((s) => s.includes('late-1'))).toBe(
+        true,
+      );
+
+      // Element renders on the next pass → first-match latch fires.
+      container._anchor = { offsetTop: 300 };
+      component.ngAfterViewChecked();
+      expect(container.scrollToCalls).toBe(1);
+      expect(container.lastScrollTo?.top).toBe(292);
+    });
+
+    it('AC #3: spacer is 0 when not anchored and max(0, viewport-content) when anchored, capped at viewport', () => {
+      mockReducedMotion(false);
+      // Before any send → spacer stays 0.
+      expect(component.spacerHeight).toBe(0);
+
+      // viewport 500, scrollHeight 600, offsetTop 550 →
+      // heightOfAnchoredTurnAndBelow = 600 - 0 - 550 = 50 → spacer = 450.
+      const container = seedTurn(
+        [sendUserMessage('sp-1')],
+        '1000',
+        { offsetTop: 550 },
+        500,
+        600,
+      );
+      component.ngAfterViewChecked();
+      expect(component.spacerHeight).toBe(450);
+      // Capped at the viewport (never exceeds clientHeight).
+      expect(component.spacerHeight).toBeLessThanOrEqual(container.clientHeight);
+    });
+
+    it('AC #3: spacer collapses toward 0 as the answer fills the viewport', () => {
+      mockReducedMotion(false);
+      // viewport 500, scrollHeight 2000, offsetTop 10 →
+      // heightOfAnchoredTurnAndBelow = 2000 - 0 - 10 = 1990 → max(0, 500-1990)=0.
+      seedTurn([sendUserMessage('fill-1')], '1000', { offsetTop: 10 }, 500, 2000);
+      component.ngAfterViewChecked();
+
+      expect(component.spacerHeight).toBe(0);
+    });
+
+    it('AC #5: re-pins on the anchor element\'s OWN offset change; answer-below growth does not', () => {
+      mockReducedMotion(false);
+      const anchorEl = { offsetTop: 600 };
+      const container = seedTurn(
+        [sendUserMessage('st-1')],
+        '1000',
+        anchorEl,
+        500,
+        1200,
+      );
+      component.ngAfterViewChecked();
+      expect(container.scrollToCalls).toBe(1);
+
+      // Answer grows BELOW the anchor: scrollHeight changes, offsetTop does not.
+      container.scrollHeight = 1800;
+      component.ngAfterViewChecked();
+      expect(container.scrollToCalls).toBe(1); // no re-pin
+
+      // The anchor's OWN height changes (late image load) → offsetTop shifts.
+      anchorEl.offsetTop = 640;
+      component.ngAfterViewChecked();
+      expect(container.scrollToCalls).toBe(2); // re-pinned
+      expect(container.lastScrollTo?.top).toBe(632);
+    });
+
+    it('AC #6: instant jump when reduced motion is requested', () => {
+      mockReducedMotion(true);
+      const container = seedTurn([sendUserMessage('rm-1')], '1000', {
+        offsetTop: 600,
+      });
+      component.ngAfterViewChecked();
+
+      expect(container.lastScrollTo?.behavior).toBe('auto');
+    });
+
+    it('AC #6: behavior is smooth when reduced motion is NOT requested', () => {
+      mockReducedMotion(false);
+      const container = seedTurn([sendUserMessage('rm-2')], '1000', {
+        offsetTop: 600,
+      });
+      component.ngAfterViewChecked();
+
+      expect(container.lastScrollTo?.behavior).toBe('smooth');
+    });
+
+    it('renders the trailing spacer bound to spacerHeight, excluded from displayItems', () => {
+      mockReducedMotion(false);
+      messagesSubject.next([sendUserMessage('dom-1')]);
+      fixture.detectChanges();
+
+      const el: HTMLElement = fixture.nativeElement;
+      const list = el.querySelector('.message-list');
+      const spacer = list!.querySelector('.message-spacer');
+      expect(spacer).not.toBeNull();
+      // The spacer is the LAST child of the message list.
+      expect(list!.lastElementChild).toBe(spacer);
+      // It is not a DisplayItem — only the message is.
+      expect(component.displayItems.length).toBe(1);
+    });
   });
 });
