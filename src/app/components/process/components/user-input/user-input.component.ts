@@ -137,6 +137,17 @@ export class ProcessUserInputComponent implements OnInit {
     this.selectedAgents = [];
   }
 
+  /**
+   * Story 19-1 (ADR-016 §Decision 1) — send-origin key source for the just-sent
+   * signal. Wrapped as an overridable method so specs can pin a deterministic
+   * value. `apiService.sendMessage*` returns no message id synchronously
+   * (Open Question 1), so the panel keys the top-anchor by send time and matches
+   * the first user-originated (Rule 1) message at/after this timestamp.
+   */
+  protected nextJustSentKey(): string {
+    return String(Date.now());
+  }
+
   async sendMessage() {
     if (!this.contextService.currentTeamRunning$.value || !this.userInput || this.userInput.trim() === '') {
       return;
@@ -145,6 +156,11 @@ export class ProcessUserInputComponent implements OnInit {
     const hasSender = this.selectedSender !== null && this.selectedSender !== '';
     const hasRecipients = this.selectedAgents.length > 0;
 
+    // Capture the send-origin key BEFORE dispatch so it precedes the answer's
+    // arrival; emitted only after a dispatch actually happens (never on the
+    // early-return guards above or the no-candidate-recipient guard below).
+    const justSentKey = this.nextJustSentKey();
+
     if (hasSender && hasRecipients) {
       // Priority 1: explicit sender + explicit recipients
       for (const recipient of this.selectedAgents) {
@@ -152,6 +168,7 @@ export class ProcessUserInputComponent implements OnInit {
           this.processId, this.selectedSender!, recipient, this.userInput,
         );
       }
+      this.chatService.emitJustSent(justSentKey);
     } else if (hasSender && !hasRecipients) {
       // Priority 2: explicit sender, no recipient -> first dropdown agent
       const defaultRecipient = this.dropdownAgents[0]?.value;
@@ -162,14 +179,17 @@ export class ProcessUserInputComponent implements OnInit {
       await this.apiService.sendMessageFromTo(
         this.processId, this.selectedSender!, defaultRecipient, this.userInput,
       );
+      this.chatService.emitJustSent(justSentKey);
     } else if (hasRecipients) {
       // Priority 3: default sender + explicit recipients (Story 3-1 preserved)
       for (const agentName of this.selectedAgents) {
         await this.apiService.sendMessage(this.processId, this.userInput, agentName);
       }
+      this.chatService.emitJustSent(justSentKey);
     } else {
       // Priority 4: broadcast (Story 3-1 preserved)
       await this.apiService.sendMessage(this.processId, this.userInput);
+      this.chatService.emitJustSent(justSentKey);
     }
 
     this.userInput = '';

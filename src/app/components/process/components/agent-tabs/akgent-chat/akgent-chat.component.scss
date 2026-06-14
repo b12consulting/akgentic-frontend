@@ -32,9 +32,39 @@
 
 .input-container {
     padding: 1rem 0rem 0rem;
+    position: relative;
     textarea {
     width: 100%;
     margin-bottom: 0.5rem;
+    }
+
+    // "Messages" / "Auto scrolling" pill — floats just above the input, centered.
+    .jump-to-latest {
+        position: absolute;
+        left: 50%;
+        bottom: 95%;
+        transform: translateX(-50%);
+        z-index: 5;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.35rem 0.9rem;
+        border: none;
+        border-radius: 999px;
+        background-color: #fff;
+        color: #475569;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+
+        .pi {
+            font-size: 0.85rem;
+        }
+
+        &:hover {
+            background-color: #f2f7f9;
+        }
     }
 }
 

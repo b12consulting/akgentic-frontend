@@ -1,6 +1,13 @@
-import { ComponentFixture, fakeAsync, flushMicrotasks, TestBed } from '@angular/core/testing';
+import {
+  ComponentFixture,
+  fakeAsync,
+  flush,
+  flushMicrotasks,
+  TestBed,
+  tick,
+} from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
-import { BehaviorSubject, of } from 'rxjs';
+import { BehaviorSubject, of, Subject } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { provideMarkdown } from 'ngx-markdown';
 
@@ -16,6 +23,7 @@ import { ChatMessage, classifyMessage } from '../../selectors/chat-message.model
 import { ApiService } from '../../../../core/http/api.service';
 import { AkgentService } from '../../../../core/ui/akgent.service';
 import { GraphDataService } from '../../selectors/graph.selector';
+import { ContextService } from '../../../../core/context/context.service';
 import { IngestionService } from '../../event/ingestion.service';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
@@ -70,9 +78,12 @@ describe('ChatPanelComponent', () => {
   let component: ChatPanelComponent;
   let fixture: ComponentFixture<ChatPanelComponent>;
   let messagesSubject: BehaviorSubject<AkgenticMessage[]>;
+  // Story 19-1 (ADR-016): just-sent side channel feed.
+  let justSentSubject: Subject<string>;
 
   beforeEach(async () => {
     messagesSubject = new BehaviorSubject<AkgenticMessage[]>([]);
+    justSentSubject = new Subject<string>();
 
     // Story 6.4 (AC3): `ChatPanelComponent` no longer injects
     // `IngestionService`. The spec feeds SentMessages via
@@ -95,6 +106,8 @@ describe('ChatPanelComponent', () => {
         map(computePendingNotifications),
       ),
       thinkingAgents$: thinkingAgentsSubj,
+      justSent$: justSentSubject.asObservable(),
+      emitJustSent: (key: string) => justSentSubject.next(key),
     };
 
     const selectionService = jasmine.createSpyObj('SelectionService', [
@@ -969,126 +982,344 @@ describe('ChatPanelComponent', () => {
     });
   });
 
-  describe('Hover-aware auto-scroll lock (Story 4.4)', () => {
-    // Helper to install a mock scrollContainer with controllable
-    // scrollTop/scrollHeight/clientHeight on the component.
-    function installMockScrollContainer(
-      initialHeight = 1000,
-      clientHeight = 400,
-    ): { scrollTop: number; scrollHeight: number; clientHeight: number } {
-      const mockEl = { scrollTop: 0, scrollHeight: initialHeight, clientHeight };
-      (component as any).scrollContainer = { nativeElement: mockEl };
-      (component as any).lastScrollHeight = initialHeight;
-      return mockEl;
+  // -------------------------------------------------------------------------
+  // ADR-016 (simplified) — anchor-on-send + opt-in follow mode.
+  // Mocks model the REAL browser: scrollTo/scrollTop clamps, scrollHeight clamps
+  // UP to clientHeight, and the spacer's min-height feeds scrollHeight.
+  // -------------------------------------------------------------------------
+  describe('scroll behavior (anchor-on-send + follow)', () => {
+    // Most scroll tests assume a RUNNING process (so "Auto scrolling" can show).
+    beforeEach(() => {
+      TestBed.inject(ContextService).currentTeamRunning$.next(true);
+    });
+
+    function humanTurn(id: string): SentMessage {
+      return makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'user turn',
+        id,
+      );
+    }
+    function agentMsg(id: string): SentMessage {
+      return makeSentMessage(
+        { name: '@Manager', role: 'Manager' },
+        { name: '@Human', role: 'Human' },
+        'reply',
+        id,
+      );
     }
 
-    it('(a) auto-scroll fires when NOT hovered and a new message arrives', () => {
-      const mockEl = installMockScrollContainer(1000, 400);
-      // Not hovered (default)
-      expect((component as any).isHovered).toBe(false);
-      // Simulate DOM growth from a new message.
-      mockEl.scrollHeight = 1200;
+    // Clamp-aware container with a single anchor message + spacer.
+    // `spacerEl.offsetTop` is the end of real content; mutate it to simulate the
+    // reply growing.
+    function installClamping(
+      anchorOffsetTop: number,
+      anchorHeight: number,
+      clientHeight: number,
+      containerOffsetTop = 0,
+    ) {
+      let spacerMin = 0;
+      const spacerEl = {
+        offsetTop: anchorOffsetTop + anchorHeight,
+        style: {
+          set minHeight(v: string) {
+            spacerMin = parseInt(v, 10) || 0;
+          },
+          get minHeight() {
+            return spacerMin + 'px';
+          },
+        },
+      };
+      const anchorEl = { offsetTop: anchorOffsetTop };
+      const container = {
+        offsetTop: containerOffsetTop,
+        clientHeight,
+        get scrollHeight() {
+          return Math.max(clientHeight, spacerEl.offsetTop + spacerMin); // CLAMP UP
+        },
+        scrollTop: 0,
+        lastScrollTo: null as null | { top: number; behavior: string },
+        querySelector(sel: string) {
+          return sel.includes('message-spacer') ? null : anchorEl;
+        },
+        scrollTo(o: { top: number; behavior: ScrollBehavior }) {
+          this.lastScrollTo = { top: o.top, behavior: o.behavior };
+          const max = Math.max(0, this.scrollHeight - this.clientHeight);
+          this.scrollTop = Math.max(0, Math.min(o.top, max)); // CLAMP, like a browser
+        },
+      };
+      container.scrollTop = Math.max(0, container.scrollHeight - clientHeight); // parked bottom
+      (component as any).scrollContainer = { nativeElement: container };
+      (component as any).spacerRef = { nativeElement: spacerEl };
+      return { container, spacerEl, anchorEl, getSpacerMin: () => spacerMin };
+    }
+
+    // Simple container for follow / indicator tests (no anchor element).
+    function installSimple(scrollHeight: number, clientHeight: number, scrollTop = 0) {
+      const container = {
+        offsetTop: 0,
+        clientHeight,
+        scrollHeight,
+        scrollTop,
+        lastScrollTo: null as null | { top: number; behavior: string },
+        querySelector: () => null,
+        scrollTo(o: { top: number; behavior: ScrollBehavior }) {
+          this.lastScrollTo = { top: o.top, behavior: o.behavior };
+          this.scrollTop = o.top;
+        },
+      };
+      (component as any).scrollContainer = { nativeElement: container };
+      // Spacer marks the end of the messages (= scrollHeight here; no reserved gap).
+      (component as any).spacerRef = {
+        nativeElement: { offsetTop: scrollHeight, style: { minHeight: '' } },
+      };
+      return container;
+    }
+
+    // --- anchor on send ------------------------------------------------------
+
+    it('pins the just-sent message to the top on a SHORT conversation', () => {
+      (component.chatService as any).emitJustSent('k');
+      messagesSubject.next([humanTurn('u1')]);
+      expect((component as any).anchorId).toBe('u1');
+
+      const { container, getSpacerMin } = installClamping(84, 36, 356);
+      expect(container.scrollTop).toBe(0); // content < viewport → parked at 0
+
       component.ngAfterViewChecked();
-      expect(mockEl.scrollTop).toBe(1200);
+
+      // realBelow = spacer.offsetTop(120) - anchor.offsetTop(84) = 36 → spacer 320.
+      expect(getSpacerMin()).toBe(320);
+      // target = 84 - containerOffsetTop(0) - pad(8) = 76 → message at the top.
+      expect(container.scrollTop).toBe(76);
+      expect(84 - container.scrollTop).toBe(8);
     });
 
-    it('(b) auto-scroll is SUSPENDED when hovered; pendingCatchUpScroll is set', () => {
-      const mockEl = installMockScrollContainer(1000, 400);
-      mockEl.scrollTop = 850; // near bottom so shouldScrollToBottom will be true
-      (component as any).checkShouldAutoScroll();
-      component.onMouseEnter();
-      expect((component as any).isHovered).toBe(true);
+    it('pins to the top regardless of the prior scroll position', () => {
+      (component.chatService as any).emitJustSent('k');
+      messagesSubject.next([humanTurn('u1')]);
+      const { container } = installClamping(520, 40, 356);
+      container.scrollTop = 999; // user was scrolled elsewhere
 
-      // New message arrives while hovered.
-      const sent = makeSentMessage(
-        { name: '@Human', role: 'Human' },
-        { name: '@Manager', role: 'Manager' },
-        'hovered-arrival',
-        'hov-1',
-      );
-      messagesSubject.next([sent]);
-      mockEl.scrollHeight = 1200;
       component.ngAfterViewChecked();
 
-      // scrollTop was NOT moved to bottom — hover suspends.
-      expect(mockEl.scrollTop).toBe(850);
-      expect((component as any).pendingCatchUpScroll).toBe(true);
+      expect(container.scrollTop).toBe(512); // 520 - 8, independent of 999
     });
 
-    it('(c) mouseleave performs catch-up when a message arrived during hover', fakeAsync(() => {
-      const mockEl = installMockScrollContainer(1000, 400);
-      mockEl.scrollTop = 850;
-      (component as any).checkShouldAutoScroll();
-      component.onMouseEnter();
-
-      const sent = makeSentMessage(
-        { name: '@Human', role: 'Human' },
-        { name: '@Manager', role: 'Manager' },
-        'catch-up',
-        'cu-1',
-      );
-      messagesSubject.next([sent]);
-      mockEl.scrollHeight = 1200;
+    it('uses a clean container frame: subtracts container.offsetTop', () => {
+      (component.chatService as any).emitJustSent('k');
+      messagesSubject.next([humanTurn('u1')]);
+      // container is inset 16px inside its positioned parent.
+      const { container } = installClamping(100, 40, 356, 16);
       component.ngAfterViewChecked();
-      expect(mockEl.scrollTop).toBe(850);
-      expect((component as any).pendingCatchUpScroll).toBe(true);
+      expect(container.scrollTop).toBe(76); // 100 - 16 - 8
+    });
 
-      component.onMouseLeave();
-      flushMicrotasks();
+    it('anchors the newly-sent message, not a pre-existing one (baseline)', () => {
+      messagesSubject.next([humanTurn('old')]); // restored history, no send
+      (component.chatService as any).emitJustSent('k'); // baseline = 'old'
+      messagesSubject.next([humanTurn('old'), humanTurn('new')]);
+      expect((component as any).anchorId).toBe('new');
+    });
 
-      expect(mockEl.scrollTop).toBe(1200);
-      expect((component as any).pendingCatchUpScroll).toBe(false);
-      expect((component as any).isHovered).toBe(false);
-    }));
-
-    it('(d) mouseleave does NOT catch-up if no message arrived during hover', fakeAsync(() => {
-      const mockEl = installMockScrollContainer(1000, 400);
-      mockEl.scrollTop = 850;
-      (component as any).checkShouldAutoScroll();
-
-      component.onMouseEnter();
-      // No message arrives — scrollHeight unchanged.
+    it('does NOT anchor messages that arrive without a send (history load)', () => {
+      messagesSubject.next([humanTurn('h1'), agentMsg('a1')]);
+      const { container } = installClamping(84, 36, 356);
+      const before = container.scrollTop;
       component.ngAfterViewChecked();
-      component.onMouseLeave();
-      flushMicrotasks();
+      expect((component as any).anchorId).toBeNull();
+      expect(container.scrollTop).toBe(before); // viewport untouched
+    });
 
-      expect(mockEl.scrollTop).toBe(850);
-      expect((component as any).pendingCatchUpScroll).toBe(false);
-    }));
+    it('the spacer shrinks as the reply grows, keeping scrollHeight constant (shift-free)', () => {
+      (component.chatService as any).emitJustSent('k');
+      messagesSubject.next([humanTurn('u1')]);
+      const { container, spacerEl, getSpacerMin } = installClamping(84, 36, 356);
+      component.ngAfterViewChecked();
+      expect(getSpacerMin()).toBe(320);
+      const scrollHeightAfterPin = container.scrollHeight; // 120 + 320 = 440
 
-    it('(e) collapse toggle during hover does NOT queue a catch-up', fakeAsync(() => {
-      // Seed a Rule 4 message so we have something to toggle.
-      const r4 = makeSentMessage(
-        { name: '@Worker', role: 'Worker' },
-        { name: '@Manager', role: 'Manager' },
-        'ai msg',
-        'r4-hover',
-      );
-      messagesSubject.next([r4]);
-      fixture.detectChanges();
-
-      const mockEl = installMockScrollContainer(1000, 400);
-      mockEl.scrollTop = 850;
-      (component as any).checkShouldAutoScroll();
-
-      component.onMouseEnter();
-
-      // User toggles collapse — this changes DOM height but is NOT a
-      // message-arrival event, so pendingCatchUpScroll MUST remain false.
-      component.onToggleCollapse(component.chatMessages[0]);
-      mockEl.scrollHeight = 1100; // toggle grew the bubble
+      // The reply adds 100px of content below the anchor.
+      spacerEl.offsetTop += 100; // content end moves down
       component.ngAfterViewChecked();
 
-      // Hover still suspends the scroll.
-      expect(mockEl.scrollTop).toBe(850);
-      // CRITICAL: no catch-up queued for a collapse toggle.
-      expect((component as any).pendingCatchUpScroll).toBe(false);
+      expect(getSpacerMin()).toBe(220); // shrank by exactly 100
+      expect(container.scrollHeight).toBe(scrollHeightAfterPin); // constant → no shift
+    });
 
-      component.onMouseLeave();
+    // --- status pill: New messages / Messages / Auto scrolling --------
+
+    it('shows "New messages" when a NEW reply arrives below the fold', fakeAsync(() => {
+      (component.chatService as any).emitJustSent('k');
+      messagesSubject.next([humanTurn('u1')]);
+      const { spacerEl } = installClamping(20, 40, 500); // small user message
+      component.ngAfterViewChecked(); // pin to top
       flushMicrotasks();
+      expect(component.indicatorLabel).toBeNull(); // only the user message, visible
 
-      // No catch-up fired — scrollTop still at 850.
-      expect(mockEl.scrollTop).toBe(850);
+      // A NEW reply arrives (count grows → "unseen") and extends below the fold.
+      spacerEl.offsetTop += 800;
+      messagesSubject.next([humanTurn('u1'), agentMsg('a1')]);
+      component.ngAfterViewChecked();
+      flushMicrotasks(); // the pill update is deferred to a microtask
+      expect(component.indicatorLabel).toBe('New messages');
     }));
+
+    it('shows "Messages" when merely scrolled up (nothing new)', () => {
+      installSimple(2000, 500, 1500); // spacer.offsetTop = 2000
+      const c = (component as any).scrollContainer.nativeElement;
+      c.scrollTop = 200; // user scrolled up, no new message
+      component.onScroll();
+      expect(component.indicatorLabel).toBe('Messages');
+    });
+
+    it('treats the initial history load as "Messages", not "New messages"', () => {
+      // First non-empty emission = the loaded backlog — it is NOT "new".
+      messagesSubject.next([agentMsg('h1'), agentMsg('h2')]);
+      const container = installSimple(2000, 500, 0); // at top, backlog below the fold
+      container.scrollTop = 0;
+      component.onScroll();
+      expect((component as any).unseen).toBe(false);
+      expect(component.indicatorLabel).toBe('Messages');
+    });
+
+    it('shows "Auto scrolling" while following', () => {
+      installSimple(2000, 500, 1500);
+      (component as any).following = true;
+      component.onScroll();
+      expect(component.indicatorLabel).toBe('Auto scrolling');
+    });
+
+    it('does NOT show "Auto scrolling" when the process is stopped', () => {
+      TestBed.inject(ContextService).currentTeamRunning$.next(false);
+      installSimple(2000, 500, 1500); // at bottom
+      (component as any).following = true;
+      component.onScroll();
+      expect(component.indicatorLabel).not.toBe('Auto scrolling');
+    });
+
+    it('reaching the bottom activates follow ("Auto scrolling") and clears "unseen"', () => {
+      const container = installSimple(2000, 500, 200);
+      (component as any).unseen = true;
+      container.scrollTop = 1500; // distance 2000-1500-500 = 0 → at bottom
+      component.onScroll();
+      expect((component as any).following).toBe(true);
+      expect(component.indicatorLabel).toBe('Auto scrolling');
+      expect((component as any).unseen).toBe(false);
+    });
+
+    // --- follow mode ---------------------------------------------------------
+
+    it('clicking the pill enters follow mode, scrolls to bottom, shows "Auto scrolling"', () => {
+      const container = installSimple(2000, 500, 100);
+      component.onJumpToLatest();
+      expect((component as any).following).toBe(true);
+      expect(component.indicatorLabel).toBe('Auto scrolling');
+      expect(container.scrollTop).toBe(container.scrollHeight); // jumped to bottom
+    });
+
+    it('in follow mode, a new message tails to the bottom', () => {
+      const container = installSimple(1000, 500, 500);
+      (component as any).following = true;
+      (component as any).lastScrollHeight = 1000;
+      container.scrollHeight = 1400; // new message grew content
+      component.ngAfterViewChecked();
+      expect(container.scrollTop).toBe(1400); // tailed
+    });
+
+    it('the smooth follow tail (moving DOWN) does not exit follow mode', () => {
+      installSimple(2000, 500, 1500); // at bottom
+      (component as any).following = true;
+      (component as any).lastScrollTop = 1000; // tail animated down the page
+      component.onScroll(); // a frame of our own smooth tail (moved down, not up)
+      expect((component as any).following).toBe(true);
+      expect(component.indicatorLabel).toBe('Auto scrolling');
+    });
+
+    it('a manual upward scroll exits follow mode → "Messages"', () => {
+      const container = installSimple(2000, 500, 1500);
+      (component as any).following = true;
+      (component as any).lastScrollTop = 1500; // was at the bottom
+      container.scrollTop = 200; // user scrolled UP (distance 1300 > 100)
+      component.onScroll();
+      expect((component as any).following).toBe(false);
+      expect(component.indicatorLabel).toBe('Messages'); // no new msg since
+    });
+
+    // --- smooth scrolling ----------------------------------------------------
+
+    it('scrolls SMOOTHLY to the top on send (instant only under reduced motion)', () => {
+      spyOn(window, 'matchMedia').and.returnValue({ matches: false } as any);
+      (component.chatService as any).emitJustSent('k');
+      messagesSubject.next([humanTurn('u1')]);
+      const { container } = installClamping(84, 36, 356);
+      component.ngAfterViewChecked();
+      expect(container.lastScrollTo?.behavior).toBe('smooth');
+    });
+
+    it('respects reduced motion (instant) for the top anchor', () => {
+      spyOn(window, 'matchMedia').and.returnValue({ matches: true } as any);
+      (component.chatService as any).emitJustSent('k');
+      messagesSubject.next([humanTurn('u1')]);
+      const { container } = installClamping(84, 36, 356);
+      component.ngAfterViewChecked();
+      expect(container.lastScrollTo?.behavior).toBe('auto');
+    });
+
+    it('the "New messages" jump scrolls SMOOTHLY to the bottom', () => {
+      spyOn(window, 'matchMedia').and.returnValue({ matches: false } as any);
+      const container = installSimple(2000, 500, 100);
+      component.onJumpToLatest();
+      expect(container.lastScrollTo?.behavior).toBe('smooth');
+      expect(container.lastScrollTo?.top).toBe(2000);
+    });
+
+    it('a new send exits follow mode and re-anchors', () => {
+      (component as any).following = true;
+      (component.chatService as any).emitJustSent('k');
+      expect((component as any).following).toBe(false);
+      messagesSubject.next([humanTurn('u2')]);
+      expect((component as any).anchorId).toBe('u2');
+    });
+
+    // --- REAL layout (actual component + real CSS in ChromeHeadless) ----------
+    // No mocked container: the component renders into the live DOM with its own
+    // stylesheet, so this exercises the true layout engine (offsetParent frame,
+    // scrollHeight clamping, spacer) that the unit mocks can only approximate.
+    it('REAL layout: the just-sent message is scrolled to the top of the panel', () => {
+      // Force reduced-motion so the real scrollTo is INSTANT and the end position
+      // can be asserted synchronously (smooth would animate over real time).
+      spyOn(window, 'matchMedia').and.returnValue({ matches: true } as any);
+      const host = fixture.nativeElement as HTMLElement;
+      host.style.display = 'block';
+      host.style.height = '400px';
+      document.body.appendChild(host);
+      try {
+        // A short conversation (the case that used to fail): two replies already
+        // shown, then the user sends — the sent message must jump to the top.
+        messagesSubject.next([agentMsg('a0'), agentMsg('a1')]);
+        fixture.detectChanges();
+
+        (component.chatService as any).emitJustSent('k');
+        messagesSubject.next([agentMsg('a0'), agentMsg('a1'), humanTurn('u1')]);
+        fixture.detectChanges(); // render + ngAfterViewChecked → pin
+        fixture.detectChanges(); // settle spacer/geometry
+
+        const list = host.querySelector('.message-list') as HTMLElement;
+        const anchor = host.querySelector('[data-message-id="u1"]') as HTMLElement;
+        expect(anchor).toBeTruthy();
+
+        const delta =
+          anchor.getBoundingClientRect().top - list.getBoundingClientRect().top;
+        // The sent message sits at the top of the scroll viewport (within the
+        // small top inset), NOT pushed down the panel.
+        expect(delta).toBeGreaterThanOrEqual(0);
+        expect(delta).toBeLessThanOrEqual(16);
+      } finally {
+        document.body.removeChild(host);
+      }
+    });
   });
+
 });

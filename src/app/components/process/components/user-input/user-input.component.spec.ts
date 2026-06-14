@@ -58,6 +58,8 @@ describe('ProcessUserInputComponent', () => {
     chatServiceMock = {
       messages$: new BehaviorSubject<any[]>([]),
       loadingProcess$: new BehaviorSubject<boolean>(false),
+      // Story 19-1 (ADR-016 §Decision 1): just-sent side channel.
+      emitJustSent: jasmine.createSpy('emitJustSent'),
     };
 
     // sendMessage() guards on currentTeamRunning$.value (Story 2-5). Default
@@ -925,6 +927,106 @@ describe('ProcessUserInputComponent', () => {
       );
       expect(slash).toBeTruthy();
       expect((slash as any).disableSort).toBeTrue();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Story 19-1 (ADR-016 §Decision 1) — just-sent signal emission
+  // -------------------------------------------------------------------------
+  describe('just-sent signal (Story 19-1)', () => {
+    beforeEach(() => {
+      // Pin the send-origin key so assertions are deterministic.
+      spyOn<any>(component, 'nextJustSentKey').and.returnValue('1700000000000');
+      nodesSubject.next([
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+        makeNode({ name: 'ops-1', actorName: '@Operator', role: 'Human' }),
+        makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
+        makeNode({ name: 'dev-1', actorName: '@Developer', role: 'Worker' }),
+      ]);
+    });
+
+    it('emits once on Priority 1 (sender + recipients) with the send-origin key', async () => {
+      component.selectedSender = '@Support';
+      component.selectedAgents = ['@Manager', '@Developer'];
+      component.userInput = 'hello';
+
+      await component.sendMessage();
+
+      expect(chatServiceMock.emitJustSent).toHaveBeenCalledOnceWith('1700000000000');
+      // Routing is unchanged — one call per recipient.
+      expect(apiServiceSpy.sendMessageFromTo).toHaveBeenCalledTimes(2);
+    });
+
+    it('emits once on Priority 2 (sender, no recipient -> first dropdown agent)', async () => {
+      nodesSubject.next([
+        makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
+        makeNode({ name: 'dev-1', actorName: '@Developer', role: 'Worker' }),
+      ]);
+      component.selectedSender = '@Support';
+      component.selectedAgents = [];
+      component.userInput = 'auto-target';
+
+      await component.sendMessage();
+
+      expect(chatServiceMock.emitJustSent).toHaveBeenCalledOnceWith('1700000000000');
+      expect(apiServiceSpy.sendMessageFromTo).toHaveBeenCalledTimes(1);
+    });
+
+    it('emits once on Priority 3 (default sender + recipients)', async () => {
+      component.selectedSender = null;
+      component.selectedAgents = ['@Manager', '@Developer'];
+      component.userInput = 'hello team';
+
+      await component.sendMessage();
+
+      expect(chatServiceMock.emitJustSent).toHaveBeenCalledOnceWith('1700000000000');
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it('emits once on Priority 4 (broadcast)', async () => {
+      component.selectedSender = null;
+      component.selectedAgents = [];
+      component.userInput = 'broadcast';
+
+      await component.sendMessage();
+
+      expect(chatServiceMock.emitJustSent).toHaveBeenCalledOnceWith('1700000000000');
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+        'test-team-id', 'broadcast',
+      );
+    });
+
+    it('does NOT emit on the team-stopped guard', async () => {
+      contextServiceStub.currentTeamRunning$.next(false);
+      component.selectedAgents = [];
+      component.userInput = 'blocked';
+
+      await component.sendMessage();
+
+      expect(chatServiceMock.emitJustSent).not.toHaveBeenCalled();
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+    });
+
+    it('does NOT emit on the empty/whitespace input guard', async () => {
+      component.selectedAgents = [];
+      component.userInput = '   ';
+
+      await component.sendMessage();
+
+      expect(chatServiceMock.emitJustSent).not.toHaveBeenCalled();
+    });
+
+    it('does NOT emit on the no-candidate-recipient guard (Priority 2 edge)', async () => {
+      component.dropdownAgents = [];
+      component.selectedSender = '@Support';
+      component.selectedAgents = [];
+      component.userInput = 'orphan';
+
+      await component.sendMessage();
+
+      expect(chatServiceMock.emitJustSent).not.toHaveBeenCalled();
+      expect(apiServiceSpy.sendMessageFromTo).not.toHaveBeenCalled();
+      expect(component.userInput).toBe('orphan');
     });
   });
 });

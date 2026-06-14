@@ -1,9 +1,15 @@
-<div class="chat-container" (mouseenter)="onMouseEnter()" (mouseleave)="onMouseLeave()">
+<div class="chat-container">
   <ng-container *ngIf="displayItems.length > 0; else noMessagesPlaceholder">
-    <div class="message-list" #scrollContainer (click)="onBackgroundClick()">
+    <div
+      class="message-list"
+      #scrollContainer
+      (click)="onBackgroundClick()"
+      (scroll)="onScroll()"
+    >
       <ng-container *ngFor="let item of displayItems; trackBy: trackByDisplayItem">
         <app-chat-message
           *ngIf="item.kind === 'message'"
+          [attr.data-message-id]="item.data.id"
           [message]="item.data"
           [selected]="item.data.id === selectedMessageId"
           [notification]="hasNotification(item.data)"
@@ -19,6 +25,10 @@
           (toggleExpanded)="onToggleThinkingExpanded($event)"
         ></app-chat-thinking>
       </ng-container>
+      <!-- ADR-016: trailing spacer reserves scroll room so the just-sent message
+           can park at the top. Plain element AFTER the *ngFor (never iterated by
+           trackByDisplayItem); its min-height is written imperatively. -->
+      <div class="message-spacer" #spacer></div>
     </div>
   </ng-container>
   <ng-template #noMessagesPlaceholder>
@@ -45,7 +55,23 @@
       </div>
     </ng-template>
   </ng-template>
-  <app-user-input [processId]="processId"></app-user-input>
+  <!-- The "New messages" indicator sits directly ON TOP of the input field
+       (positioned against `.input-area`, which wraps the input). OUTSIDE
+       #scrollContainer so it never changes scrollHeight; *ngIf-gated so it is
+       absent (and captures no pointer events) when hidden. Its click handler is
+       the ONLY entry into follow mode. -->
+  <div class="input-area">
+    <button
+      *ngIf="indicatorLabel"
+      type="button"
+      class="jump-to-latest"
+      (click)="onJumpToLatest()"
+    >
+      <i class="pi" [ngClass]="indicatorIcon"></i>
+      <span>{{ indicatorLabel }}</span>
+    </button>
+    <app-user-input [processId]="processId"></app-user-input>
+  </div>
   <app-chat-human-modal
     [visible]="modalVisible"
     [agentPair]="modalAgentPair"

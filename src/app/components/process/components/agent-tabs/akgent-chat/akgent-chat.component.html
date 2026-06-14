@@ -6,7 +6,7 @@
   block nor a long conversation can overflow the clipped tab container and push
   the chat input out of reach.
 -->
-<div class="trace-scroll" #traceScroll>
+<div class="trace-scroll" #traceScroll (scroll)="onScroll()">
   <!--
     Head system block — sourced ONCE from `systemPrompt$` (SystemPromptSelector,
     Story 16-1), independently of `context.length`. Latest-wins. `*ngIf ... as
@@ -34,11 +34,7 @@
        scroll region (hover-pauses auto-scroll via the table's mouse events). -->
   <div class="collapsible-container" *ngIf="context.length">
     <div class="collapsible">
-      <p-table
-        [value]="context"
-        (mouseenter)="isMouseOverTable = true"
-        (mouseleave)="isMouseOverTable = false"
-      >
+      <p-table [value]="context" [rowTrackBy]="trackByIndex">
       <ng-template #body let-message>
         <div class="card-container">
           <div class="card-header">
@@ -100,6 +96,18 @@
 </div>
 
 <div class="input-container">
+  <!-- "Messages" / "Auto scrolling" status pill, anchored on top of the input.
+       Click → follow (auto-scroll to the bottom). Hidden when the newest message
+       is on screen. -->
+  <button
+    *ngIf="indicatorLabel"
+    type="button"
+    class="jump-to-latest"
+    (click)="onFollowLatest()"
+  >
+    <i class="pi" [ngClass]="indicatorIcon"></i>
+    <span>{{ indicatorLabel }}</span>
+  </button>
   <p-floatlabel variant="in">
     <div class="input-row">
       <div class="input-row-textarea">
@@ -108,7 +116,6 @@
           rows="4"
           cols="50"
           [(ngModel)]="userInput"
-          (click)="scroll()"
           [mentionConfig]="mentionConfig"
           [mentionListTemplate]="mentionItemTemplate"
         ></textarea>
