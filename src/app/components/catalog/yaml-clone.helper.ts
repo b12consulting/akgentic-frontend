@@ -26,15 +26,12 @@ export class CloneYamlError extends Error {
  * namespace: src          # ← document-level, ONE key
  * user_id: null
  * entries:
- *   team-1: { kind: team, parent_namespace: src-parent, payload: {...} }
+ *   team-1: { kind: team, payload: {...} }
  *   agent-1: { kind: agent, ... }
  * ```
  *
  * The helper touches EXACTLY one key: the root `namespace`. It does NOT walk
- * `entries`. It does NOT touch per-entry `parent_namespace` fields (those
- * are lineage pointers — "which namespace did my ancestor live in?" — not
- * the entry's current namespace; rewriting them would corrupt ADR-006
- * parent_namespace semantics). It does NOT touch any `payload` sub-tree
+ * `entries`. It does NOT touch any `payload` sub-tree
  * (payloads may legitimately contain the source namespace name as a string
  * literal inside `description` / `config.name` / arbitrary user-supplied
  * fields — plain-text find-and-replace would corrupt those, per ADR-011 D5

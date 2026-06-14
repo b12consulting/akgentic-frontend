@@ -35,17 +35,12 @@ export type EntryKind = 'team' | 'agent' | 'tool' | 'model' | 'prompt';
  * Field names are translated verbatim (snake_case), matching the wire shape
  * — no camelCase rewriting.
  *
- * Lineage fields (`parent_namespace` + `parent_id`) support three valid
- * combinations (both null, same-namespace duplicate, cross-namespace clone);
- * the server rejects `parent_namespace` set without `parent_id`.
  */
 export interface Entry {
   id: string;
   kind: EntryKind;
   namespace: string;
-  user_id?: string | null;
-  parent_namespace?: string | null;
-  parent_id?: string | null;
+  user_id: string;
   model_type: string;
   description: string;
   payload: Record<string, unknown>;

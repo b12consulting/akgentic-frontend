@@ -19,7 +19,6 @@ import {
  *   1. Multi-kind bundle rewrite.
  *   2. Payload literal preservation (string `src` inside payload is NOT
  *      rewritten).
- *   3. `parent_namespace` non-rewrite (lineage pointer untouched).
  *   4. Round-trip structural equality except root namespace.
  *   5. Malformed YAML → CloneYamlError (`yaml-parse-error: ...`).
  *   6. Non-mapping root → CloneYamlError (`bundle root is not a mapping`).
@@ -102,29 +101,6 @@ entries:
     expect(cfg['name']).toBe('src-style name');
   });
 
-  // Test 3 — parent_namespace is NOT rewritten.
-  it('does NOT rewrite per-entry parent_namespace lineage pointers', () => {
-    const input = `namespace: src
-user_id: null
-entries:
-  team-1:
-    kind: team
-    model_type: BaseTeamModel
-    parent_namespace: src-parent
-    parent_id: ancestor-team
-    payload:
-      name: Team One
-`;
-    const out = rewriteNamespaceInYaml(input, 'dst');
-    const parsed = yaml.load(out) as Record<string, unknown>;
-    expect(parsed['namespace']).toBe('dst');
-
-    const entries = parsed['entries'] as Record<string, unknown>;
-    const team = entries['team-1'] as Record<string, unknown>;
-    expect(team['parent_namespace']).toBe('src-parent');
-    expect(team['parent_id']).toBe('ancestor-team');
-  });
-
   // Test 4 — round-trip structural equality except root namespace.
   it('produces output that deep-equals a destNs-mutated input clone', () => {
     const input = `namespace: src
@@ -139,7 +115,6 @@ entries:
   agent-1:
     kind: agent
     model_type: BaseAgentModel
-    parent_namespace: src-parent
     payload:
       role: assistant
 `;
