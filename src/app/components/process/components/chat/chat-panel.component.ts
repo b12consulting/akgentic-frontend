@@ -346,7 +346,15 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
    *  is the last child, so its offsetTop marks the end of the messages). This is
    *  immune to `scrollHeight` being clamped up to `clientHeight` on short
    *  conversations — the case where a scrollHeight-based formula under-reserves
-   *  and the message can never reach the top. */
+   *  and the message can never reach the top.
+   *
+   *  We reserve only enough that the PINNED position (anchor at `TOP_PAD`) is the
+   *  bottom-most scroll: subtracting the `TOP_PAD` inset and the list's own
+   *  bottom padding makes `maxScrollTop === anchorTop - TOP_PAD` exactly, so
+   *  scrolling down can't push the anchored bubble above its top inset and no
+   *  surplus empty space is left below the reply. The flex gap before the spacer
+   *  is part of `realBelow` and cancels out, so the inset is exact regardless of
+   *  the gap/padding values. */
   private reserveSpacer(anchorEl: HTMLElement): void {
     const c = this.scrollContainer?.nativeElement;
     const spacer = this.spacerRef?.nativeElement;
@@ -355,7 +363,9 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
       return;
     }
     const realBelow = spacer.offsetTop - anchorEl.offsetTop;
-    this.spacerHeight = Math.max(0, Math.min(c.clientHeight, c.clientHeight - realBelow));
+    const padBottom = parseFloat(getComputedStyle(c).paddingBottom) || 0;
+    const reserve = c.clientHeight - realBelow - this.TOP_PAD - padBottom;
+    this.spacerHeight = Math.max(0, Math.min(c.clientHeight, reserve));
     spacer.style.minHeight = this.spacerHeight + 'px';
   }
 
