@@ -126,8 +126,21 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   private hasDoneInitialScroll = false;
   /** ADR-016 §Decision 4 "critical" — set around every programmatic `scrollTop`/
    *  `scrollTo` write so the resulting `scroll` event is not mistaken for the
-   *  user scrolling away. Cleared after the event settles (queueMicrotask). */
+   *  user scrolling away. A smooth `scrollTo` dispatches `scroll` events across
+   *  many animation frames (macrotasks) — long after a microtask checkpoint —
+   *  so the flag is cleared on a TRAILING debounce: each programmatic-origin
+   *  `scroll` re-arms the timer and the flag only drops once the events stop
+   *  arriving (the animation has settled). This is the documented top regression
+   *  risk (§Consequences): a microtask clear would close the window before the
+   *  async `scroll` fired and the anchor would release itself on its own write. */
   private isProgrammaticScroll = false;
+  /** Trailing-debounce handle that clears `isProgrammaticScroll` once the
+   *  programmatic `scroll` events stop arriving. */
+  private programmaticScrollTimer: ReturnType<typeof setTimeout> | null = null;
+  /** ms of `scroll`-event silence after which a programmatic write is considered
+   *  settled — comfortably outlasts the smooth-scroll animation's frame cadence
+   *  while staying short enough that a genuine user scroll is not swallowed. */
+  private readonly programmaticScrollSettleMs = 150;
   /** Reused near-bottom threshold (px) — the constant from the retired
    *  `checkShouldAutoScroll`. Drives anchor-release classification (and, in
    *  19-3, the indicator + follow-exit) so they stay consistent. */
@@ -296,7 +309,13 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
    * anchored releases the anchor to `idle`.
    */
   onScroll(): void {
-    if (this.isProgrammaticScroll) return; // programmatic write — not a user exit
+    if (this.isProgrammaticScroll) {
+      // Still settling a programmatic write: this `scroll` is one of the
+      // animation's own frames. Re-arm the trailing debounce and ignore it —
+      // do NOT classify it as a user exit (the anchor must not release itself).
+      this.armProgrammaticScrollSettle();
+      return;
+    }
     if (this.scrollMode !== 'anchored') return;
     if (!this.isNearBottom()) {
       this.releaseAnchor();
@@ -320,6 +339,10 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     }
     if (this.justSentSubscription) {
       this.justSentSubscription.unsubscribe();
+    }
+    if (this.programmaticScrollTimer !== null) {
+      clearTimeout(this.programmaticScrollTimer);
+      this.programmaticScrollTimer = null;
     }
   }
 
@@ -546,16 +569,30 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   /**
    * AC #5 — open the programmatic-scroll guard window around a `scrollTop`/
-   * `scrollTo` write. The `scroll` event fires asynchronously, so the flag is
-   * cleared via `queueMicrotask` after the write (mirroring Story 4.4's
-   * discipline) — long enough to bracket the programmatic `scroll` event,
-   * short enough that a genuine user scroll in a later tick still releases.
+   * `scrollTo` write. A smooth `scrollTo` dispatches its `scroll` events across
+   * many later animation frames, so the flag is NOT cleared on a microtask
+   * (that window closes before the first async `scroll` fires, letting the
+   * anchor release itself — §Consequences top regression risk). Instead the
+   * flag is cleared on a TRAILING debounce: it is armed here and re-armed by
+   * every programmatic-origin `scroll` in `onScroll`, dropping only once the
+   * events stop (the animation has settled). A genuine user scroll arriving
+   * after settle is then classified normally.
    */
   private beginProgrammaticScroll(): void {
     this.isProgrammaticScroll = true;
-    queueMicrotask(() => {
+    this.armProgrammaticScrollSettle();
+  }
+
+  /** Re-arm the trailing debounce that clears the programmatic-scroll guard
+   *  once `scroll` events stop arriving (the programmatic animation settled). */
+  private armProgrammaticScrollSettle(): void {
+    if (this.programmaticScrollTimer !== null) {
+      clearTimeout(this.programmaticScrollTimer);
+    }
+    this.programmaticScrollTimer = setTimeout(() => {
       this.isProgrammaticScroll = false;
-    });
+      this.programmaticScrollTimer = null;
+    }, this.programmaticScrollSettleMs);
   }
 
   /**

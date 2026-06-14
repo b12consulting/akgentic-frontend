@@ -1,4 +1,11 @@
-import { ComponentFixture, fakeAsync, flushMicrotasks, TestBed } from '@angular/core/testing';
+import {
+  ComponentFixture,
+  fakeAsync,
+  flush,
+  flushMicrotasks,
+  TestBed,
+  tick,
+} from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { BehaviorSubject, of, Subject } from 'rxjs';
 import { map } from 'rxjs/operators';
@@ -1116,18 +1123,51 @@ describe('ChatPanelComponent', () => {
       expect((component as any).scrollMode).toBe('anchored');
     });
 
-    it('AC #5: the programmatic guard clears after a microtask so a later user scroll releases', fakeAsync(() => {
+    it('AC #5: the programmatic guard clears on the trailing debounce so a later user scroll releases', fakeAsync(() => {
       const mockEl = installMockScrollContainer(2000, 400);
       (component as any).scrollMode = 'anchored';
       (component as any).anchorMessageId = 'a-4';
-      // Open the guard window the way scrollToBottom() does.
+      // Open the guard window the way scrollToBottom()/applyAnchorScroll() do.
       (component as any).beginProgrammaticScroll();
       expect((component as any).isProgrammaticScroll).toBe(true);
 
+      // The guard outlasts a microtask checkpoint (a smooth scrollTo dispatches
+      // its `scroll` events across later frames, not the current microtask).
       flushMicrotasks();
+      expect((component as any).isProgrammaticScroll).toBe(true);
+
+      // Once the settle window elapses with no further scroll events, it drops.
+      tick((component as any).programmaticScrollSettleMs);
       expect((component as any).isProgrammaticScroll).toBe(false);
 
       // A genuine user scroll in a later tick now releases.
+      mockEl.scrollTop = 0;
+      component.onScroll();
+      expect((component as any).scrollMode).toBe('idle');
+    }));
+
+    it('AC #5: the anchor does NOT release itself when its own async programmatic scroll events fire', fakeAsync(() => {
+      const mockEl = installMockScrollContainer(2000, 400);
+      (component as any).scrollMode = 'anchored';
+      (component as any).anchorMessageId = 'a-5';
+      // Open the guard the way a smooth anchor write does.
+      (component as any).beginProgrammaticScroll();
+
+      // The smooth scroll parks the view near the TOP — its own `scroll` frames
+      // arrive across several later ticks, each below the near-bottom threshold.
+      // These are the animation's frames, not a user exit: the anchor must hold.
+      for (let i = 0; i < 4; i++) {
+        mockEl.scrollTop = i * 10; // still far above near-bottom (distance > 100)
+        component.onScroll();
+        tick(50); // less than the settle window — guard stays armed
+      }
+      expect((component as any).scrollMode).toBe('anchored');
+      expect((component as any).anchorMessageId).toBe('a-5');
+
+      // After the events stop for the full settle window, the guard drops and a
+      // genuine later user scroll releases.
+      tick((component as any).programmaticScrollSettleMs);
+      expect((component as any).isProgrammaticScroll).toBe(false);
       mockEl.scrollTop = 0;
       component.onScroll();
       expect((component as any).scrollMode).toBe('idle');
@@ -1181,6 +1221,7 @@ describe('ChatPanelComponent', () => {
       // The anchor scroll replayed (offsetTop 600 - padding 8 = 592).
       expect(mockEl.lastScrollTo?.top).toBe(592);
       expect((component as any).owedScroll).toBeNull();
+      flush(); // drain the programmatic-scroll settle timer the replay armed
     }));
 
     it('AC #6: mouseleave replays a mount-bottom owed action via scrollToBottom', fakeAsync(() => {
@@ -1193,6 +1234,7 @@ describe('ChatPanelComponent', () => {
 
       expect(mockEl.scrollTop).toBe(1300);
       expect((component as any).owedScroll).toBeNull();
+      flush(); // drain the programmatic-scroll settle timer the replay armed
     }));
 
     it('AC #6: collapse toggle during hover does NOT queue an owed scroll', fakeAsync(() => {
