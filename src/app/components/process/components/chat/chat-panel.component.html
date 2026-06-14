@@ -1,4 +1,4 @@
-<div class="chat-container" (mouseenter)="onMouseEnter()" (mouseleave)="onMouseLeave()">
+<div class="chat-container">
   <ng-container *ngIf="displayItems.length > 0; else noMessagesPlaceholder">
     <div
       class="message-list"
@@ -25,10 +25,10 @@
           (toggleExpanded)="onToggleThinkingExpanded($event)"
         ></app-chat-thinking>
       </ng-container>
-      <!-- Story 19-1 (ADR-016 §Decision 2): trailing spacer reserves scroll
-           room so the anchored turn can park at the top. Plain element AFTER
-           the *ngFor — never iterated by trackByDisplayItem. -->
-      <div class="message-spacer" [style.min-height.px]="spacerHeight"></div>
+      <!-- ADR-016: trailing spacer reserves scroll room so the just-sent message
+           can park at the top. Plain element AFTER the *ngFor (never iterated by
+           trackByDisplayItem); its min-height is written imperatively. -->
+      <div class="message-spacer" #spacer></div>
     </div>
   </ng-container>
   <ng-template #noMessagesPlaceholder>
@@ -55,21 +55,23 @@
       </div>
     </ng-template>
   </ng-template>
-  <!-- Story 19-3 (ADR-016 §Decision 6): jump-to-latest indicator. Overlays the
-       bottom edge of the message list, above <app-user-input>. OUTSIDE
-       #scrollContainer so it does not change scrollHeight. *ngIf-gated so it is
-       absent from the DOM (and captures no pointer events) when hidden. The
-       click handler is the ONLY entry into follow mode. -->
-  <button
-    *ngIf="showJumpToLatest"
-    type="button"
-    class="jump-to-latest"
-    (click)="onJumpToLatest()"
-  >
-    <i class="pi pi-arrow-down"></i>
-    <span>New messages</span>
-  </button>
-  <app-user-input [processId]="processId"></app-user-input>
+  <!-- The "New messages" indicator sits directly ON TOP of the input field
+       (positioned against `.input-area`, which wraps the input). OUTSIDE
+       #scrollContainer so it never changes scrollHeight; *ngIf-gated so it is
+       absent (and captures no pointer events) when hidden. Its click handler is
+       the ONLY entry into follow mode. -->
+  <div class="input-area">
+    <button
+      *ngIf="indicatorLabel"
+      type="button"
+      class="jump-to-latest"
+      (click)="onJumpToLatest()"
+    >
+      <i class="pi" [ngClass]="indicatorIcon"></i>
+      <span>{{ indicatorLabel }}</span>
+    </button>
+    <app-user-input [processId]="processId"></app-user-input>
+  </div>
   <app-chat-human-modal
     [visible]="modalVisible"
     [agentPair]="modalAgentPair"

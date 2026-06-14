@@ -17,6 +17,7 @@ import { ActorAddress } from '../../../../protocol/message.types';
 import { ApiService } from '../../../../core/http/api.service';
 import { ChatService, ThinkingState } from '../../selectors/chat.selector';
 import { IngestionService } from '../../event/ingestion.service';
+import { ContextService } from '../../../../core/context/context.service';
 import { Selectable, SelectionService } from '../../ui-state/selection.service';
 import {
   AnsweredRequest,
@@ -32,6 +33,35 @@ export type DisplayItem =
   | { kind: 'message'; data: ChatMessage }
   | { kind: 'thinking'; data: ThinkingState };
 
+/**
+ * Chat panel scroll model (ADR-016, simplified rewrite).
+ *
+ * Two behaviors, kept deliberately small and position-based (no programmatic
+ * scroll flags, no hover lock, no state-machine enum):
+ *
+ *  1. ANCHOR ON SEND — when the user submits a message, the panel pins THAT
+ *     message to the top of the viewport (regardless of the prior scroll
+ *     position) and reserves a trailing spacer so the agent's reply streams into
+ *     the space below it. The submit is signalled by `chatService.justSent$`; the
+ *     echoed message is matched by identity (the newest human-authored message
+ *     that appeared after the send). The spacer shrinks as the reply grows, so
+ *     the message holds its top position without any further scrolling.
+ *
+ *  2. FOLLOW ON DEMAND — while a reply streams in below the fold, a
+ *     "New messages" indicator is shown. Clicking it scrolls to the bottom and
+ *     enters FOLLOW mode (auto-scroll to the bottom on every new message). Any
+ *     manual upward scroll exits follow mode. A new send also exits follow and
+ *     re-anchors.
+ *
+ * Programmatic scrolls are INSTANT, so a scroll event is never confused with a
+ * user scroll: follow mode exits only when the position moves measurably away
+ * from the bottom, which a "scroll to bottom" write never does.
+ *
+ * Entry-to-page (mount) scrolling is intentionally OUT of scope here.
+ *
+ * The per-agent `akgent-chat` trace keeps its own stick-to-bottom autoscroll —
+ * the two surfaces diverge on purpose (see `akgent-chat.component.ts#scroll()`).
+ */
 @Component({
   selector: 'app-chat-panel',
   standalone: true,
@@ -49,12 +79,17 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   @Input() processId!: string;
 
   @ViewChild('scrollContainer', { static: false })
-  private scrollContainer!: ElementRef;
+  private scrollContainer!: ElementRef<HTMLElement>;
+
+  /** The trailing spacer element that reserves room below the anchored message. */
+  @ViewChild('spacer', { static: false })
+  private spacerRef?: ElementRef<HTMLElement>;
 
   chatService: ChatService = inject(ChatService);
   ingestionService: IngestionService = inject(IngestionService);
   selectionService: SelectionService = inject(SelectionService);
   apiService: ApiService = inject(ApiService);
+  private contextService: ContextService = inject(ContextService);
 
   chatMessages: ChatMessage[] = [];
   thinkingStates: ThinkingState[] = [];
@@ -69,175 +104,331 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   modalAnsweredMessages: AnsweredRequest[] = [];
 
   private subscription!: Subscription;
-  private lastScrollHeight = 0;
-  // Story 4.4: hover-aware auto-scroll lock. `isHovered` short-circuits the
-  // scroll in ngAfterViewChecked while the user's pointer is over the panel.
-  // `owedScroll` is set ONLY from the messages$ / mount / anchor paths (a
-  // programmatic scroll suppressed by hover) — never from ngAfterViewChecked
-  // height changes — so collapse/expand toggles during hover do NOT queue a
-  // spurious catch-up.
-  private isHovered = false;
-  // Story 19-2 (ADR-016 §Decision 4 item 4): typed hover owed-action. Records
-  // WHICH programmatic scroll was deferred by the hover lock so `mouseleave`
-  // replays the correct one (the boolean `pendingCatchUpScroll` is retired).
-  // Story 19-3 adds `'follow-tail'` — a deferred follow-mode tail scroll.
-  private owedScroll: 'top-anchor' | 'mount-bottom' | 'follow-tail' | null = null;
+  private notificationSubscription!: Subscription;
+  private justSentSubscription!: Subscription;
+  private runningSubscription!: Subscription;
+
   private expandedMessageIds = new Set<string>();
-  /** Story 4-8: per-bubble expansion state (mirrors expandedMessageIds
-   *  pattern; persists across thinkingAgents$ re-emissions). */
+  /** Story 4-8: per-bubble expansion state. */
   private thinkingExpanded = new Set<string>();
   selectedMessageId: string | null = null;
-  private notificationSubscription!: Subscription;
   pendingNotifications: Set<string> = new Set();
 
-  // ---------------------------------------------------------------------------
-  // Story 19-1 (ADR-016) — top-anchor primitive.
-  // `justSentKey` is the send-origin timestamp emitted by user-input on send;
-  // `anchorMessageId` is the OUTER `ChatMessage.id` of the matched user message
-  // (the `data-message-id` lookup key). `anchorScrollDone` latches the single
-  // top-anchor per turn (AC #2). `spacerHeight` drives the trailing spacer that
-  // reserves room to park the turn at top (AC #3). `lastAnchorOffsetTop` caches
-  // the anchored element's own geometry to discriminate its own height changes
-  // (re-pin, AC #5) from answer-below growth (must NOT move the view).
-  // ---------------------------------------------------------------------------
-  private justSentSubscription!: Subscription;
-  private justSentKey: string | null = null;
-  private anchorMessageId: string | null = null;
-  private anchorScrollDone = false;
+  // --- scroll state -----------------------------------------------------------
+  /** Reserved height (px) of the trailing spacer; bound imperatively. */
   spacerHeight = 0;
-  private lastAnchorOffsetTop: number | null = null;
-  /** Small top inset (px) so the parked message isn't flush to the edge —
-   *  echoes the `.message-list` 0.5rem/1rem padding rhythm (ADR-016 §Decision 3). */
-  private readonly anchorTopPadding = 8;
+  /** Status-pill label above the input (template-bound), or null when hidden.
+   *  One of: 'Auto scrolling' | 'New messages' | 'Messages'. */
+  indicatorLabel: string | null = null;
+  /** FOLLOW mode: auto-scroll to the bottom on every new message. */
+  private following = false;
+  /** A new message arrived that the user hasn't caught up to yet — the only
+   *  difference between "New messages" and "Messages". Set on growth while
+   *  not following; cleared once the newest message is back on screen. */
+  private unseen = false;
+  /** Message count last seen, to detect a genuinely new message. */
+  private prevCount = 0;
+  /** True once the initial history has loaded — so the first batch isn't counted
+   *  as "new" (it's pre-existing, hence "Messages", not "New messages"). */
+  private loaded = false;
 
-  // ---------------------------------------------------------------------------
-  // Story 19-2 (ADR-016 §Decision 4) — explicit scroll-mode state machine.
-  // `scrollMode` is the SINGLE source of truth for "what the viewport is
-  // allowed to do", replacing the implicit `shouldScrollToBottom` boolean:
-  //   - `idle`      : the view never moves on its own (no autoscroll).
-  //   - `anchored`  : a turn is parked at top; turn-triggered growth fills the
-  //                   space below the anchor without moving the scroll.
-  //   - `following` : Story 19-3 — opt-in tail. Entered ONLY by clicking the
-  //                   jump-to-latest indicator (`onJumpToLatest`); pins to the
-  //                   bottom on every `messages$` growth. A manual upward scroll
-  //                   exits to `idle`; a send exits to `anchored` (re-anchor).
-  //
-  // FR12 trace divergence (ADR-016 §Consequences): the main chat panel is now
-  // top-anchored (idle/anchored/following) while the per-agent `akgent-chat`
-  // trace (process/components/agent-tabs/akgent-chat/) deliberately keeps its
-  // own stick-to-bottom autoscroll. The two surfaces diverge intentionally —
-  // see `akgent-chat.component.ts#scroll()`. This is a human navigation note,
-  // not a runtime invariant.
-  // ---------------------------------------------------------------------------
-  private scrollMode: 'idle' | 'anchored' | 'following' = 'idle';
-  /** Story 19-3 (ADR-016 §Decision 6) — true when content grew while the user
-   *  was below the fold and not following, so the jump-to-latest indicator is
-   *  offered. Set on `messages$` growth while `!isNearBottom()` and not
-   *  following; cleared once the user reaches the bottom (`onScroll`) or enters
-   *  follow mode (`onJumpToLatest`). Drives the `showJumpToLatest` getter. */
-  private unseenContent = false;
-  /** Story 19-3 (AC #2) — set on `messages$` growth while `following` so the
-   *  post-layout pass (`maybeFollowTail` in `ngAfterViewChecked`) tails to the
-   *  bottom AFTER layout settles (reading `scrollHeight` post-layout). Keeping
-   *  the write in `ngAfterViewChecked` co-locates all programmatic scroll writes
-   *  (NFR2) and naturally coalesces frame-batched emissions. */
-  private followTailPending = false;
-  /** ADR-016 §Decision 7 — one-shot instant scroll-to-bottom on mount, latched
-   *  so it never re-fires on subsequent emissions / view-checks / growth. */
-  private hasDoneInitialScroll = false;
-  /** ADR-016 §Decision 4 "critical" — set around every programmatic `scrollTop`/
-   *  `scrollTo` write so the resulting `scroll` event is not mistaken for the
-   *  user scrolling away. A smooth `scrollTo` dispatches `scroll` events across
-   *  many animation frames (macrotasks) — long after a microtask checkpoint —
-   *  so the flag is cleared on a TRAILING debounce: each programmatic-origin
-   *  `scroll` re-arms the timer and the flag only drops once the events stop
-   *  arriving (the animation has settled). This is the documented top regression
-   *  risk (§Consequences): a microtask clear would close the window before the
-   *  async `scroll` fired and the anchor would release itself on its own write. */
-  private isProgrammaticScroll = false;
-  /** Trailing-debounce handle that clears `isProgrammaticScroll` once the
-   *  programmatic `scroll` events stop arriving. */
-  private programmaticScrollTimer: ReturnType<typeof setTimeout> | null = null;
-  /** ms of `scroll`-event silence after which a programmatic write is considered
-   *  settled — comfortably outlasts the smooth-scroll animation's frame cadence
-   *  while staying short enough that a genuine user scroll is not swallowed. */
-  private readonly programmaticScrollSettleMs = 150;
-  /** Reused near-bottom threshold (px) — the constant from the retired
-   *  `checkShouldAutoScroll`. Drives anchor-release classification (and, in
-   *  19-3, the indicator + follow-exit) so they stay consistent. */
-  private readonly nearBottomThreshold = 100;
+  /** Outer id of the message currently pinned to the top (null when none). */
+  private anchorId: string | null = null;
+  /** Whether the one-time scroll-to-top for `anchorId` has run. */
+  private anchorPinned = false;
+
+  /** Between a send and the arrival of its echo. */
+  private awaitingEcho = false;
+  /** Newest entry-point (@Human) message id at send time — tells the echo from a
+   *  pre-existing one. */
+  private sendBaselineId: string | null = null;
+
+  private lastScrollHeight = 0;
+  /** Last observed scrollTop — used to tell a user scroll-UP from our own smooth
+   *  scroll (which only ever moves DOWN toward the bottom). */
+  private lastScrollTop = 0;
+
+  /** Small top inset so the pinned message isn't flush against the edge. */
+  private readonly TOP_PAD = 8;
 
   ngOnInit(): void {
     this.notificationSubscription = this.chatService.pendingNotifications$.subscribe(
       (pending) => {
         this.pendingNotifications = pending;
         this.recomputeModalInputs();
-      }
+      },
     );
-    // Story 19-1 (AC #1/#2): a new just-sent signal starts a fresh turn —
-    // record the send-origin key and reset the per-anchor latch so the next
-    // matching emission can fire exactly one top-anchor.
-    this.justSentSubscription = this.chatService.justSent$.subscribe((key) => {
-      this.justSentKey = key;
-      this.anchorMessageId = null;
-      this.anchorScrollDone = false;
-      this.lastAnchorOffsetTop = null;
-      // AC #3: spacer is 0 until the new turn is actually anchored.
-      this.spacerHeight = 0;
-      // Story 19-2 (AC #3): re-anchor on send. The latch reset above is the
-      // anchor's own bookkeeping; routing it through the state field makes the
-      // transition read as `anchored/idle → (send) → anchored`. The actual
-      // `anchored` set happens when `applyAnchorScroll` fires in
-      // `maybeAnchorTurn()` once the matched element renders.
-      // Story 19-3 (AC #3): a send while `following` ALSO routes here — setting
-      // `idle` here supersedes `following`, so the next matching emission
-      // re-anchors (`following → (send) → anchored`). Drop any pending tail.
-      this.scrollMode = 'idle';
-      this.followTailPending = false;
+
+    // A submit arms anchoring and exits follow mode. The echo is matched on the
+    // next emission (see onMessages); the baseline distinguishes it from a
+    // pre-existing human message (e.g. restored history).
+    this.justSentSubscription = this.chatService.justSent$.subscribe(() => {
+      this.sendBaselineId = this.latestEntryPointId();
+      this.awaitingEcho = true;
+      this.following = false;
+      this.anchorId = null;
+      this.anchorPinned = false;
+      this.unseen = false;
+      this.indicatorLabel = null;
+      this.clearSpacer();
     });
-    // Story 4-8: merge chat messages + thinking states into a single sorted
-    // displayItems array. Either stream re-triggers rebuild.
-    // Story 6.4 (AC3): subscription migrated from the deleted
-    // `messageService.messages$` onto `chatService.messages$` — classification
-    // is owned by `chatFold` (Story 6.3); the component is a presenter.
+
+    // "Auto scrolling" only applies to a RUNNING process — a stopped team
+    // produces no messages to follow. Exit follow + refresh the pill on change.
+    this.runningSubscription = this.contextService.currentTeamRunning$.subscribe(
+      (running) => {
+        if (!running) this.following = false;
+        this.updateIndicator();
+      },
+    );
+
     this.subscription = combineLatest([
       this.chatService.messages$,
       this.chatService.thinkingAgents$,
-    ]).subscribe(([classified, thinkingStates]) => {
-      const previousLength = this.chatMessages.length;
-      // Preserve per-user expand state across re-emissions (Rule 3 / Rule 4).
-      for (const chatMsg of classified) {
-        if (
-          (chatMsg.rule === 3 || chatMsg.rule === 4) &&
-          this.expandedMessageIds.has(chatMsg.id)
-        ) {
-          chatMsg.collapsed = false;
-        }
-      }
-
-      this.chatMessages = classified;
-      this.thinkingStates = thinkingStates;
-      this.displayItems = this.buildDisplayItems(classified, thinkingStates);
-      // Story 19-1 (AC #2): resolve the anchor id from the first user-originated
-      // message at/after the send time. Once resolved, the actual scroll runs
-      // post-layout in ngAfterViewChecked (offsetTop must be read post-layout).
-      this.resolveAnchorMessageId();
-      // Story 19-2 (AC #6): if a new message arrived while the user is hovering
-      // the panel, remember WHICH scroll is owed on mouseleave (typed). The
-      // `mount-bottom` catch-up preserves the pre-existing "only catch up if
-      // the user was near the bottom at arrival time" intent.
-      if (this.isHovered && classified.length > previousLength) {
-        this.recordOwedScrollDuringHover();
-      }
-      // Story 19-3 (AC #1/#2): react to content growth for the follow-mode tail
-      // and the unseen-content indicator flag. Both key off `displayItems`
-      // growth only (no ingestion change, ADR-005).
-      if (classified.length > previousLength) {
-        this.onContentGrew();
-      }
-      this.recomputeModalInputs();
-    });
+    ]).subscribe(([classified, thinking]) => this.onMessages(classified, thinking));
   }
+
+  ngOnDestroy(): void {
+    this.subscription?.unsubscribe();
+    this.notificationSubscription?.unsubscribe();
+    this.justSentSubscription?.unsubscribe();
+    this.runningSubscription?.unsubscribe();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Message stream
+  // ---------------------------------------------------------------------------
+
+  private onMessages(classified: ChatMessage[], thinking: ThinkingState[]): void {
+    const grew = classified.length > this.prevCount;
+    this.prevCount = classified.length;
+
+    // Preserve per-user expand state across re-emissions (Rule 3 / Rule 4).
+    for (const chatMsg of classified) {
+      if (
+        (chatMsg.rule === 3 || chatMsg.rule === 4) &&
+        this.expandedMessageIds.has(chatMsg.id)
+      ) {
+        chatMsg.collapsed = false;
+      }
+    }
+
+    this.chatMessages = classified;
+    this.thinkingStates = thinking;
+    this.displayItems = this.buildDisplayItems(classified, thinking);
+
+    // The user's just-sent message arrived → pin it to the top (done in
+    // ngAfterViewChecked once it has rendered). The baseline distinguishes the
+    // echo from a pre-existing @Human message (restored history).
+    if (this.awaitingEcho) {
+      const echoId = this.latestEntryPointId(classified);
+      if (echoId && echoId !== this.sendBaselineId) {
+        this.anchorId = echoId;
+        this.anchorPinned = false;
+        this.awaitingEcho = false;
+        this.following = false;
+        this.unseen = false;
+        this.indicatorLabel = null;
+      }
+    }
+
+    // A genuinely new message the user isn't watching live ⇒ "New messages"
+    // (vs "Messages" when merely scrolled up). The initial history load
+    // does not count as "new". The label itself is derived from layout and
+    // applied in ngAfterViewChecked.
+    if (grew && this.loaded && !this.following) this.unseen = true;
+    this.loaded = this.loaded || classified.length > 0;
+    this.recomputeModalInputs();
+  }
+
+  /**
+   * Post-layout scrolling. Runs after the view is updated so `offsetTop` /
+   * `scrollHeight` are measured against the rendered DOM.
+   */
+  ngAfterViewChecked(): void {
+    if (this.anchorId && !this.anchorPinned) {
+      // First chance to pin the just-sent message to the top. Wait until BOTH the
+      // message element and the spacer have rendered — pinning without the spacer
+      // would reserve no room and the scroll would clamp short.
+      const el = this.findMessageEl(this.anchorId);
+      if (el && this.spacerRef) {
+        this.pinToTop(el);
+        this.anchorPinned = true;
+      }
+    } else if (this.anchorId && this.anchorPinned) {
+      // Keep the reserved room accurate as the reply streams in. The spacer
+      // shrinks by exactly what the reply grows, so scrollHeight stays constant
+      // and the pinned message holds its top position with no further scrolling.
+      const el = this.findMessageEl(this.anchorId);
+      if (el) this.reserveSpacer(el);
+      // Once the reply fills the viewport the spacer is gone — stop managing.
+      if (this.spacerHeight === 0) this.anchorId = null;
+    }
+
+    // FOLLOW mode: tail to the bottom whenever new content arrived.
+    if (this.following && this.contentGrewSinceLastCheck()) {
+      this.scrollToBottom();
+    }
+
+    // Refresh the status pill from post-layout geometry (this is what makes it
+    // appear as replies stream in below an anchored turn, when no scroll event
+    // fires). Deferred to a microtask, and only when it would actually change, so
+    // it can't trip Angular's "expression changed after it was checked" guard or
+    // loop.
+    if (this.computeIndicatorLabel() !== this.indicatorLabel) {
+      queueMicrotask(() => this.updateIndicator());
+    }
+  }
+
+  /** Scroll handler (template `(scroll)` binding). Pure position logic — no
+   *  programmatic-scroll flag needed: our smooth scrolls only ever move DOWN
+   *  toward the bottom, so a measurable UPWARD move is unambiguously the user. */
+  onScroll(): void {
+    const c = this.scrollContainer?.nativeElement;
+    if (!c) return;
+    const movedUp = c.scrollTop < this.lastScrollTop - 2;
+    this.lastScrollTop = c.scrollTop;
+    // The user scrolled up → stop auto-scrolling ("follow until the user scrolls").
+    if (this.following && movedUp) {
+      this.following = false;
+    }
+    // Re-derive the pill from the new position (safe directly — outside CD).
+    this.updateIndicator();
+  }
+
+  /** Pill click — jump to the bottom and start auto-scrolling. */
+  onJumpToLatest(): void {
+    this.following = true;
+    this.unseen = false;
+    this.indicatorLabel = 'Auto scrolling';
+    this.anchorId = null;
+    this.clearSpacer();
+    this.scrollToBottom();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Scroll primitives (all INSTANT — see class docstring)
+  // ---------------------------------------------------------------------------
+
+  /** Pin `anchorEl` to the top: reserve the spacer (synchronously, so the
+   *  container has room) then scroll the message's top to the viewport top. */
+  private pinToTop(anchorEl: HTMLElement): void {
+    const c = this.scrollContainer?.nativeElement;
+    if (!c) return;
+    this.reserveSpacer(anchorEl);
+    // `offsetTop` is relative to the nearest positioned ancestor (`.chat-container`),
+    // which the message and the scroll container (`.message-list`) share — so
+    // subtract the container's own `offsetTop` to get a position within the
+    // scroll content.
+    const top = Math.max(0, anchorEl.offsetTop - (c.offsetTop ?? 0) - this.TOP_PAD);
+    c.scrollTo({ top, behavior: this.scrollBehavior() });
+  }
+
+  private scrollToBottom(): void {
+    const c = this.scrollContainer?.nativeElement;
+    if (c) c.scrollTo({ top: c.scrollHeight, behavior: this.scrollBehavior() });
+  }
+
+  /** Smooth by default; instant only when the user requests reduced motion. */
+  private scrollBehavior(): ScrollBehavior {
+    return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+      ? 'auto'
+      : 'smooth';
+  }
+
+  /** Recompute + write the spacer min-height to the DOM synchronously. Real
+   *  content below the anchor = `spacer.offsetTop - anchor.offsetTop` (the spacer
+   *  is the last child, so its offsetTop marks the end of the messages). This is
+   *  immune to `scrollHeight` being clamped up to `clientHeight` on short
+   *  conversations — the case where a scrollHeight-based formula under-reserves
+   *  and the message can never reach the top. */
+  private reserveSpacer(anchorEl: HTMLElement): void {
+    const c = this.scrollContainer?.nativeElement;
+    const spacer = this.spacerRef?.nativeElement;
+    if (!c || !spacer) {
+      this.spacerHeight = 0;
+      return;
+    }
+    const realBelow = spacer.offsetTop - anchorEl.offsetTop;
+    this.spacerHeight = Math.max(0, Math.min(c.clientHeight, c.clientHeight - realBelow));
+    spacer.style.minHeight = this.spacerHeight + 'px';
+  }
+
+  private clearSpacer(): void {
+    this.spacerHeight = 0;
+    const spacer = this.spacerRef?.nativeElement;
+    if (spacer) spacer.style.minHeight = '0px';
+  }
+
+  private findMessageEl(id: string): HTMLElement | null {
+    return (
+      this.scrollContainer?.nativeElement.querySelector<HTMLElement>(
+        '[data-message-id="' + id + '"]',
+      ) ?? null
+    );
+  }
+
+  /**
+   * The "is there a new message to show?" criterion (the indicator's trigger):
+   * the END of the message list is below the visible viewport — i.e. the newest
+   * message is not on screen. The spacer is the list's last child, so its
+   * POSITION (`offsetTop`, not its reserved height) marks where the messages end;
+   * using it keeps the check correct even while a turn is anchored (the reserved
+   * spacer height would otherwise make a scrollHeight-based check think we're at
+   * the bottom).
+   */
+  private newestMessageBelowFold(): boolean {
+    const c = this.scrollContainer?.nativeElement;
+    const spacer = this.spacerRef?.nativeElement;
+    if (!c || !spacer) return false;
+    const messagesBottom = spacer.offsetTop - (c.offsetTop ?? 0);
+    return messagesBottom > c.scrollTop + c.clientHeight + 4;
+  }
+
+  /** The status-pill label for the current state (pure). */
+  private computeIndicatorLabel(): string | null {
+    // "Auto scrolling" only while the process is RUNNING — a stopped team has
+    // nothing to follow.
+    if (this.following && this.contextService.currentTeamRunning$.value) {
+      return 'Auto scrolling';
+    }
+    if (!this.newestMessageBelowFold()) return null;
+    return this.unseen ? 'New messages' : 'Messages';
+  }
+
+  /** Icon class for the status pill — a "following" glyph while auto scrolling,
+   *  a down-arrow for the jump-to-latest states (keyed off the shown label). */
+  get indicatorIcon(): string {
+    return this.indicatorLabel === 'Auto scrolling' ? 'pi-sync' : 'pi-arrow-down';
+  }
+
+  /** Apply the pill label; clears `unseen` once the user is caught up. */
+  private updateIndicator(): void {
+    const label = this.computeIndicatorLabel();
+    if (label === null) this.unseen = false; // newest message back on screen
+    this.indicatorLabel = label;
+  }
+
+  /** True when scrollHeight changed since the last check (new content / spacer). */
+  private contentGrewSinceLastCheck(): boolean {
+    const c = this.scrollContainer?.nativeElement;
+    if (!c) return false;
+    const changed = c.scrollHeight !== this.lastScrollHeight;
+    this.lastScrollHeight = c.scrollHeight;
+    return changed;
+  }
+
+  /** Newest entry-point (@Human) message id — the user's own send — or null. */
+  private latestEntryPointId(msgs: ChatMessage[] = this.chatMessages): string | null {
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].sender.name === ENTRY_POINT_NAME) return msgs[i].id;
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Presentation helpers (unchanged behavior)
+  // ---------------------------------------------------------------------------
 
   onToggleCollapse(chatMsg: ChatMessage): void {
     if (chatMsg.rule !== 3 && chatMsg.rule !== 4) return;
@@ -249,188 +440,22 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     }
   }
 
-  /**
-   * Post-layout orchestrator (Story 19-2). Public method coordinates; private
-   * helpers implement. Order: keep `lastScrollHeight` fresh → drive the anchor
-   * (Story 19-1, AC #2/#5) and detect natural scroll-off release (AC #3) →
-   * one-shot mount scroll (AC #4). NO default autoscroll — the legacy
-   * per-emission bottom re-pin is retired (AC #1).
-   */
-  ngAfterViewChecked(): void {
-    // Always evaluate hasContentChanged() so lastScrollHeight stays fresh —
-    // even while hovered — otherwise a collapse/expand during hover would
-    // leave a stale lastScrollHeight that spuriously fires a scroll later. The
-    // return value no longer gates an autoscroll (AC #1) but keeps the
-    // discrimination geometry current.
-    this.hasContentChanged();
-    // Story 19-1/19-2: the top-anchor runs once per turn (AC #2) and re-pins
-    // only on the anchor element's own height change (AC #5); 19-2 also
-    // releases to idle on natural scroll-off (AC #3) and sets `scrollMode`.
-    this.maybeAnchorTurn();
-    this.maybeMountScroll();
-    // Story 19-3 (AC #2): when following, tail to the bottom on each growth.
-    // Runs LAST — `following` is mutually exclusive with an active anchor
-    // (entering follow clears it) and the mount scroll is latched, so this
-    // never fights them.
-    this.maybeFollowTail();
-  }
-
-  /**
-   * AC #4 — one-shot INSTANT scroll-to-bottom on the first view-settle with a
-   * laid-out, non-empty backlog. Latched by `hasDoneInitialScroll` so it never
-   * re-fires. Anchor precedence: if a turn is already anchored (a send arrived
-   * before mount settled), the anchor owns the first frame and the mount scroll
-   * is skipped. After mount the panel stays `idle` (it does not start tailing).
-   */
-  private maybeMountScroll(): void {
-    if (this.hasDoneInitialScroll || this.anchorMessageId !== null) return;
-    if (!this.scrollContainer) return;
-    const el = this.scrollContainer.nativeElement;
-    if (el.scrollHeight <= 0) return; // not laid out yet — retry next pass
-    this.hasDoneInitialScroll = true;
-    if (this.isHovered) {
-      // Story 4.4: defer the programmatic mount scroll until mouseleave.
-      this.owedScroll = 'mount-bottom';
-      return;
-    }
-    this.scrollToBottom();
-  }
-
-  onMouseEnter(): void {
-    this.isHovered = true;
-  }
-
-  onMouseLeave(): void {
-    this.isHovered = false;
-    // Story 19-2 (AC #6): replay the typed owed scroll, then clear it.
-    const owed = this.owedScroll;
-    this.owedScroll = null;
-    if (owed === 'top-anchor') {
-      // Re-run the anchor scroll once layout settles. `maybeAnchorTurn()` is
-      // idempotent (latched) so it re-pins via the resolved element.
-      queueMicrotask(() => this.maybeAnchorTurn());
-    } else if (owed === 'mount-bottom') {
-      // queueMicrotask defers the scroll until after the current event-loop
-      // tick so Angular can finish any change detection triggered by the
-      // isHovered = false assignment before we read scrollHeight.
-      queueMicrotask(() => this.scrollToBottom());
-    } else if (owed === 'follow-tail') {
-      // Story 19-3 (AC #4): replay the deferred follow-mode tail as a smooth
-      // bottom scroll, routed through the programmatic guard.
-      queueMicrotask(() => this.followScrollToBottom());
-    }
-  }
-
-  /**
-   * AC #6 — record WHICH programmatic scroll the hover lock deferred. A
-   * `top-anchor` is owed whenever an active turn's anchor scroll is suppressed
-   * by hover; a `mount-bottom` is owed for the deferred mount catch-up, gated
-   * by the pre-existing "user was near the bottom at arrival" intent. The
-   * `top-anchor` kind wins because parking the turn at top is the dominant
-   * behavior (mirrors 19-1).
-   */
-  private recordOwedScrollDuringHover(): void {
-    // Story 19-3 (AC #4): a follow-mode tail deferred by hover owes a
-    // `follow-tail`. `following` is mutually exclusive with an active anchor
-    // (entering follow clears the anchor), so this branch and `top-anchor`
-    // cannot both apply — check `following` first.
-    if (this.scrollMode === 'following') {
-      this.owedScroll = 'follow-tail';
-      return;
-    }
-    if (this.anchorMessageId !== null) {
-      this.owedScroll = 'top-anchor';
-      return;
-    }
-    if (this.isNearBottom()) {
-      this.owedScroll = 'mount-bottom';
-    }
-  }
-
-  /**
-   * AC #3/#5 — `scroll` event handler bound via the template `(scroll)`
-   * binding (Open Question 2: template binding chosen — smaller, testable
-   * surface, no manual teardown). Programmatic writes (the anchor write, the
-   * mount-bottom write) are ignored via `isProgrammaticScroll` (primary guard);
-   * the near-bottom threshold is the secondary safety net. A GENUINE user
-   * scroll that moves the position measurably above the near-bottom frame while
-   * anchored releases the anchor to `idle`.
-   */
-  onScroll(): void {
-    if (this.isProgrammaticScroll) {
-      // Still settling a programmatic write: this `scroll` is one of the
-      // animation's own frames. Re-arm the trailing debounce and ignore it —
-      // do NOT classify it as a user exit (the anchor must not release itself,
-      // and the follow tail must not self-cancel `following`).
-      this.armProgrammaticScrollSettle();
-      return;
-    }
-    // Story 19-3 (AC #1): reaching the bottom clears the unseen-content flag so
-    // the indicator hides — regardless of the active mode.
-    if (this.isNearBottom()) {
-      this.unseenContent = false;
-    }
-    // Story 19-3 (AC #3): a genuine upward scroll past the threshold while
-    // following exits to `idle` (tailing stops); the indicator re-evaluates
-    // (`showJumpToLatest` shows again if there is unseen content below).
-    if (this.scrollMode === 'following') {
-      if (!this.isNearBottom()) {
-        this.scrollMode = 'idle';
-        this.followTailPending = false;
-        // The user is now below the fold with content beyond the bottom — make
-        // the affordance immediately available (Open Question 5).
-        this.unseenContent = true;
-      }
-      return;
-    }
-    if (this.scrollMode !== 'anchored') return;
-    if (!this.isNearBottom()) {
-      this.releaseAnchor();
-    }
-  }
-
   hasNotification(chatMsg: ChatMessage): boolean {
     // `pendingNotifications` holds inner `BaseMessage.id` values so that
-    // `reply.parent_id` (also inner) clears the correct entry. Using the
-    // outer envelope `chatMsg.id` here would never match, which was the
-    // root cause of the "hand icon never disappears in chat" regression.
+    // `reply.parent_id` (also inner) clears the correct entry.
     return chatMsg.rule === 3 && this.pendingNotifications.has(chatMsg.message_id);
   }
 
-  ngOnDestroy(): void {
-    if (this.subscription) {
-      this.subscription.unsubscribe();
-    }
-    if (this.notificationSubscription) {
-      this.notificationSubscription.unsubscribe();
-    }
-    if (this.justSentSubscription) {
-      this.justSentSubscription.unsubscribe();
-    }
-    if (this.programmaticScrollTimer !== null) {
-      clearTimeout(this.programmaticScrollTimer);
-      this.programmaticScrollTimer = null;
-    }
-  }
-
   /**
-   * Bubble click updates the visual selection highlight only. Routing is
-   * driven exclusively by the Send-to dropdown in `user-input.component`
-   * (see Story 4-11 / ADR-002 Revision Log 2026-04-13 — Decision 3
-   * superseded). The former `chatService.setReplyContext(...)` call was
-   * retired because it silently overrode the dropdown selection.
+   * Bubble click updates the visual selection highlight only. Routing is driven
+   * exclusively by the Send-to dropdown in `user-input.component` (Story 4-11).
    */
   onBubbleClicked(chatMsg: ChatMessage): void {
     this.selectedMessageId = chatMsg.id;
   }
 
-  /**
-   * Open the Rule 3 modal with every still-unanswered message from the same
-   * agent pair as the clicked bubble. Story 4-7 will replace the
-   * last-message fallback (modal emits one reply per send) with per-request
-   * reply inputs; this story only changes the notification tracking data
-   * model from `Map<pairKey, ChatMessage[]>` to `Set<id>`.
-   */
+  /** Open the Rule 3 modal with every still-unanswered message from the clicked
+   *  bubble's agent pair. */
   onRule3Clicked(chatMsg: ChatMessage): void {
     const pair = { sender: chatMsg.sender, recipient: chatMsg.recipient };
     const pendingForPair = this.computePendingForPair(pair);
@@ -445,8 +470,6 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   onModalReply(reply: HumanModalReply): void {
-    // Modal stays open across replies (Story 4-7 AC3) — the next messages$
-    // emission will reclassify pending/answered via recomputeModalInputs().
     this.apiService
       .processHumanInput(this.processId, reply.content, reply.messageId)
       .catch((err) => console.error('Failed to send human input:', err));
@@ -461,11 +484,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     }
   }
 
-  /**
-   * Re-derive modalPendingMessages and modalAnsweredMessages from the current
-   * chatMessages + pendingNotifications when the modal is open. Auto-closes
-   * the modal when both lists become empty (clean-exit condition).
-   */
+  /** Re-derive modal pending/answered lists; auto-close when both empty. */
   private recomputeModalInputs(): void {
     if (this.modalAgentPair === null) return;
     const pendingForPair = this.computePendingForPair(this.modalAgentPair);
@@ -502,8 +521,6 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
           !this.pendingNotifications.has(m.message_id),
       )
       .map((request) => {
-        // Reply's `parent_id` is the original's INNER id (`message_id`),
-        // not its outer envelope `id`.
         const reply =
           this.chatMessages.find((r) => r.parent_id === request.message_id) ?? null;
         return reply ? { request, reply } : null;
@@ -535,11 +552,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     return item.id;
   }
 
-  /**
-   * Story 4-8: Stable tracking key for the mixed display list — preserves
-   * DOM nodes across ephemeral → persistent transitions of a thinking
-   * bubble (the `anchor_message_id` is constant across the finalise flip).
-   */
+  /** Stable tracking key for the mixed display list. */
   trackByDisplayItem(_: number, item: DisplayItem): string {
     return (
       item.kind +
@@ -560,13 +573,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     }
   }
 
-  /**
-   * Story 4-8 (AC5): Merge chat messages and thinking states into a single
-   * chronologically sorted list.
-   *   - Primary key: timestamp / start_time (ms).
-   *   - Tie-break (same ms): message BEFORE thinking (so the triggering
-   *     ReceivedMessage visually precedes its own bubble).
-   */
+  /** Merge chat messages + thinking states into one chronologically sorted list. */
   private buildDisplayItems(
     messages: ChatMessage[],
     thinking: ThinkingState[],
@@ -585,333 +592,5 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
       return a.kind === 'message' ? -1 : 1;
     });
     return items;
-  }
-
-  /**
-   * Story 19-2 — distance (px) from the bottom of the scroll container. The
-   * 100px near-bottom threshold from the retired `checkShouldAutoScroll` lives
-   * in `isNearBottom()` below; both reuse this single geometry read.
-   */
-  private distanceFromBottom(): number {
-    if (!this.scrollContainer) return 0;
-    const el = this.scrollContainer.nativeElement;
-    return el.scrollHeight - el.scrollTop - el.clientHeight;
-  }
-
-  /**
-   * Story 19-2 (AC #3/#5) — true when the viewport is within the reused
-   * near-bottom threshold of the bottom. Anchor-release, the mount catch-up
-   * intent, and (19-3) the indicator/follow-exit all key off this constant so
-   * they stay consistent.
-   */
-  private isNearBottom(): boolean {
-    if (!this.scrollContainer) return true;
-    return this.distanceFromBottom() <= this.nearBottomThreshold;
-  }
-
-  private hasContentChanged(): boolean {
-    if (!this.scrollContainer) return false;
-    const currentScrollHeight = this.scrollContainer.nativeElement.scrollHeight;
-    const changed = currentScrollHeight !== this.lastScrollHeight;
-    this.lastScrollHeight = currentScrollHeight;
-    return changed;
-  }
-
-  /**
-   * Instant jump to the bottom. Used by the one-shot mount scroll (AC #4) and,
-   * in 19-3, by follow mode. The write is PROGRAMMATIC: it is bracketed by the
-   * `isProgrammaticScroll` guard (AC #5) so the resulting `scroll` event is not
-   * mistaken for a user scroll-away. Mount is instant regardless (FR8).
-   */
-  private scrollToBottom(): void {
-    if (!this.scrollContainer) return;
-    try {
-      const el = this.scrollContainer.nativeElement;
-      this.beginProgrammaticScroll();
-      el.scrollTop = el.scrollHeight;
-    } catch (err) {
-      console.warn('Could not scroll to bottom:', err);
-    }
-  }
-
-  /**
-   * Story 19-3 (AC #2/#4, Open Question 2) — SMOOTH bottom scroll for follow
-   * mode (honoring reduced motion). A sibling to the instant `scrollToBottom()`
-   * so the mount path stays byte-stable instant (FR8). The write is
-   * PROGRAMMATIC — bracketed by `beginProgrammaticScroll()` so its async smooth
-   * `scroll` frames do not self-cancel `following` via `onScroll` (AC #2).
-   */
-  private followScrollToBottom(): void {
-    if (!this.scrollContainer) return;
-    try {
-      const el = this.scrollContainer.nativeElement;
-      this.beginProgrammaticScroll();
-      el.scrollTo({
-        top: el.scrollHeight,
-        behavior: this.prefersReducedMotion() ? 'auto' : 'smooth',
-      });
-    } catch (err) {
-      console.warn('Could not follow-scroll to bottom:', err);
-    }
-  }
-
-  /**
-   * AC #5 — open the programmatic-scroll guard window around a `scrollTop`/
-   * `scrollTo` write. A smooth `scrollTo` dispatches its `scroll` events across
-   * many later animation frames, so the flag is NOT cleared on a microtask
-   * (that window closes before the first async `scroll` fires, letting the
-   * anchor release itself — §Consequences top regression risk). Instead the
-   * flag is cleared on a TRAILING debounce: it is armed here and re-armed by
-   * every programmatic-origin `scroll` in `onScroll`, dropping only once the
-   * events stop (the animation has settled). A genuine user scroll arriving
-   * after settle is then classified normally.
-   */
-  private beginProgrammaticScroll(): void {
-    this.isProgrammaticScroll = true;
-    this.armProgrammaticScrollSettle();
-  }
-
-  /** Re-arm the trailing debounce that clears the programmatic-scroll guard
-   *  once `scroll` events stop arriving (the programmatic animation settled). */
-  private armProgrammaticScrollSettle(): void {
-    if (this.programmaticScrollTimer !== null) {
-      clearTimeout(this.programmaticScrollTimer);
-    }
-    this.programmaticScrollTimer = setTimeout(() => {
-      this.isProgrammaticScroll = false;
-      this.programmaticScrollTimer = null;
-    }, this.programmaticScrollSettleMs);
-  }
-
-  /**
-   * AC #3 — release the anchor to `idle`: stop re-pinning and clear ALL anchor
-   * bookkeeping so `maybeAnchorTurn()` no longer fires until the next send.
-   */
-  private releaseAnchor(): void {
-    this.scrollMode = 'idle';
-    this.anchorMessageId = null;
-    this.anchorScrollDone = false;
-    this.lastAnchorOffsetTop = null;
-    this.spacerHeight = 0;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Story 19-3 (ADR-016 §Decision 4/6) — opt-in follow mode + jump-to-latest.
-  // ---------------------------------------------------------------------------
-
-  /**
-   * AC #1/#2 — react to `displayItems` growth (called only when the list grew).
-   * In `following`, arm the post-layout tail (`maybeFollowTail`). Otherwise, if
-   * the user is below the fold, flag unseen content so the indicator is offered.
-   */
-  private onContentGrew(): void {
-    if (this.scrollMode === 'following') {
-      this.followTailPending = true;
-      return;
-    }
-    if (!this.isNearBottom()) {
-      this.unseenContent = true;
-    }
-  }
-
-  /**
-   * AC #2 — post-layout follow tail. Runs from `ngAfterViewChecked` after the
-   * mount/anchor passes. Pins to the bottom on every growth while `following`.
-   * Honors the hover lock (defers a `follow-tail` owed action) and routes the
-   * write through the programmatic guard so it does not self-release (AC #2).
-   */
-  private maybeFollowTail(): void {
-    if (this.scrollMode !== 'following' || !this.followTailPending) return;
-    this.followTailPending = false;
-    if (this.isHovered) {
-      // Story 4.4 hover lock: defer the tail until mouseleave (AC #4).
-      this.owedScroll = 'follow-tail';
-      return;
-    }
-    this.followScrollToBottom();
-  }
-
-  /**
-   * AC #2 — enter `following`. Clears any active anchor bookkeeping (follow
-   * supersedes `anchored`) then sets the state. Extracted so the click handler
-   * stays an orchestrator. `releaseAnchor()` would set `idle`, so the order is:
-   * clear anchor fields, THEN set `following`.
-   */
-  private enterFollowMode(): void {
-    this.anchorMessageId = null;
-    this.anchorScrollDone = false;
-    this.lastAnchorOffsetTop = null;
-    this.spacerHeight = 0;
-    this.scrollMode = 'following';
-  }
-
-  /**
-   * AC #1 — derived indicator visibility (cheap, side-effect-free; reads
-   * geometry only, no writes — OnPush/CD safe, NFR3). Shown when NOT following,
-   * NOT at the bottom, and there is unseen content below the fold. The
-   * `!== 'following'` and `!isNearBottom()` terms give "hidden while following"
-   * and "hidden at bottom" for free.
-   */
-  get showJumpToLatest(): boolean {
-    return (
-      this.scrollMode !== 'following' &&
-      !this.isNearBottom() &&
-      this.unseenContent
-    );
-  }
-
-  /**
-   * AC #2 — the indicator's click handler: the ONLY entry into `following`.
-   * Enters follow mode, smooth-scrolls to the newest message (reduced-motion
-   * aware), and clears the unseen-content flag.
-   */
-  onJumpToLatest(): void {
-    this.enterFollowMode();
-    this.unseenContent = false;
-    this.followScrollToBottom();
-  }
-
-  // ---------------------------------------------------------------------------
-  // Story 19-1 (ADR-016) — top-anchor primitive helpers.
-  // ---------------------------------------------------------------------------
-
-  /**
-   * AC #2 — resolve `anchorMessageId` (the OUTER `ChatMessage.id`, the
-   * `data-message-id` lookup key) from the first user-originated (Rule 1)
-   * message at/after the send time. Keyed by send ORIGIN (timestamp), not by
-   * content (ADR-016 §Decision 1). No-op once an id is resolved for the turn so
-   * frame-batched / de-dup re-emits do not re-resolve. The actual scroll is
-   * latched separately by `anchorScrollDone` in `maybeAnchorTurn()`.
-   */
-  private resolveAnchorMessageId(): void {
-    if (this.justSentKey === null || this.anchorMessageId !== null) return;
-    const sentAt = Number(this.justSentKey);
-    const match = this.chatMessages.find(
-      (m) =>
-        m.sender.name === ENTRY_POINT_NAME &&
-        (Number.isNaN(sentAt) || m.timestamp.getTime() >= sentAt),
-    );
-    if (match) {
-      this.anchorMessageId = match.id;
-    }
-  }
-
-  /**
-   * AC #2/#4/#5 (19-1) + AC #3 (19-2) — drive the top-anchor from the
-   * post-layout pass. Fires the single first-anchor once the matched element
-   * renders (sets `scrollMode = 'anchored'`), then re-pins only on the anchored
-   * element's OWN offset change (late layout). 19-2 additions: a hover defer
-   * (owe a `top-anchor` replay), and natural scroll-off release to `idle` when
-   * answer growth pushes the anchor above the fold. Downstream answer growth
-   * does not move the view (it does not change the anchor's `offsetTop`).
-   */
-  private maybeAnchorTurn(): void {
-    if (this.anchorMessageId === null) return;
-    const anchorEl = this.resolveAnchorElement(this.anchorMessageId);
-    if (!anchorEl) return; // not yet rendered — retry on next emission (AC #4)
-
-    // Story 4.4 hover lock: defer the programmatic anchor write until mouseleave.
-    if (this.isHovered) {
-      this.owedScroll = 'top-anchor';
-      return;
-    }
-
-    if (!this.anchorScrollDone) {
-      this.applyAnchorScroll(anchorEl);
-      this.anchorScrollDone = true;
-      this.scrollMode = 'anchored';
-      return;
-    }
-    // Natural scroll-off (AC #3): the answer grew tall enough that the anchored
-    // message scrolled above the top of the viewport — release, do NOT re-pin.
-    // Disjoint from the AC #5 re-pin below (Open Question 4): scroll-off is
-    // "anchor above the fold" (offsetTop − scrollTop < topPadding), re-pin is
-    // "anchor's OWN offsetTop changed".
-    if (this.isAnchorScrolledOff(anchorEl)) {
-      this.releaseAnchor();
-      return;
-    }
-    // Anchor stability (AC #5): re-pin only on the anchor's OWN geometry change.
-    if (anchorEl.offsetTop !== this.lastAnchorOffsetTop) {
-      this.applyAnchorScroll(anchorEl);
-    }
-  }
-
-  /**
-   * AC #3 (Open Question 4) — true when the anchored element has scrolled above
-   * the top of the viewport (answer growth pushed it off the fold). Uses the
-   * cached geometry vs the live container `scrollTop`, not a brittle per-frame
-   * heuristic. Distinct from the AC #5 re-pin (which keys off the anchor's OWN
-   * `offsetTop` change, not its position relative to the scroll position).
-   */
-  private isAnchorScrolledOff(anchorEl: HTMLElement): boolean {
-    if (!this.scrollContainer) return false;
-    const container = this.scrollContainer.nativeElement;
-    return anchorEl.offsetTop - container.scrollTop < this.anchorTopPadding;
-  }
-
-  /** Resolve the anchored element inside the scroll container via
-   *  `data-message-id` (ADR-016 §Decision 3). Returns null if not yet rendered. */
-  private resolveAnchorElement(id: string): HTMLElement | null {
-    if (!this.scrollContainer) return null;
-    return (
-      this.scrollContainer.nativeElement.querySelector(
-        '[data-message-id="' + id + '"]',
-      ) ?? null
-    );
-  }
-
-  /**
-   * AC #3/#4/#6 — single post-layout read→write task. Reads `offsetTop` /
-   * `clientHeight` / `scrollHeight` first, derives the trailing spacer height,
-   * writes the spacer height, then writes `scrollTop` (smooth unless reduced
-   * motion is requested). No read after the writes — no thrash (NFR2).
-   */
-  private applyAnchorScroll(anchorEl: HTMLElement): void {
-    if (!this.scrollContainer) return;
-    const container = this.scrollContainer.nativeElement;
-    // --- reads (post-layout) ---
-    const offsetTop: number = anchorEl.offsetTop;
-    // --- derive + write spacer (AC #3) ---
-    this.recomputeSpacerHeight(offsetTop);
-    // --- write scroll (AC #4/#6) ---
-    // Story 19-2 (AC #5): the anchor write is PROGRAMMATIC — bracket it so the
-    // resulting `scroll` event does not release the anchor as a user-exit.
-    const top = offsetTop - this.anchorTopPadding;
-    this.beginProgrammaticScroll();
-    container.scrollTo({
-      top,
-      behavior: this.prefersReducedMotion() ? 'auto' : 'smooth',
-    });
-    this.lastAnchorOffsetTop = offsetTop;
-  }
-
-  /**
-   * AC #3 — trailing spacer height. `0` when no turn is anchored; otherwise
-   * `max(0, min(viewport, viewport − heightOfAnchoredTurnAndBelow))`, where the
-   * "below" term is measured against the spacer-excluded content
-   * (`scrollHeight − spacerHeight − offsetTop`, Open Question 3 option (a)).
-   * Collapses toward `0` as the answer fills the viewport; capped at the
-   * viewport so short conversations show no dead space.
-   */
-  private recomputeSpacerHeight(anchorOffsetTop: number): void {
-    if (!this.scrollContainer || this.anchorMessageId === null) {
-      this.spacerHeight = 0;
-      return;
-    }
-    const container = this.scrollContainer.nativeElement;
-    const viewportHeight: number = container.clientHeight;
-    const scrollHeight: number = container.scrollHeight;
-    const heightOfAnchoredTurnAndBelow =
-      scrollHeight - this.spacerHeight - anchorOffsetTop;
-    this.spacerHeight = Math.max(
-      0,
-      Math.min(viewportHeight, viewportHeight - heightOfAnchoredTurnAndBelow),
-    );
-  }
-
-  /** AC #6 — true when the user has requested reduced motion. */
-  private prefersReducedMotion(): boolean {
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
 }
