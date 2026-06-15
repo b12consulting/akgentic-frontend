@@ -41,34 +41,45 @@ import {
 import { ValidationReportComponent } from './validation-report/validation-report.component';
 
 /**
- * NamespacePanelComponent — host-agnostic view of a catalog namespace YAML.
+ * NamespacePanelComponent — host-agnostic editor for a catalog namespace YAML.
  *
- * Story 11.2 delivered the read-only scaffold. Story 11.3 adds:
- *   - Edit / Cancel / Save action row (Edit replaced by Cancel+Save in edit mode).
- *   - `hasUnsavedChanges()` is now a real buffer-vs-serverYaml comparison.
- *   - Save flow posts directly to `apiService.importNamespace` — NO
- *     pre-save `validate` round-trip (ADR-011 D4).
+ * Story 22.1 (ADR-017 §1–§6) collapses the original view/edit two-mode state
+ * machine into a single **dirty** signal (`buffer !== serverYaml`). The panel
+ * is **always editable** — Monaco mounts permanently writable, there is no
+ * Edit-click barrier, and the entire action row is driven by one boolean:
+ *
+ *   - Monaco mounts writable (`readOnly: false`); `editorOptions` is a single
+ *     stable object built once and never reassigned.
+ *   - `hasUnsavedChanges()` collapses to `buffer !== serverYaml` (name +
+ *     signature preserved — the route `CanDeactivate` guard and the home
+ *     dirty-close guard consume it unchanged).
+ *   - Action row: Validate (always) · Save (dirty) · Reset (dirty) ·
+ *     Clone (clean) · Delete (always).
+ *   - Save flow posts directly to `apiService.importNamespace` — NO pre-save
+ *     `validate` round-trip (ADR-011 D4) — preceded by a one-shot drift check
+ *     (re-export; on divergence prompt reload-and-rebase vs overwrite).
  *   - 422 → populate `lastValidation` (structured) or `rawSaveError`
- *     (fallback); stay in edit mode, buffer preserved.
- *   - 5xx / 4xx (other than 401/422) → sticky error toast + in-panel Retry
- *     button; stay in edit mode, buffer preserved.
+ *     (fallback); buffer preserved.
+ *   - 5xx / 4xx (other than 401/422) → sticky error toast; buffer preserved.
+ *     Re-clicking Save retries.
  *   - 401 → no panel-specific behaviour; the FetchService global toast
  *     surfaces the failure, the app-wide handler (if any) runs. Panel only
  *     clears `saving` in `finally`.
- *   - PrimeNG `ConfirmDialog` guards Cancel-with-dirty-buffer.
+ *   - PrimeNG `ConfirmDialog` guards Reset-with-dirty-buffer and the Save
+ *     drift reload-vs-overwrite choice.
  *
  * The component remains presentation-only: no `Router`, `ActivatedRoute`,
- * `MAT_DIALOG_DATA`, etc. The dialog wrapper (HomeComponent) and the future
+ * `MAT_DIALOG_DATA`, etc. The dialog wrapper (HomeComponent) and the
  * deep-link route (Story 11.6) mount it identically.
  *
- * Public surface contract (stable across Epic 11):
+ * Public surface contract:
  *   - @Input() namespace: string          — required, drives the load flow.
  *   - @Output() closed: EventEmitter<void> — asks the host to dismiss.
  *   - @Output() saved: EventEmitter<void>  — emitted once per successful
  *     import; hosts re-fetch derived lists (e.g. HomeComponent's dropdown).
  *   - hasUnsavedChanges(): boolean         — dirty-state predicate. Returns
- *     true iff `mode === 'edit' && buffer !== serverYaml`. Story 11.6's
- *     `CanDeactivate` guard consumes the same method.
+ *     true iff `buffer !== serverYaml`. The route `CanDeactivate` guard and
+ *     the home dirty-close guard consume the same method.
  */
 @Component({
   selector: 'app-namespace-panel',
@@ -122,10 +133,10 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   private authService: AuthService = inject(AuthService);
   private destroyRef: DestroyRef = inject(DestroyRef);
 
-  // Internal state — initial values per AC 2.
+  // Internal state. The panel is always editable — there is no `mode` axis.
+  // The single signal that drives the action row is `buffer !== serverYaml`.
   serverYaml: string = '';
   buffer: string = '';
-  mode: 'view' | 'edit' = 'view';
   lastValidation: NamespaceValidationReport | null = null;
   loading: boolean = false;
 
@@ -142,27 +153,17 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   validating: boolean = false;
 
   // UX polish: replaces the intrusive "Validation passed" panel on clean
-  // reports. When a Validate click returns `ok: true`, the clicked button
+  // reports. When a Validate click returns `ok: true`, the Validate button
   // briefly flips to PrimeNG's `success` severity (green) and then reverts.
   // The report pane stays hidden in this path — findings-only.
   //
-  //   - `validationFlashPersisted` — true while the view-mode Validate button
-  //     shows the success-flash state.
-  //   - `validationFlashBuffer`    — same, for the edit-mode Validate button.
+  //   - `validationFlashBuffer` — true while the Validate button shows the
+  //     success-flash state. (Single flag now — there is one Validate
+  //     button, over the buffer; ADR-017 §4.)
   //   - `flashTimeoutId` — handle so repeated clicks cancel the prior timer
   //     and the destroy hook cleans up any pending callback.
-  validationFlashPersisted: boolean = false;
   validationFlashBuffer: boolean = false;
   private flashTimeoutId: ReturnType<typeof setTimeout> | undefined = undefined;
-
-  /**
-   * Post-review UX refinement — set while the Edit button's drift check
-   * is in flight (one `exportNamespace` call before flipping to edit
-   * mode). Gates the Edit button's `[disabled]` + spinner-icon swap so
-   * the operator cannot double-click during the async round trip. See
-   * `onEditClick()`.
-   */
-  refreshingForEdit: boolean = false;
 
   /**
    * Snapshot of the buffer value at the moment a Validate-buffer request
@@ -302,18 +303,17 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   }
 
   /**
-   * Briefly flash the clicked Validate button as `success` (green) — the
-   * UX-light alternative to rendering a "Validation passed" panel for clean
-   * reports. Repeated clicks during the flash window cancel the pending
-   * timer and restart fresh. The destroyed guard prevents a post-destroy
-   * write if the timer fires after teardown.
+   * Briefly flash the Validate button as `success` (green) — the UX-light
+   * alternative to rendering a "Validation passed" panel for clean reports.
+   * Repeated clicks during the flash window cancel the pending timer and
+   * restart fresh. The destroyed guard prevents a post-destroy write if the
+   * timer fires after teardown.
    */
-  private flashValidated(target: 'persisted' | 'buffer'): void {
+  private flashValidated(): void {
     if (this.flashTimeoutId !== undefined) {
       clearTimeout(this.flashTimeoutId);
     }
-    this.validationFlashPersisted = target === 'persisted';
-    this.validationFlashBuffer = target === 'buffer';
+    this.validationFlashBuffer = true;
     // Story 11.7 AC 11 — pair the visual flash with an aria-live
     // announcement so screen-reader users get the same outcome.
     this.a11yAnnouncement = 'Validation passed';
@@ -322,7 +322,6 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       if (this.destroyed) {
         return;
       }
-      this.validationFlashPersisted = false;
       this.validationFlashBuffer = false;
       this.validatedBuffer = null;
     }, 2500);
@@ -330,10 +329,10 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
 
   /**
    * Story 11.7 AC 12 — write the failing-validation announcement into the
-   * live region. Called from THREE sites that populate `lastValidation`
-   * with a non-clean report: `onValidatePersistedClick` failing branch,
-   * `onValidateBufferClick` failing branch, and the Save / Clone 422
-   * structured branches in `handleSaveError` / `handleCloneError`.
+   * live region. Called from the sites that populate `lastValidation` with a
+   * non-clean report: the `onValidateBufferClick` failing branch and the
+   * Save / Clone / Delete 422 structured branches in `handleSaveError` /
+   * `handleCloneError` / `handleDeleteError`.
    *
    * Plural form is fixed at "issues" (e.g. "Validation found 1 issues") for
    * announcement-text simplicity — assistive-tech audiences tolerate the
@@ -352,7 +351,7 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   /**
    * Single write path for `buffer` driven from the Monaco editor's
    * `(ngModelChange)`. Writes-through to `this.buffer` AND invalidates the
-   * edit-mode Validate-buffer flash when the value diverges from the
+   * Validate success-flash when the value diverges from the
    * snapshot captured at the last successful validate. Modifying the YAML
    * after a clean ack makes the ack stale — the button must revert to
    * secondary immediately rather than keep its green state for the full
@@ -404,136 +403,42 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   }
 
   /**
-   * Monaco editor options.
+   * Monaco editor options — a single stable object reference built once and
+   * NEVER reassigned (ADR-017 §1). The editor is permanently writable
+   * (`readOnly: false`) since the panel is always editable.
    *
-   * MUST be a stable object reference between mode changes. `nu-monaco-editor`
-   * receives `[options]` as a signal input (reference-equality semantics) —
-   * returning a fresh object every change-detection tick (the previous getter
-   * implementation) fires the input on every CD, causes `updateOptions()` to
-   * run repeatedly, and drives a CD / layout feedback loop that freezes the
-   * tab. The field is reassigned ONLY when `mode` flips (via `setMode`).
+   * `nu-monaco-editor` receives `[options]` as a signal input
+   * (reference-equality semantics): a stable reference means Monaco's
+   * `updateOptions()` does not re-run on every change-detection tick. The old
+   * per-mode reassignment (via `setMode`) was the CD-churn risk; with one
+   * constant object that risk is gone.
    *
    * `automaticLayout: true` is load-bearing for dialog hosting — the editor
    * otherwise renders at 0×0 when its container mounts late.
    */
-  editorOptions: Record<string, unknown> = this.buildEditorOptions();
-
-  private buildEditorOptions(): Record<string, unknown> {
-    return {
-      theme: 'vs',
-      language: 'yaml',
-      automaticLayout: true,
-      readOnly: this.mode === 'view',
-    };
-  }
+  readonly editorOptions: Record<string, unknown> = {
+    theme: 'vs',
+    language: 'yaml',
+    automaticLayout: true,
+    readOnly: false,
+  };
 
   /**
-   * Single write path for `mode` — keeps `editorOptions` in lock-step so the
-   * Monaco signal input sees exactly one new reference per real mode flip.
-   */
-  private setMode(next: 'view' | 'edit'): void {
-    if (this.mode === next) {
-      return;
-    }
-    this.mode = next;
-    this.editorOptions = this.buildEditorOptions();
-  }
-
-  /**
-   * Dirty-state predicate — single source of truth for confirm-on-close
-   * and Save-enabled checks. True iff the panel is in edit mode AND the
-   * buffer diverges from the last server snapshot. Method NAME + SIGNATURE
-   * are part of Epic 11's stable surface (Story 11.6's `CanDeactivate`
-   * guard consumes the same method).
+   * Dirty-state predicate — single source of truth for the confirm-on-close
+   * guards and the Save/Reset/Clone enablement. True iff the buffer diverges
+   * from the last server snapshot (ADR-017 §1). The method NAME + SIGNATURE
+   * are preserved: the route `CanDeactivate` guard and the home dirty-close
+   * guard consume the same method.
    */
   hasUnsavedChanges(): boolean {
-    return this.mode === 'edit' && this.buffer !== this.serverYaml;
+    return this.buffer !== this.serverYaml;
   }
 
   /**
-   * Enter edit mode.
-   *
-   * Post-review refinement — re-fetches the server namespace (single
-   * `exportNamespace` call) before flipping to `edit`. If the server has
-   * drifted since the initial load, prompts the operator to reload;
-   * accept replaces `serverYaml` + `buffer` with the latest and enters
-   * edit mode against the fresh state, reject stays in view mode with
-   * the stale state visible (operator can re-click Edit or close).
-   *
-   * On network error the drift check falls through to edit mode with a
-   * warning toast — operators shouldn't be blocked by a hiccup from
-   * editing their last-known version; the server still validates on
-   * save, so a genuinely-stale edit can only land a known-bad bundle.
-   *
-   * Monaco's `readOnly` flips via the `editorOptions` field (reassigned
-   * in `setMode`). Save / Reset / Cancel replace the Edit / Clone pair
-   * in the action row.
-   */
-  async onEditClick(): Promise<void> {
-    if (this.refreshingForEdit) {
-      return;
-    }
-    this.refreshingForEdit = true;
-    try {
-      // Story 14.4 — the Edit drift-check re-read must also carry the admin
-      // "show all" flag, else an admin editing a foreign-owned namespace would
-      // hit an owner-scoped read here and fail the drift check.
-      const latestYaml = await this.apiService.exportNamespace(this.namespace, {
-        all: this.showAll,
-      });
-      if (this.destroyed) {
-        return;
-      }
-      if (latestYaml === this.serverYaml) {
-        this.setMode('edit');
-        return;
-      }
-      // Drift detected — prompt the operator before silently replacing
-      // the snapshot the panel is showing.
-      this.confirmationService.confirm({
-        header: 'Namespace modified',
-        icon: 'pi pi-exclamation-triangle',
-        message:
-          'The namespace was modified on the server since it was loaded. Reload the latest version to edit?',
-        accept: () => {
-          if (this.destroyed) {
-            return;
-          }
-          this.serverYaml = latestYaml;
-          this.buffer = latestYaml;
-          this.lastValidation = null;
-          this.rawSaveError = null;
-          this.validatedBuffer = null;
-          this.setMode('edit');
-        },
-        // reject intentionally omitted — dismissing keeps the operator
-        // in view mode with the stale state visible; re-clicking Edit
-        // will re-check.
-      });
-    } catch (err) {
-      if (this.destroyed) {
-        return;
-      }
-      // Non-blocking: warn and proceed to edit against last-known state.
-      this.messageService.add({
-        severity: 'warn',
-        summary: 'Could not verify namespace state',
-        detail: 'Editing against the last-known version. Save will re-validate on the server.',
-      });
-      this.setMode('edit');
-    } finally {
-      if (!this.destroyed) {
-        this.refreshingForEdit = false;
-      }
-    }
-  }
-
-  /**
-   * Post-review new feature — revert the buffer to `serverYaml` without
-   * exiting edit mode. Mirrors Cancel's dirty-state guard (confirm
-   * "Discard unsaved changes?") but keeps `mode === 'edit'` on accept
-   * so the operator can keep working. Clean buffer path is guarded at
-   * the template level (`[disabled]="buffer === serverYaml"`).
+   * Revert the buffer to `serverYaml` — the SOLE undo affordance now that
+   * Cancel is removed (ADR-017 §2). Guarded by the existing "Discard unsaved
+   * changes?" confirm; a no-op when clean (the Reset button is also disabled
+   * via `[disabled]="buffer === serverYaml"`).
    */
   onResetClick(): void {
     if (this.buffer === this.serverYaml) {
@@ -551,49 +456,30 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
         this.lastValidation = null;
         this.rawSaveError = null;
         this.validatedBuffer = null;
-        // Stay in edit mode — Reset differs from Cancel here.
       },
-    });
-  }
-
-  /**
-   * Cancel the edit. Clean buffer → flip to view directly. Dirty buffer →
-   * PrimeNG confirm dialog; on accept revert buffer + flip to view, on
-   * reject keep state unchanged (AC 3 + AC 4).
-   */
-  onCancelClick(): void {
-    if (this.buffer === this.serverYaml) {
-      this.setMode('view');
-      return;
-    }
-    this.confirmationService.confirm({
-      header: 'Unsaved changes',
-      icon: 'pi pi-exclamation-triangle',
-      message: 'Discard unsaved changes?',
-      accept: () => {
-        if (this.destroyed) {
-          return;
-        }
-        this.buffer = this.serverYaml;
-        this.setMode('view');
-      },
-      // `reject` intentionally omitted — dismissing the confirm leaves the
-      // panel exactly as it was (AC 3 dismiss branch).
     });
   }
 
   /**
    * Save handler — posts the current buffer directly to
-   * `apiService.importNamespace` (NO pre-save validate, per ADR-011 D4).
+   * `apiService.importNamespace` (NO pre-save validate, per ADR-011 D4),
+   * preceded by a one-shot **drift check** (ADR-017 §6).
    *
-   * Success (2xx): `serverYaml` snapshots the just-saved buffer, mode flips
-   * to view, toast success, `saved` emits so the host refreshes derived
-   * lists.
+   * Gated on `hasUnsavedChanges()` (and `saving`); no longer references any
+   * mode — the panel is always editable.
+   *
+   * Drift check: before importing, re-`exportNamespace` and, if the returned
+   * YAML diverges from `serverYaml`, prompt the operator (reload-and-rebase
+   * vs overwrite) instead of importing blindly. The check is one-shot per
+   * Save; it relocates the protection the old Edit-entry drift check gave.
+   *
+   * Success (2xx): `serverYaml` snapshots the just-saved buffer, toast
+   * success, `saved` emits so the host refreshes derived lists. The buffer is
+   * unchanged, so the panel is now clean (Save/Reset disable, Clone enables).
    *
    * 422: populate `lastValidation` when the body is structurally a
-   * `NamespaceValidationReport`, else stash the raw body into
-   * `rawSaveError` for a verbatim `<pre>` rendering. Stay in edit mode,
-   * buffer preserved, saving resets.
+   * `NamespaceValidationReport`, else stash the raw body into `rawSaveError`
+   * for a verbatim `<pre>` rendering. Buffer preserved, saving resets.
    *
    * 401: silent at the panel level. FetchService has already surfaced a
    * global toast; the app-wide 401 handler (if any) runs. The panel only
@@ -658,20 +544,14 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
     // not display outdated issues while the request is in flight.
     this.lastValidation = null;
     try {
-      await this.apiService.importNamespace(savedBuffer);
-      if (this.destroyed) {
+      // ADR-017 §6 — one-shot drift check before importing. Returns false
+      // when the operator chose reload-and-rebase (import is skipped this
+      // click); true when the import should proceed (no drift, or overwrite).
+      const proceed = await this.checkSaveDrift(savedBuffer);
+      if (this.destroyed || !proceed) {
         return;
       }
-      this.serverYaml = savedBuffer;
-      this.setMode('view');
-      // Story 11.7 AC 13 — pair the success toast with an aria-live
-      // announcement so screen-reader users get the same outcome.
-      this.a11yAnnouncement = 'Namespace saved';
-      this.saved.emit();
-      this.messageService.add({
-        severity: 'success',
-        summary: 'Namespace saved successfully',
-      });
+      await this.performSaveImport(savedBuffer);
     } catch (err) {
       if (this.destroyed) {
         return;
@@ -685,61 +565,99 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   }
 
   /**
-   * Validate the persisted namespace (view mode). Calls
-   * `apiService.validatePersistedNamespace(this.namespace)` exactly once,
-   * populates `this.lastValidation` on success, never mutates
-   * `serverYaml` / `mode` / `buffer` / `rawSaveError` (Validate is never
-   * a Save gate — ADR-011 D3 / D4).
+   * ADR-017 §6 — one-shot drift check folded into Save. Re-`exportNamespace`s
+   * (carrying `{ all: this.showAll }`) and, if the returned YAML diverges from
+   * `serverYaml`, prompts the operator with a reload-and-rebase vs overwrite
+   * choice. Returns:
+   *   - `true`  → proceed with the import (no drift detected, OR the operator
+   *               chose **overwrite**).
+   *   - `false` → skip the import this click (the operator chose
+   *               **reload-and-rebase**: `serverYaml`, and `buffer` if it
+   *               equalled the old `serverYaml`, are replaced with the latest
+   *               server YAML so the operator can re-Save against the fresh
+   *               base).
+   *
+   * PrimeNG's `confirmationService.confirm` is binary, so the affordance is
+   * mapped: `accept` = reload-and-rebase (resolve false), `reject` =
+   * overwrite (resolve true). A network error during the re-export falls
+   * through to `true` (proceed) — the server still validates on import, so a
+   * genuinely-stale edit can only land a known-bad bundle, and operators
+   * should not be blocked by a hiccup.
    */
-  async onValidatePersistedClick(): Promise<void> {
-    if (this.validating) {
-      return;
-    }
-    this.validating = true;
+  private async checkSaveDrift(savedBuffer: string): Promise<boolean> {
+    let latestYaml: string;
     try {
-      const report = await this.apiService.validatePersistedNamespace(
-        this.namespace,
-      );
-      if (this.destroyed) {
-        return;
-      }
-      // Defensive: if the API layer resolved to undefined (e.g. network
-      // fallback in FetchService) or an unexpected shape, surface a clear
-      // toast instead of throwing a TypeError on `report.ok`.
-      if (!this.isValidationReport(report)) {
-        throw new Error('Server returned no validation report.');
-      }
-      // Clean report → keep the pane hidden and flash the button green for a
-      // brief ack. Non-clean report → populate `lastValidation` so the
-      // ValidationReportComponent renders the findings.
-      if (report.ok) {
-        this.lastValidation = null;
-        this.flashValidated('persisted');
-      } else {
-        this.lastValidation = report;
-        // Story 11.7 AC 12 — announce the failing-validation outcome.
-        this.announceValidationOutcome(report);
-      }
-    } catch (err) {
-      if (this.destroyed) {
-        return;
-      }
-      this.handleValidateError(err);
-    } finally {
-      if (!this.destroyed) {
-        this.validating = false;
-      }
+      latestYaml = await this.apiService.exportNamespace(this.namespace, {
+        all: this.showAll,
+      });
+    } catch {
+      // Non-blocking: proceed to import against last-known server state.
+      return true;
     }
+    if (this.destroyed) {
+      return false;
+    }
+    if (latestYaml === this.serverYaml) {
+      return true;
+    }
+    return new Promise<boolean>((resolve) => {
+      this.confirmationService.confirm({
+        header: 'Namespace modified',
+        icon: 'pi pi-exclamation-triangle',
+        message:
+          'The namespace was modified on the server since it was loaded. ' +
+          'Reload the latest version (discarding this Save), or overwrite it ' +
+          'with your changes?',
+        acceptLabel: 'Reload',
+        rejectLabel: 'Overwrite',
+        accept: () => {
+          if (!this.destroyed) {
+            // Rebase onto the fresh server YAML; only move the buffer if it
+            // was still pinned to the old snapshot (no local edits to lose).
+            if (this.buffer === this.serverYaml) {
+              this.buffer = latestYaml;
+            }
+            this.serverYaml = latestYaml;
+          }
+          resolve(false);
+        },
+        reject: () => resolve(true),
+      });
+    });
   }
 
   /**
-   * Validate the current edit buffer without persisting. Snapshots
-   * `this.buffer` at click time (`bufferAtClick`) so Monaco's live
+   * Issues the import and runs the success branch. Extracted from
+   * `onSaveClick` so the handler stays within the method-length budget. The
+   * caller owns `saving` / the destroy guard / the catch branch.
+   */
+  private async performSaveImport(savedBuffer: string): Promise<void> {
+    await this.apiService.importNamespace(savedBuffer);
+    if (this.destroyed) {
+      return;
+    }
+    this.serverYaml = savedBuffer;
+    // Story 11.7 AC 13 — pair the success toast with an aria-live
+    // announcement so screen-reader users get the same outcome.
+    this.a11yAnnouncement = 'Namespace saved';
+    this.saved.emit();
+    this.messageService.add({
+      severity: 'success',
+      summary: 'Namespace saved successfully',
+    });
+  }
+
+  /**
+   * The SINGLE Validate handler (ADR-017 §4). Validates the current buffer
+   * without persisting via `apiService.validateNamespaceBuffer(buffer)`.
+   * Snapshots `this.buffer` at click time (`bufferAtClick`) so Monaco's live
    * `[(ngModel)]` mutation during the in-flight request cannot race the
    * request args (mirrors Story 11.3's `savedBuffer` pattern).
    *
-   * Validate never mutates `mode`, `serverYaml`, or `buffer` — the
-   * handler touches only `validating` and `lastValidation`.
+   * When the buffer is clean (`buffer === serverYaml`), this is identical to
+   * validating the persisted namespace. Validate never mutates `serverYaml`
+   * or `buffer` — the handler touches only `validating` and `lastValidation`.
+   * It is never disabled by the FR14 gate (ADR-017 §5).
    */
   async onValidateBufferClick(): Promise<void> {
     if (this.validating) {
@@ -756,12 +674,12 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       if (!this.isValidationReport(report)) {
         throw new Error('Server returned no validation report.');
       }
-      // Clean buffer → flash the edit-mode Validate button. Non-clean →
-      // render findings via `lastValidation` as before.
+      // Clean buffer → flash the Validate button. Non-clean → render
+      // findings via `lastValidation` as before.
       if (report.ok) {
         this.lastValidation = null;
         this.validatedBuffer = bufferAtClick;
-        this.flashValidated('buffer');
+        this.flashValidated();
       } else {
         this.lastValidation = report;
         // Story 11.7 AC 12 — announce the failing-validation outcome.
@@ -842,7 +760,7 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
     if (status === 401) {
       // Silent at the panel — FetchService already fired a global toast and
       // the app-wide 401 handler (if any) runs. The panel does not mutate
-      // `mode` / `buffer` / `lastValidation` on 401 (AC 9).
+      // `buffer` / `lastValidation` on 401 (AC 9).
       return;
     }
     if (status === 422) {
@@ -877,7 +795,7 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
 
   /**
    * Open the Clone sub-dialog (AC 2). Pure UI flip — does NOT fire a
-   * network request, does NOT mutate `buffer` / `serverYaml` / `mode` /
+   * network request, does NOT mutate `buffer` / `serverYaml` /
    * `lastValidation` / `rawSaveError`. No-op when `cloning === true`
    * (defence in depth — the outer Clone button is `[disabled]` in that
    * state, so this path is unreachable in practice).
@@ -1095,17 +1013,17 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   }
 
   /**
-   * Clone handler — "Save As" semantics (AC 5). Captures the CURRENT buffer
-   * (NOT `serverYaml`) so an operator editing mid-view and clicking Clone
-   * sees their dirty edits in the rewritten bundle. Rewrites the root
-   * `namespace` field via {@link rewriteNamespaceInYaml}, then reuses the
-   * Save path (`apiService.importNamespace`) — no new endpoint.
+   * Clone handler — "duplicate the saved bundle" semantics (ADR-017 §3). The
+   * outer Clone button is gated on a **clean** panel (`buffer === serverYaml`),
+   * so the captured buffer is the persisted bundle, never a half-edited draft.
+   * Rewrites the root `namespace` field via {@link rewriteNamespaceInYaml},
+   * then reuses the Save path (`apiService.importNamespace`) — no new endpoint.
    *
    * Branches (AC 8–AC 12):
    *   - `CloneYamlError` before the network call → toast + dialog stays
    *     open, `cloning` resets, `importNamespace` NEVER called.
    *   - 2xx → dismiss dialog, emit `(saved)`, switch to destNs, re-load via
-   *     `loadNamespace(destNs)` (Story 11.2 contract — lands in view mode).
+   *     `loadNamespace(destNs)` (Story 11.2 contract — lands clean).
    *   - 401 silent (FetchService surfaces the global toast).
    *   - 422 structured → populate `lastValidation`; dialog stays open.
    *   - 422 unstructured → stash raw body in `rawSaveError`; dialog stays
@@ -1113,8 +1031,8 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
    *   - Other (4xx / 5xx / network) → sticky error toast + `lastCloneError`;
    *     dialog stays open.
    *
-   * In every failure branch: `namespace` / `serverYaml` / `buffer` / `mode`
-   * are unchanged (AC 10). Destroy-guard mirrors Story 11.3's `onSaveClick`.
+   * In every failure branch: `namespace` / `serverYaml` / `buffer` are
+   * unchanged (AC 10). Destroy-guard mirrors Story 11.3's `onSaveClick`.
    */
   async onCloneConfirmClick(): Promise<void> {
     if (this.cloneConfirmDisabled) {
@@ -1145,7 +1063,7 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       // 2xx happy path: dismiss dialog, emit saved, switch namespace +
       // re-load. Programmatic self-writes to an @Input() field do NOT
       // trigger ngOnChanges, so we invoke loadNamespace explicitly — it
-      // re-exports the bundle and flips mode to view (Story 11.2).
+      // re-exports the bundle and lands the panel clean (Story 11.2).
       this.cloneDialogVisible = false;
       this.cloneDestNs = '';
       this.cloneDestName = '';
@@ -1247,10 +1165,11 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   // -------------------------------------------------------------------
 
   /**
-   * View-mode Delete handler (AC 3). No-op while a delete is in flight
-   * (defence in depth alongside `[disabled]="deleting"`). Opens the PrimeNG
-   * confirm naming the current namespace; `accept` runs `onDeleteConfirm()`.
-   * No `reject` — cancelling is a no-op (panel unchanged, no network call).
+   * Delete handler (AC 3). Always available (only gated by an in-flight
+   * `deleting`). No-op while a delete is in flight (defence in depth alongside
+   * `[disabled]="deleting"`). Opens the PrimeNG confirm naming the current
+   * namespace; `accept` runs `onDeleteConfirm()`. No `reject` — cancelling is
+   * a no-op (panel unchanged, no network call).
    */
   onDeleteClick(): void {
     if (this.deleting) {
@@ -1310,7 +1229,7 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   /**
    * Narrow the caught Delete error (AC 7–AC 9). Branches:
    *   - `401` → silent return (FetchService already fired the global toast;
-   *     the panel does not mutate `mode` / `buffer` / `serverYaml`).
+   *     the panel does not mutate `buffer` / `serverYaml`).
    *   - `403` → non-sticky not-authorized toast; panel stays open. NOT
    *     retried. (Community never returns 403; gated tiers do.)
    *   - `409` / `422` → inbound-reference blocker. If the body is a
@@ -1399,7 +1318,9 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       }
       this.serverYaml = yaml;
       this.buffer = yaml;
-      this.setMode('view');
+      // buffer === serverYaml ⇒ the panel lands clean (Save/Reset disabled,
+      // Clone enabled). There is no mode to set — the editor is always
+      // writable.
       this.lastValidation = null;
       this.rawSaveError = null;
     } catch (err) {

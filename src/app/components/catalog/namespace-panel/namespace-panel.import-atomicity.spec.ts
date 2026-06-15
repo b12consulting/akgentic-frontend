@@ -22,6 +22,9 @@ import { ValidationReportComponent } from './validation-report/validation-report
 
 /**
  * Story 11.3 AC 12 — import-atomicity focused spec (NFR5 / ADR-011 D4).
+ * Updated for ADR-017 (always-editable single-mode panel): there is no
+ * `mode` / `onEditClick`; the buffer is dirtied directly and Save runs a
+ * one-shot drift re-export before importing.
  *
  * This spec verifies the FRONTEND-SIDE contract of the atomicity guarantee:
  * when `importNamespace` rejects with a 422, the panel MUST leave its
@@ -163,10 +166,14 @@ describe('NamespacePanelComponent — import atomicity (NFR5)', () => {
       expect(component.serverYaml).toBe(BASELINE_YAML);
       expect(component.buffer).toBe(BASELINE_YAML);
 
-      // User flips into edit mode and types in the INVALID bundle.
-      await component.onEditClick();
+      // The editor is always writable — the user types in the INVALID bundle
+      // directly (no Edit click / mode flip exists).
       component.buffer = INVALID_YAML;
-      expect(component.mode).toBe('edit');
+      expect(component.hasUnsavedChanges()).toBe(true);
+
+      // Save runs a drift re-export first (ADR-017 §6); it returns the same
+      // baseline ⇒ no drift prompt, the import proceeds.
+      apiSpy.exportNamespace.and.returnValue(Promise.resolve(BASELINE_YAML));
 
       // importNamespace rejects with a 422 carrying a structured report.
       apiSpy.importNamespace.and.returnValue(
@@ -184,12 +191,10 @@ describe('NamespacePanelComponent — import atomicity (NFR5)', () => {
       await component.onSaveClick();
 
       // Post-422 assertions:
-      //  - mode stays edit,
       //  - buffer is preserved (user's invalid YAML is not lost),
       //  - serverYaml is UNCHANGED — still the pre-save baseline.
       // This is the frontend-testable equivalent of "the server did not
       // persist a partial write".
-      expect(component.mode).toBe('edit');
       expect(component.buffer).toBe(INVALID_YAML);
       expect(component.serverYaml).toBe(BASELINE_YAML);
 

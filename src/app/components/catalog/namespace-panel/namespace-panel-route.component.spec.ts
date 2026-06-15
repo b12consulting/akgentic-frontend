@@ -242,7 +242,7 @@ describe('NamespacePanelRouteComponent (Story 11.6)', () => {
   });
 
   // ----- AC 10 parity smoke test ------------------------------------------------
-  it('(AC10) parity smoke test — load → edit → save → validate-persisted → clone → edit → cancel', async () => {
+  it('(AC10) parity smoke test — load → edit → save → validate → clone → edit → reset', async () => {
     const srcYaml = `namespace: foo
 user_id: null
 entries:
@@ -262,7 +262,7 @@ entries:
       Promise.resolve([summary('foo'), summary('bar')]),
     );
     apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
-    apiSpy.validatePersistedNamespace.and.returnValue(
+    apiSpy.validateNamespaceBuffer.and.returnValue(
       Promise.resolve(cleanReport('foo')),
     );
 
@@ -273,43 +273,39 @@ entries:
 
     const panel = component.panel!;
     expect(panel.serverYaml).toBe(srcYaml);
-    expect(panel.mode).toBe('view');
+    expect(panel.hasUnsavedChanges()).toBe(false);
 
-    // --- Edit → Save ---
-    await panel.onEditClick();
+    // --- Edit (direct) → Save. Save re-exports for the drift check (returns
+    // the same srcYaml ⇒ no prompt) then imports. ---
     panel.buffer = srcYaml + '# edited\n';
     await panel.onSaveClick();
-    expect(panel.mode).toBe('view');
+    expect(panel.hasUnsavedChanges()).toBe(false);
     expect(panel.serverYaml).toBe(srcYaml + '# edited\n');
 
-    // --- Validate persisted ---
-    // Clean reports now flash the view-mode Validate button instead of
-    // populating the "Validation passed" pane — lastValidation stays null.
-    await panel.onValidatePersistedClick();
+    // --- Validate (single buffer handler). Clean report flashes the button
+    // instead of populating the pane — lastValidation stays null. ---
+    await panel.onValidateBufferClick();
     expect(panel.lastValidation).toBeNull();
-    expect(panel.validationFlashPersisted).toBeTrue();
+    expect(panel.validationFlashBuffer).toBeTrue();
 
-    // --- Clone (valid bundle yaml in buffer) ---
-    // Set buffer to a clean bundle root mapping so rewriteNamespaceInYaml
-    // succeeds, then invoke the Clone confirm path.
+    // --- Clone (from the clean panel — gated on clean) ---
     panel.onCloneClick();
     panel.cloneDestNs = 'new-ns';
     await panel.onCloneConfirmClick();
     await fixture.whenStable();
     await fixture.whenStable();
     expect(panel.namespace).toBe('new-ns');
-    expect(panel.mode).toBe('view');
+    expect(panel.hasUnsavedChanges()).toBe(false);
 
-    // --- Edit → Cancel (dirty) with ConfirmationService.accept ---
+    // --- Edit (direct) → Reset (dirty) with ConfirmationService.accept ---
     confirmationSpy.confirm.and.callFake((cfg) => {
       cfg.accept!();
       return confirmationSpy;
     });
-    await panel.onEditClick();
     panel.buffer = panel.serverYaml + '# dirty again\n';
-    panel.onCancelClick();
+    panel.onResetClick();
     expect(panel.buffer).toBe(panel.serverYaml);
-    expect(panel.mode).toBe('view');
+    expect(panel.hasUnsavedChanges()).toBe(false);
 
     // Verify the parity bundle of YAML round-trips the rewritten namespace
     // field (belts-and-braces — ensures Clone really rewrote the bundle).
@@ -321,7 +317,7 @@ entries:
   });
 
   // ----- AC 11 NFR7 REST call budget --------------------------------------------
-  it('(AC11) NFR7 REST budget — mount=2, +validate=+1, +save=+1, +clone=+3 (total 7)', async () => {
+  it('(AC11) NFR7 REST budget — mount=2, +validate=+1, +save=+2 (drift+import), +clone=+3 (total 9)', async () => {
     const srcYaml = `namespace: foo
 user_id: null
 entries: {}
@@ -351,13 +347,17 @@ entries: {}
     expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(1);
 
     const panel = component.panel!;
+    apiSpy.validateNamespaceBuffer.and.returnValue(
+      Promise.resolve(cleanReport('foo')),
+    );
 
-    // +Validate persisted (+1).
-    await panel.onValidatePersistedClick();
-    expect(apiSpy.validatePersistedNamespace).toHaveBeenCalledTimes(1);
+    // +Validate buffer (+1) — the single Validate handler (ADR-017 §4).
+    await panel.onValidateBufferClick();
+    expect(apiSpy.validateNamespaceBuffer).toHaveBeenCalledTimes(1);
 
-    // +Save (+1 import).
-    await panel.onEditClick();
+    // +Save: the editor is always writable — dirty the buffer directly.
+    // onSaveClick re-exports for the drift check (+1 export; returns the same
+    // YAML ⇒ no prompt) then imports (+1 import).
     panel.buffer = srcYaml + '# edit\n';
     await panel.onSaveClick();
     await fixture.whenStable();
@@ -365,8 +365,8 @@ entries: {}
     expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
     expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(2);
 
-    // +Clone (+1 import + 1 export on the destNs re-load + 1 getNamespaces
-    // re-fetch from the shell's (saved) handler).
+    // +Clone from the now-clean panel (+1 import + 1 export on the destNs
+    // re-load + 1 getNamespaces re-fetch from the shell's (saved) handler).
     panel.onCloneClick();
     panel.cloneDestNs = 'dst';
     await panel.onCloneConfirmClick();
@@ -374,17 +374,14 @@ entries: {}
     await fixture.whenStable();
 
     expect(apiSpy.importNamespace).toHaveBeenCalledTimes(2);
-    // foo-mount + foo-drift-check-on-edit + dst-clone-reload = 3.
-    // Post-review UX refinement added the drift-check export on Edit.
+    // foo-mount + foo-save-drift-check + dst-clone-reload = 3.
+    // ADR-017 §6 relocated the drift-check export from Edit-entry into Save.
     expect(apiSpy.exportNamespace).toHaveBeenCalledTimes(3);
     expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(3); // mount + (saved)×2
 
-    // Tally — 2 (mount) + 1 (validate) + 1 (edit-drift-check) + 1 (save-import)
+    // Tally — 2 (mount) + 1 (validate) + 1 (save-drift-check) + 1 (save-import)
     //         + 1 (save-refresh-ns) + 1 (clone-import) + 1 (clone-reload-export)
-    //         + 1 (clone-refresh-ns) = 9 total calls across all four spies.
-    // AC 11's original milestone-grouped total was 7 (save refresh counted as
-    // part of save, clone refresh counted as part of clone). The drift-check
-    // on Edit adds +1 → 10 by that accounting, 9 at the spy level.
+    //         + 1 (clone-refresh-ns) = 9 total calls across all spies.
     const totalCalls =
       apiSpy.exportNamespace.calls.count() +
       apiSpy.getNamespaces.calls.count() +
@@ -392,8 +389,8 @@ entries: {}
       apiSpy.validatePersistedNamespace.calls.count() +
       apiSpy.validateNamespaceBuffer.calls.count();
     expect(totalCalls).toBe(9);
-    // No polling / heartbeat / background fetches.
-    expect(apiSpy.validateNamespaceBuffer).not.toHaveBeenCalled();
+    // The retired persisted-validate endpoint is no longer called.
+    expect(apiSpy.validatePersistedNamespace).not.toHaveBeenCalled();
   });
 
   // ----- AC 8 clean buffer → no prompt on programmatic navigation ---------------
@@ -423,7 +420,7 @@ entries: {}
     fixture.detectChanges();
 
     const panel = component.panel!;
-    await panel.onEditClick();
+    // The editor is always writable — dirty the buffer directly.
     panel.buffer = 'key: modified\n';
     expect(panel.hasUnsavedChanges()).toBeTrue();
   });
@@ -441,7 +438,7 @@ entries: {}
     fixture.detectChanges();
 
     const panel = component.panel!;
-    await panel.onEditClick();
+    // The editor is always writable — dirty the buffer directly.
     panel.buffer = 'key: modified\n';
     fixture.detectChanges();
 
@@ -470,7 +467,9 @@ entries: {}
     expect(indicator).toBeNull();
   });
 
-  it('(11.7 AC10) route shell dirty indicator removed after Save 2xx (panel flips back to view)', async () => {
+  it('(11.7 AC10) route shell dirty indicator removed after Save 2xx (panel becomes clean)', async () => {
+    // The drift re-export returns the same server YAML ⇒ no prompt; import
+    // proceeds and snapshots serverYaml so the panel becomes clean.
     apiSpy.exportNamespace.and.returnValue(Promise.resolve('key: value\n'));
     apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
 
@@ -480,7 +479,7 @@ entries: {}
     fixture.detectChanges();
 
     const panel = component.panel!;
-    await panel.onEditClick();
+    // The editor is always writable — dirty the buffer directly.
     panel.buffer = 'key: modified\n';
     fixture.detectChanges();
     expect(
@@ -494,7 +493,6 @@ entries: {}
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(panel.mode).toBe('view');
     expect(panel.hasUnsavedChanges()).toBeFalse();
     expect(
       fixture.nativeElement.querySelector(

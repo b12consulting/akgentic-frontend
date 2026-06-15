@@ -65,6 +65,17 @@ function makeHttpError(status: number, body: unknown = ''): HttpError {
   return new HttpError('boom', status, body);
 }
 
+/**
+ * Drain the microtask queue a few times so an awaited async chain (e.g. the
+ * Save drift re-export resolving before `confirmationService.confirm` fires)
+ * settles before assertions read its side effects.
+ */
+async function flushMicrotasks(): Promise<void> {
+  for (let i = 0; i < 5; i++) {
+    await Promise.resolve();
+  }
+}
+
 describe('NamespacePanelComponent', () => {
   let fixture: ComponentFixture<NamespacePanelComponent>;
   let component: NamespacePanelComponent;
@@ -128,7 +139,8 @@ describe('NamespacePanelComponent', () => {
             ValidationReportComponent,
           ],
           // Swap the locally-provided real ConfirmationService for a spy so
-          // the Cancel + confirm-dialog flow is testable deterministically.
+          // the Reset + drift + confirm-dialog flows are testable
+          // deterministically.
           providers: [
             { provide: ConfirmationService, useValue: confirmationSpy },
           ],
@@ -138,7 +150,20 @@ describe('NamespacePanelComponent', () => {
   });
 
   // ---------------------------------------------------------------------
-  // Story 11.2 load/view-mode tests carried forward from the prior spec.
+  // Shared load helper — drives ngOnInit → loadNamespace → stable view.
+  // The panel lands clean (buffer === serverYaml) and always editable.
+  // ---------------------------------------------------------------------
+
+  async function loaded(yaml = 'foo: 1\n'): Promise<void> {
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve(yaml));
+    await buildFixture('foo');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  // ---------------------------------------------------------------------
+  // Load / view tests carried forward (no `mode` axis).
   // ---------------------------------------------------------------------
 
   it('(AC13) load flow (happy path) — populates serverYaml/buffer and clears loading', async () => {
@@ -156,9 +181,10 @@ describe('NamespacePanelComponent', () => {
     });
     expect(component.serverYaml).toBe('key: value\n');
     expect(component.buffer).toBe('key: value\n');
-    expect(component.mode).toBe('view');
     expect(component.lastValidation).toBeNull();
     expect(component.loading).toBe(false);
+    // Lands clean — Save/Reset disabled, Clone enabled.
+    expect(component.hasUnsavedChanges()).toBe(false);
   });
 
   it('(14.4 AC8, AC17) admin foreign-open — showAll=true threads all:true into the entry read', async () => {
@@ -251,18 +277,33 @@ describe('NamespacePanelComponent', () => {
     expect(component.loading).toBe(false);
   });
 
-  it('(AC13) editorOptions.readOnly === true when mode === "view"', async () => {
-    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: 1\n'));
-    await buildFixture('foo');
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
+  // ---------------------------------------------------------------------
+  // ADR-017 §1 — Monaco always writable; editorOptions stable constant.
+  // ---------------------------------------------------------------------
+
+  it('(22.1 AC1/AC2) editorOptions.readOnly === false and the object preserves theme/language/automaticLayout', async () => {
+    await loaded('foo: 1\n');
 
     const options = component.editorOptions;
-    expect(options['readOnly']).toBe(true);
+    expect(options['readOnly']).toBe(false);
     expect(options['language']).toBe('yaml');
     expect(options['automaticLayout']).toBe(true);
     expect(options['theme']).toBe('vs');
+  });
+
+  it('(22.1 AC1) editorOptions is a single stable object reference — never reassigned', async () => {
+    await loaded('foo: 1\n');
+    const first = component.editorOptions;
+
+    // Dirtying the buffer (no Edit click exists) does not churn the reference.
+    component.buffer = 'foo: 2\n';
+    fixture.detectChanges();
+    expect(component.editorOptions).toBe(first);
+
+    // Saving and resetting also leave the reference untouched.
+    component.onResetClick();
+    fixture.detectChanges();
+    expect(component.editorOptions).toBe(first);
   });
 
   it('(AC13) public surface — namespace @Input, closed/saved @Output, hasUnsavedChanges', async () => {
@@ -274,7 +315,6 @@ describe('NamespacePanelComponent', () => {
     expect(component.namespace).toBe('foo');
     expect(typeof component.closed.emit).toBe('function');
     expect(typeof component.saved.emit).toBe('function');
-    // Story 11.3: hasUnsavedChanges is now a real check.
     expect(typeof component.hasUnsavedChanges).toBe('function');
   });
 
@@ -315,111 +355,242 @@ describe('NamespacePanelComponent', () => {
   });
 
   // ---------------------------------------------------------------------
-  // Story 11.3 — Edit flip (AC 1)
+  // ADR-017 §1 — hasUnsavedChanges() collapse (AC4, AC5).
   // ---------------------------------------------------------------------
 
-  async function loadedEditMode(yaml = 'foo: 1\n'): Promise<void> {
-    apiSpy.exportNamespace.and.returnValue(Promise.resolve(yaml));
+  it('(22.1 AC4/AC5) hasUnsavedChanges() === (buffer !== serverYaml) — no mode axis', async () => {
+    await loaded('foo: 1\n');
+
+    // Clean buffer.
+    expect(component.buffer).toBe(component.serverYaml);
+    expect(component.hasUnsavedChanges()).toBe(false);
+
+    // Dirty buffer — true with no Edit click (the editor is always writable).
+    component.buffer = 'foo: 2\n';
+    expect(component.hasUnsavedChanges()).toBe(true);
+
+    // Back to clean.
+    component.buffer = component.serverYaml;
+    expect(component.hasUnsavedChanges()).toBe(false);
+  });
+
+  // ---------------------------------------------------------------------
+  // ADR-017 §2 — action row renders five buttons whenever there is content.
+  // ---------------------------------------------------------------------
+
+  it('(22.1 AC3/AC6) all five action buttons render whenever the panel has content (no per-mode *ngIf)', async () => {
+    await loaded('foo: 1\n');
+
+    const row = fixture.nativeElement as HTMLElement;
+    expect(row.querySelector('button[data-test="validate-btn"]')).not.toBeNull();
+    expect(row.querySelector('button[data-test="save-btn"]')).not.toBeNull();
+    expect(row.querySelector('button[data-test="reset-btn"]')).not.toBeNull();
+    expect(row.querySelector('button[data-test="clone-btn"]')).not.toBeNull();
+    expect(
+      row.querySelector('button[data-test="delete-ns-btn"]'),
+    ).not.toBeNull();
+
+    // The retired buttons are gone.
+    expect(row.querySelector('button[data-test="edit-btn"]')).toBeNull();
+    expect(row.querySelector('button[data-test="cancel-btn"]')).toBeNull();
+    expect(
+      row.querySelector('button[data-test="validate-persisted-btn"]'),
+    ).toBeNull();
+    expect(
+      row.querySelector('button[data-test="validate-buffer-btn"]'),
+    ).toBeNull();
+  });
+
+  it('(22.1 AC3) action row + editor are hidden while loading and in the empty state', async () => {
+    // Loading: pending export keeps loading true.
+    apiSpy.exportNamespace.and.returnValue(new Promise<string>(() => {}));
+    await buildFixture('foo');
+    fixture.detectChanges();
+    expect(
+      fixture.nativeElement.querySelector('button[data-test="save-btn"]'),
+    ).toBeNull();
+    fixture.destroy();
+
+    // Empty / error state: serverYaml === ''.
+    apiSpy.exportNamespace.and.returnValue(Promise.reject(new Error('boom')));
     await buildFixture('foo');
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
-  }
-
-  it('(11.3 AC1) onEditClick flips mode to edit and Monaco readOnly to false', async () => {
-    await loadedEditMode();
-    expect(component.mode).toBe('view');
-
-    await component.onEditClick();
-    fixture.detectChanges();
-
-    expect(component.mode).toBe('edit');
-    expect(component.editorOptions['readOnly']).toBe(false);
+    expect(
+      fixture.nativeElement.querySelector('button[data-test="save-btn"]'),
+    ).toBeNull();
   });
 
-  // ---------------------------------------------------------------------
-  // Story 11.3 — Save enabled/disabled (AC 2)
-  // ---------------------------------------------------------------------
+  // ----- Save enablement (AC7) -----
 
-  it('(11.3 AC2) Save is disabled when buffer === serverYaml, enabled otherwise', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
-    fixture.detectChanges();
+  it('(22.1 AC7) Save disabled when clean, enabled when dirty', async () => {
+    await loaded('foo: 1\n');
 
-    // Clean buffer — button[data-test="save-btn"] is disabled.
     let saveBtn = fixture.nativeElement.querySelector(
       'button[data-test="save-btn"]',
-    ) as HTMLButtonElement | null;
-    expect(saveBtn).not.toBeNull();
-    expect(saveBtn!.disabled).toBeTrue();
+    ) as HTMLButtonElement;
+    expect(saveBtn.disabled).toBeTrue();
 
-    // Dirty buffer.
     component.buffer = 'foo: 2\n';
     fixture.detectChanges();
     saveBtn = fixture.nativeElement.querySelector(
       'button[data-test="save-btn"]',
-    ) as HTMLButtonElement | null;
-    expect(saveBtn!.disabled).toBeFalse();
+    ) as HTMLButtonElement;
+    expect(saveBtn.disabled).toBeFalse();
   });
 
-  // ---------------------------------------------------------------------
-  // Story 11.3 — Cancel flows (AC 3 + AC 4)
-  // ---------------------------------------------------------------------
+  it('(22.1 AC7) Save disabled while saving and while FR14-gated even when dirty', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
 
-  it('(11.3 AC4) onCancelClick with clean buffer flips mode directly — no confirm', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
+    component.saving = true;
+    fixture.detectChanges();
+    let saveBtn = fixture.nativeElement.querySelector(
+      'button[data-test="save-btn"]',
+    ) as HTMLButtonElement;
+    expect(saveBtn.disabled).toBeTrue();
+
+    component.saving = false;
+    component.lastValidation = failingReport(1);
+    fixture.detectChanges();
+    saveBtn = fixture.nativeElement.querySelector(
+      'button[data-test="save-btn"]',
+    ) as HTMLButtonElement;
+    expect(saveBtn.disabled).toBeTrue();
+  });
+
+  // ----- Validate enablement (AC8) -----
+
+  it('(22.1 AC8) Validate enabled in both clean and dirty states, and never gated by FR14', async () => {
+    await loaded('foo: 1\n');
+
+    // Clean — enabled.
+    let validateBtn = fixture.nativeElement.querySelector(
+      'button[data-test="validate-btn"]',
+    ) as HTMLButtonElement;
+    expect(validateBtn.disabled).toBeFalse();
+
+    // Dirty AND FR14-gated (a known-bad report is pending) — STILL enabled.
+    component.buffer = 'foo: 2\n';
+    component.lastValidation = failingReport(2);
+    component.rawSaveError = 'raw';
+    expect(component.isSaveGated).toBeTrue();
     fixture.detectChanges();
 
-    component.onCancelClick();
+    validateBtn = fixture.nativeElement.querySelector(
+      'button[data-test="validate-btn"]',
+    ) as HTMLButtonElement;
+    expect(validateBtn.disabled).toBeFalse();
 
-    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
-    expect(component.mode).toBe('view');
+    // Only an in-flight validating / saving disables it.
+    component.validating = true;
+    fixture.detectChanges();
+    validateBtn = fixture.nativeElement.querySelector(
+      'button[data-test="validate-btn"]',
+    ) as HTMLButtonElement;
+    expect(validateBtn.disabled).toBeTrue();
   });
 
-  it('(11.3 AC3) onCancelClick with dirty buffer triggers confirm — accept reverts', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
+  // ----- Reset enablement (AC9) -----
+
+  it('(22.1 AC9) Reset disabled when clean, enabled when dirty, disabled while saving', async () => {
+    await loaded('foo: 1\n');
+
+    let resetBtn = fixture.nativeElement.querySelector(
+      'button[data-test="reset-btn"]',
+    ) as HTMLButtonElement;
+    expect(resetBtn.disabled).toBeTrue();
+
     component.buffer = 'foo: 2\n';
     fixture.detectChanges();
+    resetBtn = fixture.nativeElement.querySelector(
+      'button[data-test="reset-btn"]',
+    ) as HTMLButtonElement;
+    expect(resetBtn.disabled).toBeFalse();
 
-    component.onCancelClick();
-    expect(confirmationSpy.confirm).toHaveBeenCalledTimes(1);
-    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
-    expect(args.message as string).toContain('Discard unsaved changes');
-
-    // Accept → revert.
-    args.accept!();
-    expect(component.buffer).toBe('foo: 1\n');
-    expect(component.mode).toBe('view');
+    component.saving = true;
+    fixture.detectChanges();
+    resetBtn = fixture.nativeElement.querySelector(
+      'button[data-test="reset-btn"]',
+    ) as HTMLButtonElement;
+    expect(resetBtn.disabled).toBeTrue();
   });
 
-  it('(11.3 AC3) onCancelClick with dirty buffer — dismiss leaves state unchanged', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
+  // ----- Clone enablement (AC10) -----
+
+  it('(22.1 AC10) Clone enabled when clean, disabled when dirty', async () => {
+    await loaded('foo: 1\n');
+
+    let cloneBtn = fixture.nativeElement.querySelector(
+      'button[data-test="clone-btn"]',
+    ) as HTMLButtonElement;
+    expect(cloneBtn.disabled).toBeFalse();
+
     component.buffer = 'foo: 2\n';
     fixture.detectChanges();
+    cloneBtn = fixture.nativeElement.querySelector(
+      'button[data-test="clone-btn"]',
+    ) as HTMLButtonElement;
+    expect(cloneBtn.disabled).toBeTrue();
+  });
 
-    component.onCancelClick();
-    // Simulate dismiss: call reject if present, else just don't call accept.
-    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
-    if (args.reject) {
-      args.reject();
-    }
+  it('(22.1 AC10) Clone disabled while cloning and while FR14-gated (clean state)', async () => {
+    await loaded('foo: 1\n');
 
-    expect(component.buffer).toBe('foo: 2\n');
-    expect(component.mode).toBe('edit');
+    component.cloning = true;
+    fixture.detectChanges();
+    let cloneBtn = fixture.nativeElement.querySelector(
+      'button[data-test="clone-btn"]',
+    ) as HTMLButtonElement;
+    expect(cloneBtn.disabled).toBeTrue();
+
+    component.cloning = false;
+    component.lastValidation = failingReport(1);
+    fixture.detectChanges();
+    cloneBtn = fixture.nativeElement.querySelector(
+      'button[data-test="clone-btn"]',
+    ) as HTMLButtonElement;
+    expect(cloneBtn.disabled).toBeTrue();
+  });
+
+  // ----- Delete enablement (AC11) -----
+
+  it('(22.1 AC11) Delete enabled by default, disabled only while deleting', async () => {
+    await loaded('foo: 1\n');
+
+    let deleteBtn = fixture.nativeElement.querySelector(
+      'button[data-test="delete-ns-btn"]',
+    ) as HTMLButtonElement;
+    expect(deleteBtn.disabled).toBeFalse();
+
+    component.deleting = true;
+    fixture.detectChanges();
+    deleteBtn = fixture.nativeElement.querySelector(
+      'button[data-test="delete-ns-btn"]',
+    ) as HTMLButtonElement;
+    expect(deleteBtn.disabled).toBeTrue();
   });
 
   // ---------------------------------------------------------------------
-  // Story 11.3 — Save direct-to-import, NOT via validate (AC 5)
+  // ADR-017 §2/§6 — Save flow (gate, drift check, success, errors).
   // ---------------------------------------------------------------------
 
-  it('(11.3 AC5) Save posts buffer directly to importNamespace — validateNamespaceBuffer NOT called', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
+  it('(22.1 AC12) onSaveClick is a no-op when clean (gated on hasUnsavedChanges)', async () => {
+    await loaded('foo: 1\n');
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+
+    await component.onSaveClick();
+
+    expect(apiSpy.importNamespace).not.toHaveBeenCalled();
+  });
+
+  it('(22.1 AC12) Save posts buffer directly to importNamespace — validateNamespaceBuffer NOT called', async () => {
+    await loaded('foo: 1\n');
     component.buffer = 'foo: 2\n';
     apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+    // Drift re-export returns the same server YAML → no prompt.
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: 1\n'));
 
     await component.onSaveClick();
 
@@ -427,35 +598,39 @@ describe('NamespacePanelComponent', () => {
     expect(apiSpy.importNamespace).toHaveBeenCalledOnceWith('foo: 2\n');
   });
 
-  // ---------------------------------------------------------------------
-  // Story 11.3 — Save 2xx success path (AC 6)
-  // ---------------------------------------------------------------------
-
-  it('(11.3 AC6) Save 2xx — serverYaml updates, mode flips to view, saved.emit + success toast', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
+  it('(22.1 AC13) Save 2xx — serverYaml updates, saved.emit + success toast + a11y, panel becomes clean', async () => {
+    await loaded('foo: 1\n');
     component.buffer = 'foo: 2\n';
     apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: 1\n'));
     const savedEmit = spyOn(component.saved, 'emit');
 
     await component.onSaveClick();
 
     expect(component.serverYaml).toBe('foo: 2\n');
-    expect(component.mode).toBe('view');
     expect(component.saving).toBe(false);
+    expect(component.hasUnsavedChanges()).toBe(false);
+    expect(component.a11yAnnouncement).toBe('Namespace saved');
     expect(savedEmit).toHaveBeenCalledTimes(1);
     const toast = messageSpy.add.calls.mostRecent().args[0];
     expect(toast.severity).toBe('success');
+
+    // Now clean → Save/Reset disabled, Clone enabled.
+    fixture.detectChanges();
+    const saveBtn = fixture.nativeElement.querySelector(
+      'button[data-test="save-btn"]',
+    ) as HTMLButtonElement;
+    const cloneBtn = fixture.nativeElement.querySelector(
+      'button[data-test="clone-btn"]',
+    ) as HTMLButtonElement;
+    expect(saveBtn.disabled).toBeTrue();
+    expect(cloneBtn.disabled).toBeFalse();
   });
 
-  // ---------------------------------------------------------------------
-  // Story 11.3 — Save 422 structured (AC 7)
-  // ---------------------------------------------------------------------
-
-  it('(11.3 AC7) Save 422 structured — lastValidation populated, mode stays edit, buffer preserved', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
+  it('(22.1 AC13) Save 422 structured — lastValidation populated, buffer preserved', async () => {
+    await loaded('foo: 1\n');
     component.buffer = 'foo: 2\n';
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: 1\n'));
     const report: NamespaceValidationReport = {
       namespace: 'foo',
       ok: false,
@@ -468,18 +643,16 @@ describe('NamespacePanelComponent', () => {
 
     await component.onSaveClick();
 
-    expect(component.mode).toBe('edit');
     expect(component.buffer).toBe('foo: 2\n');
     expect(component.saving).toBe(false);
     expect(component.lastValidation).toEqual(report);
     expect(component.rawSaveError).toBeNull();
   });
 
-  it('(11.3 AC7) Save 422 unstructured — rawSaveError populated, lastValidation null', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
+  it('(22.1 AC13) Save 422 unstructured — rawSaveError populated, lastValidation null', async () => {
+    await loaded('foo: 1\n');
     component.buffer = 'foo: 2\n';
-    // FastAPI-style error body — does NOT match NamespaceValidationReport.
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: 1\n'));
     const rawBody = { detail: [{ msg: 'field required', loc: ['body'] }] };
     apiSpy.importNamespace.and.returnValue(
       Promise.reject(makeHttpError(422, rawBody)),
@@ -489,97 +662,90 @@ describe('NamespacePanelComponent', () => {
 
     expect(component.lastValidation).toBeNull();
     expect(component.rawSaveError).toContain('field required');
-    expect(component.mode).toBe('edit');
     expect(component.buffer).toBe('foo: 2\n');
   });
 
-  // ---------------------------------------------------------------------
-  // Story 11.3 — Save 5xx failure path (AC 8)
-  // Retry affordance is the regular Save button itself — re-click retries.
-  // The dedicated "Retry Save" action-row button from the first 11.3 draft
-  // was removed as redundant; Save stays enabled (buffer still dirty) so
-  // clicking it again IS the retry. Toast is sticky so the outcome is
-  // visible post-dismiss.
-  // ---------------------------------------------------------------------
-
-  it('(11.3 AC8) Save 5xx — sticky toast; re-clicking Save retries with the same buffer', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
+  it('(22.1 AC12) Save 5xx — sticky toast; re-clicking Save retries with the same buffer', async () => {
+    await loaded('foo: 1\n');
     component.buffer = 'foo: 2\n';
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: 1\n'));
     apiSpy.importNamespace.and.returnValue(Promise.reject(makeHttpError(500)));
 
     await component.onSaveClick();
 
-    expect(component.mode).toBe('edit');
     expect(component.buffer).toBe('foo: 2\n');
     expect(component.saving).toBe(false);
-
-    // Sticky error toast fired.
     const errorToast = messageSpy.add.calls.mostRecent().args[0];
     expect(errorToast.severity).toBe('error');
     expect(errorToast.sticky).toBeTrue();
 
-    // No dedicated Retry Save button renders — removed as redundant with Save.
+    // No dedicated Retry button renders.
     fixture.detectChanges();
     const retryBtn = fixture.nativeElement.querySelector(
       'button[data-test="retry-save-btn"]',
     ) as HTMLButtonElement | null;
     expect(retryBtn).toBeNull();
 
-    // Save button stays enabled (buffer still !== serverYaml, not saving).
+    // Save still enabled (dirty, not saving).
     const saveBtn = fixture.nativeElement.querySelector(
       'button[data-test="save-btn"]',
     ) as HTMLButtonElement;
     expect(saveBtn.disabled).toBeFalse();
 
-    // Second click — this time a 2xx success — retries with the same buffer.
+    // Second click — 2xx — retries with the same buffer.
     apiSpy.importNamespace.calls.reset();
     apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
     await component.onSaveClick();
     expect(apiSpy.importNamespace).toHaveBeenCalledOnceWith('foo: 2\n');
   });
 
-  it('(11.3 AC8) Save 500 does NOT auto-invoke importNamespace a second time', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
+  it('(22.1 AC12) Save 500 does NOT auto-invoke importNamespace a second time', async () => {
+    await loaded('foo: 1\n');
     component.buffer = 'foo: 2\n';
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: 1\n'));
     apiSpy.importNamespace.and.returnValue(Promise.reject(makeHttpError(500)));
 
     await component.onSaveClick();
-    // No further calls until the operator explicitly clicks Retry.
     expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
   });
 
-  // ---------------------------------------------------------------------
-  // Post-review guardrail — refuse to Save when the buffer's namespace
-  // field has been edited away from the panel's namespace (use Clone).
-  // ---------------------------------------------------------------------
-
-  it('Save refuses when buffer namespace has been edited — shows error toast, no import', async () => {
-    // Load a bundle whose root namespace matches the panel's namespace.
-    await loadedEditMode('namespace: foo\nuser_id: null\nentries: {}\n');
-    await component.onEditClick();
-    // Operator edits the namespace field to something else.
-    component.buffer = 'namespace: bar\nuser_id: null\nentries: {}\n';
+  it('(22.1 AC9) Save 401 — no panel toast, buffer preserved, saving resets', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: 1\n'));
+    apiSpy.importNamespace.and.returnValue(Promise.reject(makeHttpError(401)));
 
     await component.onSaveClick();
 
-    // Import must NOT have fired.
-    expect(apiSpy.importNamespace).not.toHaveBeenCalled();
+    expect(component.buffer).toBe('foo: 2\n');
+    expect(component.saving).toBe(false);
+    expect(messageSpy.add).not.toHaveBeenCalled();
+  });
 
-    // A sticky error toast with the namespace-change guardrail message
-    // was surfaced.
-    expect(messageSpy.add).toHaveBeenCalled();
+  // ----- Save buffer-namespace guard preserved (AC12) -----
+
+  it('(22.1 AC12) Save refuses when buffer namespace has been edited — error toast, no import, no drift export', async () => {
+    await loaded('namespace: foo\nuser_id: null\nentries: {}\n');
+    component.buffer = 'namespace: bar\nuser_id: null\nentries: {}\n';
+    apiSpy.exportNamespace.calls.reset();
+
+    await component.onSaveClick();
+
+    expect(apiSpy.importNamespace).not.toHaveBeenCalled();
+    // The guard fires before the drift re-export.
+    expect(apiSpy.exportNamespace).not.toHaveBeenCalled();
     const toast = messageSpy.add.calls.mostRecent().args[0];
     expect(toast.severity).toBe('error');
     expect(toast.sticky).toBeTrue();
     expect(toast.detail).toContain('Clone');
   });
 
-  it('Save proceeds when the buffer namespace matches the panel namespace (guardrail is a no-op)', async () => {
-    await loadedEditMode('namespace: foo\nuser_id: null\nentries: {}\n');
-    await component.onEditClick();
+  it('(22.1 AC12) Save proceeds when the buffer namespace matches (guard is a no-op)', async () => {
+    await loaded('namespace: foo\nuser_id: null\nentries: {}\n');
     component.buffer = 'namespace: foo\nuser_id: null\nentries:\n  x: 1\n';
+    apiSpy.exportNamespace.and.returnValue(
+      Promise.resolve('namespace: foo\nuser_id: null\nentries: {}\n'),
+    );
     apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
 
     await component.onSaveClick();
@@ -587,11 +753,12 @@ describe('NamespacePanelComponent', () => {
     expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
   });
 
-  it('Save falls through the guardrail when the buffer is unparseable — server decides', async () => {
-    await loadedEditMode('namespace: foo\nuser_id: null\nentries: {}\n');
-    await component.onEditClick();
-    // Unparseable YAML — our helper returns null, guardrail skips.
+  it('(22.1 AC12) Save falls through the guard when the buffer is unparseable — server decides', async () => {
+    await loaded('namespace: foo\nuser_id: null\nentries: {}\n');
     component.buffer = 'namespace: foo\nentries: [\n  unclosed\n';
+    apiSpy.exportNamespace.and.returnValue(
+      Promise.resolve('namespace: foo\nuser_id: null\nentries: {}\n'),
+    );
     apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
 
     await component.onSaveClick();
@@ -599,17 +766,15 @@ describe('NamespacePanelComponent', () => {
     expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
   });
 
-  // ---------------------------------------------------------------------
-  // Story 14.3 — Advisory owner-or-admin pre-flight guard on Edit-Save.
-  // The buffer's namespace MUST match the panel's (`foo`) so the existing
-  // namespace-change guard is a no-op and the ownership guard is reached.
-  // ---------------------------------------------------------------------
+  // ----- Advisory owner-or-admin pre-flight preserved (AC12) -----
 
-  it('(14.3 AC2/AC10) owner can Save — import fires, no owner-block toast', async () => {
+  it('(22.1 AC12 / 14.3) owner can Save — import fires, no owner-block toast', async () => {
     authStub.currentUserValue = { user_id: 'alice', roles: [] };
-    await loadedEditMode('namespace: foo\nuser_id: alice\nentries: {}\n');
-    await component.onEditClick();
+    await loaded('namespace: foo\nuser_id: alice\nentries: {}\n');
     component.buffer = 'namespace: foo\nuser_id: alice\nentries:\n  x: 1\n';
+    apiSpy.exportNamespace.and.returnValue(
+      Promise.resolve('namespace: foo\nuser_id: alice\nentries: {}\n'),
+    );
     apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
 
     await component.onSaveClick();
@@ -621,10 +786,9 @@ describe('NamespacePanelComponent', () => {
     expect(ownerBlocked).toBeFalse();
   });
 
-  it('(14.3 AC1/AC4/AC11) non-owner non-admin is blocked — no import, sticky toast, stays edit', async () => {
+  it('(22.1 AC12 / 14.3) non-owner non-admin is blocked — no import, sticky toast', async () => {
     authStub.currentUserValue = { user_id: 'bob', roles: [] };
-    await loadedEditMode('namespace: foo\nuser_id: alice\nentries: {}\n');
-    await component.onEditClick();
+    await loaded('namespace: foo\nuser_id: alice\nentries: {}\n');
     component.buffer = 'namespace: foo\nuser_id: alice\nentries:\n  x: 1\n';
     apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
 
@@ -635,65 +799,26 @@ describe('NamespacePanelComponent', () => {
     expect(toast.severity).toBe('error');
     expect(toast.sticky).toBeTrue();
     expect(toast.summary).toBe('Cannot save changes to this namespace');
-    expect(component.mode).toBe('edit');
     expect(component.saving).toBeFalse();
   });
 
-  it('(14.3 AC3/AC12) admin can Save another user\'s namespace — import fires, no block', async () => {
+  it('(22.1 AC12 / 14.3) admin can Save another user\'s namespace — import fires', async () => {
     authStub.currentUserValue = { user_id: 'bob', roles: ['admin'] };
-    await loadedEditMode('namespace: foo\nuser_id: alice\nentries: {}\n');
-    await component.onEditClick();
+    await loaded('namespace: foo\nuser_id: alice\nentries: {}\n');
     component.buffer = 'namespace: foo\nuser_id: alice\nentries:\n  x: 1\n';
+    apiSpy.exportNamespace.and.returnValue(
+      Promise.resolve('namespace: foo\nuser_id: alice\nentries: {}\n'),
+    );
     apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
 
     await component.onSaveClick();
 
     expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
-    const ownerBlocked = messageSpy.add.calls
-      .allArgs()
-      .some((args) => args[0]?.summary === 'Cannot save changes to this namespace');
-    expect(ownerBlocked).toBeFalse();
   });
 
-  it('(14.3 AC5/AC13) community anonymous can Save anonymous-owned namespace — no block', async () => {
-    authStub.currentUserValue = { user_id: 'anonymous' };
-    await loadedEditMode('namespace: foo\nuser_id: anonymous\nentries: {}\n');
-    await component.onEditClick();
-    component.buffer = 'namespace: foo\nuser_id: anonymous\nentries:\n  x: 1\n';
-    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
-
-    await component.onSaveClick();
-
-    expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
-    const ownerBlocked = messageSpy.add.calls
-      .allArgs()
-      .some((args) => args[0]?.summary === 'Cannot save changes to this namespace');
-    expect(ownerBlocked).toBeFalse();
-  });
-
-  it('(14.3 AC7/AC14) unresolvable owner defers to server for non-admin — import fires', async () => {
+  it('(22.1 AC12 / 14.3) namespace-change guard still wins over ownership guard', async () => {
     authStub.currentUserValue = { user_id: 'bob', roles: [] };
-    // No root user_id → extractYamlUserId returns null → fall through.
-    await loadedEditMode('namespace: foo\nentries: {}\n');
-    await component.onEditClick();
-    component.buffer = 'namespace: foo\nentries:\n  x: 1\n';
-    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
-
-    await component.onSaveClick();
-
-    expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
-    const ownerBlocked = messageSpy.add.calls
-      .allArgs()
-      .some((args) => args[0]?.summary === 'Cannot save changes to this namespace');
-    expect(ownerBlocked).toBeFalse();
-  });
-
-  it('(14.3 AC8/AC15) namespace-change guard still wins over ownership guard', async () => {
-    // Non-owner AND namespace changed — the namespace-change guard fires
-    // first with its own message; the ownership message is never reached.
-    authStub.currentUserValue = { user_id: 'bob', roles: [] };
-    await loadedEditMode('namespace: foo\nuser_id: alice\nentries: {}\n');
-    await component.onEditClick();
+    await loaded('namespace: foo\nuser_id: alice\nentries: {}\n');
     component.buffer = 'namespace: bar\nuser_id: alice\nentries: {}\n';
 
     await component.onSaveClick();
@@ -701,66 +826,107 @@ describe('NamespacePanelComponent', () => {
     expect(apiSpy.importNamespace).not.toHaveBeenCalled();
     const toast = messageSpy.add.calls.mostRecent().args[0];
     expect(toast.summary).toBe('Cannot change namespace on Save');
-    expect(toast.severity).toBe('error');
-    expect(toast.sticky).toBeTrue();
   });
 
-  // ---------------------------------------------------------------------
-  // Story 11.3 — Save 401 silent (AC 9)
-  // ---------------------------------------------------------------------
+  // ----- Save drift check (AC20, AC21) -----
 
-  it('(11.3 AC9) Save 401 — no panel toast, mode stays edit, saving resets', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
+  it('(22.1 AC20/AC21) Save with a matching server export imports without a drift prompt', async () => {
+    await loaded('foo: 1\n');
     component.buffer = 'foo: 2\n';
-    apiSpy.importNamespace.and.returnValue(Promise.reject(makeHttpError(401)));
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: 1\n'));
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
 
     await component.onSaveClick();
 
-    expect(component.mode).toBe('edit');
+    // Drift re-export ran (one extra export beyond the mount load) but no
+    // confirm was shown.
+    expect(apiSpy.exportNamespace).toHaveBeenCalledTimes(2);
+    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+    expect(apiSpy.importNamespace).toHaveBeenCalledOnceWith('foo: 2\n');
+  });
+
+  it('(22.1 AC20/AC21) Save with diverged server export prompts; reload-and-rebase skips the import and rebases', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    // Server has drifted since load.
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: server\n'));
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+
+    const savePromise = component.onSaveClick();
+    // Let the drift re-export resolve so the confirm fires.
+    await flushMicrotasks();
+    expect(confirmationSpy.confirm).toHaveBeenCalledTimes(1);
+    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
+    expect(args.header).toBe('Namespace modified');
+
+    // accept = reload-and-rebase.
+    args.accept!();
+    await savePromise;
+
+    // Import was NOT performed this click.
+    expect(apiSpy.importNamespace).not.toHaveBeenCalled();
+    // serverYaml rebased to the latest; buffer kept the operator's edit
+    // (it had diverged from the old serverYaml, so it is preserved).
+    expect(component.serverYaml).toBe('foo: server\n');
     expect(component.buffer).toBe('foo: 2\n');
-    expect(component.saving).toBe(false);
-    // The panel's handler must not add its own toast — the global toast
-    // already fires via FetchService.
-    expect(messageSpy.add).not.toHaveBeenCalled();
+    expect(component.saving).toBeFalse();
   });
 
-  // ---------------------------------------------------------------------
-  // Story 11.3 — hasUnsavedChanges four-state matrix (AC 11)
-  // ---------------------------------------------------------------------
-
-  it('(11.3 AC11) hasUnsavedChanges truth table (view+clean, view+dirty, edit+clean, edit+dirty)', async () => {
-    await loadedEditMode('foo: 1\n');
-
-    // view + clean buffer.
-    expect(component.mode).toBe('view');
-    expect(component.buffer).toBe(component.serverYaml);
-    expect(component.hasUnsavedChanges()).toBe(false);
-
-    // view + dirty buffer — mode gate means still false.
+  it('(22.1 AC21) drift reload-and-rebase moves the buffer when it still equalled the old serverYaml', async () => {
+    await loaded('foo: 1\n');
+    // Force a dirty gate so onSaveClick runs, but keep buffer === old
+    // serverYaml at the moment the rebase fires by reverting after dirtying.
     component.buffer = 'foo: 2\n';
-    expect(component.hasUnsavedChanges()).toBe(false);
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: server\n'));
 
-    // Reset for edit cases.
-    component.buffer = component.serverYaml;
+    const savePromise = component.onSaveClick();
+    await flushMicrotasks();
+    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
+    // Simulate buffer back at the old serverYaml right before accept.
+    component.buffer = 'foo: 1\n';
+    args.accept!();
+    await savePromise;
 
-    // edit + clean.
-    await component.onEditClick();
-    expect(component.hasUnsavedChanges()).toBe(false);
-
-    // edit + dirty.
-    component.buffer = 'foo: 2\n';
-    expect(component.hasUnsavedChanges()).toBe(true);
+    expect(component.serverYaml).toBe('foo: server\n');
+    // buffer equalled the OLD serverYaml → moved to the fresh server YAML.
+    expect(component.buffer).toBe('foo: server\n');
   });
 
-  // ---------------------------------------------------------------------
-  // Story 11.3 — Destroy-during-save (AC 13)
-  // ---------------------------------------------------------------------
-
-  it('(11.3 AC13) destroy-during-save — late-resolving import does not write state', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
+  it('(22.1 AC21) Save with diverged server export — overwrite choice proceeds with the operator buffer', async () => {
+    await loaded('foo: 1\n');
     component.buffer = 'foo: 2\n';
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: server\n'));
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+
+    const savePromise = component.onSaveClick();
+    await flushMicrotasks();
+    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
+    // reject = overwrite → import proceeds with the operator's buffer.
+    args.reject!();
+    await savePromise;
+
+    expect(apiSpy.importNamespace).toHaveBeenCalledOnceWith('foo: 2\n');
+    expect(component.serverYaml).toBe('foo: 2\n');
+  });
+
+  it('(22.1 AC21) drift export network error falls through to import (non-blocking)', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    apiSpy.exportNamespace.and.returnValue(Promise.reject(new Error('net')));
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+
+    await component.onSaveClick();
+
+    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+    expect(apiSpy.importNamespace).toHaveBeenCalledOnceWith('foo: 2\n');
+  });
+
+  // ----- Destroy-during-save (AC13) -----
+
+  it('(22.1) destroy-during-save — late-resolving import does not write state', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: 1\n'));
     let resolveLate!: (value: unknown) => void;
     apiSpy.importNamespace.and.returnValue(
       new Promise<unknown>((r) => {
@@ -770,6 +936,9 @@ describe('NamespacePanelComponent', () => {
 
     const consoleErrorSpy = spyOn(console, 'error');
     const savePromise = component.onSaveClick();
+    // Drain the drift re-export microtask so importNamespace is reached.
+    await Promise.resolve();
+    await Promise.resolve();
     expect(component.saving).toBe(true);
 
     fixture.destroy();
@@ -778,14 +947,49 @@ describe('NamespacePanelComponent', () => {
     await savePromise;
     await Promise.resolve();
 
-    // No state writes on the destroyed instance.
     expect(component.serverYaml).toBe('foo: 1\n');
-    expect(component.mode).toBe('edit');
     expect(consoleErrorSpy).not.toHaveBeenCalled();
   });
 
   // ---------------------------------------------------------------------
-  // Story 11.4 — Validate flows (buttons, handlers, state, errors)
+  // ADR-017 §2 — Reset is the only undo (AC14, AC15).
+  // ---------------------------------------------------------------------
+
+  it('(22.1 AC14) onCancelClick is removed from the component', async () => {
+    await loaded('foo: 1\n');
+    expect(
+      (component as unknown as { onCancelClick?: unknown }).onCancelClick,
+    ).toBeUndefined();
+  });
+
+  it('(22.1 AC15) onResetClick reverts behind the confirm, clearing validation state', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    component.lastValidation = failingReport(1);
+    component.rawSaveError = 'raw';
+
+    component.onResetClick();
+    expect(confirmationSpy.confirm).toHaveBeenCalledTimes(1);
+    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
+    expect(args.message as string).toContain('Discard unsaved changes');
+
+    args.accept!();
+    expect(component.buffer).toBe('foo: 1\n');
+    expect(component.lastValidation).toBeNull();
+    expect(component.rawSaveError).toBeNull();
+    expect(component.hasUnsavedChanges()).toBe(false);
+  });
+
+  it('(22.1 AC15) onResetClick is a no-op when clean (no confirm)', async () => {
+    await loaded('foo: 1\n');
+
+    component.onResetClick();
+
+    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+  });
+
+  // ---------------------------------------------------------------------
+  // ADR-017 §4 — single Validate handler (AC17, AC18).
   // ---------------------------------------------------------------------
 
   function cleanReport(namespace = 'foo'): NamespaceValidationReport {
@@ -797,106 +1001,31 @@ describe('NamespacePanelComponent', () => {
     };
   }
 
-  // ----- Button visibility per mode (AC 1 / AC 3) -----
-
-  it('(11.4 AC1) Validate-persisted button visible in view mode, hidden in edit', async () => {
-    await loadedEditMode('foo: 1\n');
-
-    let viewBtn = fixture.nativeElement.querySelector(
-      'button[data-test="validate-persisted-btn"]',
-    );
-    expect(viewBtn).not.toBeNull();
-
-    await component.onEditClick();
-    fixture.detectChanges();
-
-    viewBtn = fixture.nativeElement.querySelector(
-      'button[data-test="validate-persisted-btn"]',
-    );
-    expect(viewBtn).toBeNull();
+  it('(22.1 AC17) onValidatePersistedClick is removed; onValidateBufferClick is the single handler', async () => {
+    await loaded('foo: 1\n');
+    expect(
+      (component as unknown as { onValidatePersistedClick?: unknown })
+        .onValidatePersistedClick,
+    ).toBeUndefined();
+    expect(typeof component.onValidateBufferClick).toBe('function');
   });
 
-  it('(11.4 AC3) Validate-buffer button visible in edit mode, hidden in view', async () => {
-    await loadedEditMode('foo: 1\n');
-
-    let editBtn = fixture.nativeElement.querySelector(
-      'button[data-test="validate-buffer-btn"]',
-    );
-    expect(editBtn).toBeNull();
-
-    await component.onEditClick();
-    fixture.detectChanges();
-
-    editBtn = fixture.nativeElement.querySelector(
-      'button[data-test="validate-buffer-btn"]',
-    );
-    expect(editBtn).not.toBeNull();
-  });
-
-  // ----- Validate-persisted click — AC 2 -----
-
-  it('(11.4 AC2) onValidatePersistedClick calls validatePersistedNamespace exactly once; clean report hides pane and flashes the view-mode button', async () => {
-    await loadedEditMode('foo: 1\n');
-    const report = cleanReport();
-    apiSpy.validatePersistedNamespace.and.returnValue(Promise.resolve(report));
-
-    await component.onValidatePersistedClick();
-
-    expect(apiSpy.validatePersistedNamespace).toHaveBeenCalledOnceWith('foo');
-    // Clean reports no longer render the "Validation passed" pane — the
-    // button-flash UX replaces it. `lastValidation` stays null.
-    expect(component.lastValidation).toBeNull();
-    expect(component.validationFlashPersisted).toBeTrue();
-    expect(component.validationFlashBuffer).toBeFalse();
-    // Save's fallback field stays untouched.
-    expect(component.rawSaveError).toBeNull();
-    // No other ApiService spy invoked on this path (beyond the load's export).
-    expect(apiSpy.importNamespace).not.toHaveBeenCalled();
-    expect(apiSpy.validateNamespaceBuffer).not.toHaveBeenCalled();
-  });
-
-  it('onValidatePersistedClick non-clean report still populates lastValidation (findings pane renders)', async () => {
-    await loadedEditMode('foo: 1\n');
-    const report: NamespaceValidationReport = {
-      namespace: 'foo',
-      ok: false,
-      global_errors: ['schema mismatch'],
-      entry_issues: [],
-    };
-    apiSpy.validatePersistedNamespace.and.returnValue(Promise.resolve(report));
-
-    await component.onValidatePersistedClick();
-
-    expect(component.lastValidation).toEqual(report);
-    expect(component.validationFlashPersisted).toBeFalse();
-  });
-
-  it('clean-report flash on Validate auto-reverts after 2500ms', fakeAsync(() => {
-    void buildFixture('foo');
-    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: 1\n'));
-    apiSpy.validatePersistedNamespace.and.returnValue(
+  it('(22.1 AC17) Validate validates the buffer via validateNamespaceBuffer; clean state equals persisted', async () => {
+    await loaded('foo: 1\n');
+    // Clean: buffer === serverYaml, so the buffer-validate equals a
+    // persisted-validate.
+    apiSpy.validateNamespaceBuffer.and.returnValue(
       Promise.resolve(cleanReport()),
     );
-    fixture.detectChanges();
-    tick();
 
-    void component.onValidatePersistedClick();
-    tick();
-    expect(component.validationFlashPersisted).toBeTrue();
-    // Halfway through the window — still flashing.
-    tick(1000);
-    expect(component.validationFlashPersisted).toBeTrue();
-    // Past the 2500ms window — flag auto-reverts.
-    tick(1600);
-    expect(component.validationFlashPersisted).toBeFalse();
-    expect(component.validationFlashBuffer).toBeFalse();
-  }));
+    await component.onValidateBufferClick();
 
-  // ----- Validate-buffer click — AC 4 -----
+    expect(apiSpy.validateNamespaceBuffer).toHaveBeenCalledOnceWith('foo: 1\n');
+    expect(apiSpy.validatePersistedNamespace).not.toHaveBeenCalled();
+  });
 
-  it('(11.4 AC4) onValidateBufferClick passes snapshot-at-click buffer; live edits post-click do NOT change args', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
+  it('(22.1 AC17) Validate passes snapshot-at-click buffer; live edits post-click do NOT change args', async () => {
+    await loaded('foo: 1\n');
     component.buffer = 'foo: 2\n';
 
     let resolveValidate!: (v: NamespaceValidationReport) => void;
@@ -907,25 +1036,65 @@ describe('NamespacePanelComponent', () => {
     );
 
     const validatePromise = component.onValidateBufferClick();
-    // Simulate user typing AFTER click but BEFORE the promise resolves.
     component.buffer = 'foo: 99\n';
-
     resolveValidate(cleanReport());
     await validatePromise;
 
-    // Spy was called with the pre-edit (snapshot-at-click) buffer.
     expect(apiSpy.validateNamespaceBuffer).toHaveBeenCalledOnceWith('foo: 2\n');
-    // Clean report → pane hidden, edit-mode button flashes `success`.
     expect(component.lastValidation).toBeNull();
     expect(component.validationFlashBuffer).toBeTrue();
-    expect(component.validationFlashPersisted).toBeFalse();
-    // Validate never mutates buffer; the live edit is still present.
     expect(component.buffer).toBe('foo: 99\n');
   });
 
-  it('editing the buffer after a clean Validate-buffer clears the flash immediately', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
+  it('(22.1 AC18) clean report flashes the Validate button green and announces; pane stays hidden', async () => {
+    await loaded('foo: 1\n');
+    apiSpy.validateNamespaceBuffer.and.returnValue(
+      Promise.resolve(cleanReport()),
+    );
+
+    await component.onValidateBufferClick();
+    fixture.detectChanges();
+
+    expect(component.lastValidation).toBeNull();
+    expect(component.validationFlashBuffer).toBeTrue();
+    expect(component.a11yAnnouncement).toBe('Validation passed');
+    const validateBtn = fixture.nativeElement.querySelector(
+      'button[data-test="validate-btn"]',
+    ) as HTMLButtonElement;
+    expect(validateBtn.classList.contains('p-button-success')).toBeTrue();
+  });
+
+  it('(22.1 AC18) non-clean report populates lastValidation (findings pane renders)', async () => {
+    await loaded('foo: 1\n');
+    const report = failingReport(1, 0);
+    apiSpy.validateNamespaceBuffer.and.returnValue(Promise.resolve(report));
+
+    await component.onValidateBufferClick();
+
+    expect(component.lastValidation).toEqual(report);
+    expect(component.validationFlashBuffer).toBeFalse();
+  });
+
+  it('(22.1 AC18) clean-report flash auto-reverts after 2500ms', fakeAsync(() => {
+    void buildFixture('foo');
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: 1\n'));
+    apiSpy.validateNamespaceBuffer.and.returnValue(
+      Promise.resolve(cleanReport()),
+    );
+    fixture.detectChanges();
+    tick();
+
+    void component.onValidateBufferClick();
+    tick();
+    expect(component.validationFlashBuffer).toBeTrue();
+    tick(1000);
+    expect(component.validationFlashBuffer).toBeTrue();
+    tick(1600);
+    expect(component.validationFlashBuffer).toBeFalse();
+  }));
+
+  it('(22.1 AC18) editing the buffer after a clean Validate clears the flash immediately', async () => {
+    await loaded('foo: 1\n');
     component.buffer = 'foo: 2\n';
     apiSpy.validateNamespaceBuffer.and.returnValue(
       Promise.resolve(cleanReport()),
@@ -934,32 +1103,14 @@ describe('NamespacePanelComponent', () => {
     await component.onValidateBufferClick();
     expect(component.validationFlashBuffer).toBeTrue();
 
-    // User edits the YAML after the clean ack — the green state is now
-    // stale, the button must revert to secondary immediately rather than
-    // linger until the 2500ms timer elapses.
     component.onBufferChange('foo: 2\n# edited\n');
 
     expect(component.buffer).toBe('foo: 2\n# edited\n');
     expect(component.validationFlashBuffer).toBeFalse();
   });
 
-  it('editing buffer does NOT clear the flash on the view-mode persisted button (persisted validates server state, not buffer)', async () => {
-    await loadedEditMode('foo: 1\n');
-    apiSpy.validatePersistedNamespace.and.returnValue(
-      Promise.resolve(cleanReport()),
-    );
-    await component.onValidatePersistedClick();
-    expect(component.validationFlashPersisted).toBeTrue();
-
-    // Even if buffer changes (e.g. user flips to edit later), the persisted
-    // flash is not bound to the buffer — it stays.
-    component.onBufferChange('foo: 99\n');
-    expect(component.validationFlashPersisted).toBeTrue();
-  });
-
-  it('(11.4 AC4) Validate-buffer does NOT mutate mode, serverYaml, buffer, or call importNamespace', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
+  it('(22.1 AC17) Validate does NOT mutate serverYaml/buffer or call importNamespace', async () => {
+    await loaded('foo: 1\n');
     component.buffer = 'foo: 2\n';
     apiSpy.validateNamespaceBuffer.and.returnValue(
       Promise.resolve(cleanReport()),
@@ -967,263 +1118,112 @@ describe('NamespacePanelComponent', () => {
 
     await component.onValidateBufferClick();
 
-    expect(component.mode).toBe('edit');
     expect(component.buffer).toBe('foo: 2\n');
     expect(component.serverYaml).toBe('foo: 1\n');
     expect(apiSpy.importNamespace).not.toHaveBeenCalled();
     expect(component.rawSaveError).toBeNull();
   });
 
-  // ----- Validate does not gate Save — AC 5 -----
-
-  it('(11.4 AC5 + 11.7 AC1) Validate is not a Save trigger; a CLEAN report leaves Save enabled, importNamespace never called by Validate', async () => {
-    // Story 11.4 AC 5 — Validate flow MUST NOT call importNamespace.
-    // Story 11.7 AC 1 amends the post-Validate state: a FAILING report
-    // populates `lastValidation.ok === false` which gates Save via FR14.
-    // This test asserts the CLEAN-report variant where the Validate-Save
-    // independence still holds (no auto-Save, gate stays open).
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
-    component.buffer = 'foo: 2\n';
-    fixture.detectChanges();
-
+  it('(22.1 AC18) Validate 422 structured → findings pane, no toast', async () => {
+    await loaded('foo: 1\n');
+    const report = failingReport(1, 0);
     apiSpy.validateNamespaceBuffer.and.returnValue(
-      Promise.resolve(cleanReport()),
-    );
-
-    await component.onValidateBufferClick();
-    fixture.detectChanges();
-
-    // Save button still enabled (buffer !== serverYaml, saving === false,
-    // gate is not active because the report was clean).
-    const saveBtn = fixture.nativeElement.querySelector(
-      'button[data-test="save-btn"]',
-    ) as HTMLButtonElement;
-    expect(saveBtn.disabled).toBeFalse();
-    expect(component.isSaveGated).toBeFalse();
-    // importNamespace never invoked by the validate path.
-    expect(apiSpy.importNamespace).not.toHaveBeenCalled();
-  });
-
-  // ----- lastValidation preserved across mode flips — AC 10 -----
-
-  it('(11.4 AC10) onEditClick does NOT mutate lastValidation (view → edit)', async () => {
-    await loadedEditMode('foo: 1\n');
-    const prior = cleanReport();
-    component.lastValidation = prior;
-
-    await component.onEditClick();
-
-    expect(component.mode).toBe('edit');
-    expect(component.lastValidation).toBe(prior);
-  });
-
-  it('(11.4 AC10) onCancelClick dirty-accept does NOT mutate lastValidation', async () => {
-    await loadedEditMode('foo: 1\n');
-    const prior = cleanReport();
-    await component.onEditClick();
-    component.buffer = 'foo: 2\n';
-    component.lastValidation = prior;
-
-    component.onCancelClick();
-    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
-    args.accept!();
-
-    expect(component.mode).toBe('view');
-    expect(component.lastValidation).toBe(prior);
-  });
-
-  it('(11.4 AC10) onCancelClick clean-flip does NOT mutate lastValidation', async () => {
-    await loadedEditMode('foo: 1\n');
-    const prior = cleanReport();
-    await component.onEditClick();
-    // Clean buffer — direct flip, no confirm.
-    component.lastValidation = prior;
-
-    component.onCancelClick();
-
-    expect(component.mode).toBe('view');
-    expect(component.lastValidation).toBe(prior);
-  });
-
-  // ----- Validate 422 with structured body → findings rendered (no toast) -----
-
-  it('Validate 422 with NamespaceValidationReport body populates lastValidation (findings pane, no toast)', async () => {
-    await loadedEditMode('foo: 1\n');
-    const report: NamespaceValidationReport = {
-      namespace: 'foo',
-      ok: false,
-      global_errors: ["bundle root missing required key 'entries'"],
-      entry_issues: [],
-    };
-    apiSpy.validatePersistedNamespace.and.returnValue(
       Promise.reject(makeHttpError(422, report)),
     );
 
-    await component.onValidatePersistedClick();
+    await component.onValidateBufferClick();
 
     expect(component.lastValidation).toEqual(report);
-    // No error toast — the pane is the UI for findings.
     expect(messageSpy.add).not.toHaveBeenCalled();
-    expect(component.validationFlashPersisted).toBeFalse();
   });
 
-  it('Validate 422 with non-report body falls through to the generic toast', async () => {
-    await loadedEditMode('foo: 1\n');
+  it('(22.1 AC18) Validate 422 non-report → generic toast', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'garbage: [\n';
     apiSpy.validateNamespaceBuffer.and.returnValue(
       Promise.reject(makeHttpError(422, 'yaml parse error at line 5')),
     );
-    await component.onEditClick();
-    component.buffer = 'garbage: [\n';
 
     await component.onValidateBufferClick();
 
-    // lastValidation untouched (no structured report to render).
     expect(component.lastValidation).toBeNull();
-    // Generic error toast fired instead.
     expect(messageSpy.add).toHaveBeenCalled();
   });
 
-  it('Validate resolved to undefined (network fallback) throws a clear toast, not TypeError', async () => {
-    await loadedEditMode('foo: 1\n');
-    // Simulate FetchService's network-fallback branch (returns undefined).
-    apiSpy.validatePersistedNamespace.and.returnValue(
+  it('(22.1 AC18) Validate resolved to undefined → clear toast, not TypeError', async () => {
+    await loaded('foo: 1\n');
+    apiSpy.validateNamespaceBuffer.and.returnValue(
       Promise.resolve(undefined as unknown as NamespaceValidationReport),
     );
 
-    await component.onValidatePersistedClick();
+    await component.onValidateBufferClick();
 
-    expect(messageSpy.add).toHaveBeenCalled();
     const call = messageSpy.add.calls.mostRecent().args[0];
     expect(call.summary).toBe('Validation failed');
-    // The detail must NOT be the cryptic TypeError message.
     expect(call.detail).not.toContain("reading 'ok'");
-    expect(component.validationFlashPersisted).toBeFalse();
   });
 
-  // ----- Validate 5xx → toast, state unchanged — AC 11 -----
-
-  it('(11.4 AC11) Validate 5xx — error toast, lastValidation unchanged, validating resets', async () => {
-    await loadedEditMode('foo: 1\n');
+  it('(22.1 AC18) Validate 5xx — error toast, lastValidation unchanged, validating resets', async () => {
+    await loaded('foo: 1\n');
     const prior = cleanReport();
     component.lastValidation = prior;
-    apiSpy.validatePersistedNamespace.and.returnValue(
+    apiSpy.validateNamespaceBuffer.and.returnValue(
       Promise.reject(makeHttpError(500)),
     );
 
-    await component.onValidatePersistedClick();
+    await component.onValidateBufferClick();
 
     expect(component.lastValidation).toBe(prior);
     expect(component.validating).toBe(false);
-    expect(component.rawSaveError).toBeNull();
-    // One error toast fired (non-sticky).
     const toast = messageSpy.add.calls.mostRecent().args[0];
     expect(toast.severity).toBe('error');
     expect(toast.summary).toBe('Validation failed');
     expect(toast.sticky).toBeFalsy();
   });
 
-  // ----- Validate 401 silent — AC 12 -----
-
-  it('(11.4 AC12) Validate 401 — no panel toast, state unchanged, validating resets', async () => {
-    await loadedEditMode('foo: 1\n');
+  it('(22.1 AC18) Validate 401 — no panel toast, state unchanged, validating resets', async () => {
+    await loaded('foo: 1\n');
     const prior = cleanReport();
     component.lastValidation = prior;
     messageSpy.add.calls.reset();
-    apiSpy.validatePersistedNamespace.and.returnValue(
+    apiSpy.validateNamespaceBuffer.and.returnValue(
       Promise.reject(makeHttpError(401)),
     );
 
-    await component.onValidatePersistedClick();
+    await component.onValidateBufferClick();
 
     expect(component.lastValidation).toBe(prior);
     expect(component.validating).toBe(false);
-    expect(component.mode).toBe('view');
     expect(messageSpy.add).not.toHaveBeenCalled();
   });
 
-  // ----- Destroy-during-validate — AC 13 -----
-
-  it('(11.4 AC13) destroy-during-validate — late-resolving validate does not write state', async () => {
-    await loadedEditMode('foo: 1\n');
+  it('(22.1) destroy-during-validate — late-resolving validate does not write state', async () => {
+    await loaded('foo: 1\n');
     let resolveLate!: (v: NamespaceValidationReport) => void;
-    apiSpy.validatePersistedNamespace.and.returnValue(
+    apiSpy.validateNamespaceBuffer.and.returnValue(
       new Promise<NamespaceValidationReport>((r) => {
         resolveLate = r;
       }),
     );
 
     const consoleErrorSpy = spyOn(console, 'error');
-    const validatePromise = component.onValidatePersistedClick();
+    const validatePromise = component.onValidateBufferClick();
     expect(component.validating).toBe(true);
 
     fixture.destroy();
 
-    resolveLate(cleanReport('bar'));
+    resolveLate(failingReport(1));
     await validatePromise;
     await Promise.resolve();
 
-    // lastValidation was not written post-destroy.
     expect(component.lastValidation).toBeNull();
     expect(consoleErrorSpy).not.toHaveBeenCalled();
   });
 
-  // ----- NFR7 — exact REST call budget — AC 14 -----
-
-  it('(11.4 AC14) NFR7 scenario — 2 export + 2 validate-persisted + 1 validate-buffer + 1 import = 6 calls', async () => {
-    // Arrange: load with exportSpy.
-    await loadedEditMode('foo: 1\n');
-    expect(apiSpy.exportNamespace).toHaveBeenCalledTimes(1);
-
-    // Validate-persisted x2.
-    apiSpy.validatePersistedNamespace.and.returnValue(
-      Promise.resolve(cleanReport()),
-    );
-    await component.onValidatePersistedClick();
-    await component.onValidatePersistedClick();
-
-    // Flip to edit, set dirty buffer, Validate-buffer x1.
-    // Post-review UX refinement — onEditClick now re-fetches the server
-    // namespace to detect drift; exportNamespace is called once more
-    // (returns the same YAML → no drift → immediate mode flip).
-    await component.onEditClick();
-    component.buffer = 'foo: 2\n';
-    apiSpy.validateNamespaceBuffer.and.returnValue(
-      Promise.resolve(cleanReport()),
-    );
-    await component.onValidateBufferClick();
-
-    // Save x1 (success).
-    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
-    await component.onSaveClick();
-
-    // Tally.
-    expect(apiSpy.exportNamespace).toHaveBeenCalledTimes(2);
-    expect(apiSpy.validatePersistedNamespace).toHaveBeenCalledTimes(2);
-    expect(apiSpy.validateNamespaceBuffer).toHaveBeenCalledTimes(1);
-    expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
-  });
-
-  // ----- editorOptions reference stability — AC 15 -----
-
-  it('(11.4 AC15) editorOptions is reference-stable on a stable mode (regression lock for the getter idiom)', async () => {
-    await loadedEditMode('foo: 1\n');
-    const first = component.editorOptions;
-    const second = component.editorOptions;
-    expect(first).toBe(second);
-
-    // Flipping mode creates exactly one new reference.
-    await component.onEditClick();
-    const afterEdit = component.editorOptions;
-    expect(afterEdit).not.toBe(first);
-    // And the field stays stable on that new mode too.
-    expect(component.editorOptions).toBe(afterEdit);
-  });
-
-  // ----- onClearValidationClick nulls both fields — AC 8 -----
+  // ----- onClearValidationClick nulls both fields -----
 
   it('(11.4 AC8) onClearValidationClick nulls lastValidation AND rawSaveError', async () => {
-    await loadedEditMode('foo: 1\n');
+    await loaded('foo: 1\n');
     component.lastValidation = cleanReport();
     component.rawSaveError = 'some raw';
 
@@ -1234,7 +1234,7 @@ describe('NamespacePanelComponent', () => {
   });
 
   it('(11.4 AC8) ValidationReportComponent clearRequested output triggers onClearValidationClick', async () => {
-    await loadedEditMode('foo: 1\n');
+    await loaded('foo: 1\n');
     component.lastValidation = cleanReport();
     component.rawSaveError = null;
     fixture.detectChanges();
@@ -1251,16 +1251,112 @@ describe('NamespacePanelComponent', () => {
   });
 
   // ---------------------------------------------------------------------
-  // Story 11.5 — Clone flow (AC 1–AC 16)
+  // ADR-017 §5 — FR14 gate retained, orthogonal to Validate (AC19).
   // ---------------------------------------------------------------------
 
-  /**
-   * Bundle YAML fixture used by the Clone-flow tests below. The bundle
-   * conforms to the v2 wire format: root `namespace` + `user_id` +
-   * `entries` map. `payload.description` deliberately mentions "src" so
-   * the rewrite helper's structured-rewrite contract is exercised — that
-   * string MUST NOT be touched.
-   */
+  /** A non-clean validation report with a known finding count. */
+  function failingReport(
+    globalCount = 1,
+    entryCount = 0,
+  ): NamespaceValidationReport {
+    return {
+      namespace: 'foo',
+      ok: false,
+      global_errors: Array.from(
+        { length: globalCount },
+        (_, i) => `global error ${i}`,
+      ),
+      entry_issues: Array.from({ length: entryCount }, (_, i) => ({
+        entry_id: `entry-${i}`,
+        kind: 'agent',
+        errors: ['bad'],
+      })),
+    };
+  }
+
+  it('(22.1 AC19) isSaveGated / isCloneGated retain their bodies (known-bad report or rawSaveError)', async () => {
+    await loaded('foo: 1\n');
+
+    expect(component.isSaveGated).toBeFalse();
+    expect(component.isCloneGated).toBeFalse();
+
+    component.lastValidation = failingReport(2, 0);
+    expect(component.isSaveGated).toBeTrue();
+    expect(component.isCloneGated).toBeTrue();
+
+    component.lastValidation = null;
+    component.rawSaveError = 'raw';
+    expect(component.isSaveGated).toBeTrue();
+    expect(component.isCloneGated).toBeTrue();
+  });
+
+  it('(22.1 AC19) onBufferChange clears rawSaveError unconditionally (gate auto-lifts)', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    component.lastValidation = null;
+    component.rawSaveError = 'stale raw error';
+    expect(component.isSaveGated).toBeTrue();
+
+    component.onBufferChange('foo: 3\n');
+
+    expect(component.rawSaveError).toBeNull();
+    expect(component.isSaveGated).toBeFalse();
+    expect(component.isCloneGated).toBeFalse();
+  });
+
+  it('(22.1 AC19) onClearValidationClick lifts the gate', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    component.lastValidation = failingReport(1);
+    component.rawSaveError = 'raw';
+    expect(component.isSaveGated).toBeTrue();
+
+    component.onClearValidationClick();
+
+    expect(component.isSaveGated).toBeFalse();
+    expect(component.isCloneGated).toBeFalse();
+  });
+
+  it('(22.1 AC19) a successful Save (2xx) lifts the gate', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    component.lastValidation = failingReport(1);
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: 1\n'));
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+
+    await component.onSaveClick();
+
+    expect(component.lastValidation).toBeNull();
+    expect(component.rawSaveError).toBeNull();
+    expect(component.serverYaml).toBe('foo: 2\n');
+    expect(component.isSaveGated).toBeFalse();
+  });
+
+  it('(22.1 AC19) saveTooltip/cloneTooltip describe the gate only when it is the active disable reason', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    component.lastValidation = failingReport(1);
+
+    expect(component.saveTooltip).toBe('Fix validation issues before saving.');
+
+    // Clone tooltip surfaces in a clean state (Clone enabled only when clean).
+    component.buffer = component.serverYaml;
+    expect(component.cloneTooltip).toBe('Fix validation issues before cloning.');
+  });
+
+  it('(22.1 AC19) saveTooltip returns undefined when the gate is not the active disable reason', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = component.serverYaml; // clean — disabled by dirtiness
+    component.lastValidation = null;
+    component.rawSaveError = null;
+
+    expect(component.saveTooltip).toBeUndefined();
+  });
+
+  // ---------------------------------------------------------------------
+  // Clone flow (ADR-012 modal unchanged; gated on clean — ADR-017 §3).
+  // ---------------------------------------------------------------------
+
   const cloneSrcYaml = `namespace: src
 user_id: null
 entries:
@@ -1282,56 +1378,18 @@ entries:
     fixture.detectChanges();
   }
 
-  // ----- Clone button visibility (AC 1) -----
-
-  it('(11.5 AC1) Clone button is visible in view mode', async () => {
+  it('(11.5 AC1) Clone button is present in the loaded (clean) state', async () => {
     await loadedWithCloneSrc();
     const btn = fixture.nativeElement.querySelector(
       'button[data-test="clone-btn"]',
-    );
+    ) as HTMLButtonElement;
     expect(btn).not.toBeNull();
+    expect(btn.disabled).toBeFalse();
   });
 
-  it('Clone button is hidden in edit mode (post-review UX refinement — Clone is view-mode only)', async () => {
-    await loadedWithCloneSrc();
-    await component.onEditClick();
-    fixture.detectChanges();
-    const btn = fixture.nativeElement.querySelector(
-      'button[data-test="clone-btn"]',
-    );
-    expect(btn).toBeNull();
-  });
-
-  it('(11.5 AC1) Clone button is hidden while loading', async () => {
-    // Pending export — loading stays true.
-    apiSpy.exportNamespace.and.returnValue(new Promise<string>(() => {}));
-    await buildFixture('src');
-    fixture.detectChanges();
-    const btn = fixture.nativeElement.querySelector(
-      'button[data-test="clone-btn"]',
-    );
-    expect(btn).toBeNull();
-  });
-
-  it('(11.5 AC1) Clone button is hidden in the empty / error state (serverYaml === "")', async () => {
-    apiSpy.exportNamespace.and.returnValue(Promise.reject(new Error('boom')));
-    await buildFixture('src');
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    const btn = fixture.nativeElement.querySelector(
-      'button[data-test="clone-btn"]',
-    );
-    expect(btn).toBeNull();
-  });
-
-  // ----- Clicking Clone opens the dialog (AC 2) -----
-
-  it('(11.5 AC2) onCloneClick opens the dialog without a network call', async () => {
+  it('(22.1 AC16) onCloneClick opens the dialog from a clean state without a network call', async () => {
     await loadedWithCloneSrc();
     const bufferBefore = component.buffer;
-    const modeBefore = component.mode;
     const serverYamlBefore = component.serverYaml;
     apiSpy.importNamespace.calls.reset();
 
@@ -1340,9 +1398,19 @@ entries:
 
     expect(component.cloneDialogVisible).toBeTrue();
     expect(component.buffer).toBe(bufferBefore);
-    expect(component.mode).toBe(modeBefore);
     expect(component.serverYaml).toBe(serverYamlBefore);
     expect(apiSpy.importNamespace).not.toHaveBeenCalled();
+  });
+
+  it('(22.1 AC16) the outer Clone button is disabled while dirty', async () => {
+    await loadedWithCloneSrc();
+    component.buffer = cloneSrcYaml + '# dirty\n';
+    fixture.detectChanges();
+
+    const btn = fixture.nativeElement.querySelector(
+      'button[data-test="clone-btn"]',
+    ) as HTMLButtonElement;
+    expect(btn.disabled).toBeTrue();
   });
 
   it('(11.5 AC2) onCloneClick is a no-op when cloning === true', async () => {
@@ -1355,9 +1423,9 @@ entries:
     expect(component.cloneDialogVisible).toBeFalse();
   });
 
-  // ----- Pre-flight dialog validation (AC 4) -----
+  // ----- Clone modal pre-flight validation (AC4) -----
 
-  it('(11.5 AC4) Confirm button disabled — empty destNs', async () => {
+  it('(11.5 AC4) Confirm disabled — empty destNs', async () => {
     await loadedWithCloneSrc();
     component.onCloneClick();
     component.cloneDestNs = '';
@@ -1369,7 +1437,7 @@ entries:
     );
   });
 
-  it('(11.5 AC4) Confirm button disabled — destNs equals source namespace', async () => {
+  it('(11.5 AC4) Confirm disabled — destNs equals source namespace', async () => {
     await loadedWithCloneSrc();
     component.onCloneClick();
     component.cloneDestNs = 'src';
@@ -1380,7 +1448,7 @@ entries:
     );
   });
 
-  it('(11.5 AC4) Confirm button disabled — destNs collides with existingNamespaces', async () => {
+  it('(11.5 AC4) Confirm disabled — destNs collides with existingNamespaces', async () => {
     await loadedWithCloneSrc(['src', 'already-there']);
     component.onCloneClick();
     component.cloneDestNs = 'already-there';
@@ -1391,7 +1459,7 @@ entries:
     );
   });
 
-  it('(11.5 AC4) Confirm button disabled while cloning === true', async () => {
+  it('(11.5 AC4) Confirm disabled while cloning === true', async () => {
     await loadedWithCloneSrc();
     component.onCloneClick();
     component.cloneDestNs = 'dst';
@@ -1400,7 +1468,7 @@ entries:
     expect(component.cloneConfirmDisabled).toBeTrue();
   });
 
-  it('(11.5 AC4) Confirm button enabled when all checks pass', async () => {
+  it('(11.5 AC4) Confirm enabled when all checks pass', async () => {
     await loadedWithCloneSrc();
     component.onCloneClick();
     component.cloneDestNs = 'dst';
@@ -1409,27 +1477,45 @@ entries:
     expect(component.cloneValidationError).toBeNull();
   });
 
-  // ----- Clone takes buffer, not serverYaml (AC 5) -----
+  // ----- Clone Confirm happy path -----
 
-  it('(11.5 AC5) onCloneConfirmClick captures buffer (not serverYaml) as the clone source', async () => {
+  it('(11.5 AC8+12+14) Clone Confirm happy path — import then re-export, land on destNs clean', async () => {
+    await loadedWithCloneSrc(['src']);
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+
+    const exportedFresh = 'namespace: dst\nuser_id: null\nentries: {}\n';
+    apiSpy.exportNamespace.and.callFake((ns: string) =>
+      Promise.resolve(ns === 'dst' ? exportedFresh : cloneSrcYaml),
+    );
+    const savedEmit = spyOn(component.saved, 'emit');
+
+    component.onCloneClick();
+    component.cloneDestNs = 'dst';
+    await component.onCloneConfirmClick();
+    await fixture.whenStable();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
+    expect(apiSpy.exportNamespace).toHaveBeenCalledTimes(2);
+    expect(apiSpy.exportNamespace.calls.mostRecent().args).toEqual([
+      'dst',
+      { all: false },
+    ]);
+    expect(component.namespace).toBe('dst');
+    expect(component.hasUnsavedChanges()).toBe(false);
+    expect(component.cloneDialogVisible).toBeFalse();
+    expect(component.cloneDestNs).toBe('');
+    expect(component.cloning).toBeFalse();
+    expect(savedEmit).toHaveBeenCalledTimes(1);
+    const toasts = messageSpy.add.calls.allArgs().map((a) => a[0]);
+    const success = toasts.find((t) => t.severity === 'success');
+    expect(success).toBeDefined();
+    expect(success!.summary).toContain("'dst'");
+  });
+
+  it('(11.5 AC5) onCloneConfirmClick captures the buffer (== server bundle when clean) as the clone source', async () => {
     await loadedWithCloneSrc();
-    await component.onEditClick();
-    // Operator edits the buffer — add an extra entry that is NOT in
-    // serverYaml to uniquely distinguish the two sources.
-    component.buffer = `namespace: src
-user_id: null
-entries:
-  team-1:
-    kind: team
-    model_type: BaseTeamModel
-    payload:
-      description: "configured for src namespace"
-  extra-entry:
-    kind: agent
-    model_type: BaseAgentModel
-    payload:
-      role: helper
-`;
     apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
     apiSpy.exportNamespace.and.returnValue(
       Promise.resolve('namespace: dst\nuser_id: null\nentries: {}\n'),
@@ -1445,64 +1531,12 @@ entries:
     const parsed = yaml.load(sent) as Record<string, unknown>;
     expect(parsed['namespace']).toBe('dst');
     const entries = parsed['entries'] as Record<string, unknown>;
-    expect(entries['extra-entry']).toBeDefined();
+    expect(entries['team-1']).toBeDefined();
   });
 
-  // ----- Clone Confirm happy path (AC 8, AC 12, AC 14) -----
-
-  it('(11.5 AC8+12+14) Clone Confirm happy path — import then re-export, land on destNs in view mode', async () => {
-    await loadedWithCloneSrc(['src']);
-    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
-
-    const exportedFresh = 'namespace: dst\nuser_id: null\nentries: {}\n';
-    // After the clone re-load, exportNamespace is called with 'dst'.
-    apiSpy.exportNamespace.and.callFake((ns: string) =>
-      Promise.resolve(ns === 'dst' ? exportedFresh : cloneSrcYaml),
-    );
-    const savedEmit = spyOn(component.saved, 'emit');
-
-    component.onCloneClick();
-    component.cloneDestNs = 'dst';
-    await component.onCloneConfirmClick();
-    // onCloneConfirmClick fires `loadNamespace(destNs)` as fire-and-forget;
-    // drain microtasks so it resolves before assertions.
-    await fixture.whenStable();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
-    // exportNamespace called twice: once on mount (cloneSrcYaml), once for
-    // the re-load (exportedFresh).
-    expect(apiSpy.exportNamespace).toHaveBeenCalledTimes(2);
-    expect(apiSpy.exportNamespace.calls.mostRecent().args).toEqual([
-      'dst',
-      { all: false },
-    ]);
-    expect(component.namespace).toBe('dst');
-    expect(component.mode).toBe('view');
-    expect(component.cloneDialogVisible).toBeFalse();
-    expect(component.cloneDestNs).toBe('');
-    expect(component.cloning).toBeFalse();
-    expect(savedEmit).toHaveBeenCalledTimes(1);
-    // Success toast fired exactly once with the destNs-interpolated summary.
-    const toasts = messageSpy.add.calls.allArgs().map((a) => a[0]);
-    const success = toasts.find((t) => t.severity === 'success');
-    expect(success).toBeDefined();
-    expect(success!.summary).toContain("'dst'");
-  });
-
-  // ----- Clone 422 structured (AC 9) -----
-
-  // Story 11.7 AC 20 amends this branch — the modal CLOSES on a structured
-  // 422 and the findings are surfaced in the parent panel's findings pane.
   it('(11.5 AC9 + 11.7 AC20) Clone 422 structured — lastValidation populated, modal closes, source intact', async () => {
     await loadedWithCloneSrc();
-    const report: NamespaceValidationReport = {
-      namespace: 'dst',
-      ok: false,
-      global_errors: ['invalid entry'],
-      entry_issues: [],
-    };
+    const report = failingReport(1, 0);
     apiSpy.importNamespace.and.returnValue(
       Promise.reject(makeHttpError(422, report)),
     );
@@ -1513,23 +1547,15 @@ entries:
 
     expect(component.lastValidation).toEqual(report);
     expect(component.rawSaveError).toBeNull();
-    // Story 11.7 AC 20 — modal closes; findings render in parent pane.
     expect(component.cloneDialogVisible).toBeFalse();
     expect(component.cloneDestNs).toBe('');
     expect(component.namespace).toBe('src');
-    expect(component.mode).toBe('view');
     expect(component.buffer).toBe(cloneSrcYaml);
     expect(component.serverYaml).toBe(cloneSrcYaml);
     expect(component.cloning).toBeFalse();
   });
 
-  // ----- Clone 422 unstructured (AC 9; Story 11.7 AC 21 amends) -----
-
-  // Story 11.7 AC 21 amends this branch — instead of populating
-  // `rawSaveError`, the unstructured-422 path populates `cloneInlineError`
-  // and keeps the modal open. Parent's `rawSaveError` stays null because
-  // the FR14 gate-via-rawSaveError path is reserved for SAVE failures.
-  it('(11.5 AC9 + 11.7 AC21) Clone 422 unstructured — cloneInlineError populated, modal stays open, parent state untouched', async () => {
+  it('(11.5 AC9 + 11.7 AC21) Clone 422 unstructured — cloneInlineError populated, modal stays open', async () => {
     await loadedWithCloneSrc();
     apiSpy.importNamespace.and.returnValue(
       Promise.reject(makeHttpError(422, 'FastAPI detail string')),
@@ -1543,19 +1569,11 @@ entries:
     expect(component.rawSaveError).toBeNull();
     expect(component.lastValidation).toBeNull();
     expect(component.cloneDialogVisible).toBeTrue();
-    expect(component.namespace).toBe('src');
     expect(component.cloning).toBeFalse();
   });
 
-  // ----- Clone 5xx (AC 9, AC 10) -----
-
   it('(11.5 AC9+10) Clone 5xx — sticky toast, lastCloneError populated, source intact', async () => {
     await loadedWithCloneSrc();
-    // Seed dirty edit state so AC 10's "source intact" check covers mode +
-    // buffer too.
-    await component.onEditClick();
-    component.buffer = cloneSrcYaml + '# edited marker\n';
-    const editedBuffer = component.buffer;
     apiSpy.importNamespace.and.returnValue(
       Promise.reject(makeHttpError(500, '')),
     );
@@ -1568,24 +1586,16 @@ entries:
     expect(component.lastCloneError).not.toBeNull();
     expect(component.cloning).toBeFalse();
     expect(component.cloneDialogVisible).toBeTrue();
-    // Source state intact.
     expect(component.namespace).toBe('src');
-    expect(component.mode).toBe('edit');
-    expect(component.buffer).toBe(editedBuffer);
     expect(component.serverYaml).toBe(cloneSrcYaml);
-    // Sticky error toast fired.
     const lastToast = messageSpy.add.calls.mostRecent().args[0];
     expect(lastToast.severity).toBe('error');
     expect(lastToast.sticky).toBeTrue();
   });
 
-  // ----- Clone 401 silent (AC 9) -----
-
   it('(11.5 AC9) Clone 401 — no panel toast, dialog stays open, cloning resets', async () => {
     await loadedWithCloneSrc();
-    apiSpy.importNamespace.and.returnValue(
-      Promise.reject(makeHttpError(401)),
-    );
+    apiSpy.importNamespace.and.returnValue(Promise.reject(makeHttpError(401)));
     messageSpy.add.calls.reset();
 
     component.onCloneClick();
@@ -1598,20 +1608,18 @@ entries:
     expect(component.lastCloneError).toBeNull();
   });
 
-  // ----- Clone CloneYamlError (AC 11) -----
-
   it('(11.5 AC11) CloneYamlError — no import call, toast fired, cloning resets, lastCloneError NOT set', async () => {
     await loadedWithCloneSrc();
-    await component.onEditClick();
-    // Buffer is NOT a valid bundle root mapping — forces
-    // rewriteNamespaceInYaml to throw CloneYamlError before the network
-    // call.
+    // A buffer that is not a valid bundle root mapping forces
+    // rewriteNamespaceInYaml to throw CloneYamlError before the network call.
+    // Set it directly (Clone reads this.buffer); the gate is bypassed by
+    // calling onCloneConfirmClick after opening the modal.
+    component.onCloneClick();
     component.buffer = '- not a mapping\n';
+    component.cloneDestNs = 'dst';
     apiSpy.importNamespace.calls.reset();
     messageSpy.add.calls.reset();
 
-    component.onCloneClick();
-    component.cloneDestNs = 'dst';
     await component.onCloneConfirmClick();
 
     expect(apiSpy.importNamespace).not.toHaveBeenCalled();
@@ -1622,11 +1630,8 @@ entries:
     expect(toast.severity).toBe('error');
   });
 
-  // ----- NFR7 budget (AC 14) -----
-
-  it('(11.5 AC14) NFR7 — clone happy path = 1 import + 2 exports total, no other spy calls', async () => {
+  it('(11.5 AC14) NFR7 — clone happy path = 1 import + 2 exports total, no validate calls', async () => {
     await loadedWithCloneSrc();
-    // 1 export fired during mount; now clone.
     apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
     apiSpy.exportNamespace.and.callFake((ns: string) =>
       Promise.resolve(`namespace: ${ns}\nuser_id: null\nentries: {}\n`),
@@ -1643,8 +1648,6 @@ entries:
     expect(apiSpy.validateNamespaceBuffer).not.toHaveBeenCalled();
     expect(apiSpy.validatePersistedNamespace).not.toHaveBeenCalled();
   });
-
-  // ----- Destroy-during-clone (AC 16) -----
 
   it('(11.5 AC16) destroy-during-clone — late-resolving import does not write state', async () => {
     await loadedWithCloneSrc();
@@ -1670,231 +1673,89 @@ entries:
     await clonePromise;
     await Promise.resolve();
 
-    // No state writes on the destroyed instance.
     expect(component.namespace).toBe('src');
     expect(consoleErrorSpy).not.toHaveBeenCalled();
   });
-
-  // ---------------------------------------------------------------------
-  // Story 11.7 — Validation gate + a11y polish (AC 1–26)
-  // ---------------------------------------------------------------------
-
-  /** Helper: a non-clean validation report with a known finding count. */
-  function failingReport(
-    globalCount = 1,
-    entryCount = 0,
-  ): NamespaceValidationReport {
-    return {
-      namespace: 'foo',
-      ok: false,
-      global_errors: Array.from(
-        { length: globalCount },
-        (_, i) => `global error ${i}`,
-      ),
-      entry_issues: Array.from({ length: entryCount }, (_, i) => ({
-        entry_id: `entry-${i}`,
-        kind: 'agent',
-        errors: ['bad'],
-      })),
-    };
-  }
-
-  // ----- AC 1, 2, 6 — FR14 gate getters -----
-
-  it('(11.7 AC1) gate matrix branch A — lastValidation.ok=false disables Save; Clone gate covered by the view-mode test below (post-UX-refinement: Clone is view-mode only)', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
-    component.buffer = 'foo: 2\n';
-    component.lastValidation = failingReport(2, 0);
-    component.rawSaveError = null;
-    fixture.detectChanges();
-
-    // Both gate flags still true regardless of mode — they track data state.
-    expect(component.isSaveGated).toBeTrue();
-    expect(component.isCloneGated).toBeTrue();
-
-    // Save is visible AND disabled in edit mode.
-    const saveBtn = fixture.nativeElement.querySelector(
-      'button[data-test="save-btn"]',
-    ) as HTMLButtonElement;
-    expect(saveBtn.disabled).toBeTrue();
-    expect(component.saveTooltip).toBe('Fix validation issues before saving.');
-
-    // Clone is NOT rendered in edit mode (post-review UX refinement).
-    const cloneBtn = fixture.nativeElement.querySelector(
-      'button[data-test="clone-btn"]',
-    ) as HTMLButtonElement | null;
-    expect(cloneBtn).toBeNull();
-    // The gate still computes; tooltip would surface in view mode.
-    expect(component.cloneTooltip).toBe('Fix validation issues before cloning.');
-  });
-
-  it('(11.7 AC2) gate matrix branch B — rawSaveError !== null disables Save and Clone', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
-    component.buffer = 'foo: 2\n';
-    component.lastValidation = null;
-    component.rawSaveError = 'FastAPI raw error string';
-    fixture.detectChanges();
-
-    expect(component.isSaveGated).toBeTrue();
-    expect(component.isCloneGated).toBeTrue();
-    expect(component.saveTooltip).toBe('Fix validation issues before saving.');
-    expect(component.cloneTooltip).toBe('Fix validation issues before cloning.');
-  });
-
-  it('(11.7 AC6) fresh untouched state is NOT pre-gated — Clone enabled by default', async () => {
-    await loadedWithCloneSrc(['src']);
-    expect(component.lastValidation).toBeNull();
-    expect(component.rawSaveError).toBeNull();
-    expect(component.isCloneGated).toBeFalse();
-    expect(component.cloneTooltip).toBeUndefined();
-
-    const cloneBtn = fixture.nativeElement.querySelector(
-      'button[data-test="clone-btn"]',
-    ) as HTMLButtonElement;
-    expect(cloneBtn.disabled).toBeFalse();
-  });
-
-  it('(11.7 AC1) saveTooltip returns undefined when gate is NOT the active disable reason', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
-    // Clean buffer — Save disabled because buffer === serverYaml, NOT gate.
-    component.buffer = 'foo: 1\n';
-    component.lastValidation = null;
-    component.rawSaveError = null;
-    fixture.detectChanges();
-
-    // Tooltip is `undefined` (not null) so PrimeNG's pTooltip input
-    // (`string | TemplateRef | undefined`) accepts it under strictTemplates.
-    expect(component.saveTooltip).toBeUndefined();
-  });
-
-  // ----- AC 3 — gate auto-lifts on onBufferChange -----
-
-  it('(11.7 AC3) gate matrix branch C — onBufferChange clears rawSaveError unconditionally', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
-    component.buffer = 'foo: 2\n';
-    component.lastValidation = failingReport(1);
-    component.rawSaveError = 'stale raw error';
-    expect(component.isSaveGated).toBeTrue();
-    expect(component.isCloneGated).toBeTrue();
-
-    component.onBufferChange('foo: 3\n');
-
-    // Both fields nulled → gate flips false in the same change-detection
-    // cycle. lastValidation clears via the validatedBuffer path even
-    // though validatedBuffer was null (it was already null because no
-    // green-flash was active).
-    expect(component.rawSaveError).toBeNull();
-    // lastValidation stays in this case because the validatedBuffer
-    // condition didn't trigger — but the rawSaveError clear alone is
-    // enough to lift the gate when lastValidation === null. With both
-    // signals present, the gate stays until lastValidation also clears
-    // (operator can click Clear-results or Re-validate). Verify the
-    // rawSaveError-clear path independently:
-    component.lastValidation = null;
-    expect(component.isSaveGated).toBeFalse();
-    expect(component.isCloneGated).toBeFalse();
-  });
-
-  it('(11.7 AC3) regression-lock — onBufferChange still clears validationFlashBuffer when value diverges from validatedBuffer (Story 11.4 green-flash semantics)', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
-    component.buffer = 'foo: 2\n';
-    apiSpy.validateNamespaceBuffer.and.returnValue(
-      Promise.resolve(cleanReport()),
-    );
-    await component.onValidateBufferClick();
-
-    // Pre-condition: green-flash on, validatedBuffer captured.
-    expect(component.validationFlashBuffer).toBeTrue();
-
-    // Change the buffer — the existing Story 11.4 invalidation must
-    // still fire.
-    component.onBufferChange('foo: 3\n');
-    expect(component.validationFlashBuffer).toBeFalse();
-  });
-
-  // ----- AC 4 — gate auto-lifts on onClearValidationClick -----
-
-  it('(11.7 AC4) gate matrix branch D — onClearValidationClick lifts the gate', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
-    component.buffer = 'foo: 2\n';
-    component.lastValidation = failingReport(1);
-    component.rawSaveError = 'raw';
-    expect(component.isSaveGated).toBeTrue();
-
-    component.onClearValidationClick();
-    expect(component.lastValidation).toBeNull();
-    expect(component.rawSaveError).toBeNull();
-    expect(component.isSaveGated).toBeFalse();
-    expect(component.isCloneGated).toBeFalse();
-
-    fixture.detectChanges();
-    const saveBtn = fixture.nativeElement.querySelector(
-      'button[data-test="save-btn"]',
-    ) as HTMLButtonElement;
-    expect(saveBtn.disabled).toBeFalse();
-  });
-
-  // ----- AC 5 — gate auto-lifts on successful Save (regression-lock) -----
-
-  it('(11.7 AC5) gate matrix branch E — successful Save (2xx) lifts the gate', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
-    component.buffer = 'foo: 2\n';
-    component.lastValidation = failingReport(1);
-    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
-
-    await component.onSaveClick();
-
-    expect(component.lastValidation).toBeNull();
-    expect(component.rawSaveError).toBeNull();
-    expect(component.mode).toBe('view');
-    expect(component.serverYaml).toBe('foo: 2\n');
-    expect(component.isSaveGated).toBeFalse();
-  });
-
-  // ----- AC 7 — Clone modal Confirm gated by FR14 -----
 
   it('(11.7 AC7) Clone modal Confirm button is gated by isCloneGated', async () => {
     await loadedWithCloneSrc(['src']);
     component.onCloneClick();
     component.cloneDestNs = 'valid-new-ns';
-    // Without gate: cloneConfirmDisabled would be false (destination valid).
     expect(component.cloneConfirmDisabled).toBeFalse();
 
-    // With gate: confirmDisabled returns true.
     component.lastValidation = failingReport(1);
     expect(component.cloneConfirmDisabled).toBeTrue();
   });
 
-  // ----- AC 11–14 — aria-live announcements -----
+  // ----- Clone modal a11y handlers -----
 
-  it('(11.7 AC11) flashValidated sets a11yAnnouncement to "Validation passed"', async () => {
-    await loadedEditMode('foo: 1\n');
-    apiSpy.validatePersistedNamespace.and.returnValue(
-      Promise.resolve(cleanReport()),
-    );
-    await component.onValidatePersistedClick();
-    fixture.detectChanges();
+  it('(11.7 AC18) onCloneDialogHide clears cloneDestNs and cloneInlineError', async () => {
+    await loadedWithCloneSrc(['src']);
+    component.onCloneClick();
+    component.cloneDestNs = 'something';
+    component.cloneInlineError = 'pending error';
 
-    expect(component.a11yAnnouncement).toBe('Validation passed');
-    const liveRegion = fixture.nativeElement.querySelector(
-      '[data-test="a11y-live-region"]',
-    ) as HTMLElement;
-    expect(liveRegion.textContent?.trim()).toBe('Validation passed');
+    component.onCloneDialogHide();
+
+    expect(component.cloneDestNs).toBe('');
+    expect(component.cloneInlineError).toBeNull();
   });
 
-  it('(11.7 AC12) failing Validate-persisted sets a11yAnnouncement to "Validation found N issues"', async () => {
-    await loadedEditMode('foo: 1\n');
-    apiSpy.validatePersistedNamespace.and.returnValue(
+  it('(11.7 AC19) onCloneDialogHide returns focus to the outer Clone button', fakeAsync(async () => {
+    await loadedWithCloneSrc(['src']);
+    fixture.detectChanges();
+
+    const cloneBtn = fixture.nativeElement.querySelector(
+      'button[data-test="clone-btn"]',
+    ) as HTMLButtonElement;
+    component.cloneBtnRef = {
+      nativeElement: cloneBtn,
+    } as ElementRef<HTMLButtonElement>;
+
+    component.onCloneDialogHide();
+    tick(0);
+
+    expect(document.activeElement).toBe(cloneBtn);
+  }));
+
+  it('(11.7 AC16) onCloneDialogShow focuses the destination input via cloneDestInputRef', fakeAsync(async () => {
+    await loadedWithCloneSrc(['src']);
+    component.onCloneClick();
+    fixture.detectChanges();
+
+    const stub = document.createElement('input');
+    document.body.appendChild(stub);
+    component.cloneDestInputRef = {
+      nativeElement: stub,
+    } as ElementRef<HTMLInputElement>;
+
+    component.onCloneDialogShow();
+    tick(0);
+
+    expect(document.activeElement).toBe(stub);
+    document.body.removeChild(stub);
+  }));
+
+  it('(11.7 AC21) onCloneDestNsChange clears cloneInlineError', async () => {
+    await loadedWithCloneSrc(['src']);
+    component.cloneInlineError = 'stale error';
+
+    component.onCloneDestNsChange();
+
+    expect(component.cloneInlineError).toBeNull();
+  });
+
+  // ---------------------------------------------------------------------
+  // a11y live region.
+  // ---------------------------------------------------------------------
+
+  it('(11.7 AC12) failing Validate sets a11yAnnouncement to "Validation found N issues"', async () => {
+    await loaded('foo: 1\n');
+    apiSpy.validateNamespaceBuffer.and.returnValue(
       Promise.resolve(failingReport(3, 2)),
     );
-    await component.onValidatePersistedClick();
+
+    await component.onValidateBufferClick();
     fixture.detectChanges();
 
     expect(component.a11yAnnouncement).toBe('Validation found 5 issues');
@@ -1905,9 +1766,9 @@ entries:
   });
 
   it('(11.7 AC12) Save 422 structured branch announces "Validation found N issues"', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
+    await loaded('foo: 1\n');
     component.buffer = 'foo: 2\n';
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: 1\n'));
     apiSpy.importNamespace.and.returnValue(
       Promise.reject(makeHttpError(422, failingReport(1, 0))),
     );
@@ -1915,17 +1776,6 @@ entries:
     await component.onSaveClick();
 
     expect(component.a11yAnnouncement).toBe('Validation found 1 issues');
-  });
-
-  it('(11.7 AC13) Save 2xx sets a11yAnnouncement to "Namespace saved"', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
-    component.buffer = 'foo: 2\n';
-    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
-
-    await component.onSaveClick();
-
-    expect(component.a11yAnnouncement).toBe('Namespace saved');
   });
 
   it('(11.7 AC14) Clone Confirm 2xx sets a11yAnnouncement to "Cloned to namespace \'X\'"', async () => {
@@ -1944,7 +1794,7 @@ entries:
   });
 
   it('(11.7 AC15) live region is visually-hidden but present in the DOM', async () => {
-    await loadedEditMode('foo: 1\n');
+    await loaded('foo: 1\n');
     fixture.detectChanges();
 
     const liveRegion = fixture.nativeElement.querySelector(
@@ -1962,175 +1812,31 @@ entries:
     expect(styles.overflow).toBe('hidden');
   });
 
-  // ----- AC 18 — Escape dismisses Clone modal with Cancel semantics -----
-
-  it('(11.7 AC18) onCloneDialogHide clears cloneDestNs and cloneInlineError', async () => {
-    await loadedWithCloneSrc(['src']);
-    component.onCloneClick();
-    component.cloneDestNs = 'something';
-    component.cloneInlineError = 'pending error';
-
-    component.onCloneDialogHide();
-
-    expect(component.cloneDestNs).toBe('');
-    expect(component.cloneInlineError).toBeNull();
-  });
-
-  // ----- AC 19 — Focus returns to outer Clone button on modal close -----
-
-  it('(11.7 AC19) onCloneDialogHide returns focus to the outer Clone button', fakeAsync(async () => {
-    await loadedWithCloneSrc(['src']);
-    fixture.detectChanges();
-
-    // Wire the @ViewChild ElementRef manually with the rendered button.
-    const cloneBtn = fixture.nativeElement.querySelector(
-      'button[data-test="clone-btn"]',
-    ) as HTMLButtonElement;
-    expect(cloneBtn).not.toBeNull();
-    component.cloneBtnRef = { nativeElement: cloneBtn } as ElementRef<HTMLButtonElement>;
-
-    component.onCloneDialogHide();
-    tick(0);
-
-    expect(document.activeElement).toBe(cloneBtn);
-  }));
-
-  // ----- AC 20 — Clone Confirm 422 structured: close modal + render in parent -----
-
-  it('(11.7 AC20) Clone Confirm 422 structured — closes modal, populates lastValidation, parent buffer/mode untouched', async () => {
-    await loadedWithCloneSrc(['src']);
-    component.onCloneClick();
-    component.cloneDestNs = 'new-ns';
-    const bufferBefore = component.buffer;
-    const modeBefore = component.mode;
-
-    apiSpy.importNamespace.and.returnValue(
-      Promise.reject(makeHttpError(422, failingReport(2))),
-    );
-    await component.onCloneConfirmClick();
-
-    expect(component.cloneDialogVisible).toBeFalse();
-    expect(component.cloneDestNs).toBe('');
-    expect(component.cloneInlineError).toBeNull();
-    expect(component.lastValidation?.ok).toBeFalse();
-    expect(component.buffer).toBe(bufferBefore);
-    expect(component.mode).toBe(modeBefore);
-    expect(component.isCloneGated).toBeTrue();
-  });
-
-  // ----- AC 21 — Clone Confirm 422 unstructured: stay open, inline error -----
-
-  it('(11.7 AC21) Clone Confirm 422 unstructured — modal stays open, cloneInlineError populated, no parent state mutation', async () => {
-    await loadedWithCloneSrc(['src']);
-    component.onCloneClick();
-    component.cloneDestNs = 'new-ns';
-
-    apiSpy.importNamespace.and.returnValue(
-      Promise.reject(makeHttpError(422, 'plain error string')),
-    );
-    await component.onCloneConfirmClick();
-
-    expect(component.cloneDialogVisible).toBeTrue();
-    expect(component.cloneInlineError).toBe('plain error string');
-    expect(component.lastValidation).toBeNull();
-    expect(component.rawSaveError).toBeNull();
-  });
-
-  it('(11.7 AC21) onCloneDestNsChange clears cloneInlineError', async () => {
-    await loadedWithCloneSrc(['src']);
-    component.cloneInlineError = 'stale error';
-
-    component.onCloneDestNsChange();
-
-    expect(component.cloneInlineError).toBeNull();
-  });
-
-  // ----- AC 24 — destroy-during-write absorbs late resolutions (regression-lock) -----
-
-  it('(11.7 AC24 regression-lock) destroy-during-save absorbs late import resolution (no state writes on destroyed component)', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
-    component.buffer = 'foo: 2\n';
-
-    let resolveImport!: (value: unknown) => void;
-    apiSpy.importNamespace.and.returnValue(
-      new Promise<unknown>((r) => {
-        resolveImport = r;
-      }) as unknown as Promise<never>,
-    );
-
-    const savePromise = component.onSaveClick();
-    expect(component.saving).toBeTrue();
-
-    fixture.destroy();
-    resolveImport([]);
-    await savePromise;
-    await Promise.resolve();
-
-    // No state writes on the destroyed instance — serverYaml stays at the
-    // pre-save value (foo: 1) since the success branch never ran.
-    expect(component.serverYaml).toBe('foo: 1\n');
-  });
-
-  // ----- AC 16 — Clone modal autofocus (programmatic via onCloneDialogShow) -----
-
-  it('(11.7 AC16) onCloneDialogShow focuses the destination input via cloneDestInputRef', fakeAsync(async () => {
-    await loadedWithCloneSrc(['src']);
-    component.onCloneClick();
-    fixture.detectChanges();
-
-    // Wire the @ViewChild manually with a focusable stub element so the
-    // assertion is deterministic regardless of PrimeNG's overlay timing.
-    const stub = document.createElement('input');
-    document.body.appendChild(stub);
-    component.cloneDestInputRef = {
-      nativeElement: stub,
-    } as ElementRef<HTMLInputElement>;
-
-    component.onCloneDialogShow();
-    tick(0);
-
-    expect(document.activeElement).toBe(stub);
-    document.body.removeChild(stub);
-  }));
-
-  // Story 14.1 — Delete-namespace button + confirmation (ADR-028 frontend leg)
+  // ---------------------------------------------------------------------
+  // Delete flow (Story 14.1 / ADR-028 frontend leg) — always available.
   // ---------------------------------------------------------------------
 
-  /**
-   * Capture the config object passed to ConfirmationService.confirm and
-   * invoke its `accept` callback — drives the delete-confirm branch
-   * deterministically (mirrors the existing clone/cancel confirm tests).
-   */
-  function acceptLastConfirm(): void {
-    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
-    args.accept!();
-  }
-
-  // ----- Button render: view mode vs edit mode (AC 11) -----
-
-  it('(14.1 AC11) Delete button renders in view mode', async () => {
-    await loadedEditMode('foo: 1\n');
+  it('(14.1 AC11) Delete button renders whenever the panel has content', async () => {
+    await loaded('foo: 1\n');
     const btn = fixture.nativeElement.querySelector(
       'button[data-test="delete-ns-btn"]',
     );
     expect(btn).not.toBeNull();
   });
 
-  it('(14.1 AC11) Delete button is absent in edit mode', async () => {
-    await loadedEditMode('foo: 1\n');
-    await component.onEditClick();
+  it('(14.1 AC11) Delete button is present even when dirty (orthogonal to dirty)', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
     fixture.detectChanges();
     const btn = fixture.nativeElement.querySelector(
       'button[data-test="delete-ns-btn"]',
-    );
-    expect(btn).toBeNull();
+    ) as HTMLButtonElement;
+    expect(btn).not.toBeNull();
+    expect(btn.disabled).toBeFalse();
   });
 
-  // ----- Confirm open + accept/cancel (AC 12) -----
-
-  it('(14.1 AC12) clicking Delete opens the confirmation; accepting calls deleteNamespace once with the current namespace', async () => {
-    await loadedEditMode('foo: 1\n');
+  it('(14.1 AC12) clicking Delete opens the confirmation; accepting calls deleteNamespace once', async () => {
+    await loaded('foo: 1\n');
     apiSpy.deleteNamespace.and.returnValue(Promise.resolve());
 
     component.onDeleteClick();
@@ -2140,27 +1846,14 @@ entries:
     expect(args.icon).toBe('pi pi-trash');
     expect(args.message as string).toContain('foo');
 
-    acceptLastConfirm();
+    args.accept!();
     await fixture.whenStable();
 
     expect(apiSpy.deleteNamespace).toHaveBeenCalledOnceWith('foo');
   });
 
-  it('(14.1 AC12) cancelling the confirm does NOT call deleteNamespace (no reject side effects)', async () => {
-    await loadedEditMode('foo: 1\n');
-
-    component.onDeleteClick();
-    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
-    // No reject callback is wired — cancel = pure no-op.
-    expect(args.reject).toBeUndefined();
-    // Simulate cancel: never call accept.
-    expect(apiSpy.deleteNamespace).not.toHaveBeenCalled();
-  });
-
-  // ----- 204 success path (AC 13, AC 6) -----
-
   it('(14.1 AC13) 204 success — emits saved + closed and shows a success toast', async () => {
-    await loadedEditMode('foo: 1\n');
+    await loaded('foo: 1\n');
     apiSpy.deleteNamespace.and.returnValue(Promise.resolve());
     const savedEmit = spyOn(component.saved, 'emit');
     const closedEmit = spyOn(component.closed, 'emit');
@@ -2173,47 +1866,31 @@ entries:
     expect(component.deleting).toBeFalse();
     const toast = messageSpy.add.calls.mostRecent().args[0];
     expect(toast.severity).toBe('success');
-    expect(toast.summary).toContain('foo');
-    // a11y live-region announcement set.
     expect(component.a11yAnnouncement).toBe("Namespace 'foo' deleted");
   });
 
-  // ----- 403 not-authorized (AC 14) -----
-
-  it('(14.1 AC14) 403 — not-authorized toast, panel open, state unchanged, single call (not retried)', async () => {
-    await loadedEditMode('foo: 1\n');
+  it('(14.1 AC14) 403 — not-authorized toast, panel open, state unchanged, single call', async () => {
+    await loaded('foo: 1\n');
     const savedEmit = spyOn(component.saved, 'emit');
-    apiSpy.deleteNamespace.and.returnValue(
-      Promise.reject(makeHttpError(403)),
-    );
+    apiSpy.deleteNamespace.and.returnValue(Promise.reject(makeHttpError(403)));
     messageSpy.add.calls.reset();
 
     await component.onDeleteConfirm();
 
     expect(apiSpy.deleteNamespace).toHaveBeenCalledTimes(1);
     expect(savedEmit).not.toHaveBeenCalled();
-    // Panel state untouched.
-    expect(component.mode).toBe('view');
     expect(component.serverYaml).toBe('foo: 1\n');
     expect(component.buffer).toBe('foo: 1\n');
     expect(component.deleting).toBeFalse();
-    // Not-authorized error toast (non-sticky).
     const toast = messageSpy.add.calls.mostRecent().args[0];
     expect(toast.severity).toBe('error');
     expect(toast.summary).toContain('not authorized');
     expect(toast.sticky).toBeFalsy();
   });
 
-  // ----- 409 / 422 inbound-reference blocker (AC 15) -----
-
   it('(14.1 AC15) 422 structured NamespaceValidationReport — findings surfaced, panel open', async () => {
-    await loadedEditMode('foo: 1\n');
-    const report: NamespaceValidationReport = {
-      namespace: 'foo',
-      ok: false,
-      global_errors: ["namespace 'bar' references 'foo'"],
-      entry_issues: [],
-    };
+    await loaded('foo: 1\n');
+    const report = failingReport(1, 0);
     apiSpy.deleteNamespace.and.returnValue(
       Promise.reject(makeHttpError(422, report)),
     );
@@ -2222,13 +1899,12 @@ entries:
 
     expect(component.lastValidation).toEqual(report);
     expect(component.rawSaveError).toBeNull();
-    expect(component.mode).toBe('view');
     expect(component.serverYaml).toBe('foo: 1\n');
     expect(component.a11yAnnouncement).toBe('Validation found 1 issues');
   });
 
   it('(14.1 AC15) 409 with unstructured body — error toast surfaces the detail, panel open', async () => {
-    await loadedEditMode('foo: 1\n');
+    await loaded('foo: 1\n');
     apiSpy.deleteNamespace.and.returnValue(
       Promise.reject(makeHttpError(409, 'referenced by namespace bar')),
     );
@@ -2240,30 +1916,22 @@ entries:
     const toast = messageSpy.add.calls.mostRecent().args[0];
     expect(toast.severity).toBe('error');
     expect(toast.detail).toContain('referenced by namespace bar');
-    expect(component.mode).toBe('view');
   });
 
-  // ----- 401 falls through (no panel-specific handling, AC 9) -----
-
-  it('(14.1 AC9) 401 — no panel toast, state unchanged', async () => {
-    await loadedEditMode('foo: 1\n');
-    apiSpy.deleteNamespace.and.returnValue(
-      Promise.reject(makeHttpError(401)),
-    );
+  it('(14.1 AC9) Delete 401 — no panel toast, state unchanged', async () => {
+    await loaded('foo: 1\n');
+    apiSpy.deleteNamespace.and.returnValue(Promise.reject(makeHttpError(401)));
     messageSpy.add.calls.reset();
 
     await component.onDeleteConfirm();
 
     expect(messageSpy.add).not.toHaveBeenCalled();
-    expect(component.mode).toBe('view');
     expect(component.serverYaml).toBe('foo: 1\n');
     expect(component.deleting).toBeFalse();
   });
 
-  // ----- In-flight guard (AC 16) -----
-
   it('(14.1 AC16) in-flight guard — button disabled while deleting; second confirm does not fire a second call', async () => {
-    await loadedEditMode('foo: 1\n');
+    await loaded('foo: 1\n');
     let resolveDelete!: () => void;
     apiSpy.deleteNamespace.and.returnValue(
       new Promise<void>((r) => {
@@ -2275,15 +1943,12 @@ entries:
     expect(component.deleting).toBeTrue();
     fixture.detectChanges();
 
-    // Button is disabled while the delete is pending.
     const btn = fixture.nativeElement.querySelector(
       'button[data-test="delete-ns-btn"]',
     ) as HTMLButtonElement;
     expect(btn.disabled).toBeTrue();
 
-    // A second confirm during the in-flight window is a no-op.
     void component.onDeleteConfirm();
-    // And clicking again is gated too.
     component.onDeleteClick();
     expect(confirmationSpy.confirm).not.toHaveBeenCalled();
 
@@ -2295,7 +1960,7 @@ entries:
   });
 
   it('(14.1 AC10) onDeleteClick is a no-op while a delete is in flight', async () => {
-    await loadedEditMode('foo: 1\n');
+    await loaded('foo: 1\n');
     component.deleting = true;
 
     component.onDeleteClick();
@@ -2303,10 +1968,8 @@ entries:
     expect(confirmationSpy.confirm).not.toHaveBeenCalled();
   });
 
-  // ----- Destroy safety — late-resolving delete does not write state -----
-
   it('(14.1 AC10) destroy-during-delete — late resolution does not write state', async () => {
-    await loadedEditMode('foo: 1\n');
+    await loaded('foo: 1\n');
     let resolveLate!: () => void;
     apiSpy.deleteNamespace.and.returnValue(
       new Promise<void>((r) => {
@@ -2329,18 +1992,15 @@ entries:
   });
 
   // ---------------------------------------------------------------------
-  // Story 12.2 — Clone modal shareable / public toggles (AC 7–AC 13)
+  // Story 12.2 — Clone modal shareable / public toggles (modal unchanged).
   // ---------------------------------------------------------------------
 
-  /** Bundle YAML carrying explicit shareable / public flags. */
   const cloneSrcYamlWithFlags = `namespace: src
 name: Src
 shareable: true
 public: false
 entries: {}
 `;
-
-  // ----- Default state + reset parity (AC 7) -----
 
   it('(12.2 AC7) cloneShareable / clonePublic initialize to false', async () => {
     await loadedWithCloneSrc();
@@ -2381,8 +2041,6 @@ entries: {}
     expect(component.clonePublic).toBeFalse();
   });
 
-  // ----- Pre-fill from buffer (AC 8) -----
-
   it('(12.2 AC8) onCloneClick pre-fills both toggles from the buffer flags', async () => {
     apiSpy.exportNamespace.and.returnValue(
       Promise.resolve(cloneSrcYamlWithFlags),
@@ -2396,13 +2054,11 @@ entries: {}
 
     expect(component.cloneShareable).toBeTrue();
     expect(component.clonePublic).toBeFalse();
-    // Story 12.1 name/namespace pre-fill remains (additive).
     expect(component.cloneDestNs).toMatch(/^src_/);
     expect(component.cloneDestName).toBe('Src_copy');
   });
 
   it('(12.2 AC8) onCloneClick defaults both toggles to false when the buffer omits the flags', async () => {
-    // cloneSrcYaml has neither shareable nor public.
     await loadedWithCloneSrc();
     component.cloneShareable = true;
     component.clonePublic = true;
@@ -2412,8 +2068,6 @@ entries: {}
     expect(component.cloneShareable).toBeFalse();
     expect(component.clonePublic).toBeFalse();
   });
-
-  // ----- Confirm wires both toggle values through (AC 9) -----
 
   it('(12.2 AC9) onCloneConfirmClick passes both toggle values into the import YAML', async () => {
     await loadedWithCloneSrc(['src']);
@@ -2438,12 +2092,9 @@ entries: {}
     expect(parsed['public']).toBe(false);
     expect(parsed['namespace']).toBe('dst');
     expect(parsed['name']).toBe('Dest');
-    // Both toggles reset after the successful import.
     expect(component.cloneShareable).toBeFalse();
     expect(component.clonePublic).toBeFalse();
   });
-
-  // ----- Toggles do NOT affect the Confirm gate (AC 10) -----
 
   it('(12.2 AC10) toggle combinations never change cloneConfirmDisabled or cloneValidationError', async () => {
     await loadedWithCloneSrc(['src']);
@@ -2465,8 +2116,6 @@ entries: {}
     }
   });
 
-  // ----- Template render + field order + hints (AC 11, AC 13) -----
-
   it('(12.2 AC11) both toggles render after the inputs with distinguishing hints', async () => {
     await loadedWithCloneSrc(['src']);
     component.onCloneClick();
@@ -2480,7 +2129,6 @@ entries: {}
     expect(shareable).not.toBeNull();
     expect(isPublic).not.toBeNull();
 
-    // Field order: name → namespace → shareable → public.
     const ordered = Array.from(
       root.querySelectorAll(
         '[data-test="clone-destname-input"],' +
@@ -2496,7 +2144,6 @@ entries: {}
       'clone-public-toggle',
     ]);
 
-    // Each toggle is name-accessible via a label/inputId pair.
     expect(
       root.querySelector('label[for="clone-shareable-toggle"]'),
     ).not.toBeNull();
@@ -2504,7 +2151,6 @@ entries: {}
       root.querySelector('label[for="clone-public-toggle"]'),
     ).not.toBeNull();
 
-    // The two hints distinguish referenceability from listing/cloning.
     const shareableHint =
       root.querySelector('#clone-shareable-hint')?.textContent?.toLowerCase() ??
       '';

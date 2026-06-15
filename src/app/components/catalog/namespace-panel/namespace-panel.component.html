@@ -17,9 +17,10 @@
   <ng-container *ngIf="!loading && serverYaml !== ''">
     <!--
       ngModel is split into [ngModel] + (ngModelChange) so the change
-      handler can invalidate the edit-mode Validate-buffer success flash
-      as soon as the user modifies the YAML — a clean-report ack should
-      not outlive the buffer it validated.
+      handler can invalidate the Validate success flash as soon as the user
+      modifies the YAML — a clean-report ack should not outlive the buffer it
+      validated. The editor is permanently writable (ADR-017 §1):
+      `editorOptions.readOnly` is `false` and the object is a stable constant.
     -->
     <nu-monaco-editor
       class="namespace-panel__editor"
@@ -30,101 +31,33 @@
     ></nu-monaco-editor>
 
     <!--
-      Action row.
-      VIEW mode order (post-review UX refinement): Validate · Edit · Clone.
-      EDIT mode order (post-review UX refinement): Validate · Save · Reset · Cancel.
-      Clone is NO LONGER rendered in edit mode — "Save As from a dirty buffer" was a
-      confusing mental model (the clone captures in-memory state, not the server
-      state the operator sees in view mode). Operators save first, then clone.
+      Action row (ADR-017 §2) — five always-present actions in a single,
+      non-mode-split row: Validate · Save · Reset · Clone · Delete. Enablement
+      is driven by one boolean — dirty (`buffer !== serverYaml`):
+        • Save / Reset enabled when dirty.
+        • Clone enabled when clean.
+        • Validate / Delete orthogonal (always available; only gated by an
+          in-flight request). Validate is NEVER disabled by the FR14 gate.
     -->
     <div class="namespace-panel__actions">
-      <!-- VIEW mode: Validate · Edit · Clone (in that order) -->
-
-      <!-- Validate persisted state. Flash-to-green pattern on clean report
-           via `[class.p-button-success]` — PrimeNG's own `[severity]`
-           binding does not strip the prior class on revert, so we toggle
-           the class explicitly. -->
+      <!-- Validate (over the buffer; single handler — ADR-017 §4). Flash-to-
+           green on a clean report via `[class.p-button-success]` — PrimeNG's
+           own `[severity]` binding does not strip the prior class on revert,
+           so we toggle the class explicitly. NEVER gated by FR14 (§5). -->
       <button
-        *ngIf="mode === 'view'"
-        pButton
-        type="button"
-        size="small"
-        [class.p-button-success]="validationFlashPersisted"
-        label="Validate persisted state"
-        [icon]="validationFlashPersisted ? 'pi pi-check' : 'pi pi-check-circle'"
-        [disabled]="validating"
-        (click)="onValidatePersistedClick()"
-        data-test="validate-persisted-btn"
-      ></button>
-
-      <!-- Edit. Post-review refinement: re-fetches the server namespace
-           on click and prompts the operator to reload if it drifted since
-           the initial load. Shows a spinner while the drift check is in
-           flight. See `onEditClick()` in the component. -->
-      <button
-        *ngIf="mode === 'view'"
-        pButton
-        type="button"
-        size="small"
-        label="Edit"
-        [icon]="refreshingForEdit ? 'pi pi-spinner pi-spin' : 'pi pi-pencil'"
-        [disabled]="refreshingForEdit"
-        (click)="onEditClick()"
-        data-test="edit-btn"
-      ></button>
-
-      <!-- Clone. VIEW-MODE ONLY per post-review UX refinement. -->
-      <button
-        *ngIf="mode === 'view'"
-        #cloneBtn
-        pButton
-        type="button"
-        size="small"
-        severity="secondary"
-        label="Clone"
-        icon="pi pi-copy"
-        [disabled]="cloning || isCloneGated"
-        [pTooltip]="cloneTooltip"
-        (click)="onCloneClick()"
-        data-test="clone-btn"
-      ></button>
-
-      <!-- Delete. VIEW-MODE ONLY (Story 14.1 / ADR-028 frontend leg). Dark-red
-           destructive action; opens a confirm naming the namespace before
-           issuing DELETE. Disabled while a delete is in flight. -->
-      <button
-        *ngIf="mode === 'view'"
-        pButton
-        type="button"
-        size="small"
-        severity="danger"
-        label="Delete"
-        icon="pi pi-trash"
-        [disabled]="deleting"
-        (click)="onDeleteClick()"
-        data-test="delete-ns-btn"
-      ></button>
-
-      <!-- EDIT mode: Validate · Save · Reset · Cancel (in that order) -->
-
-      <!-- Validate buffer. Same flash pattern as the view-mode counterpart. -->
-      <button
-        *ngIf="mode === 'edit'"
         pButton
         type="button"
         size="small"
         [class.p-button-success]="validationFlashBuffer"
-        label="Validate buffer"
-        [icon]="validationFlashBuffer ? 'pi pi-check' : 'pi pi-check-square'"
+        label="Validate"
+        [icon]="validationFlashBuffer ? 'pi pi-check' : 'pi pi-check-circle'"
         [disabled]="saving || validating"
         (click)="onValidateBufferClick()"
-        data-test="validate-buffer-btn"
+        data-test="validate-btn"
       ></button>
 
-      <!-- Save. Disabled when the buffer matches serverYaml, during save,
-           or when the FR14 gate is active (known-bad validation). -->
+      <!-- Save. Enabled iff dirty AND not saving AND not FR14-gated. -->
       <button
-        *ngIf="mode === 'edit'"
         pButton
         type="button"
         size="small"
@@ -136,12 +69,10 @@
         data-test="save-btn"
       ></button>
 
-      <!-- Reset. Post-review new feature — revert the buffer to the last
-           server snapshot WITHOUT exiting edit mode. Dirty buffer triggers
-           a confirm (same "Discard unsaved changes?" prompt as Cancel);
-           clean buffer is a no-op and the button is disabled. -->
+      <!-- Reset — the sole undo affordance (Cancel is removed; ADR-017 §2).
+           Reverts the buffer to the last server snapshot behind a "Discard
+           unsaved changes?" confirm. Enabled iff dirty; a no-op when clean. -->
       <button
-        *ngIf="mode === 'edit'"
         pButton
         type="button"
         size="small"
@@ -153,18 +84,37 @@
         data-test="reset-btn"
       ></button>
 
-      <!-- Cancel. Same dirty-state guard as the dialog-close X (Story 11.3). -->
+      <!-- Clone — gated on CLEAN state (ADR-017 §3): disabled while dirty so
+           it always duplicates the saved bundle, never a half-edited draft.
+           Also FR14-gated. `#cloneBtn` is the focus-return target for
+           `onCloneDialogHide()`. -->
       <button
-        *ngIf="mode === 'edit'"
+        #cloneBtn
         pButton
         type="button"
         size="small"
         severity="secondary"
-        label="Cancel"
-        icon="pi pi-times"
-        [disabled]="saving"
-        (click)="onCancelClick()"
-        data-test="cancel-btn"
+        label="Clone"
+        icon="pi pi-copy"
+        [disabled]="buffer !== serverYaml || cloning || isCloneGated"
+        [pTooltip]="cloneTooltip"
+        (click)="onCloneClick()"
+        data-test="clone-btn"
+      ></button>
+
+      <!-- Delete (Story 14.1 / ADR-028 frontend leg). Always available;
+           dark-red destructive action; opens a confirm naming the namespace
+           before issuing DELETE. Disabled only while a delete is in flight. -->
+      <button
+        pButton
+        type="button"
+        size="small"
+        severity="danger"
+        label="Delete"
+        icon="pi pi-trash"
+        [disabled]="deleting"
+        (click)="onDeleteClick()"
+        data-test="delete-ns-btn"
       ></button>
     </div>
 
