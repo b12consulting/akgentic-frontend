@@ -1,4 +1,5 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { FormsModule } from '@angular/forms';
 import { BehaviorSubject } from 'rxjs';
 
@@ -101,6 +102,12 @@ describe('ProcessUserInputComponent', () => {
 
   it('should create', () => {
     expect(component).toBeTruthy();
+  });
+
+  it('renders the send icon on the Submit button (parity with member chat)', () => {
+    const submitBtn = fixture.debugElement.query(By.css('p-button'));
+    expect(submitBtn).toBeTruthy();
+    expect(submitBtn.componentInstance.icon).toBe('pi pi-send');
   });
 
   describe('dropdown population from nodes$', () => {

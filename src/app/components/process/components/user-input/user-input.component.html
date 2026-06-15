@@ -66,6 +66,7 @@
     ></p-multiSelect>
     <p-button
       size="small"
+      icon="pi pi-send"
       label="Submit"
       (click)="sendMessage()"
       [disabled]="!userInput || !(contextService.currentTeamRunning$ | async)"

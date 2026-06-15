@@ -29,6 +29,7 @@ import { CapitalizePipe } from '../../../../../shared/pipes/capitalise.pipe';
 import { ApiService } from '../../../../../core/http/api.service';
 import { UtilService } from '../../../../../core/ui/utils.service';
 import { ContextService } from '../../../../../core/context/context.service';
+import { ConfigService } from '../../../../../core/config/config.service';
 import { IngestionService } from '../../../event/ingestion.service';
 import {
   SystemPromptRow,
@@ -80,6 +81,7 @@ export class AkgentChatComponent implements OnInit, OnChanges {
   utilService: UtilService = inject(UtilService);
   contextService: ContextService = inject(ContextService);
   messageService: IngestionService = inject(IngestionService);
+  private config = inject(ConfigService);
   // ADR-004 §5b: component-scoped selector provided on ProcessComponent.providers
   // (Story 16-1) — resolves the same MessageLogService instance as this subtree.
   private systemPromptSelector: SystemPromptSelector = inject(
@@ -88,6 +90,10 @@ export class AkgentChatComponent implements OnInit, OnChanges {
   private destroyRef = inject(DestroyRef);
 
   context: any[] = [];
+
+  // Mirror the main chat (user-input): Enter submits only when the
+  // `userInputEnterKeySubmit` setting is enabled; Cmd/Ctrl+Enter always submit.
+  userInputEnterKeySubmit: boolean = this.config.userInputEnterKeySubmit;
 
   /**
    * ADR-004 §5b step 2 — the head system block, derived once from the unified
