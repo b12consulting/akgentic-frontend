@@ -1,5 +1,6 @@
 import { SimpleChange } from '@angular/core';
 import { ComponentFixture, fakeAsync, TestBed, tick } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { BehaviorSubject } from 'rxjs';
 
@@ -924,4 +925,91 @@ describe('AkgentChatComponent — follow mode + status pill', () => {
     tick(0);
     expect(el.scrollTop).toBe(0);
   }));
+});
+
+// ---------------------------------------------------------------------------
+// Keyboard-submit parity with the main chat (user-input): Enter submits only
+// when the `userInputEnterKeySubmit` setting is on; Cmd/Ctrl+Enter always send.
+// ---------------------------------------------------------------------------
+describe('AkgentChatComponent — keyboard submit parity', () => {
+  let component: AkgentChatComponent;
+  let fixture: ComponentFixture<AkgentChatComponent>;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      imports: [AkgentChatComponent],
+      providers: [
+        {
+          provide: ApiService,
+          useValue: {
+            sendMessage: jasmine.createSpy('sendMessage').and.resolveTo(undefined),
+          },
+        },
+        { provide: UtilService, useValue: {} },
+        {
+          provide: ContextService,
+          useValue: {
+            currentTeamRunning$: new BehaviorSubject<boolean>(true),
+            currentProcessId$: new BehaviorSubject<string>('proc-1'),
+          },
+        },
+        MessageLogService,
+        PerAgentStoreRegistry,
+        {
+          provide: IngestionService,
+          useFactory: (registry: PerAgentStoreRegistry) => ({
+            commands: { snapshot: (_id: string) => undefined },
+            systemPrompt: registry.register<SystemPromptValue>({
+              name: 'systemPrompt',
+              match: systemPromptMatch,
+              reduce: systemPromptReduce,
+            }),
+          }),
+          deps: [PerAgentStoreRegistry],
+        },
+        SystemPromptSelector,
+        provideNoopAnimations(),
+      ],
+    });
+
+    fixture = TestBed.createComponent(AkgentChatComponent);
+    component = fixture.componentInstance;
+    component.context$ = new BehaviorSubject<any[]>([]);
+    component.agentId = 'a-mgr';
+    component.agentName = '@Manager';
+    component.userInput = 'hello';
+    fixture.detectChanges();
+  });
+
+  function textareaEl() {
+    return fixture.debugElement.query(By.css('textarea'));
+  }
+
+  it('Enter submits when userInputEnterKeySubmit is enabled', () => {
+    const spy = spyOn(component, 'sendMessage');
+    component.userInputEnterKeySubmit = true;
+    textareaEl().triggerEventHandler('keydown.enter', {});
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('Enter does NOT submit when userInputEnterKeySubmit is disabled', () => {
+    const spy = spyOn(component, 'sendMessage');
+    component.userInputEnterKeySubmit = false;
+    textareaEl().triggerEventHandler('keydown.enter', {});
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('Cmd+Enter always submits regardless of the toggle', () => {
+    const spy = spyOn(component, 'sendMessage');
+    component.userInputEnterKeySubmit = false;
+    textareaEl().triggerEventHandler('keydown.meta.enter', {});
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('Ctrl+Enter always submits regardless of the toggle', () => {
+    const spy = spyOn(component, 'sendMessage');
+    component.userInputEnterKeySubmit = false;
+    textareaEl().triggerEventHandler('keydown.control.enter', {});
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
 });

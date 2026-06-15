@@ -118,6 +118,9 @@
           rows="4"
           cols="50"
           [(ngModel)]="userInput"
+          (keydown.enter)="userInputEnterKeySubmit ? sendMessage() : null"
+          (keydown.meta.enter)="sendMessage()"
+          (keydown.control.enter)="sendMessage()"
           [mentionConfig]="mentionConfig"
           [mentionListTemplate]="mentionItemTemplate"
         ></textarea>
