@@ -27,6 +27,7 @@
       [options]="editorOptions"
       [ngModel]="buffer"
       (ngModelChange)="onBufferChange($event)"
+      (event)="onEditorEvent($event)"
       [height]="'calc(90vh - 240px)'"
     ></nu-monaco-editor>
 
@@ -51,7 +52,7 @@
         [class.p-button-success]="validationFlashBuffer"
         label="Validate"
         [icon]="validationFlashBuffer ? 'pi pi-check' : 'pi pi-check-circle'"
-        [disabled]="saving || validating"
+        [disabled]="!canValidate"
         (click)="onValidateBufferClick()"
         data-test="validate-btn"
       ></button>
@@ -63,7 +64,7 @@
         size="small"
         label="Save"
         [icon]="saving ? 'pi pi-spinner pi-spin' : 'pi pi-save'"
-        [disabled]="buffer === serverYaml || saving || isSaveGated"
+        [disabled]="!canSave"
         [pTooltip]="saveTooltip"
         (click)="onSaveClick()"
         data-test="save-btn"
@@ -79,7 +80,7 @@
         severity="secondary"
         label="Reset"
         icon="pi pi-undo"
-        [disabled]="buffer === serverYaml || saving"
+        [disabled]="!canReset"
         (click)="onResetClick()"
         data-test="reset-btn"
       ></button>
@@ -96,7 +97,7 @@
         severity="secondary"
         label="Clone"
         icon="pi pi-copy"
-        [disabled]="buffer !== serverYaml || cloning || isCloneGated"
+        [disabled]="!canClone"
         [pTooltip]="cloneTooltip"
         (click)="onCloneClick()"
         data-test="clone-btn"
@@ -112,7 +113,7 @@
         severity="danger"
         label="Delete"
         icon="pi pi-trash"
-        [disabled]="deleting"
+        [disabled]="!canDelete"
         (click)="onDeleteClick()"
         data-test="delete-ns-btn"
       ></button>

@@ -4,6 +4,7 @@ import {
   DestroyRef,
   ElementRef,
   EventEmitter,
+  HostListener,
   Input,
   OnChanges,
   OnInit,
@@ -14,7 +15,10 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
-import { NuMonacoEditorModule } from '@ng-util/monaco-editor';
+import {
+  NuMonacoEditorEvent,
+  NuMonacoEditorModule,
+} from '@ng-util/monaco-editor';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -433,6 +437,232 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   hasUnsavedChanges(): boolean {
     return this.buffer !== this.serverYaml;
   }
+
+  // -------------------------------------------------------------------
+  // Story 22.2 (ADR-017 §7) — keyboard shortcuts.
+  //
+  // The five action shortcuts are captured in TWO places — a Monaco
+  // `editor.addAction` (in-editor focus; Monaco swallows keystrokes) and a
+  // component `@HostListener('keydown')` (focus outside the editor, e.g. on a
+  // button). Both paths funnel through ONE shared dispatch surface: the
+  // `can*` enablement getters below (which mirror the button `[disabled]`
+  // expressions) and the `triggerX()` entry points. The button template binds
+  // the SAME `can*` getters so the enablement predicate cannot drift between
+  // the click path and the shortcut path (AC 6, AC 12).
+  // -------------------------------------------------------------------
+
+  /**
+   * Save enablement — mirrors the Save button's `[disabled]` expression
+   * (`buffer === serverYaml || saving || isSaveGated`). `buffer !== serverYaml`
+   * is exactly `hasUnsavedChanges()`, used here so intent is explicit. ⌥S
+   * fires Save iff this is true (AC 1, AC 6).
+   */
+  get canSave(): boolean {
+    return this.hasUnsavedChanges() && !this.saving && !this.isSaveGated;
+  }
+
+  /**
+   * Validate enablement — mirrors the Validate button's `[disabled]`
+   * (`saving || validating`). NEVER gated by FR14 (ADR-017 §5); ⌥V fires in
+   * both clean and dirty states (AC 2, AC 6).
+   */
+  get canValidate(): boolean {
+    return !this.validating && !this.saving;
+  }
+
+  /**
+   * Reset enablement — mirrors the Reset button's `[disabled]`
+   * (`buffer === serverYaml || saving`). ⌥R is a no-op while clean; when dirty
+   * it routes through the existing discard confirm (AC 3, AC 6).
+   */
+  get canReset(): boolean {
+    return this.hasUnsavedChanges() && !this.saving;
+  }
+
+  /**
+   * Clone enablement — mirrors the Clone button's `[disabled]`
+   * (`buffer !== serverYaml || cloning || isCloneGated`). ⌥⇧C is a no-op while
+   * dirty; it opens the Clone modal only when clean (AC 4, AC 6).
+   */
+  get canClone(): boolean {
+    return !this.hasUnsavedChanges() && !this.cloning && !this.isCloneGated;
+  }
+
+  /**
+   * Delete enablement — mirrors the Delete button's `[disabled]`
+   * (`deleting`). ⌥D still routes through the Delete confirm dialog (AC 5,
+   * AC 6).
+   */
+  get canDelete(): boolean {
+    return !this.deleting;
+  }
+
+  /**
+   * Shared Save trigger (AC 1, AC 12). Consults `canSave` then delegates to
+   * the existing handler body — never duplicates it. A true no-op when Save
+   * is disabled (the keystroke is still `preventDefault`ed upstream — AC 9).
+   */
+  private triggerSave(): void {
+    if (this.canSave) {
+      void this.onSaveClick();
+    }
+  }
+
+  /** Shared Validate trigger (AC 2, AC 12). */
+  private triggerValidate(): void {
+    if (this.canValidate) {
+      void this.onValidateBufferClick();
+    }
+  }
+
+  /** Shared Reset trigger (AC 3, AC 12). */
+  private triggerReset(): void {
+    if (this.canReset) {
+      this.onResetClick();
+    }
+  }
+
+  /** Shared Clone trigger (AC 4, AC 12). */
+  private triggerClone(): void {
+    if (this.canClone) {
+      this.onCloneClick();
+    }
+  }
+
+  /** Shared Delete trigger (AC 5, AC 12) — routes through the Delete confirm. */
+  private triggerDelete(): void {
+    if (this.canDelete) {
+      this.onDeleteClick();
+    }
+  }
+
+  /**
+   * Single keyboard matcher consumed by BOTH capture sites (AC 7–9, 12).
+   *
+   * - Returns immediately (unhandled, NO `preventDefault`) when `!altKey`.
+   * - Keys off `event.code` (NOT `event.key`) so macOS Option dead-keys
+   *   (⌥S → `ß`, ⌥V → `√`, …) still match (AC 7).
+   * - `KeyC` → Clone ONLY when `event.shiftKey` (Alt+KeyC without Shift is
+   *   unhandled — AC 8). The S/V/R/D branches are keyed by their own codes, so
+   *   Alt+Shift+KeyC fires ONLY Clone (no double-fire — AC 8).
+   * - On a recognised combo, `preventDefault()` is called ALWAYS — even when
+   *   the matching `triggerX()` is a no-op by enablement (AC 9) — so the
+   *   dead-key glyph / Alt-mnemonic is suppressed for keystrokes that are
+   *   "ours".
+   */
+  private matchShortcut(event: KeyboardEvent): void {
+    if (!event.altKey) {
+      return; // not ours — let it propagate, no preventDefault.
+    }
+    switch (event.code) {
+      case 'KeyS':
+        event.preventDefault();
+        this.triggerSave();
+        return;
+      case 'KeyV':
+        event.preventDefault();
+        this.triggerValidate();
+        return;
+      case 'KeyR':
+        event.preventDefault();
+        this.triggerReset();
+        return;
+      case 'KeyD':
+        event.preventDefault();
+        this.triggerDelete();
+        return;
+      case 'KeyC':
+        if (event.shiftKey) {
+          event.preventDefault();
+          this.triggerClone();
+        }
+        // Alt+KeyC without Shift is unhandled — no preventDefault (AC 8).
+        return;
+      default:
+        // Alt + a non-bound code — unhandled, propagates (AC 9).
+        return;
+    }
+  }
+
+  /**
+   * Component-level keydown capture (AC 11). Mirrors the established
+   * `chat-panel.component.ts` `@HostListener` pattern. Binding on the host
+   * (`'keydown'`, not `'document:keydown'`) scopes capture to the panel
+   * subtree — the shortcuts fire only when the panel (or its editor) has
+   * focus. Catches the combos when focus sits OUTSIDE Monaco (e.g. on a
+   * button); the Monaco `addAction` path covers in-editor focus.
+   */
+  @HostListener('keydown', ['$event'])
+  onKeydown(event: KeyboardEvent): void {
+    this.matchShortcut(event);
+  }
+
+  /**
+   * `(event)` handler for `<nu-monaco-editor>` (AC 10). On the `'init'` event
+   * the editor instance is available; register the five chord actions via
+   * `editor.addAction(...)`, each `run` delegating to the SAME `triggerX()`
+   * entry point as the HostListener path (AC 12). Guarded against
+   * re-registration on a `'re-init'` event via `monacoActionsRegistered`.
+   */
+  onEditorEvent(e: NuMonacoEditorEvent): void {
+    if (e.type !== 'init' || !e.editor) {
+      return;
+    }
+    if (this.monacoActionsRegistered) {
+      return;
+    }
+    const editor = e.editor as monaco.editor.IStandaloneCodeEditor;
+    this.registerEditorShortcuts(editor);
+    this.monacoActionsRegistered = true;
+  }
+
+  /**
+   * Registers the five ⌥-key chord actions on the Monaco editor. Each `run`
+   * delegates to the shared `triggerX()` dispatch surface so enablement parity
+   * (AC 6) holds identically for the Monaco and HostListener capture sites.
+   * The chord constants come from the ambient `monaco` namespace
+   * (`monaco.KeyMod` / `monaco.KeyCode`) — no `monaco-editor` import.
+   */
+  private registerEditorShortcuts(
+    editor: monaco.editor.IStandaloneCodeEditor,
+  ): void {
+    editor.addAction({
+      id: 'namespace-panel.save',
+      label: 'Save namespace',
+      keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.KeyS],
+      run: () => this.triggerSave(),
+    });
+    editor.addAction({
+      id: 'namespace-panel.validate',
+      label: 'Validate namespace',
+      keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.KeyV],
+      run: () => this.triggerValidate(),
+    });
+    editor.addAction({
+      id: 'namespace-panel.reset',
+      label: 'Reset namespace buffer',
+      keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.KeyR],
+      run: () => this.triggerReset(),
+    });
+    editor.addAction({
+      id: 'namespace-panel.clone',
+      label: 'Clone namespace',
+      keybindings: [monaco.KeyMod.Alt | monaco.KeyMod.Shift | monaco.KeyCode.KeyC],
+      run: () => this.triggerClone(),
+    });
+    editor.addAction({
+      id: 'namespace-panel.delete',
+      label: 'Delete namespace',
+      keybindings: [monaco.KeyMod.Alt | monaco.KeyCode.KeyD],
+      run: () => this.triggerDelete(),
+    });
+  }
+
+  /**
+   * Guards `onEditorEvent` against double-registering the Monaco actions if a
+   * `'re-init'` event follows the initial `'init'`.
+   */
+  private monacoActionsRegistered = false;
 
   /**
    * Revert the buffer to `serverYaml` — the SOLE undo affordance now that

@@ -1,5 +1,12 @@
 import { CommonModule } from '@angular/common';
-import { Component, ElementRef, forwardRef, Input } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  EventEmitter,
+  forwardRef,
+  Input,
+  Output,
+} from '@angular/core';
 import {
   ComponentFixture,
   fakeAsync,
@@ -11,7 +18,9 @@ import {
   FormsModule,
   NG_VALUE_ACCESSOR,
 } from '@angular/forms';
+import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
+import { NuMonacoEditorEvent } from '@ng-util/monaco-editor';
 import yaml from 'js-yaml';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
@@ -55,10 +64,40 @@ import { ValidationReportComponent } from './validation-report/validation-report
 class StubMonacoEditorComponent implements ControlValueAccessor {
   @Input() options?: Record<string, unknown>;
   @Input() height?: string;
+  // Story 22.2 — mirror the real component's `(event)` output so the Monaco
+  // capture path (`onEditorEvent`) is reachable from the template binding.
+  @Output() event = new EventEmitter<NuMonacoEditorEvent>();
   writeValue(_value: string): void {}
   registerOnChange(_fn: (value: string) => void): void {}
   registerOnTouched(_fn: () => void): void {}
   setDisabledState?(_isDisabled: boolean): void {}
+}
+
+/**
+ * Story 22.2 — a hand-rolled Monaco editor double whose `addAction` records the
+ * descriptors passed to it. Tests drive `component.onEditorEvent({ type:
+ * 'init', editor })` with one of these, then locate a descriptor by id and
+ * invoke its `run()` to exercise the Monaco capture path.
+ */
+interface RecordedAction {
+  id: string;
+  label: string;
+  keybindings?: number[];
+  run: (editor: unknown, ...args: unknown[]) => void | Promise<void>;
+}
+
+function makeEditorStub(): {
+  editor: unknown;
+  actions: RecordedAction[];
+} {
+  const actions: RecordedAction[] = [];
+  const editor = {
+    addAction(descriptor: RecordedAction): { dispose(): void } {
+      actions.push(descriptor);
+      return { dispose(): void {} };
+    },
+  };
+  return { editor, actions };
 }
 
 function makeHttpError(status: number, body: unknown = ''): HttpError {
@@ -87,6 +126,29 @@ describe('NamespacePanelComponent', () => {
   // to the anonymous user so pre-existing Save tests — whose buffers carry
   // `user_id: null` (unresolvable owner → defer to server) — are unaffected.
   let authStub: { currentUserValue: { user_id: string; roles?: string[] } };
+
+  // Story 22.2 — the real Monaco library (and its `window.monaco` global
+  // carrying `KeyMod`/`KeyCode`) is NOT loaded in Karma (the AMD loader is
+  // stubbed out via StubMonacoEditorComponent). The component's
+  // `registerEditorShortcuts` reads `monaco.KeyMod`/`monaco.KeyCode` when it
+  // builds the chord keybindings, so install a minimal runtime stub. Values
+  // are arbitrary-but-stable distinct bits — the assertions only require that
+  // the production code and the test compute the SAME chord number from the
+  // SAME stub (the real bit values live in the browser-loaded library).
+  let prevMonaco: unknown;
+  beforeAll(() => {
+    const w = globalThis as unknown as { monaco?: unknown };
+    prevMonaco = w.monaco;
+    if (w.monaco === undefined) {
+      w.monaco = {
+        KeyMod: { Alt: 1 << 9, Shift: 1 << 10, CtrlCmd: 1 << 11, WinCtrl: 1 << 8 },
+        KeyCode: { KeyS: 49, KeyV: 52, KeyR: 48, KeyC: 33, KeyD: 34 },
+      };
+    }
+  });
+  afterAll(() => {
+    (globalThis as unknown as { monaco?: unknown }).monaco = prevMonaco;
+  });
 
   async function buildFixture(namespace: string) {
     fixture = TestBed.createComponent(NamespacePanelComponent);
@@ -2161,5 +2223,534 @@ entries: {}
     expect(shareableHint).not.toContain('clone');
     expect(publicHint).toContain('clone');
     expect(publicHint).toMatch(/list|read/);
+  });
+
+  // ---------------------------------------------------------------------
+  // Story 22.2 (ADR-017 §7) — action-row keyboard shortcuts.
+  // ⌥S Save · ⌥V Validate · ⌥R Reset · ⌥⇧C Clone · ⌥D Delete.
+  // Match on altKey + code (NOT key); preventDefault on handled combos;
+  // two capture sites (HostListener + Monaco addAction) over one shared
+  // dispatch surface honouring each button's enablement.
+  // ---------------------------------------------------------------------
+
+  /**
+   * Build a KeyboardEvent with explicit code/altKey/shiftKey/key.
+   * `cancelable: true` so `event.defaultPrevented` reflects a
+   * `preventDefault()` call even when the event is invoked directly (not
+   * dispatched) — a non-cancelable synthetic event ignores preventDefault.
+   */
+  function keyEvent(
+    code: string,
+    init: Partial<KeyboardEventInit> = {},
+  ): KeyboardEvent {
+    return new KeyboardEvent('keydown', {
+      altKey: true,
+      cancelable: true,
+      code,
+      ...init,
+    });
+  }
+
+  // ----- can* enablement getters mirror the button [disabled] (AC 6) -----
+
+  it('(22.2 AC6) can* getters mirror the button [disabled] expressions', async () => {
+    await loaded('foo: 1\n');
+
+    // Clean, idle: Save/Reset disabled, Validate/Clone/Delete enabled.
+    expect(component.canSave).toBeFalse();
+    expect(component.canReset).toBeFalse();
+    expect(component.canValidate).toBeTrue();
+    expect(component.canClone).toBeTrue();
+    expect(component.canDelete).toBeTrue();
+
+    // Dirty: Save/Reset enable, Clone disables.
+    component.buffer = 'foo: 2\n';
+    expect(component.canSave).toBeTrue();
+    expect(component.canReset).toBeTrue();
+    expect(component.canClone).toBeFalse();
+
+    // FR14-gated: Save off, Clone off (when clean), Validate STILL on.
+    component.buffer = component.serverYaml;
+    component.lastValidation = failingReport(1);
+    expect(component.canSave).toBeFalse();
+    expect(component.canClone).toBeFalse();
+    expect(component.canValidate).toBeTrue();
+
+    // In-flight flags.
+    component.lastValidation = null;
+    component.saving = true;
+    expect(component.canValidate).toBeFalse();
+    component.saving = false;
+    component.validating = true;
+    expect(component.canValidate).toBeFalse();
+    component.validating = false;
+    component.cloning = true;
+    expect(component.canClone).toBeFalse();
+    component.cloning = false;
+    component.deleting = true;
+    expect(component.canDelete).toBeFalse();
+  });
+
+  it('(22.2 AC6) the button [disabled] bindings consume the can* getters (single source of truth)', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    fixture.detectChanges();
+
+    const dis = (test: string): boolean =>
+      (
+        fixture.nativeElement.querySelector(
+          `button[data-test="${test}"]`,
+        ) as HTMLButtonElement
+      ).disabled;
+
+    // Dirty state: Save/Reset enabled, Clone disabled — matches can*.
+    expect(dis('save-btn')).toBe(!component.canSave);
+    expect(dis('reset-btn')).toBe(!component.canReset);
+    expect(dis('clone-btn')).toBe(!component.canClone);
+    expect(dis('validate-btn')).toBe(!component.canValidate);
+    expect(dis('delete-ns-btn')).toBe(!component.canDelete);
+  });
+
+  // ----- HostListener path: per-action dispatch + enablement (AC 1–6, 11) -----
+
+  it('(22.2 AC1/AC6) ⌥S fires Save when dirty+enabled; no-op while clean', async () => {
+    await loaded('foo: 1\n');
+    const saveSpy = spyOn(component, 'onSaveClick').and.returnValue(
+      Promise.resolve(),
+    );
+
+    // Clean → no-op.
+    component.onKeydown(keyEvent('KeyS'));
+    expect(saveSpy).not.toHaveBeenCalled();
+
+    // Dirty → fires.
+    component.buffer = 'foo: 2\n';
+    component.onKeydown(keyEvent('KeyS'));
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('(22.2 AC1/AC6) ⌥S is a no-op while saving or FR14-gated even when dirty', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    const saveSpy = spyOn(component, 'onSaveClick').and.returnValue(
+      Promise.resolve(),
+    );
+
+    component.saving = true;
+    component.onKeydown(keyEvent('KeyS'));
+    expect(saveSpy).not.toHaveBeenCalled();
+
+    component.saving = false;
+    component.lastValidation = failingReport(1);
+    component.onKeydown(keyEvent('KeyS'));
+    expect(saveSpy).not.toHaveBeenCalled();
+  });
+
+  it('(22.2 AC2/AC6) ⌥V fires Validate in clean AND dirty states; never FR14-suppressed', async () => {
+    await loaded('foo: 1\n');
+    const validateSpy = spyOn(component, 'onValidateBufferClick').and.returnValue(
+      Promise.resolve(),
+    );
+
+    // Clean.
+    component.onKeydown(keyEvent('KeyV'));
+    expect(validateSpy).toHaveBeenCalledTimes(1);
+
+    // Dirty + FR14-gated → still fires.
+    component.buffer = 'foo: 2\n';
+    component.lastValidation = failingReport(1);
+    component.rawSaveError = 'raw';
+    expect(component.isSaveGated).toBeTrue();
+    component.onKeydown(keyEvent('KeyV'));
+    expect(validateSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('(22.2 AC2/AC6) ⌥V is a no-op while validating or saving', async () => {
+    await loaded('foo: 1\n');
+    const validateSpy = spyOn(component, 'onValidateBufferClick').and.returnValue(
+      Promise.resolve(),
+    );
+
+    component.validating = true;
+    component.onKeydown(keyEvent('KeyV'));
+    expect(validateSpy).not.toHaveBeenCalled();
+
+    component.validating = false;
+    component.saving = true;
+    component.onKeydown(keyEvent('KeyV'));
+    expect(validateSpy).not.toHaveBeenCalled();
+  });
+
+  it('(22.2 AC3/AC6) ⌥R fires Reset when dirty; no-op while clean; routes through the confirm', async () => {
+    await loaded('foo: 1\n');
+    const resetSpy = spyOn(component, 'onResetClick').and.callThrough();
+
+    // Clean → no-op (and no confirm).
+    component.onKeydown(keyEvent('KeyR'));
+    expect(resetSpy).not.toHaveBeenCalled();
+    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+
+    // Dirty → fires onResetClick, which opens the discard confirm.
+    component.buffer = 'foo: 2\n';
+    component.onKeydown(keyEvent('KeyR'));
+    expect(resetSpy).toHaveBeenCalledTimes(1);
+    expect(confirmationSpy.confirm).toHaveBeenCalledTimes(1);
+    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
+    expect(args.message as string).toContain('Discard unsaved changes');
+  });
+
+  it('(22.2 AC3/AC6) ⌥R is a no-op while saving even when dirty', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    component.saving = true;
+    const resetSpy = spyOn(component, 'onResetClick');
+
+    component.onKeydown(keyEvent('KeyR'));
+
+    expect(resetSpy).not.toHaveBeenCalled();
+  });
+
+  it('(22.2 AC4/AC6/AC8) ⌥⇧C fires Clone when clean; no-op while dirty', async () => {
+    await loaded('foo: 1\n');
+    const cloneSpy = spyOn(component, 'onCloneClick').and.callThrough();
+
+    // Clean + Shift → opens the modal.
+    component.onKeydown(keyEvent('KeyC', { shiftKey: true }));
+    expect(cloneSpy).toHaveBeenCalledTimes(1);
+    expect(component.cloneDialogVisible).toBeTrue();
+
+    // Dirty → no-op even with Shift.
+    cloneSpy.calls.reset();
+    component.cloneDialogVisible = false;
+    component.buffer = 'foo: 2\n';
+    component.onKeydown(keyEvent('KeyC', { shiftKey: true }));
+    expect(cloneSpy).not.toHaveBeenCalled();
+  });
+
+  it('(22.2 AC4/AC6) ⌥⇧C is a no-op while cloning or FR14-gated', async () => {
+    await loaded('foo: 1\n');
+    const cloneSpy = spyOn(component, 'onCloneClick');
+
+    component.cloning = true;
+    component.onKeydown(keyEvent('KeyC', { shiftKey: true }));
+    expect(cloneSpy).not.toHaveBeenCalled();
+
+    component.cloning = false;
+    component.lastValidation = failingReport(1);
+    component.onKeydown(keyEvent('KeyC', { shiftKey: true }));
+    expect(cloneSpy).not.toHaveBeenCalled();
+  });
+
+  it('(22.2 AC5) ⌥D opens the Delete confirm; does NOT call deleteNamespace until accept', async () => {
+    await loaded('foo: 1\n');
+    apiSpy.deleteNamespace.and.returnValue(Promise.resolve());
+    const deleteSpy = spyOn(component, 'onDeleteClick').and.callThrough();
+
+    component.onKeydown(keyEvent('KeyD'));
+
+    expect(deleteSpy).toHaveBeenCalledTimes(1);
+    expect(confirmationSpy.confirm).toHaveBeenCalledTimes(1);
+    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
+    expect(args.header).toBe('Delete namespace');
+    // No direct DELETE before accept.
+    expect(apiSpy.deleteNamespace).not.toHaveBeenCalled();
+
+    args.accept!();
+    await fixture.whenStable();
+    expect(apiSpy.deleteNamespace).toHaveBeenCalledOnceWith('foo');
+  });
+
+  it('(22.2 AC5/AC6) ⌥D is a no-op while a delete is in flight', async () => {
+    await loaded('foo: 1\n');
+    component.deleting = true;
+    const deleteSpy = spyOn(component, 'onDeleteClick').and.callThrough();
+
+    component.onKeydown(keyEvent('KeyD'));
+
+    expect(deleteSpy).not.toHaveBeenCalled();
+    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+  });
+
+  // ----- Match on code, NOT key — macOS dead-key survival (AC 7) -----
+
+  it('(22.2 AC7) ⌥S still fires when key carries the dead-key glyph ß (matcher ignores event.key)', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    const saveSpy = spyOn(component, 'onSaveClick').and.returnValue(
+      Promise.resolve(),
+    );
+
+    component.onKeydown(keyEvent('KeyS', { key: 'ß' }));
+
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('(22.2 AC7) ⌥V still fires when key carries the dead-key glyph √', async () => {
+    await loaded('foo: 1\n');
+    const validateSpy = spyOn(component, 'onValidateBufferClick').and.returnValue(
+      Promise.resolve(),
+    );
+
+    component.onKeydown(keyEvent('KeyV', { key: '√' }));
+
+    expect(validateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // ----- Shift gating for Clone (AC 8) -----
+
+  it('(22.2 AC8) Alt+KeyC WITHOUT Shift does not trigger Clone and does not preventDefault', async () => {
+    await loaded('foo: 1\n');
+    const cloneSpy = spyOn(component, 'onCloneClick');
+    const evt = keyEvent('KeyC', { shiftKey: false });
+
+    component.onKeydown(evt);
+
+    expect(cloneSpy).not.toHaveBeenCalled();
+    expect(evt.defaultPrevented).toBeFalse();
+  });
+
+  it('(22.2 AC8) Alt+Shift+KeyC triggers ONLY Clone — no S/V/R/D handler fires', async () => {
+    await loaded('foo: 1\n');
+    const cloneSpy = spyOn(component, 'onCloneClick').and.callThrough();
+    const saveSpy = spyOn(component, 'onSaveClick').and.returnValue(
+      Promise.resolve(),
+    );
+    const validateSpy = spyOn(component, 'onValidateBufferClick').and.returnValue(
+      Promise.resolve(),
+    );
+    const resetSpy = spyOn(component, 'onResetClick');
+    const deleteSpy = spyOn(component, 'onDeleteClick');
+
+    component.onKeydown(keyEvent('KeyC', { shiftKey: true }));
+
+    expect(cloneSpy).toHaveBeenCalledTimes(1);
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(validateSpy).not.toHaveBeenCalled();
+    expect(resetSpy).not.toHaveBeenCalled();
+    expect(deleteSpy).not.toHaveBeenCalled();
+  });
+
+  it('(22.2 AC8) S/V/R/D match regardless of shiftKey state', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    const saveSpy = spyOn(component, 'onSaveClick').and.returnValue(
+      Promise.resolve(),
+    );
+
+    // Alt+Shift+KeyS still fires Save (Shift is irrelevant for S/V/R/D).
+    component.onKeydown(keyEvent('KeyS', { shiftKey: true }));
+
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // ----- preventDefault on handled combos only (AC 9) -----
+
+  it('(22.2 AC9) preventDefault is called on a handled combo even when the action is a no-op (⌥S while clean)', async () => {
+    await loaded('foo: 1\n');
+    // Clean → triggerSave is a no-op, but the keystroke is "ours".
+    const evt = keyEvent('KeyS');
+    const pd = spyOn(evt, 'preventDefault').and.callThrough();
+    const saveSpy = spyOn(component, 'onSaveClick');
+
+    component.onKeydown(evt);
+
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(pd).toHaveBeenCalledTimes(1);
+    expect(evt.defaultPrevented).toBeTrue();
+  });
+
+  it('(22.2 AC9) preventDefault is NOT called for an event without Alt', async () => {
+    await loaded('foo: 1\n');
+    const evt = new KeyboardEvent('keydown', {
+      altKey: false,
+      cancelable: true,
+      code: 'KeyS',
+    });
+    const pd = spyOn(evt, 'preventDefault').and.callThrough();
+
+    component.onKeydown(evt);
+
+    expect(pd).not.toHaveBeenCalled();
+    expect(evt.defaultPrevented).toBeFalse();
+  });
+
+  it('(22.2 AC9) preventDefault is NOT called for Alt + a non-bound code', async () => {
+    await loaded('foo: 1\n');
+    const evt = keyEvent('KeyX');
+    const pd = spyOn(evt, 'preventDefault').and.callThrough();
+
+    component.onKeydown(evt);
+
+    expect(pd).not.toHaveBeenCalled();
+  });
+
+  it('(22.2 AC9) preventDefault IS called on a handled+enabled combo (⌥S while dirty)', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    spyOn(component, 'onSaveClick').and.returnValue(Promise.resolve());
+    const evt = keyEvent('KeyS');
+    const pd = spyOn(evt, 'preventDefault').and.callThrough();
+
+    component.onKeydown(evt);
+
+    expect(pd).toHaveBeenCalledTimes(1);
+  });
+
+  // ----- HostListener binding wired end-to-end via dispatchEvent (AC 11) -----
+
+  it('(22.2 AC11) the @HostListener binding catches a dispatched keydown on the host element', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    const saveSpy = spyOn(component, 'onSaveClick').and.returnValue(
+      Promise.resolve(),
+    );
+
+    const evt = keyEvent('KeyS');
+    fixture.nativeElement.dispatchEvent(evt);
+
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+  });
+
+  // ----- Monaco capture path via editor.addAction (AC 10, 12) -----
+
+  function findAction(actions: RecordedAction[], id: string): RecordedAction {
+    const action = actions.find((a) => a.id.endsWith(id));
+    expect(action).withContext(`addAction for ${id}`).toBeDefined();
+    return action!;
+  }
+
+  it('(22.2 AC10) onEditorEvent("init") registers five chord actions with the expected keybindings', async () => {
+    await loaded('foo: 1\n');
+    const { editor, actions } = makeEditorStub();
+
+    component.onEditorEvent({
+      type: 'init',
+      editor: editor as unknown as NuMonacoEditorEvent['editor'],
+    });
+
+    expect(actions.length).toBe(5);
+    const save = findAction(actions, 'save');
+    const validate = findAction(actions, 'validate');
+    const reset = findAction(actions, 'reset');
+    const clone = findAction(actions, 'clone');
+    const del = findAction(actions, 'delete');
+
+    // Alt = bit, Shift = bit, codes resolve to distinct chord numbers.
+    expect(save.keybindings![0]).toBe(monaco.KeyMod.Alt | monaco.KeyCode.KeyS);
+    expect(validate.keybindings![0]).toBe(
+      monaco.KeyMod.Alt | monaco.KeyCode.KeyV,
+    );
+    expect(reset.keybindings![0]).toBe(monaco.KeyMod.Alt | monaco.KeyCode.KeyR);
+    expect(clone.keybindings![0]).toBe(
+      monaco.KeyMod.Alt | monaco.KeyMod.Shift | monaco.KeyCode.KeyC,
+    );
+    expect(del.keybindings![0]).toBe(monaco.KeyMod.Alt | monaco.KeyCode.KeyD);
+  });
+
+  it('(22.2 AC10) a non-init event (or missing editor) registers nothing', async () => {
+    await loaded('foo: 1\n');
+    const { editor, actions } = makeEditorStub();
+
+    component.onEditorEvent({ type: 're-init' });
+    component.onEditorEvent({ type: 'resize' });
+    component.onEditorEvent({
+      type: 'init',
+      editor: undefined,
+    });
+    expect(actions.length).toBe(0);
+
+    // A real init registers; a following re-init does NOT double-register.
+    component.onEditorEvent({
+      type: 'init',
+      editor: editor as unknown as NuMonacoEditorEvent['editor'],
+    });
+    expect(actions.length).toBe(5);
+    component.onEditorEvent({
+      type: 'init',
+      editor: editor as unknown as NuMonacoEditorEvent['editor'],
+    });
+    expect(actions.length).toBe(5);
+  });
+
+  it('(22.2 AC10/AC12) Monaco run() routes through the same dispatch + enablement as the HostListener', async () => {
+    await loaded('foo: 1\n');
+    const { editor, actions } = makeEditorStub();
+    component.onEditorEvent({
+      type: 'init',
+      editor: editor as unknown as NuMonacoEditorEvent['editor'],
+    });
+
+    const saveSpy = spyOn(component, 'onSaveClick').and.returnValue(
+      Promise.resolve(),
+    );
+    const save = findAction(actions, 'save');
+
+    // Clean → run() is a no-op (enablement parity with the HostListener).
+    save.run(editor);
+    expect(saveSpy).not.toHaveBeenCalled();
+
+    // Dirty → run() fires Save.
+    component.buffer = 'foo: 2\n';
+    save.run(editor);
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('(22.2 AC12) Monaco path and HostListener path reach the same handler under the same state', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    const { editor, actions } = makeEditorStub();
+    component.onEditorEvent({
+      type: 'init',
+      editor: editor as unknown as NuMonacoEditorEvent['editor'],
+    });
+    const saveSpy = spyOn(component, 'onSaveClick').and.returnValue(
+      Promise.resolve(),
+    );
+
+    // HostListener path.
+    component.onKeydown(keyEvent('KeyS'));
+    // Monaco path.
+    findAction(actions, 'save').run(editor);
+
+    expect(saveSpy).toHaveBeenCalledTimes(2);
+  });
+
+  it('(22.2 AC10/AC12) Monaco Clone run() honours the clean-only enablement', async () => {
+    await loadedWithCloneSrc(['src']);
+    const { editor, actions } = makeEditorStub();
+    component.onEditorEvent({
+      type: 'init',
+      editor: editor as unknown as NuMonacoEditorEvent['editor'],
+    });
+    const cloneSpy = spyOn(component, 'onCloneClick').and.callThrough();
+    const clone = findAction(actions, 'clone');
+
+    // Clean → opens the modal.
+    clone.run(editor);
+    expect(cloneSpy).toHaveBeenCalledTimes(1);
+
+    // Dirty → no-op.
+    cloneSpy.calls.reset();
+    component.cloneDialogVisible = false;
+    component.buffer = cloneSrcYaml + '# dirty\n';
+    clone.run(editor);
+    expect(cloneSpy).not.toHaveBeenCalled();
+  });
+
+  it('(22.2 AC10) the template wires nu-monaco-editor (event) → onEditorEvent', async () => {
+    await loaded('foo: 1\n');
+    const onEditorEventSpy = spyOn(component, 'onEditorEvent').and.callThrough();
+    const { editor } = makeEditorStub();
+
+    const stub = fixture.debugElement.query(By.css('nu-monaco-editor'));
+    expect(stub).withContext('nu-monaco-editor present').not.toBeNull();
+    (stub.componentInstance as StubMonacoEditorComponent).event.emit({
+      type: 'init',
+      editor: editor as unknown as NuMonacoEditorEvent['editor'],
+    });
+
+    expect(onEditorEventSpy).toHaveBeenCalledTimes(1);
+    const arg = onEditorEventSpy.calls.mostRecent().args[0];
+    expect(arg.type).toBe('init');
   });
 });
