@@ -22,7 +22,8 @@ import { TableModule } from 'primeng/table';
 import { TextareaModule } from 'primeng/textarea';
 import { MentionModule } from 'angular-mentions';
 
-import { BehaviorSubject, Observable } from 'rxjs';
+import { BehaviorSubject, combineLatest, Observable, of } from 'rxjs';
+import { map } from 'rxjs/operators';
 
 import { CapitalizePipe } from '../../../../../shared/pipes/capitalise.pipe';
 import { ApiService } from '../../../../../core/http/api.service';
@@ -32,6 +33,7 @@ import { IngestionService } from '../../../event/ingestion.service';
 import {
   SystemPromptRow,
   SystemPromptSelector,
+  systemPromptLabel,
 } from '../../../selectors/system-prompt.selector';
 import { CommandDescriptor } from '../../../../../protocol/message.types';
 
@@ -65,6 +67,12 @@ export class AkgentChatComponent implements OnInit, OnChanges {
   // scroll-to-bottom targets this element so new messages stay in view.
   @ViewChild('traceScroll') traceScroll?: ElementRef<HTMLElement>;
   @Input() context$!: BehaviorSubject<any[]>;
+  // akgentic-agent ADR-007 §4 — the selected agent's trimmed `AgentState.backstory`, projected
+  // by the host (`AgentTabsComponent`) from the `state` PerAgentStore. Drives the
+  // never-run head-block FALLBACK (a synthetic backstory row) when no
+  // `LlmSystemPromptEvent` row exists yet. Optional so existing callers/tests
+  // that omit it keep the event-only head block.
+  @Input() backstory$?: Observable<string>;
   @Input() agentId!: string;
   @Input() agentName!: string;
 
@@ -91,6 +99,17 @@ export class AkgentChatComponent implements OnInit, OnChanges {
    * `row.content` directly and renders nothing for an empty array.
    */
   systemPrompt$!: Observable<SystemPromptRow[]>;
+
+  /**
+   * akgentic-agent ADR-007 §4 — the head block actually bound in the template. Latest-wins:
+   * the event-sourced `systemPrompt$` rows when present; otherwise, for a
+   * never-run agent (no `LlmSystemPromptEvent` row), a single synthetic backstory
+   * row built from `backstory$` (label parity with the `agent_backstory` dynamic
+   * block via `systemPromptLabel`). When the first run emits its event the rows
+   * become non-empty and the synthetic row is dropped — no duplicate, no flicker.
+   * Rebound alongside `systemPrompt$` in `bindSystemPrompt()` on agent switch.
+   */
+  headRows$!: Observable<SystemPromptRow[]>;
 
   /**
    * The agent-tabs dropdown REUSES this component across member selections (it
@@ -140,11 +159,34 @@ export class AkgentChatComponent implements OnInit, OnChanges {
       });
   }
 
-  /** Point `systemPrompt$` at the current `agentId`'s head system block. The
-   *  async pipe in the template resubscribes to the new stream on reassignment. */
+  /** Point `systemPrompt$` at the current `agentId`'s head system block and
+   *  rebuild the rendered `headRows$` (event rows, else the never-run backstory
+   *  fallback). The async pipe in the template resubscribes to the new stream on
+   *  reassignment. */
   private bindSystemPrompt(): void {
     this.systemPrompt$ = this.systemPromptSelector.latestSystemPrompt$(
       this.agentId
+    );
+    // akgentic-agent ADR-007 §4: latest-wins — event rows win; otherwise synthesize a single
+    // backstory row from `backstory$` (a trimmed string; `''` ⇒ no fallback).
+    // `backstory$` may be absent (callers/tests that omit the input) → `of('')`.
+    this.headRows$ = combineLatest([
+      this.systemPrompt$,
+      this.backstory$ ?? of(''),
+    ]).pipe(
+      map(([rows, backstory]) => {
+        if (rows.length > 0) return rows;
+        if (backstory.length > 0) {
+          return [
+            {
+              type: 'system' as const,
+              name: systemPromptLabel('agent_backstory'),
+              content: backstory,
+            },
+          ];
+        }
+        return [];
+      }),
     );
   }
 

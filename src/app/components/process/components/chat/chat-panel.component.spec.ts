@@ -991,6 +991,19 @@ describe('ChatPanelComponent', () => {
     // Most scroll tests assume a RUNNING process (so "Auto scrolling" can show).
     beforeEach(() => {
       TestBed.inject(ContextService).currentTeamRunning$.next(true);
+      // The clamp-aware containers below are plain mock objects, not real DOM
+      // Elements, so `reserveSpacer`'s `getComputedStyle(c)` (chat-panel.component.ts)
+      // throws "parameter 1 is not of type 'Element'" in headless Chrome. Pass real
+      // Elements through to the real implementation (Angular/PrimeNG rendering is
+      // unaffected) and return a zero-padding stub for the non-Element mocks — the
+      // mock spacer math already assumes paddingBottom = 0.
+      const realGetComputedStyle = window.getComputedStyle.bind(window);
+      spyOn(window, 'getComputedStyle').and.callFake(
+        (el: Element, pseudo?: string | null) =>
+          el instanceof Element
+            ? realGetComputedStyle(el, pseudo)
+            : ({ paddingBottom: '0px' } as CSSStyleDeclaration),
+      );
     });
 
     function humanTurn(id: string): SentMessage {
@@ -1089,8 +1102,9 @@ describe('ChatPanelComponent', () => {
 
       component.ngAfterViewChecked();
 
-      // realBelow = spacer.offsetTop(120) - anchor.offsetTop(84) = 36 → spacer 320.
-      expect(getSpacerMin()).toBe(320);
+      // realBelow = spacer.offsetTop(120) - anchor.offsetTop(84) = 36;
+      // reserve = clientHeight(356) - realBelow(36) - TOP_PAD(8) - padBottom(0) = 312.
+      expect(getSpacerMin()).toBe(312);
       // target = 84 - containerOffsetTop(0) - pad(8) = 76 → message at the top.
       expect(container.scrollTop).toBe(76);
       expect(84 - container.scrollTop).toBe(8);
@@ -1137,14 +1151,14 @@ describe('ChatPanelComponent', () => {
       messagesSubject.next([humanTurn('u1')]);
       const { container, spacerEl, getSpacerMin } = installClamping(84, 36, 356);
       component.ngAfterViewChecked();
-      expect(getSpacerMin()).toBe(320);
-      const scrollHeightAfterPin = container.scrollHeight; // 120 + 320 = 440
+      expect(getSpacerMin()).toBe(312); // 356 - realBelow(36) - TOP_PAD(8) - padBottom(0)
+      const scrollHeightAfterPin = container.scrollHeight; // 120 + 312 = 432
 
       // The reply adds 100px of content below the anchor.
       spacerEl.offsetTop += 100; // content end moves down
       component.ngAfterViewChecked();
 
-      expect(getSpacerMin()).toBe(220); // shrank by exactly 100
+      expect(getSpacerMin()).toBe(212); // shrank by exactly 100 (312 → 212)
       expect(container.scrollHeight).toBe(scrollHeightAfterPin); // constant → no shift
     });
 
