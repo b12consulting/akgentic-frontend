@@ -557,7 +557,7 @@ describe('AkgentChatComponent — head system block (Story 16-2)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Story 20-1 (ADR-007 §4) — never-run backstory head-block FALLBACK. A
+// Story 20-1 (akgentic-agent ADR-007 §4) — never-run backstory head-block FALLBACK. A
 // never-run agent has NO LlmSystemPromptEvent; its backstory comes from the
 // host via the `backstory$` input (projected from AgentState.backstory). The
 // head block renders the synthetic backstory row when no event rows exist, the

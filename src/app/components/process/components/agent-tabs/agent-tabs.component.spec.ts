@@ -203,7 +203,7 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
   }
 
   // ===========================================================================
-  // Story 20-1 (ADR-007 §4) — never-run backstory head block + chat-tab
+  // Story 20-1 (akgentic-agent ADR-007 §4) — never-run backstory head block + chat-tab
   // visibility from AgentState.backstory. Visibility gates on conversation
   // context OR a non-empty trimmed `state.backstory` (a running agent always has
   // context; a never-run agent shows its backstory). The head-block fallback

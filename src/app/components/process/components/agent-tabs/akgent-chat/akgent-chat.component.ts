@@ -67,7 +67,7 @@ export class AkgentChatComponent implements OnInit, OnChanges {
   // scroll-to-bottom targets this element so new messages stay in view.
   @ViewChild('traceScroll') traceScroll?: ElementRef<HTMLElement>;
   @Input() context$!: BehaviorSubject<any[]>;
-  // ADR-007 §4 — the selected agent's trimmed `AgentState.backstory`, projected
+  // akgentic-agent ADR-007 §4 — the selected agent's trimmed `AgentState.backstory`, projected
   // by the host (`AgentTabsComponent`) from the `state` PerAgentStore. Drives the
   // never-run head-block FALLBACK (a synthetic backstory row) when no
   // `LlmSystemPromptEvent` row exists yet. Optional so existing callers/tests
@@ -101,7 +101,7 @@ export class AkgentChatComponent implements OnInit, OnChanges {
   systemPrompt$!: Observable<SystemPromptRow[]>;
 
   /**
-   * ADR-007 §4 — the head block actually bound in the template. Latest-wins:
+   * akgentic-agent ADR-007 §4 — the head block actually bound in the template. Latest-wins:
    * the event-sourced `systemPrompt$` rows when present; otherwise, for a
    * never-run agent (no `LlmSystemPromptEvent` row), a single synthetic backstory
    * row built from `backstory$` (label parity with the `agent_backstory` dynamic
@@ -167,7 +167,7 @@ export class AkgentChatComponent implements OnInit, OnChanges {
     this.systemPrompt$ = this.systemPromptSelector.latestSystemPrompt$(
       this.agentId
     );
-    // ADR-007 §4: latest-wins — event rows win; otherwise synthesize a single
+    // akgentic-agent ADR-007 §4: latest-wins — event rows win; otherwise synthesize a single
     // backstory row from `backstory$` (a trimmed string; `''` ⇒ no fallback).
     // `backstory$` may be absent (callers/tests that omit the input) → `of('')`.
     this.headRows$ = combineLatest([
