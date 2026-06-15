@@ -12,9 +12,8 @@ import { RouterTestingModule } from '@angular/router/testing';
 import yaml from 'js-yaml';
 import { BehaviorSubject } from 'rxjs';
 
-import { ConfirmationService, MessageService } from 'primeng/api';
+import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
@@ -87,7 +86,6 @@ describe('NamespacePanelRouteComponent (Story 11.6)', () => {
   let component: NamespacePanelRouteComponent;
   let apiSpy: jasmine.SpyObj<ApiService>;
   let messageSpy: jasmine.SpyObj<MessageService>;
-  let confirmationSpy: jasmine.SpyObj<ConfirmationService>;
   let paramMap$: BehaviorSubject<ReturnType<typeof convertToParamMap>>;
 
   async function buildFixture(namespace: string): Promise<void> {
@@ -109,10 +107,6 @@ describe('NamespacePanelRouteComponent (Story 11.6)', () => {
     apiSpy.getNamespaces.and.returnValue(Promise.resolve([summary('foo')]));
     messageSpy = jasmine.createSpyObj('MessageService', ['add']);
 
-    confirmationSpy =
-      new ConfirmationService() as jasmine.SpyObj<ConfirmationService>;
-    spyOn(confirmationSpy, 'confirm').and.callThrough();
-
     paramMap$ = new BehaviorSubject(convertToParamMap({ namespace: 'foo' }));
 
     await TestBed.configureTestingModule({
@@ -131,22 +125,21 @@ describe('NamespacePanelRouteComponent (Story 11.6)', () => {
       ],
     })
       // Swap real Monaco for the stub — the panel is nested inside the shell.
+      // Story 22.3 — the panel no longer uses ConfirmationService /
+      // <p-confirmDialog>; its confirm flows run through the panel-owned custom
+      // modal, so the old service override is gone.
       .overrideComponent(NamespacePanelComponent, {
         set: {
           imports: [
             CommonModule,
             FormsModule,
             ButtonModule,
-            ConfirmDialogModule,
             DialogModule,
             InputTextModule,
             ToggleSwitchModule,
             TooltipModule,
             StubMonacoEditorComponent,
             ValidationReportComponent,
-          ],
-          providers: [
-            { provide: ConfirmationService, useValue: confirmationSpy },
           ],
         },
       })
@@ -297,13 +290,12 @@ entries:
     expect(panel.namespace).toBe('new-ns');
     expect(panel.hasUnsavedChanges()).toBe(false);
 
-    // --- Edit (direct) → Reset (dirty) with ConfirmationService.accept ---
-    confirmationSpy.confirm.and.callFake((cfg) => {
-      cfg.accept!();
-      return confirmationSpy;
-    });
+    // --- Edit (direct) → Reset (dirty) via the custom confirm modal Proceed ---
     panel.buffer = panel.serverYaml + '# dirty again\n';
     panel.onResetClick();
+    expect(panel.confirmDialogVisible).toBeTrue();
+    expect(panel.confirmRequest!.variant).toBe('reset');
+    panel.onConfirmProceedClick();
     expect(panel.buffer).toBe(panel.serverYaml);
     expect(panel.hasUnsavedChanges()).toBe(false);
 
@@ -404,10 +396,10 @@ entries: {}
 
     const panel = component.panel!;
     expect(panel.hasUnsavedChanges()).toBeFalse();
-    // The functional guard short-circuits on this path before any
-    // ConfirmationService interaction — covered exhaustively in
-    // namespace-panel.guard.spec.ts.
-    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+    // The functional guard short-circuits on this path before any confirm
+    // interaction — covered exhaustively in namespace-panel.guard.spec.ts. The
+    // panel's own custom confirm modal stays closed on a clean panel.
+    expect(panel.confirmDialogVisible).toBeFalse();
   });
 
   // ----- AC 7 dirty buffer → guard would prompt (component-level check) ---------

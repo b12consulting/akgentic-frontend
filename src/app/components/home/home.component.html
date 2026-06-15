@@ -241,13 +241,21 @@
   cloning). Reads (validate / load) stay dismissable — `isWriteInFlight`
   intentionally excludes `validating` / `loading`.
 -->
+<!--
+  Story 22.3 (ADR-018 §3) — suppress the host config dialog's `closeOnEscape`
+  while ANY secondary panel (Clone modal or confirmation modal) is open, so Esc
+  closes only the topmost secondary panel and does NOT bubble through to close
+  the config panel. `namespacePanel?.hasSecondaryPanelOpen !== true` keeps the
+  existing close-on-escape behaviour when no secondary panel is open (and the
+  panel may be undefined before the @defer block mounts it).
+-->
 <p-dialog
   [visible]="namespacePanelVisible"
   (visibleChange)="onNamespacePanelVisibleChange($event)"
   [modal]="true"
   [style]="{ width: '90vw', height: '90vh' }"
   [closable]="!isWriteInFlight"
-  [closeOnEscape]="!isWriteInFlight"
+  [closeOnEscape]="!isWriteInFlight && namespacePanel?.hasSecondaryPanelOpen !== true"
   [dismissableMask]="!isWriteInFlight"
 >
   <ng-template pTemplate="header">

@@ -104,13 +104,15 @@
       ></button>
 
       <!-- Delete (Story 14.1 / ADR-028 frontend leg). Always available;
-           dark-red destructive action; opens a confirm naming the namespace
-           before issuing DELETE. Disabled only while a delete is in flight. -->
+           dark-red destructive action (ADR-018 §4 — shared `namespace-panel__danger`
+           class, NOT PrimeNG's bright `severity="danger"`); opens the custom
+           confirm naming the namespace before issuing DELETE. Disabled only
+           while a delete is in flight. -->
       <button
         pButton
         type="button"
         size="small"
-        severity="danger"
+        class="namespace-panel__danger"
         label="Delete"
         icon="pi pi-trash"
         [disabled]="!canDelete"
@@ -147,12 +149,20 @@
     (visibleChange)="onCloneDialogVisibleChange($event)"
     (onShow)="onCloneDialogShow()"
     (onHide)="onCloneDialogHide()"
-    [modal]="true"
+    [modal]="false"
     [style]="{ width: '30rem' }"
     header="Clone namespace"
     data-test="clone-dialog"
   >
-    <div class="namespace-panel__clone-body">
+    <!-- ADR-018 §3 — the secondary panel owns its Esc→cancel: stop the
+         keystroke from bubbling so it cannot reach the host config dialog. The
+         dialog's own [closeOnEscape] (default true) closes THIS modal; the host
+         dialog's [closeOnEscape] is separately gated off via
+         `hasSecondaryPanelOpen` while any secondary panel is open. -->
+    <div
+      class="namespace-panel__clone-body"
+      (keydown.escape)="$event.stopPropagation()"
+    >
       <label for="clone-dest-name-input">Destination name</label>
       <input
         #cloneDestInput
@@ -272,8 +282,86 @@
     data-test="a11y-live-region"
   >{{ a11yAnnouncement }}</div>
 
-  <!-- PrimeNG ConfirmDialog — scoped to this component via `providers:
-       [ConfirmationService]` so the dialog and future route presentations
-       both get an instance without app-root wiring. -->
-  <p-confirmDialog></p-confirmDialog>
+  <!--
+    Story 22.3 (ADR-018 §1–§4) — panel-owned custom confirmation modal. Same
+    `<p-dialog>` shell + `namespace-panel__clone-body` / `__clone-actions`
+    styling as the Clone modal above; reused for Reset-discard, Save-drift, and
+    Delete. Driven from component state (`confirmDialogVisible` + the typed
+    `confirmRequest`), not an imperative service call.
+
+    - No `[modal]` → no backdrop under the secondary panel (ADR-018 §3 / AC 14).
+    - `(onShow)` autofocuses the safe button so Enter/Esc cancel (ADR-018 §2);
+      `(onHide)` resets state + settles a pending drift dismissal to the safe
+      branch (AC 8, 19).
+    - Esc on the body stops propagation so it cannot reach the host config
+      dialog (ADR-018 §3); the dialog's own [closeOnEscape] closes THIS modal.
+  -->
+  <p-dialog
+    [visible]="confirmDialogVisible"
+    (visibleChange)="confirmDialogVisible = $event"
+    (onShow)="onConfirmDialogShow()"
+    (onHide)="onConfirmDialogHide()"
+    [style]="{ width: '30rem' }"
+    [header]="confirmRequest?.header ?? ''"
+    data-test="confirm-dialog"
+  >
+    <div
+      *ngIf="confirmRequest as req"
+      class="namespace-panel__clone-body"
+      (keydown.escape)="$event.stopPropagation()"
+    >
+      <p class="namespace-panel__confirm-message" data-test="confirm-message">
+        {{ req.message }}
+      </p>
+    </div>
+    <div class="namespace-panel__clone-actions" *ngIf="confirmRequest as req">
+      <!-- Drift variant: two explicit named buttons — Reload (safe, focused
+           default) + Overwrite (destructive branch). ADR-018 §1 / AC 7. -->
+      <ng-container *ngIf="req.variant === 'drift'; else cancelProceed">
+        <button
+          #confirmSafeBtn
+          pButton
+          type="button"
+          size="small"
+          severity="secondary"
+          label="Reload"
+          (click)="onConfirmReloadClick()"
+          data-test="confirm-reload-btn"
+        ></button>
+        <button
+          pButton
+          type="button"
+          size="small"
+          severity="secondary"
+          label="Overwrite"
+          (click)="onConfirmOverwriteClick()"
+          data-test="confirm-overwrite-btn"
+        ></button>
+      </ng-container>
+      <!-- Reset / Delete variants: [Cancel] [Proceed]. Cancel holds focus so
+           Enter/Esc cancel (ADR-018 §2 / AC 9, 10). The Delete-flow Proceed
+           button is destructive — shared dark-red class (ADR-018 §4 / AC 16). -->
+      <ng-template #cancelProceed>
+        <button
+          #confirmSafeBtn
+          pButton
+          type="button"
+          size="small"
+          severity="secondary"
+          label="Cancel"
+          (click)="onConfirmCancelClick()"
+          data-test="confirm-cancel-btn"
+        ></button>
+        <button
+          pButton
+          type="button"
+          size="small"
+          [class.namespace-panel__danger]="req.variant === 'delete'"
+          [label]="confirmProceedLabel"
+          (click)="onConfirmProceedClick()"
+          data-test="confirm-proceed-btn"
+        ></button>
+      </ng-template>
+    </div>
+  </p-dialog>
 </div>

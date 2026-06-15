@@ -22,9 +22,8 @@ import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { NuMonacoEditorEvent } from '@ng-util/monaco-editor';
 import yaml from 'js-yaml';
-import { ConfirmationService, MessageService } from 'primeng/api';
+import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
@@ -120,7 +119,6 @@ describe('NamespacePanelComponent', () => {
   let component: NamespacePanelComponent;
   let apiSpy: jasmine.SpyObj<ApiService>;
   let messageSpy: jasmine.SpyObj<MessageService>;
-  let confirmationSpy: jasmine.SpyObj<ConfirmationService>;
   // Minimal AuthService stub exposing only a settable `currentUserValue`
   // (the sole surface the panel's advisory owner pre-check reads). Defaults
   // to the anonymous user so pre-existing Save tests — whose buffers carry
@@ -165,13 +163,6 @@ describe('NamespacePanelComponent', () => {
       'deleteNamespace',
     ]);
     messageSpy = jasmine.createSpyObj('MessageService', ['add']);
-    // Use a REAL ConfirmationService instance (its `requireConfirmation$`
-    // Subject is wired) and spy on `.confirm` — PrimeNG's `<p-confirmDialog>`
-    // subscribes to `requireConfirmation$` on instantiation, so a bare
-    // `jasmine.createSpyObj` breaks the constructor.
-    confirmationSpy =
-      new ConfirmationService() as jasmine.SpyObj<ConfirmationService>;
-    spyOn(confirmationSpy, 'confirm').and.callThrough();
     authStub = { currentUserValue: { user_id: 'anonymous' } };
 
     await TestBed.configureTestingModule({
@@ -186,13 +177,19 @@ describe('NamespacePanelComponent', () => {
       // the same template surface (selector + `options` + `ControlValueAccessor`)
       // but does not kick off Monaco's AMD loader — which previously leaked
       // late `onDestroy` registrations across tests (NG0911).
+      //
+      // Story 22.3 (ADR-018 §1) — the panel no longer uses
+      // `ConfirmationService` / `<p-confirmDialog>`; the three confirm flows
+      // run through the panel-owned custom modal driven by component state, so
+      // the old `confirmationSpy` real-instance wiring + provider override are
+      // gone. Confirm assertions read `confirmDialogVisible` / `confirmRequest`
+      // and exercise the modal's button handlers directly.
       .overrideComponent(NamespacePanelComponent, {
         set: {
           imports: [
             CommonModule,
             FormsModule,
             ButtonModule,
-            ConfirmDialogModule,
             DialogModule,
             InputTextModule,
             ToggleSwitchModule,
@@ -200,16 +197,43 @@ describe('NamespacePanelComponent', () => {
             StubMonacoEditorComponent,
             ValidationReportComponent,
           ],
-          // Swap the locally-provided real ConfirmationService for a spy so
-          // the Reset + drift + confirm-dialog flows are testable
-          // deterministically.
-          providers: [
-            { provide: ConfirmationService, useValue: confirmationSpy },
-          ],
         },
       })
       .compileComponents();
   });
+
+  // ---------------------------------------------------------------------
+  // Story 22.3 — custom confirmation modal helpers. These replace the old
+  // `confirmationSpy.confirm` call-count / `args.accept!()` idiom: a confirm
+  // is "open" when `confirmDialogVisible` is true and `confirmRequest` carries
+  // the flow's header/message/variant; Proceed / Cancel / Reload / Overwrite
+  // are exercised via the component's button handlers.
+  // ---------------------------------------------------------------------
+
+  /** True iff the custom confirmation modal is open. */
+  function confirmOpen(): boolean {
+    return component.confirmDialogVisible && component.confirmRequest !== null;
+  }
+
+  /** Run the Proceed (reset/delete) button effect, then close. */
+  function clickConfirmProceed(): void {
+    component.onConfirmProceedClick();
+  }
+
+  /** Run the Cancel (reset/delete) button effect, then close. */
+  function clickConfirmCancel(): void {
+    component.onConfirmCancelClick();
+  }
+
+  /** Run the Reload (drift safe-default) button effect, then close. */
+  function clickConfirmReload(): void {
+    component.onConfirmReloadClick();
+  }
+
+  /** Run the Overwrite (drift destructive) button effect, then close. */
+  function clickConfirmOverwrite(): void {
+    component.onConfirmOverwriteClick();
+  }
 
   // ---------------------------------------------------------------------
   // Shared load helper — drives ngOnInit → loadNamespace → stable view.
@@ -901,13 +925,13 @@ describe('NamespacePanelComponent', () => {
     await component.onSaveClick();
 
     // Drift re-export ran (one extra export beyond the mount load) but no
-    // confirm was shown.
+    // confirm modal was shown.
     expect(apiSpy.exportNamespace).toHaveBeenCalledTimes(2);
-    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+    expect(confirmOpen()).toBeFalse();
     expect(apiSpy.importNamespace).toHaveBeenCalledOnceWith('foo: 2\n');
   });
 
-  it('(22.1 AC20/AC21) Save with diverged server export prompts; reload-and-rebase skips the import and rebases', async () => {
+  it('(22.3 AC7/AC8) Save with diverged server export opens the drift modal with Reload + Overwrite; Reload skips the import and rebases', async () => {
     await loaded('foo: 1\n');
     component.buffer = 'foo: 2\n';
     // Server has drifted since load.
@@ -915,17 +939,18 @@ describe('NamespacePanelComponent', () => {
     apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
 
     const savePromise = component.onSaveClick();
-    // Let the drift re-export resolve so the confirm fires.
+    // Let the drift re-export resolve so the modal opens.
     await flushMicrotasks();
-    expect(confirmationSpy.confirm).toHaveBeenCalledTimes(1);
-    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
-    expect(args.header).toBe('Namespace modified');
+    expect(confirmOpen()).toBeTrue();
+    expect(component.confirmRequest!.variant).toBe('drift');
+    expect(component.confirmRequest!.header).toBe('Namespace modified');
 
-    // accept = reload-and-rebase.
-    args.accept!();
+    // Reload = reload-and-rebase (safe / focused default).
+    clickConfirmReload();
     await savePromise;
 
-    // Import was NOT performed this click.
+    // Modal closed; import was NOT performed this click.
+    expect(confirmOpen()).toBeFalse();
     expect(apiSpy.importNamespace).not.toHaveBeenCalled();
     // serverYaml rebased to the latest; buffer kept the operator's edit
     // (it had diverged from the old serverYaml, so it is preserved).
@@ -934,7 +959,7 @@ describe('NamespacePanelComponent', () => {
     expect(component.saving).toBeFalse();
   });
 
-  it('(22.1 AC21) drift reload-and-rebase moves the buffer when it still equalled the old serverYaml', async () => {
+  it('(22.3 AC7) drift Reload moves the buffer when it still equalled the old serverYaml', async () => {
     await loaded('foo: 1\n');
     // Force a dirty gate so onSaveClick runs, but keep buffer === old
     // serverYaml at the moment the rebase fires by reverting after dirtying.
@@ -943,10 +968,10 @@ describe('NamespacePanelComponent', () => {
 
     const savePromise = component.onSaveClick();
     await flushMicrotasks();
-    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
-    // Simulate buffer back at the old serverYaml right before accept.
+    expect(component.confirmRequest!.variant).toBe('drift');
+    // Simulate buffer back at the old serverYaml right before Reload.
     component.buffer = 'foo: 1\n';
-    args.accept!();
+    clickConfirmReload();
     await savePromise;
 
     expect(component.serverYaml).toBe('foo: server\n');
@@ -954,7 +979,7 @@ describe('NamespacePanelComponent', () => {
     expect(component.buffer).toBe('foo: server\n');
   });
 
-  it('(22.1 AC21) Save with diverged server export — overwrite choice proceeds with the operator buffer', async () => {
+  it('(22.3 AC7) Save with diverged server export — Overwrite proceeds with the operator buffer', async () => {
     await loaded('foo: 1\n');
     component.buffer = 'foo: 2\n';
     apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: server\n'));
@@ -962,13 +987,33 @@ describe('NamespacePanelComponent', () => {
 
     const savePromise = component.onSaveClick();
     await flushMicrotasks();
-    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
-    // reject = overwrite → import proceeds with the operator's buffer.
-    args.reject!();
+    expect(component.confirmRequest!.variant).toBe('drift');
+    // Overwrite → import proceeds with the operator's buffer.
+    clickConfirmOverwrite();
     await savePromise;
 
     expect(apiSpy.importNamespace).toHaveBeenCalledOnceWith('foo: 2\n');
     expect(component.serverYaml).toBe('foo: 2\n');
+  });
+
+  it('(22.3 AC8) drift modal dismissal (onHide) resolves the safe branch — no import this click', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: server\n'));
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+
+    const savePromise = component.onSaveClick();
+    await flushMicrotasks();
+    expect(component.confirmRequest!.variant).toBe('drift');
+
+    // Esc / Cancel / X — the dialog (onHide) fires without a button choice.
+    component.onConfirmDialogHide();
+    await savePromise;
+
+    // Safe branch: no blind overwrite, import skipped this click.
+    expect(apiSpy.importNamespace).not.toHaveBeenCalled();
+    expect(confirmOpen()).toBeFalse();
+    expect(component.saving).toBeFalse();
   });
 
   it('(22.1 AC21) drift export network error falls through to import (non-blocking)', async () => {
@@ -979,7 +1024,7 @@ describe('NamespacePanelComponent', () => {
 
     await component.onSaveClick();
 
-    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+    expect(confirmOpen()).toBeFalse();
     expect(apiSpy.importNamespace).toHaveBeenCalledOnceWith('foo: 2\n');
   });
 
@@ -1024,22 +1069,41 @@ describe('NamespacePanelComponent', () => {
     ).toBeUndefined();
   });
 
-  it('(22.1 AC15) onResetClick reverts behind the confirm, clearing validation state', async () => {
+  it('(22.1 AC15 / 22.3 AC4) onResetClick reverts behind the custom confirm, clearing validation state', async () => {
     await loaded('foo: 1\n');
     component.buffer = 'foo: 2\n';
     component.lastValidation = failingReport(1);
     component.rawSaveError = 'raw';
 
     component.onResetClick();
-    expect(confirmationSpy.confirm).toHaveBeenCalledTimes(1);
-    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
-    expect(args.message as string).toContain('Discard unsaved changes');
+    expect(confirmOpen()).toBeTrue();
+    expect(component.confirmRequest!.variant).toBe('reset');
+    expect(component.confirmRequest!.message).toContain('Discard unsaved changes');
 
-    args.accept!();
+    clickConfirmProceed();
+    expect(confirmOpen()).toBeFalse();
     expect(component.buffer).toBe('foo: 1\n');
     expect(component.lastValidation).toBeNull();
     expect(component.rawSaveError).toBeNull();
     expect(component.hasUnsavedChanges()).toBe(false);
+  });
+
+  it('(22.3 AC4) Reset Cancel leaves all state untouched', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    component.lastValidation = failingReport(1);
+    component.rawSaveError = 'raw';
+
+    component.onResetClick();
+    expect(confirmOpen()).toBeTrue();
+
+    clickConfirmCancel();
+    expect(confirmOpen()).toBeFalse();
+    // Cancel runs no revert — buffer + validation state are unchanged.
+    expect(component.buffer).toBe('foo: 2\n');
+    expect(component.lastValidation).not.toBeNull();
+    expect(component.rawSaveError).toBe('raw');
+    expect(component.hasUnsavedChanges()).toBe(true);
   });
 
   it('(22.1 AC15) onResetClick is a no-op when clean (no confirm)', async () => {
@@ -1047,7 +1111,7 @@ describe('NamespacePanelComponent', () => {
 
     component.onResetClick();
 
-    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+    expect(confirmOpen()).toBeFalse();
   });
 
   // ---------------------------------------------------------------------
@@ -1897,21 +1961,36 @@ entries:
     expect(btn.disabled).toBeFalse();
   });
 
-  it('(14.1 AC12) clicking Delete opens the confirmation; accepting calls deleteNamespace once', async () => {
+  it('(14.1 AC12 / 22.3 AC5) clicking Delete opens the custom confirm naming the namespace; Proceed calls deleteNamespace once', async () => {
     await loaded('foo: 1\n');
     apiSpy.deleteNamespace.and.returnValue(Promise.resolve());
 
     component.onDeleteClick();
-    expect(confirmationSpy.confirm).toHaveBeenCalledTimes(1);
-    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
-    expect(args.header).toBe('Delete namespace');
-    expect(args.icon).toBe('pi pi-trash');
-    expect(args.message as string).toContain('foo');
+    expect(confirmOpen()).toBeTrue();
+    expect(component.confirmRequest!.variant).toBe('delete');
+    expect(component.confirmRequest!.header).toBe('Delete namespace');
+    expect(component.confirmRequest!.message).toContain('foo');
 
-    args.accept!();
+    clickConfirmProceed();
     await fixture.whenStable();
 
+    expect(confirmOpen()).toBeFalse();
     expect(apiSpy.deleteNamespace).toHaveBeenCalledOnceWith('foo');
+  });
+
+  it('(22.3 AC5) Delete Cancel fires no network request and leaves the panel unchanged', async () => {
+    await loaded('foo: 1\n');
+    apiSpy.deleteNamespace.and.returnValue(Promise.resolve());
+
+    component.onDeleteClick();
+    expect(confirmOpen()).toBeTrue();
+
+    clickConfirmCancel();
+
+    expect(confirmOpen()).toBeFalse();
+    expect(apiSpy.deleteNamespace).not.toHaveBeenCalled();
+    expect(component.serverYaml).toBe('foo: 1\n');
+    expect(component.buffer).toBe('foo: 1\n');
   });
 
   it('(14.1 AC13) 204 success — emits saved + closed and shows a success toast', async () => {
@@ -2012,7 +2091,7 @@ entries:
 
     void component.onDeleteConfirm();
     component.onDeleteClick();
-    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+    expect(confirmOpen()).toBeFalse();
 
     resolveDelete();
     await firstCall;
@@ -2027,7 +2106,7 @@ entries:
 
     component.onDeleteClick();
 
-    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+    expect(confirmOpen()).toBeFalse();
   });
 
   it('(14.1 AC10) destroy-during-delete — late resolution does not write state', async () => {
@@ -2388,15 +2467,15 @@ entries: {}
     // Clean → no-op (and no confirm).
     component.onKeydown(keyEvent('KeyR'));
     expect(resetSpy).not.toHaveBeenCalled();
-    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+    expect(confirmOpen()).toBeFalse();
 
     // Dirty → fires onResetClick, which opens the discard confirm.
     component.buffer = 'foo: 2\n';
     component.onKeydown(keyEvent('KeyR'));
     expect(resetSpy).toHaveBeenCalledTimes(1);
-    expect(confirmationSpy.confirm).toHaveBeenCalledTimes(1);
-    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
-    expect(args.message as string).toContain('Discard unsaved changes');
+    expect(confirmOpen()).toBeTrue();
+    expect(component.confirmRequest!.variant).toBe('reset');
+    expect(component.confirmRequest!.message).toContain('Discard unsaved changes');
   });
 
   it('(22.2 AC3/AC6) ⌥R is a no-op while saving even when dirty', async () => {
@@ -2441,7 +2520,7 @@ entries: {}
     expect(cloneSpy).not.toHaveBeenCalled();
   });
 
-  it('(22.2 AC5) ⌥D opens the Delete confirm; does NOT call deleteNamespace until accept', async () => {
+  it('(22.2 AC5) ⌥D opens the Delete confirm; does NOT call deleteNamespace until Proceed', async () => {
     await loaded('foo: 1\n');
     apiSpy.deleteNamespace.and.returnValue(Promise.resolve());
     const deleteSpy = spyOn(component, 'onDeleteClick').and.callThrough();
@@ -2449,13 +2528,13 @@ entries: {}
     component.onKeydown(keyEvent('KeyD'));
 
     expect(deleteSpy).toHaveBeenCalledTimes(1);
-    expect(confirmationSpy.confirm).toHaveBeenCalledTimes(1);
-    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
-    expect(args.header).toBe('Delete namespace');
-    // No direct DELETE before accept.
+    expect(confirmOpen()).toBeTrue();
+    expect(component.confirmRequest!.variant).toBe('delete');
+    expect(component.confirmRequest!.header).toBe('Delete namespace');
+    // No direct DELETE before Proceed.
     expect(apiSpy.deleteNamespace).not.toHaveBeenCalled();
 
-    args.accept!();
+    clickConfirmProceed();
     await fixture.whenStable();
     expect(apiSpy.deleteNamespace).toHaveBeenCalledOnceWith('foo');
   });
@@ -2468,7 +2547,7 @@ entries: {}
     component.onKeydown(keyEvent('KeyD'));
 
     expect(deleteSpy).not.toHaveBeenCalled();
-    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+    expect(confirmOpen()).toBeFalse();
   });
 
   // ----- Match on code, NOT key — macOS dead-key survival (AC 7) -----
@@ -2753,4 +2832,270 @@ entries: {}
     const arg = onEditorEventSpy.calls.mostRecent().args[0];
     expect(arg.type).toBe('init');
   });
+
+  // ---------------------------------------------------------------------
+  // Story 22.3 (ADR-018 §1–§4) — custom confirmation modal + secondary-modal
+  // interaction contract: no <p-confirmDialog>; Clone-idiom custom modal;
+  // focus-Cancel/Enter-cancels; hasSecondaryPanelOpen predicate; no backdrop;
+  // shared dark-red destructive style.
+  // ---------------------------------------------------------------------
+
+  // ----- AC 1 — <p-confirmDialog> removed; custom modal renders -----
+
+  it('(22.3 AC1) the rendered panel contains no <p-confirmDialog>', async () => {
+    await loaded('foo: 1\n');
+    expect(
+      fixture.nativeElement.querySelector('p-confirmDialog'),
+    ).toBeNull();
+  });
+
+  it('(22.3 AC1/AC2) opening a confirm renders a <p-dialog> with the Clone-modal body/action classes and the supplied header/message', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+
+    component.onResetClick();
+    fixture.detectChanges();
+
+    // The confirm dialog teleports its content to document.body; query the
+    // whole document for the body/action classes + message.
+    const body = document.querySelector(
+      '[data-test="confirm-dialog"] .namespace-panel__clone-body',
+    );
+    const actions = document.querySelector(
+      '[data-test="confirm-dialog"] .namespace-panel__clone-actions',
+    );
+    expect(body).withContext('confirm body uses clone-body class').not.toBeNull();
+    expect(actions)
+      .withContext('confirm action row uses clone-actions class')
+      .not.toBeNull();
+
+    const message = document.querySelector(
+      '[data-test="confirm-message"]',
+    ) as HTMLElement | null;
+    expect(message?.textContent).toContain('Discard unsaved changes');
+  });
+
+  it('(22.3 AC3) the same modal surface is reused across reset / drift / delete variants', async () => {
+    await loaded('foo: 1\n');
+
+    // Reset variant.
+    component.buffer = 'foo: 2\n';
+    component.onResetClick();
+    expect(component.confirmRequest!.variant).toBe('reset');
+    component.onConfirmDialogHide();
+    expect(confirmOpen()).toBeFalse();
+
+    // Delete variant — same `confirmDialogVisible` / `confirmRequest` surface.
+    component.onDeleteClick();
+    expect(component.confirmRequest!.variant).toBe('delete');
+    component.onConfirmDialogHide();
+    expect(confirmOpen()).toBeFalse();
+  });
+
+  // ----- AC 9 / AC 10 — focus the safe button; Enter/activate cancels -----
+
+  it('(22.3 AC9) onConfirmDialogShow focuses the safe button (Cancel for reset/delete)', fakeAsync(async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    component.onResetClick();
+
+    const safeBtn = document.createElement('button');
+    document.body.appendChild(safeBtn);
+    component.confirmSafeBtnRef = {
+      nativeElement: safeBtn,
+    } as ElementRef<HTMLButtonElement>;
+
+    component.onConfirmDialogShow();
+    tick(0);
+
+    expect(document.activeElement).toBe(safeBtn);
+    document.body.removeChild(safeBtn);
+  }));
+
+  it('(22.3 AC9) drift variant focuses the Reload (safe) button on show', fakeAsync(async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: server\n'));
+
+    void component.onSaveClick();
+    tick();
+    expect(component.confirmRequest!.variant).toBe('drift');
+
+    const reloadBtn = document.createElement('button');
+    document.body.appendChild(reloadBtn);
+    component.confirmSafeBtnRef = {
+      nativeElement: reloadBtn,
+    } as ElementRef<HTMLButtonElement>;
+
+    component.onConfirmDialogShow();
+    tick(0);
+
+    expect(document.activeElement).toBe(reloadBtn);
+    document.body.removeChild(reloadBtn);
+    // Settle the pending drift promise so no async leaks into later specs.
+    component.onConfirmDialogHide();
+    tick();
+  }));
+
+  it('(22.3 AC10) activating the focused Cancel button runs the cancel path — accept callback does NOT fire (no destructive effect)', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    component.onDeleteClick();
+    apiSpy.deleteNamespace.and.returnValue(Promise.resolve());
+
+    // Enter on the focused Cancel button activates it natively → cancel path.
+    clickConfirmCancel();
+
+    expect(apiSpy.deleteNamespace).not.toHaveBeenCalled();
+    expect(confirmOpen()).toBeFalse();
+  });
+
+  // ----- AC 19 — confirm-request state cleared on hide -----
+
+  it('(22.3 AC19) onConfirmDialogHide clears confirmRequest so a stale request cannot leak', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    component.onResetClick();
+    expect(component.confirmRequest).not.toBeNull();
+
+    component.onConfirmDialogHide();
+
+    expect(component.confirmRequest).toBeNull();
+    expect(component.confirmDialogVisible).toBeFalse();
+  });
+
+  // ----- AC 11 / AC 12 / AC 13 — hasSecondaryPanelOpen predicate -----
+
+  it('(22.3 AC12) hasSecondaryPanelOpen is true when the Clone modal is open, false otherwise', async () => {
+    await loadedWithCloneSrc(['src']);
+    expect(component.hasSecondaryPanelOpen).toBeFalse();
+
+    component.onCloneClick();
+    expect(component.hasSecondaryPanelOpen).toBeTrue();
+
+    component.onCloneDialogVisibleChange(false);
+    expect(component.hasSecondaryPanelOpen).toBeFalse();
+  });
+
+  it('(22.3 AC12) hasSecondaryPanelOpen is true when the confirmation modal is open, false otherwise', async () => {
+    await loaded('foo: 1\n');
+    expect(component.hasSecondaryPanelOpen).toBeFalse();
+
+    component.buffer = 'foo: 2\n';
+    component.onResetClick();
+    expect(component.hasSecondaryPanelOpen).toBeTrue();
+
+    component.onConfirmDialogHide();
+    expect(component.hasSecondaryPanelOpen).toBeFalse();
+  });
+
+  // ----- AC 14 — no backdrop / mask under either secondary panel -----
+  //
+  // PrimeNG v19 always renders a `.p-dialog-mask` positioning wrapper, but the
+  // DIMMING backdrop is only painted in modal mode. With `[modal]="false"` the
+  // wrapper is transparent and `pointer-events: none` (no backdrop, click-through
+  // to the config panel underneath). The contract is asserted on that style.
+
+  it('(22.3 AC14) the Clone <p-dialog> renders without a dimming backdrop (mask is pointer-events:none)', async () => {
+    await loadedWithCloneSrc(['src']);
+    component.onCloneClick();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const mask = document.querySelector(
+      '.p-dialog-mask',
+    ) as HTMLElement | null;
+    expect(mask).withContext('Clone dialog mask wrapper present').not.toBeNull();
+    // Non-modal: no backdrop — the mask does not capture pointer events.
+    expect(mask!.style.pointerEvents).toBe('none');
+  });
+
+  it('(22.3 AC14) the confirmation <p-dialog> renders without a dimming backdrop (mask is pointer-events:none)', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    component.onResetClick();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const mask = document.querySelector(
+      '.p-dialog-mask',
+    ) as HTMLElement | null;
+    expect(mask).withContext('confirm dialog mask wrapper present').not.toBeNull();
+    expect(mask!.style.pointerEvents).toBe('none');
+  });
+
+  // ----- AC 16 / AC 18 — shared dark-red destructive class -----
+
+  it('(22.3 AC16) the action-row Delete button carries namespace-panel__danger and drops severity="danger"', async () => {
+    await loaded('foo: 1\n');
+
+    const deleteBtn = fixture.nativeElement.querySelector(
+      'button[data-test="delete-ns-btn"]',
+    ) as HTMLButtonElement;
+    expect(deleteBtn.classList.contains('namespace-panel__danger')).toBeTrue();
+    // The bright PrimeNG danger severity is gone (no p-button-danger class and
+    // no severity attribute set to danger).
+    expect(deleteBtn.getAttribute('severity')).not.toBe('danger');
+  });
+
+  it('(22.3 AC16) the Delete-confirm Proceed button carries the shared namespace-panel__danger class', async () => {
+    await loaded('foo: 1\n');
+    component.onDeleteClick();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const proceedBtn = document.querySelector(
+      '[data-test="confirm-proceed-btn"]',
+    ) as HTMLButtonElement | null;
+    expect(proceedBtn).withContext('Delete Proceed button rendered').not.toBeNull();
+    expect(
+      proceedBtn!.classList.contains('namespace-panel__danger'),
+    ).toBeTrue();
+  });
+
+  it('(22.3 AC18) the Reset-confirm Proceed button is NOT destructive (no danger class)', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    component.onResetClick();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const proceedBtn = document.querySelector(
+      '[data-test="confirm-proceed-btn"]',
+    ) as HTMLButtonElement | null;
+    expect(proceedBtn).not.toBeNull();
+    expect(
+      proceedBtn!.classList.contains('namespace-panel__danger'),
+    ).toBeFalse();
+  });
+
+  it('(22.3 AC18) the drift Reload / Overwrite buttons are NOT destructive (no danger class)', fakeAsync(async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: server\n'));
+
+    void component.onSaveClick();
+    tick();
+    fixture.detectChanges();
+    expect(component.confirmRequest!.variant).toBe('drift');
+
+    const reloadBtn = document.querySelector(
+      '[data-test="confirm-reload-btn"]',
+    ) as HTMLButtonElement | null;
+    const overwriteBtn = document.querySelector(
+      '[data-test="confirm-overwrite-btn"]',
+    ) as HTMLButtonElement | null;
+    expect(reloadBtn).not.toBeNull();
+    expect(overwriteBtn).not.toBeNull();
+    expect(
+      reloadBtn!.classList.contains('namespace-panel__danger'),
+    ).toBeFalse();
+    expect(
+      overwriteBtn!.classList.contains('namespace-panel__danger'),
+    ).toBeFalse();
+
+    // Settle the pending drift promise so no async leaks into later specs.
+    component.onConfirmDialogHide();
+    tick();
+  }));
 });

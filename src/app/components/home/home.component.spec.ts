@@ -666,6 +666,54 @@ describe('HomeComponent', () => {
     expect(component.isWriteInFlight).toBeFalse();
   });
 
+  // --- Story 22.3 (ADR-018 §3) — config dialog closeOnEscape gated on the ---
+  // --- panel's secondary-panel-open state. The template binding is         ---
+  // --- `!isWriteInFlight && namespacePanel?.hasSecondaryPanelOpen !== true`.---
+
+  /** Mirrors the home.component.html `[closeOnEscape]` binding expression. */
+  function closeOnEscape(): boolean {
+    return (
+      !component.isWriteInFlight &&
+      component.namespacePanel?.hasSecondaryPanelOpen !== true
+    );
+  }
+
+  it('(22.3 AC12) config dialog closeOnEscape is false while a secondary panel is open', () => {
+    component.namespacePanel = {
+      saving: false,
+      cloning: false,
+      hasSecondaryPanelOpen: true,
+    } as unknown as NamespacePanelComponent;
+
+    expect(closeOnEscape()).toBeFalse();
+  });
+
+  it('(22.3 AC13) config dialog closeOnEscape is true when no secondary panel is open (and no write in flight)', () => {
+    component.namespacePanel = {
+      saving: false,
+      cloning: false,
+      hasSecondaryPanelOpen: false,
+    } as unknown as NamespacePanelComponent;
+
+    expect(closeOnEscape()).toBeTrue();
+  });
+
+  it('(22.3 AC13) config dialog closeOnEscape stays false while a write is in flight, regardless of secondary panel', () => {
+    component.namespacePanel = {
+      saving: true,
+      cloning: false,
+      hasSecondaryPanelOpen: false,
+    } as unknown as NamespacePanelComponent;
+
+    // isWriteInFlight wins — closeOnEscape is suppressed during a write.
+    expect(closeOnEscape()).toBeFalse();
+  });
+
+  it('(22.3 AC13) config dialog closeOnEscape is true when the panel is not yet mounted (undefined)', () => {
+    component.namespacePanel = undefined;
+    expect(closeOnEscape()).toBeTrue();
+  });
+
   it('(11.7 AC8) namespaceLabel returns selected.name when present', () => {
     component.selectedNamespace$.next({
       namespace: 'foo',

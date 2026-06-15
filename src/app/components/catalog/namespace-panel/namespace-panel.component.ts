@@ -19,9 +19,8 @@ import {
   NuMonacoEditorEvent,
   NuMonacoEditorModule,
 } from '@ng-util/monaco-editor';
-import { ConfirmationService, MessageService } from 'primeng/api';
+import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
@@ -43,6 +42,22 @@ import {
   suggestDestNamespace,
 } from '../yaml-clone.helper';
 import { ValidationReportComponent } from './validation-report/validation-report.component';
+
+/**
+ * Typed shape for the panel's custom confirmation modal (ADR-018 §1). One
+ * interface, three call sites — NEVER an inline `Record`/object literal
+ * scattered across handlers (Golden Rule #1). `variant` selects the action-row
+ * button layout:
+ *   - `'reset'` / `'delete'` → `[Cancel] [Proceed]` (Proceed is destructive for
+ *     `'delete'` only — ADR-018 §4).
+ *   - `'drift'` → `[Reload] [Overwrite]` (two explicit named buttons, not a
+ *     binary accept/reject — ADR-018 §1).
+ */
+interface ConfirmRequest {
+  header: string;
+  message: string;
+  variant: 'reset' | 'drift' | 'delete';
+}
 
 /**
  * NamespacePanelComponent — host-agnostic editor for a catalog namespace YAML.
@@ -69,8 +84,10 @@ import { ValidationReportComponent } from './validation-report/validation-report
  *   - 401 → no panel-specific behaviour; the FetchService global toast
  *     surfaces the failure, the app-wide handler (if any) runs. Panel only
  *     clears `saving` in `finally`.
- *   - PrimeNG `ConfirmDialog` guards Reset-with-dirty-buffer and the Save
- *     drift reload-vs-overwrite choice.
+ *   - A panel-owned custom confirmation modal (ADR-018 §1) — same `<p-dialog>`
+ *     shell as the Clone modal — guards Reset-with-dirty-buffer, the Save drift
+ *     reload-vs-overwrite choice, and Delete. The safe button holds focus on
+ *     open so Enter/Esc cancel (ADR-018 §2).
  *
  * The component remains presentation-only: no `Router`, `ActivatedRoute`,
  * `MAT_DIALOG_DATA`, etc. The dialog wrapper (HomeComponent) and the
@@ -92,7 +109,6 @@ import { ValidationReportComponent } from './validation-report/validation-report
     CommonModule,
     FormsModule,
     ButtonModule,
-    ConfirmDialogModule,
     DialogModule,
     InputTextModule,
     NuMonacoEditorModule,
@@ -100,10 +116,6 @@ import { ValidationReportComponent } from './validation-report/validation-report
     TooltipModule,
     ValidationReportComponent,
   ],
-  // ConfirmationService is provided locally per PrimeNG v19 pattern — scopes
-  // the confirm dialog to this component (dialog + future route both get
-  // their own scoped instance).
-  providers: [ConfirmationService],
   templateUrl: './namespace-panel.component.html',
   styleUrls: ['./namespace-panel.component.scss'],
 })
@@ -133,7 +145,6 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
 
   private apiService: ApiService = inject(ApiService);
   private messageService: MessageService = inject(MessageService);
-  private confirmationService: ConfirmationService = inject(ConfirmationService);
   private authService: AuthService = inject(AuthService);
   private destroyRef: DestroyRef = inject(DestroyRef);
 
@@ -245,6 +256,58 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
    * `destroyed` idiom.
    */
   deleting: boolean = false;
+
+  // -------------------------------------------------------------------
+  // Story 22.3 — Custom confirmation modal (ADR-018 §1–§4). Replaces the
+  // generic `<p-confirmDialog>` / `ConfirmationService` for the three confirm
+  // flows. Driven from component state (a visibility flag + a typed
+  // `ConfirmRequest`) rather than an imperative service call.
+  // -------------------------------------------------------------------
+
+  /** Controls visibility of the custom confirmation modal (AC 1, 2). */
+  confirmDialogVisible: boolean = false;
+
+  /**
+   * The active confirm request describing the modal's header/message/variant
+   * (AC 2). `null` when no confirm is open; nulled on close so a stale request
+   * cannot leak into the next open (AC 19).
+   */
+  confirmRequest: ConfirmRequest | null = null;
+
+  /**
+   * Per-flow accept callback captured when the confirm opens (AC 3). The
+   * Proceed (reset/delete) and Overwrite (drift) buttons invoke this; a private
+   * closure so each flow runs the same effect its old `confirm({ accept })`
+   * callback ran. `null` while no confirm is open.
+   */
+  private confirmAccept: (() => void) | null = null;
+
+  /**
+   * The drift variant's "Reload" (safe / focused-default) callback (AC 7). Only
+   * set for the `'drift'` variant; Reset/Delete leave it `null` (their safe
+   * branch is a bare cancel). Invoked by the Reload button.
+   */
+  private confirmReload: (() => void) | null = null;
+
+  /**
+   * Pending "resolve the drift `Promise<boolean>` to the SAFE branch (false)"
+   * thunk for an Esc / Cancel / X dismissal of the drift modal (AC 8). Set by
+   * `checkSaveDrift` while the drift modal is open; invoked by
+   * `onConfirmDialogHide` so a dismissal that bypasses a button still settles
+   * the awaited promise (and does so as the non-overwrite branch). `null` for
+   * the reset/delete variants (their dismissal is a bare cancel with no
+   * pending promise).
+   */
+  private confirmDriftResolve: (() => void) | null = null;
+
+  /**
+   * Safe-button reference for the confirmation modal — the Cancel button for
+   * the reset/delete variants, the Reload button for the drift variant. Used by
+   * `onConfirmDialogShow()` to autofocus it on open so Enter cancels (AC 9, 10),
+   * mirroring the Clone modal's `cloneDestInputRef` focus plumbing.
+   */
+  @ViewChild('confirmSafeBtn', { read: ElementRef })
+  confirmSafeBtnRef?: ElementRef<HTMLButtonElement>;
 
   // -------------------------------------------------------------------
   // Story 11.7 — UX-polish state (FR14 gate, FR16 a11y, FR17 Clone modal,
@@ -664,9 +727,138 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
    */
   private monacoActionsRegistered = false;
 
+  // -------------------------------------------------------------------
+  // Story 22.3 — Custom confirmation modal (ADR-018 §1–§4). One shared
+  // open/close surface reused by Reset-discard, Save-drift, and Delete; the
+  // safe button autofocuses on show so Enter/Esc cancel.
+  // -------------------------------------------------------------------
+
+  /**
+   * Open the custom confirmation modal (AC 2, 3). Captures the typed request +
+   * the per-flow callbacks the template buttons invoke, then flips the
+   * visibility flag. For the `'drift'` variant `onReload` is the safe/focused
+   * Reload branch and `onAccept` is the Overwrite branch; for `'reset'` /
+   * `'delete'` only `onAccept` (Proceed) is supplied and `onReload` is omitted.
+   */
+  private openConfirm(
+    request: ConfirmRequest,
+    onAccept: () => void,
+    onReload?: () => void,
+  ): void {
+    this.confirmRequest = request;
+    this.confirmAccept = onAccept;
+    this.confirmReload = onReload ?? null;
+    this.confirmDialogVisible = true;
+  }
+
+  /**
+   * Close the confirmation modal and null the request + callbacks so a stale
+   * request cannot leak into the next open (AC 19). Idempotent. The pending
+   * drift resolver (`confirmDriftResolve`) is intentionally NOT cleared here —
+   * `onConfirmDialogHide` owns resolving it to the safe branch before this runs.
+   */
+  private closeConfirm(): void {
+    this.confirmDialogVisible = false;
+    this.confirmRequest = null;
+    this.confirmAccept = null;
+    this.confirmReload = null;
+  }
+
+  /**
+   * Public predicate (AC 12) — true iff ANY secondary panel (the Clone modal
+   * OR the confirmation modal) is open. The host (`HomeComponent` config dialog,
+   * and any route-shell that binds `closeOnEscape`) reads this synchronously to
+   * suppress its own `closeOnEscape` while a secondary panel is open, so Esc
+   * closes only the topmost secondary panel (ADR-018 §3).
+   */
+  get hasSecondaryPanelOpen(): boolean {
+    return this.cloneDialogVisible || this.confirmDialogVisible;
+  }
+
+  /**
+   * The action-row label for the confirmation modal's affirmative button. The
+   * drift variant uses "Overwrite" (its Reload button is rendered separately);
+   * reset/delete use "Proceed". Returned as a getter so the template need not
+   * branch on the variant in three places.
+   */
+  get confirmProceedLabel(): string {
+    return this.confirmRequest?.variant === 'delete' ? 'Delete' : 'Proceed';
+  }
+
+  /**
+   * Proceed (reset/delete) button handler (AC 3, 5). Runs the captured accept
+   * callback then closes. For `'delete'` this fires `onDeleteConfirm()`; for
+   * `'reset'` the revert effect.
+   */
+  onConfirmProceedClick(): void {
+    const accept = this.confirmAccept;
+    this.closeConfirm();
+    accept?.();
+  }
+
+  /**
+   * Overwrite (drift) button handler (AC 7). The destructive drift branch:
+   * resolves the drift promise `true` (proceed to import the operator buffer)
+   * via the captured accept callback, then closes.
+   */
+  onConfirmOverwriteClick(): void {
+    const accept = this.confirmAccept;
+    // The drift promise is settled by `accept`; clear the dismissal resolver
+    // first so the resulting onHide does not re-settle it (AC 8).
+    this.confirmDriftResolve = null;
+    this.closeConfirm();
+    accept?.();
+  }
+
+  /**
+   * Reload (drift) button handler — the safe / focused default (AC 7, 9). Runs
+   * the rebase effect and resolves the drift promise `false` (skip the import)
+   * via the captured reload callback, then closes.
+   */
+  onConfirmReloadClick(): void {
+    const reload = this.confirmReload;
+    this.confirmDriftResolve = null;
+    this.closeConfirm();
+    reload?.();
+  }
+
+  /**
+   * Cancel (reset/delete) button handler (AC 10). The safe branch: closes
+   * without running any accept callback — no destructive/lossy effect occurs.
+   */
+  onConfirmCancelClick(): void {
+    this.closeConfirm();
+  }
+
+  /**
+   * `(onShow)` handler for the confirmation modal (AC 9). Mirrors
+   * `onCloneDialogShow`: defers the focus call by a microtask so PrimeNG has
+   * mounted the overlay, then focuses the safe button (Cancel for reset/delete,
+   * Reload for drift). Null-safe via the `@ViewChild` ref.
+   */
+  onConfirmDialogShow(): void {
+    setTimeout(() => {
+      this.confirmSafeBtnRef?.nativeElement.focus();
+    }, 0);
+  }
+
+  /**
+   * `(onHide)` handler for the confirmation modal (AC 8, 19). Resolves a
+   * still-pending drift dismissal to the SAFE branch (false — no blind
+   * overwrite), then resets the request + callbacks so nothing leaks into the
+   * next open. The drift resolver is invoked BEFORE `closeConfirm` so the
+   * awaited `onSaveClick` promise settles even on an Esc/X dismissal.
+   */
+  onConfirmDialogHide(): void {
+    const driftResolve = this.confirmDriftResolve;
+    this.confirmDriftResolve = null;
+    driftResolve?.();
+    this.closeConfirm();
+  }
+
   /**
    * Revert the buffer to `serverYaml` — the SOLE undo affordance now that
-   * Cancel is removed (ADR-017 §2). Guarded by the existing "Discard unsaved
+   * Cancel is removed (ADR-017 §2). Guarded by the custom "Discard unsaved
    * changes?" confirm; a no-op when clean (the Reset button is also disabled
    * via `[disabled]="buffer === serverYaml"`).
    */
@@ -674,11 +866,13 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
     if (this.buffer === this.serverYaml) {
       return;
     }
-    this.confirmationService.confirm({
-      header: 'Unsaved changes',
-      icon: 'pi pi-exclamation-triangle',
-      message: 'Discard unsaved changes?',
-      accept: () => {
+    this.openConfirm(
+      {
+        header: 'Unsaved changes',
+        message: 'Discard unsaved changes?',
+        variant: 'reset',
+      },
+      () => {
         if (this.destroyed) {
           return;
         }
@@ -687,7 +881,7 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
         this.rawSaveError = null;
         this.validatedBuffer = null;
       },
-    });
+    );
   }
 
   /**
@@ -807,12 +1001,15 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
    *               server YAML so the operator can re-Save against the fresh
    *               base).
    *
-   * PrimeNG's `confirmationService.confirm` is binary, so the affordance is
-   * mapped: `accept` = reload-and-rebase (resolve false), `reject` =
-   * overwrite (resolve true). A network error during the re-export falls
+   * ADR-018 §1 — the choice is rendered as **two explicit named buttons** in
+   * the custom confirmation modal (Reload + Overwrite), not a binary
+   * accept/reject. Reload (the safe, focused default) resolves `false`;
+   * Overwrite resolves `true`. Dismissing the modal (Esc / Cancel / X) resolves
+   * `false` — the safe branch — so an accidental dismissal never lands a blind
+   * overwrite (ADR-018 §2 / AC 8). A network error during the re-export falls
    * through to `true` (proceed) — the server still validates on import, so a
-   * genuinely-stale edit can only land a known-bad bundle, and operators
-   * should not be blocked by a hiccup.
+   * genuinely-stale edit can only land a known-bad bundle, and operators should
+   * not be blocked by a hiccup.
    */
   private async checkSaveDrift(savedBuffer: string): Promise<boolean> {
     let latestYaml: string;
@@ -831,16 +1028,35 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
       return true;
     }
     return new Promise<boolean>((resolve) => {
-      this.confirmationService.confirm({
-        header: 'Namespace modified',
-        icon: 'pi pi-exclamation-triangle',
-        message:
-          'The namespace was modified on the server since it was loaded. ' +
-          'Reload the latest version (discarding this Save), or overwrite it ' +
-          'with your changes?',
-        acceptLabel: 'Reload',
-        rejectLabel: 'Overwrite',
-        accept: () => {
+      // Guard against double-resolution: a button click resolves and closes;
+      // the resulting onHide must NOT resolve a second time. `settle` clears
+      // the pending resolver so `onConfirmDialogHide` becomes a no-op once a
+      // button has chosen.
+      let settled = false;
+      const settle = (value: boolean): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        this.confirmDriftResolve = null;
+        resolve(value);
+      };
+      // Esc / Cancel / X dismissal resolves the SAFE branch (false). Registered
+      // so `onConfirmDialogHide` can settle a dismissal that bypasses a button.
+      this.confirmDriftResolve = () => settle(false);
+      this.openConfirm(
+        {
+          header: 'Namespace modified',
+          message:
+            'The namespace was modified on the server since it was loaded. ' +
+            'Reload the latest version (discarding this Save), or overwrite it ' +
+            'with your changes?',
+          variant: 'drift',
+        },
+        // Overwrite (the destructive branch) → proceed with the operator buffer.
+        () => settle(true),
+        // Reload (the safe, focused default) → rebase + skip this import.
+        () => {
           if (!this.destroyed) {
             // Rebase onto the fresh server YAML; only move the buffer if it
             // was still pinned to the old snapshot (no local edits to lose).
@@ -849,10 +1065,9 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
             }
             this.serverYaml = latestYaml;
           }
-          resolve(false);
+          settle(false);
         },
-        reject: () => resolve(true),
-      });
+      );
     });
   }
 
@@ -1397,24 +1612,24 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   /**
    * Delete handler (AC 3). Always available (only gated by an in-flight
    * `deleting`). No-op while a delete is in flight (defence in depth alongside
-   * `[disabled]="deleting"`). Opens the PrimeNG confirm naming the current
-   * namespace; `accept` runs `onDeleteConfirm()`. No `reject` — cancelling is
-   * a no-op (panel unchanged, no network call).
+   * `[disabled]="deleting"`). Opens the custom confirmation modal naming the
+   * current namespace; the Proceed (destructive) button runs `onDeleteConfirm()`.
+   * Cancelling is a no-op (panel unchanged, no network call — AC 5).
    */
   onDeleteClick(): void {
     if (this.deleting) {
       return;
     }
-    this.confirmationService.confirm({
-      header: 'Delete namespace',
-      icon: 'pi pi-trash',
-      message: `Delete namespace "${this.namespace}" and all its entries? This cannot be undone.`,
-      accept: () => {
+    this.openConfirm(
+      {
+        header: 'Delete namespace',
+        message: `Delete namespace "${this.namespace}" and all its entries? This cannot be undone.`,
+        variant: 'delete',
+      },
+      () => {
         void this.onDeleteConfirm();
       },
-      // `reject` intentionally omitted — cancelling leaves the panel exactly
-      // as it was and fires no network request (AC 3).
-    });
+    );
   }
 
   /**

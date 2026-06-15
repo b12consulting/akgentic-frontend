@@ -7,9 +7,8 @@ import {
   NG_VALUE_ACCESSOR,
 } from '@angular/forms';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
-import { ConfirmationService, MessageService } from 'primeng/api';
+import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
@@ -106,7 +105,6 @@ describe('NamespacePanelComponent — import atomicity (NFR5)', () => {
   let component: NamespacePanelComponent;
   let apiSpy: jasmine.SpyObj<ApiService>;
   let messageSpy: jasmine.SpyObj<MessageService>;
-  let confirmationSpy: jasmine.SpyObj<ConfirmationService>;
 
   beforeEach(async () => {
     apiSpy = jasmine.createSpyObj('ApiService', [
@@ -114,12 +112,6 @@ describe('NamespacePanelComponent — import atomicity (NFR5)', () => {
       'importNamespace',
     ]);
     messageSpy = jasmine.createSpyObj('MessageService', ['add']);
-    // Real ConfirmationService instance + spy on .confirm — see
-    // `namespace-panel.component.spec.ts` for the rationale (PrimeNG's
-    // `<p-confirmDialog>` constructor subscribes to `requireConfirmation$`).
-    confirmationSpy =
-      new ConfirmationService() as jasmine.SpyObj<ConfirmationService>;
-    spyOn(confirmationSpy, 'confirm').and.callThrough();
 
     await TestBed.configureTestingModule({
       imports: [NamespacePanelComponent, NoopAnimationsModule],
@@ -128,22 +120,20 @@ describe('NamespacePanelComponent — import atomicity (NFR5)', () => {
         { provide: MessageService, useValue: messageSpy },
       ],
     })
+      // Story 22.3 — the panel no longer wires ConfirmationService /
+      // <p-confirmDialog>; the override just swaps Monaco for the stub.
       .overrideComponent(NamespacePanelComponent, {
         set: {
           imports: [
             CommonModule,
             FormsModule,
             ButtonModule,
-            ConfirmDialogModule,
             DialogModule,
             InputTextModule,
             ToggleSwitchModule,
             TooltipModule,
             StubMonacoEditorComponent,
             ValidationReportComponent,
-          ],
-          providers: [
-            { provide: ConfirmationService, useValue: confirmationSpy },
           ],
         },
       })
