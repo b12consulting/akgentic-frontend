@@ -1,11 +1,11 @@
 <ng-container *ngIf="agentsByCategory; else noAgentsPlaceholder">
   <p-tabs value="0">
     <p-tablist>
-      <p-tab value="0" *ngIf="(context$ | async)?.length">
+      <p-tab value="0" *ngIf="chatTabVisible$ | async">
         Chat with "{{ selectedAgent?.label }}"
       </p-tab>
       <p-tab
-        [value]="(context$ | async)?.length ? '1' : '0'"
+        [value]="(chatTabVisible$ | async) ? '1' : '0'"
         *ngIf="state$ | async"
       >
         State of "{{ selectedAgent?.label }}"
@@ -35,15 +35,16 @@
       </div>
     </p-tablist>
     <p-tabpanels>
-      <p-tabpanel value="0" *ngIf="(context$ | async)?.length">
+      <p-tabpanel value="0" *ngIf="chatTabVisible$ | async">
         <app-akgent-chat
           [context$]="context$"
+          [backstory$]="backstory$"
           [agentId]="akgentId"
           [agentName]="akgentName"
         ></app-akgent-chat>
       </p-tabpanel>
       <p-tabpanel
-        [value]="(context$ | async)?.length ? '1' : '0'"
+        [value]="(chatTabVisible$ | async) ? '1' : '0'"
         *ngIf="state$ | async"
       >
         <app-akgent-state

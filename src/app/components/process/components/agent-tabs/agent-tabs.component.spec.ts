@@ -187,4 +187,83 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
     expect(component.state$.value).toBeNull();
     expect(component.context$.value).toEqual([]);
   });
+
+  /** Synchronously read the current value of `chatTabVisible$`. */
+  function tabVisible(): boolean {
+    let visible: boolean | undefined;
+    component.chatTabVisible$.subscribe((v) => (visible = v)).unsubscribe();
+    return visible as boolean;
+  }
+
+  /** Synchronously read the current value of `backstory$`. */
+  function backstory(): string {
+    let value = '';
+    component.backstory$.subscribe((v) => (value = v)).unsubscribe();
+    return value;
+  }
+
+  // ===========================================================================
+  // Story 20-1 (ADR-007 §4) — never-run backstory head block + chat-tab
+  // visibility from AgentState.backstory. Visibility gates on conversation
+  // context OR a non-empty trimmed `state.backstory` (a running agent always has
+  // context; a never-run agent shows its backstory). The head-block fallback
+  // itself is verified at the consumer in akgent-chat.component.spec.ts.
+  // ===========================================================================
+
+  it('AC1/AC3 never-run: no system-prompt event but a non-empty state.backstory → backstory$ projects it and the chat tab is visible', () => {
+    // A freshly created agent: only a StateChangedMessage carrying the backstory,
+    // NO LlmSystemPromptEvent and NO LlmMessageEvent (never run).
+    log.append(mkStateChanged('agent-A', { backstory: 'You are Bob.' }, 's1'));
+    selectedAkgent$.next({ name: '@agent-A', agentId: 'agent-A' });
+
+    // No context …
+    expect(component.context$.value).toEqual([]);
+    // … but the backstory is on the client via the `state` store.
+    expect(backstory()).toBe('You are Bob.');
+    // The chat tab is reachable from state.backstory alone (no white panel).
+    expect(tabVisible()).toBeTrue();
+  });
+
+  it('AC1 trims: backstory$ projects the TRIMMED state.backstory', () => {
+    log.append(
+      mkStateChanged('agent-A', { backstory: '  You are Bob.\n' }, 's1'),
+    );
+    selectedAkgent$.next({ name: '@agent-A', agentId: 'agent-A' });
+
+    expect(backstory()).toBe('You are Bob.');
+    expect(tabVisible()).toBeTrue();
+  });
+
+  it('AC4 no false-positive: empty/whitespace state.backstory, no context → chat tab hidden', () => {
+    log.append(mkStateChanged('agent-A', { backstory: '   \n\t ' }, 's1'));
+    selectedAkgent$.next({ name: '@agent-A', agentId: 'agent-A' });
+
+    expect(component.context$.value).toEqual([]);
+    // Whitespace-only backstory trims to '' — it must NOT force the tab open.
+    expect(backstory()).toBe('');
+    expect(tabVisible()).toBeFalse();
+  });
+
+  it('AC4 no false-positive: a state with no backstory field at all → backstory$ is "" and the tab is hidden', () => {
+    log.append(mkStateChanged('agent-A', { phase: 'busy' }, 's1'));
+    selectedAkgent$.next({ name: '@agent-A', agentId: 'agent-A' });
+
+    expect(backstory()).toBe('');
+    expect(tabVisible()).toBeFalse();
+  });
+
+  it('chatTabVisible$ is false for an agent with neither context nor backstory', () => {
+    selectedAkgent$.next({ name: '@unknown', agentId: 'unknown' });
+
+    expect(backstory()).toBe('');
+    expect(tabVisible()).toBeFalse();
+  });
+
+  it('AC3 context-only: an agent with conversation context (no backstory) is visible', () => {
+    log.append(mkLlmEvent('agent-A', { role: 'user', content: 'hi' }, 'e1'));
+    selectedAkgent$.next({ name: '@agent-A', agentId: 'agent-A' });
+
+    expect(component.context$.value).toEqual([{ role: 'user', content: 'hi' }]);
+    expect(tabVisible()).toBeTrue();
+  });
 });

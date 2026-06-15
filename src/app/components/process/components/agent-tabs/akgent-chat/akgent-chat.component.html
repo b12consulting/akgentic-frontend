@@ -8,14 +8,16 @@
 -->
 <div class="trace-scroll" #traceScroll (scroll)="onScroll()">
   <!--
-    Head system block — sourced ONCE from `systemPrompt$` (SystemPromptSelector,
-    Story 16-1), independently of `context.length`. Latest-wins. `*ngIf ... as
-    rows` + `rows.length` guard renders nothing when there are no system rows
-    (AC8). `async` keeps it OnPush-safe and self-unsubscribing.
+    Head system block — sourced from `headRows$`: the event-sourced
+    `systemPrompt$` rows (SystemPromptSelector, Story 16-1) when present
+    (latest-wins), else the never-run backstory fallback synthesized from
+    `backstory$` (ADR-007 §4). Independent of `context.length`. `*ngIf ... as
+    rows` + `rows.length` guard renders nothing when there are no rows (AC8).
+    `async` keeps it OnPush-safe and self-unsubscribing.
   -->
   <div
     class="head-system-container"
-    *ngIf="systemPrompt$ | async as rows"
+    *ngIf="headRows$ | async as rows"
   >
     <ng-container *ngIf="rows.length">
       <div class="card-container" *ngFor="let row of rows">

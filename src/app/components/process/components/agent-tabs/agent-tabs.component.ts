@@ -48,6 +48,38 @@ export class AgentTabsComponent implements OnInit {
   context$: BehaviorSubject<any[]> = new BehaviorSubject<any[]>([]);
   state$: BehaviorSubject<any> = new BehaviorSubject<any>(null);
 
+  // ADR-007 §4: a NEVER-RUN agent has NO `LlmSystemPromptEvent` (the backend
+  // emits no creation event). Its backstory is already on the client as the
+  // serialized `AgentState.backstory`, folded by the `state` PerAgentStore
+  // (value shape `{ schema, state }`). Project the trimmed backstory string so
+  // the chat component can render it as the head-block fallback and so chat-tab
+  // visibility can account for it. Emits `''` when there is no backstory.
+  backstory$ = this.state$.pipe(map((state) => this.readBackstory(state)));
+
+  // The chat tab is shown when the agent has conversation context OR a non-empty
+  // `state.backstory` to display (ADR-007 §4 never-run case — an empty/whitespace
+  // backstory must NOT force the tab open). A running agent always has context;
+  // a never-run agent shows `state.backstory`. When visible it occupies slot "0"
+  // and the State tab moves to "1".
+  chatTabVisible$ = combineLatest([this.context$, this.state$]).pipe(
+    map(
+      ([context, state]) =>
+        (context?.length ?? 0) > 0 || this.readBackstory(state).length > 0,
+    ),
+  );
+
+  /**
+   * ADR-007 §4 — read the agent's backstory from the `state` PerAgentStore
+   * value (`{ schema, state }`, where `state` is the serialized `AgentState`
+   * carrying `backstory: str`). Returns the TRIMMED backstory, or `''` when the
+   * state, raw state, or backstory is absent/blank. Defensive: never throws on
+   * `null`/`undefined`/non-string.
+   */
+  private readBackstory(stateValue: any): string {
+    const raw = stateValue?.state?.backstory;
+    return typeof raw === 'string' ? raw.trim() : '';
+  }
+
   // Subject to unsubscribe from agent-specific subscriptions when agent changes
   private agentSubscriptions$ = new Subject<void>();
 

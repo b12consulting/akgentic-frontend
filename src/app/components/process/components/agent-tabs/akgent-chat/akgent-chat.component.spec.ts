@@ -556,6 +556,203 @@ describe('AkgentChatComponent — head system block (Story 16-2)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Story 20-1 (ADR-007 §4) — never-run backstory head-block FALLBACK. A
+// never-run agent has NO LlmSystemPromptEvent; its backstory comes from the
+// host via the `backstory$` input (projected from AgentState.backstory). The
+// head block renders the synthetic backstory row when no event rows exist, the
+// event rows when present (latest-wins), and nothing when both are empty.
+// ---------------------------------------------------------------------------
+describe('AkgentChatComponent — never-run backstory head block (Story 20-1)', () => {
+  const AGENT = 'a-mgr';
+
+  function setup(backstory = ''): {
+    fixture: ComponentFixture<AkgentChatComponent>;
+    component: AkgentChatComponent;
+    log: MessageLogService;
+    backstory$: BehaviorSubject<string>;
+  } {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [AkgentChatComponent],
+      providers: [
+        {
+          provide: ApiService,
+          useValue: {
+            sendMessage: jasmine.createSpy('sendMessage').and.resolveTo(undefined),
+          },
+        },
+        {
+          provide: UtilService,
+          useValue: { copyToClipboard: () => {}, formatJSON: (v: any) => v },
+        },
+        {
+          provide: ContextService,
+          useValue: {
+            currentTeamRunning$: new BehaviorSubject<boolean>(true),
+            currentProcessId$: new BehaviorSubject<string>('proc-1'),
+          },
+        },
+        MessageLogService,
+        PerAgentStoreRegistry,
+        {
+          provide: IngestionService,
+          useFactory: (registry: PerAgentStoreRegistry) => ({
+            commands: { snapshot: (_id: string) => undefined },
+            systemPrompt: registry.register<SystemPromptValue>({
+              name: 'systemPrompt',
+              match: systemPromptMatch,
+              reduce: systemPromptReduce,
+            }),
+          }),
+          deps: [PerAgentStoreRegistry],
+        },
+        SystemPromptSelector,
+        provideNoopAnimations(),
+      ],
+    });
+
+    const log = TestBed.inject(MessageLogService);
+    const fixture = TestBed.createComponent(AkgentChatComponent);
+    const component = fixture.componentInstance;
+    const backstory$ = new BehaviorSubject<string>(backstory);
+    component.context$ = new BehaviorSubject<any[]>([]);
+    component.backstory$ = backstory$;
+    component.agentId = AGENT;
+    component.agentName = '@' + AGENT;
+    return { fixture, component, log, backstory$ };
+  }
+
+  function headHeaders(fixture: ComponentFixture<AkgentChatComponent>): string[] {
+    const el: HTMLElement = fixture.nativeElement;
+    return Array.from(
+      el.querySelectorAll('.head-system-container .card-header')
+    ).map((n) => (n.textContent ?? '').trim());
+  }
+
+  function headBodies(fixture: ComponentFixture<AkgentChatComponent>): string[] {
+    const el: HTMLElement = fixture.nativeElement;
+    return Array.from(
+      el.querySelectorAll('.head-system-container .text-container')
+    ).map((n) => (n.textContent ?? '').trim());
+  }
+
+  it('AC1 never-run fallback: no event → head block shows a single backstory row from backstory$ (agent_backstory label parity)', () => {
+    const { fixture } = setup('You are Bob.');
+    // No LlmSystemPromptEvent in the log — never-run agent.
+    fixture.detectChanges();
+
+    expect(headHeaders(fixture)).toEqual(['System : agent_backstory']);
+    expect(headBodies(fixture)).toEqual(['You are Bob.']);
+  });
+
+  it('AC4 empty backstory + no event → no head fieldset, no throw', () => {
+    const { fixture } = setup('');
+    expect(() => fixture.detectChanges()).not.toThrow();
+    expect(headHeaders(fixture)).toEqual([]);
+    expect(headBodies(fixture)).toEqual([]);
+  });
+
+  it('AC2 event wins: a LlmSystemPromptEvent is present → head block renders the EVENT rows, not the backstory fallback', () => {
+    const { fixture, log } = setup('You are Bob.');
+    log.append(
+      systemPromptEnvelope(AGENT, [
+        { dynamic_ref: 'team.roster', content: 'roster v1' },
+      ]),
+    );
+    fixture.detectChanges();
+
+    // Event rows win — the synthetic backstory row is NOT shown.
+    expect(headHeaders(fixture)).toEqual(['System : roster']);
+    expect(headBodies(fixture)).toEqual(['roster v1']);
+  });
+
+  it('AC2 latest-wins handoff: state-sourced backstory → first run event replaces it with NO duplicate and NO leftover backstory row', () => {
+    const { fixture, log } = setup('You are Bob.');
+    // Phase 1 — never-run: the state backstory row renders.
+    fixture.detectChanges();
+    expect(headBodies(fixture)).toEqual(['You are Bob.']);
+
+    // Phase 2 — first run emits its system-prompt event.
+    log.append(
+      systemPromptEnvelope(AGENT, [
+        { dynamic_ref: 'agent_backstory', content: 'You are Bob (run 1).' },
+        { dynamic_ref: 'current_date', content: 'day 1' },
+      ]),
+    );
+    fixture.detectChanges();
+
+    // The head block switches to the event rendering; exactly the event rows,
+    // no leftover/duplicate synthetic backstory row.
+    expect(headHeaders(fixture)).toEqual([
+      'System : agent_backstory',
+      'System : current_date',
+    ]);
+    expect(headBodies(fixture)).toEqual(['You are Bob (run 1).', 'day 1']);
+  });
+
+  it('backstory$ updates live: a later non-empty backstory renders the fallback row when no event exists', () => {
+    const { fixture, backstory$ } = setup('');
+    fixture.detectChanges();
+    expect(headHeaders(fixture)).toEqual([]);
+
+    backstory$.next('Backstory arrived.');
+    fixture.detectChanges();
+    expect(headBodies(fixture)).toEqual(['Backstory arrived.']);
+  });
+
+  it('omitted backstory$ input (legacy caller): no event, no backstory → empty head block, no throw', () => {
+    // A caller that does NOT bind backstory$ keeps the event-only head block.
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [AkgentChatComponent],
+      providers: [
+        {
+          provide: ApiService,
+          useValue: {
+            sendMessage: jasmine.createSpy('sendMessage').and.resolveTo(undefined),
+          },
+        },
+        {
+          provide: UtilService,
+          useValue: { copyToClipboard: () => {}, formatJSON: (v: any) => v },
+        },
+        {
+          provide: ContextService,
+          useValue: {
+            currentTeamRunning$: new BehaviorSubject<boolean>(true),
+            currentProcessId$: new BehaviorSubject<string>('proc-1'),
+          },
+        },
+        MessageLogService,
+        PerAgentStoreRegistry,
+        {
+          provide: IngestionService,
+          useFactory: (registry: PerAgentStoreRegistry) => ({
+            commands: { snapshot: (_id: string) => undefined },
+            systemPrompt: registry.register<SystemPromptValue>({
+              name: 'systemPrompt',
+              match: systemPromptMatch,
+              reduce: systemPromptReduce,
+            }),
+          }),
+          deps: [PerAgentStoreRegistry],
+        },
+        SystemPromptSelector,
+        provideNoopAnimations(),
+      ],
+    });
+    const fixture = TestBed.createComponent(AkgentChatComponent);
+    const component = fixture.componentInstance;
+    component.context$ = new BehaviorSubject<any[]>([]);
+    component.agentId = AGENT;
+    component.agentName = '@' + AGENT;
+    // backstory$ intentionally left undefined.
+    expect(() => fixture.detectChanges()).not.toThrow();
+    expect(headHeaders(fixture)).toEqual([]);
+  });
+});
+
 describe('AkgentChatComponent — follow mode + status pill', () => {
   let running: BehaviorSubject<boolean>;
 
