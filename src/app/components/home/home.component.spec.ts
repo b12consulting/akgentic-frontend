@@ -348,7 +348,7 @@ describe('HomeComponent', () => {
     return el as HTMLButtonElement | null;
   }
 
-  it('(AC14 11.2) "Edit namespace YAML" button is disabled when no namespace is selected', async () => {
+  it('(AC14 11.2) "Edit Configuration" button is disabled when no namespace is selected', async () => {
     component.selectedNamespace$.next(null);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -360,7 +360,7 @@ describe('HomeComponent', () => {
     expect(btn!.disabled).toBeTrue();
   });
 
-  it('(AC14 11.2) "Edit namespace YAML" button is enabled when a namespace is selected', async () => {
+  it('(AC14 11.2) "Edit Configuration" button is enabled when a namespace is selected', async () => {
     // The refreshed list (driven by ngOnInit's loadNamespaces) must contain
     // the seeded selection — otherwise the Story 14.2 reconciliation correctly
     // drops a selection absent from the fetched list, clearing it to null.
