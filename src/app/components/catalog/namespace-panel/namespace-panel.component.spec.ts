@@ -24,7 +24,7 @@ import { NuMonacoEditorEvent } from '@ng-util/monaco-editor';
 import yaml from 'js-yaml';
 import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
-import { DialogModule } from 'primeng/dialog';
+import { Dialog, DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
@@ -3605,24 +3605,51 @@ entries: {}
   });
 
   // ---------------------------------------------------------------------
-  // ADR-018 Amendment §a (FIX 4) — secondary modals are modal + draggable.
+  // ADR-018 Amendment §a (FIX 4) — secondary modals are modal but NON-draggable.
+  // Read the PrimeNG Dialog inputs back off the component instance so the test
+  // FAILS if someone flips `draggable` on or drops `modal`.
   // ---------------------------------------------------------------------
 
-  it('(ADR-018 §a) the confirmation <p-dialog> is rendered modal and draggable', async () => {
+  /**
+   * Resolve a PrimeNG `Dialog` directive instance by its host `data-test`
+   * attribute. `modal` / `draggable` are `booleanAttribute`-transformed inputs,
+   * so reading them back yields the resolved boolean the template bound.
+   */
+  function dialogInstanceByTestId(testId: string): Dialog {
+    const debugEl = fixture.debugElement
+      .queryAll(By.directive(Dialog))
+      .find(
+        (de) =>
+          (de.nativeElement as HTMLElement).getAttribute('data-test') ===
+          testId,
+      );
+    expect(debugEl)
+      .withContext(`p-dialog[data-test="${testId}"] present`)
+      .toBeTruthy();
+    return debugEl!.componentInstance as Dialog;
+  }
+
+  it('(ADR-018 §a) the confirmation <p-dialog> is modal and NON-draggable', async () => {
     await loaded('foo: 1\n');
     component.buffer = 'foo: 2\n';
     component.onResetClick();
     fixture.detectChanges();
     await fixture.whenStable();
 
-    // Draggable dialogs expose a grab cursor on their header in PrimeNG; the
-    // deterministic contract here is that the dialog container rendered (modal
-    // mask present) — the modal/draggable inputs are asserted via the template
-    // binding, which compiles only if the inputs exist on <p-dialog>.
-    const container = document.querySelector(
-      '[data-test="confirm-dialog"] .p-dialog, .p-dialog',
-    ) as HTMLElement | null;
-    expect(container).withContext('confirm dialog container rendered').not.toBeNull();
+    const confirmDialog = dialogInstanceByTestId('confirm-dialog');
+    expect(confirmDialog.modal).toBe(true);
+    expect(confirmDialog.draggable).toBe(false);
     component.onConfirmDialogHide();
+  });
+
+  it('(ADR-018 §a) the Clone <p-dialog> is modal and NON-draggable', async () => {
+    await loadedWithCloneSrc(['src']);
+    component.onCloneClick();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const cloneDialog = dialogInstanceByTestId('clone-dialog');
+    expect(cloneDialog.modal).toBe(true);
+    expect(cloneDialog.draggable).toBe(false);
   });
 });

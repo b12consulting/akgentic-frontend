@@ -150,7 +150,7 @@
     (onShow)="onCloneDialogShow()"
     (onHide)="onCloneDialogHide()"
     [modal]="true"
-    [draggable]="true"
+    [draggable]="false"
     [closeOnEscape]="false"
     styleClass="np-secondary-modal"
     maskStyleClass="np-secondary-modal-mask"
@@ -159,12 +159,13 @@
     data-test="clone-dialog"
   >
     <!-- ADR-018 Amendment §a/§b — the secondary modal is properly modal
-         (draggable, pointer-contained) but paints NO dimming backdrop: the
+         (pointer-contained) but paints NO dimming backdrop: the
          `np-secondary-modal` styleClass makes `.p-dialog-mask` transparent (see
-         the component SCSS). `[closeOnEscape]="false"` disables PrimeNG's
-         document-level Esc listener for THIS modal; the single coordinated
-         Escape handler (the host's capture-phase keydown → `handleSecondaryEscape`)
-         closes only the topmost secondary panel. -->
+         the component SCSS). `[draggable]="false"` — fixed-position, dragging is
+         disabled (operator preference; it was glitchy). `[closeOnEscape]="false"`
+         disables PrimeNG's document-level Esc listener for THIS modal; the single
+         coordinated Escape handler (the host's capture-phase keydown →
+         `handleSecondaryEscape`) closes only the topmost secondary panel. -->
     <div class="namespace-panel__clone-body">
       <label for="clone-dest-name-input">Destination name</label>
       <input
@@ -294,9 +295,10 @@
     (`confirmDialogVisible` + the typed `confirmRequest`), not an imperative
     service call.
 
-    - `[modal]="true"` + `[draggable]="true"` + `styleClass="np-secondary-modal"`
-      (transparent `.p-dialog-mask` in the SCSS) → properly modal and draggable
-      with NO dimming backdrop (ADR-018 Amendment §a / FIX 4).
+    - `[modal]="true"` + `[draggable]="false"` + `styleClass="np-secondary-modal"`
+      (transparent `.p-dialog-mask` in the SCSS) → properly modal, fixed-position
+      (dragging disabled — operator preference; it was glitchy), NO dimming
+      backdrop (ADR-018 Amendment §a / FIX 4).
     - `[closeOnEscape]="false"` (Amendment §b / FIX 2): the host's single
       coordinated Escape handler closes only the topmost secondary modal via
       `handleSecondaryEscape`.
@@ -310,7 +312,7 @@
     (onShow)="onConfirmDialogShow()"
     (onHide)="onConfirmDialogHide()"
     [modal]="true"
-    [draggable]="true"
+    [draggable]="false"
     [closeOnEscape]="false"
     styleClass="np-secondary-modal"
     maskStyleClass="np-secondary-modal-mask"
