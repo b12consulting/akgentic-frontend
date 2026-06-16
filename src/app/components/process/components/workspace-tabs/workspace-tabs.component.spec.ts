@@ -173,7 +173,8 @@ describe('WorkspaceTabsComponent', () => {
     const found = explorers();
     expect(found.length).toBe(1);
     expect(hasTabChrome()).toBe(false);
-    expect(found[0].workspaceId).toBeUndefined();
+    // workspaceId is a signal input (Story 24-1); read it via the getter.
+    expect(found[0].workspaceId()).toBeUndefined();
   });
 
   it('(single named) one named workspace → explorer bound to its workspaceId, no tab chrome', () => {
@@ -184,7 +185,7 @@ describe('WorkspaceTabsComponent', () => {
     const found = explorers();
     expect(found.length).toBe(1);
     expect(hasTabChrome()).toBe(false);
-    expect(found[0].workspaceId).toBe('ws-solo');
+    expect(found[0].workspaceId()).toBe('ws-solo');
   });
 
   it('(23-3 AC1, AC2, AC4) default + 1 named → tab chrome, one panel per descriptor, correct bindings', () => {
@@ -204,13 +205,14 @@ describe('WorkspaceTabsComponent', () => {
     // behaviour (workspaceId undefined) (AC2).
     let found = explorers();
     expect(found.length).toBe(1);
-    expect(found[0].workspaceId).toBeUndefined();
+    // workspaceId is a signal input (Story 24-1); read it via the getter.
+    expect(found[0].workspaceId()).toBeUndefined();
 
     // Named tab (index 1): explorer is bound to its workspace id (AC2).
     activateTab(1);
     found = explorers();
     expect(found.length).toBe(1);
-    expect(found[0].workspaceId).toBe('ws-named');
+    expect(found[0].workspaceId()).toBe('ws-named');
   });
 
   it('(23-3 AC5) tab labels render from descriptor.label', () => {

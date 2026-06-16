@@ -1,5 +1,9 @@
 import { CommonModule } from '@angular/common';
-import { CUSTOM_ELEMENTS_SCHEMA, SimpleChange } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  CUSTOM_ELEMENTS_SCHEMA,
+} from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { TreeNode } from 'primeng/api';
@@ -35,6 +39,20 @@ function fileNode(overrides: Partial<FileNode>): FileNode {
     extension: overrides.extension,
     ...overrides,
   };
+}
+
+/**
+ * Drive the declarative `toObservable(workspaceId) → switchMap` root load:
+ * `detectChanges()` flushes the effect that feeds the signal value into the
+ * stream; `whenStable()` waits for the resolved fetch promise to settle the
+ * signals. Used everywhere the old spec called `ngOnInit()`/`loadWorkspace()`.
+ */
+async function flushRootLoad(
+  fixture: ComponentFixture<WorkspaceExplorerComponent>,
+): Promise<void> {
+  fixture.detectChanges();
+  await fixture.whenStable();
+  fixture.detectChanges();
 }
 
 describe('WorkspaceExplorerComponent', () => {
@@ -78,9 +96,9 @@ describe('WorkspaceExplorerComponent', () => {
       .compileComponents();
   });
 
-  // --- loadWorkspace -------------------------------------------------
+  // --- declarative root-tree load -----------------------------------
 
-  describe('loadWorkspace', () => {
+  describe('root-tree load', () => {
     it('scenario 1 — root listing wraps backend entries under synthetic Root Folder', async () => {
       workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
         fileNode({
@@ -95,13 +113,15 @@ describe('WorkspaceExplorerComponent', () => {
 
       fixture = TestBed.createComponent(WorkspaceExplorerComponent);
       component = fixture.componentInstance;
-      // Don't detectChanges yet — call loadWorkspace explicitly and await it
-      await component.ngOnInit();
+      await flushRootLoad(fixture);
 
-      expect(component.treeNodes.length).toBe(1);
-      const root = component.treeNodes[0];
+      expect(component.treeNodes().length).toBe(1);
+      const root = component.treeNodes()[0];
       expect(root.label).toBe('Root Folder');
+      expect(root.icon).toBe('pi pi-home');
+      expect(root.expanded).toBe(true);
       expect(root.children?.length).toBe(2);
+      expect(component.errorMessage()).toBeNull();
 
       // The directory child should be lazy (children === undefined, leaf false)
       const subChild = root.children![1];
@@ -120,13 +140,13 @@ describe('WorkspaceExplorerComponent', () => {
 
       fixture = TestBed.createComponent(WorkspaceExplorerComponent);
       component = fixture.componentInstance;
-      await component.ngOnInit();
+      await flushRootLoad(fixture);
 
       // Synthetic root always exists; its children are []
-      expect(component.treeNodes.length).toBe(1);
-      expect(component.treeNodes[0].label).toBe('Root Folder');
-      expect(component.treeNodes[0].children).toEqual([]);
-      expect(component.errorMessage).toBeNull();
+      expect(component.treeNodes().length).toBe(1);
+      expect(component.treeNodes()[0].label).toBe('Root Folder');
+      expect(component.treeNodes()[0].children).toEqual([]);
+      expect(component.errorMessage()).toBeNull();
     });
 
     it('scenario 3 — HTTP error sets errorMessage and clears loading', async () => {
@@ -134,10 +154,10 @@ describe('WorkspaceExplorerComponent', () => {
 
       fixture = TestBed.createComponent(WorkspaceExplorerComponent);
       component = fixture.componentInstance;
-      await component.ngOnInit();
+      await flushRootLoad(fixture);
 
-      expect(component.errorMessage).toBe('500');
-      expect(component.loading).toBe(false);
+      expect(component.errorMessage()).toBe('500');
+      expect(component.loading()).toBe(false);
     });
   });
 
@@ -159,7 +179,7 @@ describe('WorkspaceExplorerComponent', () => {
         leaf: false,
         children: undefined,
       };
-      component.treeNodes = [subDir];
+      component.treeNodes.set([subDir]);
 
       workspaceServiceSpy.getWorkspaceTree.calls.reset();
       workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
@@ -190,7 +210,7 @@ describe('WorkspaceExplorerComponent', () => {
         leaf: false,
         children: undefined,
       };
-      component.treeNodes = [subDir];
+      component.treeNodes.set([subDir]);
 
       workspaceServiceSpy.getWorkspaceTree.calls.reset();
       workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
@@ -224,7 +244,7 @@ describe('WorkspaceExplorerComponent', () => {
         leaf: false,
         children: undefined,
       };
-      component.treeNodes = [subDir];
+      component.treeNodes.set([subDir]);
 
       workspaceServiceSpy.getWorkspaceTree.calls.reset();
       workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
@@ -243,14 +263,14 @@ describe('WorkspaceExplorerComponent', () => {
         leaf: false,
         children: undefined,
       };
-      component.treeNodes = [subDir];
+      component.treeNodes.set([subDir]);
 
       workspaceServiceSpy.getWorkspaceTree.calls.reset();
       workspaceServiceSpy.getWorkspaceTree.and.rejectWith(new Error('boom'));
 
       await component.onNodeExpand({ node: subDir });
 
-      expect(component.errorMessage).toBe('boom');
+      expect(component.errorMessage()).toBe('boom');
       expect(subDir.children).toBeUndefined();
     });
   });
@@ -259,7 +279,7 @@ describe('WorkspaceExplorerComponent', () => {
 
   describe('handleUploadComplete', () => {
     beforeEach(() => {
-      // Keep ngOnInit's loadWorkspace call happy with an empty listing
+      // Keep the declarative root load happy with an empty listing
       workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
       workspaceServiceSpy.uploadFiles.and.resolveTo();
       fixture = TestBed.createComponent(WorkspaceExplorerComponent);
@@ -295,7 +315,7 @@ describe('WorkspaceExplorerComponent', () => {
         children: [docs],
         expanded: true,
       };
-      component.treeNodes = [root];
+      component.treeNodes.set([root]);
       component.uploadTargetPath = 'docs';
 
       // Stub the upload modal ViewChild
@@ -320,8 +340,6 @@ describe('WorkspaceExplorerComponent', () => {
         }),
       ]);
 
-      const loadWorkspaceSpy = spyOn(component, 'loadWorkspace').and.callThrough();
-
       await component.handleUploadComplete();
 
       expect(workspaceServiceSpy.uploadFiles).toHaveBeenCalledTimes(1);
@@ -330,11 +348,8 @@ describe('WorkspaceExplorerComponent', () => {
         'docs'
       );
 
-      const refreshedDocs = component.treeNodes[0].children![0];
+      const refreshedDocs = component.treeNodes()[0].children![0];
       expect(refreshedDocs.children?.length).toBe(2);
-
-      // Critically: no full-tree refresh was issued
-      expect(loadWorkspaceSpy).not.toHaveBeenCalled();
     });
 
     it('scenario 10 — root target refreshes the synthetic Root Folder wrapper children', async () => {
@@ -348,7 +363,7 @@ describe('WorkspaceExplorerComponent', () => {
         children: [],
         expanded: true,
       };
-      component.treeNodes = [root];
+      component.treeNodes.set([root]);
       component.uploadTargetPath = '';
       component.uploadModal = {
         getSelectedFiles: () => [new File(['x'], 'c.md')],
@@ -371,10 +386,10 @@ describe('WorkspaceExplorerComponent', () => {
         ''
       );
       // Root wrapper itself stays; its children are replaced with fresh listing
-      expect(component.treeNodes.length).toBe(1);
-      expect(component.treeNodes[0].label).toBe('Root Folder');
-      expect(component.treeNodes[0].children?.length).toBe(1);
-      expect(component.treeNodes[0].children![0].label).toBe('c.md');
+      expect(component.treeNodes().length).toBe(1);
+      expect(component.treeNodes()[0].label).toBe('Root Folder');
+      expect(component.treeNodes()[0].children?.length).toBe(1);
+      expect(component.treeNodes()[0].children![0].label).toBe('c.md');
     });
 
     it('scenario 11 — no files selected: no-op (uploadFiles NOT called)', async () => {
@@ -389,7 +404,7 @@ describe('WorkspaceExplorerComponent', () => {
     });
   });
 
-  // --- workspaceId threading (AC6, AC7) ------------------------------
+  // --- workspaceId threading (AC7) -----------------------------------
 
   describe('workspaceId threading', () => {
     beforeEach(() => {
@@ -406,10 +421,10 @@ describe('WorkspaceExplorerComponent', () => {
     });
 
     it('scenario 12 — set workspaceId threads as the trailing arg on every call', async () => {
-      component.workspaceId = 'ws-1';
+      fixture.componentRef.setInput('workspaceId', 'ws-1');
 
-      // getWorkspaceTree via loadWorkspace
-      await component.loadWorkspace();
+      // getWorkspaceTree via the declarative root load
+      await flushRootLoad(fixture);
       expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledWith(
         'proc',
         '',
@@ -439,11 +454,13 @@ describe('WorkspaceExplorerComponent', () => {
       );
 
       // getDownloadUrl via downloadFile
-      component.selectedFile = fileNode({
-        name: 'a.md',
-        path: 'docs/a.md',
-        type: 'file',
-      });
+      component.selectedFile.set(
+        fileNode({
+          name: 'a.md',
+          path: 'docs/a.md',
+          type: 'file',
+        })
+      );
       spyOn(window, 'open');
       component.downloadFile();
       expect(workspaceServiceSpy.getDownloadUrl).toHaveBeenCalledWith(
@@ -467,8 +484,8 @@ describe('WorkspaceExplorerComponent', () => {
     });
 
     it('scenario 13 — unset workspaceId keeps the 2-arg getWorkspaceTree shape', async () => {
-      // workspaceId left undefined
-      await component.loadWorkspace();
+      // workspaceId left undefined — the root load issues the 2-arg call
+      await flushRootLoad(fixture);
       expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith(
         'proc',
         ''
@@ -476,45 +493,193 @@ describe('WorkspaceExplorerComponent', () => {
     });
   });
 
-  // --- ngOnChanges refetch (AC8) -------------------------------------
+  // --- workspaceId signal-input re-trigger + race closure (AC6) -------
 
-  describe('ngOnChanges refetch', () => {
+  describe('workspaceId signal-input re-trigger', () => {
     beforeEach(() => {
       workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
       fixture = TestBed.createComponent(WorkspaceExplorerComponent);
       component = fixture.componentInstance;
-      component.processId = 'proc';
     });
 
-    it('scenario 14 — a non-first workspaceId change refetches the tree', () => {
-      const loadSpy = spyOn(component, 'loadWorkspace').and.resolveTo();
+    it('scenario 14 — a workspaceId change re-triggers the root fetch via switchMap', async () => {
+      // initial load (undefined workspaceId)
+      await flushRootLoad(fixture);
+      expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith(
+        'proc',
+        ''
+      );
 
-      component.workspaceId = 'ws-2';
-      component.ngOnChanges({
-        workspaceId: new SimpleChange('ws-1', 'ws-2', false),
-      });
+      // change the bound signal input ⇒ a new switchMap emission ⇒ refetch
+      fixture.componentRef.setInput('workspaceId', 'ws-2');
+      await flushRootLoad(fixture);
 
-      expect(loadSpy).toHaveBeenCalledTimes(1);
+      expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledWith(
+        'proc',
+        '',
+        'ws-2'
+      );
+      expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(2);
     });
 
-    it('scenario 15 — the first (init) change does NOT trigger a refetch', () => {
-      const loadSpy = spyOn(component, 'loadWorkspace').and.resolveTo();
+    it('scenario 15 — setting the same workspaceId value does not refetch', async () => {
+      fixture.componentRef.setInput('workspaceId', 'ws-1');
+      await flushRootLoad(fixture);
+      expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(1);
 
-      component.ngOnChanges({
-        workspaceId: new SimpleChange(undefined, 'ws-1', true),
-      });
-
-      expect(loadSpy).not.toHaveBeenCalled();
+      // signal inputs dedupe equal values: no new emission, no refetch
+      fixture.componentRef.setInput('workspaceId', 'ws-1');
+      await flushRootLoad(fixture);
+      expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(1);
     });
 
-    it('scenario 16 — an unchanged value does not refetch', () => {
-      const loadSpy = spyOn(component, 'loadWorkspace').and.resolveTo();
+    it('scenario 16 — a superseded slow response does not clobber the newer tab tree (switchMap race closure)', async () => {
+      // First (slow) fetch for ws-A: resolves LATE.
+      let resolveSlow!: (v: FileNode[]) => void;
+      const slow = new Promise<FileNode[]>((res) => (resolveSlow = res));
+      workspaceServiceSpy.getWorkspaceTree.and.returnValue(slow);
 
-      component.ngOnChanges({
-        workspaceId: new SimpleChange('ws-1', 'ws-1', false),
-      });
+      fixture.componentRef.setInput('workspaceId', 'ws-A');
+      fixture.detectChanges(); // kick the ws-A switchMap emission (still pending)
 
-      expect(loadSpy).not.toHaveBeenCalled();
+      // Second (fast) fetch for ws-B: resolves immediately and wins.
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
+        fileNode({ name: 'fromB.md', path: 'fromB.md', type: 'file' }),
+      ]);
+      fixture.componentRef.setInput('workspaceId', 'ws-B');
+      await flushRootLoad(fixture);
+
+      // ws-B's tree is in place
+      expect(component.treeNodes()[0].children![0].label).toBe('fromB.md');
+
+      // Now the stale ws-A response finally arrives — switchMap cancelled it,
+      // so it must NOT overwrite ws-B's tree.
+      resolveSlow([
+        fileNode({ name: 'fromA.md', path: 'fromA.md', type: 'file' }),
+      ]);
+      await flushRootLoad(fixture);
+
+      expect(component.treeNodes()[0].children![0].label).toBe('fromB.md');
     });
+  });
+
+  // --- OnChanges removal (AC5) ---------------------------------------
+
+  describe('OnChanges removal', () => {
+    it('scenario 17 — component no longer implements OnChanges (no ngOnChanges method)', () => {
+      fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+      component = fixture.componentInstance;
+
+      expect(
+        (component as unknown as { ngOnChanges?: unknown }).ngOnChanges
+      ).toBeUndefined();
+    });
+  });
+});
+
+// --------------------------------------------------------------------
+// NFR3 regression gate (AC1) — the falsifiability gate.
+//
+// Hosts the explorer inside an OnPush parent that is rendered ONCE and then
+// never re-marked. When the root tree resolves, the spinner must be gone and
+// loading() must be false WITHOUT any further change-detection trigger from
+// the parent. This fails against the default-CD / `loading`-field impl (the
+// child's field mutation never marks the OnPush parent dirty, so the view is
+// stale) and passes against the signal/OnPush impl.
+// --------------------------------------------------------------------
+
+@Component({
+  selector: 'app-onpush-host',
+  standalone: true,
+  imports: [WorkspaceExplorerComponent],
+  template: `<app-workspace-explorer />`,
+  // OnPush parent: after the first render it is NEVER re-marked by the test.
+  changeDetection: ChangeDetectionStrategy.OnPush,
+})
+class OnPushHostComponent {}
+
+describe('WorkspaceExplorerComponent — NFR3 OnPush regression gate', () => {
+  let workspaceServiceSpy: jasmine.SpyObj<WorkspaceService>;
+  let contextServiceStub: {
+    currentProcessId$: BehaviorSubject<string>;
+    currentTeamRunning$: BehaviorSubject<boolean>;
+    getCurrentTeam: jasmine.Spy;
+  };
+
+  beforeEach(async () => {
+    workspaceServiceSpy = jasmine.createSpyObj('WorkspaceService', [
+      'getWorkspaceTree',
+      'getFileContent',
+      'getDownloadUrl',
+      'uploadFiles',
+    ]);
+    contextServiceStub = {
+      currentProcessId$: new BehaviorSubject<string>('proc'),
+      currentTeamRunning$: new BehaviorSubject<boolean>(true),
+      getCurrentTeam: jasmine
+        .createSpy('getCurrentTeam')
+        .and.callFake(async () => makeTeam()),
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [OnPushHostComponent, NoopAnimationsModule],
+      providers: [
+        { provide: WorkspaceService, useValue: workspaceServiceSpy },
+        { provide: ContextService, useValue: contextServiceStub },
+      ],
+    })
+      .overrideComponent(WorkspaceExplorerComponent, {
+        set: {
+          imports: [CommonModule],
+          schemas: [CUSTOM_ELEMENTS_SCHEMA],
+        },
+      })
+      .compileComponents();
+  });
+
+  it('scenario 18 — spinner clears after the tree resolves WITHOUT re-marking the OnPush parent', async () => {
+    // Slow-ish promise so the spinner is visible on the first render.
+    let resolveTree!: (v: FileNode[]) => void;
+    const treePromise = new Promise<FileNode[]>((res) => (resolveTree = res));
+    workspaceServiceSpy.getWorkspaceTree.and.returnValue(treePromise);
+
+    const hostFixture: ComponentFixture<OnPushHostComponent> =
+      TestBed.createComponent(OnPushHostComponent);
+
+    // Attach the fixture to ApplicationRef and let zone-driven change detection
+    // run on stabilization — faithfully reproducing the running app, where a
+    // settled fetch promise triggers a GLOBAL ApplicationRef.tick(), NOT a
+    // targeted parent detectChanges(). autoDetect NEVER force-checks the OnPush
+    // parent: tick() walks from the root and re-checks only views on a dirty
+    // path. With the OLD default-CD/`loading`-field impl the explorer's field
+    // mutation never marks the OnPush parent's subtree dirty, so tick skips it
+    // and the spinner stays (this spec fails); with the signal/OnPush impl the
+    // signal write marks the explorer dirty up the chain, so tick re-checks it
+    // and the spinner clears (this spec passes).
+    hostFixture.autoDetectChanges(true);
+
+    const explorerDe = hostFixture.debugElement.children[0];
+    const explorer =
+      explorerDe.componentInstance as WorkspaceExplorerComponent;
+
+    expect(explorer.loading()).toBe(true);
+    expect(
+      hostFixture.nativeElement.querySelector('p-progressspinner') ||
+        hostFixture.nativeElement.querySelector('p-progressSpinner')
+    ).withContext('spinner should be visible while pending').not.toBeNull();
+
+    // Resolve the tree. CRITICALLY: never call hostFixture.detectChanges()
+    // (which would force-check the OnPush parent). Only let the zone settle —
+    // the spinner must clear via the signal-driven global tick alone.
+    resolveTree([fileNode({ name: 'a.md', path: 'a.md', type: 'file' })]);
+    await hostFixture.whenStable();
+
+    // The signal write repainted the explorer's own OnPush view via the global
+    // tick, even though the parent was never explicitly re-marked.
+    expect(explorer.loading()).toBe(false);
+    expect(
+      hostFixture.nativeElement.querySelector('p-progressspinner') ||
+        hostFixture.nativeElement.querySelector('p-progressSpinner')
+    ).withContext('spinner must be gone after resolve').toBeNull();
   });
 });
