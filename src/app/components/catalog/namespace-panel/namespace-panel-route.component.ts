@@ -15,11 +15,11 @@ import { NamespacePanelComponent } from './namespace-panel.component';
 /**
  * Route-shell host for `NamespacePanelComponent` on the deep-link route.
  *
- * Story 11.6 — mounts the panel inside a full-page admin layout (header +
- * back-to-home link) for the route `/admin/catalog/namespace/:namespace`.
- * The shell exists to keep `NamespacePanelComponent` host-agnostic (NFR6):
- * the panel itself MUST NOT import `Router`, `ActivatedRoute`, `RouterLink`,
- * etc. — all route-level concerns live here.
+ * Mounts the panel inside a full-page admin layout (header + back-to-home
+ * link) for the route `/admin/catalog/namespace/:namespace`. The shell exists
+ * to keep `NamespacePanelComponent` host-agnostic: the panel itself MUST NOT
+ * import `Router`, `ActivatedRoute`, `RouterLink`, etc. — all route-level
+ * concerns live here.
  *
  * Responsibilities:
  * - Read the `:namespace` URL param and pass it to the panel's
@@ -35,9 +35,12 @@ import { NamespacePanelComponent } from './namespace-panel.component';
  * What the shell does NOT do:
  * - Does NOT wire the panel's `(closed)` output — there is no dialog to
  *   dismiss in the route presentation.
- * - Does NOT embed its own `<p-confirmDialog>` — the panel already renders
- *   one via its scoped `providers: [ConfirmationService]`, and the guard
- *   reuses that scoped service.
+ * - Does NOT embed any confirmation surface — the `CanDeactivate` guard's
+ *   dirty-navigation prompt is rendered by the panel's own custom confirmation
+ *   modal via `panel.confirmDiscard()` (ADR-018), so the shell needs no
+ *   confirmation surface of its own. The panel's secondary modals own their
+ *   own Esc-close, so the bare route shell (no host dialog, no `closeOnEscape`)
+ *   needs no Escape gating either.
  * - Does NOT read panel internals (`loading`, `serverYaml`) — the
  *   back-to-home link is always-present in the header, so the shell never
  *   needs conditional logic based on panel state.
@@ -65,8 +68,8 @@ export class NamespacePanelRouteComponent implements OnInit {
 
   /**
    * Bound to the panel's `@Input() existingNamespaces` (Clone pre-flight
-   * collision check — Story 11.5). Populated by a fire-and-forget fetch in
-   * `ngOnInit` and refreshed on the panel's `(saved)` emission.
+   * collision check). Populated by a fire-and-forget fetch in `ngOnInit` and
+   * refreshed on the panel's `(saved)` emission.
    */
   existingNamespaces: string[] = [];
 
@@ -94,8 +97,8 @@ export class NamespacePanelRouteComponent implements OnInit {
     // Fire-and-forget. Mirrors HomeComponent's `loadNamespaces()` pattern:
     // the panel's own `exportNamespace` runs in parallel, and a rejection
     // here just leaves `existingNamespaces` empty (the Clone pre-flight
-    // collision check degrades to "empty-or-source" which is acceptable
-    // per ADR-011 D5 — last-writer-wins collision-on-race).
+    // collision check degrades to "empty-or-source", which is acceptable —
+    // last-writer-wins collision-on-race).
     this.apiService
       .getNamespaces()
       .then((list) => {
