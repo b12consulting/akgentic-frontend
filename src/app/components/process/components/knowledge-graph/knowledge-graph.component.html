@@ -138,7 +138,9 @@
     [draggable]="false"
     [dismissableMask]="true"
     (onHide)="isModalView = false"
-    class="kg-pdialog"
+    appendTo="body"
+    styleClass="kg-pdialog"
+    maskStyleClass="kg-pdialog-mask"
   >
     <ng-template pTemplate="header">
       <div class="dialog-header-container">
