@@ -1,10 +1,10 @@
 import { CommonModule } from '@angular/common';
 import {
+  AfterViewInit,
   Component,
   DestroyRef,
   ElementRef,
   EventEmitter,
-  HostListener,
   Input,
   OnChanges,
   OnInit,
@@ -119,7 +119,9 @@ interface ConfirmRequest {
   templateUrl: './namespace-panel.component.html',
   styleUrls: ['./namespace-panel.component.scss'],
 })
-export class NamespacePanelComponent implements OnInit, OnChanges {
+export class NamespacePanelComponent
+  implements OnInit, OnChanges, AfterViewInit
+{
   @Input() namespace!: string;
   /**
    * Story 11.5 — existing namespace identifiers, supplied by the host, used
@@ -147,6 +149,7 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   private messageService: MessageService = inject(MessageService);
   private authService: AuthService = inject(AuthService);
   private destroyRef: DestroyRef = inject(DestroyRef);
+  private elementRef: ElementRef<HTMLElement> = inject(ElementRef);
 
   // Internal state. The panel is always editable — there is no `mode` axis.
   // The single signal that drives the action row is `buffer !== serverYaml`.
@@ -612,6 +615,19 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
    *   the matching `triggerX()` is a no-op by enablement (AC 9) — so the
    *   dead-key glyph / Alt-mnemonic is suppressed for keystrokes that are
    *   "ours".
+   *
+   * macOS dead-key / IME composition robustness (Story 22-4, ADR-018 §5).
+   * On some macOS keyboard layouts an ⌥-chord initiates a dead-key
+   * composition: the browser delivers the `keydown` flagged as composing
+   * (`isComposing === true`, `keyCode === 229`, `key === 'Dead'`). This matcher
+   * MUST NOT early-return on those flags — it keys off `event.altKey` +
+   * `event.code` ONLY and never reads `event.key`, so a composing event with
+   * `code: 'KeyV'` still matches and fires Validate. The `preventDefault()` on a
+   * handled combo also suppresses the OS dead-key composition so no glyph is
+   * inserted. NEVER add an `isComposing` / `keyCode === 229` / `key === 'Dead'`
+   * guard ahead of this matcher for these chords. (Karma cannot reproduce the
+   * real OS composition layer — synthetic `KeyboardEvent`s bypass it — so the
+   * real-world fix is manually verified on macOS; see the story's manual gate.)
    */
   private matchShortcut(event: KeyboardEvent): void {
     if (!event.altKey) {
@@ -648,16 +664,51 @@ export class NamespacePanelComponent implements OnInit, OnChanges {
   }
 
   /**
-   * Component-level keydown capture (AC 11). Mirrors the established
-   * `chat-panel.component.ts` `@HostListener` pattern. Binding on the host
-   * (`'keydown'`, not `'document:keydown'`) scopes capture to the panel
-   * subtree — the shortcuts fire only when the panel (or its editor) has
-   * focus. Catches the combos when focus sits OUTSIDE Monaco (e.g. on a
-   * button); the Monaco `addAction` path covers in-editor focus.
+   * Component-level keydown capture — the AUTHORITATIVE shortcut path
+   * (Story 22-4, ADR-018 §5). Delegates to the shared `matchShortcut`.
+   *
+   * Registered as a **capture-phase** listener on the host element (see
+   * `ngAfterViewInit`), NOT a bubble-phase `@HostListener`. The capture phase
+   * runs the host handler BEFORE the event reaches Monaco's internal keydown
+   * handling, so even when focus is inside the editor (Monaco may
+   * `stopPropagation` a keydown before it would bubble back to the host) the
+   * host still sees — and acts on — the chord. The Monaco `editor.addAction`
+   * keybindings registered in `registerEditorShortcuts` are kept as a
+   * best-effort in-editor convenience ONLY; correctness does not depend on
+   * them. Single-fire-per-keystroke is preserved: there is exactly ONE host
+   * dispatch site (this listener) routing through the idempotent `triggerX()`
+   * surface — the old bubble-phase `@HostListener` is removed so no second
+   * uncoordinated host dispatch can open two confirms / submit two imports
+   * (AC 4, AC 5).
    */
-  @HostListener('keydown', ['$event'])
   onKeydown(event: KeyboardEvent): void {
     this.matchShortcut(event);
+  }
+
+  /**
+   * Bound capture-phase keydown handler reference. Stored so the exact same
+   * function identity can be passed to both `addEventListener` and
+   * `removeEventListener` (an inline arrow would not be removable).
+   */
+  private readonly captureKeydown = (event: KeyboardEvent): void => {
+    this.onKeydown(event);
+  };
+
+  /**
+   * Register the authoritative capture-phase keydown listener on the host
+   * element (Story 22-4, ADR-018 §5). Capture phase is load-bearing: it lets
+   * the host see the chord BEFORE Monaco can swallow it when the editor has
+   * focus. Cleaned up via the `destroyRef` hook so no listener leaks after the
+   * panel is torn down.
+   */
+  ngAfterViewInit(): void {
+    const host = this.elementRef.nativeElement;
+    host.addEventListener('keydown', this.captureKeydown, { capture: true });
+    this.destroyRef.onDestroy(() => {
+      host.removeEventListener('keydown', this.captureKeydown, {
+        capture: true,
+      });
+    });
   }
 
   /**

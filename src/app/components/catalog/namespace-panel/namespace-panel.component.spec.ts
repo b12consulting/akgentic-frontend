@@ -2834,6 +2834,312 @@ entries: {}
   });
 
   // ---------------------------------------------------------------------
+  // Story 22.4 (ADR-018 §5) — macOS Option-shortcut robustness
+  // (dead-key / IME composition). On some macOS layouts an ⌥-chord initiates
+  // a dead-key composition: the keydown arrives flagged composing
+  // (isComposing:true, keyCode:229, key:'Dead'). The matcher MUST still fire
+  // (it keys off altKey+code, never key) AND preventDefault to suppress the
+  // composition. The host capture-phase listener is the AUTHORITATIVE path.
+  //
+  // NOTE (NFR5): synthetic KeyboardEvents bypass the OS composition layer, so
+  // these specs prove the matcher WOULD handle a composing event (guarding a
+  // future composing-skip regression) but CANNOT reproduce the real macOS
+  // chord — that is the manual-verification gate (AC 8), left for the operator.
+  // ---------------------------------------------------------------------
+
+  /**
+   * Build a composing (dead-key / IME) keydown — the macOS failure shape:
+   * `isComposing:true`, `keyCode:229`, `key:'Dead'`. Merges any extra init
+   * (e.g. `{ shiftKey: true }` for ⌥⇧C). Reuses the Story 22-2 `keyEvent`
+   * helper (altKey:true + cancelable:true), so `evt.defaultPrevented` is
+   * observable after a direct `component.onKeydown(evt)` call.
+   */
+  function composingKeyEvent(
+    code: string,
+    init: Partial<KeyboardEventInit> = {},
+  ): KeyboardEvent {
+    return keyEvent(code, {
+      isComposing: true,
+      keyCode: 229,
+      key: 'Dead',
+      ...init,
+    });
+  }
+
+  // ----- AC 1, 2, 3 — composing-event survival + preventDefault, uniform -----
+
+  interface ComposingChordCase {
+    name: string;
+    code: string;
+    extraInit: Partial<KeyboardEventInit>;
+    handler:
+      | 'onSaveClick'
+      | 'onValidateBufferClick'
+      | 'onResetClick'
+      | 'onCloneClick'
+      | 'onDeleteClick';
+    /** Make the chord's `canX` enablement true before dispatching. */
+    enable: () => void;
+  }
+
+  const composingChordCases: ComposingChordCase[] = [
+    {
+      name: '⌥S Save',
+      code: 'KeyS',
+      extraInit: {},
+      handler: 'onSaveClick',
+      enable: (): void => {
+        component.buffer = 'foo: 2\n'; // dirty → canSave
+      },
+    },
+    {
+      name: '⌥V Validate',
+      code: 'KeyV',
+      extraInit: {},
+      handler: 'onValidateBufferClick',
+      enable: (): void => {
+        // Validate is enabled by default (clean or dirty) — no setup needed.
+      },
+    },
+    {
+      name: '⌥R Reset',
+      code: 'KeyR',
+      extraInit: {},
+      handler: 'onResetClick',
+      enable: (): void => {
+        component.buffer = 'foo: 2\n'; // dirty → canReset
+      },
+    },
+    {
+      name: '⌥⇧C Clone',
+      code: 'KeyC',
+      extraInit: { shiftKey: true },
+      handler: 'onCloneClick',
+      enable: (): void => {
+        // Clean (default loaded state) → canClone is already true.
+      },
+    },
+    {
+      name: '⌥D Delete',
+      code: 'KeyD',
+      extraInit: {},
+      handler: 'onDeleteClick',
+      enable: (): void => {
+        // Delete is enabled by default (only gated by an in-flight delete).
+      },
+    },
+  ];
+
+  composingChordCases.forEach((c) => {
+    it(`(22.4 AC1/AC3) ${c.name} fires under a composing event (keyCode:229/isComposing/key:'Dead') and preventDefaults`, async () => {
+      await loaded('foo: 1\n');
+      // Keep handlers inert so no real network / modal side effects run; we
+      // only assert the matcher reached the handler under a composing event.
+      const handlerSpy = spyOn(component, c.handler).and.returnValue(
+        undefined as never,
+      );
+      c.enable();
+
+      const evt = composingKeyEvent(c.code, c.extraInit);
+      component.onKeydown(evt);
+
+      expect(handlerSpy)
+        .withContext(`${c.name} handler under composing event`)
+        .toHaveBeenCalledTimes(1);
+      expect(evt.defaultPrevented)
+        .withContext(`${c.name} preventDefault under composing event`)
+        .toBeTrue();
+    });
+  });
+
+  it("(22.4 AC1) the matcher keys off event.code, never event.key — a composing ⌥V with key:'Dead' still validates", async () => {
+    await loaded('foo: 1\n');
+    const validateSpy = spyOn(component, 'onValidateBufferClick').and.returnValue(
+      Promise.resolve(),
+    );
+
+    // key:'Dead' is irrelevant — only altKey + code drive the match.
+    const evt = composingKeyEvent('KeyV');
+    expect(evt.key).toBe('Dead');
+    component.onKeydown(evt);
+
+    expect(validateSpy).toHaveBeenCalledTimes(1);
+    expect(evt.defaultPrevented).toBeTrue();
+  });
+
+  it('(22.4 AC2) preventDefault fires under a composing + no-op-by-enablement combo (⌥S while clean)', async () => {
+    await loaded('foo: 1\n');
+    // Clean → triggerSave is a no-op, but the keystroke is "ours" and the
+    // composition MUST still be suppressed (parity with Story 22-2 AC9).
+    const saveSpy = spyOn(component, 'onSaveClick');
+    const evt = composingKeyEvent('KeyS');
+
+    component.onKeydown(evt);
+
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(evt.defaultPrevented).toBeTrue();
+  });
+
+  it('(22.4 AC3) per-action enablement is honoured under composing events (clean ⌥S/⌥R no-op; ⌥V/⌥⇧C/⌥D still fire)', async () => {
+    await loaded('foo: 1\n');
+    const saveSpy = spyOn(component, 'onSaveClick').and.returnValue(
+      Promise.resolve(),
+    );
+    const resetSpy = spyOn(component, 'onResetClick');
+    const validateSpy = spyOn(component, 'onValidateBufferClick').and.returnValue(
+      Promise.resolve(),
+    );
+    const cloneSpy = spyOn(component, 'onCloneClick');
+    const deleteSpy = spyOn(component, 'onDeleteClick');
+
+    // Clean state: Save/Reset are no-ops; Validate/Clone/Delete fire.
+    component.onKeydown(composingKeyEvent('KeyS'));
+    component.onKeydown(composingKeyEvent('KeyR'));
+    component.onKeydown(composingKeyEvent('KeyV'));
+    component.onKeydown(composingKeyEvent('KeyC', { shiftKey: true }));
+    component.onKeydown(composingKeyEvent('KeyD'));
+
+    expect(saveSpy).not.toHaveBeenCalled();
+    expect(resetSpy).not.toHaveBeenCalled();
+    expect(validateSpy).toHaveBeenCalledTimes(1);
+    expect(cloneSpy).toHaveBeenCalledTimes(1);
+    expect(deleteSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("(22.4 AC1) a composing ⌥⇧C (Clone) still requires Shift — composing Alt+KeyC without Shift is unhandled", async () => {
+    await loaded('foo: 1\n');
+    const cloneSpy = spyOn(component, 'onCloneClick');
+
+    const noShift = composingKeyEvent('KeyC', { shiftKey: false });
+    component.onKeydown(noShift);
+    expect(cloneSpy).not.toHaveBeenCalled();
+    expect(noShift.defaultPrevented).toBeFalse();
+
+    const withShift = composingKeyEvent('KeyC', { shiftKey: true });
+    component.onKeydown(withShift);
+    expect(cloneSpy).toHaveBeenCalledTimes(1);
+    expect(withShift.defaultPrevented).toBeTrue();
+  });
+
+  // ----- AC 4 — host capture-phase listener is the authoritative path -----
+
+  it('(22.4 AC4) a composing keydown dispatched on the host element fires the action via the capture-phase listener', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    const saveSpy = spyOn(component, 'onSaveClick').and.returnValue(
+      Promise.resolve(),
+    );
+
+    // Dispatch (not a direct method call) so the registered capture-phase host
+    // listener — the authoritative path — is what catches the composing chord.
+    const evt = composingKeyEvent('KeyS');
+    fixture.nativeElement.dispatchEvent(evt);
+
+    expect(saveSpy).toHaveBeenCalledTimes(1);
+    expect(evt.defaultPrevented).toBeTrue();
+  });
+
+  it('(22.4 AC4) the host capture listener is removed on destroy — a post-teardown keydown does not dispatch', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    const saveSpy = spyOn(component, 'onSaveClick').and.returnValue(
+      Promise.resolve(),
+    );
+    const host = fixture.nativeElement as HTMLElement;
+
+    fixture.destroy();
+    host.dispatchEvent(composingKeyEvent('KeyS'));
+
+    expect(saveSpy).not.toHaveBeenCalled();
+  });
+
+  // ----- AC 5 — single dispatch per keystroke (no double-fire) -----
+
+  it('(22.4 AC5) a composing ⌥R opens EXACTLY ONE reset confirm via the host path', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    const openSpy = spyOn(component, 'onResetClick').and.callThrough();
+
+    component.onKeydown(composingKeyEvent('KeyR'));
+
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    expect(confirmOpen()).toBeTrue();
+    expect(component.confirmRequest!.variant).toBe('reset');
+  });
+
+  it('(22.4 AC5) a composing ⌥D from the authoritative host path opens ONE delete confirm; Proceeding once issues exactly ONE DELETE', async () => {
+    await loaded('foo: 1\n');
+    apiSpy.deleteNamespace.and.returnValue(Promise.resolve());
+    const openSpy = spyOn(component, 'onDeleteClick').and.callThrough();
+
+    // ONE physical keystroke reaches the ONE authoritative host capture site
+    // (real macOS delivers a single keystroke to a single listener). It opens a
+    // single delete confirm via the idempotent triggerDelete() surface — no
+    // second uncoordinated host dispatch (the old bubble-phase @HostListener is
+    // gone, so there is exactly one host dispatch per keystroke).
+    component.onKeydown(composingKeyEvent('KeyD'));
+
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    expect(confirmOpen()).toBeTrue();
+    expect(component.confirmRequest!.variant).toBe('delete');
+    expect(apiSpy.deleteNamespace).not.toHaveBeenCalled();
+
+    // Proceed once → exactly one DELETE issued (no double-submit per keystroke).
+    clickConfirmProceed();
+    await fixture.whenStable();
+    expect(apiSpy.deleteNamespace).toHaveBeenCalledTimes(1);
+  });
+
+  it('(22.4 AC5/AC4) the Monaco best-effort run() routes through the SAME triggerDelete() surface as the host path (parity, not a second uncoordinated dispatch)', async () => {
+    await loaded('foo: 1\n');
+    const { editor, actions } = makeEditorStub();
+    component.onEditorEvent({
+      type: 'init',
+      editor: editor as unknown as NuMonacoEditorEvent['editor'],
+    });
+    const openSpy = spyOn(component, 'onDeleteClick').and.callThrough();
+
+    // The Monaco descriptor's run() reaches the SAME triggerDelete() →
+    // onDeleteClick surface, honouring the same enablement as the host path.
+    // It is best-effort convenience only; correctness rides on the host
+    // capture listener (AC 4). Invoking it opens the same single delete confirm.
+    findAction(actions, 'delete').run(editor);
+
+    expect(openSpy).toHaveBeenCalledTimes(1);
+    expect(confirmOpen()).toBeTrue();
+    expect(component.confirmRequest!.variant).toBe('delete');
+  });
+
+  // ----- AC 6 — non-composing regression guard (Story 22-2 path intact) -----
+
+  it('(22.4 AC6) the non-composing path is unchanged — ⌥V (no composing flags) still validates and preventDefaults', async () => {
+    await loaded('foo: 1\n');
+    const validateSpy = spyOn(component, 'onValidateBufferClick').and.returnValue(
+      Promise.resolve(),
+    );
+
+    const evt = keyEvent('KeyV'); // no isComposing / keyCode 229 / key:'Dead'
+    component.onKeydown(evt);
+
+    expect(validateSpy).toHaveBeenCalledTimes(1);
+    expect(evt.defaultPrevented).toBeTrue();
+  });
+
+  it('(22.4 AC6) a composing event WITHOUT Alt is still unhandled — no preventDefault, propagates', async () => {
+    await loaded('foo: 1\n');
+    const validateSpy = spyOn(component, 'onValidateBufferClick').and.returnValue(
+      Promise.resolve(),
+    );
+    // altKey:false overrides the keyEvent default → not ours.
+    const evt = composingKeyEvent('KeyV', { altKey: false });
+
+    component.onKeydown(evt);
+
+    expect(validateSpy).not.toHaveBeenCalled();
+    expect(evt.defaultPrevented).toBeFalse();
+  });
+
+  // ---------------------------------------------------------------------
   // Story 22.3 (ADR-018 §1–§4) — custom confirmation modal + secondary-modal
   // interaction contract: no <p-confirmDialog>; Clone-idiom custom modal;
   // focus-Cancel/Enter-cancels; hasSecondaryPanelOpen predicate; no backdrop;
