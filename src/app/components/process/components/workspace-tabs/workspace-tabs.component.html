@@ -1,16 +1,31 @@
-<ng-container *ngIf="workspaces$ | async as ws">
-  <!-- Single default workspace → no tab chrome, identical to today -->
-  <app-workspace-explorer *ngIf="ws.length <= 1"></app-workspace-explorer>
+<ng-container *ngIf="vm$ | async as vm">
+  <!-- Single default workspace → header strip + single explorer, NO tab chrome -->
+  <ng-container *ngIf="vm.workspaces.length <= 1">
+    <div class="workspace-header-strip">
+      <ng-container
+        *ngTemplateOutlet="
+          memberRow;
+          context: { d: vm.workspaces[0], agents: vm.agentsById }
+        "
+      ></ng-container>
+    </div>
+    <app-workspace-explorer></app-workspace-explorer>
+  </ng-container>
 
   <!-- ≥1 named workspace → PrimeNG sub-tabs, one panel per descriptor -->
-  <p-tabs *ngIf="ws.length > 1" value="0">
+  <p-tabs *ngIf="vm.workspaces.length > 1" value="0">
     <p-tablist>
-      <p-tab *ngFor="let d of ws; let i = index" [value]="i.toString()">
+      <p-tab *ngFor="let d of vm.workspaces; let i = index" [value]="i.toString()">
         {{ d.label }}
       </p-tab>
     </p-tablist>
     <p-tabpanels>
-      <p-tabpanel *ngFor="let d of ws; let i = index" [value]="i.toString()">
+      <p-tabpanel *ngFor="let d of vm.workspaces; let i = index" [value]="i.toString()">
+        <div class="workspace-header-strip">
+          <ng-container
+            *ngTemplateOutlet="memberRow; context: { d: d, agents: vm.agentsById }"
+          ></ng-container>
+        </div>
         <app-workspace-explorer
           [workspaceId]="d.isDefault ? undefined : d.workspaceId"
         ></app-workspace-explorer>
@@ -18,3 +33,18 @@
     </p-tabpanels>
   </p-tabs>
 </ng-container>
+
+<!-- Reusable member-chip row (v1 = membership only — name + role, no RW level) -->
+<ng-template #memberRow let-d="d" let-agents="agents">
+  <ng-container *ngIf="d.isDefault && d.agentIds.length === 0; else chips">
+    <span class="ws-all-members">Team default — all members</span>
+  </ng-container>
+  <ng-template #chips>
+    <p-chip
+      *ngFor="let m of resolveMembers(d, agents)"
+      class="ws-member-chip"
+      [label]="m.name"
+      [pTooltip]="m.role"
+    ></p-chip>
+  </ng-template>
+</ng-template>

@@ -12,6 +12,7 @@ import { PerAgentStoreRegistry } from './event/per-agent-store';
 import { SystemPromptSelector } from './selectors/system-prompt.selector';
 import { ToolPresenceService } from './selectors/tool-presence.selector';
 import { WorkspaceRegistryService } from './selectors/workspace-registry.selector';
+import { AgentsByIdService } from './selectors/agents-by-id.selector';
 
 import { AgentTabsComponent } from './components/agent-tabs/agent-tabs.component';
 import { TeamTabsComponent } from './components/team-tabs/team-tabs.component';
@@ -62,6 +63,12 @@ interface VisualizationOption {
     // `providedIn: 'root'` — it shares the team-scoped log lifecycle, so a team
     // switch destroys it and never leaks workspaces across teams.
     WorkspaceRegistryService,
+    // Epic 23 (ADR-020): component-scoped identity map that folds the message
+    // log into `agent_id -> { name, role }`, combined in WorkspaceTabsComponent
+    // with the workspace registry to render each workspace's member chips.
+    // Provided AFTER MessageLogService (which it injects); never
+    // `providedIn: 'root'` — it shares the team-scoped log lifecycle.
+    AgentsByIdService,
     ToolPresenceService,
     KGStateReducer,
     SystemPromptSelector,

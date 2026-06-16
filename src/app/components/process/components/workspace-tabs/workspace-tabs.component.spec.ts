@@ -4,10 +4,15 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { Tabs } from 'primeng/tabs';
+import { Tooltip } from 'primeng/tooltip';
 import { BehaviorSubject } from 'rxjs';
 
 import { ContextService } from '../../../../core/context/context.service';
 import { WorkspaceService } from '../../workspace/workspace.service';
+import {
+  AgentsById,
+  AgentsByIdService,
+} from '../../selectors/agents-by-id.selector';
 import {
   WorkspaceDescriptor,
   WorkspaceRegistryService,
@@ -21,20 +26,23 @@ import { WorkspaceTabsComponent } from './workspace-tabs.component';
 
 const TEAM_ID = 'team-1';
 
-function defaultDescriptor(): WorkspaceDescriptor {
+function defaultDescriptor(agentIds: string[] = []): WorkspaceDescriptor {
   return {
     workspaceId: TEAM_ID,
     isDefault: true,
-    agentIds: [],
+    agentIds,
     label: 'Default workspace',
   };
 }
 
-function namedDescriptor(workspaceId: string): WorkspaceDescriptor {
+function namedDescriptor(
+  workspaceId: string,
+  agentIds: string[] = ['agent-A'],
+): WorkspaceDescriptor {
   return {
     workspaceId,
     isDefault: false,
-    agentIds: ['agent-A'],
+    agentIds,
     label: workspaceId,
   };
 }
@@ -46,12 +54,19 @@ class FakeWorkspaceRegistryService {
   ]);
 }
 
+/** Fake identity map exposing a BehaviorSubject the test drives directly. */
+class FakeAgentsByIdService {
+  readonly agentsById$ = new BehaviorSubject<AgentsById>({});
+}
+
 describe('WorkspaceTabsComponent', () => {
   let fixture: ComponentFixture<WorkspaceTabsComponent>;
   let registry: FakeWorkspaceRegistryService;
+  let agents: FakeAgentsByIdService;
 
   beforeEach(async () => {
     registry = new FakeWorkspaceRegistryService();
+    agents = new FakeAgentsByIdService();
 
     const contextStub = {
       currentProcessId$: new BehaviorSubject<string>('proc'),
@@ -72,11 +87,13 @@ describe('WorkspaceTabsComponent', () => {
         { provide: WorkspaceService, useValue: workspaceStub },
       ],
     })
-      // Drive `workspaces$` directly via the component-scoped registry.
+      // Drive `workspaces$` / `agentsById$` directly via the component-scoped
+      // services.
       .overrideComponent(WorkspaceTabsComponent, {
         set: {
           providers: [
             { provide: WorkspaceRegistryService, useValue: registry },
+            { provide: AgentsByIdService, useValue: agents },
           ],
         },
       })
@@ -108,6 +125,17 @@ describe('WorkspaceTabsComponent', () => {
     );
   }
 
+  function chipLabels(): string[] {
+    return fixture.debugElement
+      .queryAll(By.css('p-chip'))
+      .map((de) => (de.nativeElement.textContent as string).trim());
+  }
+
+  function strips(): number {
+    return fixture.debugElement.queryAll(By.css('.workspace-header-strip'))
+      .length;
+  }
+
   /**
    * Activate the tab at `index`. PrimeNG 19's `<p-tabpanel>` renders ONLY the
    * active panel's content (`@if (active())`), so each tab's explorer is
@@ -121,7 +149,11 @@ describe('WorkspaceTabsComponent', () => {
     fixture.detectChanges();
   }
 
-  it('(AC3) default-only → one explorer, no tab chrome, workspaceId undefined', () => {
+  // -------------------------------------------------------------------
+  // Story 23-3 sub-tab behaviour (must stay green — AC6 no churn).
+  // -------------------------------------------------------------------
+
+  it('(23-3 AC3) default-only → one explorer, no tab chrome, workspaceId undefined', () => {
     registry.workspaces$.next([defaultDescriptor()]);
     fixture.detectChanges();
 
@@ -131,7 +163,7 @@ describe('WorkspaceTabsComponent', () => {
     expect(found[0].workspaceId).toBeUndefined();
   });
 
-  it('(AC1, AC2, AC4) default + 1 named → tab chrome, one panel per descriptor, correct bindings', () => {
+  it('(23-3 AC1, AC2, AC4) default + 1 named → tab chrome, one panel per descriptor, correct bindings', () => {
     registry.workspaces$.next([
       defaultDescriptor(),
       namedDescriptor('ws-named'),
@@ -157,7 +189,7 @@ describe('WorkspaceTabsComponent', () => {
     expect(found[0].workspaceId).toBe('ws-named');
   });
 
-  it('(AC5) tab labels render from descriptor.label', () => {
+  it('(23-3 AC5) tab labels render from descriptor.label', () => {
     registry.workspaces$.next([
       defaultDescriptor(),
       namedDescriptor('ws-named'),
@@ -170,7 +202,7 @@ describe('WorkspaceTabsComponent', () => {
     expect(labels).toEqual(['Default workspace', 'ws-named']);
   });
 
-  it('(AC6) reactive re-emission re-renders the sub-tabs', () => {
+  it('(23-3 AC6) reactive re-emission re-renders the sub-tabs', () => {
     registry.workspaces$.next([defaultDescriptor()]);
     fixture.detectChanges();
     expect(explorers().length).toBe(1);
@@ -185,5 +217,83 @@ describe('WorkspaceTabsComponent', () => {
     fixture.detectChanges();
     expect(hasTabChrome()).toBe(true);
     expect(fixture.debugElement.queryAll(By.css('p-tabpanel')).length).toBe(2);
+  });
+
+  // -------------------------------------------------------------------
+  // Story 23-4 member-chip header strip.
+  // -------------------------------------------------------------------
+
+  it('(AC2) single-default → strip above the bare explorer, NO tab chrome', () => {
+    registry.workspaces$.next([defaultDescriptor(['a1'])]);
+    agents.agentsById$.next({ a1: { name: 'Bob', role: 'Scrum Master' } });
+    fixture.detectChanges();
+
+    expect(strips()).toBe(1);
+    expect(explorers().length).toBe(1);
+    expect(hasTabChrome()).toBe(false);
+  });
+
+  it('(AC3) one chip per member, names in agentIds order, role as tooltip', () => {
+    registry.workspaces$.next([
+      defaultDescriptor(),
+      namedDescriptor('ws-named', ['a1', 'a2']),
+    ]);
+    agents.agentsById$.next({
+      a1: { name: 'Bob', role: 'Scrum Master' },
+      a2: { name: 'Amelia', role: 'Developer' },
+    });
+    fixture.detectChanges();
+
+    // The named workspace's members are visible on its (active) panel.
+    activateTab(1);
+    expect(chipLabels()).toEqual(['Bob', 'Amelia']);
+
+    // Each chip exposes its role via the pTooltip binding (Tooltip.content is
+    // the `pTooltip` input's property alias).
+    const tooltips = fixture.debugElement
+      .queryAll(By.directive(Tooltip))
+      .map((de) => (de.injector.get(Tooltip) as Tooltip).content);
+    expect(tooltips).toEqual(['Scrum Master', 'Developer']);
+  });
+
+  it('(AC4) empty default descriptor → "Team default — all members", no chips', () => {
+    registry.workspaces$.next([defaultDescriptor([])]);
+    agents.agentsById$.next({});
+    fixture.detectChanges();
+
+    expect(chipLabels()).toEqual([]);
+    const text = (
+      fixture.debugElement.query(By.css('.ws-all-members'))
+        .nativeElement.textContent as string
+    ).trim();
+    expect(text).toBe('Team default — all members');
+  });
+
+  it('(AC5) selecting a sub-tab updates the chip row to that workspace members', () => {
+    registry.workspaces$.next([
+      defaultDescriptor(['d1']),
+      namedDescriptor('ws-named', ['n1', 'n2']),
+    ]);
+    agents.agentsById$.next({
+      d1: { name: 'Dana', role: 'Lead' },
+      n1: { name: 'Bob', role: 'Scrum Master' },
+      n2: { name: 'Amelia', role: 'Developer' },
+    });
+    fixture.detectChanges();
+
+    // Default tab (index 0) active first → its sole member.
+    expect(chipLabels()).toEqual(['Dana']);
+
+    // Switching to the named tab updates the strip to that workspace members.
+    activateTab(1);
+    expect(chipLabels()).toEqual(['Bob', 'Amelia']);
+  });
+
+  it('(AC3 defensive) unknown agent_id falls back to the raw id as the name', () => {
+    registry.workspaces$.next([defaultDescriptor(['ghost'])]);
+    agents.agentsById$.next({});
+    fixture.detectChanges();
+
+    expect(chipLabels()).toEqual(['ghost']);
   });
 });
