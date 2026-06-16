@@ -1,0 +1,20 @@
+<ng-container *ngIf="workspaces$ | async as ws">
+  <!-- Single default workspace → no tab chrome, identical to today -->
+  <app-workspace-explorer *ngIf="ws.length <= 1"></app-workspace-explorer>
+
+  <!-- ≥1 named workspace → PrimeNG sub-tabs, one panel per descriptor -->
+  <p-tabs *ngIf="ws.length > 1" value="0">
+    <p-tablist>
+      <p-tab *ngFor="let d of ws; let i = index" [value]="i.toString()">
+        {{ d.label }}
+      </p-tab>
+    </p-tablist>
+    <p-tabpanels>
+      <p-tabpanel *ngFor="let d of ws; let i = index" [value]="i.toString()">
+        <app-workspace-explorer
+          [workspaceId]="d.isDefault ? undefined : d.workspaceId"
+        ></app-workspace-explorer>
+      </p-tabpanel>
+    </p-tabpanels>
+  </p-tabs>
+</ng-container>

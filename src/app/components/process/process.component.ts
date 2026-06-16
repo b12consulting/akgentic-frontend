@@ -11,12 +11,13 @@ import { IngestionService } from './event/ingestion.service';
 import { PerAgentStoreRegistry } from './event/per-agent-store';
 import { SystemPromptSelector } from './selectors/system-prompt.selector';
 import { ToolPresenceService } from './selectors/tool-presence.selector';
+import { WorkspaceRegistryService } from './selectors/workspace-registry.selector';
 
 import { AgentTabsComponent } from './components/agent-tabs/agent-tabs.component';
 import { TeamTabsComponent } from './components/team-tabs/team-tabs.component';
 import { KnowledgeGraphComponent } from './components/knowledge-graph/knowledge-graph.component';
 import { MessageListComponent } from './components/message-list/message-list.component';
-import { WorkspaceExplorerComponent } from './components/workspace-explorer/workspace-explorer.component';
+import { WorkspaceTabsComponent } from './components/workspace-tabs/workspace-tabs.component';
 
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
@@ -45,7 +46,7 @@ interface VisualizationOption {
     AgentTabsComponent,
     TeamTabsComponent,
     KnowledgeGraphComponent,
-    WorkspaceExplorerComponent,
+    WorkspaceTabsComponent,
     TabsModule,
     ButtonModule,
     ChatPanelComponent,
@@ -55,6 +56,12 @@ interface VisualizationOption {
   providers: [
     AsyncPipe,
     MessageLogService,
+    // Epic 23 (ADR-019): component-scoped registry that folds the message log
+    // into the set of WorkspaceDescriptors driving the workspace sub-tabs. Must
+    // be provided AFTER MessageLogService (which it injects). Never
+    // `providedIn: 'root'` — it shares the team-scoped log lifecycle, so a team
+    // switch destroys it and never leaks workspaces across teams.
+    WorkspaceRegistryService,
     ToolPresenceService,
     KGStateReducer,
     SystemPromptSelector,
