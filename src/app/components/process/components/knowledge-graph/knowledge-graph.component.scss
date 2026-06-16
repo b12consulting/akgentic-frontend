@@ -504,15 +504,20 @@
 
 // Z-Index Management for Proper Layering
 ::ng-deep {
-    // Main Knowledge Graph modal (highest priority - must be above any parent panels)
-    .kg-pdialog {
-        .p-dialog-mask {
-            z-index: 9999 !important; // Very high to ensure it's above parent panels
-        }
-        
-        .p-dialog {
-            z-index: 10000 !important; // Highest priority
-        }
+    // Main Knowledge Graph modal (highest priority - must be above any parent panels).
+    // The dialog uses appendTo="body", so its mask/dialog are lifted out of this
+    // component's subtree to the document root — that is what actually makes the
+    // z-index win globally (a confined high z-index loses to a sibling stacking
+    // context; see chat's z-5 "Auto scrolling" chip leaking through). The classes
+    // are applied directly to the moved elements via maskStyleClass/styleClass, so
+    // these rules keep matching after the move (a descendant `.kg-pdialog .p-dialog-mask`
+    // selector would not, since the mask is no longer a descendant of the host).
+    .kg-pdialog-mask {
+        z-index: 9999 !important; // Very high to ensure it's above parent panels
+    }
+
+    .kg-pdialog.p-dialog {
+        z-index: 10000 !important; // Highest priority
     }
     
     // Floating dialog in tab view (medium priority)
