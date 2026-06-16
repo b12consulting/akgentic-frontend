@@ -1,4 +1,12 @@
-import { Component, OnInit, inject, ViewChild } from '@angular/core';
+import {
+  Component,
+  Input,
+  OnChanges,
+  OnInit,
+  SimpleChanges,
+  inject,
+  ViewChild,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { TreeModule } from 'primeng/tree';
 import { TreeNode } from 'primeng/api';
@@ -40,8 +48,16 @@ import { UploadModalComponent } from './upload-modal/upload-modal.component';
   templateUrl: './workspace-explorer.component.html',
   styleUrls: ['./workspace-explorer.component.scss'],
 })
-export class WorkspaceExplorerComponent implements OnInit {
+export class WorkspaceExplorerComponent implements OnInit, OnChanges {
   @ViewChild(UploadModalComponent) uploadModal!: UploadModalComponent;
+
+  /**
+   * Optional workspace addressed by this explorer (Epic 23 / ADR-019). Unset
+   * (the default tab / today's behaviour) ⇒ every WorkspaceService call omits
+   * `workspaceId`, so the backend falls back to `team_id`. When bound to a
+   * value it is threaded through every call; a later change refetches the tree.
+   */
+  @Input() workspaceId?: string;
 
   workspaceService = inject(WorkspaceService);
   contextService = inject(ContextService);
@@ -68,6 +84,29 @@ export class WorkspaceExplorerComponent implements OnInit {
     this.loadWorkspace();
   }
 
+  /**
+   * Refetch the tree when the bound `workspaceId` switches AFTER init. The
+   * first (init) input arrival is `firstChange` and is handled by ngOnInit's
+   * loadWorkspace — guarding on `!firstChange` avoids a double initial fetch.
+   * A change that does not alter the value is skipped (no redundant refetch).
+   */
+  ngOnChanges(changes: SimpleChanges): void {
+    const change = changes['workspaceId'];
+    if (!change || change.firstChange) return;
+    if (change.currentValue === change.previousValue) return;
+    this.loadWorkspace();
+  }
+
+  /**
+   * Fetch a directory listing, threading `workspaceId` only when set so the
+   * unset path keeps today's 2-arg call shape (and byte-identical URL).
+   */
+  private fetchTree(path: string): Promise<FileNode[]> {
+    return this.workspaceId
+      ? this.workspaceService.getWorkspaceTree(this.processId, path, this.workspaceId)
+      : this.workspaceService.getWorkspaceTree(this.processId, path);
+  }
+
   async checkProcessStatus() {
     this.isProcessRunning = await firstValueFrom(
       this.contextService.currentTeamRunning$,
@@ -81,7 +120,7 @@ export class WorkspaceExplorerComponent implements OnInit {
     this.errorMessage = null;
 
     try {
-      const tree = await this.workspaceService.getWorkspaceTree(this.processId);
+      const tree = await this.fetchTree('');
       const fileNodes = this.convertToTreeNodes(tree);
 
       // Add root node at the top
@@ -171,10 +210,7 @@ export class WorkspaceExplorerComponent implements OnInit {
     if (node.children !== undefined) return;
 
     try {
-      const children = await this.workspaceService.getWorkspaceTree(
-        this.processId,
-        fileNode.path
-      );
+      const children = await this.fetchTree(fileNode.path);
       node.children = this.convertToTreeNodes(children);
       // Re-assign the top-level array reference so Angular's default CD
       // picks up the mutation on a nested TreeNode's `children` property.
@@ -213,7 +249,8 @@ export class WorkspaceExplorerComponent implements OnInit {
     try {
       const result: FileContent = await this.workspaceService.getFileContent(
         this.processId,
-        path
+        path,
+        this.workspaceId
       );
 
       if (result.type === 'binary') {
@@ -239,7 +276,8 @@ export class WorkspaceExplorerComponent implements OnInit {
 
     const url = this.workspaceService.getDownloadUrl(
       this.processId,
-      this.selectedFile.path
+      this.selectedFile.path,
+      this.workspaceId
     );
     window.open(url, '_blank');
   }
@@ -314,7 +352,8 @@ export class WorkspaceExplorerComponent implements OnInit {
       await this.workspaceService.uploadFiles(
         this.processId,
         files,
-        this.uploadTargetPath
+        this.uploadTargetPath,
+        this.workspaceId
       );
 
       // Refresh ONLY the directory the user uploaded to — preserves the
@@ -336,10 +375,7 @@ export class WorkspaceExplorerComponent implements OnInit {
    * the next manual expand will lazy-fetch the fresh listing anyway.
    */
   private async refreshDirectory(path: string): Promise<void> {
-    const fresh = await this.workspaceService.getWorkspaceTree(
-      this.processId,
-      path
-    );
+    const fresh = await this.fetchTree(path);
     const freshNodes = this.convertToTreeNodes(fresh);
 
     if (path === '') {
