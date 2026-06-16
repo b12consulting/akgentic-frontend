@@ -275,6 +275,141 @@ describe('WorkspaceExplorerComponent', () => {
     });
   });
 
+  // --- loadFileContent (AC2) ----------------------------------------
+
+  describe('loadFileContent', () => {
+    beforeEach(() => {
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+      fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+      component = fixture.componentInstance;
+      component.processId = 'proc';
+    });
+
+    it('scenario 19 — text result writes fileContent, clears loadingContent and isBinaryFile', async () => {
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: 'hello world',
+        type: 'text',
+      });
+
+      await component.loadFileContent('docs/readme.txt');
+
+      expect(component.fileContent()).toBe('hello world');
+      expect(component.loadingContent()).toBe(false);
+      expect(component.isBinaryFile()).toBe(false);
+      expect(component.isMarkdownFile()).toBe(false);
+      expect(component.errorMessage()).toBeNull();
+    });
+
+    it('scenario 20 — a .md selected file flags isMarkdownFile on a text result', async () => {
+      component.selectedFile.set(
+        fileNode({
+          name: 'a.md',
+          path: 'docs/a.md',
+          type: 'file',
+          extension: '.md',
+        })
+      );
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: '# Title',
+        type: 'text',
+      });
+
+      await component.loadFileContent('docs/a.md');
+
+      expect(component.fileContent()).toBe('# Title');
+      expect(component.isMarkdownFile()).toBe(true);
+      expect(component.isBinaryFile()).toBe(false);
+      expect(component.loadingContent()).toBe(false);
+    });
+
+    it('scenario 21 — binary result flags isBinaryFile and shows the binary message', async () => {
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: null,
+        type: 'binary',
+        message: 'Binary file cannot be displayed',
+      });
+
+      await component.loadFileContent('docs/image.png');
+
+      expect(component.isBinaryFile()).toBe(true);
+      expect(component.fileContent()).toBe('Binary file cannot be displayed');
+      expect(component.isMarkdownFile()).toBe(false);
+      expect(component.loadingContent()).toBe(false);
+    });
+
+    it('scenario 22 — rejected fetch sets errorMessage and clears loadingContent', async () => {
+      workspaceServiceSpy.getFileContent.and.rejectWith(new Error('read failed'));
+
+      await component.loadFileContent('docs/bad.txt');
+
+      expect(component.errorMessage()).toBe('read failed');
+      expect(component.loadingContent()).toBe(false);
+      expect(component.fileContent()).toBeNull();
+    });
+  });
+
+  // --- onNodeSelect (AC3) -------------------------------------------
+
+  describe('onNodeSelect', () => {
+    beforeEach(() => {
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: 'data',
+        type: 'text',
+      });
+      fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+      component = fixture.componentInstance;
+      component.processId = 'proc';
+    });
+
+    it('scenario 23 — selecting a file sets selectedFile, clears selectedFolder, loads content', async () => {
+      // Seed a stale folder selection to prove it is cleared.
+      component.selectedFolder.set(
+        fileNode({ name: 'old', path: 'old', type: 'directory' })
+      );
+      const file = fileNode({
+        name: 'a.ts',
+        path: 'src/a.ts',
+        type: 'file',
+        extension: '.ts',
+      });
+
+      await component.onNodeSelect({ node: { data: file } });
+
+      expect(component.selectedFile()).toEqual(file);
+      expect(component.selectedFolder()).toBeNull();
+      expect(workspaceServiceSpy.getFileContent).toHaveBeenCalledWith(
+        'proc',
+        'src/a.ts',
+        undefined
+      );
+      expect(component.fileContent()).toBe('data');
+    });
+
+    it('scenario 24 — selecting a directory sets selectedFolder, clears file + content signals', async () => {
+      // Seed a stale file + content selection to prove they are cleared.
+      component.selectedFile.set(
+        fileNode({ name: 'a.ts', path: 'src/a.ts', type: 'file' })
+      );
+      component.fileContent.set('stale content');
+      component.isBinaryFile.set(true);
+      component.isMarkdownFile.set(true);
+
+      workspaceServiceSpy.getFileContent.calls.reset();
+      const dir = fileNode({ name: 'src', path: 'src', type: 'directory' });
+
+      await component.onNodeSelect({ node: { data: dir } });
+
+      expect(component.selectedFolder()).toEqual(dir);
+      expect(component.selectedFile()).toBeNull();
+      expect(component.fileContent()).toBeNull();
+      expect(component.isBinaryFile()).toBe(false);
+      expect(component.isMarkdownFile()).toBe(false);
+      // Selecting a directory loads no content.
+      expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+    });
+  });
+
   // --- handleUploadComplete -----------------------------------------
 
   describe('handleUploadComplete', () => {
@@ -491,6 +626,131 @@ describe('WorkspaceExplorerComponent', () => {
         ''
       );
     });
+
+    it('scenario 13b — unset workspaceId omits the trailing id on content/download/upload/lazy-expand calls', async () => {
+      // workspaceId left undefined for the whole scenario.
+
+      // getFileContent via loadFileContent: signal getter returns undefined and
+      // is passed through verbatim (no `ws` query param ⇒ backend team_id fallback).
+      await component.loadFileContent('docs/a.md');
+      expect(workspaceServiceSpy.getFileContent).toHaveBeenCalledWith(
+        'proc',
+        'docs/a.md',
+        undefined
+      );
+
+      // getDownloadUrl via downloadFile: same undefined-id passthrough.
+      component.selectedFile.set(
+        fileNode({ name: 'a.md', path: 'docs/a.md', type: 'file' })
+      );
+      spyOn(window, 'open');
+      component.downloadFile();
+      expect(workspaceServiceSpy.getDownloadUrl).toHaveBeenCalledWith(
+        'proc',
+        'docs/a.md',
+        undefined
+      );
+
+      // uploadFiles via handleUploadComplete: trailing id omitted (undefined).
+      component.uploadTargetPath = 'docs';
+      component.uploadModal = {
+        getSelectedFiles: () => [new File(['x'], 'b.md')],
+      } as unknown as UploadModalComponent;
+      await component.handleUploadComplete();
+      expect(workspaceServiceSpy.uploadFiles).toHaveBeenCalledWith(
+        'proc',
+        jasmine.any(Array),
+        'docs',
+        undefined
+      );
+
+      // getWorkspaceTree via onNodeExpand: unset path keeps the 2-arg shape (no `ws`).
+      const subDir: TreeNode = {
+        label: 'sub',
+        data: fileNode({ name: 'sub', path: 'sub', type: 'directory' }),
+        leaf: false,
+        children: undefined,
+      };
+      workspaceServiceSpy.getWorkspaceTree.calls.reset();
+      await component.onNodeExpand({ node: subDir });
+      expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith(
+        'proc',
+        'sub'
+      );
+    });
+  });
+
+  // --- signal re-assignment + CD invariants (AC4, AC6) --------------
+
+  describe('treeNodes signal re-assignment', () => {
+    beforeEach(() => {
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+      fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+      component = fixture.componentInstance;
+      component.processId = 'proc';
+    });
+
+    it('scenario 25 — a successful expand re-assigns treeNodes() to a new array reference', async () => {
+      const subDir: TreeNode = {
+        label: 'sub',
+        data: fileNode({ name: 'sub', path: 'sub', type: 'directory' }),
+        leaf: false,
+        children: undefined,
+      };
+      component.treeNodes.set([subDir]);
+      const before = component.treeNodes();
+
+      workspaceServiceSpy.getWorkspaceTree.calls.reset();
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
+        fileNode({ name: 'inner.ts', path: 'sub/inner.ts', type: 'file' }),
+      ]);
+
+      await component.onNodeExpand({ node: subDir });
+
+      // New top-level array identity ⇒ the OnPush/signal CD is scheduled
+      // (re-assigning the signal is the documented expand mechanism — NFR6).
+      const after = component.treeNodes();
+      expect(after).not.toBe(before);
+      expect(after[0]).toBe(subDir); // same node, mutated in place
+      expect(subDir.children?.length).toBe(1);
+    });
+
+    it('scenario 26 — onNodeExpand schedules CD via signal re-assignment, not markForCheck', async () => {
+      // NFR6 invariant: the lazy-expand path repaints by re-assigning the
+      // treeNodes signal; it must NOT reach for the ChangeDetectorRef. If a
+      // markForCheck() crept onto this path, spying the ref would catch it.
+      const cdr = (
+        component as unknown as {
+          cdr?: { markForCheck: () => void };
+          changeDetectorRef?: { markForCheck: () => void };
+        }
+      );
+      const ref = cdr.cdr ?? cdr.changeDetectorRef;
+      const markSpy = ref ? spyOn(ref, 'markForCheck').and.callThrough() : null;
+
+      const subDir: TreeNode = {
+        label: 'sub',
+        data: fileNode({ name: 'sub', path: 'sub', type: 'directory' }),
+        leaf: false,
+        children: undefined,
+      };
+      component.treeNodes.set([subDir]);
+
+      workspaceServiceSpy.getWorkspaceTree.calls.reset();
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
+        fileNode({ name: 'inner.ts', path: 'sub/inner.ts', type: 'file' }),
+      ]);
+
+      await component.onNodeExpand({ node: subDir });
+
+      if (markSpy) {
+        // At most one markForCheck() over the whole component, and the expand
+        // path does not rely on it — the signal re-assignment is sufficient.
+        expect(markSpy).not.toHaveBeenCalled();
+      }
+      // The repaint mechanism that DID fire: a new treeNodes() reference.
+      expect(component.treeNodes()[0].children?.length).toBe(1);
+    });
   });
 
   // --- workspaceId signal-input re-trigger + race closure (AC6) -------
@@ -681,5 +941,93 @@ describe('WorkspaceExplorerComponent — NFR3 OnPush regression gate', () => {
       hostFixture.nativeElement.querySelector('p-progressspinner') ||
         hostFixture.nativeElement.querySelector('p-progressSpinner')
     ).withContext('spinner must be gone after resolve').toBeNull();
+  });
+
+  // --- the content-pane gate (AC1, NFR3 analogue) -------------------
+  //
+  // The 24-2 analogue of scenario 18: the SAME OnPush stall, but on the
+  // content pane instead of the tree pane. Host the explorer inside an OnPush
+  // parent rendered once and never re-marked; select a file (driving
+  // loadFileContent with a slow getFileContent); the content-pane spinner must
+  // clear and fileContent() must be set after the promise resolves WITHOUT any
+  // further parent re-mark. Fails against a default-CD / loadingContent-field
+  // impl (the child's field mutation never marks the OnPush parent dirty);
+  // passes against the signal/OnPush impl (the signal write does). The query is
+  // scoped to `.panel-content` so the tree-pane spinner never false-positives.
+
+  function contentSpinner(host: ComponentFixture<OnPushHostComponent>): Element | null {
+    const pane = host.nativeElement.querySelector('.panel-content');
+    if (!pane) return null;
+    return (
+      pane.querySelector('p-progressspinner') ||
+      pane.querySelector('p-progressSpinner')
+    );
+  }
+
+  it('scenario 27 — content spinner clears after getFileContent resolves WITHOUT re-marking the OnPush parent', async () => {
+    // Root tree resolves immediately so the tree pane is settled and we are
+    // exercising ONLY the content pane. A plain-text file (not .md) is used so
+    // the content renders via the `<pre><code>` block — the host describe
+    // overrides imports to CommonModule only, so the `<markdown>` component
+    // (no custom-element dash) is not resolvable here, and the gate does not
+    // depend on markdown rendering anyway.
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
+      fileNode({
+        name: 'a.txt',
+        path: 'a.txt',
+        type: 'file',
+        extension: '.txt',
+      }),
+    ]);
+    // Slow file-content promise so the content spinner is visible while pending.
+    let resolveContent!: (v: { content: string | null; type: string }) => void;
+    const contentPromise = new Promise<{ content: string | null; type: string }>(
+      (res) => (resolveContent = res)
+    );
+    workspaceServiceSpy.getFileContent.and.returnValue(contentPromise as any);
+
+    const hostFixture: ComponentFixture<OnPushHostComponent> =
+      TestBed.createComponent(OnPushHostComponent);
+
+    // Faithful reproduction of the running app: zone-driven global tick on
+    // stabilization, NEVER a targeted parent detectChanges(). See scenario 18.
+    hostFixture.autoDetectChanges(true);
+
+    const explorerDe = hostFixture.debugElement.children[0];
+    const explorer =
+      explorerDe.componentInstance as WorkspaceExplorerComponent;
+
+    // Wait for the root tree load to settle so the explorer is fully rendered.
+    await hostFixture.whenStable();
+
+    // Drive a file selection ⇒ loadFileContent ⇒ loadingContent() true.
+    const file = fileNode({
+      name: 'a.txt',
+      path: 'a.txt',
+      type: 'file',
+      extension: '.txt',
+    });
+    // Fire-and-await-later: do NOT await (the promise is still pending) so we
+    // can observe the spinner-visible state first.
+    const selectPromise = explorer.onNodeSelect({ node: { data: file } });
+    await hostFixture.whenStable();
+
+    expect(explorer.loadingContent()).toBe(true);
+    expect(contentSpinner(hostFixture))
+      .withContext('content spinner should be visible while pending')
+      .not.toBeNull();
+
+    // Resolve the content. CRITICALLY: never call hostFixture.detectChanges()
+    // (which would force-check the OnPush parent). Only let the zone settle —
+    // the spinner must clear via the signal-driven global tick alone.
+    resolveContent({ content: 'plain text body', type: 'text' });
+    await selectPromise;
+    await hostFixture.whenStable();
+
+    expect(explorer.loadingContent()).toBe(false);
+    expect(explorer.fileContent()).toBe('plain text body');
+    expect(contentSpinner(hostFixture))
+      .withContext('content spinner must be gone after resolve')
+      .toBeNull();
   });
 });
