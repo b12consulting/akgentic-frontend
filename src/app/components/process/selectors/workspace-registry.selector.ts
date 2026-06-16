@@ -53,9 +53,17 @@ function labelFor(workspaceId: string, isDefault: boolean): string {
  */
 type Contributions = Map<string, Set<string>>;
 
-/** Effective ids contributed by one `StartMessage` (deduped within the agent). */
+/** Effective ids contributed by one `StartMessage` (deduped within the agent).
+ *
+ * The team id comes from the MESSAGE (`msg.team_id`), NOT `msg.config.team_id`:
+ * the backend `AgentConfig` does not serialise `team_id` (only name/role/
+ * squad_id/prompt/tools/…), so `config.team_id` is `undefined` on the wire. A
+ * default `WorkspaceTool` (no `workspace_id`) therefore resolved to `undefined`
+ * and never merged into the team-default descriptor — using the message-level
+ * `team_id` (which IS on the wire and equals the default descriptor's key) fixes
+ * that, so default-workspace members show up. */
 function startContribution(msg: StartMessage): Set<string> {
-  const teamId = msg.config.team_id;
+  const teamId = msg.team_id;
   const ids = new Set<string>();
   for (const tool of msg.config.tools ?? []) {
     if (isWorkspaceTool(tool)) ids.add(effectiveWorkspaceId(tool, teamId));

@@ -36,7 +36,10 @@ export interface BaseConfig {
   user_id: string;
   user_email: string;
   squad_id: string;
-  team_id: string;
+  /** NOT serialised by the backend `AgentConfig` (which carries only
+   *  name/role/squad_id/prompt/tools/…) — absent on the wire. Use the
+   *  message-level `team_id` (`StartMessage.team_id`) instead. */
+  team_id?: string;
   parent?: ActorAddress;
   orchestrator: ActorAddress;
   /** Tools bound to this agent, serialised in full on the start config

@@ -37,6 +37,10 @@ function workspaceTool(workspaceId?: string | null): ToolCardLite {
   return { __model__: WORKSPACE_MODEL, workspace_id: workspaceId };
 }
 
+// NOTE: the backend AgentConfig does NOT serialise `team_id` — it is absent
+// from `config` on the wire. The fixtures omit it deliberately so the fold is
+// exercised against the real payload shape (the team id is read from the
+// message level, `StartMessage.team_id`, not from `config`).
 function makeConfig(tools?: ToolCardLite[]): BaseConfig {
   return {
     name: 'cfg',
@@ -44,7 +48,6 @@ function makeConfig(tools?: ToolCardLite[]): BaseConfig {
     user_id: 'u1',
     user_email: 'u@x',
     squad_id: 's1',
-    team_id: TEAM_ID,
     orchestrator: baseSender('orchestrator'),
     tools,
   };
@@ -242,13 +245,14 @@ describe('workspaceRegistryReduce (pure function)', () => {
       content: null,
       __model__: 'akgentic.core.messages.orchestrator.StartMessage',
       parent: null,
+      // NOTE: NO `team_id` in config — the backend AgentConfig does not
+      // serialise it. The team id is only present at the MESSAGE level above.
       config: {
         name: 'Researcher',
         role: 'Agent',
         user_id: 'u1',
         user_email: 'u@x',
         squad_id: 's1',
-        team_id: TEAM_ID,
         orchestrator: {
           __actor_address__: true,
           agent_id: 'orch',
@@ -262,6 +266,14 @@ describe('workspaceRegistryReduce (pure function)', () => {
             __model__: WORKSPACE_MODEL,
             workspace_id: 'ws-from-wire',
           },
+          // Default workspace tool: NO workspace_id → must resolve to the
+          // team default via the message-level team_id (NOT config.team_id,
+          // which is absent on the wire). Regression guard for the bug where
+          // default-workspace members showed no chips.
+          {
+            __model__: WORKSPACE_MODEL,
+            workspace_id: null,
+          },
         ],
       },
     } as unknown as AkgenticMessage;
@@ -271,6 +283,11 @@ describe('workspaceRegistryReduce (pure function)', () => {
     expect(named).toBeDefined();
     expect(named?.isDefault).toBe(false);
     expect(named?.agentIds).toEqual(['agent-serialized']);
+    // The default tool (no workspace_id, config without team_id) still lands
+    // in the team-default descriptor — resolved from the message team_id.
+    const def = findById(result, TEAM_ID);
+    expect(def?.isDefault).toBe(true);
+    expect(def?.agentIds).toEqual(['agent-serialized']);
   });
 });
 
