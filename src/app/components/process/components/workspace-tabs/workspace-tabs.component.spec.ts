@@ -248,16 +248,20 @@ describe('WorkspaceTabsComponent', () => {
     expect(chipLabels()).toEqual(['Bob', 'Amelia']);
   });
 
-  it('(AC4) descriptor with no declared members → no strip rendered (no empty bar)', () => {
-    // A workspace is only ever listed because ≥1 agent declared access, so an
-    // empty member set is not a real state to label — render no strip at all.
+  it('(AC4) workspace with no members → strip shows the no-members message, no chips', () => {
+    // A workspace can legitimately have zero members (members can be removed),
+    // so the strip renders and states that no members can access it.
     registry.workspaces$.next([defaultDescriptor([])]);
     agents.agentsById$.next({});
     fixture.detectChanges();
 
     expect(chipLabels()).toEqual([]);
-    expect(strips()).toBe(0);
-    expect(fixture.debugElement.query(By.css('.ws-no-members'))).toBeNull();
+    expect(strips()).toBe(1);
+    const text = (
+      fixture.debugElement.query(By.css('.workspace-header-strip'))
+        .nativeElement.textContent as string
+    ).trim();
+    expect(text).toContain('No members can access this workspace');
   });
 
   it('(AC4b) the default workspace is NOT treated as "all members" — chips reflect its agentIds', () => {
@@ -268,7 +272,9 @@ describe('WorkspaceTabsComponent', () => {
     fixture.detectChanges();
 
     expect(chipLabels()).toEqual(['Bob']);
-    expect(fixture.debugElement.query(By.css('.ws-no-members'))).toBeNull();
+    const text = fixture.debugElement.query(By.css('.workspace-header-strip'))
+      .nativeElement.textContent as string;
+    expect(text).not.toContain('No members');
   });
 
   it('(layout) header strip is rendered above the explorer within the pane', () => {
