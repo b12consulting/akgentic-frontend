@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
+import { CUSTOM_ELEMENTS_SCHEMA, SimpleChange } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { TreeNode } from 'primeng/api';
@@ -386,6 +386,135 @@ describe('WorkspaceExplorerComponent', () => {
       await component.handleUploadComplete();
 
       expect(workspaceServiceSpy.uploadFiles).not.toHaveBeenCalled();
+    });
+  });
+
+  // --- workspaceId threading (AC6, AC7) ------------------------------
+
+  describe('workspaceId threading', () => {
+    beforeEach(() => {
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: 'x',
+        type: 'text',
+      });
+      workspaceServiceSpy.getDownloadUrl.and.returnValue('http://dl');
+      workspaceServiceSpy.uploadFiles.and.resolveTo();
+      fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+      component = fixture.componentInstance;
+      component.processId = 'proc';
+    });
+
+    it('scenario 12 — set workspaceId threads as the trailing arg on every call', async () => {
+      component.workspaceId = 'ws-1';
+
+      // getWorkspaceTree via loadWorkspace
+      await component.loadWorkspace();
+      expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledWith(
+        'proc',
+        '',
+        'ws-1'
+      );
+
+      // getWorkspaceTree via onNodeExpand
+      const subDir: TreeNode = {
+        label: 'sub',
+        data: fileNode({ name: 'sub', path: 'sub', type: 'directory' }),
+        leaf: false,
+        children: undefined,
+      };
+      await component.onNodeExpand({ node: subDir });
+      expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledWith(
+        'proc',
+        'sub',
+        'ws-1'
+      );
+
+      // getFileContent via loadFileContent
+      await component.loadFileContent('docs/a.md');
+      expect(workspaceServiceSpy.getFileContent).toHaveBeenCalledWith(
+        'proc',
+        'docs/a.md',
+        'ws-1'
+      );
+
+      // getDownloadUrl via downloadFile
+      component.selectedFile = fileNode({
+        name: 'a.md',
+        path: 'docs/a.md',
+        type: 'file',
+      });
+      spyOn(window, 'open');
+      component.downloadFile();
+      expect(workspaceServiceSpy.getDownloadUrl).toHaveBeenCalledWith(
+        'proc',
+        'docs/a.md',
+        'ws-1'
+      );
+
+      // uploadFiles via handleUploadComplete
+      component.uploadTargetPath = 'docs';
+      component.uploadModal = {
+        getSelectedFiles: () => [new File(['x'], 'b.md')],
+      } as unknown as UploadModalComponent;
+      await component.handleUploadComplete();
+      expect(workspaceServiceSpy.uploadFiles).toHaveBeenCalledWith(
+        'proc',
+        jasmine.any(Array),
+        'docs',
+        'ws-1'
+      );
+    });
+
+    it('scenario 13 — unset workspaceId keeps the 2-arg getWorkspaceTree shape', async () => {
+      // workspaceId left undefined
+      await component.loadWorkspace();
+      expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith(
+        'proc',
+        ''
+      );
+    });
+  });
+
+  // --- ngOnChanges refetch (AC8) -------------------------------------
+
+  describe('ngOnChanges refetch', () => {
+    beforeEach(() => {
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+      fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+      component = fixture.componentInstance;
+      component.processId = 'proc';
+    });
+
+    it('scenario 14 — a non-first workspaceId change refetches the tree', () => {
+      const loadSpy = spyOn(component, 'loadWorkspace').and.resolveTo();
+
+      component.workspaceId = 'ws-2';
+      component.ngOnChanges({
+        workspaceId: new SimpleChange('ws-1', 'ws-2', false),
+      });
+
+      expect(loadSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('scenario 15 — the first (init) change does NOT trigger a refetch', () => {
+      const loadSpy = spyOn(component, 'loadWorkspace').and.resolveTo();
+
+      component.ngOnChanges({
+        workspaceId: new SimpleChange(undefined, 'ws-1', true),
+      });
+
+      expect(loadSpy).not.toHaveBeenCalled();
+    });
+
+    it('scenario 16 — an unchanged value does not refetch', () => {
+      const loadSpy = spyOn(component, 'loadWorkspace').and.resolveTo();
+
+      component.ngOnChanges({
+        workspaceId: new SimpleChange('ws-1', 'ws-1', false),
+      });
+
+      expect(loadSpy).not.toHaveBeenCalled();
     });
   });
 });
