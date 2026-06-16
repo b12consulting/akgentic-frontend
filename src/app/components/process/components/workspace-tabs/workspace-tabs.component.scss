@@ -51,6 +51,11 @@
   align-items: center;
   gap: 0.25rem;
   padding: 0.5rem 0.75rem;
+  /* Same height with and without members: a chip is taller than the plain
+   * no-members text, so clamp both to a min-height that fits a chip (vertically
+   * centred). box-sizing: border-box so the padding + border are included. */
+  box-sizing: border-box;
+  min-height: 3rem;
   /* Same separator as the explorer toolbar / file-header rows. The fallback
    * is required: --surface-border is not defined in this component's scope, so
    * without it the var() is invalid and the whole border declaration drops. */
