@@ -1,14 +1,12 @@
 <ng-container *ngIf="vm$ | async as vm">
   <!-- Single default workspace → header strip + single explorer, NO tab chrome -->
   <div *ngIf="vm.workspaces.length <= 1" class="workspace-pane">
-    <div class="workspace-header-strip">
-      <ng-container
-        *ngTemplateOutlet="
-          memberRow;
-          context: { d: vm.workspaces[0], agents: vm.agentsById }
-        "
-      ></ng-container>
-    </div>
+    <ng-container
+      *ngTemplateOutlet="
+        memberStrip;
+        context: { d: vm.workspaces[0], agents: vm.agentsById }
+      "
+    ></ng-container>
     <app-workspace-explorer></app-workspace-explorer>
   </div>
 
@@ -22,11 +20,9 @@
     <p-tabpanels>
       <p-tabpanel *ngFor="let d of vm.workspaces; let i = index" [value]="i.toString()">
         <div class="workspace-pane">
-          <div class="workspace-header-strip">
-            <ng-container
-              *ngTemplateOutlet="memberRow; context: { d: d, agents: vm.agentsById }"
-            ></ng-container>
-          </div>
+          <ng-container
+            *ngTemplateOutlet="memberStrip; context: { d: d, agents: vm.agentsById }"
+          ></ng-container>
           <app-workspace-explorer
             [workspaceId]="d.isDefault ? undefined : d.workspaceId"
           ></app-workspace-explorer>
@@ -37,14 +33,14 @@
 </ng-container>
 
 <!--
-  Reusable member-chip row (v1 = membership only — name + role, no RW level).
-  Access is per-workspace and depends on which agents mount a WorkspaceTool for
-  it — the default workspace is NOT implicitly "all members". Show the resolved
-  members for every workspace; when none declared access, say so neutrally.
+  Member-chip strip (v1 = membership only — name + role, no RW level).
+  A workspace is listed only because ≥1 agent declared access to it, so the
+  strip normally has members; if (defensively) empty, render nothing rather
+  than an empty bar — there is no "no access" state to display.
 -->
-<ng-template #memberRow let-d="d" let-agents="agents">
+<ng-template #memberStrip let-d="d" let-agents="agents">
   <ng-container *ngIf="resolveMembers(d, agents) as members">
-    <ng-container *ngIf="members.length > 0; else noAccess">
+    <div class="workspace-header-strip" *ngIf="members.length > 0">
       <span class="ws-access-label">Accessible by:</span>
       <p-chip
         *ngFor="let m of members"
@@ -52,9 +48,6 @@
         [label]="m.name"
         [pTooltip]="m.role"
       ></p-chip>
-    </ng-container>
-    <ng-template #noAccess>
-      <span class="ws-no-members">No members with declared access</span>
-    </ng-template>
+    </div>
   </ng-container>
 </ng-template>

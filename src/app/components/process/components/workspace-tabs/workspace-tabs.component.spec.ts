@@ -256,17 +256,16 @@ describe('WorkspaceTabsComponent', () => {
     expect(tooltips).toEqual(['Scrum Master', 'Developer']);
   });
 
-  it('(AC4) descriptor with no declared members → neutral "no access" text, no chips', () => {
+  it('(AC4) descriptor with no declared members → no strip rendered (no empty bar)', () => {
+    // A workspace is only ever listed because ≥1 agent declared access, so an
+    // empty member set is not a real state to label — render no strip at all.
     registry.workspaces$.next([defaultDescriptor([])]);
     agents.agentsById$.next({});
     fixture.detectChanges();
 
     expect(chipLabels()).toEqual([]);
-    const text = (
-      fixture.debugElement.query(By.css('.ws-no-members'))
-        .nativeElement.textContent as string
-    ).trim();
-    expect(text).toBe('No members with declared access');
+    expect(strips()).toBe(0);
+    expect(fixture.debugElement.query(By.css('.ws-no-members'))).toBeNull();
   });
 
   it('(AC4b) the default workspace is NOT treated as "all members" — chips reflect its agentIds', () => {
