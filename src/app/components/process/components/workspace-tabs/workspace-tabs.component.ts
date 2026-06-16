@@ -28,6 +28,7 @@ import { WorkspaceExplorerComponent } from '../workspace-explorer/workspace-expl
   standalone: true,
   imports: [CommonModule, TabsModule, WorkspaceExplorerComponent],
   templateUrl: './workspace-tabs.component.html',
+  styleUrl: './workspace-tabs.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class WorkspaceTabsComponent {

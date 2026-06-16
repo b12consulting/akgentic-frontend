@@ -1,0 +1,32 @@
+/*
+ * Fill the full height of the visualization slot so the workspace panel
+ * extends to the bottom — in both the single-default case (bare explorer)
+ * and the tabbed case (PrimeNG <p-tabs>, which otherwise sizes to content).
+ */
+:host {
+  display: block;
+  height: 100%;
+}
+
+/* Single-default case: the bare explorer is a direct child of the host. */
+app-workspace-explorer {
+  display: block;
+  height: 100%;
+}
+
+/* Tabbed case: stack the tablist over a flex-filling panels area so the
+ * hosted explorer reaches the bottom edge. */
+:host ::ng-deep .p-tabs {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+:host ::ng-deep .p-tabpanels {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+:host ::ng-deep .p-tabpanel {
+  height: 100%;
+}

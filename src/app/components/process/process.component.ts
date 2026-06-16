@@ -115,7 +115,7 @@ export class ProcessComponent implements OnDestroy {
       value: 'knowledge-graph',
       icon: 'pi pi-sitemap',
     },
-    { label: 'Workspace', value: 'workspace', icon: 'pi pi-folder-open' },
+    { label: 'Workspaces', value: 'workspace', icon: 'pi pi-folder-open' },
     { label: 'Messages', value: 'messages', icon: 'pi pi-envelope' },
   ];
 
