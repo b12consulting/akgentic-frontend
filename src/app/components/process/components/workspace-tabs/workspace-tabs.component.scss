@@ -60,19 +60,6 @@
   margin-right: 0.125rem;
 }
 
-/* Compact chips — minimal padding/size so the strip uses as little space as
- * possible. */
-:host ::ng-deep .ws-member-chip {
-  font-size: 0.75rem;
-}
-
-:host ::ng-deep .ws-member-chip.p-chip,
-:host ::ng-deep .ws-member-chip .p-chip {
-  padding: 0.0625rem 0.4rem;
-  min-height: 0;
-  border-radius: 0.75rem;
-}
-
 /* Tabbed case: fill the PrimeNG tab chain to the host height and strip the
  * default tabpanel padding (token --p-tabs-tabpanel-padding) so the strip sits
  * directly under the tablist. */
