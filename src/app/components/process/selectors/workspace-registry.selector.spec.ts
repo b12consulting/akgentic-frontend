@@ -110,36 +110,32 @@ describe('isWorkspaceTool (guard)', () => {
 });
 
 describe('workspaceRegistryReduce (pure function)', () => {
-  it('(AC6) empty log → exactly one default descriptor keyed by team id', () => {
+  it('(AC6) empty log → no descriptors (no always-present default)', () => {
     const result = workspaceRegistryReduce([], TEAM_ID);
-    expect(result.length).toBe(1);
-    expect(result[0]).toEqual({
-      workspaceId: TEAM_ID,
-      isDefault: true,
-      agentIds: [],
-      label: 'Default workspace',
-    });
+    expect(result).toEqual([]);
   });
 
-  it('(AC3) StartMessage with a named WorkspaceTool → default + one named descriptor', () => {
+  it('(AC3) StartMessage with a named WorkspaceTool only → one named descriptor, no default', () => {
     const log: AkgenticMessage[] = [
       makeStartMessage('A', [workspaceTool('ws-named')]),
     ];
     const result = workspaceRegistryReduce(log, TEAM_ID);
-    expect(result.length).toBe(2);
-    expect(findById(result, TEAM_ID)?.isDefault).toBe(true);
+    expect(result.length).toBe(1);
     const named = findById(result, 'ws-named');
     expect(named?.isDefault).toBe(false);
     expect(named?.agentIds).toEqual(['agent-A']);
+    // No agent declared a no-workspace_id tool → there is NO default descriptor.
+    expect(findById(result, TEAM_ID)).toBeUndefined();
   });
 
-  it('(AC4) effective-id fallback — no workspace_id resolves to team id', () => {
+  it('(AC4) no workspace_id → creates the default descriptor keyed by the team id', () => {
     const log: AkgenticMessage[] = [
       makeStartMessage('A', [workspaceTool(null)]),
     ];
     const result = workspaceRegistryReduce(log, TEAM_ID);
-    // Falls back to team id → folds into the default descriptor, no new one.
+    // A no-workspace_id tool resolves to the team id → the (only) default.
     expect(result.length).toBe(1);
+    expect(findById(result, TEAM_ID)?.isDefault).toBe(true);
     expect(findById(result, TEAM_ID)?.agentIds).toEqual(['agent-A']);
   });
 
@@ -150,6 +146,22 @@ describe('workspaceRegistryReduce (pure function)', () => {
     const result = workspaceRegistryReduce(log, TEAM_ID);
     expect(findById(result, 'ws-x')).toBeDefined();
     expect(findById(result, 'ws-x')?.agentIds).toEqual(['agent-A']);
+  });
+
+  it('(order) default sorts first, named workspaces follow alphabetically', () => {
+    const log: AkgenticMessage[] = [
+      makeStartMessage('A', [workspaceTool('shared_workspace')]),
+      makeStartMessage('B', [workspaceTool(null)]), // default, declared later
+      makeStartMessage('C', [workspaceTool('alpha')]),
+    ];
+    const result = workspaceRegistryReduce(log, TEAM_ID);
+    // Default first despite being declared second; named ones alphabetical.
+    expect(result.map((d) => d.workspaceId)).toEqual([
+      TEAM_ID,
+      'alpha',
+      'shared_workspace',
+    ]);
+    expect(result[0].isDefault).toBe(true);
   });
 
   it('(AC5) two agents sharing one effective id collapse to one descriptor recording both', () => {
@@ -173,15 +185,16 @@ describe('workspaceRegistryReduce (pure function)', () => {
     expect(defaults[0].agentIds).toEqual(['agent-A']);
   });
 
-  it('(AC7) Stop drops the sole contributor — named descriptor disappears, default survives', () => {
+  it('(AC7) Stop drops the member but KEEPS the workspace (sticky — operator retains access)', () => {
     const log: AkgenticMessage[] = [
       makeStartMessage('A', [workspaceTool('ws-named')]),
       makeStopMessage('A'),
     ];
     const result = workspaceRegistryReduce(log, TEAM_ID);
-    expect(findById(result, 'ws-named')).toBeUndefined();
-    expect(result.length).toBe(1);
-    expect(result[0].isDefault).toBe(true);
+    const named = findById(result, 'ws-named');
+    expect(named).toBeDefined();
+    // The fired member is gone, but the workspace persists with no members.
+    expect(named?.agentIds).toEqual([]);
   });
 
   it('(AC7) Stop — descriptor backed by another agent survives, stopped agent removed', () => {
@@ -207,19 +220,20 @@ describe('workspaceRegistryReduce (pure function)', () => {
     expect(findById(result, 'ws-named')?.agentIds).toEqual(['agent-A']);
   });
 
-  it('(AC7) the default descriptor is never removed by a Stop', () => {
+  it('(AC7) Stop keeps the default workspace (sticky), drops its member', () => {
     const log: AkgenticMessage[] = [
       makeStartMessage('A', [workspaceTool(TEAM_ID)]),
       makeStopMessage('A'),
     ];
     const result = workspaceRegistryReduce(log, TEAM_ID);
-    expect(result.length).toBe(1);
-    expect(result[0]).toEqual({
-      workspaceId: TEAM_ID,
-      isDefault: true,
-      agentIds: [],
-      label: 'Default workspace',
-    });
+    const def = findById(result, TEAM_ID);
+    expect(def?.isDefault).toBe(true);
+    expect(def?.agentIds).toEqual([]);
+  });
+
+  it('(sticky) a team that never declared a WorkspaceTool stays empty', () => {
+    const log: AkgenticMessage[] = [makeStartMessage('A', [])];
+    expect(workspaceRegistryReduce(log, TEAM_ID)).toEqual([]);
   });
 
   it('(NFR4) realistic serialized StartMessage fixture → named descriptor registered', () => {
@@ -310,19 +324,17 @@ describe('WorkspaceRegistryService (selector over MessageLogService.log$)', () =
     return v as WorkspaceDescriptor[];
   }
 
-  it('(1) initial empty log → default-only (placeholder team id)', () => {
+  it('(1) initial empty log → no descriptors', () => {
     const result = currentValue();
-    expect(result.length).toBe(1);
-    expect(result[0].isDefault).toBe(true);
-    expect(result[0].workspaceId).toBe('');
+    expect(result).toEqual([]);
   });
 
-  it('(2) live append of a named-WorkspaceTool StartMessage → default + named', () => {
+  it('(2) live append of a named-WorkspaceTool StartMessage → one named descriptor', () => {
     log.append(makeStartMessage('A', [workspaceTool('ws-named')]));
     const result = currentValue();
-    expect(result.length).toBe(2);
-    expect(findById(result, TEAM_ID)?.isDefault).toBe(true);
+    expect(result.length).toBe(1);
     expect(findById(result, 'ws-named')?.agentIds).toEqual(['agent-A']);
+    expect(findById(result, TEAM_ID)).toBeUndefined();
   });
 
   it('(3) distinctUntilChanged suppresses structurally identical re-emissions', () => {
@@ -336,19 +348,17 @@ describe('WorkspaceRegistryService (selector over MessageLogService.log$)', () =
     log.append(start1);
     log.append(start2);
 
-    // [initial default-only, after first named start]. The second start for the
-    // same agent yields the same effective contribution → structurally identical
+    // [initial empty, after first named start]. The second start for the same
+    // agent yields the same effective contribution → structurally identical
     // fold → distinctUntilChanged suppresses a third emission.
     expect(emissions.length).toBe(2);
     sub.unsubscribe();
   });
 
-  it('(4) log.reset() returns to default-only on team switch', () => {
+  it('(4) log.reset() clears the registry on team switch', () => {
     log.append(makeStartMessage('A', [workspaceTool('ws-named')]));
-    expect(currentValue().length).toBe(2);
+    expect(currentValue().length).toBe(1);
     log.reset();
-    const result = currentValue();
-    expect(result.length).toBe(1);
-    expect(result[0].isDefault).toBe(true);
+    expect(currentValue()).toEqual([]);
   });
 });

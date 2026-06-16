@@ -72,44 +72,65 @@ function startContribution(msg: StartMessage): Set<string> {
 }
 
 /**
- * Build the descriptor list from the resolved per-agent contributions plus the
- * always-present default descriptor (ADR-019 §Decision 3). The default
- * (`workspaceId === teamId`) is emitted first and absorbs any agent whose
- * effective id equals the team id rather than creating a second default.
+ * Build the descriptor list from the set of workspaces ever discovered plus the
+ * CURRENT per-agent contributions.
+ *
+ * There is NO always-present default: a workspace exists only because at least
+ * one agent declared a `WorkspaceTool` for it (no `workspace_id` → team id,
+ * marked `isDefault`; a `workspace_id` → that name). A team with no
+ * `WorkspaceTool` at all yields an EMPTY list. (Supersedes ADR-019 §Decision 3
+ * / FR6.)
+ *
+ * Workspaces are STICKY: once discovered they remain listed even after their
+ * members are fired (`seen` is monotonic) — the operator keeps browsing access.
+ * `agentIds` reflects only the CURRENTLY-active contributors, so a workspace
+ * whose members have all stopped renders with an empty member list.
  */
 function buildDescriptors(
+  seen: Set<string>,
   contributions: Contributions,
   teamId: string,
 ): WorkspaceDescriptor[] {
-  const byId = new Map<string, Set<string>>([[teamId, new Set<string>()]]);
+  const membersById = new Map<string, Set<string>>();
+  for (const id of seen) membersById.set(id, new Set<string>());
   for (const [agentId, ids] of contributions) {
     for (const id of ids) {
-      const agents = byId.get(id) ?? new Set<string>();
-      agents.add(agentId);
-      byId.set(id, agents);
+      (membersById.get(id) ?? new Set<string>()).add(agentId);
+      membersById.set(id, membersById.get(id) as Set<string>);
     }
   }
-  return [...byId.entries()].map(([workspaceId, agents]) => {
-    const isDefault = workspaceId === teamId;
-    return {
-      workspaceId,
-      isDefault,
-      agentIds: [...agents].sort(),
-      label: labelFor(workspaceId, isDefault),
-    };
-  });
+  return [...membersById.entries()]
+    .map(([workspaceId, agents]) => {
+      const isDefault = workspaceId === teamId;
+      return {
+        workspaceId,
+        isDefault,
+        agentIds: [...agents].sort(),
+        label: labelFor(workspaceId, isDefault),
+      };
+    })
+    // Deterministic order: the default workspace first, then named workspaces
+    // alphabetically by label (stable across re-folds → OnPush-safe).
+    .sort((a, b) => {
+      if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+      return a.label.localeCompare(b.label);
+    });
 }
 
 /**
  * Pure ordered fold over the message log → the deduped set of workspaces in a
- * team (ADR-019 §Decision 1/2/3, mirror of `presenceReduce`).
+ * team (ADR-019 §Decision 1/2, mirror of `presenceReduce`).
  *
- * Ordered-reduce semantics are LOAD-BEARING: a `Start → Stop → Start` restart
- * for one agent must resolve to *present* (last Start wins) — a
- * `some(isStart) && !some(isStop)` shortcut would be wrong. We track each
- * agent's latest contribution and rebuild descriptors, so a `StopMessage`
- * drops only that agent (a descriptor backed by another agent survives; the
- * default descriptor is never removed).
+ * Two pieces of state:
+ * - `seen` — every workspace id ever declared by a `WorkspaceTool`. MONOTONIC:
+ *   a `StopMessage` never removes a workspace, so a discovered workspace stays
+ *   browsable after its members are fired.
+ * - `contributions` — each agent's CURRENT effective ids (Start sets, Stop
+ *   removes). Drives the per-workspace member list.
+ *
+ * Ordered-reduce semantics are LOAD-BEARING for membership: a
+ * `Start → Stop → Start` restart for one agent must resolve to *present* (last
+ * Start wins) — so we track each agent's latest contribution and rebuild.
  *
  * Exported at module scope so tests assert it directly without a `TestBed`.
  */
@@ -118,14 +139,18 @@ export function workspaceRegistryReduce(
   teamId: string,
 ): WorkspaceDescriptor[] {
   const contributions: Contributions = new Map();
+  const seen = new Set<string>();
   for (const m of log) {
     if (isStartMessage(m)) {
-      contributions.set(m.sender.agent_id, startContribution(m));
+      const ids = startContribution(m);
+      contributions.set(m.sender.agent_id, ids);
+      for (const id of ids) seen.add(id);
     } else if (isStopMessage(m)) {
+      // Drop the agent's membership but KEEP the workspace(s) in `seen`.
       contributions.delete(m.sender.agent_id);
     }
   }
-  return buildDescriptors(contributions, teamId);
+  return buildDescriptors(seen, contributions, teamId);
 }
 
 /** Deep structural equality of two descriptor arrays (NFR3). `agentIds` is
