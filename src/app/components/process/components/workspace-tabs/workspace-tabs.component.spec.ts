@@ -256,17 +256,46 @@ describe('WorkspaceTabsComponent', () => {
     expect(tooltips).toEqual(['Scrum Master', 'Developer']);
   });
 
-  it('(AC4) empty default descriptor → "Team default — all members", no chips', () => {
+  it('(AC4) descriptor with no declared members → neutral "no access" text, no chips', () => {
     registry.workspaces$.next([defaultDescriptor([])]);
     agents.agentsById$.next({});
     fixture.detectChanges();
 
     expect(chipLabels()).toEqual([]);
     const text = (
-      fixture.debugElement.query(By.css('.ws-all-members'))
+      fixture.debugElement.query(By.css('.ws-no-members'))
         .nativeElement.textContent as string
     ).trim();
-    expect(text).toBe('Team default — all members');
+    expect(text).toBe('No members with declared access');
+  });
+
+  it('(AC4b) the default workspace is NOT treated as "all members" — chips reflect its agentIds', () => {
+    // Access is per-workspace and tool-dependent: a default workspace with one
+    // declared member shows that member, never an implicit "all members".
+    registry.workspaces$.next([defaultDescriptor(['agent-A'])]);
+    agents.agentsById$.next({ 'agent-A': { name: 'Bob', role: 'Scrum Master' } });
+    fixture.detectChanges();
+
+    expect(chipLabels()).toEqual(['Bob']);
+    expect(fixture.debugElement.query(By.css('.ws-no-members'))).toBeNull();
+  });
+
+  it('(layout) header strip is rendered above the explorer within the pane', () => {
+    registry.workspaces$.next([defaultDescriptor(['d1'])]);
+    agents.agentsById$.next({ d1: { name: 'Bob', role: 'SM' } });
+    fixture.detectChanges();
+
+    const pane = fixture.debugElement.query(By.css('.workspace-pane'))
+      .nativeElement as HTMLElement;
+    const strip = pane.querySelector('.workspace-header-strip');
+    const explorer = pane.querySelector('app-workspace-explorer');
+    expect(strip).not.toBeNull();
+    expect(explorer).not.toBeNull();
+    // The strip must precede the explorer in document order (strip on top).
+    expect(
+      strip!.compareDocumentPosition(explorer!) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
   });
 
   it('(AC5) selecting a sub-tab updates the chip row to that workspace members', () => {

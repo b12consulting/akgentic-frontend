@@ -2,8 +2,7 @@
  * Fill the full height of the visualization slot so the workspace panel
  * extends to the bottom — in both the single-default case (header strip +
  * bare explorer) and the tabbed case (PrimeNG <p-tabs>, which otherwise sizes
- * to content). A flex column so the slim header strip (Story 23-4) sizes to
- * content and the explorer (or the tab chrome) flex-fills the remaining height.
+ * to content).
  */
 :host {
   display: flex;
@@ -11,9 +10,29 @@
   height: 100%;
 }
 
-/* Slim header strip (Story 23-4): a thin horizontal member-chip row above the
- * explorer in BOTH branches. It is NOT a tab bar — it never reintroduces tab
- * chrome in the single-default branch (FR13). */
+/*
+ * Strip + explorer pane (Story 23-4). A GRID, not a flex column: the slim
+ * header strip takes its content height (auto) and the explorer fills the
+ * remaining height (1fr). Grid is deterministic here where flex was not — the
+ * explorer carries its own `height: 100%`, which under flex inflated its basis
+ * and pushed the strip past the bottom edge; against a 1fr grid track that
+ * same `height: 100%` simply resolves to the track and fills it.
+ */
+.workspace-pane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+}
+
+/* Single-default branch: the pane is the flex-filling child of the host. */
+:host > .workspace-pane {
+  flex: 1 1 auto;
+}
+
+/* Slim header strip: a thin horizontal member-chip row above the explorer in
+ * BOTH branches. It is NOT a tab bar — it never reintroduces tab chrome in the
+ * single-default branch (ADR-019 FR13). */
 .workspace-header-strip {
   display: flex;
   flex-wrap: wrap;
@@ -23,22 +42,28 @@
   min-height: 2rem;
 }
 
-.workspace-header-strip .ws-all-members {
+.workspace-header-strip .ws-access-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  opacity: 0.7;
+  margin-right: 0.25rem;
+}
+
+.workspace-header-strip .ws-no-members {
   font-size: 0.875rem;
   opacity: 0.7;
 }
 
-/* Single-default case: the bare explorer follows the header strip and fills
- * the remaining height. */
-app-workspace-explorer {
+/* The explorer fills its grid row (1fr); its own `height: 100%` now resolves
+ * against that definite track. */
+.workspace-pane > app-workspace-explorer {
   display: block;
-  flex: 1 1 auto;
+  height: 100%;
   min-height: 0;
 }
 
-/* Tabbed case: the <p-tabs> is the flex-filling child of the host; stack the
- * tablist over a flex-filling panels area so the hosted explorer reaches the
- * bottom edge. */
+/* Tabbed case: fill the PrimeNG tab chain to the host height so each panel's
+ * pane reaches the bottom edge. */
 :host ::ng-deep .p-tabs {
   display: flex;
   flex-direction: column;
@@ -51,10 +76,7 @@ app-workspace-explorer {
   min-height: 0;
 }
 
-/* Each panel stacks its own header strip over its explorer (flex column) so
- * the explorer fills the panel below the strip. */
 :host ::ng-deep .p-tabpanel {
-  display: flex;
-  flex-direction: column;
   height: 100%;
+  min-height: 0;
 }
