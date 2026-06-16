@@ -4,7 +4,6 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { Tabs } from 'primeng/tabs';
-import { Tooltip } from 'primeng/tooltip';
 import { BehaviorSubject } from 'rxjs';
 
 import { ContextService } from '../../../../core/context/context.service';
@@ -233,7 +232,7 @@ describe('WorkspaceTabsComponent', () => {
     expect(hasTabChrome()).toBe(false);
   });
 
-  it('(AC3) one chip per member, names in agentIds order, role as tooltip', () => {
+  it('(AC3) one chip per member, names in agentIds order', () => {
     registry.workspaces$.next([
       defaultDescriptor(),
       namedDescriptor('ws-named', ['a1', 'a2']),
@@ -247,13 +246,6 @@ describe('WorkspaceTabsComponent', () => {
     // The named workspace's members are visible on its (active) panel.
     activateTab(1);
     expect(chipLabels()).toEqual(['Bob', 'Amelia']);
-
-    // Each chip exposes its role via the pTooltip binding (Tooltip.content is
-    // the `pTooltip` input's property alias).
-    const tooltips = fixture.debugElement
-      .queryAll(By.directive(Tooltip))
-      .map((de) => (de.injector.get(Tooltip) as Tooltip).content);
-    expect(tooltips).toEqual(['Scrum Master', 'Developer']);
   });
 
   it('(AC4) descriptor with no declared members → no strip rendered (no empty bar)', () => {

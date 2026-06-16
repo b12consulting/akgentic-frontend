@@ -30,13 +30,14 @@ function sender(agentId: string, name: string, role: string) {
 }
 
 function makeConfig(): BaseConfig {
+  // No team_id: the backend AgentConfig does not serialise it (absent on the
+  // wire). The team id is read from the message level, not config.
   return {
     name: 'cfg',
     role: 'Agent',
     user_id: 'u1',
     user_email: 'u@x',
     squad_id: 's1',
-    team_id: TEAM_ID,
     orchestrator: sender('orch', 'orchestrator', 'Orchestrator'),
   };
 }
