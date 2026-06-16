@@ -3431,18 +3431,42 @@ entries: {}
     component.onConfirmDialogHide();
   });
 
-  it('(ADR-018 §c) confirmDiscard resolves true when Proceed is clicked', async () => {
+  it('(ADR-018 §c) confirmDiscard Proceed resolves true AND really discards (buffer reset to serverYaml)', async () => {
     await loaded('foo: 1\n');
     component.buffer = 'foo: 2\n';
+    expect(component.hasUnsavedChanges()).toBeTrue();
 
     const promise = component.confirmDiscard();
     clickConfirmProceed();
 
     await expectAsync(promise).toBeResolvedTo(true);
     expect(confirmOpen()).toBeFalse();
+    // Real discard: the buffer is reverted to the server snapshot → clean.
+    expect(component.buffer).toBe('foo: 1\n');
+    expect(component.buffer).toBe(component.serverYaml);
+    expect(component.hasUnsavedChanges()).toBeFalse();
   });
 
-  it('(ADR-018 §c) confirmDiscard resolves false when Cancel is clicked', async () => {
+  it('(ADR-018 §c) confirmDiscard Proceed clears dirty-derived state (lastValidation / rawSaveError)', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    component.lastValidation = {
+      namespace: 'foo',
+      ok: false,
+      global_errors: ['bad'],
+      entry_issues: [],
+    };
+    component.rawSaveError = 'boom';
+
+    const promise = component.confirmDiscard();
+    clickConfirmProceed();
+    await promise;
+
+    expect(component.lastValidation).toBeNull();
+    expect(component.rawSaveError).toBeNull();
+  });
+
+  it('(ADR-018 §c) confirmDiscard Cancel resolves false AND leaves the buffer dirty (no reset)', async () => {
     await loaded('foo: 1\n');
     component.buffer = 'foo: 2\n';
 
@@ -3451,9 +3475,12 @@ entries: {}
 
     await expectAsync(promise).toBeResolvedTo(false);
     expect(confirmOpen()).toBeFalse();
+    // Cancel = stay: the edits are kept intact.
+    expect(component.buffer).toBe('foo: 2\n');
+    expect(component.hasUnsavedChanges()).toBeTrue();
   });
 
-  it('(ADR-018 §c) confirmDiscard resolves false on Esc/X dismissal (onConfirmDialogHide)', async () => {
+  it('(ADR-018 §c) confirmDiscard Esc/X dismissal resolves false AND leaves the buffer dirty', async () => {
     await loaded('foo: 1\n');
     component.buffer = 'foo: 2\n';
 
@@ -3461,6 +3488,8 @@ entries: {}
     component.onConfirmDialogHide();
 
     await expectAsync(promise).toBeResolvedTo(false);
+    expect(component.buffer).toBe('foo: 2\n');
+    expect(component.hasUnsavedChanges()).toBeTrue();
   });
 
   it('(ADR-018 §d) the discard-variant Proceed button is NOT destructive (no danger class)', async () => {

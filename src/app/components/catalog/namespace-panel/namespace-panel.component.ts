@@ -878,15 +878,21 @@ export class NamespacePanelComponent
    * custom confirmation modal with the `'discard'` variant ("Unsaved changes" /
    * "You have unsaved changes. Discard?") and returns a `Promise<boolean>` that
    * resolves:
-   *   - `true`  → the operator chose **Proceed** (discard the buffer / let the
-   *               close or navigation continue), and
-   *   - `false` → the operator **Cancelled** / dismissed (Esc / X) — keep the
-   *               panel open with the buffer intact.
+   *   - `true`  → the operator chose **Proceed**. The panel buffer is REALLY
+   *               discarded here (`revertBufferToServer()` — buffer reset to the
+   *               server snapshot, dirty-derived state cleared) BEFORE the
+   *               promise resolves, then the host closes the panel. Because the
+   *               panel instance is kept alive across a dialog visibility toggle
+   *               (not destroyed), resetting on this path is what stops the
+   *               abandoned edits from leaking into the next open — reopening
+   *               shows the clean server YAML.
+   *   - `false` → the operator **Cancelled** / dismissed (Esc / X / mask) — the
+   *               buffer is left UNTOUCHED (still dirty) and the panel stays open.
    *
    * Reused by BOTH dirty-state hosts so the LAST PrimeNG `<p-confirmDialog>`
    * usages for the namespace panel are removed:
    *   - the Home config-dialog close paths (`onNamespacePanelVisibleChange` and
-   *     the Esc/X close), and
+   *     the Esc/X/mask close), and
    *   - the deep-link route `CanDeactivate` guard (`namespacePanelCanDeactivate`),
    *     resolving the spec-compliance route-guard BLOCKING finding (the guard
    *     previously depended on a `<p-confirmDialog>` the panel no longer mounts).
@@ -914,8 +920,14 @@ export class NamespacePanelComponent
           message: 'You have unsaved changes. Discard?',
           variant: 'discard',
         },
-        // Proceed → discard / allow the close-or-navigation.
-        () => settle(true),
+        // Proceed → REALLY discard (revert the buffer to the server snapshot,
+        // clear dirty-derived state) then allow the close-or-navigation. The
+        // reset happens on BOTH the Esc and the X/mask close paths because they
+        // all route Proceed through this same accept callback.
+        () => {
+          this.revertBufferToServer();
+          settle(true);
+        },
       );
     });
   }
@@ -1021,10 +1033,30 @@ export class NamespacePanelComponent
   }
 
   /**
+   * Revert the edit buffer to the last server snapshot and clear every
+   * dirty-derived signal (`lastValidation` / `rawSaveError` / `validatedBuffer`)
+   * so the panel lands fully clean. Shared by the Reset button (`onResetClick`)
+   * and the dirty-CLOSE discard (`confirmDiscard` Proceed — ADR-018 Amendment
+   * §c). Load-bearing for the close path: the panel instance is kept alive
+   * across a dialog visibility toggle (not destroyed), so without this reset the
+   * abandoned edits would leak into the next open. Destroy-guarded.
+   */
+  private revertBufferToServer(): void {
+    if (this.destroyed) {
+      return;
+    }
+    this.buffer = this.serverYaml;
+    this.lastValidation = null;
+    this.rawSaveError = null;
+    this.validatedBuffer = null;
+  }
+
+  /**
    * Revert the buffer to `serverYaml` — the SOLE undo affordance now that
    * Cancel is removed (ADR-017 §2). Guarded by the custom "Discard unsaved
    * changes?" confirm; a no-op when clean (the Reset button is also disabled
-   * via `[disabled]="buffer === serverYaml"`).
+   * via `[disabled]="buffer === serverYaml"`). Reverts-and-STAYS (does not close
+   * the panel) — distinct from the dirty-CLOSE discard which reverts-and-closes.
    */
   onResetClick(): void {
     if (this.buffer === this.serverYaml) {
@@ -1036,15 +1068,7 @@ export class NamespacePanelComponent
         message: 'Discard unsaved changes?',
         variant: 'reset',
       },
-      () => {
-        if (this.destroyed) {
-          return;
-        }
-        this.buffer = this.serverYaml;
-        this.lastValidation = null;
-        this.rawSaveError = null;
-        this.validatedBuffer = null;
-      },
+      () => this.revertBufferToServer(),
     );
   }
 
