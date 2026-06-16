@@ -3,7 +3,6 @@ import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { Router } from '@angular/router';
-import { ConfirmationService } from 'primeng/api';
 import { BehaviorSubject, of } from 'rxjs';
 
 import { ApiService } from '../../core/http/api.service';
@@ -43,7 +42,6 @@ describe('HomeComponent', () => {
   // (isAdmin$ derived from currentUser$) can be driven from tests.
   let currentUser$: BehaviorSubject<any>;
   let routerSpy: jasmine.SpyObj<Router>;
-  let confirmationSpy: jasmine.SpyObj<ConfirmationService>;
 
   beforeEach(async () => {
     teams$ = new BehaviorSubject<TeamContext[]>([]);
@@ -92,13 +90,10 @@ describe('HomeComponent', () => {
     routerSpy = jasmine.createSpyObj('Router', ['navigate']);
     routerSpy.navigate.and.returnValue(Promise.resolve(true));
 
-    // Use a REAL ConfirmationService instance (so its `requireConfirmation$`
-    // Subject is wired) and spy on `.confirm` to observe calls. Using a bare
-    // `jasmine.createSpyObj` breaks PrimeNG's `<p-confirmDialog>` constructor
-    // because it subscribes to `requireConfirmation$` on instantiation.
-    confirmationSpy = new ConfirmationService() as jasmine.SpyObj<ConfirmationService>;
-    spyOn(confirmationSpy, 'confirm').and.callThrough();
-
+    // ADR-018 Amendment §c — the dirty-close prompt is now the panel's custom
+    // confirm modal (`panel.confirmDiscard()`), so HomeComponent no longer
+    // provides/uses PrimeNG `ConfirmationService` / `<p-confirmDialog>`. Tests
+    // stub `namespacePanel.confirmDiscard` directly.
     await TestBed.configureTestingModule({
       imports: [HomeComponent, CommonModule, NoopAnimationsModule],
       providers: [
@@ -109,17 +104,7 @@ describe('HomeComponent', () => {
         { provide: Router, useValue: routerSpy },
       ],
       schemas: [CUSTOM_ELEMENTS_SCHEMA],
-    })
-      // Swap the HomeComponent's locally-provided ConfirmationService for a
-      // spy so the Story 11.3 dirty-close guard is testable deterministically.
-      .overrideComponent(HomeComponent, {
-        set: {
-          providers: [
-            { provide: ConfirmationService, useValue: confirmationSpy },
-          ],
-        },
-      })
-      .compileComponents();
+    }).compileComponents();
 
     fixture = TestBed.createComponent(HomeComponent);
     component = fixture.componentInstance;
@@ -432,22 +417,31 @@ describe('HomeComponent', () => {
   // --- Story 11.3 — dialog dirty-close guard + (saved) re-fetch -------
 
   it('(11.3 AC10) onNamespacePanelVisibleChange(true) is a no-op (opening the dialog)', () => {
+    const confirmDiscard = jasmine.createSpy('confirmDiscard');
     component.namespacePanelVisible = true;
+    component.namespacePanel = {
+      hasUnsavedChanges: () => true,
+      confirmDiscard,
+    } as unknown as NamespacePanelComponent;
+
     component.onNamespacePanelVisibleChange(true);
-    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+
+    expect(confirmDiscard).not.toHaveBeenCalled();
     expect(component.namespacePanelVisible).toBeTrue();
   });
 
   it('(11.3 AC10) onNamespacePanelVisibleChange(false) with clean panel closes without confirm', () => {
+    const confirmDiscard = jasmine.createSpy('confirmDiscard');
     component.namespacePanelVisible = true;
     // Simulate a mounted-but-clean panel.
     component.namespacePanel = {
       hasUnsavedChanges: () => false,
+      confirmDiscard,
     } as unknown as NamespacePanelComponent;
 
     component.onNamespacePanelVisibleChange(false);
 
-    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+    expect(confirmDiscard).not.toHaveBeenCalled();
     expect(component.namespacePanelVisible).toBeFalse();
   });
 
@@ -457,42 +451,48 @@ describe('HomeComponent', () => {
 
     component.onNamespacePanelVisibleChange(false);
 
-    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
     expect(component.namespacePanelVisible).toBeFalse();
   });
 
-  it('(11.3 AC10) onNamespacePanelVisibleChange(false) with dirty panel requests confirm and keeps dialog open', () => {
+  it('(ADR-018 §c) onNamespacePanelVisibleChange(false) with dirty panel calls confirmDiscard and keeps dialog open; Proceed closes', async () => {
+    let resolveDiscard!: (v: boolean) => void;
+    const confirmDiscard = jasmine
+      .createSpy('confirmDiscard')
+      .and.returnValue(new Promise<boolean>((r) => (resolveDiscard = r)));
     component.namespacePanelVisible = true;
     component.namespacePanel = {
       hasUnsavedChanges: () => true,
+      confirmDiscard,
     } as unknown as NamespacePanelComponent;
 
     component.onNamespacePanelVisibleChange(false);
 
-    expect(confirmationSpy.confirm).toHaveBeenCalledTimes(1);
-    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
-    expect(args.message as string).toContain('unsaved changes');
-    // Re-asserted visibility to keep the dialog open during the confirm.
+    expect(confirmDiscard).toHaveBeenCalledTimes(1);
+    // Re-asserted visibility to keep the dialog open while the modal runs.
     expect(component.namespacePanelVisible).toBeTrue();
 
-    // Accept → the dialog truly closes.
-    args.accept!();
+    // Proceed → the dialog truly closes.
+    resolveDiscard(true);
+    await Promise.resolve();
     expect(component.namespacePanelVisible).toBeFalse();
   });
 
-  it('(11.3 AC10) dismissing the confirm (reject) leaves the dialog open, buffer intact', () => {
+  it('(ADR-018 §c) Cancel/dismiss (confirmDiscard resolves false) leaves the dialog open, buffer intact', async () => {
+    let resolveDiscard!: (v: boolean) => void;
+    const confirmDiscard = jasmine
+      .createSpy('confirmDiscard')
+      .and.returnValue(new Promise<boolean>((r) => (resolveDiscard = r)));
     component.namespacePanelVisible = true;
     component.namespacePanel = {
       hasUnsavedChanges: () => true,
+      confirmDiscard,
     } as unknown as NamespacePanelComponent;
 
     component.onNamespacePanelVisibleChange(false);
+    resolveDiscard(false);
+    await Promise.resolve();
 
-    // Reject is optional in ConfirmationService; the call-site does not
-    // register one, so dismissing leaves state unchanged.
-    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
-    expect(args.reject).toBeUndefined();
-    // Visibility is still true (re-asserted by the handler).
+    // Dismissing keeps the dialog open (re-asserted by the handler).
     expect(component.namespacePanelVisible).toBeTrue();
   });
 
@@ -666,52 +666,80 @@ describe('HomeComponent', () => {
     expect(component.isWriteInFlight).toBeFalse();
   });
 
-  // --- Story 22.3 (ADR-018 §3) — config dialog closeOnEscape gated on the ---
-  // --- panel's secondary-panel-open state. The template binding is         ---
-  // --- `!isWriteInFlight && namespacePanel?.hasSecondaryPanelOpen !== true`.---
+  // --- ADR-018 Amendment §b (FIX 2) — single coordinated Escape handler. ---
+  // The host config dialog sets `[closeOnEscape]="false"`; `onConfigDialogEscape`
+  // (a `document:keydown.escape` HostListener) does exactly ONE thing per Esc.
 
-  /** Mirrors the home.component.html `[closeOnEscape]` binding expression. */
-  function closeOnEscape(): boolean {
-    return (
-      !component.isWriteInFlight &&
-      component.namespacePanel?.hasSecondaryPanelOpen !== true
-    );
+  function escapeEvent(): jasmine.SpyObj<Event> {
+    return jasmine.createSpyObj<Event>('KeyboardEvent', ['preventDefault']);
   }
 
-  it('(22.3 AC12) config dialog closeOnEscape is false while a secondary panel is open', () => {
+  it('(ADR-018 §b) Escape is a no-op when the config dialog is not open', () => {
+    const handleSecondaryEscape = jasmine.createSpy('handleSecondaryEscape');
+    component.namespacePanelVisible = false;
     component.namespacePanel = {
       saving: false,
       cloning: false,
-      hasSecondaryPanelOpen: true,
+      handleSecondaryEscape,
     } as unknown as NamespacePanelComponent;
 
-    expect(closeOnEscape()).toBeFalse();
+    component.onConfigDialogEscape(escapeEvent());
+
+    expect(handleSecondaryEscape).not.toHaveBeenCalled();
   });
 
-  it('(22.3 AC13) config dialog closeOnEscape is true when no secondary panel is open (and no write in flight)', () => {
-    component.namespacePanel = {
-      saving: false,
-      cloning: false,
-      hasSecondaryPanelOpen: false,
-    } as unknown as NamespacePanelComponent;
-
-    expect(closeOnEscape()).toBeTrue();
-  });
-
-  it('(22.3 AC13) config dialog closeOnEscape stays false while a write is in flight, regardless of secondary panel', () => {
+  it('(ADR-018 §b) Escape is a no-op while a write is in flight', () => {
+    const handleSecondaryEscape = jasmine.createSpy('handleSecondaryEscape');
+    component.namespacePanelVisible = true;
     component.namespacePanel = {
       saving: true,
       cloning: false,
-      hasSecondaryPanelOpen: false,
+      handleSecondaryEscape,
     } as unknown as NamespacePanelComponent;
 
-    // isWriteInFlight wins — closeOnEscape is suppressed during a write.
-    expect(closeOnEscape()).toBeFalse();
+    component.onConfigDialogEscape(escapeEvent());
+
+    expect(handleSecondaryEscape).not.toHaveBeenCalled();
   });
 
-  it('(22.3 AC13) config dialog closeOnEscape is true when the panel is not yet mounted (undefined)', () => {
-    component.namespacePanel = undefined;
-    expect(closeOnEscape()).toBeTrue();
+  it('(ADR-018 §b) Escape closes ONLY the topmost secondary modal when one is open (config stays open)', () => {
+    const handleSecondaryEscape = jasmine
+      .createSpy('handleSecondaryEscape')
+      .and.returnValue(true);
+    component.namespacePanelVisible = true;
+    component.namespacePanel = {
+      saving: false,
+      cloning: false,
+      hasUnsavedChanges: () => true,
+      handleSecondaryEscape,
+    } as unknown as NamespacePanelComponent;
+
+    const event = escapeEvent();
+    component.onConfigDialogEscape(event);
+
+    expect(handleSecondaryEscape).toHaveBeenCalledTimes(1);
+    expect(event.preventDefault).toHaveBeenCalledTimes(1);
+    // Config panel was NOT closed (the secondary modal consumed the Escape).
+    expect(component.namespacePanelVisible).toBeTrue();
+  });
+
+  it('(ADR-018 §b) Escape with no secondary modal open runs the config panel close flow', () => {
+    const handleSecondaryEscape = jasmine
+      .createSpy('handleSecondaryEscape')
+      .and.returnValue(false);
+    component.namespacePanelVisible = true;
+    component.namespacePanel = {
+      saving: false,
+      cloning: false,
+      hasUnsavedChanges: () => false,
+      handleSecondaryEscape,
+    } as unknown as NamespacePanelComponent;
+
+    component.onConfigDialogEscape(escapeEvent());
+
+    expect(handleSecondaryEscape).toHaveBeenCalledTimes(1);
+    // Clean panel → close flow closes the config dialog directly.
+    expect(component.namespacePanelVisible).toBeFalse();
   });
 
   it('(11.7 AC8) namespaceLabel returns selected.name when present', () => {

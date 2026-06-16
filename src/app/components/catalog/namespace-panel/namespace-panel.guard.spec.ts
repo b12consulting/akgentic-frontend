@@ -1,32 +1,20 @@
 import { TestBed } from '@angular/core/testing';
-import { ConfirmationService } from 'primeng/api';
 
 import { NamespacePanelComponent } from './namespace-panel.component';
 import { NamespacePanelRouteComponent } from './namespace-panel-route.component';
 import { namespacePanelCanDeactivate } from './namespace-panel.guard';
 
 /**
- * Story 11.6 — functional `CanDeactivate` guard tests.
+ * Story 11.6 + ADR-018 Amendment §c — functional `CanDeactivate` guard tests.
  *
- * The guard runs inside a router-owned injection context at navigation time.
- * In tests we invoke it via `TestBed.runInInjectionContext(() => ...)` so
- * `inject(ConfirmationService)` resolves correctly against the test module's
- * providers.
+ * The guard delegates its dirty-navigation prompt to the panel's custom confirm
+ * modal via `panel.confirmDiscard()` (no more PrimeNG `ConfirmationService` /
+ * `<p-confirmDialog>`). Tests stub `panel.confirmDiscard()` to resolve true
+ * (Proceed) / false (Cancel/dismiss) and assert the guard relays that verbatim.
  */
-describe('namespacePanelCanDeactivate (Story 11.6 CanDeactivate guard)', () => {
-  let confirmationSpy: jasmine.SpyObj<ConfirmationService>;
-
+describe('namespacePanelCanDeactivate (CanDeactivate guard)', () => {
   beforeEach(() => {
-    // Real service instance + spy on `.confirm` — matches the panel's unit
-    // tests (a bare `createSpyObj` breaks PrimeNG's internal
-    // `requireConfirmation$` subject).
-    confirmationSpy =
-      new ConfirmationService() as jasmine.SpyObj<ConfirmationService>;
-    spyOn(confirmationSpy, 'confirm').and.callThrough();
-
-    TestBed.configureTestingModule({
-      providers: [{ provide: ConfirmationService, useValue: confirmationSpy }],
-    });
+    TestBed.configureTestingModule({ providers: [] });
   });
 
   // Helper — invoke the functional guard in an injection context.
@@ -52,46 +40,47 @@ describe('namespacePanelCanDeactivate (Story 11.6 CanDeactivate guard)', () => {
     expect(typeof namespacePanelCanDeactivate).toBe('function');
   });
 
-  it('(AC4, AC8) clean buffer → returns true synchronously, no prompt', () => {
+  it('(AC4, AC8) clean buffer → returns true synchronously, no confirmDiscard call', () => {
+    const confirmDiscard = jasmine.createSpy('confirmDiscard');
     const panel = {
-      hasUnsavedChanges: jasmine.createSpy('hasUnsavedChanges').and.returnValue(false),
+      hasUnsavedChanges: jasmine
+        .createSpy('hasUnsavedChanges')
+        .and.returnValue(false),
+      confirmDiscard,
     } as unknown as NamespacePanelComponent;
     const component = { panel } as NamespacePanelRouteComponent;
 
     const result = invokeGuard(component);
 
     expect(result).toBe(true);
-    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
+    expect(confirmDiscard).not.toHaveBeenCalled();
   });
 
-  it('(AC4) dirty buffer + confirm-accept → resolves true with exact message', async () => {
+  it('(ADR-018 §c) dirty buffer + Proceed → delegates to confirmDiscard, resolves true', async () => {
+    const confirmDiscard = jasmine
+      .createSpy('confirmDiscard')
+      .and.returnValue(Promise.resolve(true));
     const panel = {
       hasUnsavedChanges: () => true,
+      confirmDiscard,
     } as unknown as NamespacePanelComponent;
     const component = { panel } as NamespacePanelRouteComponent;
-    // Auto-accept the first confirm call.
-    confirmationSpy.confirm.and.callFake((cfg) => {
-      cfg.accept!();
-      return confirmationSpy;
-    });
 
     const result = invokeGuard(component);
 
-    expect(result).toEqual(jasmine.any(Promise));
+    expect(confirmDiscard).toHaveBeenCalledTimes(1);
     await expectAsync(result as Promise<boolean>).toBeResolvedTo(true);
-    const args = confirmationSpy.confirm.calls.mostRecent().args[0];
-    expect(args.message).toBe('You have unsaved changes. Discard?');
   });
 
-  it('(AC4) dirty buffer + confirm-reject → resolves false', async () => {
+  it('(ADR-018 §c) dirty buffer + Cancel/dismiss → confirmDiscard resolves false', async () => {
+    const confirmDiscard = jasmine
+      .createSpy('confirmDiscard')
+      .and.returnValue(Promise.resolve(false));
     const panel = {
       hasUnsavedChanges: () => true,
+      confirmDiscard,
     } as unknown as NamespacePanelComponent;
     const component = { panel } as NamespacePanelRouteComponent;
-    confirmationSpy.confirm.and.callFake((cfg) => {
-      cfg.reject!();
-      return confirmationSpy;
-    });
 
     const result = invokeGuard(component);
 
@@ -104,6 +93,5 @@ describe('namespacePanelCanDeactivate (Story 11.6 CanDeactivate guard)', () => {
     const result = invokeGuard(component);
 
     expect(result).toBe(true);
-    expect(confirmationSpy.confirm).not.toHaveBeenCalled();
   });
 });

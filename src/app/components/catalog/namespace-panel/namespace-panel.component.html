@@ -149,20 +149,23 @@
     (visibleChange)="onCloneDialogVisibleChange($event)"
     (onShow)="onCloneDialogShow()"
     (onHide)="onCloneDialogHide()"
-    [modal]="false"
+    [modal]="true"
+    [draggable]="true"
+    [closeOnEscape]="false"
+    styleClass="np-secondary-modal"
+    maskStyleClass="np-secondary-modal-mask"
     [style]="{ width: '30rem' }"
     header="Clone namespace"
     data-test="clone-dialog"
   >
-    <!-- ADR-018 §3 — the secondary panel owns its Esc→cancel: stop the
-         keystroke from bubbling so it cannot reach the host config dialog. The
-         dialog's own [closeOnEscape] (default true) closes THIS modal; the host
-         dialog's [closeOnEscape] is separately gated off via
-         `hasSecondaryPanelOpen` while any secondary panel is open. -->
-    <div
-      class="namespace-panel__clone-body"
-      (keydown.escape)="$event.stopPropagation()"
-    >
+    <!-- ADR-018 Amendment §a/§b — the secondary modal is properly modal
+         (draggable, pointer-contained) but paints NO dimming backdrop: the
+         `np-secondary-modal` styleClass makes `.p-dialog-mask` transparent (see
+         the component SCSS). `[closeOnEscape]="false"` disables PrimeNG's
+         document-level Esc listener for THIS modal; the single coordinated
+         Escape handler (the host's capture-phase keydown → `handleSecondaryEscape`)
+         closes only the topmost secondary panel. -->
+    <div class="namespace-panel__clone-body">
       <label for="clone-dest-name-input">Destination name</label>
       <input
         #cloneDestInput
@@ -283,24 +286,34 @@
   >{{ a11yAnnouncement }}</div>
 
   <!--
-    Story 22.3 (ADR-018 §1–§4) — panel-owned custom confirmation modal. Same
-    `<p-dialog>` shell + `namespace-panel__clone-body` / `__clone-actions`
-    styling as the Clone modal above; reused for Reset-discard, Save-drift, and
-    Delete. Driven from component state (`confirmDialogVisible` + the typed
-    `confirmRequest`), not an imperative service call.
+    Story 22.3 (ADR-018 §1–§4 + Amendment) — panel-owned custom confirmation
+    modal. Same `<p-dialog>` shell + `namespace-panel__clone-body` /
+    `__clone-actions` styling as the Clone modal above; reused for Reset-discard,
+    Save-drift, Delete, AND the dirty-CLOSE / dirty-NAV discard confirm
+    (`confirmDiscard()` — Amendment §c). Driven from component state
+    (`confirmDialogVisible` + the typed `confirmRequest`), not an imperative
+    service call.
 
-    - No `[modal]` → no backdrop under the secondary panel (ADR-018 §3 / AC 14).
-    - `(onShow)` autofocuses the safe button so Enter/Esc cancel (ADR-018 §2);
-      `(onHide)` resets state + settles a pending drift dismissal to the safe
-      branch (AC 8, 19).
-    - Esc on the body stops propagation so it cannot reach the host config
-      dialog (ADR-018 §3); the dialog's own [closeOnEscape] closes THIS modal.
+    - `[modal]="true"` + `[draggable]="true"` + `styleClass="np-secondary-modal"`
+      (transparent `.p-dialog-mask` in the SCSS) → properly modal and draggable
+      with NO dimming backdrop (ADR-018 Amendment §a / FIX 4).
+    - `[closeOnEscape]="false"` (Amendment §b / FIX 2): the host's single
+      coordinated Escape handler closes only the topmost secondary modal via
+      `handleSecondaryEscape`.
+    - `(onShow)` autofocuses the PRIMARY/proceed button so Enter activates the
+      main action (Amendment §e / FIX 5); `(onHide)` resets state + settles a
+      pending drift/discard dismissal to the safe branch (AC 8, 19, Amendment §c).
   -->
   <p-dialog
     [visible]="confirmDialogVisible"
     (visibleChange)="confirmDialogVisible = $event"
     (onShow)="onConfirmDialogShow()"
     (onHide)="onConfirmDialogHide()"
+    [modal]="true"
+    [draggable]="true"
+    [closeOnEscape]="false"
+    styleClass="np-secondary-modal"
+    maskStyleClass="np-secondary-modal-mask"
     [style]="{ width: '30rem' }"
     [header]="confirmRequest?.header ?? ''"
     data-test="confirm-dialog"
@@ -308,26 +321,16 @@
     <div
       *ngIf="confirmRequest as req"
       class="namespace-panel__clone-body"
-      (keydown.escape)="$event.stopPropagation()"
     >
       <p class="namespace-panel__confirm-message" data-test="confirm-message">
         {{ req.message }}
       </p>
     </div>
     <div class="namespace-panel__clone-actions" *ngIf="confirmRequest as req">
-      <!-- Drift variant: two explicit named buttons — Reload (safe, focused
-           default) + Overwrite (destructive branch). ADR-018 §1 / AC 7. -->
+      <!-- Drift variant: two explicit named buttons — Reload (recommended
+           primary, focused so Enter reloads) + Overwrite (destructive branch).
+           ADR-018 §1 / Amendment §d/§e. -->
       <ng-container *ngIf="req.variant === 'drift'; else cancelProceed">
-        <button
-          #confirmSafeBtn
-          pButton
-          type="button"
-          size="small"
-          severity="secondary"
-          label="Reload"
-          (click)="onConfirmReloadClick()"
-          data-test="confirm-reload-btn"
-        ></button>
         <button
           pButton
           type="button"
@@ -337,13 +340,23 @@
           (click)="onConfirmOverwriteClick()"
           data-test="confirm-overwrite-btn"
         ></button>
+        <button
+          #confirmPrimaryBtn
+          pButton
+          type="button"
+          size="small"
+          severity="secondary"
+          label="Reload"
+          (click)="onConfirmReloadClick()"
+          data-test="confirm-reload-btn"
+        ></button>
       </ng-container>
-      <!-- Reset / Delete variants: [Cancel] [Proceed]. Cancel holds focus so
-           Enter/Esc cancel (ADR-018 §2 / AC 9, 10). The Delete-flow Proceed
-           button is destructive — shared dark-red class (ADR-018 §4 / AC 16). -->
+      <!-- Reset / Delete / Discard variants: [Cancel] [Proceed]. The Proceed
+           button holds focus so Enter proceeds (ADR-018 Amendment §e); Esc still
+           cancels. The Delete-flow Proceed button is destructive — shared
+           dark-red class (ADR-018 §4 / AC 16). -->
       <ng-template #cancelProceed>
         <button
-          #confirmSafeBtn
           pButton
           type="button"
           size="small"
@@ -353,6 +366,7 @@
           data-test="confirm-cancel-btn"
         ></button>
         <button
+          #confirmPrimaryBtn
           pButton
           type="button"
           size="small"

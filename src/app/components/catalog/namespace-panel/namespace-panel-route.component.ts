@@ -35,9 +35,12 @@ import { NamespacePanelComponent } from './namespace-panel.component';
  * What the shell does NOT do:
  * - Does NOT wire the panel's `(closed)` output — there is no dialog to
  *   dismiss in the route presentation.
- * - Does NOT embed its own `<p-confirmDialog>` — the panel already renders
- *   one via its scoped `providers: [ConfirmationService]`, and the guard
- *   reuses that scoped service.
+ * - Does NOT embed any `<p-confirmDialog>` / `ConfirmationService` — the
+ *   `CanDeactivate` guard's dirty-navigation prompt is rendered by the panel's
+ *   own custom confirmation modal via `panel.confirmDiscard()` (ADR-018
+ *   Amendment §c), so the shell needs no confirmation surface of its own. The
+ *   panel's secondary modals own their own Esc-close, so the bare route shell
+ *   (no host dialog, no `closeOnEscape`) needs no Escape gating either.
  * - Does NOT read panel internals (`loading`, `serverYaml`) — the
  *   back-to-home link is always-present in the header, so the shell never
  *   needs conditional logic based on panel state.

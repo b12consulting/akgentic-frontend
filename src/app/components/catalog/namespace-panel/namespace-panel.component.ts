@@ -44,19 +44,22 @@ import {
 import { ValidationReportComponent } from './validation-report/validation-report.component';
 
 /**
- * Typed shape for the panel's custom confirmation modal (ADR-018 §1). One
- * interface, three call sites — NEVER an inline `Record`/object literal
- * scattered across handlers (Golden Rule #1). `variant` selects the action-row
- * button layout:
- *   - `'reset'` / `'delete'` → `[Cancel] [Proceed]` (Proceed is destructive for
- *     `'delete'` only — ADR-018 §4).
+ * Typed shape for the panel's custom confirmation modal (ADR-018 §1 +
+ * Amendment §c). One interface, every call site — NEVER an inline
+ * `Record`/object literal scattered across handlers (Golden Rule #1). `variant`
+ * selects the action-row button layout:
+ *   - `'reset'` / `'delete'` / `'discard'` → `[Cancel] [Proceed]` (Proceed is
+ *     destructive — dark-red — for `'delete'` only — ADR-018 §4). `'discard'` is
+ *     the dirty-CLOSE / dirty-NAV variant the host config dialog (Home) and the
+ *     route `CanDeactivate` guard reuse via the public `confirmDiscard()`
+ *     method (ADR-018 Amendment §c).
  *   - `'drift'` → `[Reload] [Overwrite]` (two explicit named buttons, not a
  *     binary accept/reject — ADR-018 §1).
  */
 interface ConfirmRequest {
   header: string;
   message: string;
-  variant: 'reset' | 'drift' | 'delete';
+  variant: 'reset' | 'drift' | 'delete' | 'discard';
 }
 
 /**
@@ -304,13 +307,26 @@ export class NamespacePanelComponent
   private confirmDriftResolve: (() => void) | null = null;
 
   /**
-   * Safe-button reference for the confirmation modal — the Cancel button for
-   * the reset/delete variants, the Reload button for the drift variant. Used by
-   * `onConfirmDialogShow()` to autofocus it on open so Enter cancels (AC 9, 10),
-   * mirroring the Clone modal's `cloneDestInputRef` focus plumbing.
+   * Pending "resolve the dirty-discard `Promise<boolean>` to the SAFE branch
+   * (false — keep edits)" thunk for an Esc / Cancel / X dismissal of the
+   * `'discard'` modal (ADR-018 Amendment §c). Set by `confirmDiscard()` while
+   * the discard modal is open; invoked by `onConfirmDialogHide` so a dismissal
+   * that bypasses a button still settles the awaited promise as "do not
+   * discard". `null` for the reset/delete/drift variants.
    */
-  @ViewChild('confirmSafeBtn', { read: ElementRef })
-  confirmSafeBtnRef?: ElementRef<HTMLButtonElement>;
+  private confirmDiscardResolve: (() => void) | null = null;
+
+  /**
+   * Primary-button reference for the confirmation modal (ADR-018 Amendment §e
+   * — reverses the earlier focus-Cancel). On open `onConfirmDialogShow()`
+   * autofocuses the PRIMARY/proceed button so **Enter activates the main
+   * action**: the Proceed button for the reset/delete/discard variants, the
+   * Reload (recommended primary) button for the drift variant. Esc still
+   * cancels/dismisses. Mirrors the Clone modal's `cloneDestInputRef` focus
+   * plumbing.
+   */
+  @ViewChild('confirmPrimaryBtn', { read: ElementRef })
+  confirmPrimaryBtnRef?: ElementRef<HTMLButtonElement>;
 
   // -------------------------------------------------------------------
   // Story 11.7 — UX-polish state (FR14 gate, FR16 a11y, FR17 Clone modal,
@@ -827,19 +843,102 @@ export class NamespacePanelComponent
   }
 
   /**
-   * The action-row label for the confirmation modal's affirmative button. The
-   * drift variant uses "Overwrite" (its Reload button is rendered separately);
-   * reset/delete use "Proceed". Returned as a getter so the template need not
-   * branch on the variant in three places.
+   * Coordinated Escape for the panel's secondary modals (ADR-018 Amendment §b).
+   * Closes ONLY the topmost open secondary panel and reports whether it consumed
+   * the Escape, so EXACTLY ONE action happens per keystroke (no cascade):
+   *
+   *   1. confirmation modal open → cancel/close ONLY it (settling any pending
+   *      drift/discard promise via `onConfirmDialogHide`), return `true`.
+   *   2. else Clone modal open → close ONLY it, return `true`.
+   *   3. else no secondary panel open → return `false` (the host then runs the
+   *      configuration panel's own close flow).
+   *
+   * PrimeNG attaches `closeOnEscape` as a DOCUMENT-level listener per dialog, so
+   * a child `stopPropagation()` cannot stop the host config dialog's listener —
+   * that is why ALL THREE dialogs set `[closeOnEscape]="false"` and a single
+   * coordinator (the host's capture-phase keydown) delegates here first. Order
+   * is deterministic: confirm is always stacked above Clone, so it wins.
    */
-  get confirmProceedLabel(): string {
-    return this.confirmRequest?.variant === 'delete' ? 'Delete' : 'Proceed';
+  handleSecondaryEscape(): boolean {
+    if (this.confirmDialogVisible) {
+      // Route through onConfirmDialogHide so a pending drift/discard promise
+      // settles to its safe branch (mirrors a Cancel/X dismissal).
+      this.onConfirmDialogHide();
+      return true;
+    }
+    if (this.cloneDialogVisible) {
+      this.onCloneDialogVisibleChange(false);
+      return true;
+    }
+    return false;
   }
 
   /**
-   * Proceed (reset/delete) button handler (AC 3, 5). Runs the captured accept
-   * callback then closes. For `'delete'` this fires `onDeleteConfirm()`; for
-   * `'reset'` the revert effect.
+   * PUBLIC dirty-discard confirm (ADR-018 Amendment §c). Opens the panel-owned
+   * custom confirmation modal with the `'discard'` variant ("Unsaved changes" /
+   * "You have unsaved changes. Discard?") and returns a `Promise<boolean>` that
+   * resolves:
+   *   - `true`  → the operator chose **Proceed** (discard the buffer / let the
+   *               close or navigation continue), and
+   *   - `false` → the operator **Cancelled** / dismissed (Esc / X) — keep the
+   *               panel open with the buffer intact.
+   *
+   * Reused by BOTH dirty-state hosts so the LAST PrimeNG `<p-confirmDialog>`
+   * usages for the namespace panel are removed:
+   *   - the Home config-dialog close paths (`onNamespacePanelVisibleChange` and
+   *     the Esc/X close), and
+   *   - the deep-link route `CanDeactivate` guard (`namespacePanelCanDeactivate`),
+   *     resolving the spec-compliance route-guard BLOCKING finding (the guard
+   *     previously depended on a `<p-confirmDialog>` the panel no longer mounts).
+   *
+   * A dismissal that bypasses the buttons (Esc / X / mask) settles `false` via
+   * `confirmDiscardResolve` in `onConfirmDialogHide` — the safe branch (keep the
+   * edits), mirroring the drift modal's safe-dismissal contract.
+   */
+  confirmDiscard(): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      let settled = false;
+      const settle = (value: boolean): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        this.confirmDiscardResolve = null;
+        resolve(value);
+      };
+      // Esc / Cancel / X dismissal resolves the SAFE branch (false — keep edits).
+      this.confirmDiscardResolve = () => settle(false);
+      this.openConfirm(
+        {
+          header: 'Unsaved changes',
+          message: 'You have unsaved changes. Discard?',
+          variant: 'discard',
+        },
+        // Proceed → discard / allow the close-or-navigation.
+        () => settle(true),
+      );
+    });
+  }
+
+  /**
+   * The action-row label for the confirmation modal's affirmative button
+   * (ADR-018 Amendment §d). Every single-affirmative variant — reset, delete,
+   * and discard — uses **"Proceed"** (the dark-red `__danger` class is what
+   * marks the `delete` variant as destructive, NOT a distinct label). The drift
+   * variant renders its own two explicit Reload / Overwrite buttons, so this
+   * label is never shown for it. Returned as a getter so the template need not
+   * branch on the variant.
+   */
+  get confirmProceedLabel(): string {
+    return 'Proceed';
+  }
+
+  /**
+   * Proceed (reset/delete/discard) button handler (AC 3, 5). Runs the captured
+   * accept callback then closes. For `'delete'` this fires `onDeleteConfirm()`;
+   * for `'reset'` the revert effect; for `'discard'` it resolves the public
+   * `confirmDiscard()` promise `true` (the accept callback settles + clears the
+   * pending `confirmDiscardResolve`, so the resulting onHide is a no-op).
    */
   onConfirmProceedClick(): void {
     const accept = this.confirmAccept;
@@ -874,36 +973,50 @@ export class NamespacePanelComponent
   }
 
   /**
-   * Cancel (reset/delete) button handler (AC 10). The safe branch: closes
-   * without running any accept callback — no destructive/lossy effect occurs.
+   * Cancel (reset/delete/discard) button handler (AC 10). The safe branch:
+   * closes without running any accept callback — no destructive/lossy effect
+   * occurs. For the `'discard'` variant it settles the public `confirmDiscard()`
+   * promise to `false` (keep edits) directly, so the awaited promise resolves
+   * deterministically on a button click without depending on the PrimeNG
+   * `(onHide)` round-trip; the resolver is cleared so the subsequent onHide is a
+   * no-op.
    */
   onConfirmCancelClick(): void {
+    const discardResolve = this.confirmDiscardResolve;
+    this.confirmDiscardResolve = null;
     this.closeConfirm();
+    discardResolve?.();
   }
 
   /**
-   * `(onShow)` handler for the confirmation modal (AC 9). Mirrors
-   * `onCloneDialogShow`: defers the focus call by a microtask so PrimeNG has
-   * mounted the overlay, then focuses the safe button (Cancel for reset/delete,
-   * Reload for drift). Null-safe via the `@ViewChild` ref.
+   * `(onShow)` handler for the confirmation modal (ADR-018 Amendment §e).
+   * Mirrors `onCloneDialogShow`: defers the focus call by a microtask so PrimeNG
+   * has mounted the overlay, then focuses the PRIMARY/proceed button (Proceed
+   * for reset/delete/discard, Reload for drift) so **Enter activates the main
+   * action**. Esc still cancels. Null-safe via the `@ViewChild` ref.
    */
   onConfirmDialogShow(): void {
     setTimeout(() => {
-      this.confirmSafeBtnRef?.nativeElement.focus();
+      this.confirmPrimaryBtnRef?.nativeElement.focus();
     }, 0);
   }
 
   /**
-   * `(onHide)` handler for the confirmation modal (AC 8, 19). Resolves a
-   * still-pending drift dismissal to the SAFE branch (false — no blind
-   * overwrite), then resets the request + callbacks so nothing leaks into the
-   * next open. The drift resolver is invoked BEFORE `closeConfirm` so the
-   * awaited `onSaveClick` promise settles even on an Esc/X dismissal.
+   * `(onHide)` handler for the confirmation modal (AC 8, 19 + ADR-018
+   * Amendment §c). Resolves a still-pending dismissal to the SAFE branch — the
+   * drift dismissal to `false` (no blind overwrite) and the dirty-discard
+   * dismissal to `false` (keep the edits) — then resets the request + callbacks
+   * so nothing leaks into the next open. Both resolvers are invoked BEFORE
+   * `closeConfirm` so the awaited `onSaveClick` / `confirmDiscard()` promise
+   * settles even on an Esc/X dismissal.
    */
   onConfirmDialogHide(): void {
     const driftResolve = this.confirmDriftResolve;
+    const discardResolve = this.confirmDiscardResolve;
     this.confirmDriftResolve = null;
+    this.confirmDiscardResolve = null;
     driftResolve?.();
+    discardResolve?.();
     this.closeConfirm();
   }
 

@@ -1,5 +1,6 @@
 import {
   Component,
+  HostListener,
   inject,
   ViewChild,
   ViewChildren,
@@ -16,9 +17,7 @@ import { TeamContext, isRunning } from '../../core/context/team.interface';
 import { NamespaceSummary } from '../../protocol/catalog.interface';
 
 import { CommonModule } from '@angular/common';
-import { ConfirmationService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { SelectModule } from 'primeng/select';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
@@ -47,16 +46,10 @@ import { NamespacePanelComponent } from '../catalog/namespace-panel/namespace-pa
     TagModule,
     CommonModule,
     DialogModule,
-    ConfirmDialogModule,
     InputTextModule,
     ToggleSwitchModule,
     NamespacePanelComponent,
   ],
-  // First PrimeNG ConfirmDialog in the HomeComponent — scoped locally for
-  // the dirty-close guard (Story 11.3 AC 10). The NamespacePanelComponent
-  // provides its OWN ConfirmationService for its Cancel-with-dirty-buffer
-  // confirm, so they don't collide.
-  providers: [ConfirmationService],
   templateUrl: './home.component.html',
   styleUrl: './home.component.scss',
 })
@@ -65,7 +58,6 @@ export class HomeComponent {
   contextService: ContextService = inject(ContextService);
   router: Router = inject(Router);
   authService: AuthService = inject(AuthService);
-  private confirmationService: ConfirmationService = inject(ConfirmationService);
   private config = inject(ConfigService);
 
   // Catalog namespaces for the team creation dropdown
@@ -301,13 +293,22 @@ export class HomeComponent {
   }
 
   /**
-   * Story 11.3 AC 10 — dialog dirty-close guard.
+   * Story 11.3 AC 10 — dialog dirty-close guard (ADR-018 Amendment §c —
+   * migrated to the panel's custom confirm modal).
    *
    * The `p-dialog` binding is split into `[visible]` + `(visibleChange)` so
-   * this handler can intercept close attempts. When the user dismisses the
-   * dialog and the panel reports unsaved changes, re-assert
-   * `namespacePanelVisible = true` and trigger a PrimeNG ConfirmDialog. On
-   * confirm, flip visibility to false. On dismiss, leave the dialog open.
+   * this handler can intercept close attempts (the X button / dismissable
+   * mask; Esc is handled by `onConfigDialogEscape`). When the user dismisses
+   * the dialog and the panel reports unsaved changes, re-assert
+   * `namespacePanelVisible = true` to keep the dialog open while the panel's
+   * `confirmDiscard()` modal runs. On Proceed (resolve `true`) flip visibility
+   * to false; on Cancel/dismiss (resolve `false`) leave the dialog open with
+   * the buffer intact.
+   *
+   * Migrating to `panel.confirmDiscard()` removes the old PrimeNG
+   * `ConfirmationService` / `<p-confirmDialog>` usage for the panel's dirty
+   * state, so both presentations (this dialog + the route guard) share ONE
+   * confirm idiom.
    *
    * `this.namespacePanel` may be `undefined` (the panel is mounted lazily
    * via @defer) — when it is not mounted there is nothing to discard, so
@@ -325,18 +326,52 @@ export class HomeComponent {
       return;
     }
     // Dirty panel — re-assert visibility to keep the dialog open while the
-    // confirm runs. The confirm's accept callback then truly closes.
+    // panel's custom confirm modal runs. Proceed closes; Cancel/dismiss keeps
+    // it open (AC 10 dismiss branch).
     this.namespacePanelVisible = true;
-    this.confirmationService.confirm({
-      header: 'Unsaved changes',
-      icon: 'pi pi-exclamation-triangle',
-      message: 'You have unsaved changes. Discard?',
-      accept: () => {
+    void panel.confirmDiscard().then((discard) => {
+      if (discard) {
         this.namespacePanelVisible = false;
-      },
-      // `reject` intentionally omitted — dismissing keeps the dialog open
-      // (AC 10 dismiss branch).
+      }
     });
+  }
+
+  /**
+   * Single coordinated Escape handler for the config dialog (ADR-018
+   * Amendment §b — FIX 2). All three dialogs (this host config dialog + the
+   * panel's Clone + confirm modals) set `[closeOnEscape]="false"`, so PrimeNG's
+   * per-dialog document-level Esc listeners never fire and cannot cascade.
+   * Instead this ONE document-level handler coordinates Escape while the config
+   * dialog is open. A document listener (not a `<p-dialog>`-scoped one) is
+   * load-bearing: a secondary modal is teleported to `<body>` as a SIBLING
+   * overlay, so its keydown does not bubble to the config dialog element — only
+   * a document-level handler sees Escape regardless of which overlay has focus.
+   *
+   * Exactly ONE action per Escape, in priority order:
+   *   1. delegate to `panel.handleSecondaryEscape()` — if a secondary modal
+   *      (confirm, then Clone) is open it closes ONLY the topmost one and
+   *      returns `true`; we stop there.
+   *   2. otherwise (no secondary panel open) run the config panel's own close
+   *      flow (`onNamespacePanelVisibleChange(false)`), which routes a dirty
+   *      buffer through `confirmDiscard()`.
+   *
+   * Inactive unless the config dialog is open; a write-in-flight suppresses
+   * Escape entirely (mirrors the old `[closeOnEscape]="!isWriteInFlight…"`
+   * contract).
+   */
+  @HostListener('document:keydown.escape', ['$event'])
+  onConfigDialogEscape(event: Event): void {
+    if (!this.namespacePanelVisible || this.isWriteInFlight) {
+      return;
+    }
+    const panel = this.namespacePanel;
+    if (panel?.handleSecondaryEscape() === true) {
+      // A secondary modal consumed the Escape — do not also close the config
+      // panel. Prevent the default so nothing else acts on this keystroke.
+      event.preventDefault();
+      return;
+    }
+    this.onNamespacePanelVisibleChange(false);
   }
 
   /**
@@ -380,11 +415,13 @@ export class HomeComponent {
    * NON-destructive and intentionally excluded so the operator can dismiss
    * the dialog while a Validate request is mid-flight.
    *
-   * Used by the dialog's `[closable]` / `[closeOnEscape]` /
-   * `[dismissableMask]` bindings to lock all dismissal channels during
-   * an in-flight write. Existing destroyed-guard pattern in the panel
-   * (Story 11.3 AC 13 + 11.5 AC 16) absorbs late resolutions; this gate
-   * just prevents the operator from hitting that race in the first place.
+   * Used by the dialog's `[closable]` / `[dismissableMask]` bindings and by
+   * the coordinated `onConfigDialogEscape` handler to lock all dismissal
+   * channels during an in-flight write. (`[closeOnEscape]` itself is now always
+   * `false` — Escape is owned by `onConfigDialogEscape`, ADR-018 Amendment §b.)
+   * Existing destroyed-guard pattern in the panel (Story 11.3 AC 13 + 11.5
+   * AC 16) absorbs late resolutions; this gate just prevents the operator from
+   * hitting that race in the first place.
    */
   get isWriteInFlight(): boolean {
     return (

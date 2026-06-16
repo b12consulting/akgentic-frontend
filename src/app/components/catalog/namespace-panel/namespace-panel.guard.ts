@@ -1,6 +1,4 @@
-import { inject } from '@angular/core';
 import { CanDeactivateFn } from '@angular/router';
-import { ConfirmationService } from 'primeng/api';
 
 import { NamespacePanelRouteComponent } from './namespace-panel-route.component';
 
@@ -21,27 +19,34 @@ import { NamespacePanelRouteComponent } from './namespace-panel-route.component'
  *   `true` synchronously. No buffer state to lose.
  * - `component.panel.hasUnsavedChanges()` false → return `true`
  *   synchronously. No prompt shown.
- * - `component.panel.hasUnsavedChanges()` true → return a
- *   `Promise<boolean>` that resolves via the PrimeNG `ConfirmationService`:
- *     * confirm (accept)  → resolve(true), navigation proceeds.
- *     * reject / dismiss  → resolve(false), navigation is aborted and the
- *       panel's edit buffer is preserved.
+ * - `component.panel.hasUnsavedChanges()` true → delegate to the panel's
+ *   custom confirmation modal via `panel.confirmDiscard()`, which returns a
+ *   `Promise<boolean>`:
+ *     * Proceed → resolve(true), navigation proceeds.
+ *     * Cancel / dismiss (Esc / X) → resolve(false), navigation is aborted and
+ *       the panel's edit buffer is preserved.
  *
- * Prompt wording is the EXACT string `"You have unsaved changes. Discard?"` —
- * identical to the dialog presentation's close confirm (see
- * `home.component.ts` `onNamespacePanelVisibleChange`). UX consistency across
- * the two presentations is a hard requirement of Epic 11.
+ * ADR-018 Amendment §c — the guard reuses the SAME panel-owned custom modal as
+ * the Home config-dialog close confirm (`confirmDiscard()`), removing the last
+ * PrimeNG `<p-confirmDialog>` / `ConfirmationService` dependency from the
+ * namespace-panel dirty-state path. This resolves the spec-compliance BLOCKING
+ * finding: the guard previously called `inject(ConfirmationService).confirm(...)`
+ * whose accept/reject callbacks only fired when a `<p-confirmDialog>` element was
+ * mounted — but the panel dropped that element, so the Promise never resolved
+ * (Router navigation hung) and the service was no longer resolvable in the
+ * router injection context (`NullInjectorError`).
+ *
+ * Prompt wording is the EXACT string `"You have unsaved changes. Discard?"`
+ * (defined once in `panel.confirmDiscard()`) — identical to the dialog
+ * presentation's close confirm. UX consistency across the two presentations is
+ * a hard requirement of Epic 11.
  *
  * Implementation notes:
  * - Functional guard (not class-based). Matches Angular v16+ idiom and the
  *   rest of this repo's route configuration.
- * - `inject(ConfirmationService)` MUST be called inside the guard body —
- *   functional guards run in a router-owned injection context at navigation
- *   time. Capturing the service via a module-level `inject()` would fail at
- *   module load outside any injection context.
- * - The `ConfirmationService` instance is resolved from the panel's scoped
- *   `providers: [ConfirmationService]` via ancestor-chain DI lookup (the same
- *   `<p-confirmDialog>` the panel already mounts renders the prompt).
+ * - No `inject()` needed: the confirm surface lives on the panel instance the
+ *   route shell exposes via `@ViewChild`, so the guard reads it directly off
+ *   `component.panel`.
  */
 export const namespacePanelCanDeactivate: CanDeactivateFn<
   NamespacePanelRouteComponent
@@ -50,14 +55,5 @@ export const namespacePanelCanDeactivate: CanDeactivateFn<
   if (!panel || !panel.hasUnsavedChanges()) {
     return true;
   }
-  const confirmation = inject(ConfirmationService);
-  return new Promise<boolean>((resolve) => {
-    confirmation.confirm({
-      header: 'Unsaved changes',
-      icon: 'pi pi-exclamation-triangle',
-      message: 'You have unsaved changes. Discard?',
-      accept: () => resolve(true),
-      reject: () => resolve(false),
-    });
-  });
+  return panel.confirmDiscard();
 };

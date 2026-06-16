@@ -227,27 +227,28 @@
 -->
 <!--
   Story 11.3 — split [(visible)] into [visible] + (visibleChange) so the
-  dirty-close guard can intercept dismissals. A separate <p-confirmDialog />
-  is mounted at the end of this template so PrimeNG's ConfirmationService
-  can target it (first PrimeNG ConfirmDialog in HomeComponent — scoped to
-  the component, not app-root).
+  dirty-close guard can intercept dismissals. The dirty-close prompt is now
+  rendered by the panel's own custom confirm modal via `panel.confirmDiscard()`
+  (ADR-018 Amendment §c), so there is NO more `<p-confirmDialog>` here.
 -->
 <!--
   Story 11.7 AC 8, 9, 10 — replace the [header]="..." string binding with
   a <ng-template pTemplate="header"> block so we can render the namespace
   name AND the conditional FR15 dirty indicator inside the same header.
-  Story 11.7 AC 22, 23 — lock all three dismissal channels (close X,
-  Escape, dismissable mask) during an in-flight write (saving OR
-  cloning). Reads (validate / load) stay dismissable — `isWriteInFlight`
-  intentionally excludes `validating` / `loading`.
+  Story 11.7 AC 22, 23 — lock the X / dismissable-mask dismissal channels
+  during an in-flight write (saving OR cloning). Reads (validate / load) stay
+  dismissable — `isWriteInFlight` intentionally excludes `validating` /
+  `loading`.
 -->
 <!--
-  Story 22.3 (ADR-018 §3) — suppress the host config dialog's `closeOnEscape`
-  while ANY secondary panel (Clone modal or confirmation modal) is open, so Esc
-  closes only the topmost secondary panel and does NOT bubble through to close
-  the config panel. `namespacePanel?.hasSecondaryPanelOpen !== true` keeps the
-  existing close-on-escape behaviour when no secondary panel is open (and the
-  panel may be undefined before the @defer block mounts it).
+  Story 22 (ADR-018 Amendment §b) — `[closeOnEscape]="false"` on ALL THREE
+  dialogs (this config host + the panel's Clone + confirm modals). PrimeNG
+  attaches `closeOnEscape` as a DOCUMENT-level listener per dialog, so a
+  secondary modal's stopPropagation cannot stop this host's listener (Esc closed
+  both in turn). Instead the host owns ONE coordinated Escape handler
+  (`onConfigDialogEscape`, a `document:keydown.escape` HostListener) that closes
+  only the topmost secondary modal, or — when none is open — runs the config
+  panel close flow.
 -->
 <p-dialog
   [visible]="namespacePanelVisible"
@@ -255,7 +256,7 @@
   [modal]="true"
   [style]="{ width: '90vw', height: '90vh' }"
   [closable]="!isWriteInFlight"
-  [closeOnEscape]="!isWriteInFlight && namespacePanel?.hasSecondaryPanelOpen !== true"
+  [closeOnEscape]="false"
   [dismissableMask]="!isWriteInFlight"
 >
   <ng-template pTemplate="header">
@@ -279,5 +280,3 @@
     />
   }
 </p-dialog>
-
-<p-confirmDialog></p-confirmDialog>

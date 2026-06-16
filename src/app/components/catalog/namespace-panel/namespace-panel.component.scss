@@ -127,6 +127,23 @@
     line-height: 1.4;
   }
 
+  // ADR-018 Amendment §a (FIX 4) — TRANSPARENT secondary-modal mask. The Clone
+  // and confirmation `<p-dialog>`s stay `[modal]="true"` + `[draggable]="true"`
+  // (properly modal: draggable, pointer-contained, correctly stacked) but paint
+  // NO dimming backdrop over the configuration panel. PrimeNG's modal mask
+  // (`maskStyleClass="np-secondary-modal-mask"`) keeps `pointer-events: auto`
+  // (it absorbs clicks — no click-through to the config panel) while we force
+  // its background transparent here, so the config panel behind stays fully
+  // visible (no dimming). `!important` overrides the theme's mask background
+  // token. The mask is teleported to <body>, so this lives under
+  // `:host ::ng-deep` (encapsulation removed → matches the teleported element).
+  .np-secondary-modal-mask {
+    &.p-dialog-mask,
+    &.p-overlay-mask {
+      background: transparent !important;
+    }
+  }
+
   // ADR-018 §4 — single shared DARK-RED destructive style, defined ONCE and
   // reused by BOTH the action-row Delete button and the Delete-confirm's
   // Proceed button (replacing PrimeNG's bright `severity="danger"` red). Lives
