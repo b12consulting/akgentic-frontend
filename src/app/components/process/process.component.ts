@@ -24,8 +24,8 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { SelectButtonModule } from 'primeng/selectbutton';
 import { TabsModule } from 'primeng/tabs';
-import { BehaviorSubject, combineLatest, Observable, of, Subscription } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { BehaviorSubject, combineLatest, Observable, Subscription } from 'rxjs';
+import { distinctUntilChanged, map } from 'rxjs/operators';
 import { ChatPanelComponent } from './components/chat/chat-panel.component';
 import { ChatService } from './selectors/chat.selector';
 import { FeedbackService } from './ui-state/feedback.service';
@@ -97,12 +97,9 @@ export class ProcessComponent implements OnDestroy {
   graphDataService: GraphDataService = inject(GraphDataService);
   viewService: ViewService = inject(ViewService);
   toolPresenceService: ToolPresenceService = inject(ToolPresenceService);
+  private readonly workspaceRegistry = inject(WorkspaceRegistryService);
 
   processId: string = '';
-  // Workspace presence is static: every team has a workspace directory by
-  // default (backend creates one on team boot). Reactive presence detection
-  // for workspace is an explicit future enhancement — out of scope today.
-  hasWorkspace: boolean = true;
 
   /**
    * Reactive presence observable for the `#KnowledgeGraphTool` actor.
@@ -111,6 +108,18 @@ export class ProcessComponent implements OnDestroy {
    */
   hasKnowledgeGraph$: Observable<boolean> =
     this.toolPresenceService.hasKnowledgeGraph$;
+
+  /**
+   * Reactive workspace presence (ADR-020): the team has at least one workspace
+   * iff the registry holds at least one descriptor (i.e. some agent declared a
+   * `WorkspaceTool`). Drives both the `Workspaces` tab option and the
+   * `<app-workspace-tabs>` `*ngIf` — the whole tab disappears when no workspace
+   * exists, mirroring the Knowledge graph tab.
+   */
+  hasWorkspace$: Observable<boolean> = this.workspaceRegistry.workspaces$.pipe(
+    map((ws) => ws.length > 0),
+    distinctUntilChanged(),
+  );
 
   visualizationMode$ = new BehaviorSubject<string>('team');
 
@@ -128,13 +137,12 @@ export class ProcessComponent implements OnDestroy {
 
   /**
    * Reactive, filtered list of visualization options. Recomputed whenever
-   * `hasKnowledgeGraph$` emits; preserves the `hasWorkspace` static gate so
-   * workspace-presence reactivation is a one-line change in the future.
-   * (AC3 — reactive derivation)
+   * `hasKnowledgeGraph$` or `hasWorkspace$` emits — the Knowledge graph and
+   * Workspaces tabs each appear only when their tool is present.
    */
   visualizationOptions$: Observable<VisualizationOption[]> = combineLatest([
     this.toolPresenceService.hasKnowledgeGraph$,
-    of(this.hasWorkspace),
+    this.hasWorkspace$,
   ]).pipe(
     map(([hasKG, hasWS]) =>
       this.allVisualizationOptions.filter(
@@ -151,6 +159,7 @@ export class ProcessComponent implements OnDestroy {
   isLoading$ = this.graphDataService.isLoading$;
 
   private presenceSub: Subscription | null = null;
+  private workspaceSub: Subscription | null = null;
 
   constructor() {
     // Active-mode reset guard (AC3 last clause, AC8): if the user is viewing
@@ -163,6 +172,14 @@ export class ProcessComponent implements OnDestroy {
         }
       },
     );
+
+    // Same guard for the Workspaces tab: if it disappears (last workspace tool
+    // removed) while the user is viewing it, snap back to 'team'.
+    this.workspaceSub = this.hasWorkspace$.subscribe((hasWS) => {
+      if (!hasWS && this.currentVisualizationMode === 'workspace') {
+        this.visualizationMode$.next('team');
+      }
+    });
   }
 
   async ngOnInit(): Promise<void> {
@@ -197,6 +214,8 @@ export class ProcessComponent implements OnDestroy {
     this.akgentService.unselect();
     this.presenceSub?.unsubscribe();
     this.presenceSub = null;
+    this.workspaceSub?.unsubscribe();
+    this.workspaceSub = null;
   }
 
   setVisualizationMode(mode: string): void {

@@ -34,7 +34,7 @@
           <app-agent-tabs></app-agent-tabs>
         </div>
         <app-workspace-tabs
-          *ngIf="hasWorkspace"
+          *ngIf="hasWorkspace$ | async"
           [class.moved-offscreen]="isHidden('workspace')"
         ></app-workspace-tabs>
         <app-knowledge-graph

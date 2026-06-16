@@ -55,7 +55,7 @@
    * no-members text, so clamp both to a min-height that fits a chip (vertically
    * centred). box-sizing: border-box so the padding + border are included. */
   box-sizing: border-box;
-  min-height: 3rem;
+  min-height: 3.2rem;
   /* Same separator as the explorer toolbar / file-header rows. The fallback
    * is required: --surface-border is not defined in this component's scope, so
    * without it the var() is invalid and the whole border declaration drops. */

@@ -1,13 +1,17 @@
 <ng-container *ngIf="vm$ | async as vm">
-  <!-- Single default workspace → header strip + single explorer, NO tab chrome -->
-  <div *ngIf="vm.workspaces.length <= 1" class="workspace-pane">
+  <!-- Exactly one workspace → header strip + single explorer, NO tab chrome -->
+  <div *ngIf="vm.workspaces.length === 1" class="workspace-pane">
     <ng-container
       *ngTemplateOutlet="
         memberStrip;
         context: { d: vm.workspaces[0], agents: vm.agentsById }
       "
     ></ng-container>
-    <app-workspace-explorer></app-workspace-explorer>
+    <app-workspace-explorer
+      [workspaceId]="
+        vm.workspaces[0].isDefault ? undefined : vm.workspaces[0].workspaceId
+      "
+    ></app-workspace-explorer>
   </div>
 
   <!-- ≥1 named workspace → PrimeNG sub-tabs, one panel per descriptor -->

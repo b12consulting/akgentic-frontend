@@ -152,14 +152,39 @@ describe('WorkspaceTabsComponent', () => {
   // Story 23-3 sub-tab behaviour (must stay green — AC6 no churn).
   // -------------------------------------------------------------------
 
-  it('(23-3 AC3) default-only → one explorer, no tab chrome, workspaceId undefined', () => {
-    registry.workspaces$.next([defaultDescriptor()]);
+  it('(empty) no workspaces → renders nothing (parent hides the whole tab)', () => {
+    // A team with no WorkspaceTool yields an empty registry. The component
+    // renders nothing; the parent (ProcessComponent) hides the Workspaces tab
+    // entirely via hasWorkspace$, so no fabricated default is ever shown.
+    registry.workspaces$.next([]);
+    agents.agentsById$.next({});
+    fixture.detectChanges();
+
+    expect(explorers().length).toBe(0);
+    expect(hasTabChrome()).toBe(false);
+    expect(strips()).toBe(0);
+  });
+
+  it('(23-3 AC3) single default → one explorer, no tab chrome, workspaceId undefined', () => {
+    registry.workspaces$.next([defaultDescriptor(['a1'])]);
+    agents.agentsById$.next({ a1: { name: 'Bob', role: 'SM' } });
     fixture.detectChanges();
 
     const found = explorers();
     expect(found.length).toBe(1);
     expect(hasTabChrome()).toBe(false);
     expect(found[0].workspaceId).toBeUndefined();
+  });
+
+  it('(single named) one named workspace → explorer bound to its workspaceId, no tab chrome', () => {
+    registry.workspaces$.next([namedDescriptor('ws-solo', ['a1'])]);
+    agents.agentsById$.next({ a1: { name: 'Bob', role: 'SM' } });
+    fixture.detectChanges();
+
+    const found = explorers();
+    expect(found.length).toBe(1);
+    expect(hasTabChrome()).toBe(false);
+    expect(found[0].workspaceId).toBe('ws-solo');
   });
 
   it('(23-3 AC1, AC2, AC4) default + 1 named → tab chrome, one panel per descriptor, correct bindings', () => {
