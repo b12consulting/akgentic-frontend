@@ -18,13 +18,13 @@
     </p-select>
     &nbsp;
     <!--
-      Story 14.4 — admin-only "show all namespaces" toggle (ADR-028 §Decision 9).
-      Admin-gated UX affordance only; NOT the security boundary (the infra
-      unscoping of admin reads is authoritative). `*ngIf="(isAdmin$ | async)"`
-      so non-admins (incl. anonymous, no roles) never see it — hidden, not
-      merely disabled. Default off (firehose is opt-in). Flips
-      `showAllNamespaces` via `onToggleShowAll`, which re-runs the single
-      `loadNamespaces()` path so `?all=true` flows through it.
+      Admin-only "show all namespaces" toggle (ADR-028). Admin-gated UX
+      affordance only; NOT the security boundary (the infra unscoping of admin
+      reads is authoritative). `*ngIf="(isAdmin$ | async)"` so non-admins (incl.
+      anonymous, no roles) never see it — hidden, not merely disabled. Default
+      off (firehose is opt-in). Flips `showAllNamespaces` via `onToggleShowAll`,
+      which re-runs the single `loadNamespaces()` path so `?all=true` flows
+      through it.
     -->
     <span
       *ngIf="(isAdmin$ | async)"
@@ -50,7 +50,7 @@
       class="extra-small-button"
     ></button>
     &nbsp;
-    <!-- Story 11.2 — Edit Configuration button; opens the Monaco panel in a dialog. -->
+    <!-- Edit Configuration button; opens the Monaco panel in a dialog. -->
     <button
       pButton
       size="small"
@@ -219,36 +219,31 @@
 </section>
 
 <!--
-  Story 11.2 — Namespace Panel dialog wrapper.
+  Namespace Panel dialog wrapper.
 
-  `@defer (when namespacePanelVisible)` guarantees the NamespacePanelComponent
-  (and its Monaco-editor chunk) is fetched only on first open. The initial
-  home-page bundle stays Monaco-free.
--->
-<!--
-  Story 11.3 — split [(visible)] into [visible] + (visibleChange) so the
-  dirty-close guard can intercept dismissals. The dirty-close prompt is now
-  rendered by the panel's own custom confirm modal via `panel.confirmDiscard()`
-  (ADR-018 Amendment §c), so there is NO more `<p-confirmDialog>` here.
--->
-<!--
-  Story 11.7 AC 8, 9, 10 — replace the [header]="..." string binding with
-  a <ng-template pTemplate="header"> block so we can render the namespace
-  name AND the conditional FR15 dirty indicator inside the same header.
-  Story 11.7 AC 22, 23 — lock the X / dismissable-mask dismissal channels
-  during an in-flight write (saving OR cloning). Reads (validate / load) stay
-  dismissable — `isWriteInFlight` intentionally excludes `validating` /
-  `loading`.
--->
-<!--
-  Story 22 (ADR-018 Amendment §b) — `[closeOnEscape]="false"` on ALL THREE
-  dialogs (this config host + the panel's Clone + confirm modals). PrimeNG
-  attaches `closeOnEscape` as a DOCUMENT-level listener per dialog, so a
-  secondary modal's stopPropagation cannot stop this host's listener (Esc closed
-  both in turn). Instead the host owns ONE coordinated Escape handler
-  (`onConfigDialogEscape`, a `document:keydown.escape` HostListener) that closes
-  only the topmost secondary modal, or — when none is open — runs the config
-  panel close flow.
+  `@defer (when namespacePanelVisible)` fetches the NamespacePanelComponent
+  (and its Monaco-editor chunk) only on first open. The initial home-page
+  bundle stays Monaco-free.
+
+  [(visible)] is split into [visible] + (visibleChange) so the dirty-close
+  guard can intercept dismissals; the dirty-close prompt is rendered by the
+  panel's own confirm modal via `panel.confirmDiscard()` (ADR-018).
+
+  The header is a <ng-template pTemplate="header"> block so it can render the
+  namespace name AND the conditional dirty indicator in the same header.
+
+  [closable] / [dismissableMask] lock the X / dismissable-mask dismissal
+  channels during an in-flight write (saving OR cloning). Reads (validate /
+  load) stay dismissable — `isWriteInFlight` intentionally excludes
+  `validating` / `loading`.
+
+  `[closeOnEscape]="false"` on ALL THREE dialogs (this config host + the
+  panel's Clone + confirm modals). PrimeNG attaches `closeOnEscape` as a
+  DOCUMENT-level listener per dialog, so a secondary modal's stopPropagation
+  cannot stop this host's listener. Instead the host owns ONE coordinated
+  Escape handler (`onConfigDialogEscape`, a `document:keydown.escape`
+  HostListener) that closes only the topmost secondary modal, or — when none
+  is open — runs the config panel close flow.
 -->
 <p-dialog
   [visible]="namespacePanelVisible"

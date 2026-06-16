@@ -63,8 +63,8 @@ import { ValidationReportComponent } from './validation-report/validation-report
 class StubMonacoEditorComponent implements ControlValueAccessor {
   @Input() options?: Record<string, unknown>;
   @Input() height?: string;
-  // Story 22.2 — mirror the real component's `(event)` output so the Monaco
-  // capture path (`onEditorEvent`) is reachable from the template binding.
+  // Mirror the real component's `(event)` output so the Monaco capture path
+  // (`onEditorEvent`) is reachable from the template binding.
   @Output() event = new EventEmitter<NuMonacoEditorEvent>();
   writeValue(_value: string): void {}
   registerOnChange(_fn: (value: string) => void): void {}
@@ -73,10 +73,10 @@ class StubMonacoEditorComponent implements ControlValueAccessor {
 }
 
 /**
- * Story 22.2 — a hand-rolled Monaco editor double whose `addAction` records the
- * descriptors passed to it. Tests drive `component.onEditorEvent({ type:
- * 'init', editor })` with one of these, then locate a descriptor by id and
- * invoke its `run()` to exercise the Monaco capture path.
+ * A hand-rolled Monaco editor double whose `addAction` records the descriptors
+ * passed to it. Tests drive `component.onEditorEvent({ type: 'init', editor })`
+ * with one of these, then locate a descriptor by id and invoke its `run()` to
+ * exercise the Monaco capture path.
  */
 interface RecordedAction {
   id: string;
@@ -121,18 +121,18 @@ describe('NamespacePanelComponent', () => {
   let messageSpy: jasmine.SpyObj<MessageService>;
   // Minimal AuthService stub exposing only a settable `currentUserValue`
   // (the sole surface the panel's advisory owner pre-check reads). Defaults
-  // to the anonymous user so pre-existing Save tests — whose buffers carry
-  // `user_id: null` (unresolvable owner → defer to server) — are unaffected.
+  // to the anonymous user so Save tests whose buffers carry `user_id: null`
+  // (unresolvable owner → defer to server) are unaffected.
   let authStub: { currentUserValue: { user_id: string; roles?: string[] } };
 
-  // Story 22.2 — the real Monaco library (and its `window.monaco` global
-  // carrying `KeyMod`/`KeyCode`) is NOT loaded in Karma (the AMD loader is
-  // stubbed out via StubMonacoEditorComponent). The component's
-  // `registerEditorShortcuts` reads `monaco.KeyMod`/`monaco.KeyCode` when it
-  // builds the chord keybindings, so install a minimal runtime stub. Values
-  // are arbitrary-but-stable distinct bits — the assertions only require that
-  // the production code and the test compute the SAME chord number from the
-  // SAME stub (the real bit values live in the browser-loaded library).
+  // The real Monaco library (and its `window.monaco` global carrying
+  // `KeyMod`/`KeyCode`) is NOT loaded in Karma (the AMD loader is stubbed out
+  // via StubMonacoEditorComponent). The component's `registerEditorShortcuts`
+  // reads `monaco.KeyMod`/`monaco.KeyCode` when it builds the chord
+  // keybindings, so install a minimal runtime stub. Values are
+  // arbitrary-but-stable distinct bits — the assertions only require that the
+  // production code and the test compute the SAME chord number from the SAME
+  // stub (the real bit values live in the browser-loaded library).
   let prevMonaco: unknown;
   beforeAll(() => {
     const w = globalThis as unknown as { monaco?: unknown };
@@ -175,15 +175,13 @@ describe('NamespacePanelComponent', () => {
     })
       // Swap the real NuMonacoEditor for a lightweight stub that honours
       // the same template surface (selector + `options` + `ControlValueAccessor`)
-      // but does not kick off Monaco's AMD loader — which previously leaked
+      // but does not kick off Monaco's AMD loader — which would otherwise leak
       // late `onDestroy` registrations across tests (NG0911).
       //
-      // Story 22.3 (ADR-018 §1) — the panel no longer uses
-      // `ConfirmationService` / `<p-confirmDialog>`; the three confirm flows
-      // run through the panel-owned custom modal driven by component state, so
-      // the old `confirmationSpy` real-instance wiring + provider override are
-      // gone. Confirm assertions read `confirmDialogVisible` / `confirmRequest`
-      // and exercise the modal's button handlers directly.
+      // The panel does not use `ConfirmationService` / `<p-confirmDialog>`; the
+      // confirm flows run through the panel-owned custom modal driven by
+      // component state. Confirm assertions read `confirmDialogVisible` /
+      // `confirmRequest` and exercise the modal's button handlers directly.
       .overrideComponent(NamespacePanelComponent, {
         set: {
           imports: [
@@ -203,11 +201,10 @@ describe('NamespacePanelComponent', () => {
   });
 
   // ---------------------------------------------------------------------
-  // Story 22.3 — custom confirmation modal helpers. These replace the old
-  // `confirmationSpy.confirm` call-count / `args.accept!()` idiom: a confirm
-  // is "open" when `confirmDialogVisible` is true and `confirmRequest` carries
-  // the flow's header/message/variant; Proceed / Cancel / Reload / Overwrite
-  // are exercised via the component's button handlers.
+  // Custom confirmation modal helpers. A confirm is "open" when
+  // `confirmDialogVisible` is true and `confirmRequest` carries the flow's
+  // header/message/variant; Proceed / Cancel / Reload / Overwrite are
+  // exercised via the component's button handlers.
   // ---------------------------------------------------------------------
 
   /** True iff the custom confirmation modal is open. */
@@ -249,7 +246,7 @@ describe('NamespacePanelComponent', () => {
   }
 
   // ---------------------------------------------------------------------
-  // Load / view tests carried forward (no `mode` axis).
+  // Load / view tests (no `mode` axis).
   // ---------------------------------------------------------------------
 
   it('(AC13) load flow (happy path) — populates serverYaml/buffer and clears loading', async () => {
@@ -260,8 +257,8 @@ describe('NamespacePanelComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    // Story 14.4 — exportNamespace now carries the admin "show all" flag
-    // ({ all: showAll }); default showAll=false ⇒ owner-scoped read.
+    // exportNamespace carries the admin "show all" flag ({ all: showAll });
+    // default showAll=false ⇒ owner-scoped read.
     expect(apiSpy.exportNamespace).toHaveBeenCalledOnceWith('foo', {
       all: false,
     });
@@ -364,7 +361,7 @@ describe('NamespacePanelComponent', () => {
   });
 
   // ---------------------------------------------------------------------
-  // ADR-017 §1 — Monaco always writable; editorOptions stable constant.
+  // Monaco always writable; editorOptions stable constant (ADR-017).
   // ---------------------------------------------------------------------
 
   it('(22.1 AC1/AC2) editorOptions.readOnly === false and the object preserves theme/language/automaticLayout', async () => {
@@ -441,7 +438,7 @@ describe('NamespacePanelComponent', () => {
   });
 
   // ---------------------------------------------------------------------
-  // ADR-017 §1 — hasUnsavedChanges() collapse (AC4, AC5).
+  // hasUnsavedChanges() collapse (ADR-017).
   // ---------------------------------------------------------------------
 
   it('(22.1 AC4/AC5) hasUnsavedChanges() === (buffer !== serverYaml) — no mode axis', async () => {
@@ -461,7 +458,7 @@ describe('NamespacePanelComponent', () => {
   });
 
   // ---------------------------------------------------------------------
-  // ADR-017 §2 — action row renders five buttons whenever there is content.
+  // Action row renders five buttons whenever there is content (ADR-017).
   // ---------------------------------------------------------------------
 
   it('(22.1 AC3/AC6) all five action buttons render whenever the panel has content (no per-mode *ngIf)', async () => {
@@ -476,7 +473,7 @@ describe('NamespacePanelComponent', () => {
       row.querySelector('button[data-test="delete-ns-btn"]'),
     ).not.toBeNull();
 
-    // The retired buttons are gone.
+    // The edit/cancel/per-mode validate buttons are not rendered.
     expect(row.querySelector('button[data-test="edit-btn"]')).toBeNull();
     expect(row.querySelector('button[data-test="cancel-btn"]')).toBeNull();
     expect(
@@ -508,7 +505,7 @@ describe('NamespacePanelComponent', () => {
     ).toBeNull();
   });
 
-  // ----- Save enablement (AC7) -----
+  // ----- Save enablement -----
 
   it('(22.1 AC7) Save disabled when clean, enabled when dirty', async () => {
     await loaded('foo: 1\n');
@@ -546,7 +543,7 @@ describe('NamespacePanelComponent', () => {
     expect(saveBtn.disabled).toBeTrue();
   });
 
-  // ----- Validate enablement (AC8) -----
+  // ----- Validate enablement -----
 
   it('(22.1 AC8) Validate enabled in both clean and dirty states, and never gated by FR14', async () => {
     await loaded('foo: 1\n');
@@ -578,7 +575,7 @@ describe('NamespacePanelComponent', () => {
     expect(validateBtn.disabled).toBeTrue();
   });
 
-  // ----- Reset enablement (AC9) -----
+  // ----- Reset enablement -----
 
   it('(22.1 AC9) Reset disabled when clean, enabled when dirty, disabled while saving', async () => {
     await loaded('foo: 1\n');
@@ -603,7 +600,7 @@ describe('NamespacePanelComponent', () => {
     expect(resetBtn.disabled).toBeTrue();
   });
 
-  // ----- Clone enablement (AC10) -----
+  // ----- Clone enablement -----
 
   it('(22.1 AC10) Clone enabled when clean, disabled when dirty', async () => {
     await loaded('foo: 1\n');
@@ -640,7 +637,7 @@ describe('NamespacePanelComponent', () => {
     expect(cloneBtn.disabled).toBeTrue();
   });
 
-  // ----- Delete enablement (AC11) -----
+  // ----- Delete enablement -----
 
   it('(22.1 AC11) Delete enabled by default, disabled only while deleting', async () => {
     await loaded('foo: 1\n');
@@ -659,7 +656,7 @@ describe('NamespacePanelComponent', () => {
   });
 
   // ---------------------------------------------------------------------
-  // ADR-017 §2/§6 — Save flow (gate, drift check, success, errors).
+  // Save flow (gate, drift check, success, errors) (ADR-017).
   // ---------------------------------------------------------------------
 
   it('(22.1 AC12) onSaveClick is a no-op when clean (gated on hasUnsavedChanges)', async () => {
@@ -808,7 +805,7 @@ describe('NamespacePanelComponent', () => {
     expect(messageSpy.add).not.toHaveBeenCalled();
   });
 
-  // ----- Save buffer-namespace guard preserved (AC12) -----
+  // ----- Save buffer-namespace guard -----
 
   it('(22.1 AC12) Save refuses when buffer namespace has been edited — error toast, no import, no drift export', async () => {
     await loaded('namespace: foo\nuser_id: null\nentries: {}\n');
@@ -852,7 +849,7 @@ describe('NamespacePanelComponent', () => {
     expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
   });
 
-  // ----- Advisory owner-or-admin pre-flight preserved (AC12) -----
+  // ----- Advisory owner-or-admin pre-flight -----
 
   it('(22.1 AC12 / 14.3) owner can Save — import fires, no owner-block toast', async () => {
     authStub.currentUserValue = { user_id: 'alice', roles: [] };
@@ -914,7 +911,7 @@ describe('NamespacePanelComponent', () => {
     expect(toast.summary).toBe('Cannot change namespace on Save');
   });
 
-  // ----- Save drift check (AC20, AC21) -----
+  // ----- Save drift check -----
 
   it('(22.1 AC20/AC21) Save with a matching server export imports without a drift prompt', async () => {
     await loaded('foo: 1\n');
@@ -1028,7 +1025,7 @@ describe('NamespacePanelComponent', () => {
     expect(apiSpy.importNamespace).toHaveBeenCalledOnceWith('foo: 2\n');
   });
 
-  // ----- Destroy-during-save (AC13) -----
+  // ----- Destroy-during-save -----
 
   it('(22.1) destroy-during-save — late-resolving import does not write state', async () => {
     await loaded('foo: 1\n');
@@ -1059,7 +1056,7 @@ describe('NamespacePanelComponent', () => {
   });
 
   // ---------------------------------------------------------------------
-  // ADR-017 §2 — Reset is the only undo (AC14, AC15).
+  // Reset is the only undo (ADR-017).
   // ---------------------------------------------------------------------
 
   it('(22.1 AC14) onCancelClick is removed from the component', async () => {
@@ -1115,7 +1112,7 @@ describe('NamespacePanelComponent', () => {
   });
 
   // ---------------------------------------------------------------------
-  // ADR-017 §4 — single Validate handler (AC17, AC18).
+  // Single Validate handler (ADR-017).
   // ---------------------------------------------------------------------
 
   function cleanReport(namespace = 'foo'): NamespaceValidationReport {
@@ -1138,7 +1135,7 @@ describe('NamespacePanelComponent', () => {
 
   it('(22.1 AC17) Validate validates the buffer via validateNamespaceBuffer; clean state equals persisted', async () => {
     await loaded('foo: 1\n');
-    // Clean: buffer === serverYaml, so the buffer-validate equals a
+    // Clean: buffer === serverYaml, so a buffer-validate equals a
     // persisted-validate.
     apiSpy.validateNamespaceBuffer.and.returnValue(
       Promise.resolve(cleanReport()),
@@ -1346,7 +1343,7 @@ describe('NamespacePanelComponent', () => {
     expect(consoleErrorSpy).not.toHaveBeenCalled();
   });
 
-  // ----- onClearValidationClick nulls both fields -----
+  // ----- onClearValidationClick nulls both validation fields -----
 
   it('(11.4 AC8) onClearValidationClick nulls lastValidation AND rawSaveError', async () => {
     await loaded('foo: 1\n');
@@ -1377,7 +1374,7 @@ describe('NamespacePanelComponent', () => {
   });
 
   // ---------------------------------------------------------------------
-  // ADR-017 §5 — FR14 gate retained, orthogonal to Validate (AC19).
+  // Save/Clone gate retained, orthogonal to Validate (ADR-017).
   // ---------------------------------------------------------------------
 
   /** A non-clean validation report with a known finding count. */
@@ -1480,7 +1477,7 @@ describe('NamespacePanelComponent', () => {
   });
 
   // ---------------------------------------------------------------------
-  // Clone flow (ADR-012 modal unchanged; gated on clean — ADR-017 §3).
+  // Clone flow — modal gated on a clean buffer (ADR-017).
   // ---------------------------------------------------------------------
 
   const cloneSrcYaml = `namespace: src
@@ -1549,7 +1546,7 @@ entries:
     expect(component.cloneDialogVisible).toBeFalse();
   });
 
-  // ----- Clone modal pre-flight validation (AC4) -----
+  // ----- Clone modal pre-flight validation -----
 
   it('(11.5 AC4) Confirm disabled — empty destNs', async () => {
     await loadedWithCloneSrc();
@@ -1939,7 +1936,7 @@ entries:
   });
 
   // ---------------------------------------------------------------------
-  // Delete flow (Story 14.1 / ADR-028 frontend leg) — always available.
+  // Delete flow — always available (ADR-028).
   // ---------------------------------------------------------------------
 
   it('(14.1 AC11) Delete button renders whenever the panel has content', async () => {
@@ -2133,7 +2130,7 @@ entries:
   });
 
   // ---------------------------------------------------------------------
-  // Story 12.2 — Clone modal shareable / public toggles (modal unchanged).
+  // Clone modal shareable / public toggles.
   // ---------------------------------------------------------------------
 
   const cloneSrcYamlWithFlags = `namespace: src
@@ -2305,7 +2302,7 @@ entries: {}
   });
 
   // ---------------------------------------------------------------------
-  // Story 22.2 (ADR-017 §7) — action-row keyboard shortcuts.
+  // Action-row keyboard shortcuts (ADR-017).
   // ⌥S Save · ⌥V Validate · ⌥R Reset · ⌥⇧C Clone · ⌥D Delete.
   // Match on altKey + code (NOT key); preventDefault on handled combos;
   // two capture sites (HostListener + Monaco addAction) over one shared
@@ -2330,7 +2327,7 @@ entries: {}
     });
   }
 
-  // ----- can* enablement getters mirror the button [disabled] (AC 6) -----
+  // ----- can* enablement getters mirror the button [disabled] -----
 
   it('(22.2 AC6) can* getters mirror the button [disabled] expressions', async () => {
     await loaded('foo: 1\n');
@@ -2390,7 +2387,7 @@ entries: {}
     expect(dis('delete-ns-btn')).toBe(!component.canDelete);
   });
 
-  // ----- HostListener path: per-action dispatch + enablement (AC 1–6, 11) -----
+  // ----- HostListener path: per-action dispatch + enablement -----
 
   it('(22.2 AC1/AC6) ⌥S fires Save when dirty+enabled; no-op while clean', async () => {
     await loaded('foo: 1\n');
@@ -2550,7 +2547,7 @@ entries: {}
     expect(confirmOpen()).toBeFalse();
   });
 
-  // ----- Match on code, NOT key — macOS dead-key survival (AC 7) -----
+  // ----- Match on code, NOT key — macOS dead-key survival -----
 
   it('(22.2 AC7) ⌥S still fires when key carries the dead-key glyph ß (matcher ignores event.key)', async () => {
     await loaded('foo: 1\n');
@@ -2575,7 +2572,7 @@ entries: {}
     expect(validateSpy).toHaveBeenCalledTimes(1);
   });
 
-  // ----- Shift gating for Clone (AC 8) -----
+  // ----- Shift gating for Clone -----
 
   it('(22.2 AC8) Alt+KeyC WITHOUT Shift does not trigger Clone and does not preventDefault', async () => {
     await loaded('foo: 1\n');
@@ -2622,7 +2619,7 @@ entries: {}
     expect(saveSpy).toHaveBeenCalledTimes(1);
   });
 
-  // ----- preventDefault on handled combos only (AC 9) -----
+  // ----- preventDefault on handled combos only -----
 
   it('(22.2 AC9) preventDefault is called on a handled combo even when the action is a no-op (⌥S while clean)', async () => {
     await loaded('foo: 1\n');
@@ -2675,7 +2672,7 @@ entries: {}
     expect(pd).toHaveBeenCalledTimes(1);
   });
 
-  // ----- HostListener binding wired end-to-end via dispatchEvent (AC 11) -----
+  // ----- HostListener binding wired end-to-end via dispatchEvent -----
 
   it('(22.2 AC11) the @HostListener binding catches a dispatched keydown on the host element', async () => {
     await loaded('foo: 1\n');
@@ -2690,7 +2687,7 @@ entries: {}
     expect(saveSpy).toHaveBeenCalledTimes(1);
   });
 
-  // ----- Monaco capture path via editor.addAction (AC 10, 12) -----
+  // ----- Monaco capture path via editor.addAction -----
 
   function findAction(actions: RecordedAction[], id: string): RecordedAction {
     const action = actions.find((a) => a.id.endsWith(id));
@@ -2834,25 +2831,25 @@ entries: {}
   });
 
   // ---------------------------------------------------------------------
-  // Story 22.4 (ADR-018 §5) — macOS Option-shortcut robustness
-  // (dead-key / IME composition). On some macOS layouts an ⌥-chord initiates
-  // a dead-key composition: the keydown arrives flagged composing
-  // (isComposing:true, keyCode:229, key:'Dead'). The matcher MUST still fire
-  // (it keys off altKey+code, never key) AND preventDefault to suppress the
-  // composition. The host capture-phase listener is the AUTHORITATIVE path.
+  // macOS Option-shortcut robustness (dead-key / IME composition) (ADR-018).
+  // On some macOS layouts an ⌥-chord initiates a dead-key composition: the
+  // keydown arrives flagged composing (isComposing:true, keyCode:229,
+  // key:'Dead'). The matcher MUST still fire (it keys off altKey+code, never
+  // key) AND preventDefault to suppress the composition. The host capture-phase
+  // listener is the AUTHORITATIVE path.
   //
-  // NOTE (NFR5): synthetic KeyboardEvents bypass the OS composition layer, so
-  // these specs prove the matcher WOULD handle a composing event (guarding a
-  // future composing-skip regression) but CANNOT reproduce the real macOS
-  // chord — that is the manual-verification gate (AC 8), left for the operator.
+  // NOTE: synthetic KeyboardEvents bypass the OS composition layer, so these
+  // specs prove the matcher WOULD handle a composing event (guarding a future
+  // composing-skip regression) but CANNOT reproduce the real macOS chord —
+  // that remains a manual-verification gate left for the operator.
   // ---------------------------------------------------------------------
 
   /**
    * Build a composing (dead-key / IME) keydown — the macOS failure shape:
    * `isComposing:true`, `keyCode:229`, `key:'Dead'`. Merges any extra init
-   * (e.g. `{ shiftKey: true }` for ⌥⇧C). Reuses the Story 22-2 `keyEvent`
-   * helper (altKey:true + cancelable:true), so `evt.defaultPrevented` is
-   * observable after a direct `component.onKeydown(evt)` call.
+   * (e.g. `{ shiftKey: true }` for ⌥⇧C). Reuses the `keyEvent` helper
+   * (altKey:true + cancelable:true), so `evt.defaultPrevented` is observable
+   * after a direct `component.onKeydown(evt)` call.
    */
   function composingKeyEvent(
     code: string,
@@ -2866,7 +2863,7 @@ entries: {}
     });
   }
 
-  // ----- AC 1, 2, 3 — composing-event survival + preventDefault, uniform -----
+  // ----- composing-event survival + preventDefault, uniform -----
 
   interface ComposingChordCase {
     name: string;
@@ -2970,7 +2967,7 @@ entries: {}
   it('(22.4 AC2) preventDefault fires under a composing + no-op-by-enablement combo (⌥S while clean)', async () => {
     await loaded('foo: 1\n');
     // Clean → triggerSave is a no-op, but the keystroke is "ours" and the
-    // composition MUST still be suppressed (parity with Story 22-2 AC9).
+    // composition MUST still be suppressed (parity with the non-composing path).
     const saveSpy = spyOn(component, 'onSaveClick');
     const evt = composingKeyEvent('KeyS');
 
@@ -3021,7 +3018,7 @@ entries: {}
     expect(withShift.defaultPrevented).toBeTrue();
   });
 
-  // ----- AC 4 — host capture-phase listener is the authoritative path -----
+  // ----- host capture-phase listener is the authoritative path -----
 
   it('(22.4 AC4) a composing keydown dispatched on the host element fires the action via the capture-phase listener', async () => {
     await loaded('foo: 1\n');
@@ -3053,7 +3050,7 @@ entries: {}
     expect(saveSpy).not.toHaveBeenCalled();
   });
 
-  // ----- AC 5 — single dispatch per keystroke (no double-fire) -----
+  // ----- single dispatch per keystroke (no double-fire) -----
 
   it('(22.4 AC5) a composing ⌥R opens EXACTLY ONE reset confirm via the host path', async () => {
     await loaded('foo: 1\n');
@@ -3074,9 +3071,8 @@ entries: {}
 
     // ONE physical keystroke reaches the ONE authoritative host capture site
     // (real macOS delivers a single keystroke to a single listener). It opens a
-    // single delete confirm via the idempotent triggerDelete() surface — no
-    // second uncoordinated host dispatch (the old bubble-phase @HostListener is
-    // gone, so there is exactly one host dispatch per keystroke).
+    // single delete confirm via the idempotent triggerDelete() surface — there
+    // is exactly one host dispatch per keystroke.
     component.onKeydown(composingKeyEvent('KeyD'));
 
     expect(openSpy).toHaveBeenCalledTimes(1);
@@ -3110,7 +3106,7 @@ entries: {}
     expect(component.confirmRequest!.variant).toBe('delete');
   });
 
-  // ----- AC 6 — non-composing regression guard (Story 22-2 path intact) -----
+  // ----- non-composing regression guard (non-composing path intact) -----
 
   it('(22.4 AC6) the non-composing path is unchanged — ⌥V (no composing flags) still validates and preventDefaults', async () => {
     await loaded('foo: 1\n');
@@ -3140,13 +3136,13 @@ entries: {}
   });
 
   // ---------------------------------------------------------------------
-  // Story 22.3 (ADR-018 §1–§4) — custom confirmation modal + secondary-modal
-  // interaction contract: no <p-confirmDialog>; Clone-idiom custom modal;
-  // focus-Cancel/Enter-cancels; hasSecondaryPanelOpen predicate; no backdrop;
-  // shared dark-red destructive style.
+  // Custom confirmation modal + secondary-modal interaction contract
+  // (ADR-018): no <p-confirmDialog>; Clone-idiom custom modal; focused
+  // proceed button / Esc cancels; hasSecondaryPanelOpen predicate; no
+  // backdrop; shared dark-red destructive style.
   // ---------------------------------------------------------------------
 
-  // ----- AC 1 — <p-confirmDialog> removed; custom modal renders -----
+  // ----- <p-confirmDialog> removed; custom modal renders -----
 
   it('(22.3 AC1) the rendered panel contains no <p-confirmDialog>', async () => {
     await loaded('foo: 1\n');
@@ -3198,7 +3194,7 @@ entries: {}
     expect(confirmOpen()).toBeFalse();
   });
 
-  // ----- ADR-018 Amendment §e — focus the PRIMARY/proceed button; Esc cancels -----
+  // ----- focus the PRIMARY/proceed button; Esc cancels (ADR-018) -----
 
   it('(ADR-018 §e) onConfirmDialogShow focuses the primary/proceed button (reset/delete/discard)', fakeAsync(async () => {
     await loaded('foo: 1\n');
@@ -3256,7 +3252,7 @@ entries: {}
     expect(confirmOpen()).toBeFalse();
   });
 
-  // ----- AC 19 — confirm-request state cleared on hide -----
+  // ----- confirm-request state cleared on hide -----
 
   it('(22.3 AC19) onConfirmDialogHide clears confirmRequest so a stale request cannot leak', async () => {
     await loaded('foo: 1\n');
@@ -3270,7 +3266,7 @@ entries: {}
     expect(component.confirmDialogVisible).toBeFalse();
   });
 
-  // ----- AC 11 / AC 12 / AC 13 — hasSecondaryPanelOpen predicate -----
+  // ----- hasSecondaryPanelOpen predicate -----
 
   it('(22.3 AC12) hasSecondaryPanelOpen is true when the Clone modal is open, false otherwise', async () => {
     await loadedWithCloneSrc(['src']);
@@ -3295,14 +3291,13 @@ entries: {}
     expect(component.hasSecondaryPanelOpen).toBeFalse();
   });
 
-  // ----- ADR-018 Amendment §a (FIX 4) — transparent-mask draggable modals -----
+  // ----- transparent-mask modals (ADR-018) -----
   //
-  // The secondary panels stay `[modal]="true"` + `[draggable]="true"` (properly
-  // modal: draggable, pointer-contained) but paint NO dimming backdrop. PrimeNG
-  // v19 always renders a `.p-dialog-mask` wrapper; the no-dimming is achieved by
-  // tagging that wrapper with `np-secondary-modal-mask` (whose background the
-  // component SCSS forces transparent). In modal mode the mask keeps
-  // `pointer-events: auto`, so it ABSORBS clicks (no click-through). The
+  // The secondary panels stay `[modal]="true"` but paint NO dimming backdrop.
+  // PrimeNG v19 always renders a `.p-dialog-mask` wrapper; the no-dimming is
+  // achieved by tagging that wrapper with `np-secondary-modal-mask` (whose
+  // background the component SCSS forces transparent). In modal mode the mask
+  // keeps `pointer-events: auto`, so it ABSORBS clicks (no click-through). The
   // deterministic, headless-stable contract is the mask class + modal pointer
   // behaviour (computed background transparency is a real-browser concern).
 
@@ -3336,7 +3331,7 @@ entries: {}
     expect(mask!.style.pointerEvents).toBe('auto');
   });
 
-  // ----- AC 16 / AC 18 — shared dark-red destructive class -----
+  // ----- shared dark-red destructive class -----
 
   it('(22.3 AC16) the action-row Delete button carries namespace-panel__danger and drops severity="danger"', async () => {
     await loaded('foo: 1\n');
@@ -3412,7 +3407,7 @@ entries: {}
   }));
 
   // ---------------------------------------------------------------------
-  // ADR-018 Amendment §c — public confirmDiscard() (dirty-CLOSE / dirty-NAV)
+  // Public confirmDiscard() for dirty-close / dirty-nav (ADR-018).
   // ---------------------------------------------------------------------
 
   it('(ADR-018 §c) confirmDiscard opens the discard variant with the canonical header/message', async () => {
@@ -3511,8 +3506,8 @@ entries: {}
   });
 
   // ---------------------------------------------------------------------
-  // ADR-018 Amendment §d — affirmative label is "Proceed" for every single-
-  // affirmative variant (reset, delete, discard); dark-red is class-only.
+  // Affirmative label is "Proceed" for every single-affirmative variant
+  // (reset, delete, discard); dark-red is class-only (ADR-018).
   // ---------------------------------------------------------------------
 
   it('(ADR-018 §d) confirmProceedLabel is "Proceed" for reset / delete / discard', async () => {
@@ -3550,8 +3545,8 @@ entries: {}
   });
 
   // ---------------------------------------------------------------------
-  // ADR-018 Amendment §b (FIX 2) — handleSecondaryEscape: only the topmost
-  // secondary modal closes; exactly one action per Escape.
+  // handleSecondaryEscape: only the topmost secondary modal closes;
+  // exactly one action per Escape (ADR-018).
   // ---------------------------------------------------------------------
 
   it('(ADR-018 §b) handleSecondaryEscape closes ONLY the confirm modal (topmost) and returns true', async () => {
@@ -3605,9 +3600,9 @@ entries: {}
   });
 
   // ---------------------------------------------------------------------
-  // ADR-018 Amendment §a (FIX 4) — secondary modals are modal but NON-draggable.
-  // Read the PrimeNG Dialog inputs back off the component instance so the test
-  // FAILS if someone flips `draggable` on or drops `modal`.
+  // Secondary modals are modal but NON-draggable (ADR-018). Read the PrimeNG
+  // Dialog inputs back off the component instance so the test FAILS if someone
+  // flips `draggable` on or drops `modal`.
   // ---------------------------------------------------------------------
 
   /**

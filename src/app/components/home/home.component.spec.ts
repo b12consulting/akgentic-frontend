@@ -38,7 +38,7 @@ describe('HomeComponent', () => {
     currentUser$: BehaviorSubject<any>;
     currentUserValue: any;
   };
-  // Story 14.4 — settable auth subject so the reactive admin predicate
+  // Settable auth subject so the reactive admin predicate
   // (isAdmin$ derived from currentUser$) can be driven from tests.
   let currentUser$: BehaviorSubject<any>;
   let routerSpy: jasmine.SpyObj<Router>;
@@ -73,7 +73,7 @@ describe('HomeComponent', () => {
     contextSpy.createTeamAndNavigate.and.returnValue(Promise.resolve());
     contextSpy.stopTeamAndAwait.and.returnValue(Promise.resolve());
 
-    // Story 14.4 — anonymous by default (no `roles`), so isAdmin$ resolves
+    // Anonymous by default (no `roles`), so isAdmin$ resolves
     // false and the toggle is hidden unless a test pushes an admin user.
     currentUser$ = new BehaviorSubject<any>({ user_id: 'anonymous' });
     authSpy = jasmine.createSpyObj('AuthService', ['checkAuth'], {
@@ -90,10 +90,9 @@ describe('HomeComponent', () => {
     routerSpy = jasmine.createSpyObj('Router', ['navigate']);
     routerSpy.navigate.and.returnValue(Promise.resolve(true));
 
-    // ADR-018 Amendment §c — the dirty-close prompt is now the panel's custom
-    // confirm modal (`panel.confirmDiscard()`), so HomeComponent no longer
-    // provides/uses PrimeNG `ConfirmationService` / `<p-confirmDialog>`. Tests
-    // stub `namespacePanel.confirmDiscard` directly.
+    // HomeComponent's dirty-close prompt is the panel's custom confirm modal
+    // (`panel.confirmDiscard()`); tests stub `namespacePanel.confirmDiscard`
+    // directly. (ADR-018)
     await TestBed.configureTestingModule({
       imports: [HomeComponent, CommonModule, NoopAnimationsModule],
       providers: [
@@ -109,8 +108,6 @@ describe('HomeComponent', () => {
     fixture = TestBed.createComponent(HomeComponent);
     component = fixture.componentInstance;
   });
-
-  // --- AC6, AC7 ----------------------------------------------------------
 
   it('(AC6) component has no `context` field after the refactor', () => {
     expect((component as any).context).toBeUndefined();
@@ -168,8 +165,6 @@ describe('HomeComponent', () => {
     expect((component as any).context).toBeUndefined();
   });
 
-  // --- Story 10.4 — HomeComponent.createTeamAndNavigate delegation ------
-
   it('(AC4 10.4) HomeComponent.createTeamAndNavigate delegates to contextService and has no reload compensation', async () => {
     const ns = { namespace: 'cat-1', name: 'Cat One', description: 'first cat' };
     component.selectedNamespace$.next(ns);
@@ -188,8 +183,6 @@ describe('HomeComponent', () => {
     await component.createTeamAndNavigate();
     expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
   });
-
-  // --- Story 1.9 — namespace picker wiring --------------------------------
 
   it('(AC1 1.9) ngOnInit loads namespaces via getNamespaces and selects the first', async () => {
     apiSpy.getNamespaces.and.returnValue(
@@ -240,10 +233,6 @@ describe('HomeComponent', () => {
     expect(consoleErrorSpy).toHaveBeenCalled();
     expect(component.namespaces$.value).toEqual([]);
   });
-
-  // --- AC9 ---------------------------------------------------------------
-
-  // --- Story 10.5 — reactive stopTeam delegation -----------------------
 
   it('(AC5 10.5) HomeComponent.stopTeam delegates to contextService.stopTeamAndAwait without polling', async () => {
     apiSpy.stopTeam.calls.reset();
@@ -324,8 +313,6 @@ describe('HomeComponent', () => {
     expect(component.stoppingTeams.has('team-B')).toBe(false);
   });
 
-  // --- Story 11.2 — namespace-panel dialog wiring ---------------------
-
   function editButton(): HTMLButtonElement | null {
     const el = fixture.nativeElement.querySelector(
       'button[data-test="edit-namespace-yaml-btn"]',
@@ -347,8 +334,8 @@ describe('HomeComponent', () => {
 
   it('(AC14 11.2) "Edit Configuration" button is enabled when a namespace is selected', async () => {
     // The refreshed list (driven by ngOnInit's loadNamespaces) must contain
-    // the seeded selection — otherwise the Story 14.2 reconciliation correctly
-    // drops a selection absent from the fetched list, clearing it to null.
+    // the seeded selection — otherwise the reconciliation correctly drops a
+    // selection absent from the fetched list, clearing it to null.
     apiSpy.getNamespaces.and.returnValue(
       Promise.resolve([{ namespace: 'foo', name: 'Foo', description: '' }]),
     );
@@ -368,7 +355,7 @@ describe('HomeComponent', () => {
 
   it('(AC14 11.2) clicking the button sets namespacePanelVisible = true', async () => {
     // See note above: keep the seeded selection present in the fetched list so
-    // the Story 14.2 reconciliation does not drop it during ngOnInit.
+    // the reconciliation does not drop it during ngOnInit.
     apiSpy.getNamespaces.and.returnValue(
       Promise.resolve([{ namespace: 'foo', name: 'Foo', description: '' }]),
     );
@@ -413,8 +400,6 @@ describe('HomeComponent', () => {
     fixture.destroy();
     expect(teams$.observed).toBeFalse();
   });
-
-  // --- Story 11.3 — dialog dirty-close guard + (saved) re-fetch -------
 
   it('(11.3 AC10) onNamespacePanelVisibleChange(true) is a no-op (opening the dialog)', () => {
     const confirmDiscard = jasmine.createSpy('confirmDiscard');
@@ -497,8 +482,8 @@ describe('HomeComponent', () => {
   });
 
   it('(11.3 AC6) onNamespaceSaved re-invokes getNamespaces and pushes the result into namespaces$', async () => {
-    // First load pushed [] from beforeEach spy setup. Now prime a new list
-    // and invoke the (saved) handler — the dropdown must refresh.
+    // Prime a new list and invoke the (saved) handler — the dropdown must
+    // refresh.
     const updated = [
       { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
       { namespace: 'rag-team-v1', name: 'RAG Team', description: 'd2' },
@@ -511,8 +496,6 @@ describe('HomeComponent', () => {
     expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(1);
     expect(component.namespaces$.value).toEqual(updated);
   });
-
-  // --- Story 14.2 — stale-selection drop on refresh --------------------
 
   it('(14.2 AC8) stale selection (deleted ns) is dropped → advances to first remaining', async () => {
     // Seed a selection that the refreshed list no longer contains.
@@ -618,8 +601,6 @@ describe('HomeComponent', () => {
     ]);
   });
 
-  // --- Story 11.5 — namespaceIdentifiers getter + binding ---------------
-
   it('(11.5 AC13) namespaceIdentifiers returns the `.namespace` field of each namespaces$ entry', () => {
     component.namespaces$.next([
       { namespace: 'foo', name: 'F', description: '' },
@@ -632,8 +613,6 @@ describe('HomeComponent', () => {
     component.namespaces$.next([]);
     expect(component.namespaceIdentifiers).toEqual([]);
   });
-
-  // --- Story 11.7 — dirty indicator + dialog [closable] (FR15 + FR18) ---
 
   it('(11.7 AC22) isWriteInFlight is true when namespacePanel.saving === true', () => {
     component.namespacePanel = {
@@ -666,9 +645,12 @@ describe('HomeComponent', () => {
     expect(component.isWriteInFlight).toBeFalse();
   });
 
-  // --- ADR-018 Amendment §b (FIX 2) — single coordinated Escape handler. ---
-  // The host config dialog sets `[closeOnEscape]="false"`; `onConfigDialogEscape`
-  // (a `document:keydown.escape` HostListener) does exactly ONE thing per Esc.
+  // Single coordinated Escape handler. The host config dialog sets
+  // `[closeOnEscape]="false"`; `onConfigDialogEscape` (a `document:keydown.escape`
+  // HostListener) delegates to `panel.handleSecondaryEscape()` first — closing
+  // only the topmost secondary modal — else runs the config close flow. It is
+  // inactive unless the dialog is open, and a write in flight suppresses Escape.
+  // (ADR-018)
 
   function escapeEvent(): jasmine.SpyObj<Event> {
     return jasmine.createSpyObj<Event>('KeyboardEvent', ['preventDefault']);
@@ -820,8 +802,6 @@ describe('HomeComponent', () => {
     expect(component.namespaceIdentifiers).toEqual(['alpha', 'beta']);
   });
 
-  // --- Story 14.4 — admin "show all namespaces" toggle -----------------
-
   function toggleEl(): HTMLElement | null {
     return fixture.nativeElement.querySelector(
       '[data-test="show-all-namespaces-toggle"]',
@@ -949,7 +929,7 @@ describe('HomeComponent', () => {
     expect(apiSpy.getNamespaces.calls.mostRecent().args[0]).toEqual({
       all: true,
     });
-    // AC18: stale selection dropped, advanced to first remaining (Story 14.2).
+    // AC18: stale selection dropped, advanced to first remaining.
     expect(component.selectedNamespace$.value?.namespace).toBe('agent-team-v1');
   });
 
@@ -970,7 +950,7 @@ describe('HomeComponent', () => {
 
     await component.onToggleShowAll(true);
 
-    // Still-present selection left untouched (reference-equal) — Story 14.2.
+    // Still-present selection left untouched (reference-equal).
     expect(component.selectedNamespace$.value).toBe(original);
   });
 });

@@ -20,10 +20,11 @@ import { NamespacePanelComponent } from './namespace-panel.component';
 import { ValidationReportComponent } from './validation-report/validation-report.component';
 
 /**
- * Story 11.3 AC 12 — import-atomicity focused spec (NFR5 / ADR-011 D4).
- * Updated for ADR-017 (always-editable single-mode panel): there is no
- * `mode` / `onEditClick`; the buffer is dirtied directly and Save runs a
- * one-shot drift re-export before importing.
+ * Import-atomicity focused spec (NFR5).
+ *
+ * The panel is always-editable single-mode: there is no `mode` / `onEditClick`;
+ * the buffer is dirtied directly and Save runs a one-shot drift re-export
+ * before importing.
  *
  * This spec verifies the FRONTEND-SIDE contract of the atomicity guarantee:
  * when `importNamespace` rejects with a 422, the panel MUST leave its
@@ -120,8 +121,7 @@ describe('NamespacePanelComponent — import atomicity (NFR5)', () => {
         { provide: MessageService, useValue: messageSpy },
       ],
     })
-      // Story 22.3 — the panel no longer wires ConfirmationService /
-      // <p-confirmDialog>; the override just swaps Monaco for the stub.
+      // The override just swaps Monaco for the stub.
       .overrideComponent(NamespacePanelComponent, {
         set: {
           imports: [
@@ -161,7 +161,7 @@ describe('NamespacePanelComponent — import atomicity (NFR5)', () => {
       component.buffer = INVALID_YAML;
       expect(component.hasUnsavedChanges()).toBe(true);
 
-      // Save runs a drift re-export first (ADR-017 §6); it returns the same
+      // Save runs a drift re-export first (see ADR-017); it returns the same
       // baseline ⇒ no drift prompt, the import proceeds.
       apiSpy.exportNamespace.and.returnValue(Promise.resolve(BASELINE_YAML));
 

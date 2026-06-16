@@ -5,12 +5,12 @@ import { NamespacePanelRouteComponent } from './namespace-panel-route.component'
 import { namespacePanelCanDeactivate } from './namespace-panel.guard';
 
 /**
- * Story 11.6 + ADR-018 Amendment §c — functional `CanDeactivate` guard tests.
+ * Functional `CanDeactivate` guard tests.
  *
  * The guard delegates its dirty-navigation prompt to the panel's custom confirm
- * modal via `panel.confirmDiscard()` (no more PrimeNG `ConfirmationService` /
- * `<p-confirmDialog>`). Tests stub `panel.confirmDiscard()` to resolve true
- * (Proceed) / false (Cancel/dismiss) and assert the guard relays that verbatim.
+ * modal via `panel.confirmDiscard()`. Tests stub `panel.confirmDiscard()` to
+ * resolve true (Proceed) / false (Cancel/dismiss) and assert the guard relays
+ * that verbatim.
  */
 describe('namespacePanelCanDeactivate (CanDeactivate guard)', () => {
   beforeEach(() => {

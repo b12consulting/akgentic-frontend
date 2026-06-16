@@ -30,13 +30,13 @@ import { NamespacePanelRouteComponent } from './namespace-panel-route.component'
 import { ValidationReportComponent } from './validation-report/validation-report.component';
 
 /**
- * Story 11.6 — route-shell component tests.
+ * Route-shell component tests.
  *
  * Uses `RouterTestingModule` + a stubbed `ActivatedRoute.paramMap` (not
  * `RouterTestingHarness`) because every test mounts the shell directly
  * via `TestBed.createComponent` — we do not need the router to actually
  * navigate for these assertions. The separate `app.routes.spec.ts` covers
- * the route-registration / URL-parsing contract (AC 1, AC 15).
+ * the route-registration / URL-parsing contract.
  *
  * The inner `<nu-monaco-editor>` is swapped with `StubMonacoEditorComponent`
  * via `TestBed.overrideComponent(NamespacePanelComponent, ...)` so the real
@@ -125,9 +125,6 @@ describe('NamespacePanelRouteComponent (Story 11.6)', () => {
       ],
     })
       // Swap real Monaco for the stub — the panel is nested inside the shell.
-      // Story 22.3 — the panel no longer uses ConfirmationService /
-      // <p-confirmDialog>; its confirm flows run through the panel-owned custom
-      // modal, so the old service override is gone.
       .overrideComponent(NamespacePanelComponent, {
         set: {
           imports: [
@@ -147,7 +144,7 @@ describe('NamespacePanelRouteComponent (Story 11.6)', () => {
   });
 
   // ---------------------------------------------------------------------
-  // AC 19 route-shell spec — six required tests
+  // Route-shell spec
   // ---------------------------------------------------------------------
 
   it('(AC2) route activation with :namespace="foo" binds currentNamespace and mounts panel', async () => {
@@ -234,7 +231,7 @@ describe('NamespacePanelRouteComponent (Story 11.6)', () => {
     expect(backLink!.getAttribute('href')).toBe('/');
   });
 
-  // ----- AC 10 parity smoke test ------------------------------------------------
+  // ----- Parity smoke test ------------------------------------------------------
   it('(AC10) parity smoke test — load → edit → save → validate → clone → edit → reset', async () => {
     const srcYaml = `namespace: foo
 user_id: null
@@ -308,7 +305,7 @@ entries:
     expect(parsed['namespace']).toBe('new-ns');
   });
 
-  // ----- AC 11 NFR7 REST call budget --------------------------------------------
+  // ----- REST call budget -------------------------------------------------------
   it('(AC11) NFR7 REST budget — mount=2, +validate=+1, +save=+2 (drift+import), +clone=+3 (total 9)', async () => {
     const srcYaml = `namespace: foo
 user_id: null
@@ -343,7 +340,7 @@ entries: {}
       Promise.resolve(cleanReport('foo')),
     );
 
-    // +Validate buffer (+1) — the single Validate handler (ADR-017 §4).
+    // +Validate buffer (+1) — the single Validate handler.
     await panel.onValidateBufferClick();
     expect(apiSpy.validateNamespaceBuffer).toHaveBeenCalledTimes(1);
 
@@ -367,7 +364,7 @@ entries: {}
 
     expect(apiSpy.importNamespace).toHaveBeenCalledTimes(2);
     // foo-mount + foo-save-drift-check + dst-clone-reload = 3.
-    // ADR-017 §6 relocated the drift-check export from Edit-entry into Save.
+    // Save runs the drift-check export (see ADR-017).
     expect(apiSpy.exportNamespace).toHaveBeenCalledTimes(3);
     expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(3); // mount + (saved)×2
 
@@ -418,7 +415,7 @@ entries: {}
   });
 
   // ---------------------------------------------------------------------
-  // Story 11.7 AC 8, 9, 10 — route-shell dirty indicator (FR15)
+  // Route-shell dirty indicator
   // ---------------------------------------------------------------------
 
   it('(11.7 AC8, AC9) route shell renders dirty indicator with aria-label when panel is dirty', async () => {

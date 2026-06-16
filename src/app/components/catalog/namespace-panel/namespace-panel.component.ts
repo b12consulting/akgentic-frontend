@@ -810,20 +810,20 @@ export class NamespacePanelComponent
   }
 
   /**
-   * Public predicate (AC 12) — true iff ANY secondary panel (the Clone modal
-   * OR the confirmation modal) is open. The host (`HomeComponent` config dialog,
-   * and any route-shell that binds `closeOnEscape`) reads this synchronously to
+   * Public predicate — true iff ANY secondary panel (the Clone modal OR the
+   * confirmation modal) is open. The host (`HomeComponent` config dialog, and
+   * any route-shell that binds `closeOnEscape`) reads this synchronously to
    * suppress its own `closeOnEscape` while a secondary panel is open, so Esc
-   * closes only the topmost secondary panel (ADR-018 §3).
+   * closes only the topmost secondary panel (ADR-018).
    */
   get hasSecondaryPanelOpen(): boolean {
     return this.cloneDialogVisible || this.confirmDialogVisible;
   }
 
   /**
-   * Coordinated Escape for the panel's secondary modals (ADR-018 Amendment §b).
-   * Closes ONLY the topmost open secondary panel and reports whether it consumed
-   * the Escape, so EXACTLY ONE action happens per keystroke (no cascade):
+   * Coordinated Escape for the panel's secondary modals (ADR-018). Closes ONLY
+   * the topmost open secondary panel and reports whether it consumed the
+   * Escape, so EXACTLY ONE action happens per keystroke (no cascade):
    *
    *   1. confirmation modal open → cancel/close ONLY it (settling any pending
    *      drift/discard promise via `onConfirmDialogHide`), return `true`.
@@ -852,9 +852,9 @@ export class NamespacePanelComponent
   }
 
   /**
-   * PUBLIC dirty-discard confirm (ADR-018 Amendment §c). Opens the panel-owned
-   * custom confirmation modal with the `'discard'` variant ("Unsaved changes" /
-   * "You have unsaved changes. Discard?") and returns a `Promise<boolean>` that
+   * PUBLIC dirty-discard confirm (ADR-018). Opens the panel-owned custom
+   * confirmation modal with the `'discard'` variant ("Unsaved changes" / "You
+   * have unsaved changes. Discard?") and returns a `Promise<boolean>` that
    * resolves:
    *   - `true`  → the operator chose **Proceed**. The panel buffer is REALLY
    *               discarded here (`revertBufferToServer()` — buffer reset to the
@@ -867,13 +867,10 @@ export class NamespacePanelComponent
    *   - `false` → the operator **Cancelled** / dismissed (Esc / X / mask) — the
    *               buffer is left UNTOUCHED (still dirty) and the panel stays open.
    *
-   * Reused by BOTH dirty-state hosts so the LAST PrimeNG `<p-confirmDialog>`
-   * usages for the namespace panel are removed:
+   * Reused by BOTH dirty-state hosts:
    *   - the Home config-dialog close paths (`onNamespacePanelVisibleChange` and
    *     the Esc/X/mask close), and
-   *   - the deep-link route `CanDeactivate` guard (`namespacePanelCanDeactivate`),
-   *     resolving the spec-compliance route-guard BLOCKING finding (the guard
-   *     previously depended on a `<p-confirmDialog>` the panel no longer mounts).
+   *   - the deep-link route `CanDeactivate` guard (`namespacePanelCanDeactivate`).
    *
    * A dismissal that bypasses the buttons (Esc / X / mask) settles `false` via
    * `confirmDiscardResolve` in `onConfirmDialogHide` — the safe branch (keep the
@@ -911,22 +908,22 @@ export class NamespacePanelComponent
   }
 
   /**
-   * The action-row label for the confirmation modal's affirmative button
-   * (ADR-018 Amendment §d). Every single-affirmative variant — reset, delete,
-   * and discard — uses **"Proceed"** (the dark-red `__danger` class is what
-   * marks the `delete` variant as destructive, NOT a distinct label). The drift
-   * variant renders its own two explicit Reload / Overwrite buttons, so this
-   * label is never shown for it. Returned as a getter so the template need not
-   * branch on the variant.
+   * The action-row label for the confirmation modal's affirmative button. Every
+   * single-affirmative variant — reset, delete, and discard — uses
+   * **"Proceed"** (the dark-red `__danger` class is what marks the `delete`
+   * variant as destructive, NOT a distinct label). The drift variant renders
+   * its own two explicit Reload / Overwrite buttons, so this label is never
+   * shown for it. Returned as a getter so the template need not branch on the
+   * variant.
    */
   get confirmProceedLabel(): string {
     return 'Proceed';
   }
 
   /**
-   * Proceed (reset/delete/discard) button handler (AC 3, 5). Runs the captured
-   * accept callback then closes. For `'delete'` this fires `onDeleteConfirm()`;
-   * for `'reset'` the revert effect; for `'discard'` it resolves the public
+   * Proceed (reset/delete/discard) button handler. Runs the captured accept
+   * callback then closes. For `'delete'` this fires `onDeleteConfirm()`; for
+   * `'reset'` the revert effect; for `'discard'` it resolves the public
    * `confirmDiscard()` promise `true` (the accept callback settles + clears the
    * pending `confirmDiscardResolve`, so the resulting onHide is a no-op).
    */
@@ -937,23 +934,23 @@ export class NamespacePanelComponent
   }
 
   /**
-   * Overwrite (drift) button handler (AC 7). The destructive drift branch:
-   * resolves the drift promise `true` (proceed to import the operator buffer)
-   * via the captured accept callback, then closes.
+   * Overwrite (drift) button handler. The destructive drift branch: resolves
+   * the drift promise `true` (proceed to import the operator buffer) via the
+   * captured accept callback, then closes.
    */
   onConfirmOverwriteClick(): void {
     const accept = this.confirmAccept;
     // The drift promise is settled by `accept`; clear the dismissal resolver
-    // first so the resulting onHide does not re-settle it (AC 8).
+    // first so the resulting onHide does not re-settle it.
     this.confirmDriftResolve = null;
     this.closeConfirm();
     accept?.();
   }
 
   /**
-   * Reload (drift) button handler — the safe / focused default (AC 7, 9). Runs
-   * the rebase effect and resolves the drift promise `false` (skip the import)
-   * via the captured reload callback, then closes.
+   * Reload (drift) button handler — the safe / focused default. Runs the rebase
+   * effect and resolves the drift promise `false` (skip the import) via the
+   * captured reload callback, then closes.
    */
   onConfirmReloadClick(): void {
     const reload = this.confirmReload;
@@ -963,10 +960,10 @@ export class NamespacePanelComponent
   }
 
   /**
-   * Cancel (reset/delete/discard) button handler (AC 10). The safe branch:
-   * closes without running any accept callback — no destructive/lossy effect
-   * occurs. For the `'discard'` variant it settles the public `confirmDiscard()`
-   * promise to `false` (keep edits) directly, so the awaited promise resolves
+   * Cancel (reset/delete/discard) button handler. The safe branch: closes
+   * without running any accept callback — no destructive/lossy effect occurs.
+   * For the `'discard'` variant it settles the public `confirmDiscard()` promise
+   * to `false` (keep edits) directly, so the awaited promise resolves
    * deterministically on a button click without depending on the PrimeNG
    * `(onHide)` round-trip; the resolver is cleared so the subsequent onHide is a
    * no-op.
@@ -979,11 +976,11 @@ export class NamespacePanelComponent
   }
 
   /**
-   * `(onShow)` handler for the confirmation modal (ADR-018 Amendment §e).
-   * Mirrors `onCloneDialogShow`: defers the focus call by a microtask so PrimeNG
-   * has mounted the overlay, then focuses the PRIMARY/proceed button (Proceed
-   * for reset/delete/discard, Reload for drift) so **Enter activates the main
-   * action**. Esc still cancels. Null-safe via the `@ViewChild` ref.
+   * `(onShow)` handler for the confirmation modal. Mirrors `onCloneDialogShow`:
+   * defers the focus call by a microtask so PrimeNG has mounted the overlay,
+   * then focuses the PRIMARY/proceed button (Proceed for reset/delete/discard,
+   * Reload for drift) so **Enter activates the main action**. Esc still cancels.
+   * Null-safe via the `@ViewChild` ref.
    */
   onConfirmDialogShow(): void {
     setTimeout(() => {
@@ -992,13 +989,13 @@ export class NamespacePanelComponent
   }
 
   /**
-   * `(onHide)` handler for the confirmation modal (AC 8, 19 + ADR-018
-   * Amendment §c). Resolves a still-pending dismissal to the SAFE branch — the
-   * drift dismissal to `false` (no blind overwrite) and the dirty-discard
-   * dismissal to `false` (keep the edits) — then resets the request + callbacks
-   * so nothing leaks into the next open. Both resolvers are invoked BEFORE
-   * `closeConfirm` so the awaited `onSaveClick` / `confirmDiscard()` promise
-   * settles even on an Esc/X dismissal.
+   * `(onHide)` handler for the confirmation modal (ADR-018). Resolves a
+   * still-pending dismissal to the SAFE branch — the drift dismissal to `false`
+   * (no blind overwrite) and the dirty-discard dismissal to `false` (keep the
+   * edits) — then resets the request + callbacks so nothing leaks into the next
+   * open. Both resolvers are invoked BEFORE `closeConfirm` so the awaited
+   * `onSaveClick` / `confirmDiscard()` promise settles even on an Esc/X
+   * dismissal.
    */
   onConfirmDialogHide(): void {
     const driftResolve = this.confirmDriftResolve;
@@ -1014,10 +1011,10 @@ export class NamespacePanelComponent
    * Revert the edit buffer to the last server snapshot and clear every
    * dirty-derived signal (`lastValidation` / `rawSaveError` / `validatedBuffer`)
    * so the panel lands fully clean. Shared by the Reset button (`onResetClick`)
-   * and the dirty-CLOSE discard (`confirmDiscard` Proceed — ADR-018 Amendment
-   * §c). Load-bearing for the close path: the panel instance is kept alive
-   * across a dialog visibility toggle (not destroyed), so without this reset the
-   * abandoned edits would leak into the next open. Destroy-guarded.
+   * and the dirty-CLOSE discard (`confirmDiscard` Proceed). Load-bearing for the
+   * close path: the panel instance is kept alive across a dialog visibility
+   * toggle (not destroyed), so without this reset the abandoned edits would leak
+   * into the next open. Destroy-guarded.
    */
   private revertBufferToServer(): void {
     if (this.destroyed) {
@@ -1030,11 +1027,11 @@ export class NamespacePanelComponent
   }
 
   /**
-   * Revert the buffer to `serverYaml` — the SOLE undo affordance now that
-   * Cancel is removed (ADR-017 §2). Guarded by the custom "Discard unsaved
-   * changes?" confirm; a no-op when clean (the Reset button is also disabled
-   * via `[disabled]="buffer === serverYaml"`). Reverts-and-STAYS (does not close
-   * the panel) — distinct from the dirty-CLOSE discard which reverts-and-closes.
+   * Revert the buffer to `serverYaml` — the undo affordance. Guarded by the
+   * custom "Discard unsaved changes?" confirm; a no-op when clean (the Reset
+   * button is also disabled via `[disabled]="buffer === serverYaml"`).
+   * Reverts-and-STAYS (does not close the panel) — distinct from the
+   * dirty-CLOSE discard which reverts-and-closes.
    */
   onResetClick(): void {
     if (this.buffer === this.serverYaml) {
@@ -1052,16 +1049,14 @@ export class NamespacePanelComponent
 
   /**
    * Save handler — posts the current buffer directly to
-   * `apiService.importNamespace` (NO pre-save validate, per ADR-011 D4),
-   * preceded by a one-shot **drift check** (ADR-017 §6).
+   * `apiService.importNamespace` (NO pre-save validate), preceded by a one-shot
+   * **drift check** (ADR-017).
    *
-   * Gated on `hasUnsavedChanges()` (and `saving`); no longer references any
-   * mode — the panel is always editable.
+   * Gated on `hasUnsavedChanges()` (and `saving`).
    *
    * Drift check: before importing, re-`exportNamespace` and, if the returned
    * YAML diverges from `serverYaml`, prompt the operator (reload-and-rebase
-   * vs overwrite) instead of importing blindly. The check is one-shot per
-   * Save; it relocates the protection the old Edit-entry drift check gave.
+   * vs overwrite) instead of importing blindly. The check is one-shot per Save.
    *
    * Success (2xx): `serverYaml` snapshots the just-saved buffer, toast
    * success, `saved` emits so the host refreshes derived lists. The buffer is
@@ -1078,19 +1073,18 @@ export class NamespacePanelComponent
    * Other (4xx/5xx/network): sticky error toast. The operator retries by
    * clicking the regular Save button again (buffer is still dirty post-
    * failure, so Save remains enabled) — there is no dedicated Retry button
-   * in the action row. `importNamespace` is NEVER auto-retried by the
-   * panel (AC 8).
+   * in the action row. `importNamespace` is NEVER auto-retried by the panel.
    */
   async onSaveClick(): Promise<void> {
     if (!this.hasUnsavedChanges() || this.saving) {
       return;
     }
     // Snapshot the buffer at click time so typing during the request does
-    // NOT race the success branch (AC 2.3 guidance).
+    // NOT race the success branch.
     const savedBuffer = this.buffer;
 
-    // Post-review guardrail — refuse to Save when the buffer's top-level
-    // `namespace:` field has been edited away from the panel's namespace.
+    // Guardrail — refuse to Save when the buffer's top-level `namespace:`
+    // field has been edited away from the panel's namespace.
     // The server's import endpoint treats the YAML's namespace as
     // authoritative, so saving here would accidentally create or overwrite
     // a DIFFERENT namespace — the operator almost certainly means to Clone.
@@ -1134,9 +1128,9 @@ export class NamespacePanelComponent
     // not display outdated issues while the request is in flight.
     this.lastValidation = null;
     try {
-      // ADR-017 §6 — one-shot drift check before importing. Returns false
-      // when the operator chose reload-and-rebase (import is skipped this
-      // click); true when the import should proceed (no drift, or overwrite).
+      // One-shot drift check before importing (ADR-017). Returns false when
+      // the operator chose reload-and-rebase (import is skipped this click);
+      // true when the import should proceed (no drift, or overwrite).
       const proceed = await this.checkSaveDrift(savedBuffer);
       if (this.destroyed || !proceed) {
         return;
@@ -1155,7 +1149,7 @@ export class NamespacePanelComponent
   }
 
   /**
-   * ADR-017 §6 — one-shot drift check folded into Save. Re-`exportNamespace`s
+   * One-shot drift check folded into Save (ADR-017). Re-`exportNamespace`s
    * (carrying `{ all: this.showAll }`) and, if the returned YAML diverges from
    * `serverYaml`, prompts the operator with a reload-and-rebase vs overwrite
    * choice. Returns:
@@ -1167,15 +1161,14 @@ export class NamespacePanelComponent
    *               server YAML so the operator can re-Save against the fresh
    *               base).
    *
-   * ADR-018 §1 — the choice is rendered as **two explicit named buttons** in
-   * the custom confirmation modal (Reload + Overwrite), not a binary
-   * accept/reject. Reload (the safe, focused default) resolves `false`;
-   * Overwrite resolves `true`. Dismissing the modal (Esc / Cancel / X) resolves
-   * `false` — the safe branch — so an accidental dismissal never lands a blind
-   * overwrite (ADR-018 §2 / AC 8). A network error during the re-export falls
-   * through to `true` (proceed) — the server still validates on import, so a
-   * genuinely-stale edit can only land a known-bad bundle, and operators should
-   * not be blocked by a hiccup.
+   * The choice is rendered as **two explicit named buttons** in the custom
+   * confirmation modal (Reload + Overwrite), not a binary accept/reject. Reload
+   * (the safe, focused default) resolves `false`; Overwrite resolves `true`.
+   * Dismissing the modal (Esc / Cancel / X) resolves `false` — the safe branch
+   * — so an accidental dismissal never lands a blind overwrite. A network error
+   * during the re-export falls through to `true` (proceed) — the server still
+   * validates on import, so a genuinely-stale edit can only land a known-bad
+   * bundle, and operators should not be blocked by a hiccup.
    */
   private async checkSaveDrift(savedBuffer: string): Promise<boolean> {
     let latestYaml: string;
@@ -1248,8 +1241,8 @@ export class NamespacePanelComponent
       return;
     }
     this.serverYaml = savedBuffer;
-    // Story 11.7 AC 13 — pair the success toast with an aria-live
-    // announcement so screen-reader users get the same outcome.
+    // Pair the success toast with an aria-live announcement so screen-reader
+    // users get the same outcome.
     this.a11yAnnouncement = 'Namespace saved';
     this.saved.emit();
     this.messageService.add({
@@ -1259,16 +1252,16 @@ export class NamespacePanelComponent
   }
 
   /**
-   * The SINGLE Validate handler (ADR-017 §4). Validates the current buffer
-   * without persisting via `apiService.validateNamespaceBuffer(buffer)`.
-   * Snapshots `this.buffer` at click time (`bufferAtClick`) so Monaco's live
+   * The Validate handler (ADR-017). Validates the current buffer without
+   * persisting via `apiService.validateNamespaceBuffer(buffer)`. Snapshots
+   * `this.buffer` at click time (`bufferAtClick`) so Monaco's live
    * `[(ngModel)]` mutation during the in-flight request cannot race the
-   * request args (mirrors Story 11.3's `savedBuffer` pattern).
+   * request args.
    *
    * When the buffer is clean (`buffer === serverYaml`), this is identical to
    * validating the persisted namespace. Validate never mutates `serverYaml`
    * or `buffer` — the handler touches only `validating` and `lastValidation`.
-   * It is never disabled by the FR14 gate (ADR-017 §5).
+   * It is never disabled by the validation gate.
    */
   async onValidateBufferClick(): Promise<void> {
     if (this.validating) {
@@ -1286,14 +1279,14 @@ export class NamespacePanelComponent
         throw new Error('Server returned no validation report.');
       }
       // Clean buffer → flash the Validate button. Non-clean → render
-      // findings via `lastValidation` as before.
+      // findings via `lastValidation`.
       if (report.ok) {
         this.lastValidation = null;
         this.validatedBuffer = bufferAtClick;
         this.flashValidated();
       } else {
         this.lastValidation = report;
-        // Story 11.7 AC 12 — announce the failing-validation outcome.
+        // Announce the failing-validation outcome.
         this.announceValidationOutcome(report);
       }
     } catch (err) {
@@ -1311,7 +1304,7 @@ export class NamespacePanelComponent
   /**
    * Parent-owned clear for the `ValidationReportComponent` output. Nulls
    * both `lastValidation` and `rawSaveError` so the sub-component emits
-   * no DOM on the next CD tick (branch (a) — AC 8).
+   * no DOM on the next CD tick.
    */
   onClearValidationClick(): void {
     this.lastValidation = null;
@@ -1329,7 +1322,7 @@ export class NamespacePanelComponent
    *   land on 422 even though the operational outcome is the same as a
    *   200 ok:false — the user wants to see the issues, not a toast.
    * - **Other statuses / errors** — non-sticky toast. Re-clicking Validate
-   *   is the natural retry, so no Retry action is attached (AC 11).
+   *   is the natural retry, so no Retry action is attached.
    *
    * Validate never writes Save's fallback fields (`rawSaveError`) — those
    * belong to the Save flow.
@@ -1346,7 +1339,7 @@ export class NamespacePanelComponent
         // Promote the 422 body into the findings pane — matches the
         // ok:false-on-200 rendering path.
         this.lastValidation = body;
-        // Story 11.7 AC 12 — announce the failing-validation outcome.
+        // Announce the failing-validation outcome.
         this.announceValidationOutcome(body);
         return;
       }
@@ -1371,7 +1364,7 @@ export class NamespacePanelComponent
     if (status === 401) {
       // Silent at the panel — FetchService already fired a global toast and
       // the app-wide 401 handler (if any) runs. The panel does not mutate
-      // `buffer` / `lastValidation` on 401 (AC 9).
+      // `buffer` / `lastValidation` on 401.
       return;
     }
     if (status === 422) {
@@ -1379,7 +1372,7 @@ export class NamespacePanelComponent
       if (this.isValidationReport(body)) {
         this.lastValidation = body;
         this.rawSaveError = null;
-        // Story 11.7 AC 12 — announce the failing-validation outcome.
+        // Announce the failing-validation outcome.
         this.announceValidationOutcome(body);
       } else {
         this.rawSaveError =
@@ -1401,15 +1394,14 @@ export class NamespacePanelComponent
   }
 
   // -------------------------------------------------------------------
-  // Story 11.5 — Clone flow (AC 1–AC 12)
+  // Clone flow
   // -------------------------------------------------------------------
 
   /**
-   * Open the Clone sub-dialog (AC 2). Pure UI flip — does NOT fire a
-   * network request, does NOT mutate `buffer` / `serverYaml` /
-   * `lastValidation` / `rawSaveError`. No-op when `cloning === true`
-   * (defence in depth — the outer Clone button is `[disabled]` in that
-   * state, so this path is unreachable in practice).
+   * Open the Clone sub-dialog. Pure UI flip — does NOT fire a network request,
+   * does NOT mutate `buffer` / `serverYaml` / `lastValidation` / `rawSaveError`.
+   * No-op when `cloning === true` (defence in depth — the outer Clone button is
+   * `[disabled]` in that state, so this path is unreachable in practice).
    */
   onCloneClick(): void {
     if (this.cloning) {
@@ -1423,17 +1415,17 @@ export class NamespacePanelComponent
     const srcName = extractYamlName(this.buffer) ?? srcNs;
     this.cloneDestNs = suggestDestNamespace(srcNs);
     this.cloneDestName = suggestDestName(srcName);
-    // Story 12.2 — pre-fill the visibility/sharing toggles from the same
-    // buffer. Absent / non-boolean / unparseable → default to false.
+    // Pre-fill the visibility/sharing toggles from the same buffer. Absent /
+    // non-boolean / unparseable → default to false.
     this.cloneShareable = extractYamlShareable(this.buffer) ?? false;
     this.clonePublic = extractYamlPublic(this.buffer) ?? false;
     this.cloneDialogVisible = true;
   }
 
   /**
-   * Cancel the Clone sub-dialog (AC 3). Resets `cloneDestNs`; does NOT
-   * mutate `cloning` — an in-flight clone request keeps settling via its
-   * own try/catch/finally (Story 11.4's destroy-guard idiom).
+   * Cancel the Clone sub-dialog. Resets `cloneDestNs`; does NOT mutate
+   * `cloning` — an in-flight clone request keeps settling via its own
+   * try/catch/finally (the destroy-guard idiom).
    */
   onCloneCancelClick(): void {
     this.cloneDialogVisible = false;
@@ -1446,9 +1438,9 @@ export class NamespacePanelComponent
   /**
    * `(visibleChange)` handler for the Clone sub-dialog. Mirrors Cancel's
    * reset: when the dialog dismisses (visible = false, e.g. ESC or the
-   * close X), we zero `cloneDestNs` so the next open starts clean (AC 3).
-   * `cloning` is intentionally unchanged — an in-flight request keeps
-   * settling regardless of dialog visibility.
+   * close X), we zero `cloneDestNs` so the next open starts clean. `cloning`
+   * is intentionally unchanged — an in-flight request keeps settling
+   * regardless of dialog visibility.
    */
   onCloneDialogVisibleChange(visible: boolean): void {
     this.cloneDialogVisible = visible;
@@ -1461,10 +1453,10 @@ export class NamespacePanelComponent
   }
 
   /**
-   * Pre-flight predicate for the Clone Confirm button (AC 4). True iff any
-   * of: destNs is empty-trimmed, destNs equals the source namespace, destNs
-   * already appears in `existingNamespaces` (case-sensitive), or a clone is
-   * already in flight.
+   * Pre-flight predicate for the Clone Confirm button. True iff any of: destNs
+   * is empty-trimmed, destNs equals the source namespace, destNs already
+   * appears in `existingNamespaces` (case-sensitive), or a clone is already in
+   * flight.
    */
   get cloneConfirmDisabled(): boolean {
     const trimmed = this.cloneDestNs.trim();
@@ -1483,16 +1475,16 @@ export class NamespacePanelComponent
     if (this.cloning) {
       return true;
     }
-    // Story 11.7 AC 7 — the Clone modal Confirm button inherits the
-    // FR14 gate so an operator cannot bypass the outer Clone button's
-    // disabled state by opening the modal first.
+    // The Clone modal Confirm button inherits the validation gate so an
+    // operator cannot bypass the outer Clone button's disabled state by opening
+    // the modal first.
     return this.isCloneGated;
   }
 
   /**
-   * Inline validation message for the Clone dialog (AC 4). Returns `null`
-   * while the destNs is an unused, non-colliding value — so the template
-   * can gate the error block with `*ngIf`.
+   * Inline validation message for the Clone dialog. Returns `null` while the
+   * destNs is an unused, non-colliding value — so the template can gate the
+   * error block with `*ngIf`.
    */
   get cloneValidationError(): string | null {
     const trimmed = this.cloneDestNs.trim();
@@ -1512,23 +1504,21 @@ export class NamespacePanelComponent
   }
 
   // -------------------------------------------------------------------
-  // Story 11.7 — FR14 Save/Clone gate getters + tooltip helpers
+  // Save/Clone validation-gate getters + tooltip helpers
   // -------------------------------------------------------------------
 
   /**
-   * Story 11.7 AC 1, 2, 6 — Save gate predicate. True iff the panel has
-   * a known-bad signal: either a structured-422 / 200-with-issues report
-   * (`lastValidation.ok === false`) or an unstructured-422 raw-error
-   * fallback (`rawSaveError !== null`).
+   * Save gate predicate. True iff the panel has a known-bad signal: either a
+   * structured-422 / 200-with-issues report (`lastValidation.ok === false`) or
+   * an unstructured-422 raw-error fallback (`rawSaveError !== null`).
    *
-   * Fresh untouched state (`lastValidation === null && rawSaveError ===
-   * null`) returns `false` — Save / Clone are enabled by default.
-   * Option B (gate-on-known-bad) is the explicit UX choice; see story
-   * Dev Notes "Why option B".
+   * Fresh untouched state (`lastValidation === null && rawSaveError === null`)
+   * returns `false` — Save / Clone are enabled by default. The gate fires only
+   * on a known-bad signal.
    *
-   * Two getters (`isSaveGated` + `isCloneGated`) instead of one shared
-   * getter so call-site tooltips can be specific (Save's tooltip says
-   * "saving"; Clone's says "cloning") without leaking unrelated logic.
+   * Two getters (`isSaveGated` + `isCloneGated`) instead of one shared getter
+   * so call-site tooltips can be specific (Save's tooltip says "saving";
+   * Clone's says "cloning") without leaking unrelated logic.
    */
   get isSaveGated(): boolean {
     return (
@@ -1537,7 +1527,7 @@ export class NamespacePanelComponent
     );
   }
 
-  /** Story 11.7 AC 1, 2, 6 — Clone gate predicate (same body as Save). */
+  /** Clone gate predicate (same body as Save). */
   get isCloneGated(): boolean {
     return (
       (this.lastValidation !== null && !this.lastValidation.ok) ||
@@ -1546,13 +1536,12 @@ export class NamespacePanelComponent
   }
 
   /**
-   * Story 11.7 AC 1 — Save tooltip text. Returns the explanatory string
-   * ONLY when the gate is the active reason for disabling; returns
-   * `undefined` otherwise so PrimeNG's `pTooltip` input (whose type is
-   * `string | TemplateRef | undefined`) accepts it under strictTemplates.
-   * PrimeNG suppresses the tooltip on `undefined` / empty string, so
-   * unrelated disable reasons (clean buffer, in-flight save) get no
-   * tooltip — avoiding contradictory messaging.
+   * Save tooltip text. Returns the explanatory string ONLY when the gate is the
+   * active reason for disabling; returns `undefined` otherwise so PrimeNG's
+   * `pTooltip` input (whose type is `string | TemplateRef | undefined`) accepts
+   * it under strictTemplates. PrimeNG suppresses the tooltip on `undefined` /
+   * empty string, so unrelated disable reasons (clean buffer, in-flight save)
+   * get no tooltip — avoiding contradictory messaging.
    */
   get saveTooltip(): string | undefined {
     if (
@@ -1566,9 +1555,9 @@ export class NamespacePanelComponent
   }
 
   /**
-   * Story 11.7 AC 1 — Clone tooltip text. Same idiom as `saveTooltip`:
-   * returns the gate-explanatory string only when the gate is the active
-   * reason for disabling; `undefined` otherwise (pTooltip-type-compatible).
+   * Clone tooltip text. Same idiom as `saveTooltip`: returns the
+   * gate-explanatory string only when the gate is the active reason for
+   * disabling; `undefined` otherwise (pTooltip-type-compatible).
    */
   get cloneTooltip(): string | undefined {
     if (this.isCloneGated && !this.cloning && !this.saving) {
@@ -1578,13 +1567,13 @@ export class NamespacePanelComponent
   }
 
   // -------------------------------------------------------------------
-  // Story 11.7 — Clone modal a11y handlers (FR17 + FR21)
+  // Clone modal a11y handlers
   // -------------------------------------------------------------------
 
   /**
-   * Story 11.7 AC 16 — `(onShow)` handler for the Clone modal. Defers
-   * the focus call to the next microtask so PrimeNG has time to mount
-   * the input element in its overlay. Idempotent + null-safe.
+   * `(onShow)` handler for the Clone modal. Defers the focus call to the next
+   * microtask so PrimeNG has time to mount the input element in its overlay.
+   * Idempotent + null-safe.
    */
   onCloneDialogShow(): void {
     setTimeout(() => {
@@ -1593,11 +1582,10 @@ export class NamespacePanelComponent
   }
 
   /**
-   * Story 11.7 AC 18, 19, 21 — `(onHide)` handler for the Clone modal.
-   * Runs the same cleanup as `onCloneCancelClick` PLUS clears
-   * `cloneInlineError` and returns focus to the outer Clone button.
-   * Defers the focus call by one microtask so any post-hide CD settles
-   * (and PrimeNG's exit animation completes) before the focus moves.
+   * `(onHide)` handler for the Clone modal. Runs the same cleanup as
+   * `onCloneCancelClick` PLUS clears `cloneInlineError` and returns focus to the
+   * outer Clone button. Defers the focus call by one microtask so any post-hide
+   * CD settles (and PrimeNG's exit animation completes) before the focus moves.
    */
   onCloneDialogHide(): void {
     this.cloneDestNs = '';
@@ -1611,11 +1599,10 @@ export class NamespacePanelComponent
   }
 
   /**
-   * Story 11.7 AC 21 — destination-input change handler. Clears the
-   * unstructured-422 inline error so the operator can edit and retry
-   * without first dismissing a stale alert. The existing
-   * `cloneValidationError` getter (Story 11.5) is computed-on-getter and
-   * does not need a separate clear-on-input handler.
+   * Destination-input change handler. Clears the unstructured-422 inline error
+   * so the operator can edit and retry without first dismissing a stale alert.
+   * The `cloneValidationError` getter is computed-on-getter and does not need a
+   * separate clear-on-input handler.
    */
   onCloneDestNsChange(): void {
     if (this.cloneInlineError !== null) {
@@ -1624,17 +1611,17 @@ export class NamespacePanelComponent
   }
 
   /**
-   * Clone handler — "duplicate the saved bundle" semantics (ADR-017 §3). The
-   * outer Clone button is gated on a **clean** panel (`buffer === serverYaml`),
-   * so the captured buffer is the persisted bundle, never a half-edited draft.
+   * Clone handler — "duplicate the saved bundle" semantics (ADR-017). The outer
+   * Clone button is gated on a **clean** panel (`buffer === serverYaml`), so the
+   * captured buffer is the persisted bundle, never a half-edited draft.
    * Rewrites the root `namespace` field via {@link rewriteNamespaceInYaml},
    * then reuses the Save path (`apiService.importNamespace`) — no new endpoint.
    *
-   * Branches (AC 8–AC 12):
+   * Branches:
    *   - `CloneYamlError` before the network call → toast + dialog stays
    *     open, `cloning` resets, `importNamespace` NEVER called.
    *   - 2xx → dismiss dialog, emit `(saved)`, switch to destNs, re-load via
-   *     `loadNamespace(destNs)` (Story 11.2 contract — lands clean).
+   *     `loadNamespace(destNs)` — lands clean.
    *   - 401 silent (FetchService surfaces the global toast).
    *   - 422 structured → populate `lastValidation`; dialog stays open.
    *   - 422 unstructured → stash raw body in `rawSaveError`; dialog stays
@@ -1643,7 +1630,7 @@ export class NamespacePanelComponent
    *     dialog stays open.
    *
    * In every failure branch: `namespace` / `serverYaml` / `buffer` are
-   * unchanged (AC 10). Destroy-guard mirrors Story 11.3's `onSaveClick`.
+   * unchanged. Destroy-guard mirrors `onSaveClick`.
    */
   async onCloneConfirmClick(): Promise<void> {
     if (this.cloneConfirmDisabled) {
@@ -1651,9 +1638,9 @@ export class NamespacePanelComponent
     }
     const destNs = this.cloneDestNs.trim();
     const destName = this.cloneDestName.trim();
-    // Story 12.2 — capture the toggle values once at the top (mirroring the
-    // destNs / destName trim-once capture) so they are stable across the
-    // async boundary. `isPublic` avoids the reserved-ish local name `public`.
+    // Capture the toggle values once at the top (mirroring the destNs /
+    // destName trim-once capture) so they are stable across the async boundary.
+    // `isPublic` avoids the reserved-ish local name `public`.
     const shareable = this.cloneShareable;
     const isPublic = this.clonePublic;
     const sourceYaml = this.buffer;
@@ -1674,7 +1661,7 @@ export class NamespacePanelComponent
       // 2xx happy path: dismiss dialog, emit saved, switch namespace +
       // re-load. Programmatic self-writes to an @Input() field do NOT
       // trigger ngOnChanges, so we invoke loadNamespace explicitly — it
-      // re-exports the bundle and lands the panel clean (Story 11.2).
+      // re-exports the bundle and lands the panel clean.
       this.cloneDialogVisible = false;
       this.cloneDestNs = '';
       this.cloneDestName = '';
@@ -1684,11 +1671,11 @@ export class NamespacePanelComponent
       this.saved.emit();
       this.namespace = destNs;
       // Fire-and-forget: loadNamespace owns its own loading flag and
-      // destroy guard. AC 14 budgets this second fetch explicitly.
+      // destroy guard.
       void this.loadNamespace(destNs);
-      // Story 11.7 AC 14 — pair the success toast with an aria-live
-      // announcement using the captured destNs (avoids racing with
-      // any later mutation of `this.cloneDestNs`).
+      // Pair the success toast with an aria-live announcement using the
+      // captured destNs (avoids racing with any later mutation of
+      // `this.cloneDestNs`).
       this.a11yAnnouncement = `Cloned to namespace '${destNs}'`;
       this.messageService.add({
         severity: 'success',
@@ -1707,10 +1694,9 @@ export class NamespacePanelComponent
   }
 
   /**
-   * Narrow the caught Clone error (AC 9 + AC 11). Branch order MUST match
-   * AC 11 exactly: `CloneYamlError` FIRST (client-side rewrite failure,
-   * `importNamespace` never fired), then 401 silent, then 422 structured /
-   * 422 unstructured, then default sticky toast.
+   * Narrow the caught Clone error. Branch order: `CloneYamlError` FIRST
+   * (client-side rewrite failure, `importNamespace` never fired), then 401
+   * silent, then 422 structured / 422 unstructured, then default sticky toast.
    */
   private handleCloneError(err: unknown): void {
     if (err instanceof CloneYamlError) {
@@ -1732,33 +1718,31 @@ export class NamespacePanelComponent
     if (status === 422) {
       const body = (err as HttpError).body;
       if (this.isValidationReport(body)) {
-        // Story 11.7 AC 20 — structured 422 closes the Clone modal and
-        // surfaces the findings in the parent panel's findings pane (the
-        // single canonical findings surface). The outer Clone button is
-        // then gated by FR14.
+        // Structured 422 closes the Clone modal and surfaces the findings in
+        // the parent panel's findings pane (the single canonical findings
+        // surface). The outer Clone button is then gated by validation.
         this.lastValidation = body;
         this.rawSaveError = null;
         this.cloneDialogVisible = false;
         this.cloneDestNs = '';
         this.cloneInlineError = null;
-        // AC 12 — announce the failing-validation outcome.
+        // Announce the failing-validation outcome.
         this.announceValidationOutcome(body);
       } else {
-        // Story 11.7 AC 21 — unstructured 422 keeps the modal open with
-        // an inline `role="alert"` error. We deliberately do NOT touch
-        // `lastValidation` or `rawSaveError` (the parent's FR14 gate is
-        // reserved for SAVE failures). The inline alert handles its own
-        // assistive-tech announcement, so no live-region write here
-        // (avoids duplicate announcements).
+        // Unstructured 422 keeps the modal open with an inline `role="alert"`
+        // error. We deliberately do NOT touch `lastValidation` or
+        // `rawSaveError` (the parent's validation gate is reserved for SAVE
+        // failures). The inline alert handles its own assistive-tech
+        // announcement, so no live-region write here (avoids duplicate
+        // announcements).
         this.cloneInlineError =
           typeof body === 'string' ? body : JSON.stringify(body, null, 2);
       }
       return;
     }
-    // Default: 4xx / 5xx / network. Sticky toast + `lastCloneError` so a
-    // future story could wire an in-panel Retry-Clone button. This story
-    // deliberately does NOT add a Retry button — re-clicking Clone Confirm
-    // is the natural retry path, and the action row is already dense.
+    // Default: 4xx / 5xx / network. Sticky toast + `lastCloneError`. There is
+    // no in-panel Retry-Clone button — re-clicking Clone Confirm is the natural
+    // retry path, and the action row is already dense.
     this.lastCloneError = err instanceof Error ? err : new Error(String(err));
     this.messageService.add({
       severity: 'error',
@@ -1769,18 +1753,17 @@ export class NamespacePanelComponent
   }
 
   // -------------------------------------------------------------------
-  // Story 14.1 — Delete flow (ADR-028 §Decision 5, frontend leg). The
-  // backend authorizes the request (owner-or-admin); this client only
-  // issues the DELETE and reacts to the status code — no role/ownership
-  // logic lives here (ADR-028 §Decision 6).
+  // Delete flow (frontend leg). The backend authorizes the request
+  // (owner-or-admin); this client only issues the DELETE and reacts to the
+  // status code — no role/ownership logic lives here.
   // -------------------------------------------------------------------
 
   /**
-   * Delete handler (AC 3). Always available (only gated by an in-flight
-   * `deleting`). No-op while a delete is in flight (defence in depth alongside
+   * Delete handler. Always available (only gated by an in-flight `deleting`).
+   * No-op while a delete is in flight (defence in depth alongside
    * `[disabled]="deleting"`). Opens the custom confirmation modal naming the
    * current namespace; the Proceed (destructive) button runs `onDeleteConfirm()`.
-   * Cancelling is a no-op (panel unchanged, no network call — AC 5).
+   * Cancelling is a no-op (panel unchanged, no network call).
    */
   onDeleteClick(): void {
     if (this.deleting) {
@@ -1799,13 +1782,13 @@ export class NamespacePanelComponent
   }
 
   /**
-   * Issues the DELETE and runs the result paths (AC 6–AC 10). No-op while a
-   * delete is in flight. Success (`204`): emit `saved` (host refreshes the
-   * namespace list) AND `closed` (Home dialog dismisses; route-shell ignores
-   * `closed` harmlessly) — Option A, zero host edits. Failure branches
-   * delegate to `handleDeleteError`; in every failure branch `namespace`,
-   * `serverYaml`, `buffer`, and `mode` are unchanged. The `deleting` flag is
-   * always cleared in `finally`, guarded by the `destroyed` idiom.
+   * Issues the DELETE and runs the result paths. No-op while a delete is in
+   * flight. Success (`204`): emit `saved` (host refreshes the namespace list)
+   * AND `closed` (Home dialog dismisses; route-shell ignores `closed`
+   * harmlessly). Failure branches delegate to `handleDeleteError`; in every
+   * failure branch `namespace`, `serverYaml`, and `buffer` are unchanged. The
+   * `deleting` flag is always cleared in `finally`, guarded by the `destroyed`
+   * idiom.
    */
   async onDeleteConfirm(): Promise<void> {
     if (this.deleting) {
@@ -1817,7 +1800,7 @@ export class NamespacePanelComponent
       if (this.destroyed) {
         return;
       }
-      // Success path mirrors the Clone-success UX (AC 6).
+      // Success path mirrors the Clone-success UX.
       this.a11yAnnouncement = `Namespace '${this.namespace}' deleted`;
       this.saved.emit();
       this.closed.emit();
@@ -1838,7 +1821,7 @@ export class NamespacePanelComponent
   }
 
   /**
-   * Narrow the caught Delete error (AC 7–AC 9). Branches:
+   * Narrow the caught Delete error. Branches:
    *   - `401` → silent return (FetchService already fired the global toast;
    *     the panel does not mutate `buffer` / `serverYaml`).
    *   - `403` → non-sticky not-authorized toast; panel stays open. NOT
@@ -1914,13 +1897,13 @@ export class NamespacePanelComponent
     const seq = ++this.loadSeq;
     this.loading = true;
     // Reset buffer/serverYaml at the start of each reload so the empty
-    // state renders (AC 3 step 1 + AC 5) while the fetch is in flight.
+    // state renders while the fetch is in flight.
     this.serverYaml = '';
     this.buffer = '';
     try {
-      // Story 14.4 — carry the admin "show all" flag so an admin opening a
-      // foreign-owned namespace from the home "show all" list can read it
-      // (the export GET is unscoped server-side for admins when all=true).
+      // Carry the admin "show all" flag so an admin opening a foreign-owned
+      // namespace from the home "show all" list can read it (the export GET is
+      // unscoped server-side for admins when all=true).
       const yaml = await this.apiService.exportNamespace(namespace, {
         all: this.showAll,
       });
@@ -1930,8 +1913,7 @@ export class NamespacePanelComponent
       this.serverYaml = yaml;
       this.buffer = yaml;
       // buffer === serverYaml ⇒ the panel lands clean (Save/Reset disabled,
-      // Clone enabled). There is no mode to set — the editor is always
-      // writable.
+      // Clone enabled). The editor is always writable.
       this.lastValidation = null;
       this.rawSaveError = null;
     } catch (err) {

@@ -29,11 +29,11 @@ import { AuthService } from '../../core/auth/auth.service';
 import { ConfigService } from '../../core/config/config.service';
 import { ContextService } from '../../core/context/context.service';
 
-// Story 11.2 — Listed in @Component.imports so Angular's @defer block can
-// resolve <app-namespace-panel>. The `@defer (when ...)` block in the
-// template ensures the component's compiled code (and its Monaco chunk)
-// lives in a deferred chunk that is only loaded on first opening of the
-// namespace-editor dialog — the initial home-page bundle stays Monaco-free.
+// Listed in @Component.imports so Angular's @defer block can resolve
+// <app-namespace-panel>. The `@defer (when ...)` block in the template keeps
+// the component's compiled code (and its Monaco chunk) in a deferred chunk
+// loaded only on first opening of the namespace-editor dialog — the initial
+// home-page bundle stays Monaco-free.
 import { NamespacePanelComponent } from '../catalog/namespace-panel/namespace-panel.component';
 
 @Component({
@@ -70,12 +70,12 @@ export class HomeComponent {
   editingDescriptionFor: string | null = null;
   descriptionDrafts = new Map<string, string>();
 
-  // Story 11.2 — controls the Namespace Panel dialog visibility. The panel
-  // component is mounted lazily via @defer in home.component.html so its
-  // Monaco-editor dependency is NOT part of the initial home-page chunk.
+  // Controls the Namespace Panel dialog visibility. The panel component is
+  // mounted lazily via @defer in home.component.html so its Monaco-editor
+  // dependency is NOT part of the initial home-page chunk.
   namespacePanelVisible: boolean = false;
 
-  // Story 14.4 — admin-only "show all namespaces" toggle (ADR-028 §Decision 9).
+  // Admin-only "show all namespaces" toggle (ADR-028).
   //
   // This is an admin-gated UX affordance, NOT the security boundary. The
   // authoritative "see all" enforcement is the infra unscoping of admin reads
@@ -102,11 +102,11 @@ export class HomeComponent {
 
   @ViewChildren('descriptionInput') descriptionInputs!: QueryList<ElementRef>;
 
-  // Story 11.3 — @ViewChild on the @defer-rendered panel. The reference is
-  // `undefined` until the user opens the dialog (the @defer block only
-  // mounts the child when `namespacePanelVisible` flips true), so the close
-  // handler MUST null-check. `{ static: false }` is the default for
-  // @ViewChild on conditionally-rendered children; no explicit option needed.
+  // @ViewChild on the @defer-rendered panel. The reference is `undefined`
+  // until the user opens the dialog (the @defer block only mounts the child
+  // when `namespacePanelVisible` flips true), so the close handler MUST
+  // null-check. `{ static: false }` is the default for @ViewChild on
+  // conditionally-rendered children; no explicit option needed.
   @ViewChild(NamespacePanelComponent)
   namespacePanel?: NamespacePanelComponent;
 
@@ -138,29 +138,26 @@ export class HomeComponent {
   }
 
   /**
-   * Load catalog namespaces for the dropdown. Extracted so the 2xx save
-   * branch (Story 11.3 AC 6) can re-invoke the same code path without
-   * duplicating the error handling.
+   * Load catalog namespaces for the dropdown. Shared by initial load and the
+   * 2xx save branch so the fetch and error handling live in one place.
    *
-   * Story 14.2 — drop a stale selection / preserve a valid one. After
-   * refreshing the options, reconcile the current selection against the
-   * freshly-fetched list, comparing on the stable `namespace` identifier
-   * (NOT object reference — every fetch returns new objects — and NOT the
-   * display `name`, which two summaries may share). If the current
-   * selection is no longer present (e.g. it was just deleted), re-select
-   * the first remaining namespace, or `null` when the list is empty. If it
-   * is still present, leave the subject untouched to avoid a gratuitous
-   * dropdown flicker on an unrelated refresh. A `null` current selection
-   * is "not present", so a non-empty list still auto-selects `namespaces[0]`
-   * (preserves the Story 1.9 initial-load behavior).
+   * Reconciles the current selection against the freshly-fetched list,
+   * comparing on the stable `namespace` identifier (NOT object reference —
+   * every fetch returns new objects — and NOT the display `name`, which two
+   * summaries may share). If the current selection is no longer present (e.g.
+   * it was just deleted), re-select the first remaining namespace, or `null`
+   * when the list is empty. If it is still present, leave the subject
+   * untouched to avoid a gratuitous dropdown flicker on an unrelated refresh.
+   * A `null` current selection is "not present", so a non-empty list still
+   * auto-selects `namespaces[0]`.
    */
   private async loadNamespaces(): Promise<void> {
     try {
-      // Story 14.4 — forward the admin "show all" flag through the single
-      // load path so every caller (initial, save, clone, delete, refresh,
-      // toggle) stays consistent and the Story 14.2 reconciliation below still
-      // runs on every re-fetch. `all=true` is honoured server-side only for
-      // admins; for everyone else it is a no-op (normal owner+public list).
+      // Forward the admin "show all" flag through the single load path so
+      // every caller (initial, save, clone, delete, refresh, toggle) stays
+      // consistent and the selection reconciliation below runs on every
+      // re-fetch. `all=true` is honoured server-side only for admins; for
+      // everyone else it is a no-op (normal owner+public list).
       const namespaces = await this.apiService.getNamespaces({
         all: this.showAllNamespaces,
       });
@@ -293,8 +290,7 @@ export class HomeComponent {
   }
 
   /**
-   * Story 11.3 AC 10 — dialog dirty-close guard (ADR-018 Amendment §c —
-   * migrated to the panel's custom confirm modal).
+   * Dialog dirty-close guard (ADR-018).
    *
    * The `p-dialog` binding is split into `[visible]` + `(visibleChange)` so
    * this handler can intercept close attempts (the X button / dismissable
@@ -304,11 +300,6 @@ export class HomeComponent {
    * `confirmDiscard()` modal runs. On Proceed (resolve `true`) flip visibility
    * to false; on Cancel/dismiss (resolve `false`) leave the dialog open with
    * the buffer intact.
-   *
-   * Migrating to `panel.confirmDiscard()` removes the old PrimeNG
-   * `ConfirmationService` / `<p-confirmDialog>` usage for the panel's dirty
-   * state, so both presentations (this dialog + the route guard) share ONE
-   * confirm idiom.
    *
    * `this.namespacePanel` may be `undefined` (the panel is mounted lazily
    * via @defer) — when it is not mounted there is nothing to discard, so
@@ -327,7 +318,7 @@ export class HomeComponent {
     }
     // Dirty panel — re-assert visibility to keep the dialog open while the
     // panel's custom confirm modal runs. Proceed closes; Cancel/dismiss keeps
-    // it open (AC 10 dismiss branch).
+    // it open.
     this.namespacePanelVisible = true;
     void panel.confirmDiscard().then((discard) => {
       if (discard) {
@@ -337,15 +328,16 @@ export class HomeComponent {
   }
 
   /**
-   * Single coordinated Escape handler for the config dialog (ADR-018
-   * Amendment §b — FIX 2). All three dialogs (this host config dialog + the
-   * panel's Clone + confirm modals) set `[closeOnEscape]="false"`, so PrimeNG's
-   * per-dialog document-level Esc listeners never fire and cannot cascade.
-   * Instead this ONE document-level handler coordinates Escape while the config
-   * dialog is open. A document listener (not a `<p-dialog>`-scoped one) is
-   * load-bearing: a secondary modal is teleported to `<body>` as a SIBLING
-   * overlay, so its keydown does not bubble to the config dialog element — only
-   * a document-level handler sees Escape regardless of which overlay has focus.
+   * Single coordinated Escape handler for the config dialog (ADR-018).
+   *
+   * All three dialogs (this host config dialog + the panel's Clone + confirm
+   * modals) set `[closeOnEscape]="false"`, so PrimeNG's per-dialog
+   * document-level Esc listeners never fire and cannot cascade. Instead this
+   * ONE document-level handler coordinates Escape while the config dialog is
+   * open. A document listener (not a `<p-dialog>`-scoped one) is load-bearing:
+   * a secondary modal is teleported to `<body>` as a SIBLING overlay, so its
+   * keydown does not bubble to the config dialog element — only a
+   * document-level handler sees Escape regardless of which overlay has focus.
    *
    * Exactly ONE action per Escape, in priority order:
    *   1. delegate to `panel.handleSecondaryEscape()` — if a secondary modal
@@ -356,8 +348,7 @@ export class HomeComponent {
    *      buffer through `confirmDiscard()`.
    *
    * Inactive unless the config dialog is open; a write-in-flight suppresses
-   * Escape entirely (mirrors the old `[closeOnEscape]="!isWriteInFlight…"`
-   * contract).
+   * Escape entirely.
    */
   @HostListener('document:keydown.escape', ['$event'])
   onConfigDialogEscape(event: Event): void {
@@ -375,23 +366,21 @@ export class HomeComponent {
   }
 
   /**
-   * Story 11.3 AC 6 — `(saved)` output handler. Re-fetches namespaces so
-   * any summary-metadata changes (e.g. renamed description) propagate to
-   * the dropdown. Shares `loadNamespaces()` with `ngOnInit` to keep the
-   * fetch logic in one place.
+   * `(saved)` output handler. Re-fetches namespaces so any summary-metadata
+   * changes (e.g. renamed description) propagate to the dropdown. Shares
+   * `loadNamespaces()` with `ngOnInit` to keep the fetch logic in one place.
    */
   async onNamespaceSaved(): Promise<void> {
     await this.loadNamespaces();
   }
 
   /**
-   * Story 14.4 — admin "show all namespaces" toggle handler. Flips the
-   * component flag and re-runs the single `loadNamespaces()` path so the
-   * `all` flag flows through it (the toggle never calls `getNamespaces`
-   * directly — that keeps every load path consistent and preserves the
-   * Story 14.2 stale-selection reconciliation on the re-fetch). Turning on
-   * requests `?all=true` (admin firehose); turning off restores the normal
-   * owner+public list.
+   * Admin "show all namespaces" toggle handler. Flips the component flag and
+   * re-runs the single `loadNamespaces()` path so the `all` flag flows through
+   * it (the toggle never calls `getNamespaces` directly — that keeps every
+   * load path consistent and preserves the stale-selection reconciliation on
+   * the re-fetch). Turning on requests `?all=true` (admin firehose); turning
+   * off restores the normal owner+public list.
    */
   async onToggleShowAll(value: boolean): Promise<void> {
     this.showAllNamespaces = value;
@@ -399,28 +388,27 @@ export class HomeComponent {
   }
 
   /**
-   * Story 11.5 AC 13 — pure derivation of namespace identifiers from the
-   * synchronous current value of `namespaces$`. Supplied to the panel via
-   * `[existingNamespaces]` for the Clone dialog's pre-flight collision
-   * check (panel's AC 4). Getter instead of a dedicated stream because
-   * BehaviorSubject exposes `.value` synchronously; no pipe / async needed.
+   * Pure derivation of namespace identifiers from the synchronous current
+   * value of `namespaces$`. Supplied to the panel via `[existingNamespaces]`
+   * for the Clone dialog's pre-flight collision check. Getter instead of a
+   * dedicated stream because BehaviorSubject exposes `.value` synchronously;
+   * no pipe / async needed.
    */
   get namespaceIdentifiers(): string[] {
     return (this.namespaces$.value ?? []).map((n) => n.namespace);
   }
 
   /**
-   * Story 11.7 AC 22, 23 — write-in-flight predicate (FR18). True iff the
-   * panel is currently saving OR cloning. Reads (validate / load) are
-   * NON-destructive and intentionally excluded so the operator can dismiss
-   * the dialog while a Validate request is mid-flight.
+   * Write-in-flight predicate. True iff the panel is currently saving OR
+   * cloning. Reads (validate / load) are NON-destructive and intentionally
+   * excluded so the operator can dismiss the dialog while a Validate request
+   * is mid-flight.
    *
    * Used by the dialog's `[closable]` / `[dismissableMask]` bindings and by
    * the coordinated `onConfigDialogEscape` handler to lock all dismissal
-   * channels during an in-flight write. (`[closeOnEscape]` itself is now always
-   * `false` — Escape is owned by `onConfigDialogEscape`, ADR-018 Amendment §b.)
-   * Existing destroyed-guard pattern in the panel (Story 11.3 AC 13 + 11.5
-   * AC 16) absorbs late resolutions; this gate just prevents the operator from
+   * channels during an in-flight write. (`[closeOnEscape]` is always `false` —
+   * Escape is owned by `onConfigDialogEscape`.) The panel's destroyed-guard
+   * absorbs late resolutions; this gate just prevents the operator from
    * hitting that race in the first place.
    */
   get isWriteInFlight(): boolean {
@@ -431,11 +419,10 @@ export class HomeComponent {
   }
 
   /**
-   * Story 11.7 AC 8 — namespace label for the dialog header. Inlined
-   * resolution of (selectedNamespace.name ?? selectedNamespace.namespace ??
-   * 'Namespace') from the existing async pipe. Wrapped in a getter so the
-   * dialog's `<ng-template pTemplate="header">` block can render it
-   * alongside the conditional dirty indicator without two async pipes.
+   * Namespace label for the dialog header. Resolves (selectedNamespace.name ??
+   * selectedNamespace.namespace ?? 'Namespace'). Wrapped in a getter so the
+   * dialog's `<ng-template pTemplate="header">` block can render it alongside
+   * the conditional dirty indicator without two async pipes.
    */
   get namespaceLabel(): string {
     const selected = this.selectedNamespace$.value;

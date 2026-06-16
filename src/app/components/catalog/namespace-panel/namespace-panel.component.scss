@@ -28,12 +28,12 @@
     padding-top: 0.75rem;
   }
 
-  // Story 11.7 AC 11, 15 — visually-hidden polite live-region. The element
-  // stays in the DOM and accessibility tree but is clipped from view.
-  // Avoids `display: none` / `visibility: hidden` which remove the element
-  // from the AT tree entirely. Pattern equivalent to Tailwind's `sr-only`
-  // and Angular CDK's `cdk-visually-hidden` (we ship the rule inline to
-  // avoid pulling in @angular/cdk solely for this — see story AC 33).
+  // Visually-hidden polite live-region. The element stays in the DOM and
+  // accessibility tree but is clipped from view. Avoids `display: none` /
+  // `visibility: hidden` which remove the element from the AT tree entirely.
+  // Pattern equivalent to Tailwind's `sr-only` and Angular CDK's
+  // `cdk-visually-hidden` (shipped inline to avoid pulling in @angular/cdk
+  // solely for this rule).
   &__a11y-live {
     position: absolute;
     width: 1px;
@@ -53,8 +53,7 @@
 // `:host ::ng-deep` because PrimeNG's `<p-dialog>` teleports its content
 // to `document.body` via the CDK overlay. View-encapsulated selectors
 // (scoped via `[_ngcontent-xxx]` attribute suffix) do not match the
-// teleported DOM — so nested-inside-.namespace-panel rules silently
-// no-op. Same pattern Amelia used in Story 11-7 for the dialog header.
+// teleported DOM — so nested-inside-.namespace-panel rules silently no-op.
 // -------------------------------------------------------------------
 :host ::ng-deep {
   // Clone modal body — flex-column stacks the label + input + error
@@ -98,9 +97,8 @@
     line-height: 1.25;
   }
 
-  // Story 11.7 AC 21 — inline error in the Clone modal for the
-  // unstructured-422 fallback. Same red token; `display: block` so it
-  // takes its own line beneath the input.
+  // Inline error in the Clone modal for the unstructured-422 fallback. Same
+  // red token; `display: block` so it takes its own line beneath the input.
   .namespace-panel__clone-inline-error {
     display: block;
     margin-top: 0.4rem;
@@ -111,7 +109,7 @@
 
   // Clone modal action row — right-aligned Cancel + Confirm with a small
   // gap and a top separator so they don't crowd the input. Reused by the
-  // custom confirmation modal (ADR-018 §1).
+  // custom confirmation modal.
   .namespace-panel__clone-actions {
     display: flex;
     justify-content: flex-end;
@@ -119,7 +117,7 @@
     padding-top: 1rem;
   }
 
-  // ADR-018 §1 — custom confirmation modal body message. Sits in the shared
+  // Custom confirmation modal body message. Sits in the shared
   // `.namespace-panel__clone-body` flex-column; reset the default <p> margins
   // so the single message line aligns with the dialog padding.
   .namespace-panel__confirm-message {
@@ -127,10 +125,9 @@
     line-height: 1.4;
   }
 
-  // ADR-018 Amendment §a (FIX 4) — TRANSPARENT secondary-modal mask. The Clone
-  // and confirmation `<p-dialog>`s stay `[modal]="true"` + `[draggable]="true"`
-  // (properly modal: draggable, pointer-contained, correctly stacked) but paint
-  // NO dimming backdrop over the configuration panel. PrimeNG's modal mask
+  // TRANSPARENT secondary-modal mask. The Clone and confirmation `<p-dialog>`s
+  // are `[modal]="true"` (pointer-contained, correctly stacked) but paint NO
+  // dimming backdrop over the configuration panel. PrimeNG's modal mask
   // (`maskStyleClass="np-secondary-modal-mask"`) keeps `pointer-events: auto`
   // (it absorbs clicks — no click-through to the config panel) while we force
   // its background transparent here, so the config panel behind stays fully
@@ -144,12 +141,12 @@
     }
   }
 
-  // ADR-018 §4 — single shared DARK-RED destructive style, defined ONCE and
-  // reused by BOTH the action-row Delete button and the Delete-confirm's
-  // Proceed button (replacing PrimeNG's bright `severity="danger"` red). Lives
+  // Single shared DARK-RED destructive style, defined ONCE and reused by BOTH
+  // the action-row Delete button and the Delete-confirm's Proceed button. Lives
   // under `:host ::ng-deep` so it matches the teleported modal button as well
   // as the in-panel action-row button. `!important` overrides PrimeNG's own
-  // button background/border tokens, which otherwise win on specificity.
+  // button background/border tokens, which otherwise win on specificity
+  // (ADR-018).
   .namespace-panel__danger {
     &,
     &.p-button {
