@@ -44,17 +44,16 @@ import {
 import { ValidationReportComponent } from './validation-report/validation-report.component';
 
 /**
- * Typed shape for the panel's custom confirmation modal (ADR-018 §1 +
- * Amendment §c). One interface, every call site — NEVER an inline
- * `Record`/object literal scattered across handlers (Golden Rule #1). `variant`
- * selects the action-row button layout:
+ * Typed shape for the panel's custom confirmation modal (ADR-018). One
+ * interface, every call site — never an inline `Record`/object literal
+ * scattered across handlers. `variant` selects the action-row button layout:
  *   - `'reset'` / `'delete'` / `'discard'` → `[Cancel] [Proceed]` (Proceed is
- *     destructive — dark-red — for `'delete'` only — ADR-018 §4). `'discard'` is
- *     the dirty-CLOSE / dirty-NAV variant the host config dialog (Home) and the
+ *     destructive — dark-red — for `'delete'` only). `'discard'` is the
+ *     dirty-close / dirty-nav variant the host config dialog (Home) and the
  *     route `CanDeactivate` guard reuse via the public `confirmDiscard()`
- *     method (ADR-018 Amendment §c).
+ *     method.
  *   - `'drift'` → `[Reload] [Overwrite]` (two explicit named buttons, not a
- *     binary accept/reject — ADR-018 §1).
+ *     binary accept/reject).
  */
 interface ConfirmRequest {
   header: string;
@@ -65,21 +64,20 @@ interface ConfirmRequest {
 /**
  * NamespacePanelComponent — host-agnostic editor for a catalog namespace YAML.
  *
- * Story 22.1 (ADR-017 §1–§6) collapses the original view/edit two-mode state
- * machine into a single **dirty** signal (`buffer !== serverYaml`). The panel
- * is **always editable** — Monaco mounts permanently writable, there is no
- * Edit-click barrier, and the entire action row is driven by one boolean:
+ * The panel has no view/edit mode axis: it is driven by a single **dirty**
+ * signal (`buffer !== serverYaml`) and is **always editable** — Monaco mounts
+ * permanently writable, there is no Edit-click barrier, and the entire action
+ * row is driven by one boolean (ADR-017):
  *
  *   - Monaco mounts writable (`readOnly: false`); `editorOptions` is a single
  *     stable object built once and never reassigned.
- *   - `hasUnsavedChanges()` collapses to `buffer !== serverYaml` (name +
- *     signature preserved — the route `CanDeactivate` guard and the home
- *     dirty-close guard consume it unchanged).
+ *   - `hasUnsavedChanges()` is `buffer !== serverYaml`; the route
+ *     `CanDeactivate` guard and the home dirty-close guard consume it.
  *   - Action row: Validate (always) · Save (dirty) · Reset (dirty) ·
  *     Clone (clean) · Delete (always).
- *   - Save flow posts directly to `apiService.importNamespace` — NO pre-save
- *     `validate` round-trip (ADR-011 D4) — preceded by a one-shot drift check
- *     (re-export; on divergence prompt reload-and-rebase vs overwrite).
+ *   - Save flow posts directly to `apiService.importNamespace` — no pre-save
+ *     `validate` round-trip — preceded by a one-shot drift check (re-export;
+ *     on divergence prompt reload-and-rebase vs overwrite).
  *   - 422 → populate `lastValidation` (structured) or `rawSaveError`
  *     (fallback); buffer preserved.
  *   - 5xx / 4xx (other than 401/422) → sticky error toast; buffer preserved.
@@ -87,23 +85,23 @@ interface ConfirmRequest {
  *   - 401 → no panel-specific behaviour; the FetchService global toast
  *     surfaces the failure, the app-wide handler (if any) runs. Panel only
  *     clears `saving` in `finally`.
- *   - A panel-owned custom confirmation modal (ADR-018 §1) — same `<p-dialog>`
- *     shell as the Clone modal — guards Reset-with-dirty-buffer, the Save drift
- *     reload-vs-overwrite choice, and Delete. The safe button holds focus on
- *     open so Enter/Esc cancel (ADR-018 §2).
+ *   - A panel-owned custom confirmation modal — same `<p-dialog>` shell as the
+ *     Clone modal — guards Reset-with-dirty-buffer, the Save drift
+ *     reload-vs-overwrite choice, and Delete. The primary button holds focus on
+ *     open so Enter activates it and Esc cancels.
  *
- * The component remains presentation-only: no `Router`, `ActivatedRoute`,
+ * The component is presentation-only: no `Router`, `ActivatedRoute`,
  * `MAT_DIALOG_DATA`, etc. The dialog wrapper (HomeComponent) and the
- * deep-link route (Story 11.6) mount it identically.
+ * deep-link route mount it identically.
  *
  * Public surface contract:
  *   - @Input() namespace: string          — required, drives the load flow.
  *   - @Output() closed: EventEmitter<void> — asks the host to dismiss.
  *   - @Output() saved: EventEmitter<void>  — emitted once per successful
  *     import; hosts re-fetch derived lists (e.g. HomeComponent's dropdown).
- *   - hasUnsavedChanges(): boolean         — dirty-state predicate. Returns
- *     true iff `buffer !== serverYaml`. The route `CanDeactivate` guard and
- *     the home dirty-close guard consume the same method.
+ *   - hasUnsavedChanges(): boolean         — dirty-state predicate. True iff
+ *     `buffer !== serverYaml`. The route `CanDeactivate` guard and the home
+ *     dirty-close guard consume the same method.
  */
 @Component({
   selector: 'app-namespace-panel',
@@ -127,22 +125,21 @@ export class NamespacePanelComponent
 {
   @Input() namespace!: string;
   /**
-   * Story 11.5 — existing namespace identifiers, supplied by the host, used
-   * by the Clone dialog's pre-flight collision check (AC 4). The panel
-   * NEVER re-fetches this list itself (NFR7 — the collision check is a UX
-   * courtesy, not a correctness guarantee; see ADR-011 D5
-   * Collision-on-race).
+   * Existing namespace identifiers, supplied by the host, used by the Clone
+   * dialog's pre-flight collision check. The panel NEVER re-fetches this list
+   * itself — the collision check is a UX courtesy, not a correctness
+   * guarantee (the server is authoritative on collision-on-race).
    */
   @Input() existingNamespaces: string[] = [];
   /**
-   * Story 14.4 — admin "show all" context, propagated from the home toggle
+   * Admin "show all" context, propagated from the home toggle
    * (`showAllNamespaces`). When `true`, the panel's entry-read
    * (`exportNamespace`) carries `?all=true` so an admin can open a
    * foreign-owned namespace surfaced by the "show all" list. `all=true` is
    * honoured server-side only for admins (the `/admin/catalog/*` mount
-   * unscopes admin GETs — see ADR-028 §Decision 9); for a non-admin (or when
-   * the host toggle is off) it is the normal owner-scoped read. Default
-   * `false` keeps every existing caller on the unchanged owner-scoped path.
+   * unscopes admin GETs); for a non-admin (or when the host toggle is off) it
+   * is the normal owner-scoped read. Default `false` keeps every caller on the
+   * owner-scoped path.
    */
   @Input() showAll: boolean = false;
   @Output() closed = new EventEmitter<void>();
@@ -161,15 +158,14 @@ export class NamespacePanelComponent
   lastValidation: NamespaceValidationReport | null = null;
   loading: boolean = false;
 
-  // Story 11.3 — Save flow state.
-  /** True while an `importNamespace` request is in flight (AC 5). */
+  // Save flow state.
+  /** True while an `importNamespace` request is in flight. */
   saving: boolean = false;
 
-  // Story 11.4 — Validate flow state.
+  // Validate flow state.
   /**
-   * True while a `validatePersistedNamespace` or `validateNamespaceBuffer`
-   * request is in flight. Independent from `saving` / `loading` — see
-   * Story 11.4 Dev Notes "Why three separate flags".
+   * True while a `validateNamespaceBuffer` request is in flight. Independent
+   * from `saving` / `loading` so the three flows can be in flight separately.
    */
   validating: boolean = false;
 
@@ -179,8 +175,7 @@ export class NamespacePanelComponent
   // The report pane stays hidden in this path — findings-only.
   //
   //   - `validationFlashBuffer` — true while the Validate button shows the
-  //     success-flash state. (Single flag now — there is one Validate
-  //     button, over the buffer; ADR-017 §4.)
+  //     success-flash state. There is one Validate button, over the buffer.
   //   - `flashTimeoutId` — handle so repeated clicks cancel the prior timer
   //     and the destroy hook cleans up any pending callback.
   validationFlashBuffer: boolean = false;
@@ -196,17 +191,16 @@ export class NamespacePanelComponent
 
   /**
    * Raw (non-structured) server error body surfaced by a 422 whose payload
-   * is not a `NamespaceValidationReport` (AC 7 fallback branch).
+   * is not a `NamespaceValidationReport` (fallback branch).
    * `null` means no unstructured error pending.
    */
   rawSaveError: string | null = null;
-  // Story 11.5 — Clone flow state.
-  /** Controls visibility of the Clone sub-dialog (AC 2, AC 3). */
+  // Clone flow state.
+  /** Controls visibility of the Clone sub-dialog. */
   cloneDialogVisible: boolean = false;
   /**
-   * Destination namespace name typed into the Clone dialog (AC 3). Two-way
-   * bound via `[(ngModel)]`; reset to `''` on dialog dismiss AND on
-   * successful clone (AC 3, AC 8, AC 12).
+   * Destination namespace name typed into the Clone dialog. Two-way bound via
+   * `[(ngModel)]`; reset to `''` on dialog dismiss AND on successful clone.
    */
   cloneDestNs: string = '';
   /**
@@ -218,9 +212,8 @@ export class NamespacePanelComponent
    */
   cloneDestName: string = '';
   /**
-   * Story 12.2 — Clone visibility/sharing toggles, two-way bound via
-   * `[(ngModel)]` to the modal's `p-toggleswitch` controls. The two flags
-   * are ORTHOGONAL:
+   * Clone visibility/sharing toggles, two-way bound via `[(ngModel)]` to the
+   * modal's `p-toggleswitch` controls. The two flags are ORTHOGONAL:
    *   - `cloneShareable` → root `shareable`: other namespaces may reference
    *     entries in this one cross-namespace (referenceability).
    *   - `clonePublic`    → root `public`: non-owner users may list, read, and
@@ -236,68 +229,65 @@ export class NamespacePanelComponent
   cloneShareable: boolean = false;
   clonePublic: boolean = false;
   /**
-   * True while a clone-import request is in flight (AC 8 + AC 14). Gates
-   * the Confirm button (defence in depth alongside the pre-flight
-   * validation) and the outer Clone button so the operator cannot
-   * double-submit.
+   * True while a clone-import request is in flight. Gates the Confirm button
+   * (defence in depth alongside the pre-flight validation) and the outer Clone
+   * button so the operator cannot double-submit.
    */
   cloning: boolean = false;
   /**
    * Tracks the most recent non-HTTP / non-422 / non-401 clone error. The
-   * field is populated on the default failure branch (AC 9) for surfacing
-   * the error via a non-sticky toast; no in-panel action-row Retry button
-   * — re-clicking Clone Confirm is the natural retry path.
+   * field is populated on the default failure branch for surfacing the error
+   * via a non-sticky toast; no in-panel action-row Retry button — re-clicking
+   * Clone Confirm is the natural retry path.
    */
   lastCloneError: Error | null = null;
 
   // -------------------------------------------------------------------
-  // Story 14.1 — Delete-namespace flow (ADR-028 §Decision 5, frontend leg).
+  // Delete-namespace flow (frontend leg).
   // -------------------------------------------------------------------
 
   /**
-   * True while a `deleteNamespace` request is in flight (AC 4). Mirrors the
-   * `cloning` gate: disables the Delete button (`[disabled]="deleting"`) and
-   * makes both `onDeleteClick()` and `onDeleteConfirm()` no-ops, guarding
-   * against double-submit. Cleared in a `finally` block guarded by the
-   * `destroyed` idiom.
+   * True while a `deleteNamespace` request is in flight. Mirrors the `cloning`
+   * gate: disables the Delete button (`[disabled]="deleting"`) and makes both
+   * `onDeleteClick()` and `onDeleteConfirm()` no-ops, guarding against
+   * double-submit. Cleared in a `finally` block guarded by the `destroyed`
+   * idiom.
    */
   deleting: boolean = false;
 
   // -------------------------------------------------------------------
-  // Story 22.3 — Custom confirmation modal (ADR-018 §1–§4). Replaces the
-  // generic `<p-confirmDialog>` / `ConfirmationService` for the three confirm
-  // flows. Driven from component state (a visibility flag + a typed
+  // Custom confirmation modal (ADR-018). One shared shell drives the three
+  // confirm flows from component state (a visibility flag + a typed
   // `ConfirmRequest`) rather than an imperative service call.
   // -------------------------------------------------------------------
 
-  /** Controls visibility of the custom confirmation modal (AC 1, 2). */
+  /** Controls visibility of the custom confirmation modal. */
   confirmDialogVisible: boolean = false;
 
   /**
-   * The active confirm request describing the modal's header/message/variant
-   * (AC 2). `null` when no confirm is open; nulled on close so a stale request
-   * cannot leak into the next open (AC 19).
+   * The active confirm request describing the modal's header/message/variant.
+   * `null` when no confirm is open; nulled on close so a stale request cannot
+   * leak into the next open.
    */
   confirmRequest: ConfirmRequest | null = null;
 
   /**
-   * Per-flow accept callback captured when the confirm opens (AC 3). The
-   * Proceed (reset/delete) and Overwrite (drift) buttons invoke this; a private
-   * closure so each flow runs the same effect its old `confirm({ accept })`
-   * callback ran. `null` while no confirm is open.
+   * Per-flow accept callback captured when the confirm opens. The Proceed
+   * (reset/delete) and Overwrite (drift) buttons invoke this; a private closure
+   * so each flow runs its own effect. `null` while no confirm is open.
    */
   private confirmAccept: (() => void) | null = null;
 
   /**
-   * The drift variant's "Reload" (safe / focused-default) callback (AC 7). Only
-   * set for the `'drift'` variant; Reset/Delete leave it `null` (their safe
-   * branch is a bare cancel). Invoked by the Reload button.
+   * The drift variant's "Reload" (safe / focused-default) callback. Only set
+   * for the `'drift'` variant; Reset/Delete leave it `null` (their safe branch
+   * is a bare cancel). Invoked by the Reload button.
    */
   private confirmReload: (() => void) | null = null;
 
   /**
    * Pending "resolve the drift `Promise<boolean>` to the SAFE branch (false)"
-   * thunk for an Esc / Cancel / X dismissal of the drift modal (AC 8). Set by
+   * thunk for an Esc / Cancel / X dismissal of the drift modal. Set by
    * `checkSaveDrift` while the drift modal is open; invoked by
    * `onConfirmDialogHide` so a dismissal that bypasses a button still settles
    * the awaited promise (and does so as the non-overwrite branch). `null` for
@@ -309,72 +299,70 @@ export class NamespacePanelComponent
   /**
    * Pending "resolve the dirty-discard `Promise<boolean>` to the SAFE branch
    * (false — keep edits)" thunk for an Esc / Cancel / X dismissal of the
-   * `'discard'` modal (ADR-018 Amendment §c). Set by `confirmDiscard()` while
-   * the discard modal is open; invoked by `onConfirmDialogHide` so a dismissal
-   * that bypasses a button still settles the awaited promise as "do not
-   * discard". `null` for the reset/delete/drift variants.
+   * `'discard'` modal. Set by `confirmDiscard()` while the discard modal is
+   * open; invoked by `onConfirmDialogHide` so a dismissal that bypasses a
+   * button still settles the awaited promise as "do not discard". `null` for
+   * the reset/delete/drift variants.
    */
   private confirmDiscardResolve: (() => void) | null = null;
 
   /**
-   * Primary-button reference for the confirmation modal (ADR-018 Amendment §e
-   * — reverses the earlier focus-Cancel). On open `onConfirmDialogShow()`
-   * autofocuses the PRIMARY/proceed button so **Enter activates the main
-   * action**: the Proceed button for the reset/delete/discard variants, the
-   * Reload (recommended primary) button for the drift variant. Esc still
-   * cancels/dismisses. Mirrors the Clone modal's `cloneDestInputRef` focus
-   * plumbing.
+   * Primary-button reference for the confirmation modal. On open
+   * `onConfirmDialogShow()` autofocuses the PRIMARY/proceed button so **Enter
+   * activates the main action**: the Proceed button for the
+   * reset/delete/discard variants, the Reload (recommended primary) button for
+   * the drift variant. Esc still cancels/dismisses. Mirrors the Clone modal's
+   * `cloneDestInputRef` focus plumbing.
    */
   @ViewChild('confirmPrimaryBtn', { read: ElementRef })
   confirmPrimaryBtnRef?: ElementRef<HTMLButtonElement>;
 
   // -------------------------------------------------------------------
-  // Story 11.7 — UX-polish state (FR14 gate, FR16 a11y, FR17 Clone modal,
-  // FR21 inline error)
+  // UX-polish state (validation gate, a11y live region, Clone modal,
+  // inline error)
   // -------------------------------------------------------------------
 
   /**
-   * Story 11.7 FR16 — visually-hidden polite live-region payload. The
-   * template renders this string inside a `role="status" aria-live="polite"
-   * aria-atomic="true"` <div>; assistive-tech announces every change.
-   * Writes happen at FOUR sites: `flashValidated` (Validation passed),
-   * `announceValidationOutcome` (Validation found N issues),
-   * `onSaveClick` 2xx branch (Namespace saved),
+   * Visually-hidden polite live-region payload. The template renders this
+   * string inside a `role="status" aria-live="polite" aria-atomic="true"`
+   * <div>; assistive-tech announces every change. Writes happen at FOUR sites:
+   * `flashValidated` (Validation passed), `announceValidationOutcome`
+   * (Validation found N issues), `onSaveClick` 2xx branch (Namespace saved),
    * `onCloneConfirmClick` 2xx branch (Cloned to namespace 'X').
    */
   a11yAnnouncement: string = '';
 
   /**
-   * Story 11.7 FR17 (AC 21) — inline error text for the Clone modal's
-   * unstructured-422 branch. When non-null, rendered as a `role="alert"`
-   * <small> immediately below the destination input. Cleared by
-   * `onCloneDestNsChange()` (any keystroke) and by `onCloneDialogHide()`.
+   * Inline error text for the Clone modal's unstructured-422 branch. When
+   * non-null, rendered as a `role="alert"` <small> immediately below the
+   * destination input. Cleared by `onCloneDestNsChange()` (any keystroke) and
+   * by `onCloneDialogHide()`.
    */
   cloneInlineError: string | null = null;
 
   /**
-   * Story 11.7 FR17 (AC 19) — outer Clone button reference. Used by
-   * `onCloneDialogHide()` to return focus to this button after the modal
-   * closes (Cancel / Escape / X / outside click / Confirm).
+   * Outer Clone button reference. Used by `onCloneDialogHide()` to return focus
+   * to this button after the modal closes (Cancel / Escape / X / outside
+   * click / Confirm).
    */
   @ViewChild('cloneBtn', { read: ElementRef })
   cloneBtnRef?: ElementRef<HTMLButtonElement>;
 
   /**
-   * Story 11.7 FR17 (AC 16) — destination input reference. Used by
-   * `onCloneDialogShow()` to autofocus the input on modal open.
+   * Destination input reference. Used by `onCloneDialogShow()` to autofocus the
+   * input on modal open.
    */
   @ViewChild('cloneDestInput', { read: ElementRef })
   cloneDestInputRef?: ElementRef<HTMLInputElement>;
 
   /**
    * Destroy guard consumed by the async load + save flows so a late-resolving
-   * promise cannot write to state on a destroyed component (AC 13).
+   * promise cannot write to state on a destroyed component.
    */
   private destroyed = false;
   /**
    * Monotonic counter used to discard stale `exportNamespace` responses
-   * when `namespace` changes mid-flight (AC 3 re-load contract).
+   * when `namespace` changes mid-flight.
    */
   private loadSeq = 0;
 
@@ -400,8 +388,8 @@ export class NamespacePanelComponent
       clearTimeout(this.flashTimeoutId);
     }
     this.validationFlashBuffer = true;
-    // Story 11.7 AC 11 — pair the visual flash with an aria-live
-    // announcement so screen-reader users get the same outcome.
+    // Pair the visual flash with an aria-live announcement so screen-reader
+    // users get the same outcome.
     this.a11yAnnouncement = 'Validation passed';
     this.flashTimeoutId = setTimeout(() => {
       this.flashTimeoutId = undefined;
@@ -414,18 +402,17 @@ export class NamespacePanelComponent
   }
 
   /**
-   * Story 11.7 AC 12 — write the failing-validation announcement into the
-   * live region. Called from the sites that populate `lastValidation` with a
-   * non-clean report: the `onValidateBufferClick` failing branch and the
-   * Save / Clone / Delete 422 structured branches in `handleSaveError` /
-   * `handleCloneError` / `handleDeleteError`.
+   * Write the failing-validation announcement into the live region. Called
+   * from the sites that populate `lastValidation` with a non-clean report: the
+   * `onValidateBufferClick` failing branch and the Save / Clone / Delete 422
+   * structured branches in `handleSaveError` / `handleCloneError` /
+   * `handleDeleteError`.
    *
    * Plural form is fixed at "issues" (e.g. "Validation found 1 issues") for
    * announcement-text simplicity — assistive-tech audiences tolerate the
    * unidiomatic phrasing better than two announcement variants would
    * tolerate inconsistent rendering. `?? 0` defends against a malformed
-   * report missing one of the arrays (test-double sloppiness or a future
-   * schema change).
+   * report missing one of the arrays.
    */
   private announceValidationOutcome(report: NamespaceValidationReport): void {
     const total =
@@ -461,12 +448,11 @@ export class NamespacePanelComponent
         this.flashTimeoutId = undefined;
       }
     }
-    // Story 11.7 AC 3 — clear stale save error on any keystroke so the
-    // FR14 gate auto-lifts. Unconditional (any keystroke is the operator
-    // declaring "I am editing — re-evaluate"). The corresponding
-    // `lastValidation` clear remains conditional (only when
-    // `value !== validatedBuffer`) to preserve Story 11.4 green-flash
-    // semantics.
+    // Clear stale save error on any keystroke so the validation gate
+    // auto-lifts. Unconditional (any keystroke is the operator declaring "I am
+    // editing — re-evaluate"). The corresponding `lastValidation` clear remains
+    // conditional (only when `value !== validatedBuffer`) to preserve the
+    // green-flash semantics.
     if (this.rawSaveError !== null) {
       this.rawSaveError = null;
     }
@@ -490,14 +476,12 @@ export class NamespacePanelComponent
 
   /**
    * Monaco editor options — a single stable object reference built once and
-   * NEVER reassigned (ADR-017 §1). The editor is permanently writable
-   * (`readOnly: false`) since the panel is always editable.
+   * NEVER reassigned. The editor is permanently writable (`readOnly: false`)
+   * since the panel is always editable.
    *
    * `nu-monaco-editor` receives `[options]` as a signal input
-   * (reference-equality semantics): a stable reference means Monaco's
-   * `updateOptions()` does not re-run on every change-detection tick. The old
-   * per-mode reassignment (via `setMode`) was the CD-churn risk; with one
-   * constant object that risk is gone.
+   * (reference-equality semantics): a stable reference is load-bearing so
+   * Monaco's `updateOptions()` does not re-run on every change-detection tick.
    *
    * `automaticLayout: true` is load-bearing for dialog hosting — the editor
    * otherwise renders at 0×0 when its container mounts late.
@@ -512,32 +496,31 @@ export class NamespacePanelComponent
   /**
    * Dirty-state predicate — single source of truth for the confirm-on-close
    * guards and the Save/Reset/Clone enablement. True iff the buffer diverges
-   * from the last server snapshot (ADR-017 §1). The method NAME + SIGNATURE
-   * are preserved: the route `CanDeactivate` guard and the home dirty-close
-   * guard consume the same method.
+   * from the last server snapshot. The route `CanDeactivate` guard and the home
+   * dirty-close guard consume the same method.
    */
   hasUnsavedChanges(): boolean {
     return this.buffer !== this.serverYaml;
   }
 
   // -------------------------------------------------------------------
-  // Story 22.2 (ADR-017 §7) — keyboard shortcuts.
+  // Keyboard shortcuts (ADR-017).
   //
   // The five action shortcuts are captured in TWO places — a Monaco
   // `editor.addAction` (in-editor focus; Monaco swallows keystrokes) and a
-  // component `@HostListener('keydown')` (focus outside the editor, e.g. on a
+  // capture-phase host keydown listener (focus outside the editor, e.g. on a
   // button). Both paths funnel through ONE shared dispatch surface: the
   // `can*` enablement getters below (which mirror the button `[disabled]`
   // expressions) and the `triggerX()` entry points. The button template binds
   // the SAME `can*` getters so the enablement predicate cannot drift between
-  // the click path and the shortcut path (AC 6, AC 12).
+  // the click path and the shortcut path.
   // -------------------------------------------------------------------
 
   /**
    * Save enablement — mirrors the Save button's `[disabled]` expression
    * (`buffer === serverYaml || saving || isSaveGated`). `buffer !== serverYaml`
    * is exactly `hasUnsavedChanges()`, used here so intent is explicit. ⌥S
-   * fires Save iff this is true (AC 1, AC 6).
+   * fires Save iff this is true.
    */
   get canSave(): boolean {
     return this.hasUnsavedChanges() && !this.saving && !this.isSaveGated;
@@ -545,8 +528,8 @@ export class NamespacePanelComponent
 
   /**
    * Validate enablement — mirrors the Validate button's `[disabled]`
-   * (`saving || validating`). NEVER gated by FR14 (ADR-017 §5); ⌥V fires in
-   * both clean and dirty states (AC 2, AC 6).
+   * (`saving || validating`). NEVER gated by the validation gate; ⌥V fires in
+   * both clean and dirty states.
    */
   get canValidate(): boolean {
     return !this.validating && !this.saving;
@@ -555,7 +538,7 @@ export class NamespacePanelComponent
   /**
    * Reset enablement — mirrors the Reset button's `[disabled]`
    * (`buffer === serverYaml || saving`). ⌥R is a no-op while clean; when dirty
-   * it routes through the existing discard confirm (AC 3, AC 6).
+   * it routes through the discard confirm.
    */
   get canReset(): boolean {
     return this.hasUnsavedChanges() && !this.saving;
@@ -564,7 +547,7 @@ export class NamespacePanelComponent
   /**
    * Clone enablement — mirrors the Clone button's `[disabled]`
    * (`buffer !== serverYaml || cloning || isCloneGated`). ⌥⇧C is a no-op while
-   * dirty; it opens the Clone modal only when clean (AC 4, AC 6).
+   * dirty; it opens the Clone modal only when clean.
    */
   get canClone(): boolean {
     return !this.hasUnsavedChanges() && !this.cloning && !this.isCloneGated;
@@ -572,17 +555,16 @@ export class NamespacePanelComponent
 
   /**
    * Delete enablement — mirrors the Delete button's `[disabled]`
-   * (`deleting`). ⌥D still routes through the Delete confirm dialog (AC 5,
-   * AC 6).
+   * (`deleting`). ⌥D still routes through the Delete confirm dialog.
    */
   get canDelete(): boolean {
     return !this.deleting;
   }
 
   /**
-   * Shared Save trigger (AC 1, AC 12). Consults `canSave` then delegates to
-   * the existing handler body — never duplicates it. A true no-op when Save
-   * is disabled (the keystroke is still `preventDefault`ed upstream — AC 9).
+   * Shared Save trigger. Consults `canSave` then delegates to the handler body
+   * — never duplicates it. A true no-op when Save is disabled (the keystroke is
+   * still `preventDefault`ed upstream).
    */
   private triggerSave(): void {
     if (this.canSave) {
@@ -590,28 +572,28 @@ export class NamespacePanelComponent
     }
   }
 
-  /** Shared Validate trigger (AC 2, AC 12). */
+  /** Shared Validate trigger. */
   private triggerValidate(): void {
     if (this.canValidate) {
       void this.onValidateBufferClick();
     }
   }
 
-  /** Shared Reset trigger (AC 3, AC 12). */
+  /** Shared Reset trigger. */
   private triggerReset(): void {
     if (this.canReset) {
       this.onResetClick();
     }
   }
 
-  /** Shared Clone trigger (AC 4, AC 12). */
+  /** Shared Clone trigger. */
   private triggerClone(): void {
     if (this.canClone) {
       this.onCloneClick();
     }
   }
 
-  /** Shared Delete trigger (AC 5, AC 12) — routes through the Delete confirm. */
+  /** Shared Delete trigger — routes through the Delete confirm. */
   private triggerDelete(): void {
     if (this.canDelete) {
       this.onDeleteClick();
@@ -619,31 +601,30 @@ export class NamespacePanelComponent
   }
 
   /**
-   * Single keyboard matcher consumed by BOTH capture sites (AC 7–9, 12).
+   * Single keyboard matcher consumed by BOTH capture sites.
    *
    * - Returns immediately (unhandled, NO `preventDefault`) when `!altKey`.
    * - Keys off `event.code` (NOT `event.key`) so macOS Option dead-keys
-   *   (⌥S → `ß`, ⌥V → `√`, …) still match (AC 7).
+   *   (⌥S → `ß`, ⌥V → `√`, …) still match.
    * - `KeyC` → Clone ONLY when `event.shiftKey` (Alt+KeyC without Shift is
-   *   unhandled — AC 8). The S/V/R/D branches are keyed by their own codes, so
-   *   Alt+Shift+KeyC fires ONLY Clone (no double-fire — AC 8).
+   *   unhandled). The S/V/R/D branches are keyed by their own codes, so
+   *   Alt+Shift+KeyC fires ONLY Clone (no double-fire).
    * - On a recognised combo, `preventDefault()` is called ALWAYS — even when
-   *   the matching `triggerX()` is a no-op by enablement (AC 9) — so the
-   *   dead-key glyph / Alt-mnemonic is suppressed for keystrokes that are
-   *   "ours".
+   *   the matching `triggerX()` is a no-op by enablement — so the dead-key
+   *   glyph / Alt-mnemonic is suppressed for keystrokes that are "ours".
    *
-   * macOS dead-key / IME composition robustness (Story 22-4, ADR-018 §5).
-   * On some macOS keyboard layouts an ⌥-chord initiates a dead-key
-   * composition: the browser delivers the `keydown` flagged as composing
-   * (`isComposing === true`, `keyCode === 229`, `key === 'Dead'`). This matcher
-   * MUST NOT early-return on those flags — it keys off `event.altKey` +
-   * `event.code` ONLY and never reads `event.key`, so a composing event with
-   * `code: 'KeyV'` still matches and fires Validate. The `preventDefault()` on a
-   * handled combo also suppresses the OS dead-key composition so no glyph is
-   * inserted. NEVER add an `isComposing` / `keyCode === 229` / `key === 'Dead'`
-   * guard ahead of this matcher for these chords. (Karma cannot reproduce the
-   * real OS composition layer — synthetic `KeyboardEvent`s bypass it — so the
-   * real-world fix is manually verified on macOS; see the story's manual gate.)
+   * macOS dead-key / IME composition robustness (ADR-018). On some macOS
+   * keyboard layouts an ⌥-chord initiates a dead-key composition: the browser
+   * delivers the `keydown` flagged as composing (`isComposing === true`,
+   * `keyCode === 229`, `key === 'Dead'`). This matcher MUST NOT early-return on
+   * those flags — it keys off `event.altKey` + `event.code` ONLY and never
+   * reads `event.key`, so a composing event with `code: 'KeyV'` still matches
+   * and fires Validate. The `preventDefault()` on a handled combo also
+   * suppresses the OS dead-key composition so no glyph is inserted. NEVER add
+   * an `isComposing` / `keyCode === 229` / `key === 'Dead'` guard ahead of this
+   * matcher for these chords. (Karma cannot reproduce the real OS composition
+   * layer — synthetic `KeyboardEvent`s bypass it — so the real-world fix is
+   * manually verified on macOS.)
    */
   private matchShortcut(event: KeyboardEvent): void {
     if (!event.altKey) {
@@ -671,31 +652,29 @@ export class NamespacePanelComponent
           event.preventDefault();
           this.triggerClone();
         }
-        // Alt+KeyC without Shift is unhandled — no preventDefault (AC 8).
+        // Alt+KeyC without Shift is unhandled — no preventDefault.
         return;
       default:
-        // Alt + a non-bound code — unhandled, propagates (AC 9).
+        // Alt + a non-bound code — unhandled, propagates.
         return;
     }
   }
 
   /**
    * Component-level keydown capture — the AUTHORITATIVE shortcut path
-   * (Story 22-4, ADR-018 §5). Delegates to the shared `matchShortcut`.
+   * (ADR-018). Delegates to the shared `matchShortcut`.
    *
    * Registered as a **capture-phase** listener on the host element (see
-   * `ngAfterViewInit`), NOT a bubble-phase `@HostListener`. The capture phase
-   * runs the host handler BEFORE the event reaches Monaco's internal keydown
-   * handling, so even when focus is inside the editor (Monaco may
-   * `stopPropagation` a keydown before it would bubble back to the host) the
-   * host still sees — and acts on — the chord. The Monaco `editor.addAction`
-   * keybindings registered in `registerEditorShortcuts` are kept as a
-   * best-effort in-editor convenience ONLY; correctness does not depend on
-   * them. Single-fire-per-keystroke is preserved: there is exactly ONE host
-   * dispatch site (this listener) routing through the idempotent `triggerX()`
-   * surface — the old bubble-phase `@HostListener` is removed so no second
-   * uncoordinated host dispatch can open two confirms / submit two imports
-   * (AC 4, AC 5).
+   * `ngAfterViewInit`). The capture phase runs the host handler BEFORE the
+   * event reaches Monaco's internal keydown handling, so even when focus is
+   * inside the editor (Monaco may `stopPropagation` a keydown before it would
+   * bubble back to the host) the host still sees — and acts on — the chord. The
+   * Monaco `editor.addAction` keybindings registered in
+   * `registerEditorShortcuts` are a best-effort in-editor convenience ONLY;
+   * correctness does not depend on them. Single-fire-per-keystroke is
+   * preserved: there is exactly ONE host dispatch site (this listener) routing
+   * through the idempotent `triggerX()` surface, so no second uncoordinated
+   * host dispatch can open two confirms / submit two imports.
    */
   onKeydown(event: KeyboardEvent): void {
     this.matchShortcut(event);
@@ -712,10 +691,9 @@ export class NamespacePanelComponent
 
   /**
    * Register the authoritative capture-phase keydown listener on the host
-   * element (Story 22-4, ADR-018 §5). Capture phase is load-bearing: it lets
-   * the host see the chord BEFORE Monaco can swallow it when the editor has
-   * focus. Cleaned up via the `destroyRef` hook so no listener leaks after the
-   * panel is torn down.
+   * element. Capture phase is load-bearing: it lets the host see the chord
+   * BEFORE Monaco can swallow it when the editor has focus. Cleaned up via the
+   * `destroyRef` hook so no listener leaks after the panel is torn down.
    */
   ngAfterViewInit(): void {
     const host = this.elementRef.nativeElement;
@@ -728,11 +706,11 @@ export class NamespacePanelComponent
   }
 
   /**
-   * `(event)` handler for `<nu-monaco-editor>` (AC 10). On the `'init'` event
-   * the editor instance is available; register the five chord actions via
+   * `(event)` handler for `<nu-monaco-editor>`. On the `'init'` event the
+   * editor instance is available; register the five chord actions via
    * `editor.addAction(...)`, each `run` delegating to the SAME `triggerX()`
-   * entry point as the HostListener path (AC 12). Guarded against
-   * re-registration on a `'re-init'` event via `monacoActionsRegistered`.
+   * entry point as the host capture path. Guarded against re-registration on a
+   * `'re-init'` event via `monacoActionsRegistered`.
    */
   onEditorEvent(e: NuMonacoEditorEvent): void {
     if (e.type !== 'init' || !e.editor) {
@@ -749,9 +727,9 @@ export class NamespacePanelComponent
   /**
    * Registers the five ⌥-key chord actions on the Monaco editor. Each `run`
    * delegates to the shared `triggerX()` dispatch surface so enablement parity
-   * (AC 6) holds identically for the Monaco and HostListener capture sites.
-   * The chord constants come from the ambient `monaco` namespace
-   * (`monaco.KeyMod` / `monaco.KeyCode`) — no `monaco-editor` import.
+   * holds identically for the Monaco and host capture sites. The chord
+   * constants come from the ambient `monaco` namespace (`monaco.KeyMod` /
+   * `monaco.KeyCode`) — no `monaco-editor` import.
    */
   private registerEditorShortcuts(
     editor: monaco.editor.IStandaloneCodeEditor,
@@ -795,17 +773,17 @@ export class NamespacePanelComponent
   private monacoActionsRegistered = false;
 
   // -------------------------------------------------------------------
-  // Story 22.3 — Custom confirmation modal (ADR-018 §1–§4). One shared
-  // open/close surface reused by Reset-discard, Save-drift, and Delete; the
-  // safe button autofocuses on show so Enter/Esc cancel.
+  // Custom confirmation modal (ADR-018). One shared open/close surface reused
+  // by Reset-discard, Save-drift, and Delete; the primary button autofocuses on
+  // show so Enter activates it and Esc cancels.
   // -------------------------------------------------------------------
 
   /**
-   * Open the custom confirmation modal (AC 2, 3). Captures the typed request +
-   * the per-flow callbacks the template buttons invoke, then flips the
-   * visibility flag. For the `'drift'` variant `onReload` is the safe/focused
-   * Reload branch and `onAccept` is the Overwrite branch; for `'reset'` /
-   * `'delete'` only `onAccept` (Proceed) is supplied and `onReload` is omitted.
+   * Open the custom confirmation modal. Captures the typed request + the
+   * per-flow callbacks the template buttons invoke, then flips the visibility
+   * flag. For the `'drift'` variant `onReload` is the safe/focused Reload branch
+   * and `onAccept` is the Overwrite branch; for `'reset'` / `'delete'` only
+   * `onAccept` (Proceed) is supplied and `onReload` is omitted.
    */
   private openConfirm(
     request: ConfirmRequest,
@@ -820,8 +798,8 @@ export class NamespacePanelComponent
 
   /**
    * Close the confirmation modal and null the request + callbacks so a stale
-   * request cannot leak into the next open (AC 19). Idempotent. The pending
-   * drift resolver (`confirmDriftResolve`) is intentionally NOT cleared here —
+   * request cannot leak into the next open. Idempotent. The pending drift
+   * resolver (`confirmDriftResolve`) is intentionally NOT cleared here —
    * `onConfirmDialogHide` owns resolving it to the safe branch before this runs.
    */
   private closeConfirm(): void {
