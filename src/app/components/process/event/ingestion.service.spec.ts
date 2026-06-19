@@ -60,6 +60,12 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
           useValue: {
             // Only used by the `!running` branch; default empty list is fine.
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+            // Story 25-1: init() now seeds the `state` store from this endpoint
+            // for every status. Default to an empty snapshot list so existing
+            // suites exercise the no-op seed path.
+            getAgentStates: jasmine
+              .createSpy('getAgentStates')
+              .and.resolveTo([]),
           },
         },
         { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
@@ -293,6 +299,12 @@ describe('IngestionService — Story 6.1 (frame-batched log ingestion)', () => {
           provide: ApiService,
           useValue: {
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+            // Story 25-1: init() now seeds the `state` store from this endpoint
+            // for every status. Default to an empty snapshot list so existing
+            // suites exercise the no-op seed path.
+            getAgentStates: jasmine
+              .createSpy('getAgentStates')
+              .and.resolveTo([]),
           },
         },
         { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
@@ -618,6 +630,12 @@ describe('IngestionService — commands PerAgentStore (Story 17-3, ADR-014/ADR-0
           provide: ApiService,
           useValue: {
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+            // Story 25-1: init() now seeds the `state` store from this endpoint
+            // for every status. Default to an empty snapshot list so existing
+            // suites exercise the no-op seed path.
+            getAgentStates: jasmine
+              .createSpy('getAgentStates')
+              .and.resolveTo([]),
           },
         },
         { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
@@ -833,6 +851,12 @@ describe('IngestionService — registry is the only per-agent owner (Epic 17, AD
           provide: ApiService,
           useValue: {
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+            // Story 25-1: init() now seeds the `state` store from this endpoint
+            // for every status. Default to an empty snapshot list so existing
+            // suites exercise the no-op seed path.
+            getAgentStates: jasmine
+              .createSpy('getAgentStates')
+              .and.resolveTo([]),
           },
         },
         { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
@@ -902,6 +926,12 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
           provide: ApiService,
           useValue: {
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+            // Story 25-1: init() now seeds the `state` store from this endpoint
+            // for every status. Default to an empty snapshot list so existing
+            // suites exercise the no-op seed path.
+            getAgentStates: jasmine
+              .createSpy('getAgentStates')
+              .and.resolveTo([]),
           },
         },
         { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
@@ -1101,6 +1131,12 @@ describe('IngestionService — state + context PerAgentStore (Story 17-2)', () =
           provide: ApiService,
           useValue: {
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+            // Story 25-1: init() now seeds the `state` store from this endpoint
+            // for every status. Default to an empty snapshot list so existing
+            // suites exercise the no-op seed path.
+            getAgentStates: jasmine
+              .createSpy('getAgentStates')
+              .and.resolveTo([]),
           },
         },
         { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
@@ -1260,5 +1296,228 @@ describe('IngestionService — state + context PerAgentStore (Story 17-2)', () =
     expect(ctx).toEqual([{ role: 'user', content: 'late' }]);
     subS.unsubscribe();
     subC.unsubscribe();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 25-1 (ADR-020 §2) — seed the `state` store from getAgentStates on init
+//
+// init() fetches per-agent snapshots (every status) AFTER log.reset() and
+// log.appendAll()s synthesized StateChangedMessage entries so the registry's
+// stateSpec folds them into the `state` store, keyed by sender.agent_id = the
+// agent UUID (team Epic 23). Load-bearing case: a STOPPED team whose durable
+// event log carries no StateChangedMessage (ADR-013) still shows the backstory
+// head-block on load. These tests drive the REAL log fold (no store mocking),
+// mocking only the HTTP layer (ApiService) per the story's testing standards.
+// ---------------------------------------------------------------------------
+
+describe('IngestionService — seed agent state on init (Story 25-1)', () => {
+  let service: IngestionService;
+  let log: MessageLogService;
+  let apiService: any;
+  let fakeSocket: Subject<any>;
+
+  // A realistic agent UUID (team Epic 23) — distinct from the display name so
+  // the UUID-keying assertion is meaningful.
+  const UUID = '7f3c1e90-2a4b-4c6d-8e10-1234567890ab';
+  const NAME = '@Researcher';
+
+  function snapshot(state: Record<string, unknown>): any {
+    return {
+      agent_id: UUID,
+      name: NAME,
+      state,
+      updated_at: '2026-06-18T00:00:00Z',
+    };
+  }
+
+  beforeEach(() => {
+    jasmine.clock().install();
+    jasmine.clock().mockDate(new Date(0));
+
+    fakeSocket = new Subject<any>();
+
+    TestBed.configureTestingModule({
+      providers: [
+        MessageLogService,
+        PerAgentStoreRegistry,
+        IngestionService,
+        ChatService,
+        {
+          provide: ApiService,
+          useValue: {
+            getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+            getAgentStates: jasmine
+              .createSpy('getAgentStates')
+              .and.resolveTo([]),
+          },
+        },
+        { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
+      ],
+    });
+    service = TestBed.inject(IngestionService);
+    log = TestBed.inject(MessageLogService);
+    apiService = TestBed.inject(ApiService) as any;
+
+    spyOn<any>(service, 'createWebSocket').and.returnValue(
+      fakeSocket as unknown as WebSocketSubject<any>,
+    );
+  });
+
+  afterEach(() => {
+    try {
+      fakeSocket.complete();
+    } catch {
+      /* already closed */
+    }
+    jasmine.clock().uninstall();
+  });
+
+  it('AC1/AC3: getAgentStates is fetched on init (stopped team)', async () => {
+    await service.init('team-1', false);
+    expect(apiService.getAgentStates).toHaveBeenCalledWith('team-1');
+  });
+
+  it('AC3/AC5: stopped-team init seeds state.forAgent(uuid) keyed by UUID with the backstory present', async () => {
+    apiService.getAgentStates.and.resolveTo([
+      snapshot({ backstory: 'A seasoned researcher.' }),
+    ]);
+
+    await service.init('team-1', false);
+
+    // Keyed by the agent UUID (team Epic 23), value `{ schema: {}, state }`.
+    expect(service.state.snapshot(UUID)).toEqual({
+      schema: {},
+      state: { backstory: 'A seasoned researcher.' },
+    });
+    // NOT keyed by the display name.
+    expect(service.state.snapshot(NAME)).toBeUndefined();
+  });
+
+  it('AC3/AC5: running-team init ALSO seeds state.forAgent(uuid) keyed by UUID (every status)', async () => {
+    apiService.getAgentStates.and.resolveTo([
+      snapshot({ backstory: 'Live and seeded.' }),
+    ]);
+
+    await service.init('team-1', true);
+
+    expect(service.state.snapshot(UUID)).toEqual({
+      schema: {},
+      state: { backstory: 'Live and seeded.' },
+    });
+    expect(service.state.snapshot(NAME)).toBeUndefined();
+  });
+
+  it('AC6: the synthesized seed does NOT render as a chat bubble (messageList$ excludes it)', async () => {
+    apiService.getAgentStates.and.resolveTo([
+      snapshot({ backstory: 'Backstory.' }),
+    ]);
+
+    let list: any[] | null = null;
+    const sub = log.messageList$.subscribe((v) => (list = v));
+
+    await service.init('team-1', false);
+
+    // The seed populated the state store but contributes NO message-list entry
+    // (messageListFold admits only SentMessage / ErrorMessage).
+    expect(service.state.snapshot(UUID)).toBeDefined();
+    expect(list as any[] | null).toEqual([]);
+    sub.unsubscribe();
+  });
+
+  it('AC6: the synthesized seed does NOT perturb context or commands', async () => {
+    apiService.getAgentStates.and.resolveTo([
+      snapshot({ backstory: 'Backstory.' }),
+    ]);
+
+    await service.init('team-1', false);
+
+    // The StateChangedMessage matcher rejects for context (LlmMessageEvent) and
+    // commands (CommandsAnnouncedEvent), so neither store is touched.
+    expect(service.context.snapshot(UUID)).toBeUndefined();
+    expect(service.commands.snapshot(UUID)).toBeUndefined();
+  });
+
+  it('AC3: multiple agents are each seeded under their own UUID key', async () => {
+    const uuidB = '0a0a0a0a-bbbb-cccc-dddd-eeeeeeeeeeee';
+    apiService.getAgentStates.and.resolveTo([
+      snapshot({ backstory: 'A.' }),
+      {
+        agent_id: uuidB,
+        name: '@Writer',
+        state: { backstory: 'B.' },
+        updated_at: '2026-06-18T00:00:01Z',
+      },
+    ]);
+
+    await service.init('team-1', false);
+
+    expect(service.state.snapshot(UUID)).toEqual({
+      schema: {},
+      state: { backstory: 'A.' },
+    });
+    expect(service.state.snapshot(uuidB)).toEqual({
+      schema: {},
+      state: { backstory: 'B.' },
+    });
+  });
+
+  it('AC3: an empty snapshot list leaves the state store empty (no-op seed)', async () => {
+    apiService.getAgentStates.and.resolveTo([]);
+
+    await service.init('team-1', false);
+
+    expect(service.state.snapshot(UUID)).toBeUndefined();
+    expect(log.snapshot()).toEqual([]);
+  });
+
+  it('AC6: the existing getEvents replay still seeds the log unchanged alongside the state seed', async () => {
+    apiService.getAgentStates.and.resolveTo([
+      snapshot({ backstory: 'Backstory.' }),
+    ]);
+    // A SentMessage in the durable event log replays into the message list as
+    // before; the state seed is additive and does not disturb it.
+    const sent = {
+      id: 'sent-1',
+      parent_id: null,
+      team_id: 'team-1',
+      timestamp: '2026-06-18T00:00:00Z',
+      sender: makeAddress({ role: 'Worker' }),
+      display_type: 'ai',
+      content: 'hello',
+      __model__: 'akgentic.core.messages.orchestrator.SentMessage',
+    };
+    apiService.getEvents.and.resolveTo([{ event: sent }]);
+
+    let list: any[] | null = null;
+    const sub = log.messageList$.subscribe((v) => (list = v));
+
+    await service.init('team-1', false);
+
+    // getEvents replay still produces the bubble; the state seed is keyed in the
+    // state store and contributes no bubble.
+    expect((list as any[] | null)?.map((m) => m.id)).toEqual(['sent-1']);
+    expect(service.state.snapshot(UUID)).toBeDefined();
+    sub.unsubscribe();
+  });
+
+  it('AC5: a team switch clears the seeded state (re-seeded from the new team on re-init)', async () => {
+    apiService.getAgentStates.and.resolveTo([
+      snapshot({ backstory: 'Team A backstory.' }),
+    ]);
+    await service.init('team-A', false);
+    expect(service.state.snapshot(UUID)).toBeDefined();
+
+    // Re-init (team switch) with NO snapshots → log.reset() clears the registry
+    // maps and the empty seed leaves the store empty.
+    apiService.getAgentStates.and.resolveTo([]);
+    const socketB = new Subject<any>();
+    (service as any).createWebSocket = jasmine
+      .createSpy('createWebSocket')
+      .and.returnValue(socketB as unknown as WebSocketSubject<any>);
+    await service.init('team-B', false);
+
+    expect(service.state.snapshot(UUID)).toBeUndefined();
+    socketB.complete();
   });
 });

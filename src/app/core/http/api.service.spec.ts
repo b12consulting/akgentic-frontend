@@ -234,6 +234,44 @@ describe('ApiService', () => {
     });
   });
 
+  describe('getAgentStates (Story 25-1, ADR-020 §2)', () => {
+    it('GETs /teams/:id/agent-states and returns the states array', async () => {
+      const states = [
+        {
+          agent_id: '11111111-1111-1111-1111-111111111111',
+          name: '@Researcher',
+          state: { backstory: 'A seasoned researcher.' },
+          updated_at: '2026-06-18T00:00:00Z',
+        },
+      ];
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve({ states }));
+
+      const result = await service.getAgentStates('team-1');
+
+      expect(fetchServiceSpy.fetch).toHaveBeenCalledTimes(1);
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.url).toMatch(/\/teams\/team-1\/agent-states$/);
+      expect(callArgs.options?.method).toBeUndefined(); // defaults to GET
+      expect(result).toEqual(states);
+    });
+
+    it('returns [] when the response body is absent (undefined)', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve(undefined));
+
+      const result = await service.getAgentStates('team-1');
+
+      expect(result).toEqual([]);
+    });
+
+    it('returns [] when the response has no states key', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve({} as any));
+
+      const result = await service.getAgentStates('team-1');
+
+      expect(result).toEqual([]);
+    });
+  });
+
   describe('sendMessage (existing)', () => {
     it('should broadcast when no agentName provided', async () => {
       await service.sendMessage('team-1', 'broadcast msg');

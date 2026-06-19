@@ -9,6 +9,8 @@ import {
   TeamListResponse,
   EventResponse,
   EventListResponse,
+  AgentStateResponse,
+  AgentStateListResponse,
   toTeamContext,
 } from '../context/team.interface';
 import {
@@ -154,6 +156,24 @@ export class ApiService {
       url: `${this.apiUrl}/teams/${teamId}/events`,
     });
     return response?.events ?? [];
+  }
+
+  // --- Agent states (ADR-020 §2) ---
+
+  /**
+   * Per-agent state snapshots for a team — the read-path that seeds the
+   * `state` store on init so the backstory head-block renders for STOPPED
+   * teams (the durable event log carries no `StateChangedMessage`, ADR-013).
+   * Mirrors `getEvents`: hits `GET /teams/{teamId}/agent-states` and unwraps
+   * the `states` list, defaulting to `[]` when the body is absent/empty.
+   * Each item's `agent_id` is the agent UUID (team Epic 23), so the caller
+   * can key the `state` store directly with no name→UUID resolution.
+   */
+  async getAgentStates(teamId: string): Promise<AgentStateResponse[]> {
+    const response: AgentStateListResponse = await this.fetchService.fetch({
+      url: `${this.apiUrl}/teams/${teamId}/agent-states`,
+    });
+    return response?.states ?? [];
   }
 
   // --- Catalog ---
