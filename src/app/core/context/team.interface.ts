@@ -31,6 +31,21 @@ export interface EventListResponse {
   events: EventResponse[];
 }
 
+// Maps to Python AgentStateResponse (akgentic.infra.server.models, Story 35-1).
+// `agent_id` is the agent UUID (team Epic 23) — the exact key the per-agent
+// `state` store uses, so no client-side name→UUID resolution is needed.
+export interface AgentStateResponse {
+  agent_id: string;
+  name: string | null;
+  state: Record<string, unknown>;
+  updated_at: string;
+}
+
+// Maps to Python AgentStateListResponse
+export interface AgentStateListResponse {
+  states: AgentStateResponse[];
+}
+
 // Maps to Python CreateTeamRequest (akgentic.infra.server.models)
 export interface CreateTeamRequest {
   catalog_namespace: string;

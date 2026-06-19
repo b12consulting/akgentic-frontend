@@ -5,10 +5,15 @@ import { bufferTime, filter, take } from 'rxjs/operators';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 import { ConfigService } from '../../../core/config/config.service';
 import {
+  ActorAddress,
   AkgenticMessage,
   CommandDescriptor,
+  StateChangedMessage,
 } from '../../../protocol/message.types';
-import { EventResponse } from '../../../core/context/team.interface';
+import {
+  AgentStateResponse,
+  EventResponse,
+} from '../../../core/context/team.interface';
 
 import { ApiService } from '../../../core/http/api.service';
 import { MessageLogService } from './message-log.service';
@@ -33,6 +38,40 @@ import { MessageService } from 'primeng/api';
  * never see a sub-perception flash of the spinner before the UI transitions.
  */
 const SPINNER_MIN_VISIBLE_MS = 500;
+
+/**
+ * Story 25-1 (ADR-020 §2): build a synthesized `StateChangedMessage` from one
+ * `AgentStateResponse` snapshot so `stateSpec` (`match: isStateChangedMessage`,
+ * default key `sender.agent_id`, value `{ schema: {}, state }`) folds it into
+ * the `state` store. Only `sender.agent_id` (the agent UUID, team Epic 23) and
+ * `state` are read by the fold; the other type-required `BaseMessage` /
+ * `ActorAddress` fields are inert placeholders. `id` is left empty so
+ * `MessageLogService.appendAll` never dedups one seeded entry against another
+ * (dedup only applies to truthy ids); `state` is treated as
+ * `Record<string, unknown>` exactly as `EventResponse.event` is treated as
+ * `AkgenticMessage` — no broad `any` cast beyond the state payload.
+ */
+function synthesizeStateChanged(snapshot: AgentStateResponse): StateChangedMessage {
+  const sender: ActorAddress = {
+    __actor_address__: true,
+    agent_id: snapshot.agent_id,
+    name: snapshot.name ?? '',
+    role: '',
+    squad_id: '',
+    user_message: false,
+  };
+  return {
+    id: '',
+    parent_id: null,
+    team_id: '',
+    timestamp: snapshot.updated_at,
+    sender,
+    display_type: 'other',
+    content: null,
+    __model__: 'akgentic.core.messages.orchestrator.StateChangedMessage',
+    state: snapshot.state,
+  };
+}
 
 /**
  * `IngestionService` — minimal ingestion surface (post Story 6.4 / Epic 17):
@@ -214,6 +253,16 @@ export class IngestionService {
     this.loadingProcess$.next(true);
 
     if (!running) {
+      // Story 25-1 (ADR-020 §2, !running gate): seed the per-agent `state`
+      // store from the dedicated snapshot endpoint for STOPPED teams ONLY. A
+      // stopped team has no live WS, and its durable event log carries no
+      // `StateChangedMessage` (ADR-013), so without this seed the backstory
+      // head-block (`state.forAgent(uuid)`) stays blank on load. A running team
+      // (including a freshly restored one, team Story 23-3) already receives its
+      // `StateChangedMessage`(s) on the cursor-0 WS replay, so the REST seed is
+      // redundant there and `getAgentStates` MUST NOT be called for it.
+      await this.seedAgentStates(processId);
+
       // V2: use getEvents() for stopped teams
       const eventResponses: EventResponse[] =
         await this.apiService.getEvents(processId);
@@ -335,6 +384,23 @@ export class IngestionService {
         this.showDisconnectToast();
       },
     });
+  }
+
+  /**
+   * Story 25-1 (ADR-020 §2): fetch per-agent state snapshots and feed them into
+   * the log as synthesized `StateChangedMessage` entries so the registry's
+   * `stateSpec` folds them into the `state` store exactly as it folds live WS
+   * frames. Called from `init()` ONLY for STOPPED teams (inside the `!running`
+   * block, alongside the `getEvents` replay): a running/restored team gets its
+   * state from the live WS cursor-0 replay (team Story 23-3), so seeding it via
+   * REST is redundant. Mirrors the stopped-team `getEvents` replay seeding: one
+   * REST call, then a single `log.appendAll(...)`.
+   */
+  private async seedAgentStates(processId: string): Promise<void> {
+    const states: AgentStateResponse[] =
+      await this.apiService.getAgentStates(processId);
+    if (states.length === 0) return;
+    this.log.appendAll(states.map((s) => synthesizeStateChanged(s)));
   }
 
   /**
