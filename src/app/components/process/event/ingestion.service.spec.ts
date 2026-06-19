@@ -60,9 +60,11 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
           useValue: {
             // Only used by the `!running` branch; default empty list is fine.
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
-            // Story 25-1: init() now seeds the `state` store from this endpoint
-            // for every status. Default to an empty snapshot list so existing
-            // suites exercise the no-op seed path.
+            // Story 25-1 (!running gate): init() seeds the `state` store from
+            // this endpoint ONLY for stopped teams. The running=false tests in
+            // this suite hit that path; default to an empty snapshot list so
+            // they exercise the no-op seed (and the running=true tests never
+            // call it).
             getAgentStates: jasmine
               .createSpy('getAgentStates')
               .and.resolveTo([]),
@@ -299,9 +301,11 @@ describe('IngestionService — Story 6.1 (frame-batched log ingestion)', () => {
           provide: ApiService,
           useValue: {
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
-            // Story 25-1: init() now seeds the `state` store from this endpoint
-            // for every status. Default to an empty snapshot list so existing
-            // suites exercise the no-op seed path.
+            // Story 25-1 (!running gate): init() seeds the `state` store from
+            // this endpoint ONLY for stopped teams. The running=false tests in
+            // this suite hit that path; default to an empty snapshot list so
+            // they exercise the no-op seed (and the running=true tests never
+            // call it).
             getAgentStates: jasmine
               .createSpy('getAgentStates')
               .and.resolveTo([]),
@@ -630,9 +634,11 @@ describe('IngestionService — commands PerAgentStore (Story 17-3, ADR-014/ADR-0
           provide: ApiService,
           useValue: {
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
-            // Story 25-1: init() now seeds the `state` store from this endpoint
-            // for every status. Default to an empty snapshot list so existing
-            // suites exercise the no-op seed path.
+            // Story 25-1 (!running gate): init() seeds the `state` store from
+            // this endpoint ONLY for stopped teams. The running=false tests in
+            // this suite hit that path; default to an empty snapshot list so
+            // they exercise the no-op seed (and the running=true tests never
+            // call it).
             getAgentStates: jasmine
               .createSpy('getAgentStates')
               .and.resolveTo([]),
@@ -851,9 +857,11 @@ describe('IngestionService — registry is the only per-agent owner (Epic 17, AD
           provide: ApiService,
           useValue: {
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
-            // Story 25-1: init() now seeds the `state` store from this endpoint
-            // for every status. Default to an empty snapshot list so existing
-            // suites exercise the no-op seed path.
+            // Story 25-1 (!running gate): init() seeds the `state` store from
+            // this endpoint ONLY for stopped teams. The running=false tests in
+            // this suite hit that path; default to an empty snapshot list so
+            // they exercise the no-op seed (and the running=true tests never
+            // call it).
             getAgentStates: jasmine
               .createSpy('getAgentStates')
               .and.resolveTo([]),
@@ -926,9 +934,11 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
           provide: ApiService,
           useValue: {
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
-            // Story 25-1: init() now seeds the `state` store from this endpoint
-            // for every status. Default to an empty snapshot list so existing
-            // suites exercise the no-op seed path.
+            // Story 25-1 (!running gate): init() seeds the `state` store from
+            // this endpoint ONLY for stopped teams. The running=false tests in
+            // this suite hit that path; default to an empty snapshot list so
+            // they exercise the no-op seed (and the running=true tests never
+            // call it).
             getAgentStates: jasmine
               .createSpy('getAgentStates')
               .and.resolveTo([]),
@@ -1131,9 +1141,11 @@ describe('IngestionService — state + context PerAgentStore (Story 17-2)', () =
           provide: ApiService,
           useValue: {
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
-            // Story 25-1: init() now seeds the `state` store from this endpoint
-            // for every status. Default to an empty snapshot list so existing
-            // suites exercise the no-op seed path.
+            // Story 25-1 (!running gate): init() seeds the `state` store from
+            // this endpoint ONLY for stopped teams. The running=false tests in
+            // this suite hit that path; default to an empty snapshot list so
+            // they exercise the no-op seed (and the running=true tests never
+            // call it).
             getAgentStates: jasmine
               .createSpy('getAgentStates')
               .and.resolveTo([]),
@@ -1394,18 +1406,22 @@ describe('IngestionService — seed agent state on init (Story 25-1)', () => {
     expect(service.state.snapshot(NAME)).toBeUndefined();
   });
 
-  it('AC3/AC5: running-team init ALSO seeds state.forAgent(uuid) keyed by UUID (every status)', async () => {
+  it('AC3: running-team init does NOT call getAgentStates and does NOT seed (state arrives via the live WS)', async () => {
+    // Post Story 23-3 (restore stream-parity), a running/restored team receives
+    // its StateChangedMessage(s) on the cursor-0 WS replay, so the REST seed is
+    // redundant and MUST NOT run. These unit tests do not exercise the live WS,
+    // so the state store stays empty — the seed simply never fires.
     apiService.getAgentStates.and.resolveTo([
-      snapshot({ backstory: 'Live and seeded.' }),
+      snapshot({ backstory: 'Never seeded for a running team.' }),
     ]);
 
     await service.init('team-1', true);
 
-    expect(service.state.snapshot(UUID)).toEqual({
-      schema: {},
-      state: { backstory: 'Live and seeded.' },
-    });
-    expect(service.state.snapshot(NAME)).toBeUndefined();
+    // getAgentStates is gated on !running — not called for a running team.
+    expect(apiService.getAgentStates).not.toHaveBeenCalled();
+    // No REST seed applied; the running team's state comes from the WS (not
+    // exercised here), so the store has no entry for this UUID.
+    expect(service.state.snapshot(UUID)).toBeUndefined();
   });
 
   it('AC6: the synthesized seed does NOT render as a chat bubble (messageList$ excludes it)', async () => {

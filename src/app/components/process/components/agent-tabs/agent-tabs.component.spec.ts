@@ -92,10 +92,10 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
           provide: ApiService,
           useValue: {
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
-            // Story 25-1: init() seeds the state store from this endpoint.
-            getAgentStates: jasmine
-              .createSpy('getAgentStates')
-              .and.resolveTo([]),
+            // Story 25-1 (!running gate): init() seeds the state store from
+            // getAgentStates ONLY for stopped teams. This spec inits with
+            // running=true (live WS), so getAgentStates is never called — no
+            // stub needed.
           },
         },
         {

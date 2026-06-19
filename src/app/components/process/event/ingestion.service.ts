@@ -237,15 +237,6 @@ export class IngestionService {
     // and rewinds its cursor automatically — no bespoke per-store reset needed.
     this.log.reset();
 
-    // Story 25-1 (ADR-020 §2): seed the per-agent `state` store from the
-    // dedicated snapshot endpoint for EVERY status. A stopped team's durable
-    // event log carries no `StateChangedMessage` (ADR-013), so without this the
-    // backstory head-block (`state.forAgent(uuid)`) stays blank on load. Runs
-    // BEFORE the WS wiring so the store is populated for the first paint; for a
-    // running/restored team the live WS `StateChangedMessage` overwrites it
-    // latest-wins (harmless). One REST call — negligible (ADR-020 §Consequences).
-    await this.seedAgentStates(processId);
-
     // Story 8-2: clear any stale toasts from a prior init() cycle
     // so process-A's warnings do not persist into process-B.
     this.messageService.clear();
@@ -262,6 +253,16 @@ export class IngestionService {
     this.loadingProcess$.next(true);
 
     if (!running) {
+      // Story 25-1 (ADR-020 §2, !running gate): seed the per-agent `state`
+      // store from the dedicated snapshot endpoint for STOPPED teams ONLY. A
+      // stopped team has no live WS, and its durable event log carries no
+      // `StateChangedMessage` (ADR-013), so without this seed the backstory
+      // head-block (`state.forAgent(uuid)`) stays blank on load. A running team
+      // (including a freshly restored one, team Story 23-3) already receives its
+      // `StateChangedMessage`(s) on the cursor-0 WS replay, so the REST seed is
+      // redundant there and `getAgentStates` MUST NOT be called for it.
+      await this.seedAgentStates(processId);
+
       // V2: use getEvents() for stopped teams
       const eventResponses: EventResponse[] =
         await this.apiService.getEvents(processId);
@@ -389,9 +390,11 @@ export class IngestionService {
    * Story 25-1 (ADR-020 §2): fetch per-agent state snapshots and feed them into
    * the log as synthesized `StateChangedMessage` entries so the registry's
    * `stateSpec` folds them into the `state` store exactly as it folds live WS
-   * frames. Called unconditionally from `init()` (every status) after
-   * `log.reset()`. Mirrors the stopped-team `getEvents` replay seeding: one REST
-   * call, then a single `log.appendAll(...)`.
+   * frames. Called from `init()` ONLY for STOPPED teams (inside the `!running`
+   * block, alongside the `getEvents` replay): a running/restored team gets its
+   * state from the live WS cursor-0 replay (team Story 23-3), so seeding it via
+   * REST is redundant. Mirrors the stopped-team `getEvents` replay seeding: one
+   * REST call, then a single `log.appendAll(...)`.
    */
   private async seedAgentStates(processId: string): Promise<void> {
     const states: AgentStateResponse[] =
