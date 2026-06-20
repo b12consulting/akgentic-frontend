@@ -1,8 +1,10 @@
 import { CommonModule } from '@angular/common';
 import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { Router } from '@angular/router';
+import { Table } from 'primeng/table';
 import { BehaviorSubject, of } from 'rxjs';
 
 import { ApiService } from '../../core/http/api.service';
@@ -1002,6 +1004,35 @@ describe('HomeComponent', () => {
   function paginatorEl(): HTMLElement | null {
     return fixture.nativeElement.querySelector('p-paginator, .p-paginator');
   }
+
+  // Reads the rendered PrimeNG Table instance to assert the scroll-contract
+  // inputs (28.3 AC #6a). The scroll body's p-scroller rows may not
+  // materialise deterministically in a detached fixture, so we assert the
+  // binding/configuration, not scraped viewport geometry.
+  function tableInstance(): Table {
+    return fixture.debugElement.query(By.directive(Table)).componentInstance;
+  }
+
+  it('(28.3 AC2/AC6a) table is configured scrollable with a flex scroll height and the paginator is present', async () => {
+    contextSpy.totalCount = 1000;
+    totalCount$.next(1000);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const table = tableInstance();
+    // The body scrolls within the bounded flex parent (sticky header + bottom
+    // paginator follow); the pager is always reachable without scrolling rows.
+    expect(table.scrollable).toBeTrue();
+    expect(table.scrollHeight).toBe('flex');
+    expect(paginatorEl()).withContext('paginator must render below the scroll body').not.toBeNull();
+  });
+
+  it('(28.3 AC4) table does NOT enable virtual scroll', () => {
+    fixture.detectChanges();
+    const table = tableInstance();
+    expect(table.virtualScroll).toBeFalsy();
+  });
 
   it('(28.2 AC8a) table renders with a paginator and totalRecords driven by totalCount', async () => {
     contextSpy.totalCount = 1000;
