@@ -62,6 +62,22 @@
     }
 }
 
+// Story 28.4 — opaque sticky header. 28.3's [scrollable] gave the table a
+// sticky thead for free, but the app theme sets the datatable header-cell
+// background to `transparent` (app.theme.ts), so scrolling rows bleed through
+// behind the pinned "Name / Creation Date / Status / Team ID" labels. Paint
+// the home table's sticky thead (and its cells) white — matching the row
+// surface — so rows are masked as they scroll under it. PrimeNG renders the
+// datatable header INSIDE this component's view (unlike the teleported dialog
+// header below), so `::ng-deep` is needed to pierce encapsulation; `:host`
+// keeps the rule scoped here and off every other datatable (the global
+// `transparent` preset is intentionally untouched). PrimeNG's sticky thead
+// already wins the stacking, so no z-index is needed.
+:host ::ng-deep .p-datatable-thead,
+:host ::ng-deep .p-datatable-thead > tr > th {
+    background: #fff;
+}
+
 .show-all-namespaces {
     display: inline-flex;
     align-items: center;
