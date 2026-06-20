@@ -7,6 +7,7 @@ import {
   TeamContext,
   TeamResponse,
   TeamListResponse,
+  TeamPage,
   EventResponse,
   EventListResponse,
   AgentStateResponse,
@@ -32,12 +33,28 @@ export class ApiService {
 
   // --- Team CRUD (AC1) ---
 
-  async getTeams(): Promise<TeamContext[]> {
+  /**
+   * Fetch one page of teams from the cursor-paginated `GET /teams` (ADR-031).
+   *
+   * Builds `?cursor=&limit=` from whichever args are present (omits them
+   * otherwise). The cursor is an opaque token — URL-encoded defensively and
+   * never parsed. Returns the mapped `TeamContext[]` plus the raw `next_cursor`
+   * so callers can both render the page and fetch forward.
+   */
+  async getTeams(cursor?: string, limit?: number): Promise<TeamPage> {
+    const params = new URLSearchParams();
+    if (cursor !== undefined) {
+      params.set('cursor', cursor);
+    }
+    if (limit !== undefined) {
+      params.set('limit', String(limit));
+    }
+    const query = params.toString();
     const response: TeamListResponse = await this.fetchService.fetch({
-      url: `${this.apiUrl}/teams`,
+      url: query ? `${this.apiUrl}/teams?${query}` : `${this.apiUrl}/teams`,
     });
-    const teams = response?.teams ?? [];
-    return teams.map(toTeamContext);
+    const teams = (response?.teams ?? []).map(toTeamContext);
+    return { teams, next_cursor: response?.next_cursor ?? null };
   }
 
   async getTeam(teamId: string): Promise<TeamContext> {

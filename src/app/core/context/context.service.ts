@@ -38,6 +38,11 @@ export class ContextService {
   private _context$ = new BehaviorSubject<TeamContext[]>([]);
   public teams$: Observable<TeamContext[]> = this._context$.asObservable();
 
+  // Held cursor for the paginated team list (ADR-031). `null` initially and
+  // after the last page; an opaque token otherwise. Single source of truth
+  // for whether more pages remain.
+  private _nextCursor: string | null = null;
+
   /** Derived selector: the team whose id matches `currentProcessId$`, or
    *  `null` if none matches (including the empty-string initial id). The
    *  `shareReplay(1, refCount:false)` gives late-subscriber safety without
@@ -64,10 +69,41 @@ export class ContextService {
       .subscribe((running) => this.currentTeamRunning$.next(running));
   }
 
+  /** Full-replace load of the first page (legacy home-view path, Story 27.2
+   *  migrates its callers to `loadTeamsPage`). Replaces `teams$` wholesale. */
   async getTeams(): Promise<TeamContext[]> {
-    const teams = await this.apiService.getTeams();
-    this._context$.next(teams);
-    return teams;
+    const page = await this.apiService.getTeams();
+    this._context$.next(page.teams);
+    return page.teams;
+  }
+
+  /** Held cursor for the paginated list: `null` before any load and on the
+   *  last page, an opaque token otherwise. */
+  get nextCursor(): string | null {
+    return this._nextCursor;
+  }
+
+  /** Whether another page remains to fetch (true once a page reported a
+   *  non-null `next_cursor`; false initially and after the last page). */
+  hasMorePages(): boolean {
+    return this._nextCursor !== null;
+  }
+
+  /** Fetch one page (cursor-paginated, ADR-031) and APPEND it to `teams$`
+   *  without replacing the existing rows; track the returned opaque cursor.
+   *  Called with no cursor to seed the first page onto whatever is in the
+   *  list (typically empty after `resetTeams`). */
+  async loadTeamsPage(cursor?: string): Promise<void> {
+    const page = await this.apiService.getTeams(cursor);
+    this._context$.next([...this._context$.value, ...page.teams]);
+    this._nextCursor = page.next_cursor;
+  }
+
+  /** Reset the paginated list to a fresh first page: clear `teams$` and the
+   *  held cursor (e.g. on team-switch). */
+  resetTeams(): void {
+    this._context$.next([]);
+    this._nextCursor = null;
   }
 
   async getCurrentTeam(

@@ -4,7 +4,7 @@ import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from '../http/api.service';
 import { ContextService } from './context.service';
-import { TeamContext, TeamResponse } from './team.interface';
+import { TeamContext, TeamPage, TeamResponse } from './team.interface';
 
 function makeTeam(
   teamId: string,
@@ -31,6 +31,15 @@ function makeTeamResponse(teamId: string, status: string = 'running'): TeamRespo
     created_at: '2026-04-19T10:00:00Z',
     updated_at: '2026-04-19T10:00:00Z',
   };
+}
+
+/** Wrap mapped teams in the `TeamPage` shape `ApiService.getTeams` now
+ *  returns (Story 27.1). `next_cursor` defaults to null (last page). */
+function makeTeamPage(
+  teams: TeamContext[],
+  next_cursor: string | null = null
+): TeamPage {
+  return { teams, next_cursor };
 }
 
 describe('ContextService', () => {
@@ -72,7 +81,7 @@ describe('ContextService', () => {
 
   it('(AC2) getTeams() calls apiService.getTeams then teams$ receives the list once', async () => {
     const teams = [makeTeam('a'), makeTeam('b')];
-    apiSpy.getTeams.and.returnValue(Promise.resolve(teams));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage(teams)));
 
     const emissions: TeamContext[][] = [];
     const sub = service.teams$.subscribe((v) => emissions.push(v));
@@ -92,8 +101,8 @@ describe('ContextService', () => {
     const first = [makeTeam('a')];
     const second = [makeTeam('a'), makeTeam('b')];
     apiSpy.getTeams.and.returnValues(
-      Promise.resolve(first),
-      Promise.resolve(second)
+      Promise.resolve(makeTeamPage(first)),
+      Promise.resolve(makeTeamPage(second))
     );
 
     await service.getTeams();
@@ -111,7 +120,7 @@ describe('ContextService', () => {
   it('(AC3, AC10) getCurrentTeam(false) produces new array ref + new slot ref; unchanged slots preserve identity', async () => {
     const teamA = makeTeam('a', 'running');
     const teamB = makeTeam('b', 'running');
-    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA, teamB]));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([teamA, teamB])));
     await service.getTeams();
 
     const prev = await firstValueFrom(service.teams$);
@@ -134,7 +143,7 @@ describe('ContextService', () => {
 
   it('(AC3) getCurrentTeam(true) cache-hit leaves _context$.value unchanged; currentTeamRunning$.value reflects cached team', async () => {
     const teamA = makeTeam('a', 'running');
-    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA]));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([teamA])));
     await service.getTeams();
 
     // Arm the derived pipeline by pointing currentProcessId$ at 'a' BEFORE
@@ -159,7 +168,7 @@ describe('ContextService', () => {
 
   it('(AC3 guard) getCurrentTeam(false) with null API response leaves _context$.value unchanged', async () => {
     const teamA = makeTeam('a', 'running');
-    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA]));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([teamA])));
     await service.getTeams();
 
     const prev = await firstValueFrom(service.teams$);
@@ -176,7 +185,7 @@ describe('ContextService', () => {
 
   it('(AC4) createTeamAndNavigate grows _context$.value by one and calls router.navigate', async () => {
     const existing = [makeTeam('a')];
-    apiSpy.getTeams.and.returnValue(Promise.resolve(existing));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage(existing)));
     await service.getTeams();
 
     const response = makeTeamResponse('new');
@@ -195,7 +204,7 @@ describe('ContextService', () => {
 
   it('(AC2 10.4) createTeamAndNavigate does not drive a reload', async () => {
     const existing = [makeTeam('a')];
-    apiSpy.getTeams.and.returnValue(Promise.resolve(existing));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage(existing)));
     await service.getTeams();
 
     const response = makeTeamResponse('new');
@@ -217,7 +226,7 @@ describe('ContextService', () => {
 
   it('(AC1 10.4) createTeamAndNavigate preserves immutability on append', async () => {
     const existing = [makeTeam('a'), makeTeam('b')];
-    apiSpy.getTeams.and.returnValue(Promise.resolve(existing));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage(existing)));
     await service.getTeams();
 
     const prev = await firstValueFrom(service.teams$);
@@ -238,7 +247,7 @@ describe('ContextService', () => {
   });
 
   it('(AC3 10.4) after create + navigate, currentTeam$ emits the new team and currentTeamRunning$ reflects it', async () => {
-    apiSpy.getTeams.and.returnValue(Promise.resolve([]));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([])));
     await service.getTeams();
 
     const newTeamResponse = makeTeamResponse('new', 'running');
@@ -262,7 +271,7 @@ describe('ContextService', () => {
 
   it('(AC5) deleteTeam shrinks _context$.value and calls apiService.deleteTeam', async () => {
     const teams = [makeTeam('a'), makeTeam('b'), makeTeam('c')];
-    apiSpy.getTeams.and.returnValue(Promise.resolve(teams));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage(teams)));
     await service.getTeams();
 
     apiSpy.deleteTeam.and.returnValue(Promise.resolve());
@@ -276,7 +285,7 @@ describe('ContextService', () => {
 
   it('(AC5) clear(teamId) shrinks, ends with currentTeamRunning$.value === false via derived pipeline, and navigates home', async () => {
     const teams = [makeTeam('a'), makeTeam('b')];
-    apiSpy.getTeams.and.returnValue(Promise.resolve(teams));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage(teams)));
     await service.getTeams();
 
     apiSpy.deleteTeam.and.returnValue(Promise.resolve());
@@ -301,7 +310,7 @@ describe('ContextService', () => {
 
   it('(AC11 10.1) late-subscriber receives the current value synchronously', async () => {
     const teams = [makeTeam('a')];
-    apiSpy.getTeams.and.returnValue(Promise.resolve(teams));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage(teams)));
     await service.getTeams();
 
     let received: TeamContext[] | undefined;
@@ -326,7 +335,7 @@ describe('ContextService', () => {
   it('(AC2 10.2) currentTeam$ emits the team whose id matches currentProcessId$', async () => {
     const teamA = makeTeam('a', 'running');
     const teamB = makeTeam('b', 'stopped');
-    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA, teamB]));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([teamA, teamB])));
     await service.getTeams();
 
     service.currentProcessId$.next('a');
@@ -343,7 +352,7 @@ describe('ContextService', () => {
   it('(AC3 10.2) currentTeam$ emits in order on id switch; currentTeamRunning$ tracks running state', async () => {
     const teamA = makeTeam('a', 'running');
     const teamB = makeTeam('b', 'stopped');
-    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA, teamB]));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([teamA, teamB])));
     await service.getTeams();
 
     const teamEmissions: (TeamContext | null)[] = [];
@@ -375,7 +384,7 @@ describe('ContextService', () => {
 
   it('(AC4 10.2) late subscriber to currentTeam$ receives current value synchronously', async () => {
     const teamA = makeTeam('a', 'running');
-    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA]));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([teamA])));
     await service.getTeams();
     service.currentProcessId$.next('a');
 
@@ -392,7 +401,7 @@ describe('ContextService', () => {
 
   it('(AC8 10.2 / NFR5) status flip via getCurrentTeam(id, false) emits currentTeam$ once and currentTeamRunning$ once', async () => {
     const teamA = makeTeam('a', 'running');
-    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA]));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([teamA])));
     await service.getTeams();
     service.currentProcessId$.next('a');
     await Promise.resolve();
@@ -425,7 +434,7 @@ describe('ContextService', () => {
 
   it('(AC9 10.2) unknown currentProcessId$ emits null from currentTeam$ and false from currentTeamRunning$', async () => {
     const teamA = makeTeam('a', 'running');
-    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA]));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([teamA])));
     await service.getTeams();
 
     service.currentProcessId$.next('does-not-exist');
@@ -439,7 +448,7 @@ describe('ContextService', () => {
   it('(AC11 10.2) navigation flow issues exactly ONE apiService.getTeam call (home init + id switch + ngOnInit fetch)', async () => {
     const teamA = makeTeam('a', 'running');
     const teamB = makeTeam('b', 'running');
-    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA, teamB]));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([teamA, teamB])));
     // Simulate the single `getCurrentTeam(id, false)` call from
     // ProcessComponent.ngOnInit. No other code path issues a REST call.
     apiSpy.getTeam.and.returnValue(Promise.resolve(teamA));
@@ -475,7 +484,7 @@ describe('ContextService', () => {
     const running = makeTeam('team-A', 'running');
     const stopped = makeTeam('team-A', 'stopped');
 
-    apiSpy.getTeams.and.returnValue(Promise.resolve([running]));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([running])));
     service.getTeams();
     tick();
 
@@ -502,7 +511,7 @@ describe('ContextService', () => {
 
   it('(AC3 10.5) stopTeamAndAwait rejects with TimeoutError when team never stops', fakeAsync(() => {
     const running = makeTeam('team-A', 'running');
-    apiSpy.getTeams.and.returnValue(Promise.resolve([running]));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([running])));
     service.getTeams();
     tick();
 
@@ -532,7 +541,7 @@ describe('ContextService', () => {
     const runningB = makeTeam('team-B', 'running');
     const stoppedA = makeTeam('team-A', 'stopped');
 
-    apiSpy.getTeams.and.returnValue(Promise.resolve([runningA, runningB]));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([runningA, runningB])));
     service.getTeams();
     tick();
 
@@ -581,7 +590,7 @@ describe('ContextService', () => {
     const runningB = makeTeam('team-B', 'running');
     const stoppedA = makeTeam('team-A', 'stopped');
 
-    apiSpy.getTeams.and.returnValue(Promise.resolve([runningA, runningB]));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([runningA, runningB])));
     service.getTeams();
     tick();
 
@@ -697,7 +706,7 @@ describe('ContextService', () => {
   it('(AC2 10.7) getCurrentTeam(false) replace path: array ref changes, unchanged slot ref preserved', async () => {
     const teamA = makeTeam('a', 'running');
     const teamB = makeTeam('b', 'running');
-    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA, teamB]));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([teamA, teamB])));
     await service.getTeams();
 
     const prev = await firstValueFrom(service.teams$);
@@ -763,7 +772,7 @@ describe('ContextService', () => {
   it('(AC4 10.7) refreshOneTeam replace path: array ref changes, unchanged slot ref preserved', async () => {
     const teamA = makeTeam('a', 'running');
     const teamB = makeTeam('b', 'running');
-    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA, teamB]));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([teamA, teamB])));
     await service.getTeams();
 
     const prev = await firstValueFrom(service.teams$);
@@ -805,7 +814,7 @@ describe('ContextService', () => {
 
   it('(AC5 10.7) refreshOneTeam null API leaves _context$ unchanged', async () => {
     const teamA = makeTeam('a', 'running');
-    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA]));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([teamA])));
     await service.getTeams();
 
     const prev = await firstValueFrom(service.teams$);
@@ -825,7 +834,7 @@ describe('ContextService', () => {
 
   it('(AC6 10.7) getCurrentTeam(true) cache-hit does not call API and leaves _context$ unchanged', async () => {
     const teamA = makeTeam('a', 'running');
-    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA]));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([teamA])));
     await service.getTeams();
 
     const prev = await firstValueFrom(service.teams$);
@@ -868,7 +877,7 @@ describe('ContextService', () => {
   it('(AC7 10.6) deleteTeam removes the team immutably from _context$', fakeAsync(() => {
     const teamA = makeTeam('a', 'running');
     const teamB = makeTeam('b', 'running');
-    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA, teamB]));
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([teamA, teamB])));
     apiSpy.deleteTeam.and.returnValue(Promise.resolve());
 
     service.getTeams();
@@ -899,4 +908,140 @@ describe('ContextService', () => {
     // Unchanged slot preserves reference identity (immutable filter on same refs).
     expect(next[0]).toBe(prevB);
   }));
+
+  // =======================================================================
+  // Story 27.1 — cursor-aware loadTeamsPage + held cursor + reset
+  // =======================================================================
+
+  // --- AC4 (initial state) -----------------------------------------------
+
+  it('(27.1 AC4) held cursor is null and hasMorePages() is false before any load', () => {
+    expect(service.nextCursor).toBeNull();
+    expect(service.hasMorePages()).toBe(false);
+  });
+
+  // --- AC3 (append, not replace) -----------------------------------------
+
+  it('(27.1 AC3) loadTeamsPage appends pages to teams$ rather than replacing', async () => {
+    const page1 = [makeTeam('a'), makeTeam('b')];
+    const page2 = [makeTeam('c')];
+    apiSpy.getTeams.and.returnValues(
+      Promise.resolve(makeTeamPage(page1, 'cursor-1')),
+      Promise.resolve(makeTeamPage(page2, null))
+    );
+
+    await service.loadTeamsPage();
+    const afterFirst = await firstValueFrom(service.teams$);
+    expect(afterFirst.map((t) => t.team_id)).toEqual(['a', 'b']);
+
+    await service.loadTeamsPage('cursor-1');
+    const afterSecond = await firstValueFrom(service.teams$);
+    // The first page is NOT discarded — both pages accumulate in order.
+    expect(afterSecond.map((t) => t.team_id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('(27.1 AC2/AC6) loadTeamsPage echoes the cursor token to apiService.getTeams', async () => {
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([], 'c2')));
+
+    await service.loadTeamsPage('opaque-token');
+
+    expect(apiSpy.getTeams).toHaveBeenCalledOnceWith('opaque-token');
+  });
+
+  it('(27.1 AC3) first loadTeamsPage seeds onto whatever is currently in the list', async () => {
+    const existing = [makeTeam('x')];
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage(existing)));
+    await service.getTeams(); // full-replace seeds ['x']
+
+    apiSpy.getTeams.and.returnValue(
+      Promise.resolve(makeTeamPage([makeTeam('y')], null))
+    );
+    await service.loadTeamsPage();
+
+    const next = await firstValueFrom(service.teams$);
+    expect(next.map((t) => t.team_id)).toEqual(['x', 'y']);
+  });
+
+  // --- AC4 (cursor tracking + last-page signal) --------------------------
+
+  it('(27.1 AC4) loadTeamsPage stores a non-null next_cursor and reports more pages', async () => {
+    apiSpy.getTeams.and.returnValue(
+      Promise.resolve(makeTeamPage([makeTeam('a')], 'cursor-next'))
+    );
+
+    await service.loadTeamsPage();
+
+    expect(service.nextCursor).toBe('cursor-next');
+    expect(service.hasMorePages()).toBe(true);
+  });
+
+  it('(27.1 AC4) a page with next_cursor === null records "no more pages"', async () => {
+    apiSpy.getTeams.and.returnValues(
+      Promise.resolve(makeTeamPage([makeTeam('a')], 'cursor-1')),
+      Promise.resolve(makeTeamPage([makeTeam('b')], null))
+    );
+
+    await service.loadTeamsPage();
+    expect(service.hasMorePages()).toBe(true);
+
+    await service.loadTeamsPage('cursor-1');
+    expect(service.nextCursor).toBeNull();
+    expect(service.hasMorePages()).toBe(false);
+  });
+
+  // --- AC5 (reset) -------------------------------------------------------
+
+  it('(27.1 AC5) resetTeams clears teams$ to [] and resets the held cursor', async () => {
+    apiSpy.getTeams.and.returnValue(
+      Promise.resolve(makeTeamPage([makeTeam('a'), makeTeam('b')], 'cursor-1'))
+    );
+    await service.loadTeamsPage();
+    expect((await firstValueFrom(service.teams$)).length).toBe(2);
+    expect(service.nextCursor).toBe('cursor-1');
+
+    service.resetTeams();
+
+    expect(await firstValueFrom(service.teams$)).toEqual([]);
+    expect(service.nextCursor).toBeNull();
+    expect(service.hasMorePages()).toBe(false);
+  });
+
+  it('(27.1 AC5) loadTeamsPage after resetTeams starts a fresh first page', async () => {
+    apiSpy.getTeams.and.returnValue(
+      Promise.resolve(makeTeamPage([makeTeam('a')], 'c1'))
+    );
+    await service.loadTeamsPage();
+    service.resetTeams();
+
+    apiSpy.getTeams.and.returnValue(
+      Promise.resolve(makeTeamPage([makeTeam('z')], null))
+    );
+    await service.loadTeamsPage();
+
+    const next = await firstValueFrom(service.teams$);
+    expect(next.map((t) => t.team_id)).toEqual(['z']);
+  });
+
+  // --- AC7 (legacy full-replace getTeams preserved) ----------------------
+
+  it('(27.1 AC7) getTeams() still replaces teams$ wholesale', async () => {
+    apiSpy.getTeams.and.returnValue(
+      Promise.resolve(makeTeamPage([makeTeam('a'), makeTeam('b')], 'ignored'))
+    );
+    await service.getTeams();
+    expect((await firstValueFrom(service.teams$)).map((t) => t.team_id)).toEqual([
+      'a',
+      'b',
+    ]);
+
+    // A second full-replace REPLACES (does not append).
+    apiSpy.getTeams.and.returnValue(
+      Promise.resolve(makeTeamPage([makeTeam('c')], null))
+    );
+    const returned = await service.getTeams();
+    expect(returned.map((t) => t.team_id)).toEqual(['c']);
+    expect((await firstValueFrom(service.teams$)).map((t) => t.team_id)).toEqual([
+      'c',
+    ]);
+  });
 });

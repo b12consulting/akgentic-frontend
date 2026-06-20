@@ -13,9 +13,12 @@ export interface TeamResponse {
   updated_at: string;
 }
 
-// Maps to Python TeamListResponse
+// Maps to Python TeamListResponse.
+// `next_cursor` mirrors the infra cursor-pagination contract (ADR-031): an
+// opaque token to echo on the next request, or `null` on the last page.
 export interface TeamListResponse {
   teams: TeamResponse[];
+  next_cursor: string | null;
 }
 
 // Maps to Python EventResponse
@@ -75,6 +78,16 @@ export interface TeamContext {
   updated_at: string;
   config_name: string;
   description?: string | null;
+}
+
+/**
+ * A single page of mapped teams plus the opaque cursor for the next page
+ * (`null` on the last page). Returned by `ApiService.getTeams` so callers get
+ * both the `TeamContext[]` to render and the cursor to fetch forward.
+ */
+export interface TeamPage {
+  teams: TeamContext[];
+  next_cursor: string | null;
 }
 
 /** Check if a team is currently running. */

@@ -272,6 +272,114 @@ describe('ApiService', () => {
     });
   });
 
+  describe('getTeams (Story 27.1)', () => {
+    function teamResponse(teamId: string) {
+      return {
+        team_id: teamId,
+        name: `team-${teamId}`,
+        status: 'running',
+        user_id: 'user-1',
+        created_at: '2026-06-20T10:00:00Z',
+        updated_at: '2026-06-20T10:00:00Z',
+      };
+    }
+
+    it('GETs /teams with no query string when called with no args', async () => {
+      fetchServiceSpy.fetch.and.returnValue(
+        Promise.resolve({ teams: [teamResponse('a')], next_cursor: 'c1' })
+      );
+
+      await service.getTeams();
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.url).toMatch(/\/teams$/);
+      expect(callArgs.url).not.toContain('?');
+    });
+
+    it('appends ?cursor=<token> when only a cursor is given', async () => {
+      fetchServiceSpy.fetch.and.returnValue(
+        Promise.resolve({ teams: [], next_cursor: null })
+      );
+
+      await service.getTeams('tok123');
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.url).toMatch(/\/teams\?cursor=tok123$/);
+      expect(callArgs.url).not.toContain('limit');
+    });
+
+    it('appends ?limit=<n> when only a limit is given', async () => {
+      fetchServiceSpy.fetch.and.returnValue(
+        Promise.resolve({ teams: [], next_cursor: null })
+      );
+
+      await service.getTeams(undefined, 25);
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.url).toMatch(/\/teams\?limit=25$/);
+      expect(callArgs.url).not.toContain('cursor');
+    });
+
+    it('appends ?cursor=&limit= when both are given', async () => {
+      fetchServiceSpy.fetch.and.returnValue(
+        Promise.resolve({ teams: [], next_cursor: null })
+      );
+
+      await service.getTeams('tok123', 50);
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.url).toMatch(/\/teams\?cursor=tok123&limit=50$/);
+    });
+
+    it('URL-encodes the opaque cursor token', async () => {
+      fetchServiceSpy.fetch.and.returnValue(
+        Promise.resolve({ teams: [], next_cursor: null })
+      );
+
+      await service.getTeams('a b+c/d');
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      // URLSearchParams encodes space→+, '+'→%2B, '/'→%2F.
+      expect(callArgs.url).toContain('cursor=a+b%2Bc%2Fd');
+    });
+
+    it('returns the mapped TeamContext[] plus the raw next_cursor', async () => {
+      fetchServiceSpy.fetch.and.returnValue(
+        Promise.resolve({
+          teams: [teamResponse('a'), teamResponse('b')],
+          next_cursor: 'cursor-xyz',
+        })
+      );
+
+      const page = await service.getTeams();
+
+      expect(page.next_cursor).toBe('cursor-xyz');
+      expect(page.teams.map((t) => t.team_id)).toEqual(['a', 'b']);
+      // toTeamContext maps config_name from the team name.
+      expect(page.teams[0].config_name).toBe('team-a');
+    });
+
+    it('defaults teams to [] and next_cursor to null when the body is absent', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve(undefined));
+
+      const page = await service.getTeams();
+
+      expect(page.teams).toEqual([]);
+      expect(page.next_cursor).toBeNull();
+    });
+
+    it('defaults next_cursor to null when the key is missing', async () => {
+      fetchServiceSpy.fetch.and.returnValue(
+        Promise.resolve({ teams: [teamResponse('a')] } as any)
+      );
+
+      const page = await service.getTeams();
+
+      expect(page.teams.length).toBe(1);
+      expect(page.next_cursor).toBeNull();
+    });
+  });
+
   describe('sendMessage (existing)', () => {
     it('should broadcast when no agentName provided', async () => {
       await service.sendMessage('team-1', 'broadcast msg');
