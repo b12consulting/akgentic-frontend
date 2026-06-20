@@ -13,9 +13,12 @@ export interface TeamResponse {
   updated_at: string;
 }
 
-// Maps to Python TeamListResponse
+// Maps to Python TeamListResponse (classic offset+total pagination, Epic 28).
+// `total_count` is the total teams the user owns across ALL pages; `teams` is
+// the current page. No `next_cursor` (the parked cursor approach, ADR-031).
 export interface TeamListResponse {
   teams: TeamResponse[];
+  total_count: number;
 }
 
 // Maps to Python EventResponse
@@ -75,6 +78,16 @@ export interface TeamContext {
   updated_at: string;
   config_name: string;
   description?: string | null;
+}
+
+/**
+ * Frontend-facing page of teams (classic offset+total pagination, Epic 28).
+ * `teams` is already mapped to the `TeamContext` view model; `total_count`
+ * is carried through verbatim from `TeamListResponse`.
+ */
+export interface TeamPage {
+  teams: TeamContext[];
+  total_count: number;
 }
 
 /** Check if a team is currently running. */
