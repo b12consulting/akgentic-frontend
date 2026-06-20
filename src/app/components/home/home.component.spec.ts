@@ -219,16 +219,22 @@ describe('HomeComponent', () => {
   // ---- Story 27.2: home-page lazy virtual-scroll team table (ADR-031 §5) ----
   //
   // PrimeNG's lazy/virtual <p-table> fires (onLazyLoad) with a
-  // TableLazyLoadEvent; loadPage ignores event.first and fetches the next page
-  // via the held cursor. Seeding happens in ngOnInit (resetTeams +
+  // TableLazyLoadEvent. The next-page fetch is gated on the event window
+  // reaching the END of the loaded rows (scroll-end), not on the absolute
+  // `first` offset, and the held cursor is deduped so an already-requested
+  // cursor is never fetched twice (issue #199 — append-driven re-fires would
+  // otherwise storm). Seeding happens once in ngOnInit (resetTeams +
   // loadTeamsPage); subsequent pages append via loadTeamsPage's 27.1 contract.
   // HTTP is fully mocked through the ContextService stub.
 
-  function lazyEvent(first = 0): TableLazyLoadEvent {
-    return { first, rows: 50 } as TableLazyLoadEvent;
+  // `first`/`rows` default to a window that reaches past the (small) loaded set
+  // in the existing specs; pass `last` explicitly to model a window that ends
+  // BEFORE the loaded end (append-driven re-fire that must NOT fetch).
+  function lazyEvent(first = 0, last?: number): TableLazyLoadEvent {
+    return { first, rows: 50, last } as TableLazyLoadEvent;
   }
 
-  it('(27.2 AC4) ngOnInit seeds the first page via resetTeams + loadTeamsPage (not legacy getTeams)', async () => {
+  it('(27.2 AC4) ngOnInit seeds the first page once via loadTeamsPage (idempotent, not legacy getTeams)', async () => {
     teams$.next([]);
     contextSpy.loadTeamsPage.and.callFake(async () => {
       teams$.next([makeTeam({ team_id: 'seed-1' })]);
@@ -236,10 +242,14 @@ describe('HomeComponent', () => {
 
     await component.ngOnInit();
 
-    expect(contextSpy.resetTeams).toHaveBeenCalledTimes(1);
+    // Init uses the IDEMPOTENT seed (ensureSeeded), which does NOT resetTeams —
+    // resetting on init is what enabled the page-1 double-fetch race (issue
+    // #199). resetTeams belongs to the explicit create/restore/refresh re-seeds
+    // (covered by their own specs). The init seed fetches page 1 exactly once.
     expect(contextSpy.loadTeamsPage).toHaveBeenCalledTimes(1);
     // Seed carries NO cursor (first page).
     expect(contextSpy.loadTeamsPage.calls.mostRecent().args[0]).toBeUndefined();
+    expect(contextSpy.resetTeams).not.toHaveBeenCalled();
     expect(contextSpy.getTeams).not.toHaveBeenCalled();
   });
 
@@ -374,6 +384,86 @@ describe('HomeComponent', () => {
     contextSpy.hasMorePages.and.returnValue(false);
 
     await component.loadPage(lazyEvent(150));
+
+    expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
+  });
+
+  // ---- issue #199 regression: no lazy-load request storm / no dup cursors ----
+  //
+  // These drive loadPage(event) directly with crafted TableLazyLoadEvents +
+  // the stubbed ContextService (no DOM materialization needed, sidestepping the
+  // p-scroller-doesn't-render-in-Karma limitation). They MUST fail against the
+  // pre-fix loadPage (which gated only on `loading` and re-fetched on every
+  // append) and pass against the scroll-end + cursor-dedup + idempotent-seed
+  // implementation.
+
+  it('(issue #199 i) exactly ONE page-1 load on init even if onLazyLoad fires during the seed', async () => {
+    teams$.next([]);
+    contextSpy.loadTeamsPage.calls.reset();
+    contextSpy.loadTeamsPage.and.callFake(async () => {
+      teams$.next([makeTeam({ team_id: 'seed-1' })]);
+    });
+
+    // Race: PrimeNG's init onLazyLoad fires concurrently with ngOnInit's seed.
+    const init = component.ngOnInit();
+    const earlyLazy = component.loadPage(lazyEvent(0));
+    await Promise.all([init, earlyLazy]);
+
+    // Idempotent seed: the two collapse into a single page-1 fetch (no cursor).
+    expect(contextSpy.loadTeamsPage).toHaveBeenCalledTimes(1);
+    expect(contextSpy.loadTeamsPage.calls.mostRecent().args[0]).toBeUndefined();
+  });
+
+  it('(issue #199 ii) NO fetch when the event window is within already-loaded rows', async () => {
+    await component.ngOnInit();
+    // 100 rows loaded; another page remains.
+    const loaded = Array.from({ length: 100 }, (_, i) =>
+      makeTeam({ team_id: `t-${i}` }),
+    );
+    teams$.next(loaded);
+    contextSpy.nextCursor = 'cursor-2';
+    contextSpy.hasMorePages.and.returnValue(true);
+    contextSpy.loadTeamsPage.calls.reset();
+
+    // Viewport window ends at row 60 — well inside the 100 loaded rows. This is
+    // the append-driven re-fire that must NOT fetch the next page.
+    await component.loadPage(lazyEvent(10, 60));
+
+    expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
+  });
+
+  it('(issue #199 iii) exactly ONE loadTeamsPage per DISTINCT cursor as the viewport advances', async () => {
+    await component.ngOnInit();
+    const loaded = Array.from({ length: 50 }, (_, i) =>
+      makeTeam({ team_id: `t-${i}` }),
+    );
+    teams$.next(loaded);
+    contextSpy.hasMorePages.and.returnValue(true);
+    contextSpy.loadTeamsPage.calls.reset();
+
+    // Scroll to the end of the loaded 50 rows: window ends at >= 50.
+    contextSpy.nextCursor = 'cursor-2';
+    await component.loadPage(lazyEvent(0, 50));
+    // Same cursor still held (no append happened) + another end-reaching event:
+    // the dedup guard must NOT issue a second fetch for cursor-2.
+    await component.loadPage(lazyEvent(0, 50));
+
+    expect(contextSpy.loadTeamsPage).toHaveBeenCalledOnceWith('cursor-2');
+  });
+
+  it('(issue #199 iv) fetching STOPS when hasMorePages() is false (null cursor = last page)', async () => {
+    await component.ngOnInit();
+    const loaded = Array.from({ length: 50 }, (_, i) =>
+      makeTeam({ team_id: `t-${i}` }),
+    );
+    teams$.next(loaded);
+    contextSpy.loadTeamsPage.calls.reset();
+
+    // Last page reached: cursor null, hasMorePages() false — even an
+    // end-reaching event fires no further fetch.
+    contextSpy.nextCursor = null;
+    contextSpy.hasMorePages.and.returnValue(false);
+    await component.loadPage(lazyEvent(0, 100));
 
     expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
   });

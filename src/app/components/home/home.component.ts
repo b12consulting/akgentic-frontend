@@ -10,7 +10,7 @@ import {
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { BehaviorSubject, firstValueFrom, Observable } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { map, take } from 'rxjs/operators';
 
 import { ApiService } from '../../core/http/api.service';
 import { TeamContext, isRunning } from '../../core/context/team.interface';
@@ -82,6 +82,19 @@ export class HomeComponent {
   readonly virtualRowHeight = 80;
   private seeded = false;
 
+  // Cursor + scroll-end gating for the append-on-cursor model (issue #199).
+  // PrimeNG's [lazy]+[virtualScroll] is built for offset windows over a known
+  // [totalRecords]; an append-on-cursor list has neither, so left ungated it
+  // STORMS: each appended page grows teams$ → PrimeNG re-fires (onLazyLoad) →
+  // the next page is fetched → repeat (append-driven, not scroll-driven). Two
+  // guards stop it: (1) `lastRequestedCursor` dedups — never fetch a cursor
+  // already requested (the SENTINEL marks the first-page seed so two concurrent
+  // seeds collapse to one); (2) the scroll-end check only advances when the
+  // event window actually reaches the end of the loaded rows. `resetTeams()`
+  // callers clear `lastRequestedCursor` via seedTeams so a fresh list re-seeds.
+  private static readonly SEED_CURSOR = Symbol('seed');
+  private lastRequestedCursor: string | symbol | null = null;
+
   // Controls the Namespace Panel dialog visibility. The panel component is
   // mounted lazily via @defer in home.component.html so its Monaco-editor
   // dependency is NOT part of the initial home-page chunk.
@@ -130,7 +143,9 @@ export class HomeComponent {
 
     // Seed the first page via the paginated path; read the list back from
     // teams$ for the hideHome branch (loadTeamsPage appends to teams$).
-    await this.seedTeams();
+    // ensureSeeded is idempotent so it collapses with PrimeNG's init
+    // onLazyLoad into a SINGLE page-1 fetch (the seed race, issue #199).
+    await this.ensureSeeded();
     const teams = await firstValueFrom(this.contextService.teams$);
 
     if (this.config.hideHome) {
@@ -256,24 +271,41 @@ export class HomeComponent {
   }
 
   /**
-   * Re-seed the team list from a fresh first page: clear the held cursor/rows
-   * then fetch page 1 (no cursor). The virtual scroll re-fetches forward as the
-   * user scrolls. Shared by ngOnInit and the create/restore/refresh re-seeds.
-   * Resets `seeded` so the first load is never gated on hasMorePages().
+   * Idempotent init seed (issue #199 seed race). Fetches page 1 exactly once;
+   * a call while the seed is in flight (`loading`) or already done (`seeded`)
+   * is a no-op, so the ngOnInit seed and PrimeNG's init onLazyLoad collapse
+   * into a SINGLE page-1 request. Does NOT reset the list — that would discard
+   * a seed a concurrent init onLazyLoad already loaded.
    */
-  private async seedTeams(): Promise<void> {
-    this.contextService.resetTeams();
-    this.seeded = false;
+  private async ensureSeeded(): Promise<void> {
     await this.loadFirstPage();
   }
 
   /**
-   * Fetch page 1 (no cursor) and mark the list seeded so subsequent
-   * onLazyLoad events guard on the held cursor / hasMorePages(). Toggles the
-   * `loading` flag around the await (also used as the in-flight guard).
+   * Force a fresh re-seed from page 1: clear the held cursor/rows AND the
+   * cursor-dedup tracker, then fetch page 1 (no cursor). Used by the
+   * create/restore/refresh re-seeds where a restart IS intended (not the init
+   * path — that uses the idempotent ensureSeeded). Clearing `seeded` lets the
+   * one-shot loadFirstPage run again for the new list.
+   */
+  private async seedTeams(): Promise<void> {
+    this.contextService.resetTeams();
+    this.seeded = false;
+    this.lastRequestedCursor = null;
+    await this.loadFirstPage();
+  }
+
+  /**
+   * Fetch page 1 (no cursor) exactly once. Idempotent: a second call while the
+   * seed is in flight (`loading`) or already done (`seeded`) is a no-op. Marks
+   * the seed cursor as requested so the dedup guard never re-issues it.
    */
   private async loadFirstPage(): Promise<void> {
+    if (this.loading || this.seeded) {
+      return;
+    }
     this.loading = true;
+    this.lastRequestedCursor = HomeComponent.SEED_CURSOR;
     try {
       await this.contextService.loadTeamsPage();
       this.seeded = true;
@@ -283,19 +315,19 @@ export class HomeComponent {
   }
 
   /**
-   * PrimeNG (onLazyLoad) handler. PrimeNG fires this once on table init (the
-   * seed) and again as the viewport scrolls past loaded rows. `event.first`
-   * (absolute offset) is IGNORED — infinite scroll advances forward via the
-   * held cursor only.
+   * PrimeNG (onLazyLoad) handler. PrimeNG fires this on table init (the seed)
+   * and again as the viewport scrolls — but ALSO re-fires every time an
+   * appended page grows the dataset, so the next-page fetch MUST be gated on
+   * the viewport actually reaching the end of the loaded rows, or it storms
+   * (issue #199). `event.first` is not an advance signal on its own — the held
+   * cursor is — but `event.last`/`first+rows` ARE used to detect scroll-end.
    *
-   * Guards: skip while a fetch is in flight (`loading`) so re-entrant events do
-   * not double-fetch; before the first seed, ngOnInit has already loaded page 1
-   * (`seeded === true`); once seeded, stop when `hasMorePages()` is false (held
-   * cursor null = last page). Each fetch appends one page to teams$ via
-   * loadTeamsPage's 27.1 contract.
+   * Guards (in order): in-flight (`loading`); not-yet-seeded → seed page 1
+   * once; last page reached (`!hasMorePages()`); the viewport has NOT reached
+   * the end of loaded rows (append-driven re-fire — skip); the next cursor was
+   * already requested (dedup). Only then fetch the next page and append.
    */
   async loadPage(event: TableLazyLoadEvent): Promise<void> {
-    void event; // event.first ignored — the held cursor is the only advance signal
     if (this.loading) {
       return;
     }
@@ -306,14 +338,51 @@ export class HomeComponent {
     if (!this.contextService.hasMorePages()) {
       return;
     }
+    if (!this.viewportReachedEnd(event)) {
+      // Append-driven re-fire (or a window already within loaded rows): the
+      // user has not scrolled to the end, so do NOT fetch the next page.
+      return;
+    }
+    const cursor = this.contextService.nextCursor;
+    if (cursor === null || cursor === this.lastRequestedCursor) {
+      // Already requested this cursor (re-entrant/overlapping event) — no dup.
+      return;
+    }
     this.loading = true;
+    this.lastRequestedCursor = cursor;
     try {
-      await this.contextService.loadTeamsPage(
-        this.contextService.nextCursor ?? undefined,
-      );
+      await this.contextService.loadTeamsPage(cursor);
     } finally {
       this.loading = false;
     }
+  }
+
+  /**
+   * True when the lazy-load event's window reaches the end of the rows already
+   * loaded into teams$ — i.e. the user scrolled to the bottom of the loaded
+   * set, so the next page should be fetched. Uses `event.last` when present,
+   * else `first + rows`; ignores the absolute offset otherwise (forward-only).
+   * A window that ends within the loaded rows means no scroll-end → no fetch.
+   */
+  private viewportReachedEnd(event: TableLazyLoadEvent): boolean {
+    const first = event.first ?? 0;
+    const rows = event.rows ?? 0;
+    const windowEnd = event.last ?? first + rows;
+    return windowEnd >= this.loadedRowCount();
+  }
+
+  /**
+   * Synchronous read of the current loaded-row count from teams$. `teams$` is
+   * exposed as an Observable (BehaviorSubject-backed), so a subscribe/take(1)
+   * captures the current value without reaching into the service's private
+   * subject (Golden Rule #4: context.service.ts is out of scope here).
+   */
+  private loadedRowCount(): number {
+    let count = 0;
+    this.contextService.teams$
+      .pipe(take(1))
+      .subscribe((teams) => (count = teams.length));
+    return count;
   }
 
   onRowSelect(event: any) {
