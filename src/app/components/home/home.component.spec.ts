@@ -192,7 +192,7 @@ describe('HomeComponent', () => {
   }
 
   it('(AC6) the <p-table> mounts and its value source (teams$) carries the list', async () => {
-    // detectChanges first so ngOnInit's seed (resetTeams + loadTeamsPage) runs
+    // detectChanges first so ngOnInit's seed (ensureSeeded → reloadTeams) runs
     // and settles; pushing onto teams$ AFTER the seed is what the table renders.
     fixture.detectChanges();
     await fixture.whenStable();
@@ -269,8 +269,9 @@ describe('HomeComponent', () => {
   // reaching the END of the loaded rows (scroll-end), not on the absolute
   // `first` offset, and the held cursor is deduped so an already-requested
   // cursor is never fetched twice (issue #199 — append-driven re-fires would
-  // otherwise storm). Seeding happens once in ngOnInit (resetTeams +
-  // loadTeamsPage); subsequent pages append via loadTeamsPage's 27.1 contract.
+  // otherwise storm). Seeding happens once in ngOnInit (ensureSeeded →
+  // reloadTeams, REPLACE — issue #200 no-dup-on-return); subsequent pages
+  // append via loadTeamsPage's 27.1 contract.
   // HTTP is fully mocked through the ContextService stub.
 
   // `first`/`rows` default to a window that reaches past the (small) loaded set
@@ -280,23 +281,54 @@ describe('HomeComponent', () => {
     return { first, rows: 50, last } as TableLazyLoadEvent;
   }
 
-  it('(27.2 AC4) ngOnInit seeds the first page once via loadTeamsPage (idempotent, not legacy getTeams)', async () => {
+  it('(27.2 AC4) ngOnInit seeds the first page once via reloadTeams (REPLACE, idempotent, not legacy getTeams)', async () => {
     teams$.next([]);
-    contextSpy.loadTeamsPage.and.callFake(async () => {
+    contextSpy.reloadTeams.and.callFake(async () => {
       teams$.next([makeTeam({ team_id: 'seed-1' })]);
     });
 
     await component.ngOnInit();
 
-    // Init uses the IDEMPOTENT seed (ensureSeeded), which does NOT resetTeams —
-    // resetting on init is what enabled the page-1 double-fetch race (issue
-    // #199). resetTeams belongs to the explicit create/restore/refresh re-seeds
-    // (covered by their own specs). The init seed fetches page 1 exactly once.
-    expect(contextSpy.loadTeamsPage).toHaveBeenCalledTimes(1);
-    // Seed carries NO cursor (first page).
-    expect(contextSpy.loadTeamsPage.calls.mostRecent().args[0]).toBeUndefined();
+    // Init uses the IDEMPOTENT seed (ensureSeeded → loadFirstPage), which now
+    // REPLACES page 1 via reloadTeams (issue #200: an append-based seed would
+    // stack onto the root-singleton's stale list on return navigation). It does
+    // NOT resetTeams (the synchronous [] clear that caused the flash, and that
+    // also enabled the page-1 double-fetch race, issue #199). The init seed
+    // fetches page 1 exactly once and does NOT append via loadTeamsPage.
+    expect(contextSpy.reloadTeams).toHaveBeenCalledTimes(1);
+    expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
     expect(contextSpy.resetTeams).not.toHaveBeenCalled();
     expect(contextSpy.getTeams).not.toHaveBeenCalled();
+  });
+
+  it('(27.3 AC9) returning to home REPLACES the stale list — seed does not duplicate entries', async () => {
+    // Simulate a return visit: _context$ (a root singleton) still holds the
+    // PRIOR visit's teams while a FRESH HomeComponent (seeded=false) re-seeds.
+    const stale = [
+      makeTeam({ team_id: 'p1' }),
+      makeTeam({ team_id: 'p2' }),
+    ];
+    teams$.next(stale);
+
+    // Realistic seed fakes: loadTeamsPage APPENDS (the pre-fix seed path that
+    // duplicates); reloadTeams REPLACES (the fix). Page 1 is {p1, p2} again.
+    const page1 = [makeTeam({ team_id: 'p1' }), makeTeam({ team_id: 'p2' })];
+    contextSpy.loadTeamsPage.and.callFake(async () => {
+      teams$.next([...teams$.value, ...page1]);
+    });
+    contextSpy.reloadTeams.and.callFake(async () => {
+      teams$.next([...page1]);
+    });
+
+    await component.ngOnInit();
+
+    const list = await firstValueFrom(component.contextService.teams$);
+    // Replaced, not appended: exactly page 1, no stale duplicates.
+    expect(list.length).toBe(page1.length);
+    const ids = list.map((t) => t.team_id);
+    expect(ids).toEqual(['p1', 'p2']);
+    expect(new Set(ids).size).toBe(ids.length); // no duplicate team_ids
+    expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
   });
 
   it('(27.3 AC8a) createTeam prepends the created team — no reset/reload, no refetch', async () => {
@@ -500,8 +532,9 @@ describe('HomeComponent', () => {
 
   it('(issue #199 i) exactly ONE page-1 load on init even if onLazyLoad fires during the seed', async () => {
     teams$.next([]);
+    contextSpy.reloadTeams.calls.reset();
     contextSpy.loadTeamsPage.calls.reset();
-    contextSpy.loadTeamsPage.and.callFake(async () => {
+    contextSpy.reloadTeams.and.callFake(async () => {
       teams$.next([makeTeam({ team_id: 'seed-1' })]);
     });
 
@@ -510,9 +543,10 @@ describe('HomeComponent', () => {
     const earlyLazy = component.loadPage(lazyEvent(0));
     await Promise.all([init, earlyLazy]);
 
-    // Idempotent seed: the two collapse into a single page-1 fetch (no cursor).
-    expect(contextSpy.loadTeamsPage).toHaveBeenCalledTimes(1);
-    expect(contextSpy.loadTeamsPage.calls.mostRecent().args[0]).toBeUndefined();
+    // Idempotent seed: the two collapse into a single page-1 REPLACE (no
+    // append, so no duplicates even under the seed race).
+    expect(contextSpy.reloadTeams).toHaveBeenCalledTimes(1);
+    expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
   });
 
   it('(issue #199 ii) NO fetch when the event window is within already-loaded rows', async () => {

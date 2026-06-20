@@ -302,9 +302,17 @@ export class HomeComponent {
   }
 
   /**
-   * Fetch page 1 (no cursor) exactly once. Idempotent: a second call while the
+   * Seed page 1 (no cursor) exactly once. Idempotent: a second call while the
    * seed is in flight (`loading`) or already done (`seeded`) is a no-op. Marks
    * the seed cursor as requested so the dedup guard never re-issues it.
+   *
+   * REPLACES (load-then-swap via reloadTeams), it does NOT append: _context$ is
+   * a root singleton that survives the HomeComponent rebuild on return
+   * navigation, so an append-based seed would stack page 1 onto the prior
+   * visit's stale list and duplicate every row (issue #200). reloadTeams
+   * fetches page 1 then swaps the list + resets the cursor in one shot — no
+   * intermediate [] (no flash) and no duplicates on return. Forward pages still
+   * APPEND via loadTeamsPage(cursor) in loadPage().
    */
   private async loadFirstPage(): Promise<void> {
     if (this.loading || this.seeded) {
@@ -313,7 +321,7 @@ export class HomeComponent {
     this.loading = true;
     this.lastRequestedCursor = HomeComponent.SEED_CURSOR;
     try {
-      await this.contextService.loadTeamsPage();
+      await this.contextService.reloadTeams();
       this.seeded = true;
     } finally {
       this.loading = false;
