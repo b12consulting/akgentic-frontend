@@ -19,7 +19,7 @@ import { NamespaceSummary } from '../../protocol/catalog.interface';
 import { CommonModule } from '@angular/common';
 import { ButtonModule } from 'primeng/button';
 import { SelectModule } from 'primeng/select';
-import { TableModule } from 'primeng/table';
+import { TableModule, TableLazyLoadEvent } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
@@ -70,6 +70,18 @@ export class HomeComponent {
   editingDescriptionFor: string | null = null;
   descriptionDrafts = new Map<string, string>();
 
+  // Lazy virtual-scroll state (ADR-031 §Decision 5). `loading` drives the
+  // table's [loading] affordance AND the in-flight guard in loadPage (so
+  // re-entrant onLazyLoad events do not double-fetch a page). `virtualRowHeight`
+  // must match the rendered row height in px or PrimeNG's scroll math drifts —
+  // 80px covers the tallest display-mode row (name + description cell + td
+  // padding). `seeded` distinguishes "never loaded" from "last page reached"
+  // (hasMorePages() is false in BOTH states), so the first fetch is never
+  // blocked by the hasMorePages() guard.
+  loading = false;
+  readonly virtualRowHeight = 80;
+  private seeded = false;
+
   // Controls the Namespace Panel dialog visibility. The panel component is
   // mounted lazily via @defer in home.component.html so its Monaco-editor
   // dependency is NOT part of the initial home-page chunk.
@@ -116,8 +128,10 @@ export class HomeComponent {
   async ngOnInit() {
     await this.loadNamespaces();
 
-    // Populate _context$; return value reused for the hideHome branch.
-    const teams = await this.contextService.getTeams();
+    // Seed the first page via the paginated path; read the list back from
+    // teams$ for the hideHome branch (loadTeamsPage appends to teams$).
+    await this.seedTeams();
+    const teams = await firstValueFrom(this.contextService.teams$);
 
     if (this.config.hideHome) {
       // If no team exists, create one using the first namespace.
@@ -182,7 +196,7 @@ export class HomeComponent {
         return;
       }
       await this.apiService.createTeam(selected.namespace);
-      await this.contextService.getTeams();
+      await this.seedTeams();
     } catch (error) {
       console.error('Failed to create team:', error);
     } finally {
@@ -207,7 +221,7 @@ export class HomeComponent {
     this.restoringTeams.add(teamId);
     try {
       await this.apiService.restoreTeam(teamId);
-      await this.contextService.getTeams();
+      await this.seedTeams();
     } finally {
       this.restoringTeams.delete(teamId);
     }
@@ -235,9 +249,70 @@ export class HomeComponent {
   async refreshContext() {
     this.isRefreshing = true;
     try {
-      await this.contextService.getTeams();
+      await this.seedTeams();
     } finally {
       this.isRefreshing = false;
+    }
+  }
+
+  /**
+   * Re-seed the team list from a fresh first page: clear the held cursor/rows
+   * then fetch page 1 (no cursor). The virtual scroll re-fetches forward as the
+   * user scrolls. Shared by ngOnInit and the create/restore/refresh re-seeds.
+   * Resets `seeded` so the first load is never gated on hasMorePages().
+   */
+  private async seedTeams(): Promise<void> {
+    this.contextService.resetTeams();
+    this.seeded = false;
+    await this.loadFirstPage();
+  }
+
+  /**
+   * Fetch page 1 (no cursor) and mark the list seeded so subsequent
+   * onLazyLoad events guard on the held cursor / hasMorePages(). Toggles the
+   * `loading` flag around the await (also used as the in-flight guard).
+   */
+  private async loadFirstPage(): Promise<void> {
+    this.loading = true;
+    try {
+      await this.contextService.loadTeamsPage();
+      this.seeded = true;
+    } finally {
+      this.loading = false;
+    }
+  }
+
+  /**
+   * PrimeNG (onLazyLoad) handler. PrimeNG fires this once on table init (the
+   * seed) and again as the viewport scrolls past loaded rows. `event.first`
+   * (absolute offset) is IGNORED — infinite scroll advances forward via the
+   * held cursor only.
+   *
+   * Guards: skip while a fetch is in flight (`loading`) so re-entrant events do
+   * not double-fetch; before the first seed, ngOnInit has already loaded page 1
+   * (`seeded === true`); once seeded, stop when `hasMorePages()` is false (held
+   * cursor null = last page). Each fetch appends one page to teams$ via
+   * loadTeamsPage's 27.1 contract.
+   */
+  async loadPage(event: TableLazyLoadEvent): Promise<void> {
+    void event; // event.first ignored — the held cursor is the only advance signal
+    if (this.loading) {
+      return;
+    }
+    if (!this.seeded) {
+      await this.loadFirstPage();
+      return;
+    }
+    if (!this.contextService.hasMorePages()) {
+      return;
+    }
+    this.loading = true;
+    try {
+      await this.contextService.loadTeamsPage(
+        this.contextService.nextCursor ?? undefined,
+      );
+    } finally {
+      this.loading = false;
     }
   }
 

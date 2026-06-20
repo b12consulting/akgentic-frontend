@@ -76,21 +76,32 @@
     <br />
     <br />
 
+    <!--
+      Lazy virtual-scroll team table (ADR-031 §Decision 5). PrimeNG renders the
+      body inside its own scroller (only the visible window stays in the DOM)
+      and fires (onLazyLoad) as the viewport scrolls past loaded rows; loadPage
+      fetches the next cursor-paginated page and appends. Server owns ordering
+      (created_at desc) — the client sortField/sortOrder and the sort-icon
+      affordance are gone (arbitrary client sort over a partial set cannot work).
+    -->
     <p-table
       [value]="(contextService.teams$ | async) || []"
       selectionMode="single"
       (onRowSelect)="onRowSelect($event)"
       [tableStyle]="{ 'min-width': '50rem' }"
-      [sortField]="'created_at'"
-      [sortOrder]="-1"
+      [scrollable]="true"
+      scrollHeight="60vh"
+      [virtualScroll]="true"
+      [virtualScrollItemSize]="virtualRowHeight"
+      [rows]="50"
+      [lazy]="true"
+      [loading]="loading"
+      (onLazyLoad)="loadPage($event)"
     >
       <ng-template #header>
         <tr>
           <th>Name</th>
-          <th pSortableColumn="created_at">
-            Creation Date
-            <p-sortIcon field="created_at"></p-sortIcon>
-          </th>
+          <th>Creation Date</th>
           <th>Status</th>
           <th>Team ID</th>
           <th></th>

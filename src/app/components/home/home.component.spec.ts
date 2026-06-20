@@ -3,7 +3,9 @@ import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { Router } from '@angular/router';
-import { BehaviorSubject, of } from 'rxjs';
+import { BehaviorSubject, firstValueFrom, of } from 'rxjs';
+import { MessageService } from 'primeng/api';
+import { TableLazyLoadEvent } from 'primeng/table';
 
 import { ApiService } from '../../core/http/api.service';
 import { AuthService } from '../../core/auth/auth.service';
@@ -33,6 +35,7 @@ describe('HomeComponent', () => {
   let apiSpy: jasmine.SpyObj<ApiService>;
   let contextSpy: jasmine.SpyObj<ContextService> & {
     teams$: BehaviorSubject<TeamContext[]>;
+    nextCursor: string | null;
   };
   let authSpy: jasmine.SpyObj<AuthService> & {
     currentUser$: BehaviorSubject<any>;
@@ -63,15 +66,40 @@ describe('HomeComponent', () => {
 
     contextSpy = jasmine.createSpyObj<ContextService>(
       'ContextService',
-      ['getTeams', 'deleteTeam', 'createTeamAndNavigate', 'stopTeamAndAwait']
+      [
+        'getTeams',
+        'deleteTeam',
+        'createTeamAndNavigate',
+        'stopTeamAndAwait',
+        'loadTeamsPage',
+        'resetTeams',
+        'hasMorePages',
+      ]
     ) as jasmine.SpyObj<ContextService> & {
       teams$: BehaviorSubject<TeamContext[]>;
+      nextCursor: string | null;
     };
     contextSpy.teams$ = teams$;
     contextSpy.getTeams.and.callFake(async () => teams$.value);
     contextSpy.deleteTeam.and.returnValue(Promise.resolve());
     contextSpy.createTeamAndNavigate.and.returnValue(Promise.resolve());
     contextSpy.stopTeamAndAwait.and.returnValue(Promise.resolve());
+
+    // 27.1 data-layer stub. `nextCursor` is a settable property here (a getter
+    // on the real service) so tests can drive the last-page case. Default
+    // `loadTeamsPage` mirrors the 27.1 append contract (push onto teams$) so
+    // appended rows are observable; `resetTeams` clears the list + cursor;
+    // `hasMorePages` defaults false (last page / not seeded) unless a test
+    // raises it.
+    contextSpy.nextCursor = null;
+    contextSpy.hasMorePages.and.returnValue(false);
+    contextSpy.resetTeams.and.callFake(() => {
+      teams$.next([]);
+      contextSpy.nextCursor = null;
+    });
+    contextSpy.loadTeamsPage.and.callFake(async () => {
+      teams$.next([...teams$.value]);
+    });
 
     // Anonymous by default (no `roles`), so isAdmin$ resolves
     // false and the toggle is hidden unless a test pushes an admin user.
@@ -101,6 +129,9 @@ describe('HomeComponent', () => {
         { provide: AuthService, useValue: authSpy },
         { provide: ConfigService, useValue: { hideHome: false } },
         { provide: Router, useValue: routerSpy },
+        // PrimeNG's virtual-scroll <p-table> (p-scroller) injects
+        // MessageService; the production app provides it globally (app.config).
+        MessageService,
       ],
       schemas: [CUSTOM_ELEMENTS_SCHEMA],
     }).compileComponents();
@@ -113,7 +144,25 @@ describe('HomeComponent', () => {
     expect((component as any).context).toBeUndefined();
   });
 
-  it('(AC6) template renders one row per team emitted on teams$', async () => {
+  // After Story 27.2 the home <p-table> is lazy virtual-scroll: PrimeNG renders
+  // the body through a p-scroller whose visible-window computation depends on a
+  // measured viewport. A detached Karma fixture has no stable layout, so the
+  // virtualized <tr> set is not deterministically materialisable (ADR-031
+  // §Validation / story Dev Notes). These specs therefore assert the binding
+  // contract that drives rendering — the <p-table> mounts, the table value is
+  // wired to teams$, and the virtual-scroll config is bound — rather than
+  // scraping virtualized DOM rows. The cell-template behaviours (selection,
+  // status, actions, description edit) are exercised at the handler level in
+  // the (27.2 AC7e) specs below.
+  function pTable(): HTMLElement | null {
+    return fixture.nativeElement.querySelector('p-table') as HTMLElement | null;
+  }
+
+  it('(AC6) the <p-table> mounts and its value source (teams$) carries the list', async () => {
+    // detectChanges first so ngOnInit's seed (resetTeams + loadTeamsPage) runs
+    // and settles; pushing onto teams$ AFTER the seed is what the table renders.
+    fixture.detectChanges();
+    await fixture.whenStable();
     teams$.next([
       makeTeam({ team_id: 't-1', name: 'Alpha' }),
       makeTeam({ team_id: 't-2', name: 'Beta' }),
@@ -122,26 +171,25 @@ describe('HomeComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    const rows = fixture.nativeElement.querySelectorAll('tr[psellectablerow], tbody tr');
-    // The p-table renders its body through ng-template; rows may be produced
-    // as <tr> nodes regardless of the selector. Assert at least two rendered.
-    const allRows: NodeListOf<HTMLElement> =
-      fixture.nativeElement.querySelectorAll('tbody tr');
-    expect(allRows.length).toBeGreaterThanOrEqual(2);
-
-    const text = fixture.nativeElement.textContent as string;
-    expect(text).toContain('t-1');
-    expect(text).toContain('t-2');
-    // Silence unused local warning from dual querySelectorAll above.
-    void rows;
+    // The table mounted and its [value] source — the async-piped
+    // contextService.teams$ — holds the pushed list (the array PrimeNG
+    // virtualises; its materialised rows are not deterministically queryable in
+    // a detached Karma fixture).
+    expect(pTable()).withContext('p-table must mount').not.toBeNull();
+    const value = await firstValueFrom(component.contextService.teams$);
+    expect(value.map((t) => t.team_id)).toEqual(['t-1', 't-2']);
   });
 
-  it('(AC6, AC9) pushing a new list into teams$ triggers a re-render', async () => {
+  it('(AC6, AC9) pushing a new list into teams$ updates the table value source (re-render)', async () => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+
     teams$.next([makeTeam({ team_id: 't-1' })]);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
-    expect((fixture.nativeElement.textContent as string)).toContain('t-1');
+    let value = await firstValueFrom(component.contextService.teams$);
+    expect(value.map((t) => t.team_id)).toEqual(['t-1']);
 
     teams$.next([
       makeTeam({ team_id: 't-1' }),
@@ -150,7 +198,8 @@ describe('HomeComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
-    expect((fixture.nativeElement.textContent as string)).toContain('t-2');
+    value = await firstValueFrom(component.contextService.teams$);
+    expect(value.map((t) => t.team_id)).toEqual(['t-1', 't-2']);
   });
 
   it('(AC7) deleteTeam(id) delegates to contextService.deleteTeam and does NOT call apiService.deleteTeam directly', async () => {
@@ -159,10 +208,204 @@ describe('HomeComponent', () => {
     expect(apiSpy.deleteTeam).not.toHaveBeenCalled();
   });
 
-  it('(AC7) refreshContext() calls contextService.getTeams once without touching a local field', async () => {
+  it('(27.2 AC4) refreshContext() re-seeds via resetTeams + loadTeamsPage (no legacy getTeams)', async () => {
     await component.refreshContext();
-    expect(contextSpy.getTeams).toHaveBeenCalledTimes(1);
+    expect(contextSpy.resetTeams).toHaveBeenCalledTimes(1);
+    expect(contextSpy.loadTeamsPage).toHaveBeenCalledTimes(1);
+    expect(contextSpy.getTeams).not.toHaveBeenCalled();
     expect((component as any).context).toBeUndefined();
+  });
+
+  // ---- Story 27.2: home-page lazy virtual-scroll team table (ADR-031 §5) ----
+  //
+  // PrimeNG's lazy/virtual <p-table> fires (onLazyLoad) with a
+  // TableLazyLoadEvent; loadPage ignores event.first and fetches the next page
+  // via the held cursor. Seeding happens in ngOnInit (resetTeams +
+  // loadTeamsPage); subsequent pages append via loadTeamsPage's 27.1 contract.
+  // HTTP is fully mocked through the ContextService stub.
+
+  function lazyEvent(first = 0): TableLazyLoadEvent {
+    return { first, rows: 50 } as TableLazyLoadEvent;
+  }
+
+  it('(27.2 AC4) ngOnInit seeds the first page via resetTeams + loadTeamsPage (not legacy getTeams)', async () => {
+    teams$.next([]);
+    contextSpy.loadTeamsPage.and.callFake(async () => {
+      teams$.next([makeTeam({ team_id: 'seed-1' })]);
+    });
+
+    await component.ngOnInit();
+
+    expect(contextSpy.resetTeams).toHaveBeenCalledTimes(1);
+    expect(contextSpy.loadTeamsPage).toHaveBeenCalledTimes(1);
+    // Seed carries NO cursor (first page).
+    expect(contextSpy.loadTeamsPage.calls.mostRecent().args[0]).toBeUndefined();
+    expect(contextSpy.getTeams).not.toHaveBeenCalled();
+  });
+
+  it('(27.2 AC4) createTeam re-seeds via resetTeams + loadTeamsPage', async () => {
+    component.selectedNamespace$.next({
+      namespace: 'agent-team-v1',
+      name: 'Agent Team',
+      description: 'd',
+    });
+    contextSpy.resetTeams.calls.reset();
+    contextSpy.loadTeamsPage.calls.reset();
+
+    await component.createTeam();
+
+    expect(apiSpy.createTeam).toHaveBeenCalledOnceWith('agent-team-v1');
+    expect(contextSpy.resetTeams).toHaveBeenCalledTimes(1);
+    expect(contextSpy.loadTeamsPage).toHaveBeenCalledTimes(1);
+    expect(contextSpy.getTeams).not.toHaveBeenCalled();
+  });
+
+  it('(27.2 AC4) restoreTeam re-seeds via resetTeams + loadTeamsPage', async () => {
+    contextSpy.resetTeams.calls.reset();
+    contextSpy.loadTeamsPage.calls.reset();
+
+    await component.restoreTeam('team-A');
+
+    expect(apiSpy.restoreTeam).toHaveBeenCalledOnceWith('team-A');
+    expect(contextSpy.resetTeams).toHaveBeenCalledTimes(1);
+    expect(contextSpy.loadTeamsPage).toHaveBeenCalledTimes(1);
+    expect(contextSpy.getTeams).not.toHaveBeenCalled();
+  });
+
+  it('(27.2 AC1, AC7a) the <p-table> mounts with the virtual-scroll / lazy config bound', async () => {
+    teams$.next([
+      makeTeam({ team_id: 't-1', name: 'Alpha' }),
+      makeTeam({ team_id: 't-2', name: 'Beta' }),
+    ]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // Component exposes a concrete px row-height (template binds it to
+    // [virtualScrollItemSize]).
+    expect(component.virtualRowHeight).toBeGreaterThan(0);
+
+    // The <p-table> instance carries the virtual-scroll / lazy bindings — this
+    // is the durable contract that makes PrimeNG render the body through a
+    // virtualized scroller (whose materialised rows are not deterministically
+    // queryable in a detached Karma fixture).
+    const dbg = fixture.debugElement.query(
+      (de) => de.nativeElement?.tagName?.toLowerCase() === 'p-table',
+    );
+    expect(dbg).withContext('p-table must mount').not.toBeNull();
+    const table = dbg.componentInstance as {
+      scrollable: boolean;
+      virtualScroll: boolean;
+      virtualScrollItemSize: number;
+      lazy: boolean;
+      rows: number;
+    };
+    expect(table.scrollable).toBeTrue();
+    expect(table.virtualScroll).toBeTrue();
+    expect(table.virtualScrollItemSize).toBe(component.virtualRowHeight);
+    expect(table.lazy).toBeTrue();
+    expect(table.rows).toBe(50);
+  });
+
+  it('(27.2 AC2, AC7b) loadPage fetches the next page with the HELD cursor and ignores event.first', async () => {
+    // Seed page 1 so the lazy handler advances past the first-load guard.
+    await component.ngOnInit();
+    contextSpy.loadTeamsPage.calls.reset();
+
+    // A held cursor + more pages remaining → next fetch uses the cursor.
+    contextSpy.nextCursor = 'cursor-2';
+    contextSpy.hasMorePages.and.returnValue(true);
+    contextSpy.loadTeamsPage.and.callFake(async () => {
+      teams$.next([...teams$.value, makeTeam({ team_id: 'page-2' })]);
+    });
+
+    // event.first is a large absolute offset — it MUST be ignored.
+    await component.loadPage(lazyEvent(999));
+
+    expect(contextSpy.loadTeamsPage).toHaveBeenCalledOnceWith('cursor-2');
+    const appended = await firstValueFrom(component.contextService.teams$);
+    expect(appended.some((t) => t.team_id === 'page-2')).toBeTrue();
+  });
+
+  it('(27.2 AC3, AC7c) a re-entrant lazy-load while a fetch is in flight triggers exactly ONE fetch', async () => {
+    await component.ngOnInit();
+    contextSpy.loadTeamsPage.calls.reset();
+
+    contextSpy.nextCursor = 'cursor-2';
+    contextSpy.hasMorePages.and.returnValue(true);
+    let resolveFetch!: () => void;
+    contextSpy.loadTeamsPage.and.returnValue(
+      new Promise<void>((r) => (resolveFetch = r)),
+    );
+
+    // First lazy-load starts the fetch (loading=true); the second fires while
+    // it is still in flight and must be a no-op.
+    const p1 = component.loadPage(lazyEvent(50));
+    const p2 = component.loadPage(lazyEvent(50));
+
+    expect(contextSpy.loadTeamsPage).toHaveBeenCalledTimes(1);
+
+    resolveFetch();
+    await Promise.all([p1, p2]);
+    expect(contextSpy.loadTeamsPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('(27.2 AC3, AC7c) two sequential pages = exactly one fetch each', async () => {
+    await component.ngOnInit();
+    contextSpy.loadTeamsPage.calls.reset();
+    contextSpy.hasMorePages.and.returnValue(true);
+
+    contextSpy.nextCursor = 'cursor-2';
+    await component.loadPage(lazyEvent(50));
+    contextSpy.nextCursor = 'cursor-3';
+    await component.loadPage(lazyEvent(100));
+
+    expect(contextSpy.loadTeamsPage).toHaveBeenCalledTimes(2);
+    expect(contextSpy.loadTeamsPage.calls.argsFor(0)).toEqual(['cursor-2']);
+    expect(contextSpy.loadTeamsPage.calls.argsFor(1)).toEqual(['cursor-3']);
+  });
+
+  it('(27.2 AC3, AC7d) on the last page (hasMorePages() false) loadPage fires NO further fetch', async () => {
+    await component.ngOnInit();
+    contextSpy.loadTeamsPage.calls.reset();
+
+    // Last page reached: cursor null, hasMorePages() false.
+    contextSpy.nextCursor = null;
+    contextSpy.hasMorePages.and.returnValue(false);
+
+    await component.loadPage(lazyEvent(150));
+
+    expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
+  });
+
+  it('(27.2 AC7e) selection still navigates from a virtualized row', () => {
+    component.onRowSelect({ data: { team_id: 'virt-row-1' } });
+    expect(routerSpy.navigate).toHaveBeenCalledWith(['/process', 'virt-row-1']);
+  });
+
+  it('(27.2 AC6, AC7e) status / action / description templates operate on a virtualized row', async () => {
+    const stopped = makeTeam({ team_id: 'virt-row-1', status: 'stopped' });
+    teams$.next([stopped]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // Status tag: the row data the virtualized body template renders reports
+    // stopped, so the template's `*ngIf="!isRunning(ctx)"` branch shows
+    // "Stopped" (the row text itself is not deterministically queryable in the
+    // virtual scroller — assert the template predicate that drives it).
+    expect(component.isRunning(stopped)).toBeFalse();
+
+    // Action button: restore delegates to apiService (stopped → restore path).
+    await component.restoreTeam('virt-row-1');
+    expect(apiSpy.restoreTeam).toHaveBeenCalledOnceWith('virt-row-1');
+
+    // Inline description edit: start → draft seeded; save → optimistic update.
+    component.startEditDescription('virt-row-1', 'hello');
+    expect(component.editingDescriptionFor).toBe('virt-row-1');
+    expect(component.descriptionDrafts.get('virt-row-1')).toBe('hello');
+    await component.saveDescription('virt-row-1');
+    expect(component.editingDescriptionFor).toBeNull();
   });
 
   it('(AC4 10.4) HomeComponent.createTeamAndNavigate delegates to contextService and has no reload compensation', async () => {
