@@ -76,21 +76,33 @@
     <br />
     <br />
 
+    <!--
+      Classic numbered paginator (Epic 28, ADR-032 §Decision 3). [lazy] +
+      (onLazyLoad) drive a server-paged fetch (250/page); [totalRecords] from
+      the 28.1 totalCount feeds the "X–Y of N" report. The client cross-page
+      sort (former [sortField]/[sortOrder] + pSortableColumn/p-sortIcon) is
+      removed — the server returns each page already ordered created_at desc.
+      No [scrollable]/[virtualScroll]/@angular/cdk (classic, not virtual).
+    -->
     <p-table
       [value]="(contextService.teams$ | async) || []"
       selectionMode="single"
       (onRowSelect)="onRowSelect($event)"
       [tableStyle]="{ 'min-width': '50rem' }"
-      [sortField]="'created_at'"
-      [sortOrder]="-1"
+      [lazy]="true"
+      (onLazyLoad)="loadPage($event)"
+      [paginator]="true"
+      [rows]="rows"
+      [first]="first"
+      [totalRecords]="contextService.totalCount"
+      [showCurrentPageReport]="true"
+      currentPageReportTemplate="{first}–{last} of {totalRecords}"
+      paginatorPosition="bottom"
     >
       <ng-template #header>
         <tr>
           <th>Name</th>
-          <th pSortableColumn="created_at">
-            Creation Date
-            <p-sortIcon field="created_at"></p-sortIcon>
-          </th>
+          <th>Creation Date</th>
           <th>Status</th>
           <th>Team ID</th>
           <th></th>
