@@ -48,6 +48,8 @@ export class ApiService {
     }
     if (limit !== undefined) {
       params.set('limit', String(limit));
+    } else {
+      params.set('limit', '200'); // default page size
     }
     const query = params.toString();
     const response: TeamListResponse = await this.fetchService.fetch({

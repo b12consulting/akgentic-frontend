@@ -284,7 +284,10 @@ describe('ApiService', () => {
       };
     }
 
-    it('GETs /teams with no query string when called with no args', async () => {
+    it('defaults to the max page size (?limit=200) when called with no args', async () => {
+      // Client page-size policy: with no explicit limit, getTeams requests the
+      // ADR-031 sanctioned maximum page (200) so fewer round-trips are needed
+      // to walk the owned set. (Server default is 50; the client elects 200.)
       fetchServiceSpy.fetch.and.returnValue(
         Promise.resolve({ teams: [teamResponse('a')], next_cursor: 'c1' })
       );
@@ -292,11 +295,11 @@ describe('ApiService', () => {
       await service.getTeams();
 
       const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
-      expect(callArgs.url).toMatch(/\/teams$/);
-      expect(callArgs.url).not.toContain('?');
+      expect(callArgs.url).toMatch(/\/teams\?limit=200$/);
+      expect(callArgs.url).not.toContain('cursor');
     });
 
-    it('appends ?cursor=<token> when only a cursor is given', async () => {
+    it('appends ?cursor=<token>&limit=200 when only a cursor is given (default page size applied)', async () => {
       fetchServiceSpy.fetch.and.returnValue(
         Promise.resolve({ teams: [], next_cursor: null })
       );
@@ -304,8 +307,7 @@ describe('ApiService', () => {
       await service.getTeams('tok123');
 
       const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
-      expect(callArgs.url).toMatch(/\/teams\?cursor=tok123$/);
-      expect(callArgs.url).not.toContain('limit');
+      expect(callArgs.url).toMatch(/\/teams\?cursor=tok123&limit=200$/);
     });
 
     it('appends ?limit=<n> when only a limit is given', async () => {
