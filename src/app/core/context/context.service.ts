@@ -99,6 +99,25 @@ export class ContextService {
     this._nextCursor = page.next_cursor;
   }
 
+  /** Optimistically PREPEND a just-created team to `teams$` (newest-first,
+   *  matching the server `created_at DESC` order). Does NOT touch the held
+   *  cursor — the new team is the newest row, above the loaded window, so
+   *  forward pagination never re-fetches it (no duplicate). */
+  prependTeam(team: TeamContext): void {
+    this._context$.next([team, ...this._context$.value]);
+  }
+
+  /** Load-then-swap reload of page 1: fetch first, THEN replace `teams$` and
+   *  reset the held cursor in one synchronous swap — no intermediate `[]`
+   *  emission (no blank flash). Unlike the legacy `getTeams()`, this ALSO
+   *  resets `_nextCursor` so a later forward scroll pages from the fresh
+   *  page-1 boundary, not a stale held cursor. */
+  async reloadTeams(): Promise<void> {
+    const page = await this.apiService.getTeams();
+    this._context$.next(page.teams);
+    this._nextCursor = page.next_cursor;
+  }
+
   /** Reset the paginated list to a fresh first page: clear `teams$` and the
    *  held cursor (e.g. on team-switch). */
   resetTeams(): void {

@@ -11,7 +11,11 @@ import { ApiService } from '../../core/http/api.service';
 import { AuthService } from '../../core/auth/auth.service';
 import { ConfigService } from '../../core/config/config.service';
 import { ContextService } from '../../core/context/context.service';
-import { TeamContext } from '../../core/context/team.interface';
+import {
+  TeamContext,
+  TeamResponse,
+  toTeamContext,
+} from '../../core/context/team.interface';
 import { NamespacePanelComponent } from '../catalog/namespace-panel/namespace-panel.component';
 import { HomeComponent } from './home.component';
 
@@ -25,6 +29,17 @@ function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
     config_name: 'demo',
     description: null,
     ...overrides,
+  };
+}
+
+function makeTeamResponse(teamId: string, status = 'stopped'): TeamResponse {
+  return {
+    team_id: teamId,
+    name: `team-${teamId}`,
+    status,
+    user_id: 'user-1',
+    created_at: '2026-04-19T10:00:00Z',
+    updated_at: '2026-04-19T10:00:00Z',
   };
 }
 
@@ -58,9 +73,13 @@ describe('HomeComponent', () => {
       'updateTeamDescription',
     ]);
     apiSpy.getNamespaces.and.returnValue(Promise.resolve([]));
-    apiSpy.createTeam.and.returnValue(Promise.resolve({} as any));
+    apiSpy.createTeam.and.returnValue(
+      Promise.resolve(makeTeamResponse('created-1')),
+    );
     apiSpy.deleteTeam.and.returnValue(Promise.resolve());
-    apiSpy.restoreTeam.and.returnValue(Promise.resolve({} as any));
+    apiSpy.restoreTeam.and.returnValue(
+      Promise.resolve(makeTeamResponse('restored-1')),
+    );
     apiSpy.stopTeam.and.returnValue(Promise.resolve());
     apiSpy.updateTeamDescription.and.returnValue(Promise.resolve());
 
@@ -68,10 +87,13 @@ describe('HomeComponent', () => {
       'ContextService',
       [
         'getTeams',
+        'getCurrentTeam',
         'deleteTeam',
         'createTeamAndNavigate',
         'stopTeamAndAwait',
         'loadTeamsPage',
+        'prependTeam',
+        'reloadTeams',
         'resetTeams',
         'hasMorePages',
       ]
@@ -81,9 +103,20 @@ describe('HomeComponent', () => {
     };
     contextSpy.teams$ = teams$;
     contextSpy.getTeams.and.callFake(async () => teams$.value);
+    contextSpy.getCurrentTeam.and.returnValue(Promise.resolve(null));
     contextSpy.deleteTeam.and.returnValue(Promise.resolve());
     contextSpy.createTeamAndNavigate.and.returnValue(Promise.resolve());
     contextSpy.stopTeamAndAwait.and.returnValue(Promise.resolve());
+
+    // 27.3 optimistic-write stubs. prependTeam mirrors the real PREPEND so the
+    // TOP-of-list assertion is observable; reloadTeams mirrors the load-then-swap
+    // (one emission, no [] first) so the "never emits []" assertion holds.
+    contextSpy.prependTeam.and.callFake((team: TeamContext) => {
+      teams$.next([team, ...teams$.value]);
+    });
+    contextSpy.reloadTeams.and.callFake(async () => {
+      teams$.next([...teams$.value]);
+    });
 
     // 27.1 data-layer stub. `nextCursor` is a settable property here (a getter
     // on the real service) so tests can drive the last-page case. Default
@@ -208,12 +241,25 @@ describe('HomeComponent', () => {
     expect(apiSpy.deleteTeam).not.toHaveBeenCalled();
   });
 
-  it('(27.2 AC4) refreshContext() re-seeds via resetTeams + loadTeamsPage (no legacy getTeams)', async () => {
+  it('(27.3 AC8d) refreshContext() reloads via load-then-swap and NEVER emits [] mid-refresh', async () => {
+    // Seed a live list, then subscribe BEFORE refreshing so every emission
+    // across the reload is recorded.
+    teams$.next([makeTeam({ team_id: 'a' }), makeTeam({ team_id: 'b' })]);
+    const seen: TeamContext[][] = [];
+    const sub = component.contextService.teams$.subscribe((v) => seen.push(v));
+
+    // Load-then-swap: the swap replaces the list in one emission (no [] first).
+    contextSpy.reloadTeams.and.callFake(async () => {
+      teams$.next([makeTeam({ team_id: 'a' }), makeTeam({ team_id: 'c' })]);
+    });
+
     await component.refreshContext();
-    expect(contextSpy.resetTeams).toHaveBeenCalledTimes(1);
-    expect(contextSpy.loadTeamsPage).toHaveBeenCalledTimes(1);
-    expect(contextSpy.getTeams).not.toHaveBeenCalled();
-    expect((component as any).context).toBeUndefined();
+
+    expect(contextSpy.reloadTeams).toHaveBeenCalledTimes(1);
+    expect(contextSpy.resetTeams).not.toHaveBeenCalled();
+    // No emission was an empty array during the reload (no blank flash).
+    expect(seen.some((e) => e.length === 0)).toBeFalse();
+    sub.unsubscribe();
   });
 
   // ---- Story 27.2: home-page lazy virtual-scroll team table (ADR-031 §5) ----
@@ -253,33 +299,85 @@ describe('HomeComponent', () => {
     expect(contextSpy.getTeams).not.toHaveBeenCalled();
   });
 
-  it('(27.2 AC4) createTeam re-seeds via resetTeams + loadTeamsPage', async () => {
+  it('(27.3 AC8a) createTeam prepends the created team — no reset/reload, no refetch', async () => {
     component.selectedNamespace$.next({
       namespace: 'agent-team-v1',
       name: 'Agent Team',
       description: 'd',
     });
+    const response = makeTeamResponse('new-1');
+    apiSpy.createTeam.and.returnValue(Promise.resolve(response));
     contextSpy.resetTeams.calls.reset();
     contextSpy.loadTeamsPage.calls.reset();
+    contextSpy.getTeams.calls.reset();
 
     await component.createTeam();
 
     expect(apiSpy.createTeam).toHaveBeenCalledOnceWith('agent-team-v1');
-    expect(contextSpy.resetTeams).toHaveBeenCalledTimes(1);
-    expect(contextSpy.loadTeamsPage).toHaveBeenCalledTimes(1);
-    expect(contextSpy.getTeams).not.toHaveBeenCalled();
+    // Prepend with the mapped created team; NO reset/reload path.
+    expect(contextSpy.prependTeam).toHaveBeenCalledOnceWith(
+      toTeamContext(response),
+    );
+    expect(contextSpy.resetTeams).not.toHaveBeenCalled();
+    expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
+    expect(contextSpy.reloadTeams).not.toHaveBeenCalled();
   });
 
-  it('(27.2 AC4) restoreTeam re-seeds via resetTeams + loadTeamsPage', async () => {
+  it('(27.3 AC8a) created team lands at the TOP (index 0) of teams$', async () => {
+    teams$.next([makeTeam({ team_id: 'existing' })]);
+    component.selectedNamespace$.next({
+      namespace: 'agent-team-v1',
+      name: 'Agent Team',
+      description: 'd',
+    });
+    apiSpy.createTeam.and.returnValue(Promise.resolve(makeTeamResponse('new-1')));
+
+    await component.createTeam();
+
+    const list = await firstValueFrom(component.contextService.teams$);
+    expect(list[0].team_id).toBe('new-1');
+    expect(list.map((t) => t.team_id)).toEqual(['new-1', 'existing']);
+  });
+
+  it('(27.3 AC8b) createTeam does NOT refetch (no getTeams / loadTeamsPage)', async () => {
+    component.selectedNamespace$.next({
+      namespace: 'agent-team-v1',
+      name: 'Agent Team',
+      description: 'd',
+    });
+    contextSpy.getTeams.calls.reset();
+    contextSpy.loadTeamsPage.calls.reset();
+
+    await component.createTeam();
+
+    expect(contextSpy.getTeams).not.toHaveBeenCalled();
+    expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
+  });
+
+  it('(27.3 AC8c) restoreTeam upserts in place — no reset/reload, list length unchanged', async () => {
+    const running = makeTeam({ team_id: 'team-A', status: 'running' });
+    teams$.next([running, makeTeam({ team_id: 'team-B' })]);
+    // The in-place upsert path (getCurrentTeam) flips the row in teams$.
+    contextSpy.getCurrentTeam.and.callFake(async () => {
+      const stopped = makeTeam({ team_id: 'team-A', status: 'stopped' });
+      teams$.next(teams$.value.map((t) => (t.team_id === 'team-A' ? stopped : t)));
+      return stopped;
+    });
     contextSpy.resetTeams.calls.reset();
     contextSpy.loadTeamsPage.calls.reset();
+    contextSpy.getTeams.calls.reset();
 
     await component.restoreTeam('team-A');
 
     expect(apiSpy.restoreTeam).toHaveBeenCalledOnceWith('team-A');
-    expect(contextSpy.resetTeams).toHaveBeenCalledTimes(1);
-    expect(contextSpy.loadTeamsPage).toHaveBeenCalledTimes(1);
-    expect(contextSpy.getTeams).not.toHaveBeenCalled();
+    expect(contextSpy.getCurrentTeam).toHaveBeenCalledOnceWith('team-A', false);
+    expect(contextSpy.resetTeams).not.toHaveBeenCalled();
+    expect(contextSpy.reloadTeams).not.toHaveBeenCalled();
+    expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
+
+    const list = await firstValueFrom(component.contextService.teams$);
+    expect(list.length).toBe(2); // no blank, no duplicate
+    expect(list.find((t) => t.team_id === 'team-A')!.status).toBe('stopped');
   });
 
   it('(27.2 AC1, AC7a) the <p-table> mounts with the virtual-scroll / lazy config bound', async () => {

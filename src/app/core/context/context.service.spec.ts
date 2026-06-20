@@ -1044,4 +1044,94 @@ describe('ContextService', () => {
       'c',
     ]);
   });
+
+  // =======================================================================
+  // Story 27.3 — prependTeam (optimistic create) + reloadTeams (load-then-swap)
+  // =======================================================================
+
+  // --- AC8(f) prependTeam --------------------------------------------------
+
+  it('(27.3 AC8f) prependTeam puts the team at index 0 of teams$ (newest-first)', async () => {
+    const t1 = makeTeam('a');
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage([t1])));
+    await service.getTeams();
+
+    const t2 = makeTeam('b');
+    service.prependTeam(t2);
+
+    const next = await firstValueFrom(service.teams$);
+    expect(next.map((t) => t.team_id)).toEqual(['b', 'a']);
+    expect(next[0]).toBe(t2);
+  });
+
+  it('(27.3 AC8f) prependTeam leaves the held cursor untouched', async () => {
+    apiSpy.getTeams.and.returnValue(
+      Promise.resolve(makeTeamPage([makeTeam('a')], 'held-cursor'))
+    );
+    await service.loadTeamsPage();
+    expect(service.nextCursor).toBe('held-cursor');
+
+    service.prependTeam(makeTeam('b'));
+
+    expect(service.nextCursor).toBe('held-cursor');
+    expect(service.hasMorePages()).toBe(true);
+  });
+
+  // --- AC8(e) reloadTeams --------------------------------------------------
+
+  it('(27.3 AC8e) reloadTeams replaces teams$ in ONE emission with no [] first', async () => {
+    const seed = [makeTeam('old')];
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage(seed)));
+    await service.getTeams();
+
+    const page = [makeTeam('a'), makeTeam('b')];
+    apiSpy.getTeams.and.returnValue(Promise.resolve(makeTeamPage(page, 'c-next')));
+
+    const emissions: TeamContext[][] = [];
+    const sub = service.teams$.subscribe((v) => emissions.push(v));
+    // First (replayed) emission is the seeded list; record from here.
+    const baseline = emissions.length;
+
+    await service.reloadTeams();
+
+    // Exactly one new emission, and it is the fetched page (no [] in between).
+    const after = emissions.slice(baseline);
+    expect(after.length).toBe(1);
+    expect(after.some((e) => e.length === 0)).toBeFalse();
+    expect(after[after.length - 1].map((t) => t.team_id)).toEqual(['a', 'b']);
+
+    sub.unsubscribe();
+  });
+
+  it('(27.3 AC8e) reloadTeams sets nextCursor to the fetched page next_cursor', async () => {
+    apiSpy.getTeams.and.returnValue(
+      Promise.resolve(makeTeamPage([makeTeam('a')], 'fresh-cursor'))
+    );
+
+    await service.reloadTeams();
+
+    expect(service.nextCursor).toBe('fresh-cursor');
+    expect(service.hasMorePages()).toBe(true);
+  });
+
+  it('(27.3 AC8e) reloadTeams resets a stale held cursor (null page → no more pages)', async () => {
+    // Seed a held cursor first.
+    apiSpy.getTeams.and.returnValue(
+      Promise.resolve(makeTeamPage([makeTeam('a')], 'stale-cursor'))
+    );
+    await service.loadTeamsPage();
+    expect(service.nextCursor).toBe('stale-cursor');
+
+    // Reload returns a last page (null cursor) — the held cursor must reset.
+    apiSpy.getTeams.and.returnValue(
+      Promise.resolve(makeTeamPage([makeTeam('z')], null))
+    );
+    await service.reloadTeams();
+
+    expect(service.nextCursor).toBeNull();
+    expect(service.hasMorePages()).toBe(false);
+    expect((await firstValueFrom(service.teams$)).map((t) => t.team_id)).toEqual([
+      'z',
+    ]);
+  });
 });

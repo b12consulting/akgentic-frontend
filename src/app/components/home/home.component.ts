@@ -13,7 +13,7 @@ import { BehaviorSubject, firstValueFrom, Observable } from 'rxjs';
 import { map, take } from 'rxjs/operators';
 
 import { ApiService } from '../../core/http/api.service';
-import { TeamContext, isRunning } from '../../core/context/team.interface';
+import { TeamContext, isRunning, toTeamContext } from '../../core/context/team.interface';
 import { NamespaceSummary } from '../../protocol/catalog.interface';
 
 import { CommonModule } from '@angular/common';
@@ -210,8 +210,10 @@ export class HomeComponent {
         console.warn('No namespace selected');
         return;
       }
-      await this.apiService.createTeam(selected.namespace);
-      await this.seedTeams();
+      // Optimistic prepend: the created team is the newest row (server orders
+      // created_at DESC) → put it at the TOP without a reset/reload (no flash).
+      const response = await this.apiService.createTeam(selected.namespace);
+      this.contextService.prependTeam(toTeamContext(response));
     } catch (error) {
       console.error('Failed to create team:', error);
     } finally {
@@ -236,7 +238,9 @@ export class HomeComponent {
     this.restoringTeams.add(teamId);
     try {
       await this.apiService.restoreTeam(teamId);
-      await this.seedTeams();
+      // In-place upsert: refresh only the restored row so its status flips on
+      // the existing row, no list-wide reset/reload (no flash).
+      await this.contextService.getCurrentTeam(teamId, false);
     } finally {
       this.restoringTeams.delete(teamId);
     }
@@ -264,7 +268,9 @@ export class HomeComponent {
   async refreshContext() {
     this.isRefreshing = true;
     try {
-      await this.seedTeams();
+      // Load-then-swap: reloadTeams fetches page 1 FIRST, then replaces the
+      // list in one shot (no intermediate [] emission → no flash).
+      await this.contextService.reloadTeams();
     } finally {
       this.isRefreshing = false;
     }
