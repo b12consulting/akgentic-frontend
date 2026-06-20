@@ -23,11 +23,13 @@ import {
 } from './per-agent-store';
 import {
   AgentStateValue,
+  AgentTokenUsage,
   commandsSpec,
   contextSpec,
   stateSpec,
   systemPromptSpec,
   SystemPromptValue,
+  tokenUsageSpec,
 } from './per-agent-specs';
 import { MessageService } from 'primeng/api';
 
@@ -177,6 +179,17 @@ export class IngestionService {
    */
   readonly systemPrompt: PerAgentStore<SystemPromptValue> =
     this.registry.register<SystemPromptValue>(systemPromptSpec);
+
+  /**
+   * Epic 26 (ADR-022 §Decision 2): per-agent token-usage derived from
+   * `LlmUsageEvent` riding the `EventMessage` passthrough. Default key
+   * `sender.agent_id` (the agent that ran the model). Folded by the same
+   * component-scoped registry as `state` / `context` / `commands` /
+   * `systemPrompt` — replay + reset for free. Read via `tokenUsage.forAgent(id)`
+   * (per-agent) and `tokenUsage.all$` (the `TokenUsageSelector.teamTotals$` sum).
+   */
+  readonly tokenUsage: PerAgentStore<AgentTokenUsage> =
+    this.registry.register<AgentTokenUsage>(tokenUsageSpec);
 
   processId: string = '';
 
