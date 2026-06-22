@@ -210,6 +210,13 @@ export class ApiService {
    * can key the `state` store directly with no name→UUID resolution.
    */
   async getAgentStates(teamId: string): Promise<AgentStateResponse[]> {
+    // Per-agent state snapshots are a v2 feature; the v1 (enterprise) tier has
+    // no `GET /teams/{id}/agent-states` route. Skip the call on v1 — hitting it
+    // would 404 (error toast + thrown HttpError) and break process init. The
+    // backstory head-block degrades gracefully with no seed.
+    if (this.config.catalogVersion === 'v1') {
+      return [];
+    }
     const response: AgentStateListResponse = await this.fetchService.fetch({
       url: `${this.apiUrl}/teams/${teamId}/agent-states`,
     });

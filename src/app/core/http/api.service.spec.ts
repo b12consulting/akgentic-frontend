@@ -443,4 +443,11 @@ describe('ApiService — catalog v1 mode (enterprise, no namespaces)', () => {
     const body = JSON.parse(callArgs.options?.body as string);
     expect(body).toEqual({ catalog_entry_id: 'agent-team' });
   });
+
+  it('getAgentStates returns [] without calling the endpoint (no agent-states route on v1)', async () => {
+    const result = await service.getAgentStates('team-1');
+
+    expect(result).toEqual([]);
+    expect(fetchServiceSpy.fetch).not.toHaveBeenCalled();
+  });
 });
