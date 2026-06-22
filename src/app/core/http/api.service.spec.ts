@@ -19,6 +19,13 @@ describe('ApiService', () => {
         { provide: FetchService, useValue: fetchServiceSpy },
         { provide: AuthService, useValue: {} },
         { provide: Router, useValue: {} },
+        // Pin catalog v2 explicitly so the namespace/createTeam contract tests
+        // below are deterministic regardless of the build-time environment's
+        // catalogVersion (the v1 path is covered in its own describe).
+        {
+          provide: ConfigService,
+          useValue: { api: 'http://api.test', catalogVersion: 'v2' },
+        },
       ],
     });
 
