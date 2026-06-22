@@ -57,38 +57,51 @@ export class AuthService {
    *
    * Drives `GET /auth/login/apikey?apikey=<key>` with `credentials: 'include'`
    * so the backend's `Set-Cookie` session response is stored by the browser.
-   * The same endpoint contract is exposed by both the Department and Enterprise
-   * tiers, so this single code path covers both — no tier-specific branching.
-   *
    * The API key is sent once as a query parameter and is NEVER persisted in the
    * browser; the session cookie set by the backend is the sole post-login
    * credential, exactly as on the OAuth path.
    *
-   * On an HTTP `2xx` response the backend returns a `200` JSON body
-   * (`{"success": true, "user": {...}}`) — no redirect. The JSON body itself
-   * is the success signal: its `user` is used to refresh `currentUserSubject`
-   * and the observable completes with that user. On a non-OK response (e.g.
-   * HTTP 401 for an invalid, unknown, or expired key) the observable errors so
-   * the caller can surface the message.
+   * ------------------------------------------------------------------------
+   * TEMPORARY WORKAROUND — REVERT once akgentic-infra-enterprise Story 10.10 lands.
+   * ------------------------------------------------------------------------
+   * The Department/Community tiers return a `200` JSON body
+   * (`{"success": true, "user": {...}}`) here. The Enterprise tier still returns
+   * a `302` redirect (byte-identical to the Department bug fixed in Department
+   * Story 2.13). A credentialed `fetch` transparently follows that 302
+   * cross-origin into the SPA's HTML, so `await r.json()` on the login response
+   * throws and login *appears* to fail even though the session cookie was set.
+   *
+   * Until Enterprise returns `200` JSON (akgentic-infra-enterprise Story 10.10),
+   * do NOT read the login response body: `redirect: 'manual'` avoids following the
+   * 302 into HTML, then confirm the session via `GET /auth/me` (the source of
+   * truth — same call `checkAuth()` uses). This works against BOTH contracts.
+   *
+   * REVERT when Story 10.10 ships: restore the single-call body-parse path —
+   *     const r = await fetch(url, { credentials: 'include' });
+   *     if (!r.ok) throw new Error('Invalid API key');
+   *     const user = (await r.json())?.user ?? ANONYMOUS_USER;
+   * If `redirect: 'manual'` ever fails to persist the cookie on some browser,
+   * drop it — the default `redirect: 'follow'` is proven to set the cookie.
    */
   loginWithApiKey(apiKey: string): Observable<any> {
     const url = `${this.config.api}/auth/login/apikey?apikey=${encodeURIComponent(apiKey)}`;
-    const options: RequestInit = { credentials: 'include' };
     return from(
-      fetch(url, options).then(async (r) => {
-        // A 401 (invalid/unknown/expired key) is not ok — error the observable.
-        if (!r.ok) {
-          throw new Error('Invalid API key');
-        }
-        // Success: the backend binds the session and returns a 200 JSON body.
-        const body = await r.json();
-        const user = body?.user ?? ANONYMOUS_USER;
-        if (user && !user.name) {
-          user.name = user.email || user.user_id || 'User';
-        }
-        this.currentUserSubject.next(user);
-        return user;
-      })
+      // The login call binds the session cookie under either contract; we ignore
+      // its body and let /auth/me decide whether the key was valid.
+      fetch(url, { credentials: 'include', redirect: 'manual' })
+        .then(() => fetch(`${this.config.api}/auth/me`, { credentials: 'include' }))
+        .then(async (r) => {
+          // A 401 from /auth/me (no session bound) means the key was rejected.
+          if (!r.ok) {
+            throw new Error('Invalid API key');
+          }
+          const user = await r.json();
+          if (user && !user.name) {
+            user.name = user.email || user.user_id || 'User';
+          }
+          this.currentUserSubject.next(user);
+          return user;
+        })
     );
   }
 

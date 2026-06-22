@@ -7,10 +7,14 @@ import { ConfigService } from '../config/config.service';
  * Specs for {@link AuthService.loginWithApiKey} (Stories 1.8, 1.9).
  *
  * The network boundary is the global `fetch`, which is stubbed via a Jasmine
- * spy — no real server is contacted. The backend returns a `200` JSON body
- * (`{"success": true, "user": {...}}`) on success; the body itself is the
- * success signal — no redirect is followed and no `/auth/me` round-trip is
- * issued.
+ * spy — no real server is contacted.
+ *
+ * REVERT with auth.service.ts once akgentic-infra-enterprise Story 10.10 lands:
+ * while Enterprise still answers /auth/login/apikey with a 302, login ignores the
+ * login-call body and confirms the session via a second /auth/me request — so the
+ * success path issues TWO fetches and the resolved user comes from /auth/me. When
+ * 10.10 ships (Enterprise returns 200 JSON), restore the single-call body-parse
+ * specs: one fetch, user read from the login body, no /auth/me round-trip.
  */
 describe('AuthService', () => {
   let service: AuthService;
@@ -42,11 +46,13 @@ describe('AuthService', () => {
     fetchSpy = spyOn(window, 'fetch');
   });
 
+  // REVERT with auth.service.ts (Story 10.10): success path is a two-step flow
+  // today — apikey-login call (302/200, body ignored) then /auth/me confirm.
   describe('loginWithApiKey — success path (AC #2, #4, #5)', () => {
     it('calls /auth/login/apikey with the key URL-encoded and credentials: include', async () => {
-      // One call only — the 200 JSON body is the success signal, no /auth/me.
-      fetchSpy.and.returnValue(
-        Promise.resolve(makeResponse(true, { success: true, user: { user_id: 'u1', name: 'Op' } })),
+      fetchSpy.and.returnValues(
+        Promise.resolve(makeResponse(true)), // login: cookie set, body ignored
+        Promise.resolve(makeResponse(true, { user_id: 'u1', name: 'Op' })), // /auth/me
       );
 
       await firstValueFrom(service.loginWithApiKey('secret key/+&'));
@@ -58,16 +64,18 @@ describe('AuthService', () => {
       expect((loginCall[1] as RequestInit).credentials).toBe('include');
     });
 
-    it('reads the 200 JSON body so currentUser$ reflects the response user', async () => {
+    it('confirms via /auth/me so currentUser$ reflects the resolved user', async () => {
       const resolvedUser = { user_id: 'u1', email: 'op@test', name: 'Operator' };
-      fetchSpy.and.returnValue(
-        Promise.resolve(makeResponse(true, { success: true, user: resolvedUser })),
+      fetchSpy.and.returnValues(
+        Promise.resolve(makeResponse(true)), // login: body ignored
+        Promise.resolve(makeResponse(true, resolvedUser)), // /auth/me: source of truth
       );
 
       const result = await firstValueFrom(service.loginWithApiKey('valid-key'));
 
-      // Single request — no followed redirect, no /auth/me round-trip.
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      // Two requests: the apikey-login call, then the /auth/me confirm.
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+      expect(fetchSpy.calls.argsFor(1)[0]).toBe(`${API}/auth/me`);
       expect(result).toEqual(resolvedUser);
       expect(service.currentUserValue).toEqual(resolvedUser);
     });
@@ -89,8 +97,9 @@ describe('AuthService', () => {
         firstValueFrom(service.loginWithApiKey('bad-key')),
       ).toBeRejected();
 
-      // No checkAuth() follow-up — only the failed login call was issued.
-      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      // REVERT (Story 10.10): two calls today — the login call then the /auth/me
+      // confirm, which returns 401 (no session) and errors the observable.
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
       expect(service.currentUserValue.user_id).toBe('anonymous');
     });
   });
