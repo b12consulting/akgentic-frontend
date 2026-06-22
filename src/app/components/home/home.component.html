@@ -34,7 +34,7 @@
       through it.
     -->
     <span
-      *ngIf="(isAdmin$ | async)"
+      *ngIf="isV2 && (isAdmin$ | async)"
       class="show-all-namespaces"
     >
       <p-toggleswitch
@@ -57,8 +57,10 @@
       class="extra-small-button"
     ></button>
     &nbsp;
-    <!-- Edit Configuration button; opens the Monaco panel in a dialog. -->
+    <!-- Edit Configuration button; opens the Monaco panel in a dialog.
+         v2-only: catalog v1 (enterprise) has no namespaces to edit. -->
     <button
+      *ngIf="isV2"
       pButton
       size="small"
       type="button"

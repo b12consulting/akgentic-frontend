@@ -15,6 +15,7 @@ import {
   toTeamContext,
 } from '../context/team.interface';
 import {
+  CatalogTeamEntry,
   Entry,
   NamespaceSummary,
   NamespaceValidationReport,
@@ -71,12 +72,27 @@ export class ApiService {
     return toTeamContext(response);
   }
 
-  async createTeam(namespace: string): Promise<TeamResponse> {
+  /**
+   * Create a team from the selected catalog "team type".
+   *
+   * The request shape differs by catalog generation:
+   *  - **v2** (namespaced, department): `{ catalog_namespace, params: {} }`.
+   *  - **v1** (flat, enterprise): `{ catalog_entry_id }`.
+   *
+   * `teamType` is the selected dropdown id either way — `getNamespaces()` maps
+   * a v1 catalog entry id into the `namespace` slot so the home dropdown +
+   * this call stay generation-agnostic at the call site.
+   */
+  async createTeam(teamType: string): Promise<TeamResponse> {
+    const body =
+      this.config.catalogVersion === 'v1'
+        ? { catalog_entry_id: teamType }
+        : { catalog_namespace: teamType, params: {} };
     return await this.fetchService.fetch({
       url: `${this.apiUrl}/teams`,
       options: {
         method: 'POST',
-        body: JSON.stringify({ catalog_namespace: namespace, params: {} }),
+        body: JSON.stringify(body),
         headers: { 'Content-Type': 'application/json' },
       },
     });
@@ -217,10 +233,34 @@ export class ApiService {
    * infra unscoping of admin reads is the boundary.
    */
   async getNamespaces(opts?: { all?: boolean }): Promise<NamespaceSummary[]> {
+    // Catalog v1 (enterprise) has no namespaces — feed the home "team type"
+    // dropdown from catalog team ENTRIES instead, mapping each entry id into
+    // the `namespace` slot so the dropdown + createTeam path stay unchanged
+    // (createTeam sends it as `catalog_entry_id` in v1 mode). The `all` flag is
+    // a v2-only admin lever and does not apply here.
+    if (this.config.catalogVersion === 'v1') {
+      const entries = await this.getCatalogTeams();
+      return entries.map((e) => ({
+        namespace: e.id,
+        name: e.name,
+        description: e.description ?? '',
+      }));
+    }
     const url = opts?.all
       ? `${this.apiUrl}/admin/catalog/namespaces?all=true`
       : `${this.apiUrl}/admin/catalog/namespaces`;
     return await this.fetchService.fetch({ url });
+  }
+
+  /**
+   * List catalog v1 team entries — `GET /admin/catalog/teams` (enterprise
+   * tier). Returns the flat entry array; only `id`/`name`/`description` are
+   * typed (see {@link CatalogTeamEntry}). v1-only; v2 uses `getNamespaces`.
+   */
+  async getCatalogTeams(): Promise<CatalogTeamEntry[]> {
+    return await this.fetchService.fetch({
+      url: `${this.apiUrl}/admin/catalog/teams`,
+    });
   }
 
   /**

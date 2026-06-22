@@ -3,6 +3,7 @@ import { ApiService } from './api.service';
 import { FetchService } from './fetch.service';
 import { AuthService } from '../auth/auth.service';
 import { Router } from '@angular/router';
+import { ConfigService } from '../config/config.service';
 
 describe('ApiService', () => {
   let service: ApiService;
@@ -368,5 +369,71 @@ describe('ApiService', () => {
       const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
       expect(callArgs.url).toContain('/teams/team-1/message/@Manager');
     });
+  });
+});
+
+describe('ApiService — catalog v1 mode (enterprise, no namespaces)', () => {
+  let service: ApiService;
+  let fetchServiceSpy: jasmine.SpyObj<FetchService>;
+
+  beforeEach(() => {
+    fetchServiceSpy = jasmine.createSpyObj('FetchService', ['fetch']);
+    fetchServiceSpy.fetch.and.returnValue(Promise.resolve(undefined));
+
+    TestBed.configureTestingModule({
+      providers: [
+        ApiService,
+        { provide: FetchService, useValue: fetchServiceSpy },
+        { provide: AuthService, useValue: {} },
+        { provide: Router, useValue: {} },
+        {
+          provide: ConfigService,
+          useValue: { api: 'http://api.test', catalogVersion: 'v1' },
+        },
+      ],
+    });
+
+    service = TestBed.inject(ApiService);
+  });
+
+  it('getCatalogTeams hits GET /admin/catalog/teams and returns the array', async () => {
+    const payload = [{ id: 'agent-team', name: 'Agent Team', description: 'D' }];
+    fetchServiceSpy.fetch.and.returnValue(Promise.resolve(payload));
+
+    const result = await service.getCatalogTeams();
+
+    const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+    expect(callArgs.url).toMatch(/\/admin\/catalog\/teams$/);
+    expect(result).toEqual(payload);
+  });
+
+  it('getNamespaces maps catalog team entries into namespace summaries', async () => {
+    // v1 has no /namespaces endpoint — getNamespaces fetches the team entries
+    // and maps each entry id into the `namespace` slot.
+    fetchServiceSpy.fetch.and.returnValue(
+      Promise.resolve([
+        { id: 'agent-team', name: 'Agent Team', description: 'Default' },
+      ]),
+    );
+
+    const result = await service.getNamespaces();
+
+    const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+    expect(callArgs.url).toMatch(/\/admin\/catalog\/teams$/);
+    expect(result).toEqual([
+      { namespace: 'agent-team', name: 'Agent Team', description: 'Default' },
+    ]);
+  });
+
+  it('createTeam POSTs {catalog_entry_id} — not catalog_namespace', async () => {
+    fetchServiceSpy.fetch.and.returnValue(Promise.resolve({} as any));
+
+    await service.createTeam('agent-team');
+
+    const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+    expect(callArgs.url).toMatch(/\/teams$/);
+    expect(callArgs.options?.method).toBe('POST');
+    const body = JSON.parse(callArgs.options?.body as string);
+    expect(body).toEqual({ catalog_entry_id: 'agent-team' });
   });
 });

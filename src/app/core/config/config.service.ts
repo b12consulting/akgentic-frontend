@@ -72,4 +72,9 @@ export class ConfigService {
   get production(): boolean {
     return this.config.production;
   }
+
+  /** Catalog API generation; defaults to `v2` (namespaced) when unset. */
+  get catalogVersion(): 'v1' | 'v2' {
+    return this.config.catalogVersion ?? 'v2';
+  }
 }

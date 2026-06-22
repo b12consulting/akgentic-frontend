@@ -16,6 +16,18 @@ export interface NamespaceSummary {
 }
 
 /**
+ * Catalog v1 team entry — `GET /admin/catalog/teams` (enterprise tier, which
+ * has no namespaces). The wire object carries more (members, agent_profiles,
+ * entry_point, …); only the fields the home "team type" dropdown needs are
+ * typed here. A team is created from its `id` (sent as `catalog_entry_id`).
+ */
+export interface CatalogTeamEntry {
+  id: string;
+  name: string;
+  description: string;
+}
+
+/**
  * The five catalog entry kinds.
  *
  * Mirrors the server-side `EntryKind` literal at

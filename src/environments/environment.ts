@@ -2,14 +2,15 @@ import { AuthProvider } from '../app/core/auth/auth.types';
 
 export const environment = {
   production: true,
-  api: 'http://localhost:8000',
+  api: 'http://localhost:18000',
+  catalogVersion: 'v1' as const,
   logo: 'b12.png',
   autoRedirectContext: 'Business team',
   welcomeMessage: 'Welcome to the Akgentic Framework',
   hideHome: false,
-  hideLogin: true,
+  hideLogin: false,
   initRightPanelCollapsed: false,
   userInputEnterKeySubmit: false,
   favicon: 'favicon.png',
-  loginProviders: ['google', 'apikey'] as AuthProvider[] // Array, ordered by preference
+  loginProviders: ['apikey'] as AuthProvider[] // Array, ordered by preference
 };

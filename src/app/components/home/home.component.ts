@@ -131,6 +131,16 @@ export class HomeComponent {
   // Expose isRunning to template
   isRunning = isRunning;
 
+  /**
+   * Catalog v2 predicate. Catalog v1 (enterprise) has no namespaces, so the
+   * namespace-editor affordances ("Configuration" panel + "Show all
+   * namespaces" toggle) are hidden in v1 mode. Defaults to v2 when
+   * `catalogVersion` is unset — preserving existing behaviour.
+   */
+  get isV2(): boolean {
+    return this.config.catalogVersion !== 'v1';
+  }
+
   async ngOnInit() {
     await this.loadNamespaces();
 
