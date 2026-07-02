@@ -31,6 +31,8 @@ function makeUsageEnvelope(
   agentId: string,
   input_tokens: number,
   output_tokens: number,
+  cache_read_tokens = 0,
+  cache_write_tokens = 0,
 ): AkgenticMessage {
   return {
     id: 'usage-' + agentId + '-' + envCounter++,
@@ -48,8 +50,8 @@ function makeUsageEnvelope(
       provider_name: 'anthropic',
       input_tokens,
       output_tokens,
-      cache_read_tokens: 0,
-      cache_write_tokens: 0,
+      cache_read_tokens,
+      cache_write_tokens,
       requests: 1,
     },
   } as unknown as AkgenticMessage;
@@ -143,26 +145,36 @@ describe('TokenUsageSelector.perAgent$ (AC #8)', () => {
 // ---------------------------------------------------------------------
 
 describe('TokenUsageSelector.teamTotals$ (AC #8)', () => {
-  it('empty team yields { totalSent: 0, totalReceived: 0 }', () => {
+  it('empty team yields { totalSent: 0, totalReceived: 0, totalCacheRead: 0, totalCacheWrite: 0 }', () => {
     const { selector } = configureBed();
     let received: TeamTokenTotals | undefined;
     const sub = selector.teamTotals$.subscribe((t) => (received = t));
-    expect(received).toEqual({ totalSent: 0, totalReceived: 0 });
+    expect(received).toEqual({
+      totalSent: 0,
+      totalReceived: 0,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+    });
     sub.unsubscribe();
   });
 
-  it('emits the structural sum across all agents', () => {
+  it('emits the structural sum across all agents, including cache totals', () => {
     const { log, selector } = configureBed();
     let received: TeamTokenTotals | undefined;
     const sub = selector.teamTotals$.subscribe((t) => (received = t));
 
     log.appendAll([
-      makeUsageEnvelope('A', 100, 10),
-      makeUsageEnvelope('B', 200, 20),
-      makeUsageEnvelope('A', 50, 5),
+      makeUsageEnvelope('A', 100, 10, 20, 5),
+      makeUsageEnvelope('B', 200, 20, 40, 0),
+      makeUsageEnvelope('A', 50, 5, 0, 10),
     ]);
 
-    expect(received).toEqual({ totalSent: 350, totalReceived: 35 });
+    expect(received).toEqual({
+      totalSent: 350,
+      totalReceived: 35,
+      totalCacheRead: 60, // 20 + 40 + 0
+      totalCacheWrite: 15, // 5 + 0 + 10
+    });
     sub.unsubscribe();
   });
 
@@ -176,8 +188,18 @@ describe('TokenUsageSelector.teamTotals$ (AC #8)', () => {
 
     // initial zeros + one usage change = 2 emissions; the unrelated tick adds none
     expect(emissions.length).toBe(2);
-    expect(emissions[0]).toEqual({ totalSent: 0, totalReceived: 0 });
-    expect(emissions[1]).toEqual({ totalSent: 100, totalReceived: 10 });
+    expect(emissions[0]).toEqual({
+      totalSent: 0,
+      totalReceived: 0,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+    });
+    expect(emissions[1]).toEqual({
+      totalSent: 100,
+      totalReceived: 10,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+    });
     sub.unsubscribe();
   });
 });

@@ -45,7 +45,12 @@ describe('TreeComponent — team-total footer (Story 26-3)', () => {
   }
 
   function setup(
-    initial: TeamTokenTotals = { totalSent: 0, totalReceived: 0 },
+    initial: TeamTokenTotals = {
+      totalSent: 0,
+      totalReceived: 0,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+    },
   ): ComponentFixture<TreeComponent> {
     totals$ = new BehaviorSubject<TeamTokenTotals>(initial);
     nodes$ = new BehaviorSubject<NodeInterface[]>([]);
@@ -107,7 +112,12 @@ describe('TreeComponent — team-total footer (Story 26-3)', () => {
   }
 
   it('(a) renders the populated `Team total ↑X ↓Y` BETWEEN the tree and app-human-request', () => {
-    const fixture = setup({ totalSent: 57_000, totalReceived: 12_500 });
+    const fixture = setup({
+      totalSent: 57_000,
+      totalReceived: 12_500,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+    });
     fixture.detectChanges();
 
     // tokenCount: 57_000 → "57.0k", 12_500 → "12.5k".
@@ -138,19 +148,34 @@ describe('TreeComponent — team-total footer (Story 26-3)', () => {
   });
 
   it('(b) live update: a fresh `teamTotals$` emission re-renders the ↑/↓ sums', () => {
-    const fixture = setup({ totalSent: 1_000, totalReceived: 200 });
+    const fixture = setup({
+      totalSent: 1_000,
+      totalReceived: 200,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+    });
     fixture.detectChanges();
     expect(footerText(fixture)).toBe('Team total ↑1.0k ↓200');
 
     // A new LlmUsageEvent landed for some agent → the selector re-emits a larger
     // structural sum; the async pipe re-renders without any imperative refresh.
-    totals$.next({ totalSent: 73_400, totalReceived: 18_900 });
+    totals$.next({
+      totalSent: 73_400,
+      totalReceived: 18_900,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+    });
     fixture.detectChanges();
     expect(footerText(fixture)).toBe('Team total ↑73.4k ↓18.9k');
   });
 
   it('(c) empty team (`{0,0}`) renders the `Team total ↑0 ↓0` fallback', () => {
-    const fixture = setup({ totalSent: 0, totalReceived: 0 });
+    const fixture = setup({
+      totalSent: 0,
+      totalReceived: 0,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+    });
     fixture.detectChanges();
 
     // The zero-totals object IS the empty state — the footer is still rendered.
@@ -159,7 +184,12 @@ describe('TreeComponent — team-total footer (Story 26-3)', () => {
   });
 
   it('(d) resolves the SHARED selector instance (no self-provider) and leaves the tree behavior intact', () => {
-    const fixture = setup({ totalSent: 100, totalReceived: 50 });
+    const fixture = setup({
+      totalSent: 100,
+      totalReceived: 50,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+    });
     const component = fixture.componentInstance;
 
     // The component must NOT re-provide TokenUsageSelector — it resolves the

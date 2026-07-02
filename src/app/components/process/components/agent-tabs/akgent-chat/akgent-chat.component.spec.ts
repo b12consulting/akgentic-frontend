@@ -1061,6 +1061,10 @@ describe('AkgentChatComponent — token-usage pill (Story 26-2)', () => {
       lastModelName: 'gpt-4o',
       totalSent: 0,
       totalReceived: 0,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+      lastCacheRead: 0,
+      lastCacheWrite: 0,
       ...partial,
     };
   }

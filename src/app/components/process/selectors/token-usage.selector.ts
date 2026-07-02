@@ -4,17 +4,25 @@ import { distinctUntilChanged, map, Observable, shareReplay } from 'rxjs';
 import { AgentTokenUsage } from '../event/per-agent-specs';
 import { IngestionService } from '../event/ingestion.service';
 
-/** Headline team-wide totals (ADR-022 §Decision 2/4): Σ sent / Σ received. */
+/** Headline team-wide totals (ADR-022 §Decision 2/4, extended by ADR-024
+ *  §Decision 1): Σ sent / Σ received / Σ cache read / Σ cache write. */
 export interface TeamTokenTotals {
   totalSent: number;
   totalReceived: number;
+  totalCacheRead: number;
+  totalCacheWrite: number;
 }
 
 /** Structural equality of two totals (NFR / OnPush): the summed object is a
  *  fresh reference each frame, so the default reference comparator would never
  *  suppress no-op re-emissions. */
 function totalsEqual(a: TeamTokenTotals, b: TeamTokenTotals): boolean {
-  return a.totalSent === b.totalSent && a.totalReceived === b.totalReceived;
+  return (
+    a.totalSent === b.totalSent &&
+    a.totalReceived === b.totalReceived &&
+    a.totalCacheRead === b.totalCacheRead &&
+    a.totalCacheWrite === b.totalCacheWrite
+  );
 }
 
 /** Pure Σ over every agent's usage (ADR-022 §Decision 2): the team total is a
@@ -22,11 +30,15 @@ function totalsEqual(a: TeamTokenTotals, b: TeamTokenTotals): boolean {
 function sumTotals(all: ReadonlyMap<string, AgentTokenUsage>): TeamTokenTotals {
   let totalSent = 0;
   let totalReceived = 0;
+  let totalCacheRead = 0;
+  let totalCacheWrite = 0;
   for (const usage of all.values()) {
     totalSent += usage.totalSent;
     totalReceived += usage.totalReceived;
+    totalCacheRead += usage.totalCacheRead;
+    totalCacheWrite += usage.totalCacheWrite;
   }
-  return { totalSent, totalReceived };
+  return { totalSent, totalReceived, totalCacheRead, totalCacheWrite };
 }
 
 /**
@@ -44,7 +56,8 @@ function sumTotals(all: ReadonlyMap<string, AgentTokenUsage>): TeamTokenTotals {
  *   `shareReplay({ bufferSize: 1, refCount: true })` with lazy current-value
  *   replay, so no extra pipeline is needed here.
  * - `teamTotals$` is a PURE sum over `tokenUsage.all$` (Σ every agent's
- *   `totalSent` / `totalReceived`) — NOT a separately stored aggregate. Because
+ *   `totalSent` / `totalReceived` / `totalCacheRead` / `totalCacheWrite`) — NOT
+ *   a separately stored aggregate. Because
  *   `ProcessComponent` + its scoped registry are destroyed/recreated on every
  *   team switch, `all$` holds exactly the CURRENT team's agents, so the total is
  *   correct by construction with no team-id bookkeeping. The sum is a fresh

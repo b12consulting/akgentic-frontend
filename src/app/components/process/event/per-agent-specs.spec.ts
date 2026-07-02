@@ -259,11 +259,15 @@ describe('tokenUsageSpec reducer (Epic 26 / ADR-022 §Decision 2-4)', () => {
       }),
     );
     expect(usage(service.tokenUsage, 'A')).toEqual({
-      lastContextWindow: 12_031,
+      lastContextWindow: 12_031, // no cache on this fixture — true window == input
       lastRunId: 'run-7',
       lastModelName: 'claude-opus',
       totalSent: 12_031,
       totalReceived: 412,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+      lastCacheRead: 0,
+      lastCacheWrite: 0,
     });
   });
 
@@ -288,21 +292,105 @@ describe('tokenUsageSpec reducer (Epic 26 / ADR-022 §Decision 2-4)', () => {
       lastModelName: 'claude-haiku',
       totalSent: 1200, // 1000 + 200
       totalReceived: 150, // 100 + 50
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+      lastCacheRead: 0,
+      lastCacheWrite: 0,
     });
   });
 
-  it('AC #6 multi-agent: independent entries; A never bleeds into B', () => {
+  it('AC #3/#4 cache-hit event: true lastContextWindow = input + cacheRead + cacheWrite, cache fields seeded', () => {
+    const { log, service } = configureBed();
+    log.append(
+      makeUsageEnvelope('A', {
+        run_id: 'run-8',
+        input_tokens: 500,
+        output_tokens: 60,
+        cache_read_tokens: 4_000,
+        cache_write_tokens: 1_000,
+      }),
+    );
+    expect(usage(service.tokenUsage, 'A')).toEqual({
+      lastContextWindow: 5_500, // 500 + 4_000 + 1_000 — the TRUE prompt size
+      lastRunId: 'run-8',
+      lastModelName: 'claude-sonnet',
+      totalSent: 500,
+      totalReceived: 60,
+      totalCacheRead: 4_000,
+      totalCacheWrite: 1_000,
+      lastCacheRead: 4_000,
+      lastCacheWrite: 1_000,
+    });
+  });
+
+  it('AC #3 multi-event: sums cumulative cache totals and overwrites last-run cache with the newest event', () => {
     const { log, service } = configureBed();
     log.appendAll([
-      makeUsageEnvelope('A', { input_tokens: 100, output_tokens: 10 }),
-      makeUsageEnvelope('B', { input_tokens: 999, output_tokens: 88 }),
-      makeUsageEnvelope('A', { input_tokens: 5, output_tokens: 1 }),
+      makeUsageEnvelope('A', {
+        run_id: 'run-1',
+        input_tokens: 1_000,
+        output_tokens: 100,
+        cache_read_tokens: 200,
+        cache_write_tokens: 50,
+      }),
+      makeUsageEnvelope('A', {
+        run_id: 'run-2',
+        input_tokens: 300,
+        output_tokens: 40,
+        cache_read_tokens: 900,
+        cache_write_tokens: 0,
+      }),
+    ]);
+    expect(usage(service.tokenUsage, 'A')).toEqual({
+      lastContextWindow: 1_200, // 300 + 900 + 0 — newest event's true window
+      lastRunId: 'run-2',
+      lastModelName: 'claude-sonnet',
+      totalSent: 1_300,
+      totalReceived: 140,
+      totalCacheRead: 1_100, // 200 + 900
+      totalCacheWrite: 50, // 50 + 0
+      lastCacheRead: 900, // overwritten with the newest event
+      lastCacheWrite: 0, // overwritten with the newest event
+    });
+  });
+
+  it('AC #6 multi-agent: independent entries (including cache); A never bleeds into B', () => {
+    const { log, service } = configureBed();
+    log.appendAll([
+      makeUsageEnvelope('A', {
+        input_tokens: 100,
+        output_tokens: 10,
+        cache_read_tokens: 20,
+        cache_write_tokens: 5,
+      }),
+      makeUsageEnvelope('B', {
+        input_tokens: 999,
+        output_tokens: 88,
+        cache_read_tokens: 300,
+        cache_write_tokens: 10,
+      }),
+      makeUsageEnvelope('A', {
+        input_tokens: 5,
+        output_tokens: 1,
+        cache_read_tokens: 2,
+        cache_write_tokens: 0,
+      }),
     ]);
     expect(usage(service.tokenUsage, 'A')).toEqual(
-      jasmine.objectContaining({ totalSent: 105, totalReceived: 11 }),
+      jasmine.objectContaining({
+        totalSent: 105,
+        totalReceived: 11,
+        totalCacheRead: 22,
+        totalCacheWrite: 5,
+      }),
     );
     expect(usage(service.tokenUsage, 'B')).toEqual(
-      jasmine.objectContaining({ totalSent: 999, totalReceived: 88 }),
+      jasmine.objectContaining({
+        totalSent: 999,
+        totalReceived: 88,
+        totalCacheRead: 300,
+        totalCacheWrite: 10,
+      }),
     );
   });
 
@@ -357,6 +445,10 @@ describe('tokenUsageReduce (pure reducer)', () => {
       lastModelName: 'claude-sonnet',
       totalSent: 300,
       totalReceived: 40,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+      lastCacheRead: 0,
+      lastCacheWrite: 0,
     });
   });
 
@@ -367,6 +459,10 @@ describe('tokenUsageReduce (pure reducer)', () => {
       lastModelName: 'claude-sonnet',
       totalSent: 300,
       totalReceived: 40,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+      lastCacheRead: 0,
+      lastCacheWrite: 0,
     };
     const next = tokenUsageReduce(prev, envelope(7, 3));
     expect(next).toEqual(
@@ -385,6 +481,10 @@ describe('tokenUsageReduce (pure reducer)', () => {
       lastModelName: 'm',
       totalSent: 1,
       totalReceived: 1,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+      lastCacheRead: 0,
+      lastCacheWrite: 0,
     };
     expect(tokenUsageReduce(prev, makeUnrelatedEnvelope('x'))).toBe(prev);
   });
@@ -398,7 +498,7 @@ describe('tokenUsageReduce (pure reducer)', () => {
         __model__: 'akgentic.llm.event.LlmUsageEvent',
         run_id: 'run-x',
         model_name: 'm',
-        // input_tokens / output_tokens deliberately absent
+        // input_tokens / output_tokens / cache_read_tokens / cache_write_tokens deliberately absent
       },
     } as unknown as AkgenticMessage;
     const next = tokenUsageReduce(undefined, malformed);
@@ -407,6 +507,10 @@ describe('tokenUsageReduce (pure reducer)', () => {
         lastContextWindow: 0,
         totalSent: 0,
         totalReceived: 0,
+        totalCacheRead: 0,
+        totalCacheWrite: 0,
+        lastCacheRead: 0,
+        lastCacheWrite: 0,
       }),
     );
   });
@@ -637,9 +741,13 @@ describe('tokenUsageReduce — fold compaction/clear (Epic 29 / ADR-010 §4/§8)
     lastModelName: 'claude-opus',
     totalSent: 50_000,
     totalReceived: 12_000,
+    totalCacheRead: 15_000,
+    totalCacheWrite: 3_000,
+    lastCacheRead: 4_000,
+    lastCacheWrite: 1_000,
   };
 
-  it('AC #7 compaction sets lastContextWindow = tokens_after, leaving totals + labels untouched', () => {
+  it('AC #7 compaction sets lastContextWindow = tokens_after, leaving totals + labels + cache counters untouched', () => {
     const next = tokenUsageReduce(
       PREV,
       makeCompactionEnvelope('A', {
@@ -654,6 +762,10 @@ describe('tokenUsageReduce — fold compaction/clear (Epic 29 / ADR-010 §4/§8)
       lastModelName: 'claude-opus',
       totalSent: 50_000,
       totalReceived: 12_000,
+      totalCacheRead: 15_000,
+      totalCacheWrite: 3_000,
+      lastCacheRead: 4_000,
+      lastCacheWrite: 1_000,
     });
   });
 
@@ -665,7 +777,7 @@ describe('tokenUsageReduce — fold compaction/clear (Epic 29 / ADR-010 §4/§8)
     expect(next).toBe(PREV);
   });
 
-  it('AC #7 compaction before any usage seeds from zero (window only, totals stay 0)', () => {
+  it('AC #7 compaction before any usage seeds from zero (window only, totals + cache stay 0)', () => {
     const next = tokenUsageReduce(
       undefined,
       makeCompactionEnvelope('A', {
@@ -680,10 +792,14 @@ describe('tokenUsageReduce — fold compaction/clear (Epic 29 / ADR-010 §4/§8)
       lastModelName: '',
       totalSent: 0,
       totalReceived: 0,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+      lastCacheRead: 0,
+      lastCacheWrite: 0,
     });
   });
 
-  it('AC #8 clear resets lastContextWindow to 0, keeping totals + labels', () => {
+  it('AC #8 clear resets lastContextWindow to 0, keeping totals + labels + cache counters', () => {
     const next = tokenUsageReduce(PREV, makeClearEnvelope('A', 5));
     expect(next).toEqual({
       lastContextWindow: 0,
@@ -691,6 +807,10 @@ describe('tokenUsageReduce — fold compaction/clear (Epic 29 / ADR-010 §4/§8)
       lastModelName: 'claude-opus',
       totalSent: 50_000,
       totalReceived: 12_000,
+      totalCacheRead: 15_000,
+      totalCacheWrite: 3_000,
+      lastCacheRead: 4_000,
+      lastCacheWrite: 1_000,
     });
   });
 });
@@ -710,13 +830,17 @@ describe('tokenUsageSpec — context events via the real registry (Epic 29)', ()
         tokens_after: 6_000,
       }),
     ]);
-    // Compaction re-points the window; totals + labels unchanged (not a run).
+    // Compaction re-points the window; totals + labels + cache unchanged (not a run).
     expect(usage(service.tokenUsage, 'A')).toEqual({
       lastContextWindow: 6_000,
       lastRunId: 'r1',
       lastModelName: 'claude-sonnet',
       totalSent: 30_000,
       totalReceived: 9_000,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+      lastCacheRead: 0,
+      lastCacheWrite: 0,
     });
     // The next real usage overrides the window AND accumulates totals.
     log.append(
@@ -732,6 +856,10 @@ describe('tokenUsageSpec — context events via the real registry (Epic 29)', ()
       lastModelName: 'claude-sonnet',
       totalSent: 36_500,
       totalReceived: 9_800,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+      lastCacheRead: 0,
+      lastCacheWrite: 0,
     });
   });
 
