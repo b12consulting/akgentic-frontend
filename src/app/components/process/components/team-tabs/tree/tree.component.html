@@ -27,15 +27,50 @@
       </ng-template>
     </p-tree>
   </div>
-  <!-- Epic 26 (ADR-022 §Decision 6): team-wide token total. ↑ = sent = Σ input;
-       ↓ = received = Σ output. Always rendered (empty team → ↑0 ↓0). -->
-  <div
-    *ngIf="teamTotals$ | async as totals"
-    class="team-total-footer"
-  >
-    Team total ↑{{ totals.totalSent | tokenCount }} ↓{{
-      totals.totalReceived | tokenCount
-    }}
-  </div>
+  <!--
+    ADR-024 §Decision 3 — team-wide token-usage trigger, same interactive
+    treatment as the member-chat pill (supersedes ADR-022 §Decision 6's
+    non-interactive footer). ↑ = sent = Σ input; ↓ = received = Σ output.
+    `teamTotals$` NEVER emits `undefined` (`sumTotals` always returns a
+    zero-filled object for an empty team) — the "no data" case here is
+    ALL-ZERO totals, not a missing value, so the trigger is disabled when every
+    total is `0` rather than gated on an `undefined` branch. Toggles its OWN
+    `<p-popover>` (independent of the member-chat one) breaking down the
+    team-wide cache read/write.
+  -->
+  <ng-container *ngIf="teamTotals$ | async as totals">
+    <button
+      type="button"
+      class="team-total-footer"
+      [attr.aria-label]="
+        'Team token usage: sent ' + (totals.totalSent | number) +
+        ', received ' + (totals.totalReceived | number)
+      "
+      [disabled]="
+        totals.totalSent === 0 &&
+        totals.totalReceived === 0 &&
+        totals.totalCacheRead === 0 &&
+        totals.totalCacheWrite === 0
+      "
+      (click)="teamUsageOp.toggle($event)"
+    >
+      Team total ↑{{ totals.totalSent | tokenCount }} ↓{{
+        totals.totalReceived | tokenCount
+      }}
+      <span *ngIf="totals.totalCacheRead + totals.totalCacheWrite > 0">⚡</span>
+    </button>
+    <p-popover #teamUsageOp>
+      <div class="usage-popover">
+        <div class="usage-popover-row">
+          <span class="usage-popover-label">Cache read</span>
+          <span>{{ totals.totalCacheRead | number }}</span>
+        </div>
+        <div class="usage-popover-row">
+          <span class="usage-popover-label">Cache write</span>
+          <span>{{ totals.totalCacheWrite | number }}</span>
+        </div>
+      </div>
+    </p-popover>
+  </ng-container>
   <app-human-request [nodes]="nodes"></app-human-request>
 </div>

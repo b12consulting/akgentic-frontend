@@ -17,6 +17,7 @@ import { ButtonModule } from 'primeng/button';
 import { CardModule } from 'primeng/card';
 import { FieldsetModule } from 'primeng/fieldset';
 import { FloatLabelModule } from 'primeng/floatlabel';
+import { PopoverModule } from 'primeng/popover';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import { TableModule } from 'primeng/table';
 import { TextareaModule } from 'primeng/textarea';
@@ -61,6 +62,7 @@ import { CopyButtonComponent } from '../../../../../shared/components/copy-butto
     TextareaModule,
     FloatLabelModule,
     ButtonModule,
+    PopoverModule,
     ProgressSpinnerModule,
     MentionModule,
     CapitalizePipe,

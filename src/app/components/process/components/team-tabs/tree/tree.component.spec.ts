@@ -111,7 +111,7 @@ describe('TreeComponent — team-total footer (Story 26-3)', () => {
     return (footer(fixture)?.textContent ?? '').replace(/\s+/g, ' ').trim();
   }
 
-  it('(a) renders the populated `Team total ↑X ↓Y` BETWEEN the tree and app-human-request', () => {
+  it('(a) renders the populated `Team total ↑X ↓Y` as an interactive trigger, BETWEEN the tree and app-human-request', () => {
     const fixture = setup({
       totalSent: 57_000,
       totalReceived: 12_500,
@@ -123,9 +123,11 @@ describe('TreeComponent — team-total footer (Story 26-3)', () => {
     // tokenCount: 57_000 → "57.0k", 12_500 → "12.5k".
     expect(footerText(fixture)).toBe('Team total ↑57.0k ↓12.5k');
 
-    // Non-interactive: a <div>, not a <button>; no click handler / routerLink.
+    // ADR-024 §Decision 3 — interactive: a keyboard-focusable <button>, enabled
+    // (there's usage, so there's a popover to open).
     const f = footer(fixture)!;
-    expect(f.tagName.toLowerCase()).toBe('div');
+    expect(f.tagName.toLowerCase()).toBe('button');
+    expect((f as HTMLButtonElement).disabled).toBeFalse();
 
     // DOM order: footer AFTER the tree region, BEFORE app-human-request, all
     // direct children of `.tree-component-container`.
@@ -169,7 +171,7 @@ describe('TreeComponent — team-total footer (Story 26-3)', () => {
     expect(footerText(fixture)).toBe('Team total ↑73.4k ↓18.9k');
   });
 
-  it('(c) empty team (`{0,0}`) renders the `Team total ↑0 ↓0` fallback', () => {
+  it('(c) empty team (`{0,0}`) renders the `Team total ↑0 ↓0` fallback with an inert (disabled) trigger', () => {
     const fixture = setup({
       totalSent: 0,
       totalReceived: 0,
@@ -178,9 +180,11 @@ describe('TreeComponent — team-total footer (Story 26-3)', () => {
     });
     fixture.detectChanges();
 
-    // The zero-totals object IS the empty state — the footer is still rendered.
+    // The zero-totals object IS the empty state — the footer is still rendered,
+    // but AC 6 disables it: no usage yet, nothing to open.
     expect(footer(fixture)).not.toBeNull();
     expect(footerText(fixture)).toBe('Team total ↑0 ↓0');
+    expect((footer(fixture) as unknown as HTMLButtonElement).disabled).toBeTrue();
   });
 
   it('(d) resolves the SHARED selector instance (no self-provider) and leaves the tree behavior intact', () => {
@@ -212,5 +216,163 @@ describe('TreeComponent — team-total footer (Story 26-3)', () => {
 
     component.onNodeClick({ node: { data: makeNode('a-mgr') } });
     expect(handleSelection).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 30-2 (ADR-024 §Decision 3) — the team-tree footer becomes an
+// interactive trigger for its OWN `<p-popover>` breaking down the team-wide
+// cache read/write. Same fake-selector pattern as Story 26-3: a controllable
+// `totals$` BehaviorSubject makes glyph / toggle / live-update / empty-state
+// deterministic. `p-popover` renders in place (no `appendTo` override) so its
+// content is queryable straight off `fixture.nativeElement`.
+// ---------------------------------------------------------------------------
+describe('TreeComponent — team-total popover (Story 30-2)', () => {
+  let totals$: BehaviorSubject<TeamTokenTotals>;
+  let nodes$: BehaviorSubject<NodeInterface[]>;
+
+  function setup(
+    initial: TeamTokenTotals = {
+      totalSent: 0,
+      totalReceived: 0,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+    },
+  ): ComponentFixture<TreeComponent> {
+    totals$ = new BehaviorSubject<TeamTokenTotals>(initial);
+    nodes$ = new BehaviorSubject<NodeInterface[]>([]);
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [TreeComponent],
+      providers: [
+        {
+          provide: TokenUsageSelector,
+          useValue: {
+            teamTotals$: totals$.asObservable(),
+            perAgent$: (_id: string) => of(undefined),
+          },
+        },
+        {
+          provide: GraphDataService,
+          useValue: {
+            nodes$,
+            edges$: new BehaviorSubject<unknown[]>([]),
+            categories$: new BehaviorSubject<unknown[]>([]),
+            categoryService: { COLORS: ['#fff', '#000'] },
+            set isLoading(_v: boolean) {
+              /* swallowed — buildTree side effect, irrelevant to the footer */
+            },
+          },
+        },
+        {
+          provide: SelectionService,
+          useValue: {
+            handleSelection: jasmine.createSpy('handleSelection'),
+            userRequest$: new BehaviorSubject<unknown>({}),
+            modalVisible$: new BehaviorSubject<boolean>(false),
+            onSave: jasmine.createSpy('onSave'),
+          },
+        },
+        { provide: ApiService, useValue: {} },
+        provideNoopAnimations(),
+      ],
+    });
+
+    return TestBed.createComponent(TreeComponent);
+  }
+
+  function footer(fixture: ComponentFixture<TreeComponent>): HTMLButtonElement {
+    return (fixture.nativeElement as HTMLElement).querySelector(
+      '.team-total-footer',
+    ) as HTMLButtonElement;
+  }
+
+  /** Each `.usage-popover-row`'s two cells joined with a single space (e.g.
+   *  "Cache read 4,000") — empty array when the popover isn't open. */
+  function popoverRows(fixture: ComponentFixture<TreeComponent>): string[] {
+    const rows = (fixture.nativeElement as HTMLElement).querySelectorAll(
+      '.usage-popover-row',
+    );
+    return Array.from(rows).map((row) =>
+      Array.from(row.children)
+        .map((c) => (c.textContent ?? '').trim())
+        .join(' '),
+    );
+  }
+
+  it('shows the ⚡ glyph when team cache tokens were used', () => {
+    const fixture = setup({
+      totalSent: 1_000,
+      totalReceived: 200,
+      totalCacheRead: 500,
+      totalCacheWrite: 0,
+    });
+    fixture.detectChanges();
+    expect(footer(fixture).textContent).toContain('⚡');
+  });
+
+  it('shows no glyph when both team cache totals are 0', () => {
+    const fixture = setup({
+      totalSent: 1_000,
+      totalReceived: 200,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+    });
+    fixture.detectChanges();
+    expect(footer(fixture).textContent).not.toContain('⚡');
+  });
+
+  it('clicking the trigger toggles open the popover with team-wide Cache read / Cache write', () => {
+    const fixture = setup({
+      totalSent: 57_000,
+      totalReceived: 12_500,
+      totalCacheRead: 9_000,
+      totalCacheWrite: 1_200,
+    });
+    fixture.detectChanges();
+
+    // No popover content before the trigger is clicked.
+    expect(popoverRows(fixture)).toEqual([]);
+
+    footer(fixture).click();
+    fixture.detectChanges();
+
+    const rows = popoverRows(fixture);
+    expect(rows).toContain('Cache read 9,000');
+    expect(rows).toContain('Cache write 1,200');
+  });
+
+  it('popover content updates live when teamTotals$ re-emits a new value (no re-toggle needed)', () => {
+    const fixture = setup({
+      totalSent: 1_000,
+      totalReceived: 200,
+      totalCacheRead: 300,
+      totalCacheWrite: 0,
+    });
+    fixture.detectChanges();
+    footer(fixture).click();
+    fixture.detectChanges();
+    expect(popoverRows(fixture)).toContain('Cache read 300');
+
+    totals$.next({
+      totalSent: 5_000,
+      totalReceived: 900,
+      totalCacheRead: 4_400,
+      totalCacheWrite: 250,
+    });
+    fixture.detectChanges();
+
+    expect(popoverRows(fixture)).toContain('Cache read 4,400');
+    expect(popoverRows(fixture)).toContain('Cache write 250');
+  });
+
+  it('empty team (all-zero totals) renders a disabled trigger with no popover to open', () => {
+    const fixture = setup();
+    fixture.detectChanges();
+
+    const trigger = footer(fixture);
+    expect(trigger.disabled).toBeTrue();
+    expect(popoverRows(fixture)).toEqual([]);
   });
 });

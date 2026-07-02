@@ -12,18 +12,50 @@
   flex: 1;
 }
 
-// Epic 26 (ADR-022 §Decision 6): slim, muted, non-interactive team-total strip.
-// Muted colour matches the member-chat usage pill (Story 26.2); tabular-nums
-// keeps the digits steady on live update.
+// ADR-024 §Decision 3: slim, muted team-total strip — now an interactive
+// `<button>` (supersedes ADR-022 §Decision 6's non-interactive footer). Muted
+// colour matches the member-chat usage pill (Story 30-2); tabular-nums keeps
+// the digits steady on live update. `:disabled` (empty team, AC 6) reverts to
+// the `default` cursor — inert, nothing to open.
 .team-total-footer {
   flex: 0 0 auto;
+  width: 100%;
   padding: 4px 8px;
+  border: none;
   border-top: 1px solid #e2e8f0;
+  font: inherit;
   font-size: 0.8rem;
   color: #64748b;
+  text-align: left;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
-  cursor: default;
+  background: none;
+  cursor: pointer;
+
+  &:disabled {
+    cursor: default;
+  }
+}
+
+// ADR-024 §Decision 3 — the popover's key/value breakdown, shared layout with
+// the member-chat pill's popover (akgent-chat.component.scss).
+.usage-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  min-width: 14rem;
+
+  .usage-popover-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .usage-popover-label {
+    color: #64748b;
+    font-weight: 600;
+  }
 }
 
 .human-node {

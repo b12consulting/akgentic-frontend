@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { TreeNode } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
+import { PopoverModule } from 'primeng/popover';
 import { TabViewModule } from 'primeng/tabview';
 import { TextareaModule } from 'primeng/textarea';
 import { TreeModule } from 'primeng/tree';
@@ -30,6 +31,7 @@ import { EdgeInterface, NodeInterface } from '../../../models/types';
     DialogModule,
     FormsModule,
     ButtonModule,
+    PopoverModule,
     TabViewModule,
     TextareaModule,
     HumanRequestComponent,
