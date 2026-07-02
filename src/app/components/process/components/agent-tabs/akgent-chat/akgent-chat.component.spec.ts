@@ -1386,8 +1386,11 @@ describe('AkgentChatComponent — usage popover (Story 30-2)', () => {
     );
     fixture.detectChanges();
 
-    // No popover content before the trigger is clicked.
+    // No popover content before the trigger is clicked, and the trigger
+    // announces itself as a closed disclosure control to assistive tech.
     expect(popoverRows(fixture)).toEqual([]);
+    expect(pill(fixture).getAttribute('aria-haspopup')).toBe('dialog');
+    expect(pill(fixture).getAttribute('aria-expanded')).toBe('false');
 
     pill(fixture).click();
     fixture.detectChanges();
@@ -1399,6 +1402,8 @@ describe('AkgentChatComponent — usage popover (Story 30-2)', () => {
     expect(rows).toContain('Received 12,100');
     expect(rows).toContain('Cache read 4,000 / 9,000');
     expect(rows).toContain('Cache write 300 / 300');
+    // aria-expanded flips once the popover is actually open.
+    expect(pill(fixture).getAttribute('aria-expanded')).toBe('true');
   });
 
   it('popover content updates live when usage$ re-emits a new value (no re-toggle needed)', () => {

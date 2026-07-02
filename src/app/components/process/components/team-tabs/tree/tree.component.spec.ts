@@ -332,8 +332,11 @@ describe('TreeComponent — team-total popover (Story 30-2)', () => {
     });
     fixture.detectChanges();
 
-    // No popover content before the trigger is clicked.
+    // No popover content before the trigger is clicked, and the trigger
+    // announces itself as a closed disclosure control to assistive tech.
     expect(popoverRows(fixture)).toEqual([]);
+    expect(footer(fixture).getAttribute('aria-haspopup')).toBe('dialog');
+    expect(footer(fixture).getAttribute('aria-expanded')).toBe('false');
 
     footer(fixture).click();
     fixture.detectChanges();
@@ -341,6 +344,8 @@ describe('TreeComponent — team-total popover (Story 30-2)', () => {
     const rows = popoverRows(fixture);
     expect(rows).toContain('Cache read 9,000');
     expect(rows).toContain('Cache write 1,200');
+    // aria-expanded flips once the popover is actually open.
+    expect(footer(fixture).getAttribute('aria-expanded')).toBe('true');
   });
 
   it('popover content updates live when teamTotals$ re-emits a new value (no re-toggle needed)', () => {

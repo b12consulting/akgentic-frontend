@@ -163,6 +163,8 @@
               ', received ' + (usage.totalReceived | number) +
               ', model ' + usage.lastModelName
             "
+            aria-haspopup="dialog"
+            [attr.aria-expanded]="usageOp.overlayVisible"
             (click)="usageOp.toggle($event)"
           >
             ctx {{ usage.lastContextWindow | tokenCount }} ·

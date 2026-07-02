@@ -52,6 +52,8 @@
         totals.totalCacheRead === 0 &&
         totals.totalCacheWrite === 0
       "
+      aria-haspopup="dialog"
+      [attr.aria-expanded]="teamUsageOp.overlayVisible"
       (click)="teamUsageOp.toggle($event)"
     >
       Team total ↑{{ totals.totalSent | tokenCount }} ↓{{
