@@ -477,17 +477,19 @@ export const systemPromptSpec: PerAgentSpec<SystemPromptValue> = {
  * `sender.agent_id`, which IS the agent that ran the model). Terminology
  * (ADR-022 §Decision 4): `totalSent` Σ `input_tokens`, `totalReceived` Σ
  * `output_tokens`. `lastContextWindow` is the NEWEST event's TRUE prompt size —
- * `input_tokens + cache_read_tokens + cache_write_tokens` (ADR-024 §Decision 2;
- * `input_tokens` alone is only the uncached portion on a cache hit).
+ * `input_tokens`, which pydantic-ai already reports as the FULL prompt, cache
+ * included (ADR-024 §Decision 2). `cache_read_tokens` / `cache_write_tokens` are
+ * a breakdown OF `input_tokens`, not additions to it, so the window is
+ * `input_tokens` alone — adding the cache counters would double-count.
  * `lastCacheRead` / `lastCacheWrite` keep the fresh/cached split recoverable
- * (`input = lastContextWindow − lastCacheRead − lastCacheWrite`); `totalCacheRead`
+ * (`fresh = lastContextWindow − lastCacheRead − lastCacheWrite`); `totalCacheRead`
  * / `totalCacheWrite` are the running Σ, mirroring `totalSent` / `totalReceived`.
  * `lastRunId` / `lastModelName` are labels only. `requests` rides the wire but is
  * excluded from v1.
  */
 export interface AgentTokenUsage {
-  /** input_tokens + cache_read_tokens + cache_write_tokens of the most-recent
-   *  event — the TRUE context window (overwritten each event). */
+  /** input_tokens of the most-recent event — the TRUE context window (already
+   *  the full prompt, cache included; overwritten each event). */
   lastContextWindow: number;
   /** run_id of that most-recent event (label only). */
   lastRunId: string;
@@ -536,8 +538,8 @@ const ZERO_TOKEN_USAGE: AgentTokenUsage = {
  *   - `LlmUsageEvent` → accumulate (sum sent/received/cache) AND overwrite
  *     (TRUE context window + last-run cache split + labels); numeric reads
  *     coalesce a missing field to `0` (no NaN). `lastContextWindow` is
- *     `input_tokens + cache_read_tokens + cache_write_tokens` — the real prompt
- *     size, not just the uncached portion.
+ *     `input_tokens` — already the full prompt (cache included), so the cache
+ *     counters are NOT added on top (that would double-count).
  *   - `LlmContextCompactedEvent` (Epic 29 / ADR-010 §4) → re-point
  *     `lastContextWindow` to `event.tokens_after` when it is a number; leave it
  *     unchanged when `tokens_after` is null/absent (defensive — no NaN, no reset).
@@ -558,7 +560,7 @@ export function tokenUsageReduce(
     const cacheRead = ev.cache_read_tokens ?? 0;
     const cacheWrite = ev.cache_write_tokens ?? 0;
     return {
-      lastContextWindow: input + cacheRead + cacheWrite,
+      lastContextWindow: input,
       lastRunId: ev.run_id,
       lastModelName: ev.model_name,
       totalSent: (prev?.totalSent ?? 0) + input,

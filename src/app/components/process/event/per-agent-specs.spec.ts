@@ -299,28 +299,33 @@ describe('tokenUsageSpec reducer (Epic 26 / ADR-022 §Decision 2-4)', () => {
     });
   });
 
-  it('AC #3/#4 cache-hit event: true lastContextWindow = input + cacheRead + cacheWrite, cache fields seeded', () => {
+  it('AC #3/#4 cache-hit event: lastContextWindow === input_tokens (cache-inclusive total), cache fields seeded', () => {
     const { log, service } = configureBed();
     log.append(
       makeUsageEnvelope('A', {
         run_id: 'run-8',
-        input_tokens: 500,
+        input_tokens: 5_500, // cache-inclusive total: 4_000 read + 1_000 write + 500 fresh
         output_tokens: 60,
         cache_read_tokens: 4_000,
         cache_write_tokens: 1_000,
       }),
     );
-    expect(usage(service.tokenUsage, 'A')).toEqual({
-      lastContextWindow: 5_500, // 500 + 4_000 + 1_000 — the TRUE prompt size
+    const result = usage(service.tokenUsage, 'A');
+    expect(result).toEqual({
+      lastContextWindow: 5_500, // === input_tokens — already the full prompt, cache included
       lastRunId: 'run-8',
       lastModelName: 'claude-sonnet',
-      totalSent: 500,
+      totalSent: 5_500,
       totalReceived: 60,
       totalCacheRead: 4_000,
       totalCacheWrite: 1_000,
       lastCacheRead: 4_000,
       lastCacheWrite: 1_000,
     });
+    // fresh/cached split stays recoverable and non-negative.
+    expect(
+      result!.lastContextWindow - result!.lastCacheRead - result!.lastCacheWrite,
+    ).toBe(500);
   });
 
   it('AC #3 multi-event: sums cumulative cache totals and overwrites last-run cache with the newest event', () => {
@@ -335,17 +340,17 @@ describe('tokenUsageSpec reducer (Epic 26 / ADR-022 §Decision 2-4)', () => {
       }),
       makeUsageEnvelope('A', {
         run_id: 'run-2',
-        input_tokens: 300,
+        input_tokens: 1_200, // cache-inclusive total: 900 read + 0 write + 300 fresh
         output_tokens: 40,
         cache_read_tokens: 900,
         cache_write_tokens: 0,
       }),
     ]);
     expect(usage(service.tokenUsage, 'A')).toEqual({
-      lastContextWindow: 1_200, // 300 + 900 + 0 — newest event's true window
+      lastContextWindow: 1_200, // === newest input_tokens (already the full prompt)
       lastRunId: 'run-2',
       lastModelName: 'claude-sonnet',
-      totalSent: 1_300,
+      totalSent: 2_200, // 1_000 + 1_200
       totalReceived: 140,
       totalCacheRead: 1_100, // 200 + 900
       totalCacheWrite: 50, // 50 + 0
