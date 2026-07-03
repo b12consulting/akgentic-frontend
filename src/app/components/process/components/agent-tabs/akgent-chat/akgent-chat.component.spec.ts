@@ -433,14 +433,22 @@ describe('AkgentChatComponent — head system block (Story 16-2)', () => {
       systemPromptEnvelope(AGENT, [{ dynamic_ref: null, content: 'A backstory' }]),
       systemPromptEnvelope(OTHER, [{ dynamic_ref: null, content: 'B backstory' }]),
     ]);
+    // Route the INITIAL `agentId` bind through Angular's own input-change
+    // tracking too: `setup()` assigns `agentId` via a raw property write,
+    // which Ivy's `NgOnChangesFeature` never observes, so without this the
+    // upcoming switch would be mis-detected as the *first* change.
+    fixture.componentRef.setInput('agentId', AGENT);
     fixture.detectChanges();
     expect(headBodies(fixture)).toEqual(['A backstory']);
 
     // The agent-tabs dropdown REUSES this component when switching members, so
     // ngOnInit does not re-run — ngOnChanges must re-point systemPrompt$ at the
     // new agent. Without the fix the head block stays pinned to 'A backstory'.
-    component.agentId = OTHER;
-    component.ngOnChanges({ agentId: new SimpleChange(AGENT, OTHER, false) });
+    // Story 30-3 (OnPush): `fixture.componentRef.setInput(...)` — not a bare
+    // `component.ngOnChanges(...)` call — is what a real host rebind does; it
+    // both dispatches `ngOnChanges` AND marks the component dirty the way
+    // Angular's own `@Input` diff detection would.
+    fixture.componentRef.setInput('agentId', OTHER);
     fixture.detectChanges();
 
     expect(headBodies(fixture)).toEqual(['B backstory']);
@@ -1247,9 +1255,19 @@ describe('AkgentChatComponent — token-usage pill (Story 26-2)', () => {
     // Empty input → Submit disabled (existing rule unchanged).
     expect(submit.disabled).toBeTrue();
 
-    // Typing enables it (team is running in this harness).
-    component.userInput = 'hello';
+    // Typing enables it (team is running in this harness). Story 30-3
+    // (OnPush): a bare `component.userInput = 'hello'` field write is not an
+    // `@Input`, DOM event, or async-pipe emission — it would never mark the
+    // component dirty. Dispatch a real native `input` event on the textarea,
+    // the way `[(ngModel)]="userInput"` actually updates in production; the
+    // event fires from the component's OWN template, so Angular marks it
+    // dirty automatically (no explicit markForCheck needed, per AC2).
+    const textarea: HTMLTextAreaElement =
+      fixture.nativeElement.querySelector('textarea');
+    textarea.value = 'hello';
+    textarea.dispatchEvent(new Event('input'));
     fixture.detectChanges();
+    expect(component.userInput).toBe('hello');
     expect(submit.disabled).toBeFalse();
   });
 });
@@ -1576,5 +1594,139 @@ describe('AkgentChatComponent — folded compaction summary (Story 29-3)', () =>
     expect(allText).not.toContain('verbatim question two');
     expect(allText).not.toContain('verbatim question three');
     expect(allText).not.toContain(CONVERSATION_SUMMARY_PREFIX);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 30-3 — component-level OnPush on the usage-display host components.
+// AkgentChatComponent now runs under `ChangeDetectionStrategy.OnPush`; the
+// writes below (the `context$` and `currentTeamRunning$` subscriptions in
+// `ngOnInit`) come from MANUAL RxJS subscriptions, not the `async` pipe, so
+// only an explicit `ChangeDetectorRef.markForCheck()` at each site keeps them
+// repainting. A plain repeated `fixture.detectChanges()` call — with NO
+// further `@Input` change and NO DOM event between the emission and the
+// assertion — genuinely exercises the OnPush + `markForCheck()` plumbing
+// (verified by temporarily removing each `markForCheck()` call and confirming
+// these tests fail — see Dev Agent Record). These tests deliberately avoid
+// `fakeAsync`'s `tick()` between the emission and the assertion: flushing the
+// fake-timer queue re-arms Angular's zone-driven auto-refresh scheduler,
+// which repaints the view regardless of `markForCheck()` and would silently
+// mask a missing call — confirmed empirically (see Dev Agent Record).
+// ---------------------------------------------------------------------------
+describe('AkgentChatComponent — OnPush regression (Story 30-3)', () => {
+  const AGENT = 'a-mgr';
+
+  function setup(): {
+    fixture: ComponentFixture<AkgentChatComponent>;
+    component: AkgentChatComponent;
+    running$: BehaviorSubject<boolean>;
+  } {
+    const running$ = new BehaviorSubject<boolean>(true);
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [AkgentChatComponent],
+      providers: [
+        {
+          provide: ApiService,
+          useValue: {
+            sendMessage: jasmine.createSpy('sendMessage').and.resolveTo(undefined),
+          },
+        },
+        {
+          provide: UtilService,
+          useValue: { copyToClipboard: () => {}, formatJSON: (v: any) => v },
+        },
+        {
+          provide: ContextService,
+          useValue: {
+            currentTeamRunning$: running$,
+            currentProcessId$: new BehaviorSubject<string>('proc-1'),
+          },
+        },
+        MessageLogService,
+        PerAgentStoreRegistry,
+        {
+          provide: IngestionService,
+          useFactory: (registry: PerAgentStoreRegistry) => ({
+            commands: { snapshot: (_id: string) => undefined },
+            systemPrompt: registry.register<SystemPromptValue>({
+              name: 'systemPrompt',
+              match: systemPromptMatch,
+              reduce: systemPromptReduce,
+            }),
+          }),
+          deps: [PerAgentStoreRegistry],
+        },
+        SystemPromptSelector,
+        NEUTRAL_TOKEN_USAGE_SELECTOR,
+        provideNoopAnimations(),
+      ],
+    });
+
+    const fixture = TestBed.createComponent(AkgentChatComponent);
+    const component = fixture.componentInstance;
+    component.context$ = new BehaviorSubject<any[]>([]);
+    component.agentId = AGENT;
+    component.agentName = '@' + AGENT;
+    return { fixture, component, running$ };
+  }
+
+  /** Install a mock trace-scroll element with controllable geometry (mirrors
+   *  the "follow mode" describe block's helper above). */
+  function installScroll(
+    component: AkgentChatComponent,
+    scrollHeight: number,
+    clientHeight: number,
+    scrollTop = 0,
+  ): void {
+    (component as any).traceScroll = {
+      nativeElement: {
+        scrollHeight,
+        clientHeight,
+        scrollTop,
+        scrollTo(o: { top: number }) {
+          this.scrollTop = o.top;
+        },
+      },
+    };
+  }
+
+  it('AC4: a mid-stream context$ emission (no @Input change, no DOM event) renders an added trace row', fakeAsync(() => {
+    const { fixture, component } = setup();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).not.toContain('first reply');
+
+    // Pushing onto `context$` is NOT an @Input *reference* change (it's the
+    // same BehaviorSubject instance) and not a DOM event — only the manual
+    // `ngOnInit` subscription + its `markForCheck()` can repaint this. Assert
+    // BEFORE flushing the pending post-render setTimeout (below) so this test
+    // isolates the subscription's OWN `markForCheck()` from the *different*
+    // AC2 site inside `updateContext()`'s trailing setTimeout.
+    component.context$.next([{ type: 'ai', name: 'x', content: 'first reply' }]);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('first reply');
+
+    tick(0); // flush the pending post-render setTimeout (fakeAsync requires it)
+  }));
+
+  it('AC4: a mid-stream currentTeamRunning$ emission (no @Input change, no DOM event) updates the status pill', () => {
+    const { fixture, component, running$ } = setup();
+    fixture.detectChanges();
+
+    installScroll(component, 2000, 500, 0); // newest message far below the fold
+    expect(
+      (fixture.nativeElement as HTMLElement).querySelector('.jump-to-latest'),
+    ).toBeNull();
+
+    // Emitting on `currentTeamRunning$` is NOT an @Input change and not a DOM
+    // event — only the manual `ngOnInit` subscription + its `markForCheck()`
+    // can repaint the pill.
+    running$.next(false); // process stops — following exits, pill recomputed
+    fixture.detectChanges();
+    const pill = (fixture.nativeElement as HTMLElement).querySelector(
+      '.jump-to-latest',
+    );
+    expect(pill?.textContent).toContain('Messages');
   });
 });

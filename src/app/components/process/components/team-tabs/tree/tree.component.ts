@@ -1,5 +1,13 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject, NgZone, OnDestroy, OnInit } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
+  Component,
+  inject,
+  NgZone,
+  OnDestroy,
+  OnInit,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TreeNode } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
@@ -37,9 +45,13 @@ import { EdgeInterface, NodeInterface } from '../../../models/types';
     HumanRequestComponent,
     TokenCountPipe,
   ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class TreeComponent implements OnInit, OnDestroy {
   selectionService: SelectionService = inject(SelectionService);
+  // Story 30-3 — OnPush: the graph subscriptions below (ngOnInit) mutate
+  // template-bound state imperatively; markForCheck() keeps them repainting.
+  private cdr = inject(ChangeDetectorRef);
 
   // Epic 26 (ADR-022 §Decision 6): the team-wide token total shown in the
   // footer strip below the tree. Bare inject — resolves the SAME
@@ -70,14 +82,17 @@ export class TreeComponent implements OnInit, OnDestroy {
         this.nodes = nodes;
         this.treeNodes = this.buildTree(nodes);
         this.expandAll();
+        this.cdr.markForCheck();
       }
     );
     this.edgesSub = this.graphDataService.edges$.subscribe((updatedEdges) => {
       this.edges = updatedEdges;
+      this.cdr.markForCheck();
     });
     this.categoriesSub = this.graphDataService.categories$.subscribe(
       (updatedCats) => {
         this.categories = updatedCats;
+        this.cdr.markForCheck();
       }
     );
   }

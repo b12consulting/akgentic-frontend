@@ -1,4 +1,6 @@
 import {
+  ChangeDetectionStrategy,
+  ChangeDetectorRef,
   Component,
   ElementRef,
   inject,
@@ -71,6 +73,7 @@ import { CopyButtonComponent } from '../../../../../shared/components/copy-butto
   ],
   templateUrl: './akgent-chat.component.html',
   styleUrl: './akgent-chat.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class AkgentChatComponent implements OnInit, OnChanges {
   // The single trace scroll region (head system block + conversation). Auto
@@ -101,6 +104,11 @@ export class AkgentChatComponent implements OnInit, OnChanges {
   // this subtree, so the usage pill reads THIS team's per-agent totals.
   private tokenUsageSelector: TokenUsageSelector = inject(TokenUsageSelector);
   private destroyRef = inject(DestroyRef);
+  // Story 30-3 — OnPush: the component's template-bound state is also mutated
+  // from manual RxJS subscriptions and setTimeout continuations (below), none
+  // of which Angular re-checks automatically under OnPush. markForCheck() at
+  // each such site keeps those paths repainting.
+  private cdr = inject(ChangeDetectorRef);
 
   context: any[] = [];
 
@@ -163,6 +171,7 @@ export class AkgentChatComponent implements OnInit, OnChanges {
         const el = this.traceScroll?.nativeElement;
         if (el) el.scrollTop = 0;
         this.updateIndicator();
+        this.cdr.markForCheck();
       }, 0);
     }
   }
@@ -180,6 +189,7 @@ export class AkgentChatComponent implements OnInit, OnChanges {
     this.context$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((ctx) => {
       this.isLoading = false;
       this.updateContext(ctx);
+      this.cdr.markForCheck();
     });
 
     // "Auto scrolling" only applies to a RUNNING process — exit follow + refresh
@@ -189,6 +199,7 @@ export class AkgentChatComponent implements OnInit, OnChanges {
       .subscribe((running) => {
         if (!running) this.following = false;
         this.updateIndicator();
+        this.cdr.markForCheck();
       });
   }
 
@@ -477,6 +488,7 @@ export class AkgentChatComponent implements OnInit, OnChanges {
     setTimeout(() => {
       if (this.following) this.scrollToBottom();
       this.updateIndicator();
+      this.cdr.markForCheck();
     }, 0);
   }
 
@@ -497,10 +509,14 @@ export class AkgentChatComponent implements OnInit, OnChanges {
       );
     } catch (error) {
       this.isLoading = false;
+      this.cdr.markForCheck();
     }
+    // Resumes in a later task after the `await` — the originating click
+    // event's CD pass has already closed, so mark explicitly.
     this.userInput = '';
     this.scrollToBottom();
     this.updateIndicator();
+    this.cdr.markForCheck();
   }
 
   /** Stable row identity for the trace table. Without it, p-table is given a

@@ -381,3 +381,98 @@ describe('TreeComponent — team-total popover (Story 30-2)', () => {
     expect(popoverRows(fixture)).toEqual([]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Story 30-3 — component-level OnPush on the usage-display host components.
+// TreeComponent now runs under `ChangeDetectionStrategy.OnPush`; the `nodes$`
+// subscription in `ngOnInit` mutates `treeNodes` (the critical path — it
+// rebuilds the visible `<p-tree>`) from a MANUAL RxJS subscription, not the
+// `async` pipe, so only an explicit `ChangeDetectorRef.markForCheck()` keeps
+// it repainting. A plain repeated `fixture.detectChanges()` call — with NO
+// further `@Input` change and NO DOM event between the emission and the
+// assertion — genuinely exercises the OnPush + `markForCheck()` plumbing
+// (verified by temporarily removing the `markForCheck()` call and confirming
+// this test fails — see Dev Agent Record). No `fakeAsync`/`tick()` here: the
+// `nodes$` subscription is fully synchronous, and flushing the fake-timer
+// queue would re-arm Angular's zone-driven auto-refresh scheduler, which
+// repaints the view regardless of `markForCheck()` — confirmed empirically
+// while designing the member-chat regression tests (see Dev Agent Record).
+// ---------------------------------------------------------------------------
+describe('TreeComponent — OnPush regression (Story 30-3)', () => {
+  let nodes$: BehaviorSubject<NodeInterface[]>;
+
+  function makeNode(name: string): NodeInterface {
+    return {
+      name,
+      role: 'Agent',
+      actorName: name,
+      parentId: '',
+      squadId: 's1',
+      symbol: 'roundRect',
+      category: 0,
+      userMessage: false,
+    };
+  }
+
+  function setup(): ComponentFixture<TreeComponent> {
+    nodes$ = new BehaviorSubject<NodeInterface[]>([]);
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [TreeComponent],
+      providers: [
+        {
+          provide: TokenUsageSelector,
+          useValue: {
+            teamTotals$: new BehaviorSubject<TeamTokenTotals>({
+              totalSent: 0,
+              totalReceived: 0,
+              totalCacheRead: 0,
+              totalCacheWrite: 0,
+            }),
+            perAgent$: (_id: string) => of(undefined),
+          },
+        },
+        {
+          provide: GraphDataService,
+          useValue: {
+            nodes$,
+            edges$: new BehaviorSubject<unknown[]>([]),
+            categories$: new BehaviorSubject<unknown[]>([]),
+            categoryService: { COLORS: ['#fff', '#000'] },
+            set isLoading(_v: boolean) {
+              /* swallowed — buildTree side effect, irrelevant to this test */
+            },
+          },
+        },
+        {
+          provide: SelectionService,
+          useValue: {
+            handleSelection: jasmine.createSpy('handleSelection'),
+            userRequest$: new BehaviorSubject<unknown>({}),
+            modalVisible$: new BehaviorSubject<boolean>(false),
+            onSave: jasmine.createSpy('onSave'),
+          },
+        },
+        { provide: ApiService, useValue: {} },
+        provideNoopAnimations(),
+      ],
+    });
+
+    return TestBed.createComponent(TreeComponent);
+  }
+
+  it('AC4: a mid-stream nodes$ emission (no @Input change, no DOM event) re-renders the tree node labels', () => {
+    const fixture = setup();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.textContent).not.toContain('a [Mgr]');
+
+    // A source emission on the injected service's observable — not an @Input,
+    // not a DOM event — only the manual `ngOnInit` subscription + its
+    // `markForCheck()` can repaint this.
+    nodes$.next([makeNode('a-mgr')]);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('a [Mgr]');
+  });
+});
