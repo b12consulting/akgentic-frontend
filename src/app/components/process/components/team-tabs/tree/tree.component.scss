@@ -12,19 +12,24 @@
   flex: 1;
 }
 
-// ADR-024 §Decision 3: slim, muted team-total strip — now an interactive
-// `<button>` (supersedes ADR-022 §Decision 6's non-interactive footer). Muted
-// colour matches the member-chat usage pill (Story 30-2); tabular-nums keeps
-// the digits steady on live update. `:disabled` (empty team, AC 6) reverts to
-// the `default` cursor — inert, nothing to open.
+// Slim, muted team-total strip. The strip spans full width (top-border
+// separator, footer look); the popover TRIGGER inside it is compact (sized to
+// its text) so the popover's caret aligns under the text rather than the strip
+// centre. Muted colour matches the member-chat usage pill; tabular-nums keeps
+// the digits steady on live update.
 .team-total-footer {
   flex: 0 0 auto;
   width: 100%;
   padding: 4px 8px;
-  border: none;
   border-top: 1px solid #e2e8f0;
-  font: inherit;
   font-size: 0.8rem;
+}
+
+.team-total-trigger {
+  display: inline-block;
+  padding: 0;
+  border: none;
+  font: inherit;
   color: #64748b;
   text-align: left;
   white-space: nowrap;

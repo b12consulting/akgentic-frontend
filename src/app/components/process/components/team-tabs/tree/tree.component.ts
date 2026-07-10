@@ -60,6 +60,9 @@ export class TreeComponent implements OnInit, OnDestroy {
   // Bound via `async` in the template; never `undefined` (empty team → zeros).
   private readonly tokenUsageSelector = inject(TokenUsageSelector);
   readonly teamTotals$ = this.tokenUsageSelector.teamTotals$;
+  // Per-model breakdown feeding the footer popover (grouped by each agent's
+  // current model — see TokenUsageSelector.groupByModel approximation note).
+  readonly teamByModel$ = this.tokenUsageSelector.teamByModel$;
 
   treeNodes: TreeNode[] = []; // Correct initialization as an array of TreeNode
   expandedKeys: { [key: string]: boolean } = {};

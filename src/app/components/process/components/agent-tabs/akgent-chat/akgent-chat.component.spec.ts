@@ -1274,8 +1274,10 @@ describe('AkgentChatComponent — token-usage pill (Story 26-2)', () => {
 
 // ---------------------------------------------------------------------------
 // Story 30-2 (ADR-024 §Decision 3) — the pill becomes an interactive trigger
-// for a `<p-popover>` carrying the full cache breakdown (model, true context
-// window with the fresh/cached split, sent/received, cache read/write). Driven
+// for a `<p-popover>` carrying the usage breakdown (model, context window,
+// sent/received, cache read as last/total under a "Cache ⚡" label). Cache write
+// is intentionally not surfaced (see story usage-display-cleanup: OpenAI reports
+// cache reads only). Driven
 // through the same fake `TokenUsageSelector` pattern as Story 26-2: a
 // controllable `usage$` BehaviorSubject makes glyph / toggle / live-update /
 // empty-state deterministic. `p-popover` renders in place (no `appendTo`
@@ -1389,7 +1391,7 @@ describe('AkgentChatComponent — usage popover (Story 30-2)', () => {
     expect(pill(fixture).textContent).not.toContain('⚡');
   });
 
-  it('clicking the trigger toggles open the popover with Model / Context-window-split / Sent / Received / Cache read+write', () => {
+  it('clicking the trigger toggles open the popover with Model / Context window / Sent / Received / Cache (no Cache write row)', () => {
     const { fixture } = setup(
       usage({
         lastContextWindow: 12_300,
@@ -1415,11 +1417,12 @@ describe('AkgentChatComponent — usage popover (Story 30-2)', () => {
 
     const rows = popoverRows(fixture);
     expect(rows).toContain('Model claude-opus-4-8');
-    expect(rows).toContain('Context window 12,300 of which 4,300 cached');
+    expect(rows).toContain('Context window 12,300');
     expect(rows).toContain('Sent 45,000');
     expect(rows).toContain('Received 12,100');
-    expect(rows).toContain('Cache read 4,000 / 9,000');
-    expect(rows).toContain('Cache write 300 / 300');
+    expect(rows).toContain('Cache ⚡ 4,000 / 9,000');
+    // Cache write is not surfaced (OpenAI reports cache reads only).
+    expect(rows.some((r) => r.startsWith('Cache write'))).toBeFalse();
     // aria-expanded flips once the popover is actually open.
     expect(pill(fixture).getAttribute('aria-expanded')).toBe('true');
   });
@@ -1435,7 +1438,7 @@ describe('AkgentChatComponent — usage popover (Story 30-2)', () => {
     fixture.detectChanges();
     pill(fixture).click();
     fixture.detectChanges();
-    expect(popoverRows(fixture)).toContain('Context window 1,000 of which 0 cached');
+    expect(popoverRows(fixture)).toContain('Context window 1,000');
 
     usage$.next(
       usage({
@@ -1447,7 +1450,7 @@ describe('AkgentChatComponent — usage popover (Story 30-2)', () => {
     );
     fixture.detectChanges();
 
-    expect(popoverRows(fixture)).toContain('Context window 9,000 of which 3,000 cached');
+    expect(popoverRows(fixture)).toContain('Context window 9,000');
     expect(popoverRows(fixture)).toContain('Sent 10,000');
   });
 

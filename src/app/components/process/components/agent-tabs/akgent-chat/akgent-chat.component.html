@@ -148,8 +148,10 @@
           `ctx <ctx> · ↑<sent> ↓<received>` (every number via `tokenCount`) plus a
           `⚡` glyph when any cache tokens were used — that toggles
           `<p-popover #usageOp>` with the full breakdown (model, true context
-          window with the fresh/cached split, sent/received, cache read/write, all
-          via the exact `| number` pipe). A never-run agent (`undefined`) renders
+          window with the fresh/cached split, sent/received, and cache read shown
+          as last/total — cache write is not surfaced since OpenAI reports cache
+          reads only — all via the exact `| number` pipe). A never-run agent
+          (`undefined`) renders
           the neutral `ctx — · ↑0 ↓0` with the trigger DISABLED — inert, no
           popover to open (the VIEW owns the empty-state, ADR-022 §OQ2).
         -->
@@ -180,8 +182,7 @@
               <div class="usage-popover-row">
                 <span class="usage-popover-label">Context window</span>
                 <span>
-                  {{ usage.lastContextWindow | number }} of which
-                  {{ usage.lastCacheRead + usage.lastCacheWrite | number }} cached
+                  {{ usage.lastContextWindow | number }} 
                 </span>
               </div>
               <div class="usage-popover-row">
@@ -193,12 +194,8 @@
                 <span>{{ usage.totalReceived | number }}</span>
               </div>
               <div class="usage-popover-row">
-                <span class="usage-popover-label">Cache read</span>
+                <span class="usage-popover-label">Cache ⚡</span>
                 <span>{{ usage.lastCacheRead | number }} / {{ usage.totalCacheRead | number }}</span>
-              </div>
-              <div class="usage-popover-row">
-                <span class="usage-popover-label">Cache write</span>
-                <span>{{ usage.lastCacheWrite | number }} / {{ usage.totalCacheWrite | number }}</span>
               </div>
             </div>
           </p-popover>

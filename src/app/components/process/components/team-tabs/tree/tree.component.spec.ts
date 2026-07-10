@@ -7,6 +7,7 @@ import { ApiService } from '../../../../../core/http/api.service';
 import { GraphDataService } from '../../../selectors/graph.selector';
 import { SelectionService } from '../../../ui-state/selection.service';
 import {
+  ModelTokenTotals,
   TeamTokenTotals,
   TokenUsageSelector,
 } from '../../../selectors/token-usage.selector';
@@ -66,6 +67,7 @@ describe('TreeComponent — team-total footer (Story 26-3)', () => {
           provide: TokenUsageSelector,
           useValue: {
             teamTotals$: totals$.asObservable(),
+            teamByModel$: of([]),
             perAgent$: (_id: string) => of(undefined),
           },
         },
@@ -98,17 +100,26 @@ describe('TreeComponent — team-total footer (Story 26-3)', () => {
     return TestBed.createComponent(TreeComponent);
   }
 
-  /** The footer strip element. */
+  /** The full-width footer strip (wrapper). */
   function footer(fixture: ComponentFixture<TreeComponent>): HTMLElement | null {
     return (fixture.nativeElement as HTMLElement).querySelector(
       '.team-total-footer',
     );
   }
 
-  /** Footer text with whitespace collapsed (glyphs/order are the contract,
+  /** The compact popover trigger button inside the strip. */
+  function trigger(
+    fixture: ComponentFixture<TreeComponent>,
+  ): HTMLButtonElement | null {
+    return (fixture.nativeElement as HTMLElement).querySelector(
+      '.team-total-trigger',
+    );
+  }
+
+  /** Trigger text with whitespace collapsed (glyphs/order are the contract,
    *  not exact spacing). */
   function footerText(fixture: ComponentFixture<TreeComponent>): string {
-    return (footer(fixture)?.textContent ?? '').replace(/\s+/g, ' ').trim();
+    return (trigger(fixture)?.textContent ?? '').replace(/\s+/g, ' ').trim();
   }
 
   it('(a) renders the populated `Team total ↑X ↓Y` as an interactive trigger, BETWEEN the tree and app-human-request', () => {
@@ -120,14 +131,16 @@ describe('TreeComponent — team-total footer (Story 26-3)', () => {
     });
     fixture.detectChanges();
 
-    // tokenCount: 57_000 → "57.0k", 12_500 → "12.5k".
-    expect(footerText(fixture)).toBe('Team total ↑57.0k ↓12.5k');
+    // tokenCount: 57_000 → "57.0k", 12_500 → "12.5k". No cache read → no parens
+    // (the em-dash separator before ↓ is always present).
+    expect(footerText(fixture)).toBe('Team total ↑57.0k — ↓12.5k');
 
-    // ADR-024 §Decision 3 — interactive: a keyboard-focusable <button>, enabled
-    // (there's usage, so there's a popover to open).
-    const f = footer(fixture)!;
-    expect(f.tagName.toLowerCase()).toBe('button');
-    expect((f as HTMLButtonElement).disabled).toBeFalse();
+    // Interactive: a keyboard-focusable <button> trigger, enabled (usage →
+    // popover to open); the strip wrapper itself is a plain <div>.
+    expect(footer(fixture)!.tagName.toLowerCase()).toBe('div');
+    const t = trigger(fixture)!;
+    expect(t.tagName.toLowerCase()).toBe('button');
+    expect(t.disabled).toBeFalse();
 
     // DOM order: footer AFTER the tree region, BEFORE app-human-request, all
     // direct children of `.tree-component-container`.
@@ -157,7 +170,7 @@ describe('TreeComponent — team-total footer (Story 26-3)', () => {
       totalCacheWrite: 0,
     });
     fixture.detectChanges();
-    expect(footerText(fixture)).toBe('Team total ↑1.0k ↓200');
+    expect(footerText(fixture)).toBe('Team total ↑1.0k — ↓200');
 
     // A new LlmUsageEvent landed for some agent → the selector re-emits a larger
     // structural sum; the async pipe re-renders without any imperative refresh.
@@ -168,7 +181,7 @@ describe('TreeComponent — team-total footer (Story 26-3)', () => {
       totalCacheWrite: 0,
     });
     fixture.detectChanges();
-    expect(footerText(fixture)).toBe('Team total ↑73.4k ↓18.9k');
+    expect(footerText(fixture)).toBe('Team total ↑73.4k — ↓18.9k');
   });
 
   it('(c) empty team (`{0,0}`) renders the `Team total ↑0 ↓0` fallback with an inert (disabled) trigger', () => {
@@ -181,10 +194,11 @@ describe('TreeComponent — team-total footer (Story 26-3)', () => {
     fixture.detectChanges();
 
     // The zero-totals object IS the empty state — the footer is still rendered,
-    // but AC 6 disables it: no usage yet, nothing to open.
+    // just showing all-zero sums (cache read 0 → no parens) and disabled (no
+    // usage → nothing to break down).
     expect(footer(fixture)).not.toBeNull();
-    expect(footerText(fixture)).toBe('Team total ↑0 ↓0');
-    expect((footer(fixture) as unknown as HTMLButtonElement).disabled).toBeTrue();
+    expect(footerText(fixture)).toBe('Team total ↑0 — ↓0');
+    expect(trigger(fixture)!.disabled).toBeTrue();
   });
 
   it('(d) resolves the SHARED selector instance (no self-provider) and leaves the tree behavior intact', () => {
@@ -220,26 +234,30 @@ describe('TreeComponent — team-total footer (Story 26-3)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Story 30-2 (ADR-024 §Decision 3) — the team-tree footer becomes an
-// interactive trigger for its OWN `<p-popover>` breaking down the team-wide
-// cache read/write. Same fake-selector pattern as Story 26-3: a controllable
-// `totals$` BehaviorSubject makes glyph / toggle / live-update / empty-state
-// deterministic. `p-popover` renders in place (no `appendTo` override) so its
-// content is queryable straight off `fixture.nativeElement`.
+// Team-total footer — the chip keeps `Team total ↑{sent} (⚡{cacheRead}) —
+// ↓{received}` (cache parens only when non-zero) and, when it carries usage,
+// toggles a `<p-popover>` breaking the totals down BY MODEL (`teamByModel$`,
+// one row per model: `{model} ↑{sent} (⚡{cacheRead}) ↓{received}`). Driveable
+// `totals$` + `byModel$` subjects make chip / toggle / live-update / empty-state
+// deterministic. `p-popover` renders in place (no `appendTo`) so its content is
+// queryable straight off `fixture.nativeElement`.
 // ---------------------------------------------------------------------------
-describe('TreeComponent — team-total popover (Story 30-2)', () => {
+describe('TreeComponent — team-total popover by model', () => {
   let totals$: BehaviorSubject<TeamTokenTotals>;
+  let byModel$: BehaviorSubject<ModelTokenTotals[]>;
   let nodes$: BehaviorSubject<NodeInterface[]>;
 
   function setup(
-    initial: TeamTokenTotals = {
+    initialTotals: TeamTokenTotals = {
       totalSent: 0,
       totalReceived: 0,
       totalCacheRead: 0,
       totalCacheWrite: 0,
     },
+    initialByModel: ModelTokenTotals[] = [],
   ): ComponentFixture<TreeComponent> {
-    totals$ = new BehaviorSubject<TeamTokenTotals>(initial);
+    totals$ = new BehaviorSubject<TeamTokenTotals>(initialTotals);
+    byModel$ = new BehaviorSubject<ModelTokenTotals[]>(initialByModel);
     nodes$ = new BehaviorSubject<NodeInterface[]>([]);
 
     TestBed.resetTestingModule();
@@ -250,6 +268,7 @@ describe('TreeComponent — team-total popover (Story 30-2)', () => {
           provide: TokenUsageSelector,
           useValue: {
             teamTotals$: totals$.asObservable(),
+            teamByModel$: byModel$.asObservable(),
             perAgent$: (_id: string) => of(undefined),
           },
         },
@@ -282,58 +301,74 @@ describe('TreeComponent — team-total popover (Story 30-2)', () => {
     return TestBed.createComponent(TreeComponent);
   }
 
+  // The popover trigger is the compact button inside the strip.
   function footer(fixture: ComponentFixture<TreeComponent>): HTMLButtonElement {
     return (fixture.nativeElement as HTMLElement).querySelector(
-      '.team-total-footer',
+      '.team-total-trigger',
     ) as HTMLButtonElement;
   }
 
-  /** Each `.usage-popover-row`'s two cells joined with a single space (e.g.
-   *  "Cache read 4,000") — empty array when the popover isn't open. */
+  function footerText(fixture: ComponentFixture<TreeComponent>): string {
+    return (footer(fixture)?.textContent ?? '').replace(/\s+/g, ' ').trim();
+  }
+
+  /** Each `.usage-popover-row`'s two cells (model label + usage line), inner
+   *  whitespace collapsed — empty array when the popover isn't open. */
   function popoverRows(fixture: ComponentFixture<TreeComponent>): string[] {
     const rows = (fixture.nativeElement as HTMLElement).querySelectorAll(
       '.usage-popover-row',
     );
     return Array.from(rows).map((row) =>
       Array.from(row.children)
-        .map((c) => (c.textContent ?? '').trim())
+        .map((c) => (c.textContent ?? '').replace(/\s+/g, ' ').trim())
         .join(' '),
     );
   }
 
-  it('shows the ⚡ glyph when team cache tokens were used', () => {
-    const fixture = setup({
-      totalSent: 1_000,
-      totalReceived: 200,
-      totalCacheRead: 500,
-      totalCacheWrite: 0,
-    });
+  // The two models whose totals sum to the user's headline chip example.
+  const GPT: ModelTokenTotals = {
+    modelName: 'gpt-5.4-2026-03-05',
+    totalSent: 12_000,
+    totalReceived: 100,
+    totalCacheRead: 10_000,
+    totalCacheWrite: 0,
+  };
+  const CLAUDE: ModelTokenTotals = {
+    modelName: 'claude-opus-4-8',
+    totalSent: 4_800,
+    totalReceived: 61,
+    totalCacheRead: 2_800,
+    totalCacheWrite: 0,
+  };
+  const HEADLINE: TeamTokenTotals = {
+    totalSent: 16_800,
+    totalReceived: 161,
+    totalCacheRead: 12_800,
+    totalCacheWrite: 0,
+  };
+
+  it('chip shows the cache read in parens (⚡-prefixed) between ↑ and ↓ when team cache tokens were used', () => {
+    const fixture = setup(HEADLINE, [GPT, CLAUDE]);
     fixture.detectChanges();
-    expect(footer(fixture).textContent).toContain('⚡');
+    // tokenCount: 16_800 → "16.8k", 12_800 → "12.8k", 161 → "161".
+    expect(footerText(fixture)).toBe('Team total ↑16.8k (⚡12.8k) — ↓161');
   });
 
-  it('shows no glyph when both team cache totals are 0', () => {
-    const fixture = setup({
-      totalSent: 1_000,
-      totalReceived: 200,
-      totalCacheRead: 0,
-      totalCacheWrite: 0,
-    });
+  it('chip omits the parens (and ⚡) when team cache read is 0', () => {
+    const fixture = setup(
+      { totalSent: 1_000, totalReceived: 200, totalCacheRead: 0, totalCacheWrite: 0 },
+      [{ modelName: 'gpt-5.4-2026-03-05', totalSent: 1_000, totalReceived: 200, totalCacheRead: 0, totalCacheWrite: 0 }],
+    );
     fixture.detectChanges();
+    expect(footerText(fixture)).toBe('Team total ↑1.0k — ↓200');
     expect(footer(fixture).textContent).not.toContain('⚡');
   });
 
-  it('clicking the trigger toggles open the popover with team-wide Cache read / Cache write', () => {
-    const fixture = setup({
-      totalSent: 57_000,
-      totalReceived: 12_500,
-      totalCacheRead: 9_000,
-      totalCacheWrite: 1_200,
-    });
+  it('clicking the trigger toggles open the popover with one row per model', () => {
+    const fixture = setup(HEADLINE, [GPT, CLAUDE]);
     fixture.detectChanges();
 
-    // No popover content before the trigger is clicked, and the trigger
-    // announces itself as a closed disclosure control to assistive tech.
+    // Closed disclosure control, no popover content yet.
     expect(popoverRows(fixture)).toEqual([]);
     expect(footer(fixture).getAttribute('aria-haspopup')).toBe('dialog');
     expect(footer(fixture).getAttribute('aria-expanded')).toBe('false');
@@ -342,42 +377,48 @@ describe('TreeComponent — team-total popover (Story 30-2)', () => {
     fixture.detectChanges();
 
     const rows = popoverRows(fixture);
-    expect(rows).toContain('Cache read 9,000');
-    expect(rows).toContain('Cache write 1,200');
-    // aria-expanded flips once the popover is actually open.
+    expect(rows).toContain('gpt-5.4-2026-03-05 ↑12.0k (⚡10.0k) ↓100');
+    expect(rows).toContain('claude-opus-4-8 ↑4.8k (⚡2.8k) ↓61');
     expect(footer(fixture).getAttribute('aria-expanded')).toBe('true');
   });
 
-  it('popover content updates live when teamTotals$ re-emits a new value (no re-toggle needed)', () => {
-    const fixture = setup({
-      totalSent: 1_000,
-      totalReceived: 200,
-      totalCacheRead: 300,
-      totalCacheWrite: 0,
-    });
+  it('popover per-model rows update live when teamByModel$ re-emits (a cache-free model shows no parens)', () => {
+    const fixture = setup(HEADLINE, [GPT, CLAUDE]);
     fixture.detectChanges();
     footer(fixture).click();
     fixture.detectChanges();
-    expect(popoverRows(fixture)).toContain('Cache read 300');
+    expect(popoverRows(fixture)).toContain('gpt-5.4-2026-03-05 ↑12.0k (⚡10.0k) ↓100');
 
-    totals$.next({
-      totalSent: 5_000,
-      totalReceived: 900,
-      totalCacheRead: 4_400,
-      totalCacheWrite: 250,
-    });
+    byModel$.next([
+      { modelName: 'gpt-5.4-2026-03-05', totalSent: 20_000, totalReceived: 300, totalCacheRead: 15_000, totalCacheWrite: 0 },
+      { modelName: 'local-llama', totalSent: 1_000, totalReceived: 50, totalCacheRead: 0, totalCacheWrite: 0 },
+    ]);
     fixture.detectChanges();
 
-    expect(popoverRows(fixture)).toContain('Cache read 4,400');
-    expect(popoverRows(fixture)).toContain('Cache write 250');
+    const rows = popoverRows(fixture);
+    expect(rows).toContain('gpt-5.4-2026-03-05 ↑20.0k (⚡15.0k) ↓300');
+    // Cache-free model → no ⚡ parens.
+    expect(rows).toContain('local-llama ↑1.0k ↓50');
   });
 
-  it('empty team (all-zero totals) renders a disabled trigger with no popover to open', () => {
+  it('chip cache read updates live when teamTotals$ re-emits a new value', () => {
+    const fixture = setup(
+      { totalSent: 1_000, totalReceived: 200, totalCacheRead: 300, totalCacheWrite: 0 },
+      [{ modelName: 'gpt-5.4-2026-03-05', totalSent: 1_000, totalReceived: 200, totalCacheRead: 300, totalCacheWrite: 0 }],
+    );
+    fixture.detectChanges();
+    expect(footerText(fixture)).toBe('Team total ↑1.0k (⚡300) — ↓200');
+
+    totals$.next({ totalSent: 5_000, totalReceived: 900, totalCacheRead: 4_400, totalCacheWrite: 250 });
+    fixture.detectChanges();
+    expect(footerText(fixture)).toBe('Team total ↑5.0k (⚡4.4k) — ↓900');
+  });
+
+  it('empty team (all-zero totals) renders a disabled trigger with no popover rows to open', () => {
     const fixture = setup();
     fixture.detectChanges();
 
-    const trigger = footer(fixture);
-    expect(trigger.disabled).toBeTrue();
+    expect(footer(fixture).disabled).toBeTrue();
     expect(popoverRows(fixture)).toEqual([]);
   });
 });
@@ -430,6 +471,7 @@ describe('TreeComponent — OnPush regression (Story 30-3)', () => {
               totalCacheRead: 0,
               totalCacheWrite: 0,
             }),
+            teamByModel$: of([]),
             perAgent$: (_id: string) => of(undefined),
           },
         },

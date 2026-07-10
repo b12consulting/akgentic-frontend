@@ -28,48 +28,51 @@
     </p-tree>
   </div>
   <!--
-    ADR-024 §Decision 3 — team-wide token-usage trigger, same interactive
-    treatment as the member-chat pill (supersedes ADR-022 §Decision 6's
-    non-interactive footer). ↑ = sent = Σ input; ↓ = received = Σ output.
-    `teamTotals$` NEVER emits `undefined` (`sumTotals` always returns a
-    zero-filled object for an empty team) — the "no data" case here is
-    ALL-ZERO totals, not a missing value, so the trigger is disabled when every
-    total is `0` rather than gated on an `undefined` branch. Toggles its OWN
-    `<p-popover>` (independent of the member-chat one) breaking down the
-    team-wide cache read/write.
+    Team-wide token-usage footer. ↑ = sent = Σ input; ↓ = received = Σ output;
+    the parenthesised ⚡ figure between them is the team-wide cache read (Σ cached
+    input) shown only when non-zero. `teamTotals$` NEVER emits `undefined`
+    (`sumTotals` always returns a zero-filled object for an empty team) — the
+    "no data" case is ALL-ZERO totals, so the trigger is disabled when every
+    total is 0. Clicking the (enabled) footer toggles a popover breaking the
+    totals down BY MODEL (`teamByModel$`, grouped by each agent's current model).
+    Cache write is not surfaced (OpenAI reports cache reads only).
   -->
   <ng-container *ngIf="teamTotals$ | async as totals">
-    <button
-      type="button"
-      class="team-total-footer"
-      [attr.aria-label]="
-        'Team token usage: sent ' + (totals.totalSent | number) +
-        ', received ' + (totals.totalReceived | number)
-      "
-      [disabled]="
-        totals.totalSent === 0 &&
-        totals.totalReceived === 0 &&
-        totals.totalCacheRead === 0 &&
-        totals.totalCacheWrite === 0
-      "
-      aria-haspopup="dialog"
-      [attr.aria-expanded]="teamUsageOp.overlayVisible"
-      (click)="teamUsageOp.toggle($event)"
-    >
-      Team total ↑{{ totals.totalSent | tokenCount }} ↓{{
-        totals.totalReceived | tokenCount
-      }}
-      <span *ngIf="totals.totalCacheRead + totals.totalCacheWrite > 0">⚡</span>
-    </button>
+    <!-- Full-width strip; the popover anchors to the COMPACT inner trigger (not
+         the strip) so its caret lines up under the text, not the strip centre. -->
+    <div class="team-total-footer">
+      <button
+        type="button"
+        class="team-total-trigger"
+        [attr.aria-label]="
+          'Team token usage: sent ' + (totals.totalSent | number) +
+          ', cache read ' + (totals.totalCacheRead | number) +
+          ', received ' + (totals.totalReceived | number)
+        "
+        [disabled]="
+          totals.totalSent === 0 &&
+          totals.totalReceived === 0 &&
+          totals.totalCacheRead === 0 &&
+          totals.totalCacheWrite === 0
+        "
+        aria-haspopup="dialog"
+        [attr.aria-expanded]="teamUsageOp.overlayVisible"
+        (click)="teamUsageOp.toggle($event)"
+      >
+        Team total ↑{{ totals.totalSent | tokenCount }}
+        <span *ngIf="totals.totalCacheRead > 0">(⚡{{ totals.totalCacheRead | tokenCount }})</span>
+        — ↓{{ totals.totalReceived | tokenCount }}
+      </button>
+    </div>
     <p-popover #teamUsageOp>
       <div class="usage-popover">
-        <div class="usage-popover-row">
-          <span class="usage-popover-label">Cache read</span>
-          <span>{{ totals.totalCacheRead | number }}</span>
-        </div>
-        <div class="usage-popover-row">
-          <span class="usage-popover-label">Cache write</span>
-          <span>{{ totals.totalCacheWrite | number }}</span>
+        <div class="usage-popover-row" *ngFor="let m of teamByModel$ | async">
+          <span class="usage-popover-label">{{ m.modelName }}</span>
+          <span>
+            ↑{{ m.totalSent | tokenCount }}
+            <span *ngIf="m.totalCacheRead > 0">(⚡{{ m.totalCacheRead | tokenCount }})</span>
+            ↓{{ m.totalReceived | tokenCount }}
+          </span>
         </div>
       </div>
     </p-popover>
