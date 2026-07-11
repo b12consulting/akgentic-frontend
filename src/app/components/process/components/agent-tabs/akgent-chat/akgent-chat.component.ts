@@ -92,7 +92,7 @@ export class AkgentChatComponent implements OnInit, OnChanges {
   apiService: ApiService = inject(ApiService);
   utilService: UtilService = inject(UtilService);
   contextService: ContextService = inject(ContextService);
-  messageService: IngestionService = inject(IngestionService);
+  ingestionService: IngestionService = inject(IngestionService);
   private config = inject(ConfigService);
   // ADR-004 §5b: component-scoped selector provided on ProcessComponent.providers
   // (Story 16-1) — resolves the same MessageLogService instance as this subtree.
@@ -256,7 +256,7 @@ export class AkgentChatComponent implements OnInit, OnChanges {
     args: CommandDescriptor['args'];
   }[] {
     const descriptors =
-      this.messageService.commands.snapshot(this.agentId) ?? [];
+      this.ingestionService.commands.snapshot(this.agentId) ?? [];
     return descriptors
       // `_`-prefixed commands (e.g. `_expand_media_refs`) are internal, not
       // user-invocable — keep them out of the `/` dropdown.
