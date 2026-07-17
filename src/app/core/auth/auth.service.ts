@@ -57,9 +57,11 @@ export class AuthService {
    *
    * Drives `POST /auth/login/apikey` with a JSON body (`{"apikey": "<key>"}`)
    * and `credentials: 'include'` so the backend's `Set-Cookie` session response
-   * is stored by the browser. The same endpoint contract is exposed by both the
-   * Department and Enterprise tiers, so this single code path covers both — no
-   * tier-specific branching.
+   * is stored by the browser. One code path, no tier-specific branching: the
+   * endpoint is owned by the shared backend auth library, so every tier that
+   * adopts it serves the same contract. (Enterprise has not adopted it yet and
+   * still serves a legacy variant; that is tracked backend-side, and this client
+   * deliberately does not branch to accommodate it.)
    *
    * The API key is sent once in the request body — never in the URL, where it
    * would be captured by access logs, browser history, and `Referer` headers —
