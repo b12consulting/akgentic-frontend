@@ -3,7 +3,7 @@ import { AuthProvider } from '../app/core/auth/auth.types';
 export const environment = {
   production: true,
   api: 'http://localhost:8000',
-  logo: 'b12.png',
+  logo: 'akgent_logo.png',
   autoRedirectContext: 'Business team',
   welcomeMessage: 'Welcome to the Akgentic Framework',
   hideHome: false,
