@@ -92,8 +92,13 @@ export interface StopMessage extends BaseMessage {
 
 export interface ErrorMessage extends BaseMessage {
   __model__: 'akgentic.core.messages.orchestrator.ErrorMessage';
-  exception_type: string;
-  exception_value: string;
+  /** Inherited from `NotificationMessage` upstream (core Epic 24, story 24-5):
+   *  the error's own former field pair was consolidated onto the shared
+   *  notification base. `content_type` is genuinely nullable (upstream default
+   *  `None`); `content` narrows `BaseMessage.content` to a non-null string
+   *  (upstream default `""`). */
+  content_type: string | null;
+  content: string;
   current_message?: BaseMessage | null;
 }
 

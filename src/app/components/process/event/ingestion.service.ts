@@ -371,7 +371,7 @@ export class IngestionService {
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
-            detail: event.exception_value,
+            detail: event.content,
             life: 5000,
           });
         }

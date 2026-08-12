@@ -27,13 +27,13 @@
         <ng-container *ngIf="message.__model__.includes('ErrorMessage')">
           <div class="fieldset-body">
             <p-fieldset
-              legend="{{ message.exception_type | capitalize }}"
+              legend="{{ message.content_type | capitalize }}"
               [toggleable]="false"
             >
               <div
                 style="color: darkred; margin: 0.5rem 0 1rem"
                 class="text-container"
-                [innerHTML]="message.exception_value"
+                [innerHTML]="message.content"
               ></div>
               <div>
                 <p-button

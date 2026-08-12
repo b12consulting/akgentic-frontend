@@ -285,7 +285,7 @@ function applyErrorMessage(state: GraphState, msg: ErrorMessage): GraphState {
   const target = state.nodes[idx];
   const updated: NodeInterface = {
     ...target,
-    errorMessage: msg.exception_value || msg.exception_type || 'Error',
+    errorMessage: msg.content || msg.content_type || 'Error',
     itemStyle: { ...(target.itemStyle || {}), color: 'darkred' },
   };
   const nextNodes = [
