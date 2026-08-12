@@ -16,6 +16,7 @@ import { AuthService } from './core/auth/auth.service';
 import { ConfigService } from './core/config/config.service';
 import { ContextService } from './core/context/context.service';
 import { FaviconService } from './core/config/favicon.service';
+import { NotificationToastService } from './core/ui/notification-toast.service';
 import { ViewService } from './core/ui/view.service';
 
 function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
@@ -648,5 +649,223 @@ describe('AppComponent — notification toast rendering (Story 31-3)', () => {
     await flush();
 
     expect(toasts().length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 31-5 — removing one on-screen toast, against the real <p-toast> mount
+//
+// Two things can only be settled here, against real PrimeNG:
+//
+//   1. WHY the mechanism is what it is. `MessageService` offers `add` and
+//      `clear(key)` and nothing else, and neither can take down a single toast
+//      on the app's shared keyless mount. The first two specs below run that
+//      claim rather than asserting it in a comment — they are the evidence for
+//      the design, and they fail loudly if a PrimeNG upgrade ever changes it.
+//   2. That splicing `Toast.messages` through `NotificationToastService` really
+//      does remove the rendered element, leaving its neighbours in place.
+//
+// Like the 31-3 block above, this one keeps AppComponent's own ToastModule
+// import and a REAL MessageService — under the `.overrideComponent(...)` stub
+// set used by the first suite in this file `<p-toast>` is an inert unknown
+// element and every assertion here would pass vacuously.
+// ---------------------------------------------------------------------------
+
+describe('AppComponent — single-toast removal (Story 31-5)', () => {
+  let fixture: ComponentFixture<AppComponent>;
+  let messageService: MessageService;
+  let notificationToast: NotificationToastService;
+
+  beforeEach(async () => {
+    const contextStub: ContextStub = {
+      currentProcessId$: new BehaviorSubject<string>(''),
+      currentTeam$: new BehaviorSubject<TeamContext | null>(null),
+      currentTeamRunning$: new BehaviorSubject<boolean>(false),
+      getCurrentTeam: jasmine.createSpy('getCurrentTeam'),
+      clear: jasmine.createSpy('clear'),
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [AppComponent, NoopAnimationsModule, RouterTestingModule],
+      providers: [
+        MessageService,
+        { provide: ContextService, useValue: contextStub },
+        {
+          provide: ViewService,
+          useValue: {
+            isRightColumnCollapsed$: new BehaviorSubject<boolean>(false),
+            toggleRightColumn: jasmine.createSpy('toggleRightColumn'),
+          },
+        },
+        {
+          provide: AuthService,
+          useValue: {
+            currentUser$: new BehaviorSubject<any>({
+              name: 'Alice',
+              user_id: 'u-1',
+            }),
+            checkAuth: jasmine.createSpy('checkAuth').and.returnValue(of(true)),
+            logout: jasmine.createSpy('logout'),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            logo: 'logo.png',
+            hideLogin: true,
+            favicon: 'favicon.ico',
+            hideHome: false,
+          },
+        },
+        {
+          provide: FaviconService,
+          useValue: { setFavicon: jasmine.createSpy('setFavicon') },
+        },
+        {
+          provide: ApiService,
+          useValue: {
+            getTeam: jasmine.createSpy('getTeam'),
+            getTeams: jasmine.createSpy('getTeams'),
+            emitClosedNotification: jasmine
+              .createSpy('emitClosedNotification')
+              .and.resolveTo(undefined),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(AppComponent);
+    messageService = TestBed.inject(MessageService);
+    notificationToast = TestBed.inject(NotificationToastService);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  });
+
+  afterEach(() => {
+    fixture.destroy();
+  });
+
+  function notificationToastFor(
+    messageId: string,
+    summary: string,
+  ): Record<string, unknown> {
+    return {
+      severity: 'warn',
+      summary,
+      detail: 'over limit',
+      sticky: true,
+      data: { messageId, teamId: 'team-1' },
+    };
+  }
+
+  function summaries(): (string | undefined)[] {
+    return Array.from(
+      fixture.nativeElement.querySelectorAll('.p-toast-message'),
+    ).map((t) =>
+      (t as HTMLElement)
+        .querySelector('.p-toast-summary')
+        ?.textContent?.trim(),
+    );
+  }
+
+  async function flush(): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  // --- why MessageService alone cannot do this (Task 1 evidence) -----------
+
+  it('MessageService.clear(key) removes NOTHING from the app\'s keyless mount', async () => {
+    messageService.add(notificationToastFor('w-1', 'Alpha'));
+    await flush();
+    expect(summaries().length).toBe(1);
+
+    // The obvious-looking `key: 'notification-<id>'` + `clear(that key)` design.
+    // PrimeNG matches a clear against the CONTAINER's key, not a message's, and
+    // this container has none — so the toast survives untouched.
+    messageService.clear('notification-w-1');
+    await flush();
+
+    expect(summaries()).toEqual(['Alpha']);
+  });
+
+  it('MessageService.clear() with no key removes EVERY toast, not just one', async () => {
+    // The other half of the same point: the only clear that bites is the
+    // blanket one, which would take the disconnect toast down with it.
+    messageService.add(notificationToastFor('w-1', 'Alpha'));
+    messageService.add({ severity: 'warn', summary: 'Connection Lost', sticky: true });
+    await flush();
+    expect(summaries().length).toBe(2);
+
+    messageService.clear();
+    await flush();
+
+    expect(summaries()).toEqual([]);
+  });
+
+  // --- what the story actually does ---------------------------------------
+
+  it('dismiss() removes exactly the matching toast from the DOM', async () => {
+    messageService.add(notificationToastFor('w-1', 'Alpha'));
+    messageService.add(notificationToastFor('w-2', 'Beta'));
+    await flush();
+    expect(summaries()).toEqual(['Alpha', 'Beta']);
+
+    notificationToast.dismiss('w-1');
+    await flush();
+
+    expect(summaries()).toEqual(['Beta']);
+  });
+
+  it('dismiss() leaves the disconnect toast standing', async () => {
+    messageService.add(notificationToastFor('w-1', 'Alpha'));
+    messageService.add({
+      severity: 'warn',
+      summary: 'Connection Lost',
+      sticky: true,
+      closable: false,
+    });
+    await flush();
+
+    notificationToast.dismiss('w-1');
+    await flush();
+
+    expect(summaries()).toEqual(['Connection Lost']);
+  });
+
+  it('dismiss() for an unknown id leaves every toast on screen', async () => {
+    messageService.add(notificationToastFor('w-1', 'Alpha'));
+    await flush();
+
+    notificationToast.dismiss('w-9');
+    await flush();
+
+    expect(summaries()).toEqual(['Alpha']);
+  });
+
+  it('AppComponent registers its mount, so dismiss() reaches a real container', async () => {
+    // Guards the `ngAfterViewInit` wiring specifically: without the register
+    // call the service holds null and every dismiss above would pass by doing
+    // nothing at all to an empty screen.
+    messageService.add(notificationToastFor('w-1', 'Alpha'));
+    await flush();
+
+    notificationToast.dismiss('w-1');
+    await flush();
+
+    expect(summaries()).toEqual([]);
+  });
+
+  it('destroying AppComponent unregisters the mount', async () => {
+    messageService.add(notificationToastFor('w-1', 'Alpha'));
+    await flush();
+
+    fixture.destroy();
+
+    // A dismissal arriving after teardown must not splice a dead container.
+    expect(() => notificationToast.dismiss('w-1')).not.toThrow();
+    expect((notificationToast as any).toast).toBeNull();
   });
 });

@@ -31,7 +31,7 @@
         <ng-container *ngIf="notificationSeverity(message) as severity">
           <div class="fieldset-body">
             <p-fieldset
-              legend="{{ notificationLegend(message, severity) | capitalize }}"
+              legend="{{ (notificationLegend(message, severity) ?? '') | capitalize }}"
               [toggleable]="false"
             >
               <div

@@ -37,6 +37,7 @@ import {
   tokenUsageSpec,
 } from './per-agent-specs';
 import { MessageService } from 'primeng/api';
+import { NotificationToastService } from '../../../core/ui/notification-toast.service';
 
 /**
  * Story 4-10 (AC7): minimum visible duration of the loading spinner.
@@ -106,6 +107,17 @@ export class IngestionService {
   apiService: ApiService = inject(ApiService);
   messageService: MessageService = inject(MessageService);
   private config: ConfigService = inject(ConfigService);
+
+  /**
+   * Story 31-5: the other half of dismissal. `messageService` raises toasts;
+   * this removes a single one that is already on screen — an operation PrimeNG's
+   * `MessageService` does not offer. Declared here, above `closedIdsSub`,
+   * because that field's initializer subscribes to a `BehaviorSubject` and so
+   * fires during construction.
+   */
+  private notificationToast: NotificationToastService = inject(
+    NotificationToastService,
+  );
 
   /**
    * Story 4-10 (AC7) / Epic 18 (ADR-015 §2): the loading-spinner state.
@@ -246,13 +258,44 @@ export class IngestionService {
    * ordering genuinely bites) is story 31-5's batch computation. Do NOT close the
    * gap with a synchronous side-channel off `_wsInbound$` — that is a partial,
    * untested version of 31-5.
+   *
+   * Story 31-5 kept that instruction and answered the ordering the other way
+   * round: see `onClosedNotificationIds` below.
    */
   private closedNotificationIds: Set<string> = new Set<string>();
-  /** Subscription feeding `closedNotificationIds`. Torn down in ngOnDestroy
-   *  alongside `bufferSub` / `spinnerSub`. */
+  /** Subscription feeding `closedNotificationIds` and (31-5) the toast removal
+   *  it now also drives. Torn down in ngOnDestroy alongside `bufferSub` /
+   *  `spinnerSub`. */
   private closedIdsSub: Subscription = this.log.closedNotificationIds$.subscribe(
-    (ids) => (this.closedNotificationIds = ids),
+    (ids) => this.onClosedNotificationIds(ids),
   );
+
+  /**
+   * Story 31-5: dismissal, in the direction the 31-4 suppressor cannot cover.
+   *
+   * The suppressor is pre-emptive — it refuses to raise a toast for an id the
+   * log already knows to be closed. That handles a `ClosedNotification` that
+   * arrives FIRST. On a reload of a running team the wire delivers the opposite
+   * order: history replays from cursor 0, so the `WarningMessage` (older) lands
+   * before its `ClosedNotification` (newer), the toast opens, and nothing ever
+   * took it down again. A warning dismissed days ago came back on every reload
+   * and stayed.
+   *
+   * Removing the toast when the closure is folded makes the pair
+   * order-independent, which is why no replay/live boundary is needed here —
+   * there is none on the wire, and this design does not want one.
+   *
+   * Only ids that are NEW to the set trigger a removal: `closedNotificationIds$`
+   * re-emits a fresh `Set` whenever the closed set changes, and re-dismissing
+   * the whole set each time would be wasted work that also blunts the tests.
+   */
+  private onClosedNotificationIds(ids: Set<string>): void {
+    const previous = this.closedNotificationIds;
+    this.closedNotificationIds = ids;
+    for (const id of ids) {
+      if (!previous.has(id)) this.notificationToast.dismiss(id);
+    }
+  }
 
   async init(processId: string, running: boolean): Promise<void> {
     this.processId = processId;
@@ -582,7 +625,10 @@ export class IngestionService {
    *     equals the message's (`Toast.canAdd`). A keyed message is silently
    *     dropped and never renders. Per-event identity travels in `data`
    *     instead; `Toast.add()` appends, so keyless messages already coexist
-   *     rather than clobbering one another.
+   *     rather than clobbering one another. Story 31-5 re-tested this before
+   *     building removal on top of it and reached the same conclusion: a key
+   *     here would buy nothing anyway, since `MessageService.clear(key)` empties
+   *     a whole container rather than one message.
    *   - **no `closable`** — the neighbouring `showDisconnectToast` sets
    *     `closable: false` on purpose; this toast is its exact opposite and
    *     needs the close cross that PrimeNG renders by default.
@@ -599,7 +645,10 @@ export class IngestionService {
    * a `ClosedNotification` on the log raises no toast at all. It is an early
    * return HERE and not in the WS `next` handler, so the message still reaches
    * `_wsInbound$` and the Messages tab — closing dismisses the popup, not the
-   * historical record.
+   * historical record. Story 31-5 covers the opposite arrival order by removing
+   * the toast after the fact (`onClosedNotificationIds`); `data.messageId` is
+   * what addresses it, which is why that field is load-bearing and not debug
+   * decoration.
    */
   private showNotificationToast(
     event: WarningMessage | NotificationMessage,

@@ -1,11 +1,11 @@
-import { Component, DestroyRef, inject } from '@angular/core';
+import { Component, DestroyRef, inject, ViewChild } from '@angular/core';
 import { Router, RouterModule, RouterOutlet } from '@angular/router';
 
 import { CommonModule } from '@angular/common';
 import { MenuItem } from 'primeng/api';
 import { MenubarModule } from 'primeng/menubar';
 import { TagModule } from 'primeng/tag';
-import { ToastModule } from 'primeng/toast';
+import { Toast, ToastModule } from 'primeng/toast';
 import { Subject, takeUntil } from 'rxjs';
 import { emptyableCombineLatest } from './shared/util/util';
 import { AkgentService } from './core/ui/akgent.service';
@@ -14,6 +14,7 @@ import { AuthService } from './core/auth/auth.service';
 import { ConfigService } from './core/config/config.service';
 import { ContextService } from './core/context/context.service';
 import { FaviconService } from './core/config/favicon.service';
+import { NotificationToastService } from './core/ui/notification-toast.service';
 import { ViewService } from './core/ui/view.service';
 
 @Component({
@@ -44,6 +45,20 @@ export class AppComponent {
   faviconService = inject(FaviconService);
   apiService = inject(ApiService);
   router = inject(Router);
+
+  /**
+   * Story 31-5: the app's one and only toast container. Handed to
+   * `NotificationToastService` so a `ClosedNotification` arriving over the wire
+   * can remove the toast it dismisses — see that service for why PrimeNG leaves
+   * no other route to a single-toast removal.
+   */
+  @ViewChild(Toast) private toast?: Toast;
+  private notificationToast = inject(NotificationToastService);
+
+  ngAfterViewInit() {
+    this.notificationToast.register(this.toast ?? null);
+    this.destroyRef.onDestroy(() => this.notificationToast.register(null));
+  }
 
   ngOnInit() {
     this.logo = this.configService.logo;
