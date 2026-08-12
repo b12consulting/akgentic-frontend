@@ -1537,3 +1537,258 @@ describe('IngestionService — seed agent state on init (Story 25-1)', () => {
     socketB.complete();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Story 31-3 — Persistent closable toast with agent-name header (AC1-AC5, AC8-AC10)
+//
+// The service half of the story: what `showNotificationToast` puts on the wire
+// to `MessageService.add`. The DOM half (close button, keyless rendering,
+// coexistence) lives in `app.component.spec.ts`, because those three facts are
+// PrimeNG contracts against the app's real `<p-toast>` mount and cannot be
+// observed from a spy argument.
+// ---------------------------------------------------------------------------
+
+describe('IngestionService — Story 31-3 (notification toast)', () => {
+  let service: IngestionService;
+  let msgService: any;
+  let fakeSocket: Subject<any>;
+
+  /**
+   * One frame factory for the whole block (AC1-AC5, AC8): a full
+   * `BaseMessage`-shaped notification-family frame whose `sender` carries a
+   * name, which is what the toast header renders.
+   */
+  function mkNotification(
+    id: string,
+    model: string,
+    senderName: string,
+    content: string,
+  ): any {
+    return {
+      id,
+      parent_id: null,
+      team_id: 'team-1',
+      timestamp: '2026-08-12T00:00:00Z',
+      sender: makeAddress({ name: senderName, agent_id: 'agent-' + id }),
+      display_type: 'other',
+      content,
+      content_type: null,
+      __model__: model,
+    };
+  }
+
+  const WARNING = 'akgentic.core.messages.orchestrator.WarningMessage';
+  const NOTIFICATION = 'akgentic.core.messages.orchestrator.NotificationMessage';
+
+  function addArgs(): any[] {
+    return msgService.add.calls.allArgs().map((a: any[]) => a[0]);
+  }
+
+  beforeEach(() => {
+    jasmine.clock().install();
+    jasmine.clock().mockDate(new Date(0));
+
+    fakeSocket = new Subject<any>();
+
+    TestBed.configureTestingModule({
+      providers: [
+        MessageLogService,
+        PerAgentStoreRegistry,
+        IngestionService,
+        ChatService,
+        {
+          provide: ApiService,
+          useValue: {
+            getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+            getAgentStates: jasmine
+              .createSpy('getAgentStates')
+              .and.resolveTo([]),
+          },
+        },
+        {
+          provide: MessageService,
+          useValue: {
+            add: jasmine.createSpy('add'),
+            clear: jasmine.createSpy('clear'),
+          },
+        },
+      ],
+    });
+    service = TestBed.inject(IngestionService);
+    msgService = TestBed.inject(MessageService);
+
+    spyOn<any>(service, 'createWebSocket').and.returnValue(
+      fakeSocket as unknown as WebSocketSubject<any>,
+    );
+  });
+
+  afterEach(() => {
+    try {
+      fakeSocket.complete();
+    } catch {
+      /* already closed */
+    }
+    jasmine.clock().uninstall();
+  });
+
+  /** init + advance past the spinner floor so frames land on a live pipeline. */
+  async function start(): Promise<void> {
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+    // init()'s `messageService.clear()` runs before any frame; reset so the
+    // add-count assertions below count only frame-driven toasts.
+    msgService.add.calls.reset();
+  }
+
+  it('AC2/AC3/AC4/AC5: a WarningMessage raises one warn toast headed by the sender name', async () => {
+    await start();
+
+    fakeSocket.next(
+      mkNotification('w-1', WARNING, '@Researcher', 'token budget exceeded'),
+    );
+
+    expect(msgService.add).toHaveBeenCalledTimes(1);
+    const arg = addArgs()[0];
+    expect(arg.severity).toBe('warn');
+    expect(arg.summary).toBe('@Researcher');
+    expect(arg.detail).toBe('token budget exceeded');
+    expect(arg.sticky).toBeTrue();
+    expect(arg.data.messageId).toBe('w-1');
+  });
+
+  it('AC4: the toast carries no `life` — it is permanent until dismissed', async () => {
+    await start();
+
+    fakeSocket.next(mkNotification('w-1', WARNING, '@Researcher', 'over limit'));
+
+    expect(addArgs()[0].life).toBeUndefined();
+  });
+
+  it('AC6: the toast does NOT set closable:false (the showDisconnectToast trap)', async () => {
+    await start();
+
+    fakeSocket.next(mkNotification('w-1', WARNING, '@Researcher', 'over limit'));
+
+    // `closable` must be absent (PrimeNG default true). Anything other than
+    // `undefined` here means the disconnect toast was copy-pasted.
+    expect(addArgs()[0].closable).toBeUndefined();
+  });
+
+  it('AC7: the toast carries no `key` — the keyless mount would reject a keyed message', async () => {
+    await start();
+
+    fakeSocket.next(mkNotification('w-1', WARNING, '@Researcher', 'over limit'));
+
+    expect(addArgs()[0].key).toBeUndefined();
+  });
+
+  it('AC2: a sender without a name falls back to the literal "Agent"', async () => {
+    await start();
+
+    const frame = mkNotification('w-1', WARNING, '@X', 'over limit');
+    delete frame.sender.name;
+    fakeSocket.next(frame);
+
+    expect(addArgs()[0].summary).toBe('Agent');
+  });
+
+  it('AC5: a bare NotificationMessage raises an info toast, never warn', async () => {
+    await start();
+
+    fakeSocket.next(
+      mkNotification('n-1', NOTIFICATION, '@Planner', 'heads up'),
+    );
+
+    expect(msgService.add).toHaveBeenCalledTimes(1);
+    const arg = addArgs()[0];
+    expect(arg.severity).toBe('info');
+    expect(arg.summary).toBe('@Planner');
+    expect(arg.detail).toBe('heads up');
+    expect(arg.sticky).toBeTrue();
+  });
+
+  it('AC5: a WarningMessage never yields severity "info"', async () => {
+    await start();
+
+    fakeSocket.next(mkNotification('w-1', WARNING, '@Researcher', 'over limit'));
+
+    expect(addArgs().filter((c) => c.severity === 'info').length).toBe(0);
+  });
+
+  it('AC8: two WarningMessages with different ids produce two toasts with distinct data.messageId', async () => {
+    await start();
+
+    fakeSocket.next(mkNotification('w-1', WARNING, '@Alpha', 'first'));
+    fakeSocket.next(mkNotification('w-2', WARNING, '@Beta', 'second'));
+
+    expect(msgService.add).toHaveBeenCalledTimes(2);
+    const ids = addArgs().map((c) => c.data.messageId);
+    expect(ids).toEqual(['w-1', 'w-2']);
+    expect(ids[0]).not.toBe(ids[1]);
+  });
+
+  it('AC9: the WarningMessage still reaches the message log (the toast is additive)', async () => {
+    await start();
+    const log = TestBed.inject(MessageLogService);
+
+    fakeSocket.next(mkNotification('w-1', WARNING, '@Researcher', 'over limit'));
+    // Past the 16 ms bufferTime window so the batched subscriber has appended.
+    jasmine.clock().tick(20);
+
+    expect(log.snapshot().map((m) => m.id)).toContain('w-1');
+  });
+
+  it('AC10: an ErrorMessage still raises exactly one 5-second error toast and no warn/info toast', async () => {
+    await start();
+
+    fakeSocket.next(
+      mkNotification(
+        'e-1',
+        'akgentic.core.messages.orchestrator.ErrorMessage',
+        '@Researcher',
+        'boom',
+      ),
+    );
+
+    expect(msgService.add).toHaveBeenCalledTimes(1);
+    const arg = addArgs()[0];
+    expect(arg.severity).toBe('error');
+    expect(arg.summary).toBe('Error');
+    expect(arg.detail).toBe('boom');
+    expect(arg.life).toBe(5000);
+    expect(
+      addArgs().filter((c) => c.severity === 'warn' || c.severity === 'info')
+        .length,
+    ).toBe(0);
+  });
+
+  it('AC10: unrelated frame types raise no toast at all', async () => {
+    await start();
+
+    for (const model of [
+      'akgentic.core.messages.orchestrator.SentMessage',
+      'akgentic.core.messages.orchestrator.StartMessage',
+      'akgentic.core.messages.orchestrator.StateChangedMessage',
+      'akgentic.core.messages.orchestrator.EventMessage',
+    ]) {
+      fakeSocket.next(mkNotification('x-1', model, '@Researcher', 'inert'));
+    }
+
+    expect(msgService.add).not.toHaveBeenCalled();
+  });
+
+  it('AC10: the disconnect toast is unchanged, closable:false included', async () => {
+    await start();
+
+    fakeSocket.error(new Error('connection lost'));
+
+    expect(msgService.add).toHaveBeenCalledWith(
+      jasmine.objectContaining({
+        severity: 'warn',
+        summary: 'Connection Lost',
+        sticky: true,
+        closable: false,
+      }),
+    );
+  });
+});

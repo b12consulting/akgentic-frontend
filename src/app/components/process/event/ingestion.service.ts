@@ -8,7 +8,12 @@ import {
   ActorAddress,
   AkgenticMessage,
   CommandDescriptor,
+  isErrorMessage,
+  isNotificationMessage,
+  isWarningMessage,
+  NotificationMessage,
   StateChangedMessage,
+  WarningMessage,
 } from '../../../protocol/message.types';
 import {
   AgentStateResponse,
@@ -363,7 +368,7 @@ export class IngestionService {
         // per-__model__ dispatch).
         this._wsInbound$.next(event as AkgenticMessage);
 
-        if (event.__model__.includes('ErrorMessage')) {
+        if (isErrorMessage(event)) {
           // Story 6.4 (AC1): the toast is dispatched here; the inbound log
           // emission above already feeds every downstream selector. The
           // legacy `this.message$.next(event)` push is deleted (no
@@ -374,6 +379,11 @@ export class IngestionService {
             detail: event.content,
             life: 5000,
           });
+        } else if (isWarningMessage(event) || isNotificationMessage(event)) {
+          // Story 31-3 (FR11): sibling of the error toast for the rest of the
+          // notification family. `else if` (not a second `if`) because the
+          // three guards partition the family — Story 31-2 pins that.
+          this.showNotificationToast(event);
         }
         // Story 6.4 (AC1): every other branch (StateChangedMessage,
         // EventMessage, fallthrough) is now pure log-feed via
@@ -537,6 +547,40 @@ export class IngestionService {
       detail: 'Real-time connection to the server has been lost. Updates are paused.',
       sticky: true,
       closable: false,
+    });
+  }
+
+  /**
+   * Story 31-3 (FR11): one permanent, closable toast per handled warning,
+   * headed by the name of the agent that raised it.
+   *
+   * Three properties are deliberately ABSENT, and each omission is
+   * load-bearing — do not "complete" this object:
+   *
+   *   - **no `key`** — `app.component.html` mounts a single keyless
+   *     `<p-toast>`, and PrimeNG admits a message only when the mount's key
+   *     equals the message's (`Toast.canAdd`). A keyed message is silently
+   *     dropped and never renders. Per-event identity travels in `data`
+   *     instead; `Toast.add()` appends, so keyless messages already coexist
+   *     rather than clobbering one another.
+   *   - **no `closable`** — the neighbouring `showDisconnectToast` sets
+   *     `closable: false` on purpose; this toast is its exact opposite and
+   *     needs the close cross that PrimeNG renders by default.
+   *   - **no `life`** — any value defeats `sticky: true`.
+   *
+   * `data.messageId` (not `id`, which PrimeNG binds to the rendered DOM `id`
+   * attribute) carries the source event id; `Toast.onClose` re-emits the whole
+   * message, so it survives to the close handler story 31-4 will add.
+   */
+  private showNotificationToast(
+    event: WarningMessage | NotificationMessage,
+  ): void {
+    this.messageService.add({
+      severity: isWarningMessage(event) ? 'warn' : 'info',
+      summary: event.sender?.name ?? 'Agent',
+      detail: event.content,
+      sticky: true,
+      data: { messageId: event.id },
     });
   }
 

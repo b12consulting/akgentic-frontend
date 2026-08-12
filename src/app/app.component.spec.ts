@@ -4,6 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { Router, RouterModule } from '@angular/router';
 import { RouterTestingModule } from '@angular/router/testing';
+import { MessageService } from 'primeng/api';
 import { MenubarModule } from 'primeng/menubar';
 import { TagModule } from 'primeng/tag';
 import { BehaviorSubject, of } from 'rxjs';
@@ -340,5 +341,165 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
     expect(headerTagValues()).toContain('Running');
     expect(contextStub.getCurrentTeam).not.toHaveBeenCalled();
     expect(apiStub.getTeam).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 31-3 — notification toast rendering against the real <p-toast> mount
+//
+// Three facts about the notification toast are PrimeNG contracts, not service
+// state, and are invisible to a `MessageService.add` spy:
+//   - a message without `closable: false` renders a close button (AC6)
+//   - a message with a `key` is REJECTED by the app's keyless mount (AC7)
+//   - two messages coexist rather than replacing one another (AC8)
+//
+// This block therefore does NOT use `.overrideComponent(...)` like the suite
+// above: that override swaps AppComponent's imports for a CUSTOM_ELEMENTS_SCHEMA
+// stub set, under which `<p-toast>` is an inert unknown element and every
+// assertion below would pass vacuously. AppComponent's own ToastModule import
+// stands here, and a REAL MessageService is provided.
+// ---------------------------------------------------------------------------
+
+describe('AppComponent — notification toast rendering (Story 31-3)', () => {
+  let fixture: ComponentFixture<AppComponent>;
+  let messageService: MessageService;
+
+  beforeEach(async () => {
+    const contextStub: ContextStub = {
+      currentProcessId$: new BehaviorSubject<string>(''),
+      currentTeam$: new BehaviorSubject<TeamContext | null>(null),
+      currentTeamRunning$: new BehaviorSubject<boolean>(false),
+      getCurrentTeam: jasmine.createSpy('getCurrentTeam'),
+      clear: jasmine.createSpy('clear'),
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [AppComponent, NoopAnimationsModule, RouterTestingModule],
+      providers: [
+        MessageService,
+        { provide: ContextService, useValue: contextStub },
+        {
+          provide: ViewService,
+          useValue: {
+            isRightColumnCollapsed$: new BehaviorSubject<boolean>(false),
+            toggleRightColumn: jasmine.createSpy('toggleRightColumn'),
+          },
+        },
+        {
+          provide: AuthService,
+          useValue: {
+            currentUser$: new BehaviorSubject<any>({
+              name: 'Alice',
+              user_id: 'u-1',
+            }),
+            checkAuth: jasmine.createSpy('checkAuth').and.returnValue(of(true)),
+            logout: jasmine.createSpy('logout'),
+          },
+        },
+        {
+          provide: ConfigService,
+          useValue: {
+            logo: 'logo.png',
+            hideLogin: true,
+            favicon: 'favicon.ico',
+            hideHome: false,
+          },
+        },
+        {
+          provide: FaviconService,
+          useValue: { setFavicon: jasmine.createSpy('setFavicon') },
+        },
+        {
+          provide: ApiService,
+          useValue: {
+            getTeam: jasmine.createSpy('getTeam'),
+            getTeams: jasmine.createSpy('getTeams'),
+          },
+        },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(AppComponent);
+    messageService = TestBed.inject(MessageService);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  });
+
+  afterEach(() => {
+    fixture.destroy();
+  });
+
+  /** The shape `IngestionService.showNotificationToast` produces. */
+  function notificationToast(
+    summary: string,
+    detail = 'over limit',
+  ): Record<string, unknown> {
+    return { severity: 'warn', summary, detail, sticky: true };
+  }
+
+  function toasts(): HTMLElement[] {
+    return Array.from(
+      fixture.nativeElement.querySelectorAll('.p-toast-message'),
+    );
+  }
+
+  async function flush(): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  it('AC6: a notification toast renders with a close button', async () => {
+    messageService.add(notificationToast('Alpha'));
+    await flush();
+
+    const rendered = toasts();
+    expect(rendered.length).toBe(1);
+    expect(rendered[0].querySelector('.p-toast-summary')?.textContent?.trim())
+      .toBe('Alpha');
+    expect(rendered[0].querySelector('button.p-toast-close-button'))
+      .not.toBeNull();
+  });
+
+  it('AC6 (contrast): a closable:false toast renders NO close button', async () => {
+    // The disconnect-toast shape. Proves the assertion above is live rather
+    // than passing because every toast happens to have a close button.
+    messageService.add({ ...notificationToast('Connection Lost'), closable: false });
+    await flush();
+
+    const rendered = toasts();
+    expect(rendered.length).toBe(1);
+    expect(rendered[0].querySelector('button.p-toast-close-button')).toBeNull();
+  });
+
+  it('AC7: a keyless message renders; the same message with a key renders nothing', async () => {
+    messageService.add(notificationToast('Alpha'));
+    await flush();
+    expect(toasts().length).toBe(1);
+
+    messageService.clear();
+    await flush();
+    expect(toasts().length).toBe(0);
+
+    // `<p-toast>` in app.component.html has no key, and PrimeNG's `canAdd`
+    // admits a message only when `this.key === message.key`. A keyed message
+    // is silently dropped — the invisibility regression this guards.
+    messageService.add({ ...notificationToast('Alpha'), key: 'notification-x' });
+    await flush();
+    expect(toasts().length).toBe(0);
+  });
+
+  it('AC8: two keyless messages coexist — neither replaces the other', async () => {
+    messageService.add(notificationToast('Alpha', 'first'));
+    messageService.add(notificationToast('Beta', 'second'));
+    await flush();
+
+    const summaries = toasts().map((t) =>
+      t.querySelector('.p-toast-summary')?.textContent?.trim(),
+    );
+    expect(summaries.length).toBe(2);
+    expect(summaries).toContain('Alpha');
+    expect(summaries).toContain('Beta');
   });
 });
