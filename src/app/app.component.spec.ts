@@ -602,15 +602,15 @@ describe('AppComponent — notification toast rendering (Story 31-3)', () => {
     expect(apiStub.emitClosedNotification).not.toHaveBeenCalled();
   });
 
-  it('AC6: a rejected POST neither throws nor surfaces an unhandled rejection', async () => {
-    apiStub.emitClosedNotification.and.returnValue(
-      Promise.reject(new Error('409 team stopped')),
-    );
-    const unhandled: PromiseRejectionEvent[] = [];
-    const capture = (e: PromiseRejectionEvent): void => {
-      unhandled.push(e);
-    };
-    window.addEventListener('unhandledrejection', capture);
+  it('AC6: a rejected POST is caught and logged, and nothing escapes the handler', async () => {
+    // The rejection is asserted through `console.error` rather than a
+    // `window.unhandledrejection` listener: Zone.js intercepts rejections in
+    // Karma, so that listener never fires and cannot tell a handled rejection
+    // from an unhandled one — deleting the terminal `.catch` left it green.
+    // The log call is the observable proof that the promise IS terminated.
+    const reason = new Error('409 team stopped');
+    apiStub.emitClosedNotification.and.returnValue(Promise.reject(reason));
+    const consoleError = spyOn(console, 'error');
 
     messageService.add({
       ...notificationToast('Alpha'),
@@ -620,12 +620,14 @@ describe('AppComponent — notification toast rendering (Story 31-3)', () => {
 
     expect(() => closeFirstToast()).not.toThrow();
     await flush();
-    // Give the microtask queue and the unhandledrejection task a turn.
+    // Give the microtask queue a turn so the `.catch` callback has run.
     await new Promise((resolve) => setTimeout(resolve, 0));
 
-    window.removeEventListener('unhandledrejection', capture);
     expect(apiStub.emitClosedNotification).toHaveBeenCalledTimes(1);
-    expect(unhandled.length).toBe(0);
+    expect(consoleError).toHaveBeenCalledWith(
+      'Failed to record notification dismissal:',
+      reason,
+    );
   });
 
   it('AC6: a rejected POST still removes the toast from the DOM', async () => {

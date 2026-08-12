@@ -2019,7 +2019,14 @@ describe('IngestionService — Story 31-4 (closed-notification suppression)', ()
     service.ngOnDestroy();
 
     // A post-teardown log emission must not feed the cache any more; the
-    // BehaviorSubject would otherwise keep a live observer for ever.
-    expect(() => log.append(mkClosedNotification('c-9', 'w-9'))).not.toThrow();
+    // BehaviorSubject would otherwise keep a live observer for ever. Asserted
+    // on the subscription AND on the cache: `not.toThrow()` alone stayed green
+    // with `closedIdsSub.unsubscribe()` deleted from ngOnDestroy, so it guarded
+    // nothing.
+    expect((service as any).closedIdsSub.closed).toBeTrue();
+
+    log.append(mkClosedNotification('c-9', 'w-9'));
+
+    expect((service as any).closedNotificationIds.has('w-9')).toBeFalse();
   });
 });
