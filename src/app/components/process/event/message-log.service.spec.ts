@@ -180,12 +180,15 @@ describe('messageListFold (Story 6.4, AC4)', () => {
     expect(out.map((m) => m.id)).toEqual(['s1', 'e1', 'w1', 'n1']);
   });
 
-  // Substring safety: the fully-qualified names end in the concrete class name,
-  // so no allowlist entry double-admits another entry's messages.
-  it('admits each notification model on its own entry, not by collision', () => {
-    expect(messageListFold([msg('w1', 'WarningMessage')]).length).toBe(1);
-    expect(messageListFold([msg('n1', 'NotificationMessage')]).length).toBe(1);
-    expect(messageListFold([msg('e1', 'ErrorMessage')]).length).toBe(1);
+  // The fold must admit exactly what `notificationSeverity` can classify: a model
+  // admitted here but classifiable by nothing falls through to the component's
+  // `SentMessage` branch and reads a payload it does not have. The leading dot on
+  // the `.NotificationMessage` allowlist entry is what holds that line, so assert
+  // the rejection — admission alone would pass with or without the dot.
+  it('rejects a suffix-colliding sibling the render predicate cannot classify', () => {
+    expect(messageListFold([msg('n1', 'NotificationMessage')]).map((m) => m.id))
+      .toEqual(['n1']);
+    expect(messageListFold([msg('x1', 'FooNotificationMessage')])).toEqual([]);
   });
 
   it('excludes ActorSystem senders', () => {

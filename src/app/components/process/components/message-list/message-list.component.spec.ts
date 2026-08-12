@@ -370,7 +370,28 @@ describe('MessageListComponent notification rendering (Story 31-2)', () => {
     expect(relaunchButton(info)).toBeNull();
   });
 
-  // --- the non-notification branch is untouched (AC #4) --------------------
+  // --- the two branches are mutually exclusive (AC #4) ---------------------
+
+  it('renders each of the three severities through the notification branch only', () => {
+    const models = ['ErrorMessage', 'WarningMessage', 'NotificationMessage'] as const;
+    for (const model of models) {
+      log.reset();
+      const host = renderOne(notification('x1', model, null, 'body'));
+      const bodies = host.querySelectorAll('.text-container');
+      // Two bodies would mean the `SentMessage` branch fired as well.
+      expect(bodies.length).withContext(model).toBe(1);
+      expect(bodies[0].className).withContext(model).toContain('notification-body--');
+    }
+  });
+
+  // A row the fold admits but `notificationSeverity` cannot classify takes the
+  // fallback branch, which reads an inner payload it has no reason to carry.
+  // Degrading to an empty row beats throwing out of change detection and losing
+  // the whole table.
+  it('yields no content keys for a message with no inner payload', () => {
+    expect(component.getMessageContentKeys(undefined)).toEqual([]);
+    expect(component.getMessageContentKeys(null)).toEqual([]);
+  });
 
   it('renders a SentMessage through the non-notification branch exactly once', () => {
     const host = renderOne(workerSent('s1') as AkgenticMessage);

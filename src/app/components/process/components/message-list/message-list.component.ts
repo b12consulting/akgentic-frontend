@@ -151,8 +151,17 @@ export class MessageListComponent {
     return message.content_type || LEGEND_FALLBACK[severity];
   }
 
+  /**
+   * Keys of the inner payload the non-notification branch renders. The `?? {}`
+   * is load-bearing: this is the fallback branch for every row
+   * `notificationSeverity` returns `null` for, and a message the fold admitted
+   * without an inner `message` would otherwise throw out of change detection and
+   * take the whole table down with it. An empty row is the correct degradation.
+   */
   getMessageContentKeys(message: any) {
-    return Object.keys(message).filter((k) => this.messagesKeys.includes(k));
+    return Object.keys(message ?? {}).filter((k) =>
+      this.messagesKeys.includes(k),
+    );
   }
 
   relaunch(_event: any, _msg: any) {

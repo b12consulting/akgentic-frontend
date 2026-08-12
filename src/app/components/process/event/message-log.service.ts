@@ -7,15 +7,24 @@ import { AkgenticMessage, isWelcomeAnnouncement } from '../../../protocol/messag
  * The allowlist of class-name suffixes `messageListFold` admits. Adding a future
  * admitted type is one array entry.
  *
- * No entry double-admits another's messages: a `__model__` is fully qualified and
- * ends in its concrete class name, so `'…orchestrator.ErrorMessage'` does not
- * contain `'NotificationMessage'` (nor the reverse).
+ * Each entry MUST match exactly what `MessageListComponent.notificationSeverity`
+ * can classify. A model this fold admits but that predicate returns `null` for
+ * falls through to the component's `SentMessage` branch, which reads a payload it
+ * does not have. Hence the leading dot on `.NotificationMessage`: it mirrors
+ * `isNotificationMessage`'s `endsWith('.NotificationMessage')` so a sibling such
+ * as `FooNotificationMessage` — admitted by a bare `'NotificationMessage'`
+ * entry, classifiable by nothing — never enters the list. The other three
+ * entries are bare because their guards are bare `.includes()` too.
+ *
+ * No entry double-admits another's messages either: a `__model__` is fully
+ * qualified and ends in its concrete class name, so `'…orchestrator.ErrorMessage'`
+ * does not contain `'WarningMessage'` (nor the reverse).
  */
 const MESSAGE_LIST_MODELS = [
   'SentMessage',
   'ErrorMessage',
   'WarningMessage',
-  'NotificationMessage',
+  '.NotificationMessage',
 ] as const;
 
 /**
