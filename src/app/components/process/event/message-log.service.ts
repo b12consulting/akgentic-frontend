@@ -4,6 +4,21 @@ import { BehaviorSubject, distinctUntilChanged, map, Observable } from 'rxjs';
 import { AkgenticMessage, isWelcomeAnnouncement } from '../../../protocol/message.types';
 
 /**
+ * The allowlist of class-name suffixes `messageListFold` admits. Adding a future
+ * admitted type is one array entry.
+ *
+ * No entry double-admits another's messages: a `__model__` is fully qualified and
+ * ends in its concrete class name, so `'…orchestrator.ErrorMessage'` does not
+ * contain `'NotificationMessage'` (nor the reverse).
+ */
+const MESSAGE_LIST_MODELS = [
+  'SentMessage',
+  'ErrorMessage',
+  'WarningMessage',
+  'NotificationMessage',
+] as const;
+
+/**
  * Story 6.4 (AC4) — pure selector over the log producing the inputs for
  * `MessageListComponent`. Extracted as a module-scope helper so the fold is
  * trivially unit-testable without instantiating the service. FR11 passthrough:
@@ -14,8 +29,7 @@ export function messageListFold(log: AkgenticMessage[]): AkgenticMessage[] {
   return log.filter(
     (m) =>
       !!m.__model__ &&
-      (m.__model__.includes('SentMessage') ||
-        m.__model__.includes('ErrorMessage')) &&
+      MESSAGE_LIST_MODELS.some((t) => m.__model__!.includes(t)) &&
       // ADR-011 Decision 2: the welcome announcement carries an `ActorSystem`
       // transport sender, but is admitted via the structural exception.
       (m.sender?.role !== 'ActorSystem' || isWelcomeAnnouncement(m)),
@@ -47,9 +61,11 @@ export class MessageLogService {
 
   /**
    * Story 6.4 (AC4): log-derived selector for `MessageListComponent`. Emits
-   * every `SentMessage` / `ErrorMessage` whose sender is not `ActorSystem`,
-   * in arrival order. `distinctUntilChanged` preserves reference equality
-   * across no-op log emissions (OnPush safety, NFR3).
+   * every message whose `__model__` is in `MESSAGE_LIST_MODELS` (the
+   * `SentMessage` plus the `ErrorMessage`/`WarningMessage`/`NotificationMessage`
+   * family) and whose sender is not `ActorSystem`, in arrival order.
+   * `distinctUntilChanged` preserves reference equality across no-op log
+   * emissions (OnPush safety, NFR3).
    */
   readonly messageList$: Observable<AkgenticMessage[]> = this.log$.pipe(
     map(messageListFold),

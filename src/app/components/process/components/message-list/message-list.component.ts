@@ -13,8 +13,23 @@ import { UtilService } from '../../../../core/ui/utils.service';
 import { combineLatest, Subscription } from 'rxjs';
 import { AkgentService } from '../../../../core/ui/akgent.service';
 import { MessageLogService } from '../../event/message-log.service';
-import { isWelcomeAnnouncement } from '../../../../protocol/message.types';
+import {
+  isErrorMessage,
+  isNotificationMessage,
+  isWarningMessage,
+  isWelcomeAnnouncement,
+} from '../../../../protocol/message.types';
 import { CopyButtonComponent } from '../../../../shared/components/copy-button/copy-button.component';
+
+/** Story 31-2 — the three notification severities, in escalation order. */
+export type NotificationSeverity = 'error' | 'warn' | 'info';
+
+/** Legend used when a notification carries no `content_type` of its own. */
+const LEGEND_FALLBACK: Record<NotificationSeverity, string | null> = {
+  error: null,
+  warn: 'Warning',
+  info: 'Notification',
+};
 
 @Component({
   selector: 'app-message-list',
@@ -107,6 +122,33 @@ export class MessageListComponent {
       (n) => n.name == message.recipient.agent_id
     );
     return { color: this.categoryService.COLORS[nodes?.category] };
+  }
+
+  /**
+   * Story 31-2 — the single predicate that selects the notification branch and
+   * its colour. `null` means "not a notification", which sends the row down the
+   * existing `SentMessage` branch. Called once per row from the template, so it
+   * stays a pure string check: no allocation, no observable work.
+   */
+  notificationSeverity(message: any): NotificationSeverity | null {
+    if (isErrorMessage(message)) return 'error';
+    if (isWarningMessage(message)) return 'warn';
+    if (isNotificationMessage(message)) return 'info';
+    return null;
+  }
+
+  /**
+   * Legend for a notification row: its own `content_type` when upstream supplied
+   * one, else the per-severity fallback. `error → null` is deliberate — it keeps
+   * a null-`content_type` error rendering the empty legend it renders today
+   * (NFR2), while warnings and notifications (whose `content_type` is always
+   * `null` upstream) get the only legend they will have until a producer sets it.
+   */
+  notificationLegend(
+    message: any,
+    severity: NotificationSeverity,
+  ): string | null {
+    return message.content_type || LEGEND_FALLBACK[severity];
   }
 
   getMessageContentKeys(message: any) {

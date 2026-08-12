@@ -1,11 +1,14 @@
 import {
   ActorAddress,
   BaseMessage,
+  isErrorMessage,
   isLlmContextClearedEvent,
   isLlmContextCompactedEvent,
   isLlmMessageEvent,
   isLlmSystemPromptEvent,
   isLlmUsageEvent,
+  isNotificationMessage,
+  isWarningMessage,
   isWelcomeAnnouncement,
   isWelcomeMessage,
   SentMessage,
@@ -250,6 +253,83 @@ describe('isLlmContextClearedEvent', () => {
 // prefix) and against 'LlmMessageEvent' / 'LlmUsageEvent' /
 // 'LlmSystemPromptEvent'.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Story 31-2 (AC #1, #2) — the notification-family guards.
+//
+// Upstream (core Epic 24) `ErrorMessage` and `WarningMessage` are subclasses of
+// `NotificationMessage`, but the frontend renders each on its own branch, so the
+// three guards must partition the family rather than nest. `isNotificationMessage`
+// matching ONLY the bare base is the load-bearing assertion here.
+// ---------------------------------------------------------------------------
+
+const ERROR_MODEL = 'akgentic.core.messages.orchestrator.ErrorMessage';
+const WARNING_MODEL = 'akgentic.core.messages.orchestrator.WarningMessage';
+const NOTIFICATION_MODEL =
+  'akgentic.core.messages.orchestrator.NotificationMessage';
+
+function makeNotification(model: string): BaseMessage {
+  return makeOrdinaryInner({ __model__: model });
+}
+
+describe('isWarningMessage (Story 31-2, AC #1)', () => {
+  it('returns true for a WarningMessage', () => {
+    expect(isWarningMessage(makeNotification(WARNING_MODEL))).toBe(true);
+  });
+
+  it('returns false for an ErrorMessage', () => {
+    expect(isWarningMessage(makeNotification(ERROR_MODEL))).toBe(false);
+  });
+
+  it('returns false for the bare NotificationMessage base', () => {
+    expect(isWarningMessage(makeNotification(NOTIFICATION_MODEL))).toBe(false);
+  });
+});
+
+describe('isNotificationMessage (Story 31-2, AC #2)', () => {
+  it('returns true for the bare NotificationMessage base', () => {
+    expect(isNotificationMessage(makeNotification(NOTIFICATION_MODEL))).toBe(
+      true,
+    );
+  });
+
+  // The exclusivity pair: without these two, FR9 is unproven. A `.includes()`
+  // implementation would fire for neither, but a naive `.includes('Notification')`
+  // one would fire for a hypothetical sibling — the leading dot in
+  // `.endsWith('.NotificationMessage')` is what keeps the guard honest.
+  it('returns false for an ErrorMessage', () => {
+    expect(isNotificationMessage(makeNotification(ERROR_MODEL))).toBe(false);
+  });
+
+  it('returns false for a WarningMessage', () => {
+    expect(isNotificationMessage(makeNotification(WARNING_MODEL))).toBe(false);
+  });
+
+  it('returns false for a suffix-colliding class name (leading dot required)', () => {
+    expect(
+      isNotificationMessage(
+        makeNotification('akgentic.core.messages.orchestrator.FooNotificationMessage'),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('notification-family guards partition the family (Story 31-2, AC #2)', () => {
+  const guards = [
+    isErrorMessage,
+    isWarningMessage,
+    isNotificationMessage,
+  ] as const;
+
+  it('exactly one guard fires for each of the three models', () => {
+    for (const model of [ERROR_MODEL, WARNING_MODEL, NOTIFICATION_MODEL]) {
+      const fired = guards
+        .map((g) => g(makeNotification(model)))
+        .filter(Boolean);
+      expect(fired.length).toBe(1);
+    }
+  });
+});
 
 describe('Llm*Event five-guard mutual exclusion (AC #2)', () => {
   const compacted = { __model__: 'akgentic.llm.event.LlmContextCompactedEvent' };

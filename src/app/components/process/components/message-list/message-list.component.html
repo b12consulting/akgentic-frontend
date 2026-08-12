@@ -24,18 +24,23 @@
           </ng-container>
           <ng-template #broacasted> All </ng-template>
         </div>
-        <ng-container *ngIf="message.__model__.includes('ErrorMessage')">
+        <!-- Story 31-2: one branch for all three notification severities.
+             `*ngIf="… as severity"` binds once per row and is falsy for `null`,
+             so a SentMessage falls through to the container below exactly as
+             before. Colour comes from the severity class, not an inline style. -->
+        <ng-container *ngIf="notificationSeverity(message) as severity">
           <div class="fieldset-body">
             <p-fieldset
-              legend="{{ message.content_type | capitalize }}"
+              legend="{{ notificationLegend(message, severity) | capitalize }}"
               [toggleable]="false"
             >
               <div
-                style="color: darkred; margin: 0.5rem 0 1rem"
+                style="margin: 0.5rem 0 1rem"
                 class="text-container"
+                [ngClass]="'notification-body--' + severity"
                 [innerHTML]="message.content"
               ></div>
-              <div>
+              <div *ngIf="severity === 'error'">
                 <p-button
                   size="small"
                   label="Relaunch (N/A)"
@@ -46,7 +51,7 @@
             </p-fieldset>
           </div>
         </ng-container>
-        <ng-container *ngIf="!message.__model__.includes('ErrorMessage')">
+        <ng-container *ngIf="!notificationSeverity(message)">
           <div
             class="fieldset-body"
             *ngFor="let content of getMessageContentKeys(message.message)"

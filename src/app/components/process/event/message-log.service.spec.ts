@@ -163,17 +163,29 @@ describe('messageListFold (Story 6.4, AC4)', () => {
     expect(messageListFold([])).toEqual([]);
   });
 
-  it('filters to SentMessage and ErrorMessage only', () => {
+  // Story 31-2 (AC #3): the allowlist grew from two entries to four. The
+  // negative half still proves the fold is an allowlist and not a passthrough.
+  it('filters to the notification family and SentMessage only', () => {
     const log: AkgenticMessage[] = [
       msg('s1', 'SentMessage'),
       msg('st1', 'StartMessage'),
       msg('e1', 'ErrorMessage'),
+      msg('w1', 'WarningMessage'),
+      msg('n1', 'NotificationMessage'),
       msg('sc1', 'StateChangedMessage'),
       msg('ev1', 'EventMessage'),
       msg('r1', 'ReceivedMessage'),
     ];
     const out = messageListFold(log);
-    expect(out.map((m) => m.id)).toEqual(['s1', 'e1']);
+    expect(out.map((m) => m.id)).toEqual(['s1', 'e1', 'w1', 'n1']);
+  });
+
+  // Substring safety: the fully-qualified names end in the concrete class name,
+  // so no allowlist entry double-admits another entry's messages.
+  it('admits each notification model on its own entry, not by collision', () => {
+    expect(messageListFold([msg('w1', 'WarningMessage')]).length).toBe(1);
+    expect(messageListFold([msg('n1', 'NotificationMessage')]).length).toBe(1);
+    expect(messageListFold([msg('e1', 'ErrorMessage')]).length).toBe(1);
   });
 
   it('excludes ActorSystem senders', () => {
@@ -184,6 +196,17 @@ describe('messageListFold (Story 6.4, AC4)', () => {
     ];
     const out = messageListFold(log);
     expect(out.map((m) => m.id)).toEqual(['s2']);
+  });
+
+  // Story 31-2 (AC #3): the newly admitted types get no exemption from the
+  // ActorSystem exclusion — only the welcome announcement has one.
+  it('excludes ActorSystem-sender warnings and notifications too', () => {
+    const log: AkgenticMessage[] = [
+      msg('w1', 'WarningMessage', 'ActorSystem'),
+      msg('n1', 'NotificationMessage', 'ActorSystem'),
+      msg('w2', 'WarningMessage', 'Worker'),
+    ];
+    expect(messageListFold(log).map((m) => m.id)).toEqual(['w2']);
   });
 
   it('FR11 passthrough: messages with missing/unknown __model__ are silently excluded (no throw)', () => {

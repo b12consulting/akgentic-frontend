@@ -1,3 +1,29 @@
+// Story 31-2 — notification severity colours. The muted alert-text triad: one
+// visual family, each ≳4.5:1 on a white card, visibly softer than the `darkred`
+// they replace. Scoped to :host rather than :root because this story repaints
+// the Messages tab ONLY (the graph tooltip, tree label and global `.error`
+// styles keep their own colours), and because a component styleUrl is always
+// compiled by TestBed whereas src/styles.scss is not — the computed-style specs
+// depend on these resolving. Custom properties inherit, so `var()` resolves
+// anywhere in the host's subtree.
+:host {
+	--akg-error-color: #a94442; // pastel red
+	--akg-warning-color: #8a6d3b; // pastel yellow
+	--akg-notification-color: #31708f; // pastel blue
+}
+
+.notification-body--error {
+	color: var(--akg-error-color);
+}
+
+.notification-body--warn {
+	color: var(--akg-warning-color);
+}
+
+.notification-body--info {
+	color: var(--akg-notification-color);
+}
+
 // Boxed empty-section style (copied from knowledge-graph)
 .empty-section {
 	padding: 2rem;

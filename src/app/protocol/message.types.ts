@@ -102,6 +102,39 @@ export interface ErrorMessage extends BaseMessage {
   current_message?: BaseMessage | null;
 }
 
+/**
+ * Handled-warning telemetry (core Epic 24, story 24-4) — the `ErrorMessage`
+ * sibling under the shared `NotificationMessage` base, carrying the identical
+ * `content_type`/`content` pair. `content_type` is structurally nullable and is
+ * in practice always `null`: nothing upstream yet gives a warning a "kind" the
+ * way an exception class name does, so the Messages tab supplies the legend.
+ *
+ * Declared as a FLAT SIBLING of `ErrorMessage`, deliberately not
+ * `extends NotificationMessage`: the base would have to declare `__model__` as
+ * its own literal, and neither subtype's literal is assignable to it. The
+ * `AkgenticMessage` union discriminates on the `__model__` literals, so a TS
+ * inheritance chain would buy nothing and break narrowing.
+ */
+export interface WarningMessage extends BaseMessage {
+  __model__: 'akgentic.core.messages.orchestrator.WarningMessage';
+  content_type: string | null;
+  content: string;
+  current_message?: BaseMessage | null;
+}
+
+/**
+ * The bare notification base (core Epic 24) — same field set as its
+ * `ErrorMessage` / `WarningMessage` subclasses. Nothing upstream constructs one
+ * today; the type and its render branch exist so the path lights up the moment a
+ * producer appears. Flat sibling for the same reason as `WarningMessage`.
+ */
+export interface NotificationMessage extends BaseMessage {
+  __model__: 'akgentic.core.messages.orchestrator.NotificationMessage';
+  content_type: string | null;
+  content: string;
+  current_message?: BaseMessage | null;
+}
+
 export interface StateChangedMessage extends BaseMessage {
   __model__: 'akgentic.core.messages.orchestrator.StateChangedMessage';
   state: BaseState | Record<string, any>;
@@ -278,6 +311,8 @@ export type AkgenticMessage =
   | StartMessage
   | StopMessage
   | ErrorMessage
+  | WarningMessage
+  | NotificationMessage
   | StateChangedMessage
   | EventMessage
   | UserMessage
@@ -307,6 +342,24 @@ export function isStopMessage(msg: BaseMessage): msg is StopMessage {
 
 export function isErrorMessage(msg: BaseMessage): msg is ErrorMessage {
   return msg.__model__.includes('ErrorMessage');
+}
+
+export function isWarningMessage(msg: BaseMessage): msg is WarningMessage {
+  return msg.__model__.includes('WarningMessage');
+}
+
+/**
+ * True ONLY for the bare `NotificationMessage` base. Deliberately stricter than
+ * the `.includes()` siblings (same precedent as `isWorkspaceTool` above):
+ * `ErrorMessage` and `WarningMessage` ARE `NotificationMessage` subclasses
+ * upstream, but each takes its own render branch here, so a guard that admitted
+ * them would make the three branches ambiguous. The leading dot also rejects a
+ * hypothetical `FooNotificationMessage`.
+ */
+export function isNotificationMessage(
+  msg: BaseMessage,
+): msg is NotificationMessage {
+  return msg.__model__.endsWith('.NotificationMessage');
 }
 
 export function isStateChangedMessage(
