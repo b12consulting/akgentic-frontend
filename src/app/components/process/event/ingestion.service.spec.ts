@@ -8,7 +8,11 @@ import { ApiService } from '../../../core/http/api.service';
 import { ChatService } from '../selectors/chat.selector';
 import { MessageLogService } from './message-log.service';
 import { PerAgentStore, PerAgentStoreRegistry } from './per-agent-store';
-import { ActorAddress } from '../../../protocol/message.types';
+import {
+  ActorAddress,
+  CLOSED_NOTIFICATION_MODEL,
+  EVENT_MESSAGE_MODEL,
+} from '../../../protocol/message.types';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {
@@ -1790,5 +1794,232 @@ describe('IngestionService — Story 31-3 (notification toast)', () => {
         closable: false,
       }),
     );
+  });
+
+  // Story 31-4 (AC #3/#4): the toast now also carries the team id, so
+  // `AppComponent.onToastClose` can address the dismissal POST without reading
+  // navigation state.
+  it('31-4: the toast carries data.teamId alongside data.messageId', async () => {
+    await start();
+
+    fakeSocket.next(mkNotification('w-1', WARNING, '@Researcher', 'over limit'));
+
+    expect(addArgs()[0].data).toEqual({ messageId: 'w-1', teamId: 'team-1' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 31-4 — closed-notification suppression
+//
+// The sequencing here is load-bearing and deliberately NOT engineered away
+// (AC #11): the suppression cache is fed from `log$`, which `IngestionService`
+// feeds through the 16 ms `bufferTime` window. A `ClosedNotification` frame must
+// therefore be FLUSHED to the log before a later frame can be suppressed, so
+// every sequence below ticks past the buffer between the two frames.
+// Within-one-frame suppression is not an AC — that ordering only arises during
+// replay, which is story 31-5.
+// ---------------------------------------------------------------------------
+
+describe('IngestionService — Story 31-4 (closed-notification suppression)', () => {
+  let service: IngestionService;
+  let msgService: any;
+  let fakeSocket: Subject<any>;
+  let log: MessageLogService;
+
+  const WARNING = 'akgentic.core.messages.orchestrator.WarningMessage';
+
+  function mkNotification(id: string, content: string): any {
+    return {
+      id,
+      parent_id: null,
+      team_id: 'team-1',
+      timestamp: '2026-08-12T00:00:00Z',
+      sender: makeAddress({ name: '@Researcher', agent_id: 'agent-' + id }),
+      display_type: 'other',
+      content,
+      content_type: null,
+      __model__: WARNING,
+    };
+  }
+
+  /** The `EventMessage(ClosedNotification)` frame the backend echoes back after
+   *  a dismissal POST — the same shape a `getEvents` replay would carry. */
+  function mkClosedNotification(id: string, messageId: string): any {
+    return {
+      id,
+      parent_id: null,
+      team_id: 'team-1',
+      timestamp: '2026-08-12T00:00:00Z',
+      sender: makeAddress({ name: '@Orchestrator', agent_id: 'orch' }),
+      display_type: 'other',
+      content: null,
+      __model__: EVENT_MESSAGE_MODEL,
+      event: { __model__: CLOSED_NOTIFICATION_MODEL, message_id: messageId },
+    };
+  }
+
+  function addArgs(): any[] {
+    return msgService.add.calls.allArgs().map((a: any[]) => a[0]);
+  }
+
+  beforeEach(() => {
+    jasmine.clock().install();
+    jasmine.clock().mockDate(new Date(0));
+
+    fakeSocket = new Subject<any>();
+
+    TestBed.configureTestingModule({
+      providers: [
+        MessageLogService,
+        PerAgentStoreRegistry,
+        IngestionService,
+        ChatService,
+        {
+          provide: ApiService,
+          useValue: {
+            getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+            getAgentStates: jasmine
+              .createSpy('getAgentStates')
+              .and.resolveTo([]),
+          },
+        },
+        {
+          provide: MessageService,
+          useValue: {
+            add: jasmine.createSpy('add'),
+            clear: jasmine.createSpy('clear'),
+          },
+        },
+      ],
+    });
+    service = TestBed.inject(IngestionService);
+    msgService = TestBed.inject(MessageService);
+    log = TestBed.inject(MessageLogService);
+
+    spyOn<any>(service, 'createWebSocket').and.returnValue(
+      fakeSocket as unknown as WebSocketSubject<any>,
+    );
+  });
+
+  afterEach(() => {
+    try {
+      fakeSocket.complete();
+    } catch {
+      /* already closed */
+    }
+    jasmine.clock().uninstall();
+  });
+
+  async function start(): Promise<void> {
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+    msgService.add.calls.reset();
+  }
+
+  it('AC9: a WarningMessage whose id was closed raises ZERO toasts', async () => {
+    await start();
+
+    fakeSocket.next(mkClosedNotification('c-1', 'w-1'));
+    // Past the 16 ms bufferTime window so the closure has reached the log.
+    jasmine.clock().tick(20);
+
+    fakeSocket.next(mkNotification('w-1', 'token budget exceeded'));
+
+    expect(msgService.add).not.toHaveBeenCalled();
+  });
+
+  it('AC9: a WarningMessage whose id was NOT closed still raises exactly one toast with the full 31-3 property set', async () => {
+    await start();
+
+    fakeSocket.next(mkClosedNotification('c-1', 'some-other-id'));
+    jasmine.clock().tick(20);
+
+    fakeSocket.next(mkNotification('w-1', 'token budget exceeded'));
+
+    expect(msgService.add).toHaveBeenCalledTimes(1);
+    const arg = addArgs()[0];
+    expect(arg.severity).toBe('warn');
+    expect(arg.summary).toBe('@Researcher');
+    expect(arg.detail).toBe('token budget exceeded');
+    expect(arg.sticky).toBeTrue();
+    expect(arg.key).toBeUndefined();
+    expect(arg.closable).toBeUndefined();
+    expect(arg.life).toBeUndefined();
+    expect(arg.data).toEqual({ messageId: 'w-1', teamId: 'team-1' });
+  });
+
+  it('AC10: the suppressed WarningMessage is STILL appended to the log', async () => {
+    await start();
+
+    fakeSocket.next(mkClosedNotification('c-1', 'w-1'));
+    jasmine.clock().tick(20);
+    fakeSocket.next(mkNotification('w-1', 'token budget exceeded'));
+    jasmine.clock().tick(20);
+
+    expect(log.snapshot().map((m) => m.id)).toContain('w-1');
+  });
+
+  it('AC10: the suppressed WarningMessage still appears in messageList$', async () => {
+    await start();
+
+    fakeSocket.next(mkClosedNotification('c-1', 'w-1'));
+    jasmine.clock().tick(20);
+    fakeSocket.next(mkNotification('w-1', 'token budget exceeded'));
+    jasmine.clock().tick(20);
+
+    let listed: string[] = [];
+    const sub = log.messageList$.subscribe(
+      (ms) => (listed = ms.map((m) => m.id)),
+    );
+    expect(listed).toContain('w-1');
+    sub.unsubscribe();
+  });
+
+  it('AC9: only the matching id is suppressed — a sibling warning still toasts', async () => {
+    await start();
+
+    fakeSocket.next(mkClosedNotification('c-1', 'w-1'));
+    jasmine.clock().tick(20);
+
+    fakeSocket.next(mkNotification('w-1', 'suppressed'));
+    fakeSocket.next(mkNotification('w-2', 'still shown'));
+
+    expect(msgService.add).toHaveBeenCalledTimes(1);
+    expect(addArgs()[0].data.messageId).toBe('w-2');
+  });
+
+  it('AC9: a dismissal replayed by getEvents suppresses just as a live one does', async () => {
+    // The reload path: the closure arrives in the REST replay, not on the WS.
+    const api = TestBed.inject(ApiService) as any;
+    api.getEvents.and.resolveTo([
+      { event: mkClosedNotification('c-1', 'w-1') },
+    ]);
+
+    await service.init('proc-1', false);
+    jasmine.clock().tick(600);
+    msgService.add.calls.reset();
+
+    fakeSocket.next(mkNotification('w-1', 'token budget exceeded'));
+
+    expect(msgService.add).not.toHaveBeenCalled();
+  });
+
+  it('AC9: a closure for an id that never toasts is inert', async () => {
+    await start();
+
+    fakeSocket.next(mkClosedNotification('c-1', 'never-seen'));
+    jasmine.clock().tick(20);
+
+    expect(msgService.add).not.toHaveBeenCalled();
+  });
+
+  it('ngOnDestroy tears the closed-ids subscription down', async () => {
+    await start();
+
+    service.ngOnDestroy();
+
+    // A post-teardown log emission must not feed the cache any more; the
+    // BehaviorSubject would otherwise keep a live observer for ever.
+    expect(() => log.append(mkClosedNotification('c-9', 'w-9'))).not.toThrow();
   });
 });

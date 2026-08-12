@@ -1,7 +1,11 @@
 import {
   ActorAddress,
   BaseMessage,
+  CLOSED_NOTIFICATION_MODEL,
+  EVENT_MESSAGE_MODEL,
+  isClosedNotification,
   isErrorMessage,
+  isEventMessage,
   isLlmContextClearedEvent,
   isLlmContextCompactedEvent,
   isLlmMessageEvent,
@@ -367,5 +371,78 @@ describe('Llm*Event five-guard mutual exclusion (AC #2)', () => {
       const fired = guards.map((g) => g(evt)).filter(Boolean);
       expect(fired.length).toBe(1);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 31-4 (AC #1, #2) — the ClosedNotification inner-event guard.
+//
+// This payload is the only one the frontend both READS and WRITES, so the two
+// wire tags are pinned as literals here: a silent drift in either one turns the
+// dismissal POST into a server-side 400 that no other spec would catch.
+// ---------------------------------------------------------------------------
+
+describe('isClosedNotification (Story 31-4, AC #1)', () => {
+  it('returns true for a ClosedNotification inner event', () => {
+    expect(
+      isClosedNotification({ __model__: CLOSED_NOTIFICATION_MODEL }),
+    ).toBe(true);
+  });
+
+  it('narrows to the payload so message_id is readable', () => {
+    const event: { __model__?: string } = {
+      __model__: CLOSED_NOTIFICATION_MODEL,
+      message_id: 'w-1',
+    } as { __model__?: string };
+    expect(isClosedNotification(event) && event.message_id).toBe('w-1');
+  });
+
+  // AC #2 — negative for every OTHER inner event already on the wire.
+  it('returns false for every other inner event on the wire', () => {
+    for (const model of [
+      'akgentic.llm.event.LlmUsageEvent',
+      'akgentic.llm.event.LlmSystemPromptEvent',
+      'akgentic.llm.event.LlmContextCompactedEvent',
+      'akgentic.llm.event.LlmContextClearedEvent',
+      'akgentic.tool.command.CommandsAnnouncedEvent',
+    ]) {
+      expect(isClosedNotification({ __model__: model })).toBe(false);
+    }
+  });
+
+  it('returns false for null, undefined and a __model__-less object', () => {
+    expect(isClosedNotification(null)).toBe(false);
+    expect(isClosedNotification(undefined)).toBe(false);
+    expect(isClosedNotification({})).toBe(false);
+  });
+
+  // The inverse direction: none of the five existing inner-event guards may
+  // fire for a ClosedNotification either.
+  it('no Llm*Event / CommandsAnnounced guard fires for a ClosedNotification', () => {
+    const closed = { __model__: CLOSED_NOTIFICATION_MODEL };
+    expect(isLlmUsageEvent(closed)).toBe(false);
+    expect(isLlmSystemPromptEvent(closed)).toBe(false);
+    expect(isLlmContextCompactedEvent(closed)).toBe(false);
+    expect(isLlmContextClearedEvent(closed)).toBe(false);
+    expect(isLlmMessageEvent(closed)).toBe(false);
+  });
+});
+
+describe('wire-tag constants (Story 31-4, AC #3)', () => {
+  // The exact Python import paths. `decode_message` resolves both by import
+  // path server-side, so a typo here is a 400 at runtime, not a type error.
+  it('name the akgentic-core orchestrator module paths verbatim', () => {
+    expect(EVENT_MESSAGE_MODEL).toBe(
+      'akgentic.core.messages.orchestrator.EventMessage',
+    );
+    expect(CLOSED_NOTIFICATION_MODEL).toBe(
+      'akgentic.core.messages.orchestrator.ClosedNotification',
+    );
+  });
+
+  it('the envelope tag is recognised by isEventMessage', () => {
+    expect(
+      isEventMessage(makeOrdinaryInner({ __model__: EVENT_MESSAGE_MODEL })),
+    ).toBe(true);
   });
 });

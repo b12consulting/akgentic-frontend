@@ -234,6 +234,26 @@ export class IngestionService {
    *  disposal in init()'s (a) step and in ngOnDestroy. */
   private spinnerSub: Subscription | null = null;
 
+  /**
+   * Story 31-4 (AC #9): latest snapshot of `MessageLogService.closedNotificationIds$`,
+   * cached synchronously because `showNotificationToast` runs inside the WS
+   * `next` callback and cannot await an observable.
+   *
+   * The cache lags the wire by up to one `bufferTime(16)` window — a
+   * `ClosedNotification` reaches the log only when its frame is flushed. That is
+   * by design: on the live path a dismissal always precedes the next delivery of
+   * that message by far more than a frame, and the replay path (where the
+   * ordering genuinely bites) is story 31-5's batch computation. Do NOT close the
+   * gap with a synchronous side-channel off `_wsInbound$` — that is a partial,
+   * untested version of 31-5.
+   */
+  private closedNotificationIds: Set<string> = new Set<string>();
+  /** Subscription feeding `closedNotificationIds`. Torn down in ngOnDestroy
+   *  alongside `bufferSub` / `spinnerSub`. */
+  private closedIdsSub: Subscription = this.log.closedNotificationIds$.subscribe(
+    (ids) => (this.closedNotificationIds = ids),
+  );
+
   async init(processId: string, running: boolean): Promise<void> {
     this.processId = processId;
 
@@ -570,17 +590,27 @@ export class IngestionService {
    *
    * `data.messageId` (not `id`, which PrimeNG binds to the rendered DOM `id`
    * attribute) carries the source event id; `Toast.onClose` re-emits the whole
-   * message, so it survives to the close handler story 31-4 will add.
+   * message, so it survives to `AppComponent.onToastClose`. Story 31-4 added
+   * `data.teamId` alongside it so that handler can address the dismissal POST
+   * without reading navigation state — `event.team_id` is populated on the wire
+   * by `Message.init` in `Agent._notify_orchestrator`.
+   *
+   * Story 31-4 also added the suppression guard below: an id already carried by
+   * a `ClosedNotification` on the log raises no toast at all. It is an early
+   * return HERE and not in the WS `next` handler, so the message still reaches
+   * `_wsInbound$` and the Messages tab — closing dismisses the popup, not the
+   * historical record.
    */
   private showNotificationToast(
     event: WarningMessage | NotificationMessage,
   ): void {
+    if (this.closedNotificationIds.has(event.id)) return;
     this.messageService.add({
       severity: isWarningMessage(event) ? 'warn' : 'info',
       summary: event.sender?.name ?? 'Agent',
       detail: event.content,
       sticky: true,
-      data: { messageId: event.id },
+      data: { messageId: event.id, teamId: event.team_id },
     });
   }
 
@@ -607,6 +637,10 @@ export class IngestionService {
     // tearing the service down.
     this.bufferSub?.unsubscribe();
     this.spinnerSub?.unsubscribe();
+    // Story 31-4: the closed-ids cache subscribes for the service's whole
+    // lifetime (not per init() cycle — `log.reset()` re-emits an empty set on
+    // a team switch, so the cache clears itself).
+    this.closedIdsSub.unsubscribe();
     this._wsInbound$.complete();
     // Epic 17 (ADR-014): the `commands` store is owned by the registry; its
     // single `log$` subscription is torn down by `PerAgentStoreRegistry`'s own

@@ -363,6 +363,11 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
 describe('AppComponent — notification toast rendering (Story 31-3)', () => {
   let fixture: ComponentFixture<AppComponent>;
   let messageService: MessageService;
+  let apiStub: {
+    getTeam: jasmine.Spy;
+    getTeams: jasmine.Spy;
+    emitClosedNotification: jasmine.Spy;
+  };
 
   beforeEach(async () => {
     const contextStub: ContextStub = {
@@ -371,6 +376,14 @@ describe('AppComponent — notification toast rendering (Story 31-3)', () => {
       currentTeamRunning$: new BehaviorSubject<boolean>(false),
       getCurrentTeam: jasmine.createSpy('getCurrentTeam'),
       clear: jasmine.createSpy('clear'),
+    };
+
+    apiStub = {
+      getTeam: jasmine.createSpy('getTeam'),
+      getTeams: jasmine.createSpy('getTeams'),
+      emitClosedNotification: jasmine
+        .createSpy('emitClosedNotification')
+        .and.resolveTo(undefined),
     };
 
     await TestBed.configureTestingModule({
@@ -409,13 +422,7 @@ describe('AppComponent — notification toast rendering (Story 31-3)', () => {
           provide: FaviconService,
           useValue: { setFavicon: jasmine.createSpy('setFavicon') },
         },
-        {
-          provide: ApiService,
-          useValue: {
-            getTeam: jasmine.createSpy('getTeam'),
-            getTeams: jasmine.createSpy('getTeams'),
-          },
-        },
+        { provide: ApiService, useValue: apiStub },
       ],
     }).compileComponents();
 
@@ -501,5 +508,143 @@ describe('AppComponent — notification toast rendering (Story 31-3)', () => {
     expect(summaries.length).toBe(2);
     expect(summaries).toContain('Alpha');
     expect(summaries).toContain('Beta');
+  });
+
+  // -------------------------------------------------------------------------
+  // Story 31-4 (AC #4, #5, #6) — the close round trip, proven at the DOM.
+  //
+  // Driven by clicking the real `button.p-toast-close-button` rather than
+  // calling `onToastClose` directly: the whole point is that the `(onClose)`
+  // binding on the app's single `<p-toast>` is wired and that PrimeNG re-emits
+  // `data` verbatim. Calling the handler would pass with the binding deleted.
+  // -------------------------------------------------------------------------
+
+  function closeFirstToast(): void {
+    const button = toasts()[0].querySelector(
+      'button.p-toast-close-button',
+    ) as HTMLButtonElement;
+    button.click();
+  }
+
+  it('AC4: clicking close issues exactly one POST with that toast\'s messageId and teamId', async () => {
+    messageService.add({
+      ...notificationToast('Alpha'),
+      data: { messageId: 'w-1', teamId: 'team-1' },
+    });
+    await flush();
+    expect(toasts().length).toBe(1);
+
+    closeFirstToast();
+    await flush();
+
+    expect(apiStub.emitClosedNotification).toHaveBeenCalledTimes(1);
+    expect(apiStub.emitClosedNotification).toHaveBeenCalledWith(
+      'team-1',
+      'w-1',
+    );
+  });
+
+  it('AC4: closing one of two toasts reports only that toast\'s id', async () => {
+    messageService.add({
+      ...notificationToast('Alpha', 'first'),
+      data: { messageId: 'w-1', teamId: 'team-1' },
+    });
+    messageService.add({
+      ...notificationToast('Beta', 'second'),
+      data: { messageId: 'w-2', teamId: 'team-1' },
+    });
+    await flush();
+    expect(toasts().length).toBe(2);
+
+    closeFirstToast();
+    await flush();
+
+    expect(apiStub.emitClosedNotification).toHaveBeenCalledTimes(1);
+    expect(apiStub.emitClosedNotification).toHaveBeenCalledWith(
+      'team-1',
+      'w-1',
+    );
+  });
+
+  it('AC5: closing a toast with no data issues ZERO POSTs', async () => {
+    messageService.add(notificationToast('Alpha'));
+    await flush();
+
+    closeFirstToast();
+    await flush();
+
+    expect(apiStub.emitClosedNotification).not.toHaveBeenCalled();
+  });
+
+  it('AC5: closing a toast with data but no messageId issues ZERO POSTs', async () => {
+    messageService.add({
+      ...notificationToast('Alpha'),
+      data: { teamId: 'team-1' },
+    });
+    await flush();
+
+    closeFirstToast();
+    await flush();
+
+    expect(apiStub.emitClosedNotification).not.toHaveBeenCalled();
+  });
+
+  it('AC5: closing a toast with a messageId but no teamId issues ZERO POSTs', async () => {
+    messageService.add({
+      ...notificationToast('Alpha'),
+      data: { messageId: 'w-1' },
+    });
+    await flush();
+
+    closeFirstToast();
+    await flush();
+
+    expect(apiStub.emitClosedNotification).not.toHaveBeenCalled();
+  });
+
+  it('AC6: a rejected POST neither throws nor surfaces an unhandled rejection', async () => {
+    apiStub.emitClosedNotification.and.returnValue(
+      Promise.reject(new Error('409 team stopped')),
+    );
+    const unhandled: PromiseRejectionEvent[] = [];
+    const capture = (e: PromiseRejectionEvent): void => {
+      unhandled.push(e);
+    };
+    window.addEventListener('unhandledrejection', capture);
+
+    messageService.add({
+      ...notificationToast('Alpha'),
+      data: { messageId: 'w-1', teamId: 'team-1' },
+    });
+    await flush();
+
+    expect(() => closeFirstToast()).not.toThrow();
+    await flush();
+    // Give the microtask queue and the unhandledrejection task a turn.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    window.removeEventListener('unhandledrejection', capture);
+    expect(apiStub.emitClosedNotification).toHaveBeenCalledTimes(1);
+    expect(unhandled.length).toBe(0);
+  });
+
+  it('AC6: a rejected POST still removes the toast from the DOM', async () => {
+    apiStub.emitClosedNotification.and.returnValue(
+      Promise.reject(new Error('409 team stopped')),
+    );
+
+    messageService.add({
+      ...notificationToast('Alpha'),
+      data: { messageId: 'w-1', teamId: 'team-1' },
+    });
+    await flush();
+    expect(toasts().length).toBe(1);
+
+    closeFirstToast();
+    await flush();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await flush();
+
+    expect(toasts().length).toBe(0);
   });
 });

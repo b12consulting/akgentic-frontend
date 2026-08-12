@@ -303,6 +303,47 @@ export interface LlmContextClearedEvent {
   cleared_message_count: number;
 }
 
+/**
+ * Wire tag of the `EventMessage` envelope. Named as a constant because Story
+ * 31-4 makes the frontend a WRITER of that envelope (`ApiService.
+ * emitClosedNotification`), and the tag has to match the Python import path
+ * byte-for-byte or the server's `decode_message` answers 400. Read paths keep
+ * using the `.includes()` guards — an envelope is recognised by substring, only
+ * the one place that CONSTRUCTS one needs the exact literal.
+ */
+export const EVENT_MESSAGE_MODEL =
+  'akgentic.core.messages.orchestrator.EventMessage';
+
+/**
+ * Wire tag of the `ClosedNotification` dataclass carried inside
+ * `EventMessage.event`. Same reasoning as `EVENT_MESSAGE_MODEL`: the outgoing
+ * payload carries TWO nested tags (envelope, then dataclass) and both are
+ * resolved server-side by import path.
+ */
+export const CLOSED_NOTIFICATION_MODEL =
+  'akgentic.core.messages.orchestrator.ClosedNotification';
+
+/**
+ * Inner event payload recording that a notification was dismissed by the user,
+ * mirroring the akgentic-core `ClosedNotification` frozen dataclass (core Epic
+ * 24). Carried by `EventMessage.event` like every other domain-event payload,
+ * and discriminated frontend-side by the inner `__model__` — exactly like
+ * `LlmUsageEvent` / `CommandsAnnouncedEvent`.
+ *
+ * Unlike its siblings this payload is also WRITTEN by the frontend: closing a
+ * toast POSTs it to `/teams/{id}/notification`, the orchestrator persists and
+ * streams it, and it arrives back on the WS stream (and in a later `getEvents`
+ * replay) where `closedNotificationIdsFold` collects it.
+ *
+ * `message_id` is the `id` of the dismissed `NotificationMessage`. It is a
+ * `uuid.UUID` upstream and a plain string on the wire — the server's
+ * deserializer coerces it back.
+ */
+export interface ClosedNotification {
+  __model__: string; // contains 'ClosedNotification'
+  message_id: string;
+}
+
 // Union type for all possible messages
 export type AkgenticMessage =
   | SentMessage
@@ -465,6 +506,18 @@ export function isLlmContextClearedEvent(
   event: { __model__?: string } | null | undefined,
 ): event is LlmContextClearedEvent {
   return !!event?.__model__?.includes('LlmContextClearedEvent');
+}
+
+/**
+ * Inner-event check (Story 31-4): true when the inner event carried by an
+ * `EventMessage` is a `ClosedNotification`. Matches on the inner `__model__`,
+ * the same discrimination used for `LlmUsageEvent` / `CommandsAnnouncedEvent`.
+ * No substring collision with any other inner event on the wire.
+ */
+export function isClosedNotification(
+  event: { __model__?: string } | null | undefined,
+): event is ClosedNotification {
+  return !!event?.__model__?.includes('ClosedNotification');
 }
 
 /**

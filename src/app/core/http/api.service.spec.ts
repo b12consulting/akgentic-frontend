@@ -369,4 +369,59 @@ describe('ApiService', () => {
       expect(callArgs.url).toContain('/teams/team-1/message/@Manager');
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Story 31-4 (AC #3, #6) — the dismissal wire shape.
+  //
+  // Asserted against the PARSED body, not a string match: key order is not part
+  // of the contract, but the two nested `__model__` tags are — the server
+  // resolves each by Python import path and answers 400 on a typo in either.
+  // -------------------------------------------------------------------------
+
+  describe('emitClosedNotification (Story 31-4)', () => {
+    it('(AC3) POSTs the nested EventMessage/ClosedNotification envelope as JSON', async () => {
+      await service.emitClosedNotification('team-1', 'w-1');
+
+      expect(fetchServiceSpy.fetch).toHaveBeenCalledTimes(1);
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.url).toMatch(/\/teams\/team-1\/notification$/);
+      expect(callArgs.options?.method).toBe('POST');
+      expect(callArgs.options?.headers).toEqual({
+        'Content-Type': 'application/json',
+      });
+      expect(JSON.parse(callArgs.options?.body as string)).toEqual({
+        message: {
+          __model__: 'akgentic.core.messages.orchestrator.EventMessage',
+          event: {
+            __model__: 'akgentic.core.messages.orchestrator.ClosedNotification',
+            message_id: 'w-1',
+          },
+        },
+      });
+    });
+
+    it('(AC3) sends ONLY __model__ + event — no sender/team_id/parent_id', async () => {
+      await service.emitClosedNotification('team-1', 'w-1');
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      const body = JSON.parse(callArgs.options?.body as string);
+      expect(Object.keys(body)).toEqual(['message']);
+      expect(Object.keys(body.message).sort()).toEqual(['__model__', 'event']);
+    });
+
+    it('(AC3) passes no successMessage — a dismissal raises no success toast', async () => {
+      await service.emitClosedNotification('team-1', 'w-1');
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.successMessage).toBeUndefined();
+    });
+
+    it('(AC6) propagates a FetchService rejection to the caller', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.reject(new Error('409')));
+
+      await expectAsync(
+        service.emitClosedNotification('team-1', 'w-1'),
+      ).toBeRejected();
+    });
+  });
 });

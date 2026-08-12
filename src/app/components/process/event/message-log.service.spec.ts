@@ -1,7 +1,15 @@
 import { TestBed } from '@angular/core/testing';
 
-import { AkgenticMessage, SentMessage } from '../../../protocol/message.types';
-import { MessageLogService, messageListFold } from './message-log.service';
+import {
+  AkgenticMessage,
+  CLOSED_NOTIFICATION_MODEL,
+  SentMessage,
+} from '../../../protocol/message.types';
+import {
+  closedNotificationIdsFold,
+  MessageLogService,
+  messageListFold,
+} from './message-log.service';
 
 function msg(
   id: string,
@@ -282,6 +290,171 @@ describe('MessageLogService.messageList$ (Story 6.4, AC4)', () => {
     const last = emissions[emissions.length - 1];
     expect(last.map((m) => m.id)).toEqual(['s1']);
 
+    sub.unsubscribe();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 31-4 (AC #7, #8) — closedNotificationIdsFold
+//
+// The fold is the durable half of the dismissal round trip: an id it collects
+// is an id `IngestionService` will refuse to re-toast. It is a pure function
+// over the log, so live-streamed and replayed `ClosedNotification`s are
+// indistinguishable to it — which is exactly why a dismissal survives a reload.
+// ---------------------------------------------------------------------------
+
+/** An `EventMessage` envelope carrying a `ClosedNotification` inner event. */
+function closedNotification(id: string, messageId: string): AkgenticMessage {
+  return {
+    ...msg(id, 'EventMessage'),
+    event: { __model__: CLOSED_NOTIFICATION_MODEL, message_id: messageId },
+  } as AkgenticMessage;
+}
+
+/** An `EventMessage` envelope carrying some OTHER inner event. */
+function usageEvent(id: string): AkgenticMessage {
+  return {
+    ...msg(id, 'EventMessage'),
+    event: {
+      __model__: 'akgentic.llm.event.LlmUsageEvent',
+      input_tokens: 10,
+      output_tokens: 2,
+    },
+  } as AkgenticMessage;
+}
+
+describe('closedNotificationIdsFold (Story 31-4, AC #7/#8)', () => {
+  it('empty log → empty set', () => {
+    expect(closedNotificationIdsFold([]).size).toBe(0);
+  });
+
+  it('one ClosedNotification → that message_id', () => {
+    const out = closedNotificationIdsFold([closedNotification('e1', 'w-1')]);
+    expect(Array.from(out)).toEqual(['w-1']);
+  });
+
+  it('collects several distinct ids in the order they arrived', () => {
+    const out = closedNotificationIdsFold([
+      closedNotification('e1', 'w-1'),
+      closedNotification('e2', 'w-2'),
+    ]);
+    expect(Array.from(out)).toEqual(['w-1', 'w-2']);
+  });
+
+  it('duplicate message_ids collapse to one entry', () => {
+    const out = closedNotificationIdsFold([
+      closedNotification('e1', 'w-1'),
+      closedNotification('e2', 'w-1'),
+    ]);
+    expect(out.size).toBe(1);
+    expect(out.has('w-1')).toBeTrue();
+  });
+
+  it('an EventMessage carrying another inner event contributes nothing', () => {
+    expect(closedNotificationIdsFold([usageEvent('e1')]).size).toBe(0);
+  });
+
+  it('a plain SentMessage contributes nothing', () => {
+    expect(closedNotificationIdsFold([msg('s1', 'SentMessage')]).size).toBe(0);
+  });
+
+  it('does not throw on a missing __model__ or a null inner event', () => {
+    const noModel = {
+      ...msg('x1', 'EventMessage'),
+      __model__: undefined as any,
+    } as AkgenticMessage;
+    const nullEvent = {
+      ...msg('x2', 'EventMessage'),
+      event: null,
+    } as AkgenticMessage;
+    expect(() =>
+      closedNotificationIdsFold([noModel, nullEvent]),
+    ).not.toThrow();
+    expect(closedNotificationIdsFold([noModel, nullEvent]).size).toBe(0);
+  });
+
+  it('picks the ClosedNotifications out of a mixed log', () => {
+    const out = closedNotificationIdsFold([
+      msg('s1', 'SentMessage'),
+      closedNotification('e1', 'w-1'),
+      usageEvent('e2'),
+      msg('w1', 'WarningMessage'),
+      closedNotification('e3', 'w-2'),
+    ]);
+    expect(Array.from(out).sort()).toEqual(['w-1', 'w-2']);
+  });
+});
+
+describe('MessageLogService.closedNotificationIds$ (Story 31-4, AC #7)', () => {
+  let service: MessageLogService;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [MessageLogService] });
+    service = TestBed.inject(MessageLogService);
+  });
+
+  it('emits an empty set synchronously on subscribe', () => {
+    let observed: Set<string> | null = null;
+    const sub = service.closedNotificationIds$.subscribe((v) => (observed = v));
+    expect((observed as Set<string> | null)?.size).toBe(0);
+    sub.unsubscribe();
+  });
+
+  it('re-emits when a ClosedNotification lands', () => {
+    const emissions: Set<string>[] = [];
+    const sub = service.closedNotificationIds$.subscribe((v) =>
+      emissions.push(v),
+    );
+
+    service.append(closedNotification('e1', 'w-1'));
+
+    expect(emissions.length).toBe(2);
+    expect(Array.from(emissions[1])).toEqual(['w-1']);
+    sub.unsubscribe();
+  });
+
+  // Without `distinctUntilChanged(sameIdSet)` the fold's fresh Set per log
+  // emission would push a new value on EVERY unrelated frame.
+  it('does NOT re-emit for frames that change no dismissal id', () => {
+    const emissions: Set<string>[] = [];
+    const sub = service.closedNotificationIds$.subscribe((v) =>
+      emissions.push(v),
+    );
+
+    service.append(msg('s1', 'SentMessage'));
+    service.append(usageEvent('e1'));
+    service.append(msg('s2', 'SentMessage'));
+
+    expect(emissions.length).toBe(1);
+    sub.unsubscribe();
+  });
+
+  // AC #7: replay-seeded and live-appended logs are indistinguishable — the
+  // property that makes a dismissal survive a reload.
+  it('a replay-seeded log yields the same set as a live-appended one', () => {
+    const replayed = TestBed.inject(MessageLogService);
+    replayed.appendAll([
+      closedNotification('e1', 'w-1'),
+      closedNotification('e2', 'w-2'),
+    ]);
+
+    const live = new MessageLogService();
+    live.append(closedNotification('e1', 'w-1'));
+    live.append(closedNotification('e2', 'w-2'));
+
+    expect(Array.from(closedNotificationIdsFold(replayed.snapshot())).sort())
+      .toEqual(Array.from(closedNotificationIdsFold(live.snapshot())).sort());
+  });
+
+  it('reset() empties the set again (team switch clears dismissals)', () => {
+    service.append(closedNotification('e1', 'w-1'));
+    let observed: Set<string> | null = null;
+    const sub = service.closedNotificationIds$.subscribe((v) => (observed = v));
+    expect((observed as Set<string> | null)?.size).toBe(1);
+
+    service.reset();
+
+    expect((observed as Set<string> | null)?.size).toBe(0);
     sub.unsubscribe();
   });
 });
