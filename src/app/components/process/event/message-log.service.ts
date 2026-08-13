@@ -29,7 +29,7 @@ const MESSAGE_LIST_MODELS = [
   'SentMessage',
   'ErrorMessage',
   'WarningMessage',
-  '.NotificationMessage',
+  'NotificationMessage',
 ] as const;
 
 /**
