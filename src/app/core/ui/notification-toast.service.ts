@@ -23,6 +23,18 @@ import { Toast } from 'primeng/toast';
  * `AppComponent` owns the mount and registers it here. `IngestionService` is
  * component-scoped under `ProcessComponent`, so a root service is the only
  * place the two can meet.
+ *
+ * Two things to know before changing this:
+ *
+ *   - `Toast.messages` is typed in PrimeNG's shipped `.d.ts` but is NOT an
+ *     `@Input()` — it is public state rather than a documented API. That is
+ *     tolerable only because both ways it could break are LOUD: a rename or a
+ *     retype (PrimeNG's move to signals, say) is a compile error, and a splice
+ *     that stopped reaching the DOM turns the real-mount specs below red.
+ *   - Splicing bypasses `messagesArchieve`, which PrimeNG only consults when
+ *     `preventDuplicates` is set. The mount does not set it; if it ever does, a
+ *     warning that was dismissed and then re-raised identically would be
+ *     swallowed as a duplicate.
  */
 @Injectable({ providedIn: 'root' })
 export class NotificationToastService {
@@ -44,6 +56,11 @@ export class NotificationToastService {
    * spliced it, and must neither throw nor disturb its neighbours. Only the
    * matching entry is removed — the disconnect toast and sibling notifications
    * are left exactly as they were, including their close state and position.
+   *
+   * The splice is deliberately NOT routed through `Toast.onMessageClose`: that
+   * path emits the `(onClose)` binding `AppComponent` POSTs a
+   * `ClosedNotification` from, so a closure arriving off the wire would answer
+   * the server's echo with another one.
    */
   dismiss(messageId: string): void {
     const messages = this.toast?.messages;

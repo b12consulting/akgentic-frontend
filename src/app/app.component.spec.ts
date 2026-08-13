@@ -858,6 +858,40 @@ describe('AppComponent — single-toast removal (Story 31-5)', () => {
     expect(summaries()).toEqual([]);
   });
 
+  it('a wire-driven dismissal POSTs nothing back, while a user click still does', async () => {
+    // The echo-loop guard. `dismiss()` splices `Toast.messages` directly, which
+    // deliberately does NOT go through `Toast.onMessageClose` and so never fires
+    // the `(onClose)` binding that `AppComponent.onToastClose` POSTs from. Route
+    // the removal through PrimeNG's own close path instead and every closure
+    // replayed off the wire would emit a fresh `ClosedNotification` for a
+    // notification that is already closed — the client answering the server's
+    // echo with another echo.
+    const emit = TestBed.inject(ApiService)
+      .emitClosedNotification as jasmine.Spy;
+
+    messageService.add(notificationToastFor('w-1', 'Alpha'));
+    await flush();
+
+    notificationToast.dismiss('w-1');
+    await flush();
+
+    expect(summaries()).toEqual([]);
+    expect(emit).not.toHaveBeenCalled();
+
+    // Contrast, so the assertion above cannot pass because nothing ever POSTs:
+    // the same toast closed by hand DOES record the dismissal (Story 31-4).
+    messageService.add(notificationToastFor('w-2', 'Beta'));
+    await flush();
+    (
+      fixture.nativeElement.querySelector(
+        'button.p-toast-close-button',
+      ) as HTMLButtonElement
+    ).click();
+    await flush();
+
+    expect(emit).toHaveBeenCalledOnceWith('team-1', 'w-2');
+  });
+
   it('destroying AppComponent unregisters the mount', async () => {
     messageService.add(notificationToastFor('w-1', 'Alpha'));
     await flush();
