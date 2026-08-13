@@ -1,7 +1,37 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject, distinctUntilChanged, map, Observable } from 'rxjs';
 
-import { AkgenticMessage, isWelcomeAnnouncement } from '../../../protocol/message.types';
+import {
+  AkgenticMessage,
+  isClosedNotification,
+  isEventMessage,
+  isWelcomeAnnouncement,
+} from '../../../protocol/message.types';
+
+/**
+ * The allowlist of class-name suffixes `messageListFold` admits. Adding a future
+ * admitted type is one array entry.
+ *
+ * Each entry MUST match exactly what `notificationSeverity`
+ * (`protocol/message.types.ts`, Story 31-6) can classify. A model this fold
+ * admits but that function returns `null` for falls through to the component's
+ * `SentMessage` branch, which reads a payload it does not have. Hence the
+ * leading dot on `.NotificationMessage`: it mirrors `isNotificationMessage`'s
+ * `endsWith('.NotificationMessage')` so a sibling such as
+ * `FooNotificationMessage` — admitted by a bare `'NotificationMessage'` entry,
+ * classifiable by nothing — never enters the list. The other three entries are
+ * bare because their guards are bare `.includes()` too.
+ *
+ * No entry double-admits another's messages either: a `__model__` is fully
+ * qualified and ends in its concrete class name, so `'…orchestrator.ErrorMessage'`
+ * does not contain `'WarningMessage'` (nor the reverse).
+ */
+const MESSAGE_LIST_MODELS = [
+  'SentMessage',
+  'ErrorMessage',
+  'WarningMessage',
+  '.NotificationMessage',
+] as const;
 
 /**
  * Story 6.4 (AC4) — pure selector over the log producing the inputs for
@@ -14,12 +44,51 @@ export function messageListFold(log: AkgenticMessage[]): AkgenticMessage[] {
   return log.filter(
     (m) =>
       !!m.__model__ &&
-      (m.__model__.includes('SentMessage') ||
-        m.__model__.includes('ErrorMessage')) &&
+      MESSAGE_LIST_MODELS.some((t) => m.__model__!.includes(t)) &&
       // ADR-011 Decision 2: the welcome announcement carries an `ActorSystem`
       // transport sender, but is admitted via the structural exception.
       (m.sender?.role !== 'ActorSystem' || isWelcomeAnnouncement(m)),
   );
+}
+
+/**
+ * Story 31-4 (AC #7) — pure fold collecting the ids of every notification the
+ * user has dismissed, from the `ClosedNotification` events on the log.
+ *
+ * It lives HERE, in the event layer, rather than under `components/process/
+ * selectors/` where a log-derived projection would normally go: the consumer is
+ * `IngestionService`, and the Epic 18 import DAG allows `proc-event` to reach
+ * only `proc-models | core | protocol`. Story 18-3 broke the event→selectors
+ * edge deliberately to kill a circular import; a selector-homed fold would fail
+ * `npm run lint`, not merely offend a convention.
+ *
+ * Live-stream ids and replayed ids are indistinguishable to the fold — both are
+ * just log entries — which is what makes a dismissal survive a reload.
+ */
+export function closedNotificationIdsFold(log: AkgenticMessage[]): Set<string> {
+  const ids = new Set<string>();
+  for (const m of log) {
+    if (!m.__model__ || !isEventMessage(m)) continue;
+    const event = m.event;
+    if (isClosedNotification(event) && event.message_id) {
+      ids.add(event.message_id);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Story 31-4 (AC #7): set equality by size then membership. `closedNotificationIdsFold`
+ * builds a FRESH `Set` per log emission, so the default reference comparison in
+ * `distinctUntilChanged` would re-emit on every unrelated frame and make every
+ * downstream consumer re-run for nothing.
+ */
+function sameIdSet(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const id of a) {
+    if (!b.has(id)) return false;
+  }
+  return true;
 }
 
 /**
@@ -47,13 +116,28 @@ export class MessageLogService {
 
   /**
    * Story 6.4 (AC4): log-derived selector for `MessageListComponent`. Emits
-   * every `SentMessage` / `ErrorMessage` whose sender is not `ActorSystem`,
-   * in arrival order. `distinctUntilChanged` preserves reference equality
-   * across no-op log emissions (OnPush safety, NFR3).
+   * every message whose `__model__` is in `MESSAGE_LIST_MODELS` (the
+   * `SentMessage` plus the `ErrorMessage`/`WarningMessage`/`NotificationMessage`
+   * family) and whose sender is not `ActorSystem`, in arrival order.
+   * `distinctUntilChanged` preserves reference equality across no-op log
+   * emissions (OnPush safety, NFR3).
    */
   readonly messageList$: Observable<AkgenticMessage[]> = this.log$.pipe(
     map(messageListFold),
     distinctUntilChanged(),
+  );
+
+  /**
+   * Story 31-4 (AC #7): ids of the notifications the user has dismissed, folded
+   * from the `ClosedNotification` events on the log. `IngestionService` consults
+   * it at toast-dispatch time so a dismissed notification never re-toasts.
+   *
+   * `log$` is a `BehaviorSubject`, so a subscriber receives the current set
+   * synchronously — the suppression cache is never momentarily empty on init.
+   */
+  readonly closedNotificationIds$: Observable<Set<string>> = this.log$.pipe(
+    map(closedNotificationIdsFold),
+    distinctUntilChanged(sameIdSet),
   );
 
   /** Append a single message to the log. Prefer `appendAll` when a batch is

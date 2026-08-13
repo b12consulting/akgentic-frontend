@@ -13,8 +13,19 @@ import { UtilService } from '../../../../core/ui/utils.service';
 import { combineLatest, Subscription } from 'rxjs';
 import { AkgentService } from '../../../../core/ui/akgent.service';
 import { MessageLogService } from '../../event/message-log.service';
-import { isWelcomeAnnouncement } from '../../../../protocol/message.types';
+import {
+  isWelcomeAnnouncement,
+  notificationSeverity,
+  NotificationSeverity,
+} from '../../../../protocol/message.types';
 import { CopyButtonComponent } from '../../../../shared/components/copy-button/copy-button.component';
+
+/** Legend used when a notification carries no `content_type` of its own. */
+const LEGEND_FALLBACK: Record<NotificationSeverity, string | null> = {
+  error: null,
+  warn: 'Warning',
+  info: 'Notification',
+};
 
 @Component({
   selector: 'app-message-list',
@@ -109,8 +120,44 @@ export class MessageListComponent {
     return { color: this.categoryService.COLORS[nodes?.category] };
   }
 
+  /**
+   * The predicate that selects the notification branch and its colour. `null`
+   * means "not a notification", which sends the row down the existing
+   * `SentMessage` branch.
+   *
+   * Story 31-6 (FR20) moved the body to `protocol/message.types.ts` so
+   * `IngestionService` classifies toasts through the same function. This stays
+   * as a one-line delegation because the template binds to it by name.
+   */
+  notificationSeverity(message: any): NotificationSeverity | null {
+    return notificationSeverity(message);
+  }
+
+  /**
+   * Legend for a notification row: its own `content_type` when upstream supplied
+   * one, else the per-severity fallback. `error → null` is deliberate — it keeps
+   * a null-`content_type` error rendering the empty legend it renders today
+   * (NFR2), while warnings and notifications (whose `content_type` is always
+   * `null` upstream) get the only legend they will have until a producer sets it.
+   */
+  notificationLegend(
+    message: any,
+    severity: NotificationSeverity,
+  ): string | null {
+    return message.content_type || LEGEND_FALLBACK[severity];
+  }
+
+  /**
+   * Keys of the inner payload the non-notification branch renders. The `?? {}`
+   * is load-bearing: this is the fallback branch for every row
+   * `notificationSeverity` returns `null` for, and a message the fold admitted
+   * without an inner `message` would otherwise throw out of change detection and
+   * take the whole table down with it. An empty row is the correct degradation.
+   */
   getMessageContentKeys(message: any) {
-    return Object.keys(message).filter((k) => this.messagesKeys.includes(k));
+    return Object.keys(message ?? {}).filter((k) =>
+      this.messagesKeys.includes(k),
+    );
   }
 
   relaunch(_event: any, _msg: any) {

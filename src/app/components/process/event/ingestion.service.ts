@@ -8,7 +8,12 @@ import {
   ActorAddress,
   AkgenticMessage,
   CommandDescriptor,
+  ErrorMessage,
+  NotificationMessage,
+  notificationSeverity,
+  NotificationSeverity,
   StateChangedMessage,
+  WarningMessage,
 } from '../../../protocol/message.types';
 import {
   AgentStateResponse,
@@ -32,6 +37,7 @@ import {
   tokenUsageSpec,
 } from './per-agent-specs';
 import { MessageService } from 'primeng/api';
+import { NotificationToastService } from '../../../core/ui/notification-toast.service';
 
 /**
  * Story 4-10 (AC7): minimum visible duration of the loading spinner.
@@ -40,6 +46,33 @@ import { MessageService } from 'primeng/api';
  * never see a sub-perception flash of the spinner before the UI transitions.
  */
 const SPINNER_MIN_VISIBLE_MS = 500;
+
+/**
+ * Story 31-6 (FR19): the toast header of last resort, used only when BOTH parts
+ * of `"{name} - {content_type}"` are absent — an orchestrator-sent notification
+ * with a null `content_type`, or one whose sender never arrived.
+ *
+ * Deliberately NOT `MessageListComponent`'s `LEGEND_FALLBACK`, whose
+ * `error → null` is correct there and wrong here: the Messages tab renders a
+ * `p-fieldset` that can legitimately show an empty legend, whereas an empty
+ * toast `summary` renders a blank header. The `'Error'` below is therefore not
+ * the old hardcoded error-toast summary coming back — that one headed EVERY
+ * error; this one is reached only when there is nothing else to say.
+ */
+const TOAST_FALLBACK: Record<NotificationSeverity, string> = {
+  error: 'Error',
+  warn: 'Warning',
+  info: 'Notification',
+};
+
+/**
+ * Role of the team orchestrator on `ActorAddress` (akgentic-team `factory.py` /
+ * `restorer.py` set `BaseConfig(name="@Orchestrator", role="Orchestrator")`).
+ * Matched on `role` and never on `name`: `role` is the domain field, while
+ * `name` is a display label carrying a decorative `@` and is the one of the pair
+ * that could plausibly be renamed.
+ */
+const ORCHESTRATOR_ROLE = 'Orchestrator';
 
 /**
  * Story 25-1 (ADR-020 §2): build a synthesized `StateChangedMessage` from one
@@ -101,6 +134,17 @@ export class IngestionService {
   apiService: ApiService = inject(ApiService);
   messageService: MessageService = inject(MessageService);
   private config: ConfigService = inject(ConfigService);
+
+  /**
+   * Story 31-5: the other half of dismissal. `messageService` raises toasts;
+   * this removes a single one that is already on screen — an operation PrimeNG's
+   * `MessageService` does not offer. Declared here, above `closedIdsSub`,
+   * because that field's initializer subscribes to a `BehaviorSubject` and so
+   * fires during construction.
+   */
+  private notificationToast: NotificationToastService = inject(
+    NotificationToastService,
+  );
 
   /**
    * Story 4-10 (AC7) / Epic 18 (ADR-015 §2): the loading-spinner state.
@@ -228,6 +272,57 @@ export class IngestionService {
   /** Spinner-first-event side-channel subscriber (take(1)). Held for
    *  disposal in init()'s (a) step and in ngOnDestroy. */
   private spinnerSub: Subscription | null = null;
+
+  /**
+   * Story 31-4 (AC #9): latest snapshot of `MessageLogService.closedNotificationIds$`,
+   * cached synchronously because `showNotificationToast` runs inside the WS
+   * `next` callback and cannot await an observable.
+   *
+   * The cache lags the wire by up to one `bufferTime(16)` window — a
+   * `ClosedNotification` reaches the log only when its frame is flushed. That is
+   * by design: on the live path a dismissal always precedes the next delivery of
+   * that message by far more than a frame, and the replay path (where the
+   * ordering genuinely bites) is story 31-5's batch computation. Do NOT close the
+   * gap with a synchronous side-channel off `_wsInbound$` — that is a partial,
+   * untested version of 31-5.
+   *
+   * Story 31-5 kept that instruction and answered the ordering the other way
+   * round: see `onClosedNotificationIds` below.
+   */
+  private closedNotificationIds: Set<string> = new Set<string>();
+  /** Subscription feeding `closedNotificationIds` and (31-5) the toast removal
+   *  it now also drives. Torn down in ngOnDestroy alongside `bufferSub` /
+   *  `spinnerSub`. */
+  private closedIdsSub: Subscription = this.log.closedNotificationIds$.subscribe(
+    (ids) => this.onClosedNotificationIds(ids),
+  );
+
+  /**
+   * Story 31-5: dismissal, in the direction the 31-4 suppressor cannot cover.
+   *
+   * The suppressor is pre-emptive — it refuses to raise a toast for an id the
+   * log already knows to be closed. That handles a `ClosedNotification` that
+   * arrives FIRST. On a reload of a running team the wire delivers the opposite
+   * order: history replays from cursor 0, so the `WarningMessage` (older) lands
+   * before its `ClosedNotification` (newer), the toast opens, and nothing ever
+   * took it down again. A warning dismissed days ago came back on every reload
+   * and stayed.
+   *
+   * Removing the toast when the closure is folded makes the pair
+   * order-independent, which is why no replay/live boundary is needed here —
+   * there is none on the wire, and this design does not want one.
+   *
+   * Only ids that are NEW to the set trigger a removal: `closedNotificationIds$`
+   * re-emits a fresh `Set` whenever the closed set changes, and re-dismissing
+   * the whole set each time would be wasted work that also blunts the tests.
+   */
+  private onClosedNotificationIds(ids: Set<string>): void {
+    const previous = this.closedNotificationIds;
+    this.closedNotificationIds = ids;
+    for (const id of ids) {
+      if (!previous.has(id)) this.notificationToast.dismiss(id);
+    }
+  }
 
   async init(processId: string, running: boolean): Promise<void> {
     this.processId = processId;
@@ -363,18 +458,15 @@ export class IngestionService {
         // per-__model__ dispatch).
         this._wsInbound$.next(event as AkgenticMessage);
 
-        if (event.__model__.includes('ErrorMessage')) {
-          // Story 6.4 (AC1): the toast is dispatched here; the inbound log
-          // emission above already feeds every downstream selector. The
-          // legacy `this.message$.next(event)` push is deleted (no
-          // subscribers remain).
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: event.exception_value,
-            life: 5000,
-          });
-        }
+        // Story 31-6 (FR17): all three severities take ONE dispatch. The
+        // separate `messageService.add({ severity: 'error', … life: 5000 })`
+        // branch that used to sit here is deleted — errors are notifications
+        // like any other now, which is what buys them the durable-dismissal
+        // round-trip (FR18) with no wiring of their own. `null` means "not a
+        // notification": no toast, and no early return either, so the frame has
+        // already reached `_wsInbound$` above and still lands in the log.
+        const severity = notificationSeverity(event);
+        if (severity) this.showNotificationToast(event, severity);
         // Story 6.4 (AC1): every other branch (StateChangedMessage,
         // EventMessage, fallthrough) is now pure log-feed via
         // `_wsInbound$.next(...)` above. The per-__model__ dispatch + VCR
@@ -540,6 +632,103 @@ export class IngestionService {
     });
   }
 
+  /**
+   * Story 31-6 (FR19): the toast header — `"{agent name} - {content_type}"`,
+   * with either half dropped when it carries nothing.
+   *
+   * The name half is dropped when the sender IS the orchestrator (it raises
+   * most of these, and "@Orchestrator" names nothing useful) or when no sender
+   * arrived at all. The type half is dropped when `content_type` is null or
+   * empty — structurally nullable upstream, and in practice always null for a
+   * warning, since nothing yet gives one the "kind" an exception class name
+   * gives an error.
+   *
+   * The `' - '` separator therefore appears ONLY between two present parts,
+   * never leading or trailing; when neither survives, the per-severity
+   * `TOAST_FALLBACK` heads the toast rather than a blank string.
+   *
+   * A pure function of its arguments (no `this` state) so it can be spec'd
+   * directly, without driving a frame through the socket.
+   */
+  private toastSummary(
+    event: ErrorMessage | WarningMessage | NotificationMessage,
+    severity: NotificationSeverity,
+  ): string {
+    const sender = event.sender;
+    const namePart =
+      sender && sender.role !== ORCHESTRATOR_ROLE ? sender.name : null;
+    const typePart = event.content_type || null;
+    const parts = [namePart, typePart].filter((p): p is string => !!p);
+    return parts.length > 0 ? parts.join(' - ') : TOAST_FALLBACK[severity];
+  }
+
+  /**
+   * Story 31-3 (FR11), widened by Story 31-6 (FR17): one permanent, closable
+   * toast per member of the notification family — errors included.
+   *
+   * Errors reached this method by deleting the WS handler's separate
+   * `life: 5000` branch, which is the whole of FR18: `data.messageId` and
+   * `AppComponent.onToastClose` are type-agnostic, so an error dismissal
+   * round-trips and survives a reload with no error-specific code anywhere in
+   * the chain. Do not add any. The accepted cost is that error toasts no longer
+   * auto-dismiss — if the resulting pile ever needs relief the answer is a
+   * "dismiss all" affordance, never a `life` value, which silently defeats
+   * `sticky: true`.
+   *
+   * `severity` is a PARAMETER, not recomputed here. It used to be
+   * `isWarningMessage(event) ? 'warn' : 'info'`, correct only while the caller
+   * excluded errors: once errors were admitted that expression sent every one
+   * of them to `'info'` — a red error rendered as a blue info toast, with
+   * nothing failing. The caller now classifies once through the shared
+   * `notificationSeverity` and passes the answer down.
+   *
+   * Three properties are deliberately ABSENT, and each omission is
+   * load-bearing — do not "complete" this object:
+   *
+   *   - **no `key`** — `app.component.html` mounts a single keyless
+   *     `<p-toast>`, and PrimeNG admits a message only when the mount's key
+   *     equals the message's (`Toast.canAdd`). A keyed message is silently
+   *     dropped and never renders. Per-event identity travels in `data`
+   *     instead; `Toast.add()` appends, so keyless messages already coexist
+   *     rather than clobbering one another. Story 31-5 re-tested this before
+   *     building removal on top of it and reached the same conclusion: a key
+   *     here would buy nothing anyway, since `MessageService.clear(key)` empties
+   *     a whole container rather than one message.
+   *   - **no `closable`** — the neighbouring `showDisconnectToast` sets
+   *     `closable: false` on purpose; this toast is its exact opposite and
+   *     needs the close cross that PrimeNG renders by default.
+   *   - **no `life`** — any value defeats `sticky: true`.
+   *
+   * `data.messageId` (not `id`, which PrimeNG binds to the rendered DOM `id`
+   * attribute) carries the source event id; `Toast.onClose` re-emits the whole
+   * message, so it survives to `AppComponent.onToastClose`. Story 31-4 added
+   * `data.teamId` alongside it so that handler can address the dismissal POST
+   * without reading navigation state — `event.team_id` is populated on the wire
+   * by `Message.init` in `Agent._notify_orchestrator`.
+   *
+   * Story 31-4 also added the suppression guard below: an id already carried by
+   * a `ClosedNotification` on the log raises no toast at all. It is an early
+   * return HERE and not in the WS `next` handler, so the message still reaches
+   * `_wsInbound$` and the Messages tab — closing dismisses the popup, not the
+   * historical record. Story 31-5 covers the opposite arrival order by removing
+   * the toast after the fact (`onClosedNotificationIds`); `data.messageId` is
+   * what addresses it, which is why that field is load-bearing and not debug
+   * decoration.
+   */
+  private showNotificationToast(
+    event: ErrorMessage | WarningMessage | NotificationMessage,
+    severity: NotificationSeverity,
+  ): void {
+    if (this.closedNotificationIds.has(event.id)) return;
+    this.messageService.add({
+      severity,
+      summary: this.toastSummary(event, severity),
+      detail: event.content,
+      sticky: true,
+      data: { messageId: event.id, teamId: event.team_id },
+    });
+  }
+
   ngOnDestroy() {
     // Suppress disconnect toast triggered by the unsubscribe below —
     // this is intentional navigation, not a connection loss.
@@ -563,6 +752,10 @@ export class IngestionService {
     // tearing the service down.
     this.bufferSub?.unsubscribe();
     this.spinnerSub?.unsubscribe();
+    // Story 31-4: the closed-ids cache subscribes for the service's whole
+    // lifetime (not per init() cycle — `log.reset()` re-emits an empty set on
+    // a team switch, so the cache clears itself).
+    this.closedIdsSub.unsubscribe();
     this._wsInbound$.complete();
     // Epic 17 (ADR-014): the `commands` store is owned by the registry; its
     // single `log$` subscription is torn down by `PerAgentStoreRegistry`'s own

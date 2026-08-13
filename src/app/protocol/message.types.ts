@@ -92,8 +92,46 @@ export interface StopMessage extends BaseMessage {
 
 export interface ErrorMessage extends BaseMessage {
   __model__: 'akgentic.core.messages.orchestrator.ErrorMessage';
-  exception_type: string;
-  exception_value: string;
+  /** Inherited from `NotificationMessage` upstream (core Epic 24, story 24-5):
+   *  the error's own former field pair was consolidated onto the shared
+   *  notification base. `content_type` is genuinely nullable (upstream default
+   *  `None`); `content` narrows `BaseMessage.content` to a non-null string
+   *  (upstream default `""`). */
+  content_type: string | null;
+  content: string;
+  current_message?: BaseMessage | null;
+}
+
+/**
+ * Handled-warning telemetry (core Epic 24, story 24-4) — the `ErrorMessage`
+ * sibling under the shared `NotificationMessage` base, carrying the identical
+ * `content_type`/`content` pair. `content_type` is structurally nullable and is
+ * in practice always `null`: nothing upstream yet gives a warning a "kind" the
+ * way an exception class name does, so the Messages tab supplies the legend.
+ *
+ * Declared as a FLAT SIBLING of `ErrorMessage`, deliberately not
+ * `extends NotificationMessage`: the base would have to declare `__model__` as
+ * its own literal, and neither subtype's literal is assignable to it. The
+ * `AkgenticMessage` union discriminates on the `__model__` literals, so a TS
+ * inheritance chain would buy nothing and break narrowing.
+ */
+export interface WarningMessage extends BaseMessage {
+  __model__: 'akgentic.core.messages.orchestrator.WarningMessage';
+  content_type: string | null;
+  content: string;
+  current_message?: BaseMessage | null;
+}
+
+/**
+ * The bare notification base (core Epic 24) — same field set as its
+ * `ErrorMessage` / `WarningMessage` subclasses. Nothing upstream constructs one
+ * today; the type and its render branch exist so the path lights up the moment a
+ * producer appears. Flat sibling for the same reason as `WarningMessage`.
+ */
+export interface NotificationMessage extends BaseMessage {
+  __model__: 'akgentic.core.messages.orchestrator.NotificationMessage';
+  content_type: string | null;
+  content: string;
   current_message?: BaseMessage | null;
 }
 
@@ -265,6 +303,47 @@ export interface LlmContextClearedEvent {
   cleared_message_count: number;
 }
 
+/**
+ * Wire tag of the `EventMessage` envelope. Named as a constant because Story
+ * 31-4 makes the frontend a WRITER of that envelope (`ApiService.
+ * emitClosedNotification`), and the tag has to match the Python import path
+ * byte-for-byte or the server's `decode_message` answers 400. Read paths keep
+ * using the `.includes()` guards — an envelope is recognised by substring, only
+ * the one place that CONSTRUCTS one needs the exact literal.
+ */
+export const EVENT_MESSAGE_MODEL =
+  'akgentic.core.messages.orchestrator.EventMessage';
+
+/**
+ * Wire tag of the `ClosedNotification` dataclass carried inside
+ * `EventMessage.event`. Same reasoning as `EVENT_MESSAGE_MODEL`: the outgoing
+ * payload carries TWO nested tags (envelope, then dataclass) and both are
+ * resolved server-side by import path.
+ */
+export const CLOSED_NOTIFICATION_MODEL =
+  'akgentic.core.messages.orchestrator.ClosedNotification';
+
+/**
+ * Inner event payload recording that a notification was dismissed by the user,
+ * mirroring the akgentic-core `ClosedNotification` frozen dataclass (core Epic
+ * 24). Carried by `EventMessage.event` like every other domain-event payload,
+ * and discriminated frontend-side by the inner `__model__` — exactly like
+ * `LlmUsageEvent` / `CommandsAnnouncedEvent`.
+ *
+ * Unlike its siblings this payload is also WRITTEN by the frontend: closing a
+ * toast POSTs it to `/teams/{id}/notification`, the orchestrator persists and
+ * streams it, and it arrives back on the WS stream (and in a later `getEvents`
+ * replay) where `closedNotificationIdsFold` collects it.
+ *
+ * `message_id` is the `id` of the dismissed `NotificationMessage`. It is a
+ * `uuid.UUID` upstream and a plain string on the wire — the server's
+ * deserializer coerces it back.
+ */
+export interface ClosedNotification {
+  __model__: string; // contains 'ClosedNotification'
+  message_id: string;
+}
+
 // Union type for all possible messages
 export type AkgenticMessage =
   | SentMessage
@@ -273,6 +352,8 @@ export type AkgenticMessage =
   | StartMessage
   | StopMessage
   | ErrorMessage
+  | WarningMessage
+  | NotificationMessage
   | StateChangedMessage
   | EventMessage
   | UserMessage
@@ -302,6 +383,59 @@ export function isStopMessage(msg: BaseMessage): msg is StopMessage {
 
 export function isErrorMessage(msg: BaseMessage): msg is ErrorMessage {
   return msg.__model__.includes('ErrorMessage');
+}
+
+export function isWarningMessage(msg: BaseMessage): msg is WarningMessage {
+  return msg.__model__.includes('WarningMessage');
+}
+
+/**
+ * True ONLY for the bare `NotificationMessage` base. Deliberately stricter than
+ * the `.includes()` siblings (same precedent as `isWorkspaceTool` above):
+ * `ErrorMessage` and `WarningMessage` ARE `NotificationMessage` subclasses
+ * upstream, but each takes its own render branch here, so a guard that admitted
+ * them would make the three branches ambiguous. The leading dot also rejects a
+ * hypothetical `FooNotificationMessage`.
+ */
+export function isNotificationMessage(
+  msg: BaseMessage,
+): msg is NotificationMessage {
+  return msg.__model__.endsWith('.NotificationMessage');
+}
+
+/** The three notification severities, in escalation order (Story 31-2). */
+export type NotificationSeverity = 'error' | 'warn' | 'info';
+
+/**
+ * The ONE encoding of the error/warn/info partition (Story 31-6, FR20). `null`
+ * means "not a notification".
+ *
+ * It lives here, next to the three guards it is built from, because it had been
+ * written twice: once as `MessageListComponent.notificationSeverity` (the full
+ * three-way) and once inline in `IngestionService.showNotificationToast` as
+ * `isWarningMessage(event) ? 'warn' : 'info'` — a two-way that was only correct
+ * while its caller excluded errors, and that silently rendered an error as a
+ * blue info toast the moment errors were admitted. A single exported function
+ * is what makes that class of drift unrepresentable.
+ *
+ * `message-log.service.ts`'s `MESSAGE_LIST_MODELS` allowlist is the third party
+ * to this coupling: it must admit exactly what this function can classify.
+ *
+ * Guard order is load-bearing. `ErrorMessage` and `WarningMessage` ARE
+ * `NotificationMessage` subclasses upstream, so errors and warnings must be
+ * claimed before the bare-base check — which is itself an `endsWith` for the
+ * same reason (see `isNotificationMessage`).
+ *
+ * Pure string checks, no allocation: it is called once per row from the
+ * Messages-tab template and once per frame on the WS hot path.
+ */
+export function notificationSeverity(
+  message: BaseMessage,
+): NotificationSeverity | null {
+  if (isErrorMessage(message)) return 'error';
+  if (isWarningMessage(message)) return 'warn';
+  if (isNotificationMessage(message)) return 'info';
+  return null;
 }
 
 export function isStateChangedMessage(
@@ -407,6 +541,18 @@ export function isLlmContextClearedEvent(
   event: { __model__?: string } | null | undefined,
 ): event is LlmContextClearedEvent {
   return !!event?.__model__?.includes('LlmContextClearedEvent');
+}
+
+/**
+ * Inner-event check (Story 31-4): true when the inner event carried by an
+ * `EventMessage` is a `ClosedNotification`. Matches on the inner `__model__`,
+ * the same discrimination used for `LlmUsageEvent` / `CommandsAnnouncedEvent`.
+ * No substring collision with any other inner event on the wire.
+ */
+export function isClosedNotification(
+  event: { __model__?: string } | null | undefined,
+): event is ClosedNotification {
+  return !!event?.__model__?.includes('ClosedNotification');
 }
 
 /**

@@ -19,6 +19,10 @@ import {
   NamespaceSummary,
   NamespaceValidationReport,
 } from '../../protocol/catalog.interface';
+import {
+  CLOSED_NOTIFICATION_MODEL,
+  EVENT_MESSAGE_MODEL,
+} from '../../protocol/message.types';
 
 @Injectable({
   providedIn: 'root',
@@ -168,6 +172,46 @@ export class ApiService {
       options: {
         method: 'POST',
         body: JSON.stringify({ content, message_id: messageId }),
+        headers: { 'Content-Type': 'application/json' },
+      },
+    });
+  }
+
+  /**
+   * Record that the user dismissed a notification toast (Story 31-4).
+   *
+   * Posts a `ClosedNotification` domain event to the generic
+   * `POST /teams/{teamId}/notification` route, which decodes any
+   * `__model__`-tagged payload and publishes it through
+   * `Orchestrator.emitMessage` — so the dismissal is both persisted and
+   * streamed back to every subscriber, including this client. That echo (not
+   * local optimistic state) is what feeds the closed-ids fold.
+   *
+   * TWO nested `__model__` tags are required: the `EventMessage` envelope, then
+   * the `ClosedNotification` dataclass inside `event`. Only those two keys are
+   * sent — every other `Message` field is defaulted server-side, and
+   * `Orchestrator.emitMessage` overwrites `sender` / `team_id` / `parent_id` via
+   * `Message.init` regardless of what the client sends, so naming them would be
+   * misleading rather than defensive.
+   *
+   * No `successMessage`: a dismissal is not worth a success toast. A non-OK
+   * response rejects with `HttpError` (and `FetchService` raises its own error
+   * toast) — the caller catches it rather than adding a second one.
+   */
+  async emitClosedNotification(teamId: string, messageId: string): Promise<void> {
+    await this.fetchService.fetch({
+      url: `${this.apiUrl}/teams/${teamId}/notification`,
+      options: {
+        method: 'POST',
+        body: JSON.stringify({
+          message: {
+            __model__: EVENT_MESSAGE_MODEL,
+            event: {
+              __model__: CLOSED_NOTIFICATION_MODEL,
+              message_id: messageId,
+            },
+          },
+        }),
         headers: { 'Content-Type': 'application/json' },
       },
     });

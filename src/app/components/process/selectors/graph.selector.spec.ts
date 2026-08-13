@@ -111,10 +111,9 @@ function makeError(agent_id: string): ErrorMessage {
     timestamp: '2026-04-08T10:00:00Z',
     sender: makeAddress({ agent_id }),
     display_type: 'other',
-    content: null,
+    content: 'boom',
     __model__: 'akgentic.core.messages.orchestrator.ErrorMessage',
-    exception_type: 'RuntimeError',
-    exception_value: 'boom',
+    content_type: 'RuntimeError',
   };
 }
 
