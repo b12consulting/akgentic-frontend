@@ -64,12 +64,18 @@
       size="small"
       display="chip"
     ></p-multiSelect>
+    <!--
+      Story 33-1: the gate no longer depends on run state — a stopped team is
+      restored on submit. It gates on empty text and on an in-flight restore,
+      whose transient busy state the label and spinner render.
+    -->
     <p-button
       size="small"
       icon="pi pi-send"
-      label="Submit"
+      [label]="restoring ? restoreLabel : 'Submit'"
+      [loading]="restoring"
       (click)="sendMessage()"
-      [disabled]="!userInput || !(contextService.currentTeamRunning$ | async)"
+      [disabled]="!userInput || restoring"
     />
   </div>
 </div>

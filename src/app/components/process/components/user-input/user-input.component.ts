@@ -3,6 +3,7 @@ import { Component, inject, Input, OnInit, DestroyRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 
+import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { DropdownModule } from 'primeng/dropdown';
 import { FloatLabelModule } from 'primeng/floatlabel';
@@ -14,6 +15,7 @@ import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 import { ConfigService } from '../../../../core/config/config.service';
 
 import { ApiService } from '../../../../core/http/api.service';
+import { HttpError } from '../../../../core/http/fetch.service';
 import { ChatService } from '../../selectors/chat.selector';
 import { ContextService } from '../../../../core/context/context.service';
 import { GraphDataService, HUMAN_ROLE } from '../../selectors/graph.selector';
@@ -47,8 +49,18 @@ export class ProcessUserInputComponent implements OnInit {
   graphDataService: GraphDataService = inject(GraphDataService);
   ingestionService: IngestionService = inject(IngestionService);
   private config = inject(ConfigService);
+  private messageService: MessageService = inject(MessageService);
   userInput: string = '';
   userInputEnterKeySubmit: boolean = this.config.userInputEnterKeySubmit;
+
+  /**
+   * Story 33-1: a restore is in flight for this team. Drives the transient busy
+   * state on the submit control and rejects a re-entrant submit (never queues
+   * it), so one restore cannot produce two sends.
+   */
+  restoring: boolean = false;
+  /** Submit-control label while `restoring`. */
+  readonly restoreLabel: string = 'Restarting team…';
 
   // Mention configuration
   mentionItems: { name: string; actorName: string; agentId: string }[] = [];
@@ -148,18 +160,82 @@ export class ProcessUserInputComponent implements OnInit {
     return String(Date.now());
   }
 
+  /**
+   * Story 33-1 (ADR-024 §2): restore-then-send. A stopped team is restarted
+   * first and the typed message is sent afterwards, so a stopped team is no
+   * longer a read-only dead end and the user's intent is not lost.
+   */
   async sendMessage() {
-    if (!this.contextService.currentTeamRunning$.value || !this.userInput || this.userInput.trim() === '') {
+    // A restore already in flight: reject the submit, never queue it.
+    if (this.restoring) {
+      return;
+    }
+    if (!this.userInput || this.userInput.trim() === '') {
       return;
     }
 
+    // Run state is consulted ONCE, and solely to decide whether a restore is
+    // needed. It is never re-read or re-used as a gate on the dispatch below:
+    // after a multi-second restore the captured value is stale by construction,
+    // and the live one flips only when the cache refresh lands (issue #235).
+    const running = this.contextService.currentTeamRunning$.value;
+    if (!running && !(await this.restoreBeforeSend())) {
+      return;
+    }
+
+    // Capture the send-origin key AFTER any restore and immediately before
+    // dispatch — ADR-016 keys the top-anchor by send time, so a key taken
+    // before the restore would be stale by the length of the restore. Emitted
+    // only when a dispatch actually happens (never on the guards above, never
+    // on the no-candidate-recipient guard inside `dispatch`).
+    const justSentKey = this.nextJustSentKey();
+    if (!(await this.dispatch(justSentKey))) {
+      return;
+    }
+
+    this.userInput = '';
+  }
+
+  /**
+   * Restart the team and wait for the team cache to report it running, so the
+   * send that follows cannot race the backend's "team is not running"
+   * rejection. Returns false when the restore failed or timed out — the caller
+   * then dispatches nothing and leaves `userInput` untouched so the user can
+   * retry.
+   *
+   * Only the non-HTTP rejection (an rxjs `TimeoutError`: the restore returned
+   * 200 but the team never came up within the window) is toasted here. An
+   * `HttpError` has already raised `FetchService`'s own error toast, and a
+   * second one would double up.
+   */
+  private async restoreBeforeSend(): Promise<boolean> {
+    this.restoring = true;
+    try {
+      await this.contextService.restoreTeamAndAwait(this.processId);
+      return true;
+    } catch (err) {
+      if (!(err instanceof HttpError)) {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Could not restart the team',
+          detail:
+            'The team did not come back up in time. Your message was not sent — try again.',
+        });
+      }
+      return false;
+    } finally {
+      this.restoring = false;
+    }
+  }
+
+  /**
+   * The four sender/recipient dispatch priorities (Story 7-2), unchanged.
+   * Returns false when no candidate recipient exists (Priority 2 edge case) so
+   * the caller preserves `userInput` and emits no just-sent key.
+   */
+  private async dispatch(justSentKey: string): Promise<boolean> {
     const hasSender = this.selectedSender !== null && this.selectedSender !== '';
     const hasRecipients = this.selectedAgents.length > 0;
-
-    // Capture the send-origin key BEFORE dispatch so it precedes the answer's
-    // arrival; emitted only after a dispatch actually happens (never on the
-    // early-return guards above or the no-candidate-recipient guard below).
-    const justSentKey = this.nextJustSentKey();
 
     if (hasSender && hasRecipients) {
       // Priority 1: explicit sender + explicit recipients
@@ -174,7 +250,7 @@ export class ProcessUserInputComponent implements OnInit {
       const defaultRecipient = this.dropdownAgents[0]?.value;
       if (!defaultRecipient) {
         // AC #3: no candidate recipient exists -> do not send, preserve input
-        return;
+        return false;
       }
       await this.apiService.sendMessageFromTo(
         this.processId, this.selectedSender!, defaultRecipient, this.userInput,
@@ -192,7 +268,7 @@ export class ProcessUserInputComponent implements OnInit {
       this.chatService.emitJustSent(justSentKey);
     }
 
-    this.userInput = '';
+    return true;
   }
 
   selectAgent = (item: any) => {

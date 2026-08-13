@@ -1,10 +1,12 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { FormsModule } from '@angular/forms';
+import { MessageService } from 'primeng/api';
 import { BehaviorSubject } from 'rxjs';
 
 import { ProcessUserInputComponent } from './user-input.component';
 import { ApiService } from '../../../../core/http/api.service';
+import { HttpError } from '../../../../core/http/fetch.service';
 import { ChatService } from '../../selectors/chat.selector';
 import { ContextService } from '../../../../core/context/context.service';
 import { GraphDataService } from '../../selectors/graph.selector';
@@ -44,7 +46,19 @@ describe('ProcessUserInputComponent', () => {
   let fixture: ComponentFixture<ProcessUserInputComponent>;
   let apiServiceSpy: jasmine.SpyObj<ApiService>;
   let chatServiceMock: any;
-  let contextServiceStub: { currentTeamRunning$: BehaviorSubject<boolean> };
+  // Story 33-1: the stub counts reads of `currentTeamRunning$` through a getter
+  // so AC #8 ("run state consulted once") is directly assertable, and carries
+  // the `restoreTeamAndAwait` double the restore-then-send path calls.
+  let runningSubject: BehaviorSubject<boolean>;
+  let runStateReads: number;
+  let contextServiceStub: {
+    readonly currentTeamRunning$: BehaviorSubject<boolean>;
+    restoreTeamAndAwait: jasmine.Spy<
+      (teamId: string, timeoutMs?: number) => Promise<void>
+    >;
+  };
+  let messageServiceSpy: jasmine.SpyObj<MessageService>;
+  let ingestionInitSpy: jasmine.Spy;
   let nodesSubject: BehaviorSubject<NodeInterface[]>;
   // Story 17-3: the service now exposes a `commands` PerAgentStore keyed by
   // agent_id. The stub holds a plain agent_id → descriptors map and a
@@ -63,11 +77,22 @@ describe('ProcessUserInputComponent', () => {
       emitJustSent: jasmine.createSpy('emitJustSent'),
     };
 
-    // sendMessage() guards on currentTeamRunning$.value (Story 2-5). Default
-    // to running=true so the guard does not short-circuit routing tests.
+    // sendMessage() reads currentTeamRunning$.value once to decide whether a
+    // restore is needed (Story 33-1). Default to running=true so the restore
+    // branch does not fire in the routing tests.
+    runningSubject = new BehaviorSubject<boolean>(true);
+    runStateReads = 0;
     contextServiceStub = {
-      currentTeamRunning$: new BehaviorSubject<boolean>(true),
+      get currentTeamRunning$(): BehaviorSubject<boolean> {
+        runStateReads++;
+        return runningSubject;
+      },
+      restoreTeamAndAwait: jasmine
+        .createSpy('restoreTeamAndAwait')
+        .and.returnValue(Promise.resolve()),
     };
+
+    messageServiceSpy = jasmine.createSpyObj('MessageService', ['add', 'clear']);
 
     nodesSubject = new BehaviorSubject<NodeInterface[]>([]);
 
@@ -76,7 +101,11 @@ describe('ProcessUserInputComponent', () => {
     };
 
     commandsById = {};
+    // Story 33-1 AC #11: `init` exists on the double purely so the spec can
+    // prove the restore-then-send path never re-runs ingestion.
+    ingestionInitSpy = jasmine.createSpy('init');
     const ingestionServiceStub = {
+      init: ingestionInitSpy,
       commands: {
         snapshot: (id: string): CommandDescriptor[] | undefined =>
           commandsById[id],
@@ -91,6 +120,7 @@ describe('ProcessUserInputComponent', () => {
         { provide: ContextService, useValue: contextServiceStub },
         { provide: GraphDataService, useValue: graphDataService },
         { provide: IngestionService, useValue: ingestionServiceStub },
+        { provide: MessageService, useValue: messageServiceSpy },
       ],
     }).compileComponents();
 
@@ -1003,15 +1033,22 @@ describe('ProcessUserInputComponent', () => {
       );
     });
 
-    it('does NOT emit on the team-stopped guard', async () => {
-      contextServiceStub.currentTeamRunning$.next(false);
+    // Story 33-1 replaced the team-stopped early return with restore-then-send:
+    // a stopped team now restarts and the key is emitted after the dispatch.
+    it('emits once on a stopped team, after the restore resolves', async () => {
+      runningSubject.next(false);
       component.selectedAgents = [];
-      component.userInput = 'blocked';
+      component.userInput = 'restore then send';
 
       await component.sendMessage();
 
-      expect(chatServiceMock.emitJustSent).not.toHaveBeenCalled();
-      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+      expect(contextServiceStub.restoreTeamAndAwait).toHaveBeenCalledOnceWith(
+        'test-team-id',
+      );
+      expect(chatServiceMock.emitJustSent).toHaveBeenCalledOnceWith('1700000000000');
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+        'test-team-id', 'restore then send',
+      );
     });
 
     it('does NOT emit on the empty/whitespace input guard', async () => {
@@ -1034,6 +1071,290 @@ describe('ProcessUserInputComponent', () => {
       expect(chatServiceMock.emitJustSent).not.toHaveBeenCalled();
       expect(apiServiceSpy.sendMessageFromTo).not.toHaveBeenCalled();
       expect(component.userInput).toBe('orphan');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Story 33-1 (ADR-024 §2) — restore-then-send on a stopped team
+  // -------------------------------------------------------------------------
+  describe('restore-then-send (Story 33-1)', () => {
+    /** A restore double the spec releases by hand, so "before"/"after the
+     *  restore resolves" is observable rather than inferred. */
+    function deferredRestore(): { release: () => void } {
+      let release!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      contextServiceStub.restoreTeamAndAwait.and.returnValue(pending);
+      return { release };
+    }
+
+    function timeoutError(): Error {
+      // Shape of the rxjs `timeout(ms)` rejection: an Error named TimeoutError,
+      // NOT an HttpError — so nothing else in the app has toasted it.
+      const err = new Error('Timeout has occurred');
+      err.name = 'TimeoutError';
+      return err;
+    }
+
+    function submitButton() {
+      return fixture.debugElement.query(By.css('p-button')).componentInstance;
+    }
+
+    // --- AC #5 — the submit gate no longer depends on run state -----------
+
+    it('(AC5) submit control is ENABLED with a stopped team and non-empty text', () => {
+      runningSubject.next(false);
+      component.userInput = 'typed while stopped';
+      fixture.detectChanges();
+
+      expect(submitButton().disabled).toBeFalsy();
+    });
+
+    it('(AC5) submit control stays DISABLED with empty text, stopped or running', () => {
+      runningSubject.next(false);
+      component.userInput = '';
+      fixture.detectChanges();
+      expect(submitButton().disabled).toBeTruthy();
+
+      runningSubject.next(true);
+      fixture.detectChanges();
+      expect(submitButton().disabled).toBeTruthy();
+    });
+
+    it('(AC5) sendMessage() still returns early on empty/whitespace text with a stopped team', async () => {
+      runningSubject.next(false);
+      component.userInput = '   ';
+
+      await component.sendMessage();
+
+      expect(contextServiceStub.restoreTeamAndAwait).not.toHaveBeenCalled();
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+      expect(component.userInput).toBe('   ');
+    });
+
+    // --- AC #6 — restore BEFORE send, once each ---------------------------
+
+    it('(AC6) stopped team: restoreTeamAndAwait resolves BEFORE any send, once each', async () => {
+      const { release } = deferredRestore();
+      runningSubject.next(false);
+      component.selectedAgents = [];
+      component.userInput = 'hello stopped team';
+
+      const pending = component.sendMessage();
+
+      expect(contextServiceStub.restoreTeamAndAwait).toHaveBeenCalledOnceWith(
+        'test-team-id',
+      );
+      // The dispatch has NOT happened while the restore is in flight.
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+
+      release();
+      await pending;
+
+      expect(contextServiceStub.restoreTeamAndAwait).toHaveBeenCalledTimes(1);
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+        'test-team-id', 'hello stopped team',
+      );
+      expect(component.userInput).toBe('');
+    });
+
+    // --- AC #7 — running team is untouched --------------------------------
+
+    it('(AC7) running team: sends with NO restore call', async () => {
+      runningSubject.next(true);
+      component.selectedAgents = [];
+      component.userInput = 'hello running team';
+
+      await component.sendMessage();
+
+      expect(contextServiceStub.restoreTeamAndAwait).not.toHaveBeenCalled();
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+        'test-team-id', 'hello running team',
+      );
+    });
+
+    // --- AC #8 — run state read once, never re-used as a send gate --------
+
+    it('(AC8) run state is consulted exactly once per submit', async () => {
+      runningSubject.next(false);
+      component.selectedAgents = [];
+      component.userInput = 'count the reads';
+
+      runStateReads = 0;
+      await component.sendMessage();
+
+      expect(runStateReads).toBe(1);
+    });
+
+    it('(AC8) dispatches even when the restore resolves without the flag flipping', async () => {
+      // The double resolves but leaves currentTeamRunning$ at false — the shape
+      // a re-read of the captured/live value as a send gate would swallow.
+      runningSubject.next(false);
+      component.selectedAgents = [];
+      component.userInput = 'no stale gate';
+
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+        'test-team-id', 'no stale gate',
+      );
+      expect(runningSubject.value).toBeFalse();
+    });
+
+    // --- AC #9 — busy state and re-entry ----------------------------------
+
+    it('(AC9) shows the "Restarting team…" busy state and disables submit while restoring', () => {
+      deferredRestore();
+      runningSubject.next(false);
+      component.userInput = 'busy while restoring';
+
+      void component.sendMessage();
+      fixture.detectChanges();
+
+      expect(component.restoring).toBeTrue();
+      expect(submitButton().label).toBe('Restarting team…');
+      expect(submitButton().disabled).toBeTruthy();
+    });
+
+    it('(AC9) a second submit during an in-flight restore is rejected, not queued', async () => {
+      const { release } = deferredRestore();
+      runningSubject.next(false);
+      component.selectedAgents = [];
+      component.userInput = 'only once';
+
+      const first = component.sendMessage();
+      await component.sendMessage();
+
+      expect(contextServiceStub.restoreTeamAndAwait).toHaveBeenCalledTimes(1);
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+      // userInput survives the whole restore window untouched.
+      expect(component.userInput).toBe('only once');
+
+      release();
+      await first;
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledTimes(1);
+      expect(contextServiceStub.restoreTeamAndAwait).toHaveBeenCalledTimes(1);
+    });
+
+    it('(AC9) clears the busy state once the restore resolves', async () => {
+      runningSubject.next(false);
+      component.userInput = 'clears busy';
+
+      await component.sendMessage();
+
+      expect(component.restoring).toBeFalse();
+    });
+
+    // --- AC #10 — failure and timeout -------------------------------------
+
+    it('(AC10) a timed-out restore issues no send, preserves userInput, clears busy, and toasts', async () => {
+      contextServiceStub.restoreTeamAndAwait.and.returnValue(
+        Promise.reject(timeoutError()),
+      );
+      runningSubject.next(false);
+      component.selectedAgents = [];
+      component.userInput = 'kept verbatim';
+
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+      expect(apiServiceSpy.sendMessageFromTo).not.toHaveBeenCalled();
+      expect(component.userInput).toBe('kept verbatim');
+      expect(component.restoring).toBeFalse();
+      expect(messageServiceSpy.add).toHaveBeenCalledTimes(1);
+      expect(messageServiceSpy.add.calls.mostRecent().args[0].severity).toBe(
+        'error',
+      );
+      // Keyless: app.component.html mounts a single keyless <p-toast>, and
+      // PrimeNG drops a message whose key does not match the mount's.
+      expect(messageServiceSpy.add.calls.mostRecent().args[0].key).toBeUndefined();
+    });
+
+    it('(AC10) an HTTP failure issues no send and does NOT raise a second toast', async () => {
+      contextServiceStub.restoreTeamAndAwait.and.returnValue(
+        Promise.reject(new HttpError('Restore failed', 500, null)),
+      );
+      runningSubject.next(false);
+      component.selectedAgents = [];
+      component.userInput = 'http failed';
+
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+      expect(component.userInput).toBe('http failed');
+      expect(component.restoring).toBeFalse();
+      // FetchService already toasted this one — a second toast would double up.
+      expect(messageServiceSpy.add).not.toHaveBeenCalled();
+    });
+
+    it('(AC10) a retry after a failed restore is accepted', async () => {
+      contextServiceStub.restoreTeamAndAwait.and.returnValue(
+        Promise.reject(timeoutError()),
+      );
+      runningSubject.next(false);
+      component.selectedAgents = [];
+      component.userInput = 'retry me';
+
+      await component.sendMessage();
+
+      contextServiceStub.restoreTeamAndAwait.and.returnValue(Promise.resolve());
+      await component.sendMessage();
+
+      expect(contextServiceStub.restoreTeamAndAwait).toHaveBeenCalledTimes(2);
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+        'test-team-id', 'retry me',
+      );
+    });
+
+    // --- AC #11 — no ingestion re-init ------------------------------------
+
+    it('(AC11) a stopped-team restore-then-send never invokes ingestionService.init', async () => {
+      runningSubject.next(false);
+      component.selectedAgents = [];
+      component.userInput = 'no re-init';
+
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledTimes(1);
+      expect(ingestionInitSpy).not.toHaveBeenCalled();
+    });
+
+    // --- AC #12 — justSentKey captured after the restore ------------------
+
+    it('(AC12) captures the send-origin key only AFTER the restore resolves', async () => {
+      const keySpy = spyOn<any>(component, 'nextJustSentKey').and.returnValue(
+        '1700000000000',
+      );
+      const { release } = deferredRestore();
+      runningSubject.next(false);
+      component.selectedAgents = [];
+      component.userInput = 'fresh key';
+
+      const pending = component.sendMessage();
+
+      expect(keySpy).not.toHaveBeenCalled();
+
+      release();
+      await pending;
+
+      expect(keySpy).toHaveBeenCalledTimes(1);
+      expect(chatServiceMock.emitJustSent).toHaveBeenCalledOnceWith('1700000000000');
+    });
+
+    it('(AC12) emits nothing on the failed-restore path', async () => {
+      spyOn<any>(component, 'nextJustSentKey').and.returnValue('1700000000000');
+      contextServiceStub.restoreTeamAndAwait.and.returnValue(
+        Promise.reject(timeoutError()),
+      );
+      runningSubject.next(false);
+      component.selectedAgents = [];
+      component.userInput = 'never emitted';
+
+      await component.sendMessage();
+
+      expect(chatServiceMock.emitJustSent).not.toHaveBeenCalled();
     });
   });
 });

@@ -9,6 +9,7 @@ import {
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { BehaviorSubject, of, Subject } from 'rxjs';
 import { map } from 'rxjs/operators';
+import { MessageService } from 'primeng/api';
 import { provideMarkdown } from 'ngx-markdown';
 
 import { ChatPanelComponent } from './chat-panel.component';
@@ -149,6 +150,9 @@ describe('ChatPanelComponent', () => {
         { provide: AkgentService, useValue: akgentService },
         { provide: GraphDataService, useValue: graphDataService },
         { provide: IngestionService, useValue: ingestionService },
+        // The nested <app-user-input> raises its own restore-failure toast
+        // (Story 33-1), so the child needs the PrimeNG toast service present.
+        MessageService,
       ],
     }).compileComponents();
 

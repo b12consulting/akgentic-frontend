@@ -46,6 +46,7 @@ describe('ContextService', () => {
       'createTeam',
       'deleteTeam',
       'stopTeam',
+      'restoreTeam',
     ]);
     apiSpy.stopTeam.and.returnValue(Promise.resolve());
     routerSpy = jasmine.createSpyObj('Router', ['navigate']);
@@ -971,4 +972,183 @@ describe('ContextService', () => {
     const value = await firstValueFrom(service.totalCount$);
     expect(value).toBe(0);
   });
+
+  // =======================================================================
+  // Story 33.1 — reactive restoreTeamAndAwait (mirror of stopTeamAndAwait)
+  // =======================================================================
+
+  it('(AC1 33.1) restoreTeamAndAwait is defined on the service with (teamId, timeoutMs?) shape', () => {
+    expect(typeof service.restoreTeamAndAwait).toBe('function');
+    // One required formal parameter: teamId. timeoutMs is optional (default 10000).
+    expect(service.restoreTeamAndAwait.length).toBe(1);
+  });
+
+  it('(AC1, AC2, AC3 33.1) resolves when the refresh reports running, calls restoreTeam once, then stops polling', fakeAsync(() => {
+    const stopped = makeTeam('team-A', 'stopped');
+    const running = makeTeam('team-A', 'running');
+
+    apiSpy.getTeams.and.returnValue(Promise.resolve([stopped]));
+    service.getTeams();
+    tick();
+
+    apiSpy.restoreTeam.and.returnValue(
+      Promise.resolve(makeTeamResponse('team-A', 'running')),
+    );
+    apiSpy.getTeam.and.returnValue(Promise.resolve(running));
+
+    let resolved = false;
+    service.restoreTeamAndAwait('team-A').then(() => {
+      resolved = true;
+    });
+
+    tick();
+    // AC2: restoreTeam is awaited FIRST and issued exactly once.
+    expect(apiSpy.restoreTeam).toHaveBeenCalledOnceWith('team-A');
+    // teams$ replays the stale 'stopped' snapshot at t=0, so the promise cannot
+    // have settled before the first interval tick.
+    expect(resolved).toBe(false);
+
+    tick(1000);
+    flushMicrotasks();
+
+    expect(resolved).toBe(true);
+    expect(apiSpy.restoreTeam).toHaveBeenCalledTimes(1);
+
+    // AC3 (resolve path): the interval is torn down in the `finally`, so the
+    // clock advancing produces no further refresh calls.
+    apiSpy.getTeam.calls.reset();
+    tick(5000);
+    expect(apiSpy.getTeam).not.toHaveBeenCalled();
+  }));
+
+  it('(AC1, AC3 33.1) rejects with TimeoutError when the team never reports running, then stops polling', fakeAsync(() => {
+    const stopped = makeTeam('team-A', 'stopped');
+
+    apiSpy.getTeams.and.returnValue(Promise.resolve([stopped]));
+    service.getTeams();
+    tick();
+
+    apiSpy.restoreTeam.and.returnValue(
+      Promise.resolve(makeTeamResponse('team-A', 'stopped')),
+    );
+    apiSpy.getTeam.and.returnValue(Promise.resolve(stopped));
+
+    let rejected: Error | null = null;
+    service.restoreTeamAndAwait('team-A', 10000).catch((err: Error) => {
+      rejected = err;
+    });
+
+    tick();
+    tick(11000);
+    flushMicrotasks();
+
+    expect(rejected).not.toBeNull();
+    expect(rejected!.name).toBe('TimeoutError');
+
+    // AC3 (reject path): same teardown, exercised through the rejection.
+    apiSpy.getTeam.calls.reset();
+    tick(5000);
+    expect(apiSpy.getTeam).not.toHaveBeenCalled();
+  }));
+
+  it('(AC4 33.1) never writes currentTeamRunning$ directly: it stays false when currentProcessId$ points elsewhere', fakeAsync(() => {
+    const stopped = makeTeam('team-A', 'stopped');
+    const running = makeTeam('team-A', 'running');
+
+    apiSpy.getTeams.and.returnValue(Promise.resolve([stopped]));
+    service.getTeams();
+    tick();
+
+    // currentProcessId$ is left at its initial '' → currentTeam$ is null, so the
+    // sole writer (the constructor subscription) cannot legitimately flip the
+    // flag. A `currentTeamRunning$.next(true)` inside the helper would.
+    apiSpy.restoreTeam.and.returnValue(
+      Promise.resolve(makeTeamResponse('team-A', 'running')),
+    );
+    apiSpy.getTeam.and.returnValue(Promise.resolve(running));
+
+    let resolved = false;
+    service.restoreTeamAndAwait('team-A').then(() => {
+      resolved = true;
+    });
+
+    tick();
+    tick(1000);
+    flushMicrotasks();
+
+    expect(resolved).toBe(true);
+    expect(service.currentTeamRunning$.value).toBe(false);
+  }));
+
+  it('(AC4 33.1) currentTeamRunning$ flips to true through the cache refresh when currentProcessId$ points at the team', fakeAsync(() => {
+    const stopped = makeTeam('team-A', 'stopped');
+    const running = makeTeam('team-A', 'running');
+
+    apiSpy.getTeams.and.returnValue(Promise.resolve([stopped]));
+    service.getTeams();
+    tick();
+
+    service.currentProcessId$.next('team-A');
+    flushMicrotasks();
+    expect(service.currentTeamRunning$.value).toBe(false);
+
+    apiSpy.restoreTeam.and.returnValue(
+      Promise.resolve(makeTeamResponse('team-A', 'running')),
+    );
+    apiSpy.getTeam.and.returnValue(Promise.resolve(running));
+
+    let resolved = false;
+    service.restoreTeamAndAwait('team-A').then(() => {
+      resolved = true;
+    });
+
+    tick();
+    tick(1000);
+    flushMicrotasks();
+
+    expect(resolved).toBe(true);
+    // Carried entirely by refreshOneTeam → _upsertTeam → _context$ → currentTeam$.
+    expect(service.currentTeamRunning$.value).toBe(true);
+  }));
+
+  it('(AC8 33.1) restoreTeamAndAwait refresh updates _context$ immutably', fakeAsync(() => {
+    const stoppedA = makeTeam('team-A', 'stopped');
+    const runningB = makeTeam('team-B', 'running');
+    const runningA = makeTeam('team-A', 'running');
+
+    apiSpy.getTeams.and.returnValue(Promise.resolve([stoppedA, runningB]));
+    service.getTeams();
+    tick();
+
+    let prev: TeamContext[] = [];
+    service.teams$
+      .subscribe((v) => {
+        prev = v;
+      })
+      .unsubscribe();
+    const prevB = prev.find((t) => t.team_id === 'team-B');
+
+    apiSpy.restoreTeam.and.returnValue(
+      Promise.resolve(makeTeamResponse('team-A', 'running')),
+    );
+    apiSpy.getTeam.and.returnValue(Promise.resolve(runningA));
+
+    service.restoreTeamAndAwait('team-A').catch(() => {
+      /* ignore */
+    });
+    tick();
+    tick(1000);
+    flushMicrotasks();
+
+    let next: TeamContext[] = [];
+    service.teams$
+      .subscribe((v) => {
+        next = v;
+      })
+      .unsubscribe();
+
+    expect(next).not.toBe(prev);
+    expect(next.find((t) => t.team_id === 'team-A')).toBe(runningA);
+    expect(next.find((t) => t.team_id === 'team-B')).toBe(prevB);
+  }));
 });
