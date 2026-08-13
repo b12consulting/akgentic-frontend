@@ -35,12 +35,16 @@
               [toggleable]="false"
             >
               <div
-                style="margin: 0.5rem 0 1rem"
                 class="text-container"
                 [ngClass]="'notification-body--' + severity"
                 [innerHTML]="message.content"
               ></div>
-              <div *ngIf="severity === 'error'">
+              <!-- Story 31-6 (FR16): the body's inline `margin: 0.5rem 0 1rem`
+                   is gone, so the row matches a SentMessage row. The bottom
+                   gap it used to provide belongs to the button row alone —
+                   putting it back on `.text-container` would re-pad the
+                   warn/info branches, which have no button. -->
+              <div class="notification-actions" *ngIf="severity === 'error'">
                 <p-button
                   size="small"
                   label="Relaunch (N/A)"

@@ -403,6 +403,41 @@ export function isNotificationMessage(
   return msg.__model__.endsWith('.NotificationMessage');
 }
 
+/** The three notification severities, in escalation order (Story 31-2). */
+export type NotificationSeverity = 'error' | 'warn' | 'info';
+
+/**
+ * The ONE encoding of the error/warn/info partition (Story 31-6, FR20). `null`
+ * means "not a notification".
+ *
+ * It lives here, next to the three guards it is built from, because it had been
+ * written twice: once as `MessageListComponent.notificationSeverity` (the full
+ * three-way) and once inline in `IngestionService.showNotificationToast` as
+ * `isWarningMessage(event) ? 'warn' : 'info'` — a two-way that was only correct
+ * while its caller excluded errors, and that silently rendered an error as a
+ * blue info toast the moment errors were admitted. A single exported function
+ * is what makes that class of drift unrepresentable.
+ *
+ * `message-log.service.ts`'s `MESSAGE_LIST_MODELS` allowlist is the third party
+ * to this coupling: it must admit exactly what this function can classify.
+ *
+ * Guard order is load-bearing. `ErrorMessage` and `WarningMessage` ARE
+ * `NotificationMessage` subclasses upstream, so errors and warnings must be
+ * claimed before the bare-base check — which is itself an `endsWith` for the
+ * same reason (see `isNotificationMessage`).
+ *
+ * Pure string checks, no allocation: it is called once per row from the
+ * Messages-tab template and once per frame on the WS hot path.
+ */
+export function notificationSeverity(
+  message: BaseMessage,
+): NotificationSeverity | null {
+  if (isErrorMessage(message)) return 'error';
+  if (isWarningMessage(message)) return 'warn';
+  if (isNotificationMessage(message)) return 'info';
+  return null;
+}
+
 export function isStateChangedMessage(
   msg: BaseMessage,
 ): msg is StateChangedMessage {

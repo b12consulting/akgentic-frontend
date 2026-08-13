@@ -14,15 +14,11 @@ import { combineLatest, Subscription } from 'rxjs';
 import { AkgentService } from '../../../../core/ui/akgent.service';
 import { MessageLogService } from '../../event/message-log.service';
 import {
-  isErrorMessage,
-  isNotificationMessage,
-  isWarningMessage,
   isWelcomeAnnouncement,
+  notificationSeverity,
+  NotificationSeverity,
 } from '../../../../protocol/message.types';
 import { CopyButtonComponent } from '../../../../shared/components/copy-button/copy-button.component';
-
-/** Story 31-2 — the three notification severities, in escalation order. */
-export type NotificationSeverity = 'error' | 'warn' | 'info';
 
 /** Legend used when a notification carries no `content_type` of its own. */
 const LEGEND_FALLBACK: Record<NotificationSeverity, string | null> = {
@@ -125,16 +121,16 @@ export class MessageListComponent {
   }
 
   /**
-   * Story 31-2 — the single predicate that selects the notification branch and
-   * its colour. `null` means "not a notification", which sends the row down the
-   * existing `SentMessage` branch. Called once per row from the template, so it
-   * stays a pure string check: no allocation, no observable work.
+   * The predicate that selects the notification branch and its colour. `null`
+   * means "not a notification", which sends the row down the existing
+   * `SentMessage` branch.
+   *
+   * Story 31-6 (FR20) moved the body to `protocol/message.types.ts` so
+   * `IngestionService` classifies toasts through the same function. This stays
+   * as a one-line delegation because the template binds to it by name.
    */
   notificationSeverity(message: any): NotificationSeverity | null {
-    if (isErrorMessage(message)) return 'error';
-    if (isWarningMessage(message)) return 'warn';
-    if (isNotificationMessage(message)) return 'info';
-    return null;
+    return notificationSeverity(message);
   }
 
   /**

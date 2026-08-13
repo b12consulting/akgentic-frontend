@@ -403,3 +403,132 @@ describe('MessageListComponent notification rendering (Story 31-2)', () => {
     expect(host.querySelectorAll('[class*="notification-body--"]').length).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Story 31-6 — row-padding parity (AC #1, #2)
+//
+// The notification branch used to carry an inline `style="margin: 0.5rem 0
+// 1rem"` that the SentMessage branch, rendering the very same `.text-container`
+// class, did not. That one attribute WAS the whole visible difference between
+// the two row heights.
+//
+// Asserted as COMPUTED margins on both rows rather than as the absence of the
+// attribute string from the template: the AC is that the rows match, and an
+// attribute-absence assertion would stay green if the same margin came back
+// through a class or a stylesheet rule instead.
+// ---------------------------------------------------------------------------
+
+describe('MessageListComponent row padding (Story 31-6)', () => {
+  let component: MessageListComponent;
+  let fixture: ComponentFixture<MessageListComponent>;
+  let log: MessageLogService;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [MessageListComponent, NoopAnimationsModule],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        MessageService,
+        MessageLogService,
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(MessageListComponent);
+    component = fixture.componentInstance;
+    log = TestBed.inject(MessageLogService);
+  });
+
+  /** Render one notification row and one SentMessage row together, and return
+   *  the `.text-container` of each. Rendering both in the SAME fixture is the
+   *  point: the comparison must be between two live rows of one table. */
+  function bothBodies(
+    model: 'ErrorMessage' | 'WarningMessage' | 'NotificationMessage',
+  ): { notification: HTMLElement; sent: HTMLElement } {
+    log.appendAll([
+      notification('n1', model, null, 'notification body'),
+      workerSent('s1') as AkgenticMessage,
+    ]);
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    const bodies = Array.from(
+      host.querySelectorAll<HTMLElement>('.text-container'),
+    );
+    const notificationBody = bodies.find((b) =>
+      b.className.includes('notification-body--'),
+    );
+    const sentBody = bodies.find(
+      (b) => !b.className.includes('notification-body--'),
+    );
+    expect(notificationBody).withContext('no notification body').toBeTruthy();
+    expect(sentBody).withContext('no SentMessage body').toBeTruthy();
+    return { notification: notificationBody!, sent: sentBody! };
+  }
+
+  it('AC #1: a WarningMessage body has the same computed margins as a SentMessage body', () => {
+    const { notification: notif, sent } = bothBodies('WarningMessage');
+
+    const a = getComputedStyle(notif);
+    const b = getComputedStyle(sent);
+    expect(a.marginTop).toBe(b.marginTop);
+    expect(a.marginBottom).toBe(b.marginBottom);
+  });
+
+  it('AC #1: the same holds for the error and bare-notification branches', () => {
+    for (const model of ['ErrorMessage', 'NotificationMessage'] as const) {
+      log.reset();
+      const { notification: notif, sent } = bothBodies(model);
+
+      const a = getComputedStyle(notif);
+      const b = getComputedStyle(sent);
+      expect(a.marginTop).withContext(model).toBe(b.marginTop);
+      expect(a.marginBottom).withContext(model).toBe(b.marginBottom);
+    }
+  });
+
+  // AC #2: deleting the margin must not disturb the branch it sat in. The
+  // Relaunch button keeps its own spacing on its own row — never back on
+  // `.text-container`, which the buttonless warn/info branches share.
+  it('AC #2: the error row still renders its Relaunch button, on a spaced row', () => {
+    log.appendAll([notification('e1', 'ErrorMessage', null, 'boom')]);
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    const actions = host.querySelector<HTMLElement>('.notification-actions');
+    expect(actions).withContext('no button row').toBeTruthy();
+    expect(actions!.textContent).toContain('Relaunch');
+
+    // The gap moved HERE from the body div. Asserted as "non-zero on the button
+    // row while the body has none", not as a pixel literal: the rule is `1rem`,
+    // and a rem resolves against the host page's root font size, which is the
+    // Karma runner's and not the app's.
+    const body = host.querySelector<HTMLElement>('.text-container')!;
+    expect(parseFloat(getComputedStyle(actions!).marginTop)).toBeGreaterThan(0);
+    expect(parseFloat(getComputedStyle(body).marginBottom)).toBe(0);
+  });
+
+  it('AC #2: warn and info rows render no button row at all', () => {
+    for (const model of ['WarningMessage', 'NotificationMessage'] as const) {
+      log.reset();
+      log.appendAll([notification('x1', model, null, 'body')]);
+      fixture.detectChanges();
+
+      const host = fixture.nativeElement as HTMLElement;
+      expect(host.querySelector('.notification-actions'))
+        .withContext(model)
+        .toBeNull();
+    }
+  });
+
+  it('AC #2: the severity colour classes are unchanged', () => {
+    log.appendAll([notification('w1', 'WarningMessage', null, 'careful')]);
+    fixture.detectChanges();
+
+    const host = fixture.nativeElement as HTMLElement;
+    const body = host.querySelector<HTMLElement>('.text-container')!;
+    expect(body.className).toContain('notification-body--warn');
+    expect(getComputedStyle(body).color).toBe(NOTIFICATION_COLORS.warn);
+    expect(component).toBeTruthy();
+  });
+});

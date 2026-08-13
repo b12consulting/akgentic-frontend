@@ -24,6 +24,15 @@
 	color: var(--akg-notification-color);
 }
 
+// Story 31-6 (FR16) — the error branch's Relaunch button row. The body div no
+// longer carries `margin: 0.5rem 0 1rem`, so the gap that used to separate the
+// error text from this button lives here instead: on the row that needs it,
+// not on `.text-container`, which is shared with the buttonless warn/info
+// branches and with every SentMessage row.
+.notification-actions {
+	margin-top: 1rem;
+}
+
 // Boxed empty-section style (copied from knowledge-graph)
 .empty-section {
 	padding: 2rem;

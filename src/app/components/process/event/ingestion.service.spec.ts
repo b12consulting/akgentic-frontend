@@ -1554,37 +1554,55 @@ describe('IngestionService — seed agent state on init (Story 25-1)', () => {
 // observed from a spy argument.
 // ---------------------------------------------------------------------------
 
+/**
+ * One frame factory for the 31-3 and 31-6 blocks: a full `BaseMessage`-shaped
+ * notification-family frame.
+ *
+ * Story 31-6 added the last two parameters and hoisted the factory to module
+ * scope so both blocks build frames the same way. `contentType` and
+ * `senderRole` are what FR19's summary is computed from — the role because
+ * orchestrator detection is role-based, never name-based — and both default to
+ * the 31-3 values (`null` / a non-orchestrator `'Worker'`), so every call
+ * written before 31-6 keeps its exact previous meaning.
+ */
+function mkNotification(
+  id: string,
+  model: string,
+  senderName: string,
+  content: string,
+  contentType: string | null = null,
+  senderRole = 'Worker',
+): any {
+  return {
+    id,
+    parent_id: null,
+    team_id: 'team-1',
+    timestamp: '2026-08-12T00:00:00Z',
+    sender: makeAddress({
+      name: senderName,
+      role: senderRole,
+      agent_id: 'agent-' + id,
+    }),
+    display_type: 'other',
+    content,
+    content_type: contentType,
+    __model__: model,
+  };
+}
+
+const WARNING_MODEL = 'akgentic.core.messages.orchestrator.WarningMessage';
+const NOTIFICATION_MODEL =
+  'akgentic.core.messages.orchestrator.NotificationMessage';
+const ERROR_MODEL = 'akgentic.core.messages.orchestrator.ErrorMessage';
+
 describe('IngestionService — Story 31-3 (notification toast)', () => {
   let service: IngestionService;
   let msgService: any;
   let fakeSocket: Subject<any>;
 
-  /**
-   * One frame factory for the whole block (AC1-AC5, AC8): a full
-   * `BaseMessage`-shaped notification-family frame whose `sender` carries a
-   * name, which is what the toast header renders.
-   */
-  function mkNotification(
-    id: string,
-    model: string,
-    senderName: string,
-    content: string,
-  ): any {
-    return {
-      id,
-      parent_id: null,
-      team_id: 'team-1',
-      timestamp: '2026-08-12T00:00:00Z',
-      sender: makeAddress({ name: senderName, agent_id: 'agent-' + id }),
-      display_type: 'other',
-      content,
-      content_type: null,
-      __model__: model,
-    };
-  }
-
-  const WARNING = 'akgentic.core.messages.orchestrator.WarningMessage';
-  const NOTIFICATION = 'akgentic.core.messages.orchestrator.NotificationMessage';
+  const WARNING = WARNING_MODEL;
+  const NOTIFICATION = NOTIFICATION_MODEL;
+  const ERROR = ERROR_MODEL;
 
   function addArgs(): any[] {
     return msgService.add.calls.allArgs().map((a: any[]) => a[0]);
@@ -1688,14 +1706,19 @@ describe('IngestionService — Story 31-3 (notification toast)', () => {
     expect(addArgs()[0].key).toBeUndefined();
   });
 
-  it('AC2: a sender without a name falls back to the literal "Agent"', async () => {
+  // Story 31-6 (AC #10) supersedes 31-3's AC2 here: the literal `'Agent'`
+  // fallback is gone with the `event.sender?.name ?? 'Agent'` expression that
+  // produced it. A nameless sender contributes no name part, and with a null
+  // `content_type` nothing survives to head the toast — so the per-severity
+  // fallback does, which for a warning is `'Warning'`.
+  it('AC #10: a sender without a name falls back to the per-severity header', async () => {
     await start();
 
     const frame = mkNotification('w-1', WARNING, '@X', 'over limit');
     delete frame.sender.name;
     fakeSocket.next(frame);
 
-    expect(addArgs()[0].summary).toBe('Agent');
+    expect(addArgs()[0].summary).toBe('Warning');
   });
 
   it('AC5: a bare NotificationMessage raises an info toast, never warn', async () => {
@@ -1744,24 +1767,31 @@ describe('IngestionService — Story 31-3 (notification toast)', () => {
     expect(log.snapshot().map((m) => m.id)).toContain('w-1');
   });
 
-  it('AC10: an ErrorMessage still raises exactly one 5-second error toast and no warn/info toast', async () => {
+  // Story 31-6 (AC #3) — REWRITTEN in place. This spec pinned 31-3's AC10, the
+  // deliberate non-regression that kept `ErrorMessage` on its pre-existing
+  // 5-second toast (`summary: 'Error'`, `life: 5000`). 31-6 reverses that
+  // decision on purpose, so the old expectations are obsolete rather than
+  // broken. Its "and no warn/info toast" half survives untouched: it is exactly
+  // the assertion that catches an error being classified as `'info'`.
+  it('AC #3: an ErrorMessage raises exactly one STICKY error toast and no warn/info toast', async () => {
     await start();
 
-    fakeSocket.next(
-      mkNotification(
-        'e-1',
-        'akgentic.core.messages.orchestrator.ErrorMessage',
-        '@Researcher',
-        'boom',
-      ),
-    );
+    fakeSocket.next(mkNotification('e-1', ERROR, '@Researcher', 'boom'));
 
     expect(msgService.add).toHaveBeenCalledTimes(1);
     const arg = addArgs()[0];
     expect(arg.severity).toBe('error');
-    expect(arg.summary).toBe('Error');
+    expect(arg.summary).toBe('@Researcher');
     expect(arg.detail).toBe('boom');
-    expect(arg.life).toBe(5000);
+    expect(arg.sticky).toBeTrue();
+    // The three omissions the whole family shares — `life` above all, which
+    // silently defeats `sticky: true`.
+    expect(arg.life).toBeUndefined();
+    expect(arg.key).toBeUndefined();
+    expect(arg.closable).toBeUndefined();
+    // FR18 is free precisely because this field is present on the error path
+    // too: `AppComponent.onToastClose` reads nothing else.
+    expect(arg.data).toEqual({ messageId: 'e-1', teamId: 'team-1' });
     expect(
       addArgs().filter((c) => c.severity === 'warn' || c.severity === 'info')
         .length,
@@ -1811,6 +1841,345 @@ describe('IngestionService — Story 31-3 (notification toast)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Story 31-6 — errors join the notification family; shared severity; summary
+//
+// Two separable contracts, both observed through `MessageService.add`:
+//
+//   * the SEVERITY the toast is raised at (AC #5), which is the story's silent
+//     failure mode. Widening `showNotificationToast` to admit errors made the
+//     old `isWarningMessage(event) ? 'warn' : 'info'` expression wrong without
+//     making anything fail: an error simply rendered blue. The three assertions
+//     below are the guard, and the mutation check in the Dev Agent Record is
+//     what proves they are a guard and not decoration.
+//   * the SUMMARY the toast is headed by (AC #7-#11) — `"{name} - {type}"` with
+//     either half droppable, which is four join cases plus the role-vs-name
+//     pair.
+// ---------------------------------------------------------------------------
+
+describe('IngestionService — Story 31-6 (error parity, severity, summary)', () => {
+  let service: IngestionService;
+  let msgService: any;
+  let fakeSocket: Subject<any>;
+
+  function addArgs(): any[] {
+    return msgService.add.calls.allArgs().map((a: any[]) => a[0]);
+  }
+
+  beforeEach(() => {
+    jasmine.clock().install();
+    jasmine.clock().mockDate(new Date(0));
+
+    fakeSocket = new Subject<any>();
+
+    TestBed.configureTestingModule({
+      providers: [
+        MessageLogService,
+        PerAgentStoreRegistry,
+        IngestionService,
+        ChatService,
+        {
+          provide: ApiService,
+          useValue: {
+            getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+            getAgentStates: jasmine
+              .createSpy('getAgentStates')
+              .and.resolveTo([]),
+          },
+        },
+        {
+          provide: MessageService,
+          useValue: {
+            add: jasmine.createSpy('add'),
+            clear: jasmine.createSpy('clear'),
+          },
+        },
+      ],
+    });
+    service = TestBed.inject(IngestionService);
+    msgService = TestBed.inject(MessageService);
+
+    spyOn<any>(service, 'createWebSocket').and.returnValue(
+      fakeSocket as unknown as WebSocketSubject<any>,
+    );
+  });
+
+  afterEach(() => {
+    try {
+      fakeSocket.complete();
+    } catch {
+      /* already closed */
+    }
+    jasmine.clock().uninstall();
+  });
+
+  async function start(): Promise<void> {
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+    msgService.add.calls.reset();
+  }
+
+  /** Push one frame and return the single `MessageService.add` argument. */
+  function toastFor(frame: any): any {
+    fakeSocket.next(frame);
+    expect(msgService.add).toHaveBeenCalledTimes(1);
+    return addArgs()[0];
+  }
+
+  // --- AC #5: the severity partition, one assertion per member -------------
+
+  it('AC #5: an ErrorMessage is raised at severity "error"', async () => {
+    await start();
+
+    expect(
+      toastFor(mkNotification('e-1', ERROR_MODEL, '@Researcher', 'boom'))
+        .severity,
+    ).toBe('error');
+  });
+
+  it('AC #5: a WarningMessage is raised at severity "warn"', async () => {
+    await start();
+
+    expect(
+      toastFor(mkNotification('w-1', WARNING_MODEL, '@Researcher', 'careful'))
+        .severity,
+    ).toBe('warn');
+  });
+
+  it('AC #5: a bare NotificationMessage is raised at severity "info"', async () => {
+    await start();
+
+    expect(
+      toastFor(mkNotification('n-1', NOTIFICATION_MODEL, '@Planner', 'fyi'))
+        .severity,
+    ).toBe('info');
+  });
+
+  // The mutation target, stated as its own spec. Restoring
+  // `isWarningMessage(event) ? 'warn' : 'info'` in `showNotificationToast`
+  // sends an ErrorMessage to `'info'` — `isWarningMessage` is false for it —
+  // and turns THIS red while every other severity spec stays green.
+  it('AC #5: an ErrorMessage NEVER yields severity "info"', async () => {
+    await start();
+
+    fakeSocket.next(mkNotification('e-1', ERROR_MODEL, '@Researcher', 'boom'));
+
+    expect(addArgs().filter((c) => c.severity === 'info').length).toBe(0);
+    expect(addArgs()[0].severity).not.toBe('info');
+  });
+
+  // --- AC #4: one dispatch, no second `messageService.add` in the handler --
+
+  it('AC #4: all three severities route through the one toast method', async () => {
+    await start();
+    const shown = spyOn<any>(
+      service,
+      'showNotificationToast',
+    ).and.callThrough();
+
+    fakeSocket.next(mkNotification('e-1', ERROR_MODEL, '@A', 'boom'));
+    fakeSocket.next(mkNotification('w-1', WARNING_MODEL, '@B', 'careful'));
+    fakeSocket.next(mkNotification('n-1', NOTIFICATION_MODEL, '@C', 'fyi'));
+
+    // Three frames, three calls to the shared method, three toasts: no branch
+    // in the WS handler raised a toast of its own.
+    expect(shown).toHaveBeenCalledTimes(3);
+    expect(msgService.add).toHaveBeenCalledTimes(3);
+    expect(shown.calls.allArgs().map((a: any[]) => a[1])).toEqual([
+      'error',
+      'warn',
+      'info',
+    ]);
+  });
+
+  // --- AC #7-#10: the four join cases --------------------------------------
+
+  it('AC #7: name and content_type are joined by exactly " - "', async () => {
+    await start();
+
+    const arg = toastFor(
+      mkNotification('e-1', ERROR_MODEL, '@Researcher', 'boom', 'ValueError'),
+    );
+
+    expect(arg.summary).toBe('@Researcher - ValueError');
+  });
+
+  it('AC #8: an orchestrator sender contributes no name and no leading separator', async () => {
+    await start();
+
+    const arg = toastFor(
+      mkNotification(
+        'n-1',
+        NOTIFICATION_MODEL,
+        '@Orchestrator',
+        'fyi',
+        'Info',
+        'Orchestrator',
+      ),
+    );
+
+    expect(arg.summary).toBe('Info');
+  });
+
+  it('AC #9: a null content_type contributes no type and no trailing separator', async () => {
+    await start();
+
+    const arg = toastFor(
+      mkNotification('w-1', WARNING_MODEL, '@Researcher', 'careful', null),
+    );
+
+    expect(arg.summary).toBe('@Researcher');
+  });
+
+  it('AC #9: an EMPTY-string content_type is dropped exactly as null is', async () => {
+    await start();
+
+    const arg = toastFor(
+      mkNotification('w-1', WARNING_MODEL, '@Researcher', 'careful', ''),
+    );
+
+    expect(arg.summary).toBe('@Researcher');
+  });
+
+  it('AC #10: orchestrator + null content_type falls back per severity', async () => {
+    await start();
+
+    for (const [id, model, expected] of [
+      ['e-1', ERROR_MODEL, 'Error'],
+      ['w-1', WARNING_MODEL, 'Warning'],
+      ['n-1', NOTIFICATION_MODEL, 'Notification'],
+    ] as const) {
+      msgService.add.calls.reset();
+      const arg = toastFor(
+        mkNotification(id, model, '@Orchestrator', 'body', null, 'Orchestrator'),
+      );
+      expect(arg.summary).withContext(model).toBe(expected);
+    }
+  });
+
+  it('AC #10: a missing sender falls back per severity rather than throwing', async () => {
+    await start();
+
+    const frame = mkNotification('e-1', ERROR_MODEL, '@Researcher', 'boom');
+    delete frame.sender;
+
+    expect(toastFor(frame).summary).toBe('Error');
+  });
+
+  // The fallback is NOT `LEGEND_FALLBACK`, whose `error → null` would render a
+  // blank toast header. Pinned as its own assertion because reusing that table
+  // is the tempting shortcut and it fails only on the error path.
+  it('AC #10: the error fallback is a real string, never null or empty', async () => {
+    await start();
+
+    const summary = toastFor(
+      mkNotification('e-1', ERROR_MODEL, '@Orch', 'boom', null, 'Orchestrator'),
+    ).summary;
+
+    expect(summary).toBe('Error');
+    expect(summary).not.toBeNull();
+    expect(summary.length).toBeGreaterThan(0);
+  });
+
+  // --- AC #11: role-based detection, both directions -----------------------
+
+  it('AC #11: the orchestrator is detected by role even when its name is NOT @Orchestrator', async () => {
+    await start();
+
+    const arg = toastFor(
+      mkNotification(
+        'n-1',
+        NOTIFICATION_MODEL,
+        '@TeamLead',
+        'fyi',
+        'Info',
+        'Orchestrator',
+      ),
+    );
+
+    // A name-based implementation would keep '@TeamLead' and produce
+    // '@TeamLead - Info'.
+    expect(arg.summary).toBe('Info');
+  });
+
+  it('AC #11: a NON-orchestrator role keeps its name even when it is named @Orchestrator', async () => {
+    await start();
+
+    const arg = toastFor(
+      mkNotification(
+        'w-1',
+        WARNING_MODEL,
+        '@Orchestrator',
+        'careful',
+        'Budget',
+        'Researcher',
+      ),
+    );
+
+    // A name-based implementation would drop the name and produce 'Budget'.
+    expect(arg.summary).toBe('@Orchestrator - Budget');
+  });
+
+  // --- AC #14: the toast is additive, the log is untouched ------------------
+
+  it('AC #14: an ErrorMessage still reaches the message log', async () => {
+    await start();
+    const log = TestBed.inject(MessageLogService);
+
+    fakeSocket.next(mkNotification('e-1', ERROR_MODEL, '@Researcher', 'boom'));
+    jasmine.clock().tick(20);
+
+    expect(log.snapshot().map((m) => m.id)).toContain('e-1');
+  });
+
+  it('AC #14: an ErrorMessage still appears in messageList$', async () => {
+    await start();
+    const log = TestBed.inject(MessageLogService);
+
+    fakeSocket.next(mkNotification('e-1', ERROR_MODEL, '@Researcher', 'boom'));
+    jasmine.clock().tick(20);
+
+    let listed: string[] = [];
+    const sub = log.messageList$.subscribe(
+      (ms) => (listed = ms.map((m) => m.id)),
+    );
+    expect(listed).toContain('e-1');
+    sub.unsubscribe();
+  });
+
+  // --- AC #15: the untouched neighbours ------------------------------------
+
+  it('AC #15: inert frame types still raise no toast at all', async () => {
+    await start();
+
+    for (const model of [
+      'akgentic.core.messages.orchestrator.SentMessage',
+      'akgentic.core.messages.orchestrator.StartMessage',
+      'akgentic.core.messages.orchestrator.StateChangedMessage',
+      'akgentic.core.messages.orchestrator.EventMessage',
+    ]) {
+      fakeSocket.next(mkNotification('x-1', model, '@Researcher', 'inert'));
+    }
+
+    expect(msgService.add).not.toHaveBeenCalled();
+  });
+
+  it('AC #15: showDisconnectToast is unchanged, closable:false included', async () => {
+    await start();
+
+    fakeSocket.error(new Error('connection lost'));
+
+    expect(msgService.add).toHaveBeenCalledWith(
+      jasmine.objectContaining({
+        severity: 'warn',
+        summary: 'Connection Lost',
+        sticky: true,
+        closable: false,
+      }),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Story 31-4 — closed-notification suppression
 //
 // The sequencing here is load-bearing and deliberately NOT engineered away
@@ -1829,8 +2198,12 @@ describe('IngestionService — Story 31-4 (closed-notification suppression)', ()
   let log: MessageLogService;
 
   const WARNING = 'akgentic.core.messages.orchestrator.WarningMessage';
+  const ERROR = 'akgentic.core.messages.orchestrator.ErrorMessage';
 
-  function mkNotification(id: string, content: string): any {
+  /** Story 31-6 added the `model` parameter: the suppressor is keyed on the id
+   *  alone and never inspects `__model__`, so the same specs must hold for an
+   *  ErrorMessage now that errors toast through the same method (AC #13). */
+  function mkNotification(id: string, content: string, model = WARNING): any {
     return {
       id,
       parent_id: null,
@@ -1840,7 +2213,7 @@ describe('IngestionService — Story 31-4 (closed-notification suppression)', ()
       display_type: 'other',
       content,
       content_type: null,
-      __model__: WARNING,
+      __model__: model,
     };
   }
 
@@ -2015,6 +2388,48 @@ describe('IngestionService — Story 31-4 (closed-notification suppression)', ()
     expect(msgService.add).not.toHaveBeenCalled();
   });
 
+  // Story 31-6 (AC #13) — the error half of the suppressor, proven with error
+  // fixtures rather than warning ones. No production code was added to reach
+  // this: `closedNotificationIds.has(event.id)` never looked at `__model__`, so
+  // routing errors through `showNotificationToast` covered them for free.
+  it('AC #13: an ErrorMessage whose id was closed raises ZERO toasts', async () => {
+    await start();
+
+    fakeSocket.next(mkClosedNotification('c-1', 'e-1'));
+    jasmine.clock().tick(20);
+
+    fakeSocket.next(mkNotification('e-1', 'boom', ERROR));
+
+    expect(msgService.add).not.toHaveBeenCalled();
+  });
+
+  it('AC #13: an ErrorMessage whose id was NOT closed still raises its sticky error toast', async () => {
+    await start();
+
+    fakeSocket.next(mkClosedNotification('c-1', 'some-other-id'));
+    jasmine.clock().tick(20);
+
+    fakeSocket.next(mkNotification('e-1', 'boom', ERROR));
+
+    expect(msgService.add).toHaveBeenCalledTimes(1);
+    const arg = addArgs()[0];
+    expect(arg.severity).toBe('error');
+    expect(arg.sticky).toBeTrue();
+    expect(arg.life).toBeUndefined();
+    expect(arg.data).toEqual({ messageId: 'e-1', teamId: 'team-1' });
+  });
+
+  it('AC #13: the suppressed ErrorMessage is STILL appended to the log', async () => {
+    await start();
+
+    fakeSocket.next(mkClosedNotification('c-1', 'e-1'));
+    jasmine.clock().tick(20);
+    fakeSocket.next(mkNotification('e-1', 'boom', ERROR));
+    jasmine.clock().tick(20);
+
+    expect(log.snapshot().map((m) => m.id)).toContain('e-1');
+  });
+
   it('ngOnDestroy tears the closed-ids subscription down', async () => {
     await start();
 
@@ -2086,8 +2501,16 @@ describe('IngestionService — Story 31-5 (reactive toast removal)', () => {
   let log: MessageLogService;
 
   const WARNING = 'akgentic.core.messages.orchestrator.WarningMessage';
+  const ERROR = 'akgentic.core.messages.orchestrator.ErrorMessage';
 
-  function mkWarning(id: string, content = 'token budget exceeded'): any {
+  /** Story 31-6 added the `model` parameter: removal is addressed by
+   *  `data.messageId` and never by `__model__`, so an error toast comes off the
+   *  screen by the same path a warning does (AC #13). */
+  function mkWarning(
+    id: string,
+    content = 'token budget exceeded',
+    model = WARNING,
+  ): any {
     return {
       id,
       parent_id: null,
@@ -2097,7 +2520,7 @@ describe('IngestionService — Story 31-5 (reactive toast removal)', () => {
       display_type: 'other',
       content,
       content_type: null,
-      __model__: WARNING,
+      __model__: model,
     };
   }
 
@@ -2210,6 +2633,38 @@ describe('IngestionService — Story 31-5 (reactive toast removal)', () => {
     flushFrames();
 
     expect(toastContainer.messages).toEqual([]);
+  });
+
+  // Story 31-6 (AC #13) — the same reload regression, with an ErrorMessage.
+  // Before 31-6 an error toast drained itself in five seconds, so it had no
+  // dismissal to survive; now it is sticky, and this is what stops a dismissed
+  // error coming back on every reload for ever.
+  it('AC #13: replaying ErrorMessage(X) then ClosedNotification(X) leaves zero toasts', async () => {
+    await start();
+
+    fakeSocket.next(mkWarning('e-1', 'boom', ERROR));
+    // ONE: the error toast really did open, at severity 'error'.
+    expect(toastContainer.messageIds()).toEqual(['e-1']);
+    expect(toastContainer.messages[0].severity).toBe('error');
+
+    fakeSocket.next(mkClosedNotification('c-1', 'e-1'));
+    flushFrames();
+
+    // THEN ZERO.
+    expect(toastContainer.messages).toEqual([]);
+  });
+
+  it('AC #13: a dismissed error does not take its warning neighbour with it', async () => {
+    await start();
+
+    fakeSocket.next(mkWarning('e-1', 'boom', ERROR));
+    fakeSocket.next(mkWarning('w-1', 'careful'));
+    expect(toastContainer.messageIds()).toEqual(['e-1', 'w-1']);
+
+    fakeSocket.next(mkClosedNotification('c-1', 'e-1'));
+    flushFrames();
+
+    expect(toastContainer.messageIds()).toEqual(['w-1']);
   });
 
   // --- AC #3: order independence, both directions --------------------------

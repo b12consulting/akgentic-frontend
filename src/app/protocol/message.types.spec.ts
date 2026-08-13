@@ -15,6 +15,7 @@ import {
   isWarningMessage,
   isWelcomeAnnouncement,
   isWelcomeMessage,
+  notificationSeverity,
   SentMessage,
   WelcomeMessage,
 } from './message.types';
@@ -444,5 +445,76 @@ describe('wire-tag constants (Story 31-4, AC #3)', () => {
     expect(
       isEventMessage(makeOrdinaryInner({ __model__: EVENT_MESSAGE_MODEL })),
     ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 31-6 (AC #6) — the shared severity classifier
+//
+// Moved here from `MessageListComponent`, where it was the Messages tab's
+// private predicate while `IngestionService` carried a second, two-way encoding
+// of the same partition inline. These specs cover the function itself; the
+// component keeps its own delegation specs, and `ingestion.service.spec.ts`
+// covers the toast severities the service now derives from it.
+// ---------------------------------------------------------------------------
+
+describe('notificationSeverity (Story 31-6, AC #6)', () => {
+  const ORCHESTRATOR = 'akgentic.core.messages.orchestrator.';
+
+  function frame(model: string): BaseMessage {
+    return makeOrdinaryInner({ __model__: ORCHESTRATOR + model });
+  }
+
+  it('maps each member of the notification family to its severity', () => {
+    expect(notificationSeverity(frame('ErrorMessage'))).toBe('error');
+    expect(notificationSeverity(frame('WarningMessage'))).toBe('warn');
+    expect(notificationSeverity(frame('NotificationMessage'))).toBe('info');
+  });
+
+  it('returns null for every non-notification frame on the wire', () => {
+    for (const model of [
+      'SentMessage',
+      'ReceivedMessage',
+      'ProcessedMessage',
+      'StartMessage',
+      'StopMessage',
+      'StateChangedMessage',
+      'EventMessage',
+      'UserMessage',
+      'ResultMessage',
+    ]) {
+      expect(notificationSeverity(frame(model)))
+        .withContext(model)
+        .toBeNull();
+    }
+  });
+
+  // Guard ORDER, not just guard membership. `ErrorMessage` and `WarningMessage`
+  // are `NotificationMessage` subclasses upstream; reordering the body so the
+  // bare-base check ran first would still return a severity for all three, just
+  // the wrong one for two of them. Only asserting the specific severities — as
+  // the first spec does — catches that, and this spec states the reason.
+  it('claims errors and warnings BEFORE the bare notification base', () => {
+    expect(notificationSeverity(frame('ErrorMessage'))).not.toBe('info');
+    expect(notificationSeverity(frame('WarningMessage'))).not.toBe('info');
+  });
+
+  // The `endsWith('.NotificationMessage')` half of `isNotificationMessage`: a
+  // suffix-colliding sibling is classifiable by nothing, and `messageListFold`
+  // relies on this to keep it out of the Messages tab entirely.
+  it('returns null for a suffix-colliding sibling', () => {
+    expect(notificationSeverity(frame('FooNotificationMessage'))).toBeNull();
+  });
+
+  it('agrees with the three guards it is built from', () => {
+    const error = frame('ErrorMessage');
+    const warning = frame('WarningMessage');
+    const bare = frame('NotificationMessage');
+
+    expect(isErrorMessage(error)).toBe(true);
+    expect(isWarningMessage(warning)).toBe(true);
+    expect(isNotificationMessage(bare)).toBe(true);
+    expect(isNotificationMessage(error)).toBe(false);
+    expect(isNotificationMessage(warning)).toBe(false);
   });
 });

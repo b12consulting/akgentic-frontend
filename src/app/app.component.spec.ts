@@ -545,6 +545,36 @@ describe('AppComponent — notification toast rendering (Story 31-3)', () => {
     );
   });
 
+  // Story 31-6 (AC #12) — the same round trip, from an ERROR toast.
+  //
+  // The message object below is exactly what `showNotificationToast` now emits
+  // for an `ErrorMessage`: `severity: 'error'`, sticky, and the same
+  // `data.messageId` / `data.teamId` pair. That pair is the entire reason FR18
+  // needed no code: `onToastClose` reads `data` and never `__model__`, so the
+  // error path reuses this harness rather than extending it. If this spec ever
+  // requires a change in `onToastClose`, `ApiService` or
+  // `NotificationToastService` to pass, the story has been implemented wrong.
+  it('AC #12: closing an ERROR toast issues exactly one POST carrying the error id', async () => {
+    messageService.add({
+      severity: 'error',
+      summary: '@Researcher - ValueError',
+      detail: 'boom',
+      sticky: true,
+      data: { messageId: 'e-1', teamId: 'team-1' },
+    });
+    await flush();
+    expect(toasts().length).toBe(1);
+
+    closeFirstToast();
+    await flush();
+
+    expect(apiStub.emitClosedNotification).toHaveBeenCalledTimes(1);
+    expect(apiStub.emitClosedNotification).toHaveBeenCalledWith(
+      'team-1',
+      'e-1',
+    );
+  });
+
   it('AC4: closing one of two toasts reports only that toast\'s id', async () => {
     messageService.add({
       ...notificationToast('Alpha', 'first'),

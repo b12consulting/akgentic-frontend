@@ -8,10 +8,10 @@ import {
   ActorAddress,
   AkgenticMessage,
   CommandDescriptor,
-  isErrorMessage,
-  isNotificationMessage,
-  isWarningMessage,
+  ErrorMessage,
   NotificationMessage,
+  notificationSeverity,
+  NotificationSeverity,
   StateChangedMessage,
   WarningMessage,
 } from '../../../protocol/message.types';
@@ -46,6 +46,33 @@ import { NotificationToastService } from '../../../core/ui/notification-toast.se
  * never see a sub-perception flash of the spinner before the UI transitions.
  */
 const SPINNER_MIN_VISIBLE_MS = 500;
+
+/**
+ * Story 31-6 (FR19): the toast header of last resort, used only when BOTH parts
+ * of `"{name} - {content_type}"` are absent — an orchestrator-sent notification
+ * with a null `content_type`, or one whose sender never arrived.
+ *
+ * Deliberately NOT `MessageListComponent`'s `LEGEND_FALLBACK`, whose
+ * `error → null` is correct there and wrong here: the Messages tab renders a
+ * `p-fieldset` that can legitimately show an empty legend, whereas an empty
+ * toast `summary` renders a blank header. The `'Error'` below is therefore not
+ * the old hardcoded error-toast summary coming back — that one headed EVERY
+ * error; this one is reached only when there is nothing else to say.
+ */
+const TOAST_FALLBACK: Record<NotificationSeverity, string> = {
+  error: 'Error',
+  warn: 'Warning',
+  info: 'Notification',
+};
+
+/**
+ * Role of the team orchestrator on `ActorAddress` (akgentic-team `factory.py` /
+ * `restorer.py` set `BaseConfig(name="@Orchestrator", role="Orchestrator")`).
+ * Matched on `role` and never on `name`: `role` is the domain field, while
+ * `name` is a display label carrying a decorative `@` and is the one of the pair
+ * that could plausibly be renamed.
+ */
+const ORCHESTRATOR_ROLE = 'Orchestrator';
 
 /**
  * Story 25-1 (ADR-020 §2): build a synthesized `StateChangedMessage` from one
@@ -431,23 +458,15 @@ export class IngestionService {
         // per-__model__ dispatch).
         this._wsInbound$.next(event as AkgenticMessage);
 
-        if (isErrorMessage(event)) {
-          // Story 6.4 (AC1): the toast is dispatched here; the inbound log
-          // emission above already feeds every downstream selector. The
-          // legacy `this.message$.next(event)` push is deleted (no
-          // subscribers remain).
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: event.content,
-            life: 5000,
-          });
-        } else if (isWarningMessage(event) || isNotificationMessage(event)) {
-          // Story 31-3 (FR11): sibling of the error toast for the rest of the
-          // notification family. `else if` (not a second `if`) because the
-          // three guards partition the family — Story 31-2 pins that.
-          this.showNotificationToast(event);
-        }
+        // Story 31-6 (FR17): all three severities take ONE dispatch. The
+        // separate `messageService.add({ severity: 'error', … life: 5000 })`
+        // branch that used to sit here is deleted — errors are notifications
+        // like any other now, which is what buys them the durable-dismissal
+        // round-trip (FR18) with no wiring of their own. `null` means "not a
+        // notification": no toast, and no early return either, so the frame has
+        // already reached `_wsInbound$` above and still lands in the log.
+        const severity = notificationSeverity(event);
+        if (severity) this.showNotificationToast(event, severity);
         // Story 6.4 (AC1): every other branch (StateChangedMessage,
         // EventMessage, fallthrough) is now pure log-feed via
         // `_wsInbound$.next(...)` above. The per-__model__ dispatch + VCR
@@ -614,8 +633,54 @@ export class IngestionService {
   }
 
   /**
-   * Story 31-3 (FR11): one permanent, closable toast per handled warning,
-   * headed by the name of the agent that raised it.
+   * Story 31-6 (FR19): the toast header — `"{agent name} - {content_type}"`,
+   * with either half dropped when it carries nothing.
+   *
+   * The name half is dropped when the sender IS the orchestrator (it raises
+   * most of these, and "@Orchestrator" names nothing useful) or when no sender
+   * arrived at all. The type half is dropped when `content_type` is null or
+   * empty — structurally nullable upstream, and in practice always null for a
+   * warning, since nothing yet gives one the "kind" an exception class name
+   * gives an error.
+   *
+   * The `' - '` separator therefore appears ONLY between two present parts,
+   * never leading or trailing; when neither survives, the per-severity
+   * `TOAST_FALLBACK` heads the toast rather than a blank string.
+   *
+   * A pure function of its arguments (no `this` state) so it can be spec'd
+   * directly, without driving a frame through the socket.
+   */
+  private toastSummary(
+    event: ErrorMessage | WarningMessage | NotificationMessage,
+    severity: NotificationSeverity,
+  ): string {
+    const sender = event.sender;
+    const namePart =
+      sender && sender.role !== ORCHESTRATOR_ROLE ? sender.name : null;
+    const typePart = event.content_type || null;
+    const parts = [namePart, typePart].filter((p): p is string => !!p);
+    return parts.length > 0 ? parts.join(' - ') : TOAST_FALLBACK[severity];
+  }
+
+  /**
+   * Story 31-3 (FR11), widened by Story 31-6 (FR17): one permanent, closable
+   * toast per member of the notification family — errors included.
+   *
+   * Errors reached this method by deleting the WS handler's separate
+   * `life: 5000` branch, which is the whole of FR18: `data.messageId` and
+   * `AppComponent.onToastClose` are type-agnostic, so an error dismissal
+   * round-trips and survives a reload with no error-specific code anywhere in
+   * the chain. Do not add any. The accepted cost is that error toasts no longer
+   * auto-dismiss — if the resulting pile ever needs relief the answer is a
+   * "dismiss all" affordance, never a `life` value, which silently defeats
+   * `sticky: true`.
+   *
+   * `severity` is a PARAMETER, not recomputed here. It used to be
+   * `isWarningMessage(event) ? 'warn' : 'info'`, correct only while the caller
+   * excluded errors: once errors were admitted that expression sent every one
+   * of them to `'info'` — a red error rendered as a blue info toast, with
+   * nothing failing. The caller now classifies once through the shared
+   * `notificationSeverity` and passes the answer down.
    *
    * Three properties are deliberately ABSENT, and each omission is
    * load-bearing — do not "complete" this object:
@@ -651,12 +716,13 @@ export class IngestionService {
    * decoration.
    */
   private showNotificationToast(
-    event: WarningMessage | NotificationMessage,
+    event: ErrorMessage | WarningMessage | NotificationMessage,
+    severity: NotificationSeverity,
   ): void {
     if (this.closedNotificationIds.has(event.id)) return;
     this.messageService.add({
-      severity: isWarningMessage(event) ? 'warn' : 'info',
-      summary: event.sender?.name ?? 'Agent',
+      severity,
+      summary: this.toastSummary(event, severity),
       detail: event.content,
       sticky: true,
       data: { messageId: event.id, teamId: event.team_id },
