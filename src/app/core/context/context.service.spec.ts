@@ -1111,7 +1111,10 @@ describe('ContextService', () => {
     expect(service.currentTeamRunning$.value).toBe(true);
   }));
 
-  it('(AC8 33.1) restoreTeamAndAwait refresh updates _context$ immutably', fakeAsync(() => {
+  // Not an AC of story 33.1 — the `_upsertTeam` immutability guard the restore
+  // poll rides on. (33.1's AC #8, "run state is consulted once", is a
+  // user-input concern and is pinned in user-input.component.spec.ts.)
+  it('(33.1) restoreTeamAndAwait refresh updates _context$ immutably, preserving sibling identity', fakeAsync(() => {
     const stoppedA = makeTeam('team-A', 'stopped');
     const runningB = makeTeam('team-B', 'running');
     const runningA = makeTeam('team-A', 'running');

@@ -1204,17 +1204,30 @@ describe('ProcessUserInputComponent', () => {
 
     // --- AC #9 — busy state and re-entry ----------------------------------
 
-    it('(AC9) shows the "Restarting team…" busy state and disables submit while restoring', () => {
-      deferredRestore();
+    it('(AC9) shows the "Restarting team…" busy state while restoring, then reverts', async () => {
+      const { release } = deferredRestore();
       runningSubject.next(false);
       component.userInput = 'busy while restoring';
 
-      void component.sendMessage();
+      const pending = component.sendMessage();
       fixture.detectChanges();
 
       expect(component.restoring).toBeTrue();
       expect(submitButton().label).toBe('Restarting team…');
+      expect(submitButton().loading).toBeTrue();
       expect(submitButton().disabled).toBeTruthy();
+
+      // The state is TRANSIENT, and only the rendered control proves it: release
+      // the restore, drain the send, and the button must be Submit again with no
+      // spinner. Leaving the restore un-released would also abandon a pending
+      // promise for the rest of the run.
+      release();
+      await pending;
+      fixture.detectChanges();
+
+      expect(component.restoring).toBeFalse();
+      expect(submitButton().label).toBe('Submit');
+      expect(submitButton().loading).toBeFalse();
     });
 
     it('(AC9) a second submit during an in-flight restore is rejected, not queued', async () => {
