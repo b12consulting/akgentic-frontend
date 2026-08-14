@@ -9,6 +9,7 @@ import { IngestionService } from '../event/ingestion.service';
 import { PerAgentStore, PerAgentStoreRegistry } from '../event/per-agent-store';
 import { ProcessStores } from '../event/process-stores';
 import { ReplaySeeder } from '../event/replay-seeder';
+import { LoadingIndicator } from '../event/loading-indicator';
 import {
   SystemPromptRow,
   SystemPromptSelector,
@@ -139,6 +140,7 @@ function configureBed(): {
       PerAgentStoreRegistry,
       ProcessStores,
       ReplaySeeder,
+      LoadingIndicator,
       IngestionService,
       SystemPromptSelector,
       ChatService,

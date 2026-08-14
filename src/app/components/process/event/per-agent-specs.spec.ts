@@ -11,6 +11,7 @@ import { MessageLogService } from './message-log.service';
 import { PerAgentStore, PerAgentStoreRegistry } from './per-agent-store';
 import { ProcessStores } from './process-stores';
 import { ReplaySeeder } from './replay-seeder';
+import { LoadingIndicator } from './loading-indicator';
 import {
   AgentTokenUsage,
   contextMatch,
@@ -218,6 +219,7 @@ function configureBed(): {
       PerAgentStoreRegistry,
       ProcessStores,
       ReplaySeeder,
+      LoadingIndicator,
       IngestionService,
       {
         provide: ApiService,

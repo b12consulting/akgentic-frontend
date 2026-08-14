@@ -1,7 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 
 import { BehaviorSubject, Subject, Subscription } from 'rxjs';
-import { bufferTime, filter, take } from 'rxjs/operators';
+import { bufferTime, filter } from 'rxjs/operators';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 import { ConfigService } from '../../../core/config/config.service';
 import {
@@ -14,6 +14,7 @@ import {
   WarningMessage,
 } from '../../../protocol/message.types';
 
+import { LoadingIndicator } from './loading-indicator';
 import { MessageLogService } from './message-log.service';
 import { PerAgentStore } from './per-agent-store';
 import {
@@ -25,14 +26,6 @@ import { ProcessStores } from './process-stores';
 import { ReplaySeeder } from './replay-seeder';
 import { MessageService } from 'primeng/api';
 import { NotificationToastService } from '../../../core/ui/notification-toast.service';
-
-/**
- * Story 4-10 (AC7): minimum visible duration of the loading spinner.
- * When the first event / WS error / stopped-team replay lands before this
- * floor, the flip to `loadingProcess$.next(false)` is deferred so users
- * never see a sub-perception flash of the spinner before the UI transitions.
- */
-const SPINNER_MIN_VISIBLE_MS = 500;
 
 /**
  * Story 31-6 (FR19): the toast header of last resort, used only when BOTH parts
@@ -70,7 +63,10 @@ const ORCHESTRATOR_ROLE = 'Orchestrator';
  *     registry folds that replay tail exactly as it folds live WS frames.
  *   - WS `bufferTime(16)` ingestion appends to the log; the registry derives
  *     per-agent `state` / `context` from `log$` (O(Δ), automatic replay/reset).
- *   - Spinner floor (`loadingProcess$`, AC7) — UX concern owned by ingestion.
+ *   - Spinner floor (`loadingProcess$`, AC7) is owned by `LoadingIndicator`
+ *     (`loading-indicator.ts`, Epic 34 / ADR-025 §1); `init()` drives it at four
+ *     call sites and re-exports its subject unchanged. The only wall-clock read
+ *     and the only timer in the ingestion layer now live there, not here.
  *
  * Per-agent state (Epic 17 / ADR-014, re-homed by Epic 34 / ADR-025 §1):
  * `state`, `context`, `commands`, `systemPrompt` and `tokenUsage` are ALL
@@ -99,15 +95,6 @@ export class IngestionService {
   );
 
   /**
-   * Story 4-10 (AC7) / Epic 18 (ADR-015 §2): the loading-spinner state.
-   * Owned by `IngestionService` (which drives the spinner-floor timing) rather
-   * than `ChatService` — the sole reader (`ChatPanelComponent`) reads it from
-   * here. Initial value `false`, same as the prior `ChatService` field.
-   */
-  readonly loadingProcess$: BehaviorSubject<boolean> =
-    new BehaviorSubject<boolean>(false);
-
-  /**
    * Story 6.1 (ADR-005 §Decision 1): component-scoped append-only log of
    * every WS + REST-replay message. Story 6.2 migrated KG presence + KG
    * projection to pure selectors (`ToolPresenceService.hasKnowledgeGraph$`,
@@ -133,6 +120,26 @@ export class IngestionService {
    * visible.
    */
   private readonly replay: ReplaySeeder = inject(ReplaySeeder);
+
+  /**
+   * Epic 34 (ADR-025 §0-§1): the spinner-floor reactor. Declared ABOVE the
+   * `loadingProcess$` alias below for the same reason as `stores`: TypeScript
+   * initialises class fields in declaration order, so an alias declared first
+   * would read `undefined`.
+   */
+  private readonly loading: LoadingIndicator = inject(LoadingIndicator);
+
+  /**
+   * Story 4-10 (AC7) / Epic 18 (ADR-015 §2): the loading-spinner state, read by
+   * `ChatPanelComponent` from here. An alias onto `LoadingIndicator`'s subject —
+   * the same object, not a copy, and never a `.pipe(...)` derivative: the type
+   * stays `BehaviorSubject<boolean>` because `.value` is part of the surface,
+   * and the reference must survive every cycle because the chat panel captures
+   * it once in a field initializer and binds it with `| async` for its whole
+   * life.
+   */
+  readonly loadingProcess$: BehaviorSubject<boolean> =
+    this.loading.loadingProcess$;
 
   webSocket: WebSocketSubject<any> = new WebSocketSubject({ url: '' });
 
@@ -163,19 +170,6 @@ export class IngestionService {
   processId: string = '';
 
   /**
-   * Story 4-10 (AC7): timestamp (ms since epoch) of the most recent
-   * `loadingProcess$.next(true)` emission in `init()`. Used to compute the
-   * elapsed visible duration when scheduling the flip-to-false.
-   */
-  private spinnerShownAt: number = 0;
-  /**
-   * Story 4-10 (AC7): handle of a pending `setTimeout` that will flip the
-   * spinner to `false` once the 500ms floor is reached. Cleared on re-init
-   * so a stale `false` can never clobber a fresh spinner cycle.
-   */
-  private spinnerFlipTimer: ReturnType<typeof setTimeout> | null = null;
-
-  /**
    * Story 8-2 (AC3): deduplication flag — prevents stacking duplicate
    * disconnect toasts when both error and complete fire in sequence.
    */
@@ -186,17 +180,15 @@ export class IngestionService {
   /**
    * Story 6.1 (ADR-005 §Decision 3): raw WS inbound stream. Every WS event
    * is `next()`ed onto this Subject at the top of the `webSocket.subscribe`
-   * callback so the `bufferTime(16)` batched subscriber (and the `take(1)`
-   * spinner side-channel) can consume it without coupling to the per-model
-   * dispatch below — which stays intact in PR 1 for parallel populate (AC8).
+   * callback so the `bufferTime(16)` batched subscriber (and the spinner
+   * side-channel `LoadingIndicator` opens on it) can consume it without coupling
+   * to the per-model dispatch below — which stays intact in PR 1 for parallel
+   * populate (AC8).
    */
   private readonly _wsInbound$ = new Subject<AkgenticMessage>();
   /** Frame-batched subscriber (bufferTime 16ms). Held so init()'s (a) step
    *  can dispose it deterministically before (b)-(e) run. */
   private bufferSub: Subscription | null = null;
-  /** Spinner-first-event side-channel subscriber (take(1)). Held for
-   *  disposal in init()'s (a) step and in ngOnDestroy. */
-  private spinnerSub: Subscription | null = null;
 
   /**
    * Story 31-4 (AC #9): latest snapshot of `MessageLogService.closedNotificationIds$`,
@@ -216,8 +208,8 @@ export class IngestionService {
    */
   private closedNotificationIds: Set<string> = new Set<string>();
   /** Subscription feeding `closedNotificationIds` and (31-5) the toast removal
-   *  it now also drives. Torn down in ngOnDestroy alongside `bufferSub` /
-   *  `spinnerSub`. */
+   *  it now also drives. Torn down in ngOnDestroy alongside `bufferSub` and
+   *  `LoadingIndicator.stop()`. */
   private closedIdsSub: Subscription = this.log.closedNotificationIds$.subscribe(
     (ids) => this.onClosedNotificationIds(ids),
   );
@@ -275,15 +267,13 @@ export class IngestionService {
     this.messageService.clear();
     this.wsDisconnectToastShown = false;
 
-    // Story 4-10 (AC7): cancel any pending flip from a prior `init()` call
-    // (team switch / re-init) before we start a new spinner cycle, otherwise
-    // a stale timer could emit `false` against the new cycle.
-    if (this.spinnerFlipTimer !== null) {
-      clearTimeout(this.spinnerFlipTimer);
-      this.spinnerFlipTimer = null;
-    }
-    this.spinnerShownAt = Date.now();
-    this.loadingProcess$.next(true);
+    // Story 4-10 (AC7): start the spinner cycle — `LoadingIndicator` cancels any
+    // pending flip from a prior `init()` (team switch / re-init), resets its
+    // first-event latch, stamps `t0` and emits `true`. This call belongs HERE,
+    // BEFORE the `!running` REST replay below: moving it after the await would
+    // measure the 500ms floor from the end of a network round-trip, and would
+    // put the stopped-team flip ahead of the `true` it is supposed to follow.
+    this.loading.beginCycle();
 
     if (!running) {
       // Story 25-1 (ADR-020 §2, !running gate): seed the per-agent `state`
@@ -337,29 +327,22 @@ export class IngestionService {
     // Story 4-10 (AC2): stopped-team path has already populated replay state
     // via HTTP getEvents() above — flip the spinner off BEFORE wiring up the
     // WS subscription so the user never sees `#emptyState` flash.
+    // Site 3 of the four floor call sites: direct, NOT through the latch. It
+    // happens at most once per cycle by construction, and consuming the shared
+    // latch here would leave a later live frame finding it already spent.
     if (!running) {
-      this.scheduleSpinnerFlipFalse();
+      this.loading.scheduleSpinnerFlipFalse();
     }
 
-    // Story 4-10 (AC1): running-team path keeps the spinner on until the
-    // first WS event actually lands. Closure flag guards against re-emitting
-    // `false` for every subsequent event. PR 1 keeps this closure alongside
-    // the new `take(1)` spinner side-channel (Task 2.5) — parallel populate
-    // per AC8. The second call is a no-op: scheduleSpinnerFlipFalse is
-    // idempotent and the guard flag is flipped on first entry.
-    let firstEventReceived = false;
-    const flipOnFirstEvent = (): void => {
-      if (firstEventReceived) return;
-      firstEventReceived = true;
-      this.scheduleSpinnerFlipFalse();
-    };
-
     // --- ADR-005 §Decision 6 step (d) ---------------------------------
-    // Wire the frame-batched subscriber AND the spinner take(1) side-channel
-    // BEFORE opening the WebSocket so every first `_wsInbound$.next(...)`
-    // fires against a live subscription. Load-bearing for AC3 / AC6.
+    // Wire the frame-batched subscriber AND the spinner side-channel BEFORE
+    // opening the WebSocket so every first `_wsInbound$.next(...)` fires
+    // against a live subscription. Load-bearing for AC3 / AC6. This is the
+    // SECOND cycle point and sits AFTER the replay await — separate from
+    // `beginCycle()` above by design; collapsing the two into one call would
+    // move `t0` past the network round-trip.
     this.setupBatchedSubscriber();
-    this.setupSpinnerSideChannel();
+    this.loading.watchFirstEvent(this._wsInbound$);
 
     try {
       this.webSocket = this.createWebSocket(
@@ -368,17 +351,20 @@ export class IngestionService {
     } catch (err) {
       // Story 4-10 (AC3): synchronous ctor failure must not leave the UI
       // spinning forever.
+      // Site 4: direct, NOT through the latch — same reason as site 3.
       console.error('WebSocket construction failed:', err);
-      this.scheduleSpinnerFlipFalse();
+      this.loading.scheduleSpinnerFlipFalse();
       throw err;
     }
 
     this.webSocket.subscribe({
       next: (data: any) => {
         // Story 4-10 (AC1): first event over the wire ends the loading
-        // window. Runs for EVERY event shape (including ones we ignore
-        // below) — receiving bytes is proof the replay stream has started.
-        flipOnFirstEvent();
+        // window (site 1, via the latch). Runs for EVERY event shape
+        // (including ones we ignore below) — receiving bytes is proof the
+        // replay stream has started, so this stays the FIRST statement here,
+        // ahead of the `__model__` guard.
+        this.loading.flipOnFirstEvent();
 
         // V2: data is a raw Message with __model__ discriminator
         const event = data;
@@ -409,7 +395,7 @@ export class IngestionService {
         // the UI spinning forever — flip the flag so the chat panel falls
         // through to `#emptyState` (or the subsequent error affordance)
         // instead of showing the "Loading process..." placeholder for ever.
-        flipOnFirstEvent();
+        this.loading.flipOnFirstEvent();
         console.error('WebSocket error:', err);
         // Story 8-2 (AC1, AC5): persistent warning toast replaces the
         // transient 5-second error toast. flipOnFirstEvent() is preserved above.
@@ -448,10 +434,10 @@ export class IngestionService {
       this.bufferSub.unsubscribe();
       this.bufferSub = null;
     }
-    if (this.spinnerSub) {
-      this.spinnerSub.unsubscribe();
-      this.spinnerSub = null;
-    }
+    // Epic 34 (ADR-025 §3): `LoadingIndicator` disposes its OWN side-channel
+    // and pending timer. Per-cycle, not destroy-scoped — `init()` runs again on
+    // every team switch within one component lifetime.
+    this.loading.stop();
   }
 
   /**
@@ -471,63 +457,6 @@ export class IngestionService {
       .subscribe((batch: AkgenticMessage[]) => {
         this.log.appendAll(batch);
       });
-  }
-
-  /**
-   * Story 6.1 (ADR-005 §Decision 8): spinner first-event flip. `take(1)` on
-   * the raw `_wsInbound$` fires once per `init()` cycle and is independent
-   * of the batched subscriber (so a tight batch does not delay the flip).
-   * `take(1)` (not `first()`) is used so an immediately-completed stream
-   * (e.g. unmount before any WS event) doesn't throw `EmptyError`.
-   */
-  private setupSpinnerSideChannel(): void {
-    this.spinnerSub = this._wsInbound$
-      .pipe(take(1))
-      .subscribe(() => this.scheduleSpinnerFlipFalse());
-  }
-
-  /**
-   * Story 4-10 (AC7): flip `loadingProcess$` to `false`, but respect the
-   * `SPINNER_MIN_VISIBLE_MS` floor measured from the spinner-on emission
-   * time. If the floor has already been reached, flip immediately; otherwise
-   * defer via `setTimeout` so the user always sees the spinner for at least
-   * half a second.
-   *
-   * Called from THREE sites (all share the same floor semantics):
-   *   - WS first-event path (running=true)
-   *   - WS error path (failure-safety)
-   *   - stopped-team path (after HTTP replay seeds state)
-   *   - synchronous `createWebSocket` throw (failure-safety)
-   */
-  private scheduleSpinnerFlipFalse(): void {
-    // Story 6.1 idempotency: PR 1 keeps both the legacy `flipOnFirstEvent`
-    // closure AND the new `take(1)` side-channel (Task 2.5 parallel
-    // populate). Both fire on the first WS event, so this method is called
-    // twice. Skip the second call if the spinner is already false AND no
-    // deferred flip is pending — otherwise the subscriber would see an
-    // extra redundant `false` emission, breaking Story 4-10 AC1's "subsequent
-    // events do not re-emit false" test.
-    if (
-      this.loadingProcess$.value === false &&
-      this.spinnerFlipTimer === null
-    ) {
-      return;
-    }
-    const elapsed = Date.now() - this.spinnerShownAt;
-    if (elapsed >= SPINNER_MIN_VISIBLE_MS) {
-      this.loadingProcess$.next(false);
-      return;
-    }
-    // Clear any pending timer (should normally be null here because the
-    // single-shot guard in `flipOnFirstEvent()` prevents double-scheduling,
-    // but the stopped-team path and failure paths do not use that guard).
-    if (this.spinnerFlipTimer !== null) {
-      clearTimeout(this.spinnerFlipTimer);
-    }
-    this.spinnerFlipTimer = setTimeout(() => {
-      this.spinnerFlipTimer = null;
-      this.loadingProcess$.next(false);
-    }, SPINNER_MIN_VISIBLE_MS - elapsed);
   }
 
   /**
@@ -666,7 +595,7 @@ export class IngestionService {
     // which must dispose these same subscriptions on re-init WITHOUT
     // tearing the service down.
     this.bufferSub?.unsubscribe();
-    this.spinnerSub?.unsubscribe();
+    this.loading.stop();
     // Story 31-4: the closed-ids cache subscribes for the service's whole
     // lifetime (not per init() cycle — `log.reset()` re-emits an empty set on
     // a team switch, so the cache clears itself).
@@ -674,10 +603,8 @@ export class IngestionService {
     this._wsInbound$.complete();
     // Epic 17 (ADR-014): the `commands` store is owned by the registry; its
     // single `log$` subscription is torn down by `PerAgentStoreRegistry`'s own
-    // ngOnDestroy — no per-store completion needed here.
-    if (this.spinnerFlipTimer !== null) {
-      clearTimeout(this.spinnerFlipTimer);
-      this.spinnerFlipTimer = null;
-    }
+    // ngOnDestroy — no per-store completion needed here. Epic 34 (ADR-025 §3):
+    // the pending spinner flip is cleared by the `loading.stop()` above, which
+    // owns that timer.
   }
 }
