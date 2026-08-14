@@ -164,6 +164,25 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
     expect(service.loadingProcess$.value).toBe(false);
   });
 
+  it('AC3: a synchronous createWebSocket throw flips the spinner off (fourth floor call site)', async () => {
+    // The fourth spinner-floor call site — the `catch` around the socket
+    // constructor — was the only one of the four with no spec of its own: the
+    // WS `next` / `error` paths and the stopped-team path are each pinned
+    // above, so dropping this call, or routing it through the first-event
+    // latch instead of the scheduler, went unnoticed by the whole suite. A
+    // failure here leaves the chat panel on "Loading process..." for ever,
+    // because there is no socket left to deliver the event that would end it.
+    (service as any).createWebSocket.and.throwError('bad ws url');
+
+    await expectAsync(service.init('proc-1', true)).toBeRejected();
+
+    // Inside the 500ms floor, so the flip is DEFERRED, not skipped — the
+    // failure path shares the floor with the success paths.
+    expect(service.loadingProcess$.value).toBe(true);
+    jasmine.clock().tick(500);
+    expect(service.loadingProcess$.value).toBe(false);
+  });
+
   it('AC2: running=false (stopped team) flips loadingProcess$ to false before WS wiring', async () => {
     // Record the sequence of `loadingProcess$` values as init() runs so we
     // can assert the spinner is OFF before any WS events are delivered.

@@ -64,6 +64,14 @@ export class LoadingIndicator {
    * Story 4-10 (AC7): timestamp (ms since epoch) of the most recent
    * `loadingProcess$.next(true)` emission in `beginCycle()`. Used to compute the
    * elapsed visible duration when scheduling the flip-to-false.
+   *
+   * Keep this and `spinnerFlipTimer` declared WITH their initialisers. The
+   * structural probe in `ingestion.service.spec.ts` reads the own properties of
+   * the injected instance and treats any object whose values are ALL
+   * `BehaviorSubject`s as a bespoke per-agent state container; these
+   * non-subject own properties sitting alongside `loadingProcess$` are the only
+   * reason this unit is not misread as one. Tidying them into lazily-assigned
+   * fields turns a spec red for a reason having nothing to do with the spinner.
    */
   private spinnerShownAt: number = 0;
   /**

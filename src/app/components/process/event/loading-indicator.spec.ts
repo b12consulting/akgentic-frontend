@@ -296,6 +296,12 @@ describe('LoadingIndicator — no self-wiring, the orchestrator drives it (AC9)'
   it('AC9: a freshly constructed unit ignores a stream it was never given', () => {
     const unit = setup();
     const inbound$ = new Subject<unknown>();
+    // Recorded rather than read as `.value`, because `.value` starts at `false`
+    // and would therefore read `false` for a constructor that self-started a
+    // cycle AND flipped it back — an assertion that cannot fail. The emission
+    // list can: a self-wired constructor yields `[true]`, and a self-started
+    // timer firing across the tick below yields a second entry.
+    const emitted = record(unit);
 
     // Constructed, never wired. Pushing frames must change nothing, and no
     // timer may be running before the first cycle.
@@ -303,7 +309,7 @@ describe('LoadingIndicator — no self-wiring, the orchestrator drives it (AC9)'
     inbound$.next({});
     jasmine.clock().tick(5000);
 
-    expect(unit.loadingProcess$.value).toBeFalse();
+    expect(emitted).toEqual([false]);
     expect(inbound$.observed).toBeFalse();
   });
 
