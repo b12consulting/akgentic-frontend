@@ -11,6 +11,7 @@ import { MessageLogService } from '../../event/message-log.service';
 import { PerAgentStoreRegistry } from '../../event/per-agent-store';
 import { ProcessStores } from '../../event/process-stores';
 import { ReplaySeeder } from '../../event/replay-seeder';
+import { ConnectionToast } from '../../event/connection-toast';
 import { LoadingIndicator } from '../../event/loading-indicator';
 import { ChatService } from '../../selectors/chat.selector';
 import { ApiService } from '../../../../core/http/api.service';
@@ -92,6 +93,7 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
         ProcessStores,
         ReplaySeeder,
         LoadingIndicator,
+        ConnectionToast,
         IngestionService,
         ChatService,
         {

@@ -8,6 +8,7 @@ import { IngestionService } from './ingestion.service';
 import { ApiService } from '../../../core/http/api.service';
 import { NotificationToastService } from '../../../core/ui/notification-toast.service';
 import { ChatService } from '../selectors/chat.selector';
+import { ConnectionToast } from './connection-toast';
 import { LoadingIndicator } from './loading-indicator';
 import { MessageLogService } from './message-log.service';
 import { PerAgentStore, PerAgentStoreRegistry } from './per-agent-store';
@@ -65,6 +66,7 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
         ProcessStores,
         ReplaySeeder,
         LoadingIndicator,
+        ConnectionToast,
         IngestionService,
         ChatService,
         {
@@ -329,6 +331,7 @@ describe('IngestionService — Story 6.1 (frame-batched log ingestion)', () => {
         ProcessStores,
         ReplaySeeder,
         LoadingIndicator,
+        ConnectionToast,
         IngestionService,
         ChatService,
         {
@@ -665,6 +668,7 @@ describe('IngestionService — commands PerAgentStore (Story 17-3, ADR-014/ADR-0
         ProcessStores,
         ReplaySeeder,
         LoadingIndicator,
+        ConnectionToast,
         IngestionService,
         ChatService,
         {
@@ -891,6 +895,7 @@ describe('IngestionService — registry is the only per-agent owner (Epic 17, AD
         ProcessStores,
         ReplaySeeder,
         LoadingIndicator,
+        ConnectionToast,
         IngestionService,
         ChatService,
         {
@@ -975,6 +980,13 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
   let service: IngestionService;
   let msgService: any;
   let fakeSocket: Subject<any>;
+  /**
+   * Epic 34 (story 34-4): the toast itself lives here now. The specs below keep
+   * their predicates and only change RECEIVER where they used to reach into
+   * `IngestionService`'s privates — what they assert about the toast is
+   * unchanged, and the WS-driven ones still exercise the wiring end to end.
+   */
+  let connectionToast: ConnectionToast;
 
   beforeEach(() => {
     jasmine.clock().install();
@@ -989,6 +1001,7 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
         ProcessStores,
         ReplaySeeder,
         LoadingIndicator,
+        ConnectionToast,
         IngestionService,
         ChatService,
         {
@@ -1010,6 +1023,7 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
     });
     service = TestBed.inject(IngestionService);
     msgService = TestBed.inject(MessageService);
+    connectionToast = TestBed.inject(ConnectionToast);
 
     spyOn<any>(service, 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
@@ -1024,6 +1038,14 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
     }
     jasmine.clock().uninstall();
   });
+
+  /** Every 'Connection Lost' payload raised so far, in order. */
+  function disconnectToasts(): any[] {
+    return msgService.add.calls
+      .allArgs()
+      .map((a: any[]) => a[0])
+      .filter((c: any) => c.severity === 'warn' && c.summary === 'Connection Lost');
+  }
 
   it('AC1: WS error shows persistent warning toast with correct properties', async () => {
     await service.init('proc-1', true);
@@ -1076,14 +1098,11 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
 
     // Simulate error followed by complete — use separate subjects to control
     // the sequence since error() terminates the Subject.
-    // Instead, call showDisconnectToast twice via the private method.
-    (service as any).showDisconnectToast();
-    (service as any).showDisconnectToast();
+    // Instead, raise the toast twice directly on the unit that owns it.
+    connectionToast.show();
+    connectionToast.show();
 
-    const warnCalls = msgService.add.calls.allArgs()
-      .map((a: any[]) => a[0])
-      .filter((c: any) => c.severity === 'warn' && c.summary === 'Connection Lost');
-    expect(warnCalls.length).toBe(1);
+    expect(disconnectToasts().length).toBe(1);
   });
 
   it('AC4: ngOnDestroy clears the ws-disconnect toast and resets the flag', async () => {
@@ -1091,20 +1110,23 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
     jasmine.clock().tick(600);
 
     // Show the toast first.
-    (service as any).showDisconnectToast();
-    expect((service as any).wsDisconnectToastShown).toBe(true);
+    connectionToast.show();
+    // Story 34-4 (AC11): the dedup flag moved WITH the toast, so this reads it
+    // on its new owner. Same predicate, new receiver — deliberately not
+    // weakened into a behavioural approximation.
+    expect((connectionToast as any).wsDisconnectToastShown).toBe(true);
 
     service.ngOnDestroy();
 
     expect(msgService.clear).toHaveBeenCalled();
-    expect((service as any).wsDisconnectToastShown).toBe(false);
+    expect((connectionToast as any).wsDisconnectToastShown).toBe(false);
   });
 
   it('AC4: ngOnDestroy suppresses disconnect toast triggered by unsubscribe (destroying guard)', async () => {
     await service.init('proc-1', true);
 
-    // Destroy sets the destroying flag BEFORE unsubscribe, so the complete
-    // callback's showDisconnectToast() call is suppressed.
+    // Destroy enters the destroying state BEFORE unsubscribe, so the complete
+    // callback's `connectionToast.show()` call is suppressed.
     service.ngOnDestroy();
 
     // The only warn-toast add calls should be zero — the destroying guard
@@ -1113,6 +1135,56 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
       .map((a: any[]) => a[0])
       .filter((c: any) => c.severity === 'warn' && c.summary === 'Connection Lost');
     expect(warnCalls.length).toBe(0);
+  });
+
+  // --- Story 34-4: the two seams the extraction made easier to break --------
+
+  it('34-4 (AC7): stop() runs BEFORE the unsubscribe that completes the socket', async () => {
+    // A plain `Subject.unsubscribe()` does NOT notify its subscribers, so the
+    // `fakeSocket` above cannot reproduce this hazard at all — the test that
+    // uses it passes whichever order `ngOnDestroy` writes. A real
+    // `WebSocketSubject.unsubscribe()` closes the socket and the close
+    // completes the stream, which re-enters the `complete` handler and raises
+    // the toast. This double is that, and it is the only thing here that makes
+    // the ordering falsifiable: swap the two statements in `ngOnDestroy` and a
+    // "Connection Lost" warning appears on every deliberate navigation.
+    const stream = new Subject<any>();
+    const completingSocket = {
+      subscribe: (observer: any) => stream.subscribe(observer),
+      unsubscribe: () => stream.complete(),
+      next: (value: any) => stream.next(value),
+    };
+    (service as any).createWebSocket.and.returnValue(
+      completingSocket as unknown as WebSocketSubject<any>,
+    );
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+
+    service.ngOnDestroy();
+
+    expect(disconnectToasts().length).toBe(0);
+  });
+
+  it('34-4 (AC6): init() re-arms the toast, so a fresh team cycle warns again', async () => {
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+    connectionToast.show();
+    expect(disconnectToasts().length).toBe(1);
+
+    // Team switch. `init()` calls `connectionToast.start()` at exactly the
+    // point the inline flag reset used to sit. Drop that call and this second
+    // team watches a dead socket with NO warning at all — a silence no other
+    // spec in the suite would notice, because a missing toast fails nothing on
+    // its own.
+    fakeSocket = new Subject<any>();
+    (service as any).createWebSocket.and.returnValue(
+      fakeSocket as unknown as WebSocketSubject<any>,
+    );
+    await service.init('proc-2', true);
+    jasmine.clock().tick(600);
+    connectionToast.show();
+
+    expect(disconnectToasts().length).toBe(2);
   });
 
   it('AC5: WS error still calls flipOnFirstEvent (spinner falls through)', async () => {
@@ -1199,6 +1271,7 @@ describe('IngestionService — state + context PerAgentStore (Story 17-2)', () =
         ProcessStores,
         ReplaySeeder,
         LoadingIndicator,
+        ConnectionToast,
         IngestionService,
         ChatService,
         {
@@ -1420,6 +1493,7 @@ describe('IngestionService — seed agent state on init (Story 25-1)', () => {
         ProcessStores,
         ReplaySeeder,
         LoadingIndicator,
+        ConnectionToast,
         IngestionService,
         ChatService,
         {
@@ -1734,6 +1808,7 @@ describe('IngestionService — Story 31-3 (notification toast)', () => {
         ProcessStores,
         ReplaySeeder,
         LoadingIndicator,
+        ConnectionToast,
         IngestionService,
         ChatService,
         {
@@ -1804,7 +1879,7 @@ describe('IngestionService — Story 31-3 (notification toast)', () => {
     expect(addArgs()[0].life).toBeUndefined();
   });
 
-  it('AC6: the toast does NOT set closable:false (the showDisconnectToast trap)', async () => {
+  it('AC6: the toast does NOT set closable:false (the ConnectionToast trap)', async () => {
     await start();
 
     fakeSocket.next(mkNotification('w-1', WARNING, '@Researcher', 'over limit'));
@@ -1994,6 +2069,7 @@ describe('IngestionService — Story 31-6 (error parity, severity, summary)', ()
         ProcessStores,
         ReplaySeeder,
         LoadingIndicator,
+        ConnectionToast,
         IngestionService,
         ChatService,
         {
@@ -2282,7 +2358,7 @@ describe('IngestionService — Story 31-6 (error parity, severity, summary)', ()
     expect(msgService.add).not.toHaveBeenCalled();
   });
 
-  it('AC #15: showDisconnectToast is unchanged, closable:false included', async () => {
+  it('AC #15: the disconnect toast is unchanged, closable:false included', async () => {
     await start();
 
     fakeSocket.error(new Error('connection lost'));
@@ -2369,6 +2445,7 @@ describe('IngestionService — Story 31-4 (closed-notification suppression)', ()
         ProcessStores,
         ReplaySeeder,
         LoadingIndicator,
+        ConnectionToast,
         IngestionService,
         ChatService,
         {
@@ -2673,6 +2750,7 @@ describe('IngestionService — Story 31-5 (reactive toast removal)', () => {
         ProcessStores,
         ReplaySeeder,
         LoadingIndicator,
+        ConnectionToast,
         IngestionService,
         ChatService,
         MessageService,
@@ -2838,7 +2916,7 @@ describe('IngestionService — Story 31-5 (reactive toast removal)', () => {
     await start();
 
     fakeSocket.next(mkWarning('w-1'));
-    (service as any).showDisconnectToast();
+    TestBed.inject(ConnectionToast).show();
     expect(toastContainer.summaries()).toEqual([
       '@Researcher',
       'Connection Lost',

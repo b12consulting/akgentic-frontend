@@ -6,6 +6,7 @@ import { isRunning } from '../../core/context/team.interface';
 import { AkgentService } from '../../core/ui/akgent.service';
 import { ContextService } from '../../core/context/context.service';
 import { KGStateReducer } from './selectors/knowledge-graph.selector';
+import { ConnectionToast } from './event/connection-toast';
 import { LoadingIndicator } from './event/loading-indicator';
 import { MessageLogService } from './event/message-log.service';
 import { IngestionService } from './event/ingestion.service';
@@ -100,6 +101,14 @@ interface VisualizationOption {
     // carry a prior team's spinner state, and its `| async`-bound subject, into
     // the next one.
     LoadingIndicator,
+    // Epic 34 (ADR-025 §0-§1): the WS-disconnect toast reactor, provided BEFORE
+    // IngestionService (which injects it and drives its start/show/stop). A
+    // separate class from the notification toast on purpose — the two carry
+    // opposite `closable` semantics and their old adjacency had already caused
+    // one copy-paste defect. Never `providedIn: 'root'` — its dedup flag is
+    // per-team-cycle, and a root instance would outlive the team switch that
+    // `start()` resets it for.
+    ConnectionToast,
     IngestionService,
     // Epic 26 (ADR-022): component-scoped read surface over the `tokenUsage`
     // PerAgentStore. Provided AFTER IngestionService (which it injects); never

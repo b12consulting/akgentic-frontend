@@ -14,6 +14,7 @@ import {
   WarningMessage,
 } from '../../../protocol/message.types';
 
+import { ConnectionToast } from './connection-toast';
 import { LoadingIndicator } from './loading-indicator';
 import { MessageLogService } from './message-log.service';
 import { PerAgentStore } from './per-agent-store';
@@ -67,6 +68,19 @@ const ORCHESTRATOR_ROLE = 'Orchestrator';
  *     (`loading-indicator.ts`, Epic 34 / ADR-025 §1); `init()` drives it at four
  *     call sites and re-exports its subject unchanged. The only wall-clock read
  *     and the only timer in the ingestion layer now live there, not here.
+ *   - The WS-disconnect toast is owned by `ConnectionToast`
+ *     (`connection-toast.ts`, Epic 34 / ADR-025 §1), which holds the payload,
+ *     the dedup flag and the teardown suppression. This class keeps only the
+ *     three sequencing calls (`start()` in `init()`, `show()` from the two WS
+ *     callbacks, `stop()` first in `ngOnDestroy()`).
+ *
+ *     Do NOT re-add a local disconnect toast here. It sat next to
+ *     `showNotificationToast` with the OPPOSITE `closable` semantics, and the
+ *     adjacency alone had already produced one copy-paste defect; the whole
+ *     point of the move is that the two can no longer be read as variants of
+ *     each other. `messageService.clear()` stays here, though — it empties the
+ *     entire keyless toast container, notification toasts included, so it is
+ *     lifecycle sequencing rather than either toast's business.
  *
  * Per-agent state (Epic 17 / ADR-014, re-homed by Epic 34 / ADR-025 §1):
  * `state`, `context`, `commands`, `systemPrompt` and `tokenUsage` are ALL
@@ -130,6 +144,13 @@ export class IngestionService {
   private readonly loading: LoadingIndicator = inject(LoadingIndicator);
 
   /**
+   * Epic 34 (ADR-025 §0-§1): the disconnect-toast reactor. Push-driven — this
+   * class calls `show()` from the two WS callbacks; the unit subscribes to
+   * nothing of its own.
+   */
+  private readonly connectionToast: ConnectionToast = inject(ConnectionToast);
+
+  /**
    * Story 4-10 (AC7) / Epic 18 (ADR-015 §2): the loading-spinner state, read by
    * `ChatPanelComponent` from here. An alias onto `LoadingIndicator`'s subject —
    * the same object, not a copy, and never a `.pipe(...)` derivative: the type
@@ -168,14 +189,6 @@ export class IngestionService {
   readonly tokenUsage: PerAgentStore<AgentTokenUsage> = this.stores.tokenUsage;
 
   processId: string = '';
-
-  /**
-   * Story 8-2 (AC3): deduplication flag — prevents stacking duplicate
-   * disconnect toasts when both error and complete fire in sequence.
-   */
-  private wsDisconnectToastShown = false;
-  /** True during ngOnDestroy — suppresses disconnect toast on intentional navigation. */
-  private destroying = false;
 
   /**
    * Story 6.1 (ADR-005 §Decision 3): raw WS inbound stream. Every WS event
@@ -265,7 +278,10 @@ export class IngestionService {
     // Story 8-2: clear any stale toasts from a prior init() cycle
     // so process-A's warnings do not persist into process-B.
     this.messageService.clear();
-    this.wsDisconnectToastShown = false;
+    // Epic 34 (ADR-025 §1): re-arm the disconnect toast for this cycle. Same
+    // position the inline flag reset held — after the toast clear, before the
+    // spinner cycle — so a prior team's disconnect cannot suppress this one's.
+    this.connectionToast.start();
 
     // Story 4-10 (AC7): start the spinner cycle — `LoadingIndicator` cancels any
     // pending flip from a prior `init()` (team switch / re-init), resets its
@@ -399,12 +415,13 @@ export class IngestionService {
         console.error('WebSocket error:', err);
         // Story 8-2 (AC1, AC5): persistent warning toast replaces the
         // transient 5-second error toast. flipOnFirstEvent() is preserved above.
-        this.showDisconnectToast();
+        this.connectionToast.show();
       },
       complete: () => {
         console.log('webSocket - complete');
-        // Story 8-2 (AC2): persistent warning on stream completion.
-        this.showDisconnectToast();
+        // Story 8-2 (AC2): persistent warning on stream completion. The dedup
+        // flag inside the unit is what makes error-then-complete one toast.
+        this.connectionToast.show();
       },
     });
   }
@@ -457,23 +474,6 @@ export class IngestionService {
       .subscribe((batch: AkgenticMessage[]) => {
         this.log.appendAll(batch);
       });
-  }
-
-  /**
-   * Story 8-2 (AC1, AC2, AC3): show a persistent, non-closable warning toast
-   * when the WebSocket disconnects. The deduplication guard ensures only one
-   * toast is visible even if both error and complete fire in sequence.
-   */
-  private showDisconnectToast(): void {
-    if (this.wsDisconnectToastShown || this.destroying) return;
-    this.wsDisconnectToastShown = true;
-    this.messageService.add({
-      severity: 'warn',
-      summary: 'Connection Lost',
-      detail: 'Real-time connection to the server has been lost. Updates are paused.',
-      sticky: true,
-      closable: false,
-    });
   }
 
   /**
@@ -538,9 +538,11 @@ export class IngestionService {
    *     building removal on top of it and reached the same conclusion: a key
    *     here would buy nothing anyway, since `MessageService.clear(key)` empties
    *     a whole container rather than one message.
-   *   - **no `closable`** — the neighbouring `showDisconnectToast` sets
-   *     `closable: false` on purpose; this toast is its exact opposite and
-   *     needs the close cross that PrimeNG renders by default.
+   *   - **no `closable`** — `ConnectionToast` sets `closable: false` on
+   *     purpose; this toast is its exact opposite and needs the close cross
+   *     PrimeNG renders by default. Epic 34 moved that one into its own class
+   *     precisely so the two can no longer be read as variants of each other,
+   *     so do not reunite them behind a shared payload builder.
    *   - **no `life`** — any value defeats `sticky: true`.
    *
    * `data.messageId` (not `id`, which PrimeNG binds to the rendered DOM `id`
@@ -574,14 +576,17 @@ export class IngestionService {
   }
 
   ngOnDestroy() {
-    // Suppress disconnect toast triggered by the unsubscribe below —
-    // this is intentional navigation, not a connection loss.
-    this.destroying = true;
+    // FIRST, and load-bearing: `webSocket.unsubscribe()` below closes the
+    // socket, whose `complete` callback calls `connectionToast.show()`. Moving
+    // this line after it raises a "Connection Lost" toast on every intentional
+    // navigation. The two statements now live in different files, which makes
+    // the ordering easier to break and is why a spec pins it.
+    this.connectionToast.stop();
 
-    // Story 8-2 (AC4): clear all toasts and reset the flag so
-    // navigating away removes warnings and a fresh process view starts clean.
+    // Story 8-2 (AC4): clear all toasts so navigating away removes warnings and
+    // a fresh process view starts clean. Stays HERE rather than moving into
+    // either toast unit: `clear()` empties the whole keyless container.
     this.messageService.clear();
-    this.wsDisconnectToastShown = false;
 
     try {
       this.webSocket.unsubscribe();
