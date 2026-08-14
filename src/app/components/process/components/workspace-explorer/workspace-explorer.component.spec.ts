@@ -7,6 +7,8 @@ import {
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { TreeNode } from 'primeng/api';
+import { ButtonModule } from 'primeng/button';
+import { ToolbarModule } from 'primeng/toolbar';
 import { BehaviorSubject } from 'rxjs';
 
 import { ContextService } from '../../../../core/context/context.service';
@@ -39,6 +41,27 @@ function fileNode(overrides: Partial<FileNode>): FileNode {
     extension: overrides.extension,
     ...overrides,
   };
+}
+
+/**
+ * One of the three upload controls, in either override this file uses.
+ *
+ * Where PrimeNG's `ButtonModule` is NOT imported, `<p-button>` is an unknown
+ * custom element with no inner `<button>` and every property binding lands
+ * straight on the element object — so `disabled` is read off the host itself
+ * and is never reflected to an attribute. Where `ButtonModule` IS imported,
+ * `[disabled]` is a real Button input (read off the inner `<button>`) while
+ * `[pTooltip]` stays unclaimed, because `TooltipModule` is deliberately left
+ * out, and therefore still lands on the host as `pTooltip`.
+ */
+interface UploadControlEl extends HTMLElement {
+  disabled?: boolean;
+  pTooltip?: string;
+}
+
+/** Query one upload control by its STATIC `label` attribute (a real attribute). */
+function uploadControl(host: HTMLElement, label: string): UploadControlEl | null {
+  return host.querySelector(`p-button[label="${label}"]`) as UploadControlEl | null;
 }
 
 /**
@@ -1029,5 +1052,313 @@ describe('WorkspaceExplorerComponent — NFR3 OnPush regression gate', () => {
     expect(contentSpinner(hostFixture))
       .withContext('content spinner must be gone after resolve')
       .toBeNull();
+  });
+
+  // --- the run-state gate (FR9 falsifiability gate) ------------------
+  //
+  // The one assertion a wrong run-state implementation cannot fake. The specs
+  // in the `live run-state tracking` block call fixture.detectChanges(), which
+  // force-checks the view and therefore goes green even against a plain field
+  // write that never marks the OnPush chain dirty. Here the explorer sits
+  // inside an OnPush parent rendered once and NEVER re-marked, and the flip
+  // must land after whenStable() alone. That separates the real fix from both
+  // near-misses: a re-fetched snapshot never flips at all, and a field write
+  // with no markForCheck flips the field but not the view.
+
+  it('scenario 36 — a run-state flip repaints the upload gate WITHOUT re-marking the OnPush parent', async () => {
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+    // The stub's default is `true`; start stopped so the flip is observable.
+    contextServiceStub.currentTeamRunning$.next(false);
+
+    const hostFixture: ComponentFixture<OnPushHostComponent> =
+      TestBed.createComponent(OnPushHostComponent);
+
+    // Faithful reproduction of the running app, exactly as scenario 18:
+    // zone-driven global tick on stabilization. CRITICALLY, this spec never
+    // calls hostFixture.detectChanges() — that would force-check the OnPush
+    // parent and destroy the gate.
+    hostFixture.autoDetectChanges(true);
+    await hostFixture.whenStable();
+
+    const gate = (): UploadControlEl =>
+      uploadControl(hostFixture.nativeElement, 'Upload to Root')!;
+
+    expect(gate())
+      .withContext('root upload control should be rendered')
+      .not.toBeNull();
+    expect(gate().disabled).toBe(true);
+
+    contextServiceStub.currentTeamRunning$.next(true);
+    await hostFixture.whenStable();
+
+    expect(gate().disabled).toBe(false);
+  });
+});
+
+// --------------------------------------------------------------------
+// Live run-state tracking (FR9).
+//
+// The three upload controls read run state LIVE off
+// `ContextService.currentTeamRunning$` — the stream ADR-010 makes the sole
+// writer of — instead of latching it once at init. Every spec here drives the
+// subject AFTER the component is created and never re-runs initialization: a
+// spec that re-invokes an init hook passes just as happily against the one-shot
+// `firstValueFrom` snapshot this replaces, and would therefore prove nothing.
+//
+// This block has its OWN TestBed with a widened override, and that is
+// load-bearing rather than convenience. Under the CommonModule-only override
+// used by the two describes above, the toolbar's "Upload here" control cannot
+// render AT ALL: it lives inside `<ng-template pTemplate="end">`, and only
+// PrimeNG's Toolbar instantiates that template. So `ButtonModule` and
+// `ToolbarModule` are added here — the fallback the story documents — while the
+// existing describes' overrides stay untouched (scenario 18 and scenario 27
+// were tuned without PrimeNG and must stay that way). p-tree, p-card, p-tag,
+// the spinner, the upload modal and ngx-markdown all remain stubbed by
+// CUSTOM_ELEMENTS_SCHEMA.
+//
+// `TooltipModule` is deliberately NOT imported, so `[pTooltip]` stays an
+// unclaimed property binding that lands on the p-button host element and can be
+// read straight back off it. `[disabled]`, in contrast, IS a Button input, and
+// PrimeNG propagates it onto the inner <button> — the same idiom as
+// `home.component.spec.ts`.
+// --------------------------------------------------------------------
+
+describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
+  const STOPPED_TOOLTIP = 'Process must be running to upload files';
+
+  let component: WorkspaceExplorerComponent;
+  let fixture: ComponentFixture<WorkspaceExplorerComponent>;
+  let workspaceServiceSpy: jasmine.SpyObj<WorkspaceService>;
+  let contextServiceStub: {
+    currentProcessId$: BehaviorSubject<string>;
+    currentTeamRunning$: BehaviorSubject<boolean>;
+    getCurrentTeam: jasmine.Spy;
+  };
+
+  beforeEach(async () => {
+    workspaceServiceSpy = jasmine.createSpyObj('WorkspaceService', [
+      'getWorkspaceTree',
+      'getFileContent',
+      'getDownloadUrl',
+      'uploadFiles',
+    ]);
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: 'x',
+      type: 'text',
+    });
+    contextServiceStub = {
+      currentProcessId$: new BehaviorSubject<string>('proc'),
+      currentTeamRunning$: new BehaviorSubject<boolean>(true),
+      getCurrentTeam: jasmine
+        .createSpy('getCurrentTeam')
+        .and.callFake(async () => makeTeam()),
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [WorkspaceExplorerComponent, NoopAnimationsModule],
+      providers: [
+        { provide: WorkspaceService, useValue: workspaceServiceSpy },
+        { provide: ContextService, useValue: contextServiceStub },
+      ],
+    })
+      .overrideComponent(WorkspaceExplorerComponent, {
+        set: {
+          imports: [CommonModule, ButtonModule, ToolbarModule],
+          schemas: [CUSTOM_ELEMENTS_SCHEMA],
+        },
+      })
+      .compileComponents();
+  });
+
+  /** The p-button host carrying this static `label` attribute. */
+  function host(label: string): UploadControlEl {
+    const el = uploadControl(fixture.nativeElement, label);
+    expect(el)
+      .withContext(`control "${label}" should be rendered`)
+      .not.toBeNull();
+    return el!;
+  }
+
+  /** PrimeNG propagates the [disabled] input onto the inner <button>. */
+  function isDisabled(label: string): boolean {
+    const btn = host(label).querySelector('button');
+    expect(btn)
+      .withContext(`inner <button> of control "${label}"`)
+      .not.toBeNull();
+    return (btn as HTMLButtonElement).disabled;
+  }
+
+  /** The unclaimed [pTooltip] property binding, read off the p-button host. */
+  function tooltipOf(label: string): string | undefined {
+    return host(label).pTooltip;
+  }
+
+  /**
+   * Reach the folder-selected render state — where "Upload here" and "Upload
+   * Files" live — by writing the signal directly. `onNodeSelect` would also
+   * fire a `getFileContent` fetch that has nothing to do with run state.
+   */
+  function selectFolder(): void {
+    component.selectedFolder.set(
+      fileNode({ name: 'docs', path: 'docs', type: 'directory' })
+    );
+    fixture.detectChanges();
+  }
+
+  function clearSelection(): void {
+    component.selectedFolder.set(null);
+    fixture.detectChanges();
+  }
+
+  /**
+   * Create the component with the team ALREADY stopped, and settle it. The
+   * stub's `currentTeamRunning$` default is `true`, so a "starts stopped" spec
+   * MUST push `false` BEFORE createComponent or it asserts nothing.
+   */
+  async function createStopped(): Promise<void> {
+    contextServiceStub.currentTeamRunning$.next(false);
+    fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+    component = fixture.componentInstance;
+    await flushRootLoad(fixture);
+  }
+
+  /** Create the component with the team running, and settle it. */
+  async function createRunning(): Promise<void> {
+    contextServiceStub.currentTeamRunning$.next(true);
+    fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+    component = fixture.componentInstance;
+    await flushRootLoad(fixture);
+  }
+
+  it('scenario 37 — a flip to running enables the root-placeholder control, with no re-init and no extra call', async () => {
+    await createStopped();
+    expect(isDisabled('Upload to Root')).toBe(true);
+
+    const treeCalls = workspaceServiceSpy.getWorkspaceTree.calls.count();
+    const contentCalls = workspaceServiceSpy.getFileContent.calls.count();
+    contextServiceStub.getCurrentTeam.calls.reset();
+
+    contextServiceStub.currentTeamRunning$.next(true);
+    fixture.detectChanges();
+
+    expect(isDisabled('Upload to Root')).toBe(false);
+    // Nothing was re-fetched to learn the new state: the stream IS the state.
+    expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(treeCalls);
+    expect(workspaceServiceSpy.getFileContent.calls.count()).toBe(contentCalls);
+    expect(contextServiceStub.getCurrentTeam).not.toHaveBeenCalled();
+  });
+
+  it('scenario 38 — a flip to running enables both folder-selected controls, with no re-init and no extra call', async () => {
+    await createStopped();
+    selectFolder();
+
+    expect(isDisabled('Upload here')).toBe(true);
+    expect(isDisabled('Upload Files')).toBe(true);
+
+    const treeCalls = workspaceServiceSpy.getWorkspaceTree.calls.count();
+    const contentCalls = workspaceServiceSpy.getFileContent.calls.count();
+    contextServiceStub.getCurrentTeam.calls.reset();
+
+    contextServiceStub.currentTeamRunning$.next(true);
+    fixture.detectChanges();
+
+    expect(isDisabled('Upload here')).toBe(false);
+    expect(isDisabled('Upload Files')).toBe(false);
+    expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(treeCalls);
+    expect(workspaceServiceSpy.getFileContent.calls.count()).toBe(contentCalls);
+    expect(contextServiceStub.getCurrentTeam).not.toHaveBeenCalled();
+  });
+
+  it('scenario 39 — the reverse flip disables the root-placeholder control again', async () => {
+    await createRunning();
+    expect(isDisabled('Upload to Root')).toBe(false);
+
+    const treeCalls = workspaceServiceSpy.getWorkspaceTree.calls.count();
+    contextServiceStub.getCurrentTeam.calls.reset();
+
+    contextServiceStub.currentTeamRunning$.next(false);
+    fixture.detectChanges();
+
+    expect(isDisabled('Upload to Root')).toBe(true);
+    expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(treeCalls);
+    expect(contextServiceStub.getCurrentTeam).not.toHaveBeenCalled();
+  });
+
+  it('scenario 40 — the reverse flip disables both folder-selected controls again', async () => {
+    await createRunning();
+    selectFolder();
+
+    expect(isDisabled('Upload here')).toBe(false);
+    expect(isDisabled('Upload Files')).toBe(false);
+
+    const treeCalls = workspaceServiceSpy.getWorkspaceTree.calls.count();
+    contextServiceStub.getCurrentTeam.calls.reset();
+
+    contextServiceStub.currentTeamRunning$.next(false);
+    fixture.detectChanges();
+
+    expect(isDisabled('Upload here')).toBe(true);
+    expect(isDisabled('Upload Files')).toBe(true);
+    expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(treeCalls);
+    expect(contextServiceStub.getCurrentTeam).not.toHaveBeenCalled();
+  });
+
+  it('scenario 41 — run state is correct on the FIRST render (a single detectChanges, no disabled frame)', () => {
+    // The stub's default is `true`, so the team is running at construction.
+    // Exactly ONE synchronous change-detection pass and NO await: the
+    // predecessor only settled its snapshot a microtask later, once ngOnInit's
+    // `await` resolved, so it painted a disabled frame here.
+    fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+
+    expect(component.isProcessRunning()).toBe(true);
+    expect(isDisabled('Upload to Root')).toBe(false);
+  });
+
+  it('scenario 42 — no init hook remains to latch run state', () => {
+    fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+    component = fixture.componentInstance;
+
+    const instance = component as unknown as {
+      ngOnInit?: unknown;
+      checkProcessStatus?: unknown;
+    };
+    expect(instance.ngOnInit).toBeUndefined();
+    expect(instance.checkProcessStatus).toBeUndefined();
+  });
+
+  it('scenario 43 — the run-state subscription is torn down on destroy', async () => {
+    await createStopped();
+    expect(contextServiceStub.currentTeamRunning$.observed).toBe(true);
+
+    fixture.destroy();
+
+    // rxjs 7 `Subject.observed`: no subscriber left on the stream.
+    expect(contextServiceStub.currentTeamRunning$.observed).toBe(false);
+    expect(contextServiceStub.currentTeamRunning$.observers.length).toBe(0);
+
+    // A later emission cannot reach the destroyed component.
+    contextServiceStub.currentTeamRunning$.next(true);
+    expect(component.isProcessRunning()).toBe(false);
+  });
+
+  it('scenario 44 — all three tooltips read the same live source as the three disabled bindings', async () => {
+    await createStopped();
+
+    expect(tooltipOf('Upload to Root')).toBe(STOPPED_TOOLTIP);
+    selectFolder();
+    expect(tooltipOf('Upload here')).toBe(STOPPED_TOOLTIP);
+    expect(tooltipOf('Upload Files')).toBe(STOPPED_TOOLTIP);
+
+    contextServiceStub.currentTeamRunning$.next(true);
+    fixture.detectChanges();
+
+    // Running: none of the three presents the stopped-team tooltip.
+    expect(tooltipOf('Upload here')).toBe('');
+    expect(tooltipOf('Upload Files')).toBe('');
+    clearSelection();
+    expect(tooltipOf('Upload to Root')).toBe('');
   });
 });

@@ -111,10 +111,12 @@
             [text]="true"
             [rounded]="true"
             severity="primary"
-            [disabled]="!isProcessRunning"
+            [disabled]="!isProcessRunning()"
             (onClick)="openUploadModal(selectedFolder()!.path)"
             [pTooltip]="
-              !isProcessRunning ? 'Process must be running to upload files' : ''
+              !isProcessRunning()
+                ? 'Process must be running to upload files'
+                : ''
             "
           />
           <p-button
@@ -158,11 +160,11 @@
               label="Upload to Root"
               icon="pi pi-upload"
               severity="primary"
-              [disabled]="!isProcessRunning"
+              [disabled]="!isProcessRunning()"
               (onClick)="openUploadModal()"
               styleClass="upload-button"
               [pTooltip]="
-                !isProcessRunning
+                !isProcessRunning()
                   ? 'Process must be running to upload files'
                   : ''
               "
@@ -182,11 +184,11 @@
               label="Upload Files"
               icon="pi pi-upload"
               severity="primary"
-              [disabled]="!isProcessRunning"
+              [disabled]="!isProcessRunning()"
               (onClick)="openUploadModal(selectedFolder()!.path)"
               styleClass="upload-button"
               [pTooltip]="
-                !isProcessRunning
+                !isProcessRunning()
                   ? 'Process must be running to upload files'
                   : ''
               "
