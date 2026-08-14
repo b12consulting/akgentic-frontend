@@ -130,6 +130,29 @@ describe('ProcessUserInputComponent', () => {
     fixture.detectChanges();
   });
 
+  /** A restore double the spec releases by hand, so "before"/"after the
+   *  restore resolves" is observable rather than inferred. */
+  function deferredRestore(): { release: () => void } {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    contextServiceStub.restoreTeamAndAwait.and.returnValue(pending);
+    return { release };
+  }
+
+  function timeoutError(): Error {
+    // Shape of the rxjs `timeout(ms)` rejection: an Error named TimeoutError,
+    // NOT an HttpError — so nothing else in the app has toasted it.
+    const err = new Error('Timeout has occurred');
+    err.name = 'TimeoutError';
+    return err;
+  }
+
+  function submitButton() {
+    return fixture.debugElement.query(By.css('p-button')).componentInstance;
+  }
+
   it('should create', () => {
     expect(component).toBeTruthy();
   });
@@ -1078,28 +1101,8 @@ describe('ProcessUserInputComponent', () => {
   // Story 33-1 (ADR-024 §2) — restore-then-send on a stopped team
   // -------------------------------------------------------------------------
   describe('restore-then-send (Story 33-1)', () => {
-    /** A restore double the spec releases by hand, so "before"/"after the
-     *  restore resolves" is observable rather than inferred. */
-    function deferredRestore(): { release: () => void } {
-      let release!: () => void;
-      const pending = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      contextServiceStub.restoreTeamAndAwait.and.returnValue(pending);
-      return { release };
-    }
-
-    function timeoutError(): Error {
-      // Shape of the rxjs `timeout(ms)` rejection: an Error named TimeoutError,
-      // NOT an HttpError — so nothing else in the app has toasted it.
-      const err = new Error('Timeout has occurred');
-      err.name = 'TimeoutError';
-      return err;
-    }
-
-    function submitButton() {
-      return fixture.debugElement.query(By.css('p-button')).componentInstance;
-    }
+    // `deferredRestore`, `timeoutError` and `submitButton` are shared with the
+    // Story 33-3 block below and live in the outer scope.
 
     // --- AC #5 — the submit gate no longer depends on run state -----------
 
@@ -1400,29 +1403,9 @@ describe('ProcessUserInputComponent', () => {
       return { release };
     }
 
-    /** A restore double the spec releases by hand (as in the 33-1 block). */
-    function deferredRestore(): { release: () => void } {
-      let release!: () => void;
-      const pending = new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      contextServiceStub.restoreTeamAndAwait.and.returnValue(pending);
-      return { release };
-    }
-
-    function timeoutError(): Error {
-      const err = new Error('Timeout has occurred');
-      err.name = 'TimeoutError';
-      return err;
-    }
-
     /** One macrotask drains every pending microtask, so these specs never
      *  depend on counting the `await` ticks inside `sendMessage()`. */
     const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
-
-    function submitButton() {
-      return fixture.debugElement.query(By.css('p-button')).componentInstance;
-    }
 
     function textareaEl() {
       return fixture.debugElement.query(By.css('textarea'));
@@ -1643,6 +1626,39 @@ describe('ProcessUserInputComponent', () => {
       expect(apiServiceSpy.sendMessageFromTo).toHaveBeenCalledOnceWith(
         'test-team-id', '@Support', '@Worker', 'orphan',
       );
+      expect(component.phase).toBe('idle');
+    });
+
+    // The exit path only a `finally` covers: the POST REJECTS rather than
+    // returning. AC #8's four paths all leave the try by `return`, so a
+    // trailing `this.phase = 'idle'` on the success path would still satisfy
+    // them for the throw — and would strand the control non-idle forever,
+    // spinner up and input dead, until a page reload. Story 33-5 makes a
+    // network failure throw here by default, so this is the shape that matters.
+    it('(AC8) a rejected dispatch ends idle, and the retry is accepted', async () => {
+      const failure = new Error('network down');
+      apiServiceSpy.sendMessage.and.returnValue(Promise.reject(failure));
+      runningSubject.next(true);
+      component.selectedAgents = [];
+      component.userInput = 'sent into a hole';
+
+      await expectAsync(component.sendMessage()).toBeRejectedWith(failure);
+
+      expect(component.phase).toBe('idle');
+      expect(component.busy).toBeFalse();
+      expect(chatServiceMock.emitJustSent).not.toHaveBeenCalled();
+      // The text is NOT cleared: `this.userInput = ''` never ran.
+      expect(component.userInput).toBe('sent into a hole');
+
+      // The control is live again, and the retry actually dispatches.
+      fixture.detectChanges();
+      expect(submitButton().disabled).toBeFalsy();
+
+      apiServiceSpy.sendMessage.and.returnValue(Promise.resolve());
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledTimes(2);
+      expect(chatServiceMock.emitJustSent).toHaveBeenCalledTimes(1);
       expect(component.phase).toBe('idle');
     });
   });
