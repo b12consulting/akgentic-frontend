@@ -13,6 +13,8 @@ import { ProcessStores } from './process-stores';
 import { ReplaySeeder } from './replay-seeder';
 import { ConnectionToast } from './connection-toast';
 import { NotificationToasts } from './notification-toasts';
+import { LogFeeder } from './log-feeder';
+import { TeamSocket } from './team-socket';
 import { LoadingIndicator } from './loading-indicator';
 import {
   AgentTokenUsage,
@@ -224,6 +226,8 @@ function configureBed(): {
       LoadingIndicator,
       ConnectionToast,
       NotificationToasts,
+      TeamSocket,
+      LogFeeder,
       IngestionService,
       {
         provide: ApiService,

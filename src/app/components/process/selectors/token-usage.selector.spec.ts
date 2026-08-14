@@ -10,6 +10,8 @@ import { ProcessStores } from '../event/process-stores';
 import { ReplaySeeder } from '../event/replay-seeder';
 import { ConnectionToast } from '../event/connection-toast';
 import { NotificationToasts } from '../event/notification-toasts';
+import { LogFeeder } from '../event/log-feeder';
+import { TeamSocket } from '../event/team-socket';
 import { LoadingIndicator } from '../event/loading-indicator';
 import { AgentTokenUsage } from '../event/per-agent-specs';
 import {
@@ -96,6 +98,8 @@ function configureBed(): {
       LoadingIndicator,
       ConnectionToast,
       NotificationToasts,
+      TeamSocket,
+      LogFeeder,
       IngestionService,
       TokenUsageSelector,
       {

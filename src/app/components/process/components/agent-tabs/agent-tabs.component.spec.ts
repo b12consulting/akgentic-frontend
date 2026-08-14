@@ -13,6 +13,8 @@ import { ProcessStores } from '../../event/process-stores';
 import { ReplaySeeder } from '../../event/replay-seeder';
 import { ConnectionToast } from '../../event/connection-toast';
 import { NotificationToasts } from '../../event/notification-toasts';
+import { LogFeeder } from '../../event/log-feeder';
+import { TeamSocket } from '../../event/team-socket';
 import { LoadingIndicator } from '../../event/loading-indicator';
 import { ChatService } from '../../selectors/chat.selector';
 import { ApiService } from '../../../../core/http/api.service';
@@ -96,6 +98,8 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
         LoadingIndicator,
         ConnectionToast,
         NotificationToasts,
+        TeamSocket,
+        LogFeeder,
         IngestionService,
         ChatService,
         {
@@ -125,7 +129,10 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
 
     ingestionService = TestBed.inject(IngestionService);
     log = TestBed.inject(MessageLogService);
-    spyOn<any>(ingestionService, 'createWebSocket').and.returnValue(
+    // Story 34-6: the `createWebSocket` seam lives on `TeamSocket` now. Same
+    // stub, new receiver — this spec still drives the real WS pipeline end to
+    // end so the registry's `log$` subscription is live.
+    spyOn<any>(TestBed.inject(TeamSocket), 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
     );
     // Wire the WS pipeline so the registry's log$ subscription is live.

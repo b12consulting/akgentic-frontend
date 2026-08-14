@@ -9,12 +9,14 @@ import { KGStateReducer } from './selectors/knowledge-graph.selector';
 import { ConnectionToast } from './event/connection-toast';
 import { NotificationToasts } from './event/notification-toasts';
 import { LoadingIndicator } from './event/loading-indicator';
+import { LogFeeder } from './event/log-feeder';
 import { MessageLogService } from './event/message-log.service';
 import { IngestionService } from './event/ingestion.service';
 import { PerAgentStoreRegistry } from './event/per-agent-store';
 import { ProcessStores } from './event/process-stores';
 import { ReplaySeeder } from './event/replay-seeder';
 import { SystemPromptSelector } from './selectors/system-prompt.selector';
+import { TeamSocket } from './event/team-socket';
 import { TokenUsageSelector } from './selectors/token-usage.selector';
 import { ToolPresenceService } from './selectors/tool-presence.selector';
 import { WorkspaceRegistryService } from './selectors/workspace-registry.selector';
@@ -116,6 +118,17 @@ interface VisualizationOption {
     // dismissal state, and a root instance would carry one team's closed ids into
     // the next, silently suppressing toasts that should have been raised.
     NotificationToasts,
+    // Epic 34 (ADR-025 §1): the WS transport source, provided BEFORE
+    // IngestionService (which injects it and opens it LAST in `init()`). Never
+    // `providedIn: 'root'` — a root instance would share ONE socket across every
+    // team switch, which is the transport half of the race ADR-005 §Decision 6
+    // closes.
+    TeamSocket,
+    // Epic 34 (ADR-025 §1): the frame-batched log feed, provided BEFORE
+    // IngestionService (which injects it and hands it the socket's inbound
+    // stream). Never `providedIn: 'root'` — a root instance would feed one
+    // team's frames into the next team's log.
+    LogFeeder,
     IngestionService,
     // Epic 26 (ADR-022): component-scoped read surface over the `tokenUsage`
     // PerAgentStore. Provided AFTER IngestionService (which it injects); never

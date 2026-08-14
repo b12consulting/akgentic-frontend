@@ -1,10 +1,12 @@
 import { TestBed } from '@angular/core/testing';
 import { MessageService } from 'primeng/api';
 import { Toast } from 'primeng/toast';
-import { BehaviorSubject, ReplaySubject, Subject } from 'rxjs';
+import { BehaviorSubject, ReplaySubject, Subject, Subscription } from 'rxjs';
 import { WebSocketSubject } from 'rxjs/webSocket';
 
 import { IngestionService } from './ingestion.service';
+import { LogFeeder } from './log-feeder';
+import { TeamSocket } from './team-socket';
 import { ApiService } from '../../../core/http/api.service';
 import { NotificationToastService } from '../../../core/ui/notification-toast.service';
 import { ChatService } from '../selectors/chat.selector';
@@ -20,6 +22,31 @@ import {
   CLOSED_NOTIFICATION_MODEL,
   EVENT_MESSAGE_MODEL,
 } from '../../../protocol/message.types';
+
+/**
+ * Story 34-6: the `createWebSocket` seam, the WS subject and the raw inbound
+ * stream moved off `IngestionService` onto `TeamSocket`. Every spec below that
+ * used to stub or probe them through the service now reaches the same seam on
+ * its new owner through these two helpers.
+ *
+ * A RECEIVER change and nothing else — no spec's predicate, fixture or expected
+ * value moves with it. `TestBed.inject` returns the one component-scoped
+ * instance the service itself injected, so `spyOn` and direct assignment both
+ * still land on the object `init()` will call.
+ */
+function teamSocket(): TeamSocket {
+  return TestBed.inject(TeamSocket);
+}
+
+/**
+ * The hot protocol-frame subject behind `TeamSocket.inbound$` — the successor of
+ * `IngestionService._wsInbound$`, and what the subscription-leak probes read.
+ * `inbound$` is its `asObservable()` view, so subscribers still land in THIS
+ * object's observer list.
+ */
+function inboundSubject(): Subject<any> {
+  return (teamSocket() as any)._inbound$ as Subject<any>;
+}
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {
@@ -69,6 +96,8 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
         LoadingIndicator,
         ConnectionToast,
         NotificationToasts,
+        TeamSocket,
+        LogFeeder,
         IngestionService,
         ChatService,
         {
@@ -96,7 +125,7 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
     // subscription up to our Subject instead of opening a real TCP
     // connection. Cast through unknown to satisfy the WebSocketSubject<any>
     // return type expected by init().
-    spyOn<any>(service, 'createWebSocket').and.returnValue(
+    spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
     );
   });
@@ -176,7 +205,7 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
     // latch instead of the scheduler, went unnoticed by the whole suite. A
     // failure here leaves the chat panel on "Loading process..." for ever,
     // because there is no socket left to deliver the event that would end it.
-    (service as any).createWebSocket.and.throwError('bad ws url');
+    (teamSocket() as any).createWebSocket.and.throwError('bad ws url');
 
     await expectAsync(service.init('proc-1', true)).toBeRejected();
 
@@ -271,7 +300,7 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
     // Re-init (team switch) before the pending timer fires — swap in a new
     // fake socket so the fresh init() has something to subscribe to.
     const secondSocket = new Subject<any>();
-    (service as any).createWebSocket = jasmine
+    (teamSocket() as any).createWebSocket = jasmine
       .createSpy('createWebSocket')
       .and.returnValue(secondSocket as unknown as WebSocketSubject<any>);
     await service.init('proc-2', true);
@@ -335,6 +364,8 @@ describe('IngestionService — Story 6.1 (frame-batched log ingestion)', () => {
         LoadingIndicator,
         ConnectionToast,
         NotificationToasts,
+        TeamSocket,
+        LogFeeder,
         IngestionService,
         ChatService,
         {
@@ -358,7 +389,7 @@ describe('IngestionService — Story 6.1 (frame-batched log ingestion)', () => {
     log = TestBed.inject(MessageLogService);
     chatService = TestBed.inject(ChatService);
 
-    spyOn<any>(service, 'createWebSocket').and.returnValue(
+    spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
     );
   });
@@ -490,7 +521,7 @@ describe('IngestionService — Story 6.1 (frame-batched log ingestion)', () => {
 
     // Swap in a fresh fake socket for the B cycle.
     const socketB = new Subject<any>();
-    (service as any).createWebSocket = jasmine
+    (teamSocket() as any).createWebSocket = jasmine
       .createSpy('createWebSocket')
       .and.returnValue(socketB as unknown as WebSocketSubject<any>);
 
@@ -538,25 +569,30 @@ describe('IngestionService — Story 6.1 (frame-batched log ingestion)', () => {
   });
 
   // ---------- AC7 ----------
-  it('AC7: N mount/unmount cycles leave no residual subscriptions on _wsInbound$', async () => {
-    // After init() step (a) disposes prior bufferSub + spinnerSub, the
-    // internal Subject observer list should stay bounded. Probe via the
-    // rxjs 7 `observed` boolean and the internal `observers` array (still
-    // reachable on Subject even if flagged @deprecated). Both paths agree.
-    const inbound = (service as any)._wsInbound$ as Subject<any>;
+  it('AC7: N mount/unmount cycles leave no residual subscriptions on the inbound subject', async () => {
+    // After init() step (a) disposes the prior cycle, the internal Subject
+    // observer list should stay bounded. Probe via the rxjs 7 `observed`
+    // boolean and the internal `observers` array (still reachable on Subject
+    // even if flagged @deprecated). Both paths agree.
+    //
+    // Story 34-6 repointed the probe from `IngestionService._wsInbound$` to the
+    // subject behind `TeamSocket.inbound$`, which is the same one hot stream
+    // under a new owner. Receiver only: the four numbers below are untouched.
+    const inbound = inboundSubject();
 
     for (let i = 0; i < 5; i++) {
       // Each re-init disposes the previous WS (`fakeSocket.unsubscribe()`),
       // so swap in a fresh Subject for every cycle — otherwise the next
       // init's `.subscribe(...)` would hit an unsubscribed Subject.
       const cycleSocket = new Subject<any>();
-      (service as any).createWebSocket = jasmine
+      (teamSocket() as any).createWebSocket = jasmine
         .createSpy('createWebSocket')
         .and.returnValue(cycleSocket as unknown as WebSocketSubject<any>);
 
       await service.init('proc-' + i, true);
-      // After a full init() the three live subscribers are bufferSub,
-      // spinnerSub and `NotificationToasts` — exactly 3, never more.
+      // After a full init() the three live subscribers are `LogFeeder`'s
+      // batched feed, `LoadingIndicator`'s take(1) side-channel and
+      // `NotificationToasts` — exactly 3, never more.
       //
       // Epic 34 / story 34-5 raised this bound from 2 to 3: the notification
       // dispatch used to sit INLINE in the WS `next` callback and is a
@@ -681,6 +717,8 @@ describe('IngestionService — commands PerAgentStore (Story 17-3, ADR-014/ADR-0
         LoadingIndicator,
         ConnectionToast,
         NotificationToasts,
+        TeamSocket,
+        LogFeeder,
         IngestionService,
         ChatService,
         {
@@ -702,7 +740,7 @@ describe('IngestionService — commands PerAgentStore (Story 17-3, ADR-014/ADR-0
     });
     service = TestBed.inject(IngestionService);
 
-    spyOn<any>(service, 'createWebSocket').and.returnValue(
+    spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
     );
   });
@@ -799,7 +837,7 @@ describe('IngestionService — commands PerAgentStore (Story 17-3, ADR-014/ADR-0
 
     // Re-init (team switch) → log.reset() → registry clears its maps.
     const socketB = new Subject<any>();
-    (service as any).createWebSocket = jasmine
+    (teamSocket() as any).createWebSocket = jasmine
       .createSpy('createWebSocket')
       .and.returnValue(socketB as unknown as WebSocketSubject<any>);
     await service.init('proc-B', true);
@@ -827,7 +865,7 @@ describe('IngestionService — commands PerAgentStore (Story 17-3, ADR-014/ADR-0
       { event: mkCommandsEvent('@Developer', 'agent-dev', [HIRE], 'r3') },
     ]);
     const socketB = new Subject<any>();
-    (service as any).createWebSocket = jasmine
+    (teamSocket() as any).createWebSocket = jasmine
       .createSpy('createWebSocket')
       .and.returnValue(socketB as unknown as WebSocketSubject<any>);
     await service.init('proc-stopped', false);
@@ -909,6 +947,8 @@ describe('IngestionService — registry is the only per-agent owner (Epic 17, AD
         LoadingIndicator,
         ConnectionToast,
         NotificationToasts,
+        TeamSocket,
+        LogFeeder,
         IngestionService,
         ChatService,
         {
@@ -1016,6 +1056,8 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
         LoadingIndicator,
         ConnectionToast,
         NotificationToasts,
+        TeamSocket,
+        LogFeeder,
         IngestionService,
         ChatService,
         {
@@ -1039,7 +1081,7 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
     msgService = TestBed.inject(MessageService);
     connectionToast = TestBed.inject(ConnectionToast);
 
-    spyOn<any>(service, 'createWebSocket').and.returnValue(
+    spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
     );
   });
@@ -1168,7 +1210,7 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
       unsubscribe: () => stream.complete(),
       next: (value: any) => stream.next(value),
     };
-    (service as any).createWebSocket.and.returnValue(
+    (teamSocket() as any).createWebSocket.and.returnValue(
       completingSocket as unknown as WebSocketSubject<any>,
     );
     await service.init('proc-1', true);
@@ -1191,7 +1233,7 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
     // spec in the suite would notice, because a missing toast fails nothing on
     // its own.
     fakeSocket = new Subject<any>();
-    (service as any).createWebSocket.and.returnValue(
+    (teamSocket() as any).createWebSocket.and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
     );
     await service.init('proc-2', true);
@@ -1287,6 +1329,8 @@ describe('IngestionService — state + context PerAgentStore (Story 17-2)', () =
         LoadingIndicator,
         ConnectionToast,
         NotificationToasts,
+        TeamSocket,
+        LogFeeder,
         IngestionService,
         ChatService,
         {
@@ -1310,7 +1354,7 @@ describe('IngestionService — state + context PerAgentStore (Story 17-2)', () =
     registry = TestBed.inject(PerAgentStoreRegistry);
     log = TestBed.inject(MessageLogService);
 
-    spyOn<any>(service, 'createWebSocket').and.returnValue(
+    spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
     );
   });
@@ -1381,7 +1425,7 @@ describe('IngestionService — state + context PerAgentStore (Story 17-2)', () =
       { event: mkLlmEvent('B', { role: 'user', content: 'm2' }, 'r-e2') },
     ]);
     const socketB = new Subject<any>();
-    (service as any).createWebSocket = jasmine
+    (teamSocket() as any).createWebSocket = jasmine
       .createSpy('createWebSocket')
       .and.returnValue(socketB as unknown as WebSocketSubject<any>);
     await service.init('proc-stopped', false);
@@ -1405,7 +1449,7 @@ describe('IngestionService — state + context PerAgentStore (Story 17-2)', () =
 
     // Re-init (team switch) → log.reset() → registry clears its maps.
     const socketB = new Subject<any>();
-    (service as any).createWebSocket = jasmine
+    (teamSocket() as any).createWebSocket = jasmine
       .createSpy('createWebSocket')
       .and.returnValue(socketB as unknown as WebSocketSubject<any>);
     await service.init('proc-B', true);
@@ -1510,6 +1554,8 @@ describe('IngestionService — seed agent state on init (Story 25-1)', () => {
         LoadingIndicator,
         ConnectionToast,
         NotificationToasts,
+        TeamSocket,
+        LogFeeder,
         IngestionService,
         ChatService,
         {
@@ -1528,7 +1574,7 @@ describe('IngestionService — seed agent state on init (Story 25-1)', () => {
     log = TestBed.inject(MessageLogService);
     apiService = TestBed.inject(ApiService) as any;
 
-    spyOn<any>(service, 'createWebSocket').and.returnValue(
+    spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
     );
   });
@@ -1737,7 +1783,7 @@ describe('IngestionService — seed agent state on init (Story 25-1)', () => {
     // maps and the empty seed leaves the store empty.
     apiService.getAgentStates.and.resolveTo([]);
     const socketB = new Subject<any>();
-    (service as any).createWebSocket = jasmine
+    (teamSocket() as any).createWebSocket = jasmine
       .createSpy('createWebSocket')
       .and.returnValue(socketB as unknown as WebSocketSubject<any>);
     await service.init('team-B', false);
@@ -1825,6 +1871,8 @@ describe('IngestionService — Story 31-3 (notification toast)', () => {
         LoadingIndicator,
         ConnectionToast,
         NotificationToasts,
+        TeamSocket,
+        LogFeeder,
         IngestionService,
         ChatService,
         {
@@ -1848,7 +1896,7 @@ describe('IngestionService — Story 31-3 (notification toast)', () => {
     service = TestBed.inject(IngestionService);
     msgService = TestBed.inject(MessageService);
 
-    spyOn<any>(service, 'createWebSocket').and.returnValue(
+    spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
     );
   });
@@ -1929,6 +1977,8 @@ describe('IngestionService — Story 31-6 (error parity, severity, summary)', ()
         LoadingIndicator,
         ConnectionToast,
         NotificationToasts,
+        TeamSocket,
+        LogFeeder,
         IngestionService,
         ChatService,
         {
@@ -1952,7 +2002,7 @@ describe('IngestionService — Story 31-6 (error parity, severity, summary)', ()
     service = TestBed.inject(IngestionService);
     msgService = TestBed.inject(MessageService);
 
-    spyOn<any>(service, 'createWebSocket').and.returnValue(
+    spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
     );
   });
@@ -2093,6 +2143,8 @@ describe('IngestionService — Story 31-4 (closed-notification suppression)', ()
         LoadingIndicator,
         ConnectionToast,
         NotificationToasts,
+        TeamSocket,
+        LogFeeder,
         IngestionService,
         ChatService,
         {
@@ -2117,7 +2169,7 @@ describe('IngestionService — Story 31-4 (closed-notification suppression)', ()
     msgService = TestBed.inject(MessageService);
     log = TestBed.inject(MessageLogService);
 
-    spyOn<any>(service, 'createWebSocket').and.returnValue(
+    spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
     );
   });
@@ -2326,6 +2378,8 @@ describe('IngestionService — Story 31-5 (reactive toast removal)', () => {
         LoadingIndicator,
         ConnectionToast,
         NotificationToasts,
+        TeamSocket,
+        LogFeeder,
         IngestionService,
         ChatService,
         MessageService,
@@ -2349,7 +2403,7 @@ describe('IngestionService — Story 31-5 (reactive toast removal)', () => {
     service = TestBed.inject(IngestionService);
     log = TestBed.inject(MessageLogService);
 
-    spyOn<any>(service, 'createWebSocket').and.returnValue(
+    spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
     );
   });
@@ -2459,7 +2513,7 @@ describe('IngestionService — Story 31-5 (reactive toast removal)', () => {
     expect(toastContainer.messageIds()).toEqual(['w-1']);
 
     const socketB = new Subject<any>();
-    (service as any).createWebSocket = jasmine
+    (teamSocket() as any).createWebSocket = jasmine
       .createSpy('createWebSocket')
       .and.returnValue(socketB as unknown as WebSocketSubject<any>);
     await service.init('proc-2', true);
@@ -2533,6 +2587,8 @@ describe('IngestionService — notification-toast reactor sequencing (Epic 34)',
         LoadingIndicator,
         ConnectionToast,
         NotificationToasts,
+        TeamSocket,
+        LogFeeder,
         IngestionService,
         ChatService,
         {
@@ -2556,7 +2612,7 @@ describe('IngestionService — notification-toast reactor sequencing (Epic 34)',
     service = TestBed.inject(IngestionService);
     msgService = TestBed.inject(MessageService);
 
-    spyOn<any>(service, 'createWebSocket').and.returnValue(
+    spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
     );
   });
@@ -2577,7 +2633,7 @@ describe('IngestionService — notification-toast reactor sequencing (Epic 34)',
     // Team switch. `_wsInbound$` is the SAME subject across cycles, so a reactor
     // that was never stopped is still subscribed to it.
     const socketB = new Subject<any>();
-    (service as any).createWebSocket = jasmine
+    (teamSocket() as any).createWebSocket = jasmine
       .createSpy('createWebSocket')
       .and.returnValue(socketB as unknown as WebSocketSubject<any>);
     await service.init('proc-2', true);
@@ -2605,7 +2661,7 @@ describe('IngestionService — notification-toast reactor sequencing (Epic 34)',
     // notification is silently lost with nothing else failing.
     const replaying = new ReplaySubject<any>(1);
     replaying.next(mkWarning('w-1'));
-    (service as any).createWebSocket = jasmine
+    (teamSocket() as any).createWebSocket = jasmine
       .createSpy('createWebSocket')
       .and.returnValue(replaying as unknown as WebSocketSubject<any>);
 
@@ -2638,7 +2694,7 @@ describe('IngestionService — notification-toast reactor sequencing (Epic 34)',
     // into the reactor would make the first assertion above fail; removing the
     // raw subscription would make this one fail.
     const socketB = new Subject<any>();
-    (service as any).createWebSocket = jasmine
+    (teamSocket() as any).createWebSocket = jasmine
       .createSpy('createWebSocket')
       .and.returnValue(socketB as unknown as WebSocketSubject<any>);
     await service.init('proc-2', true);
@@ -2652,5 +2708,267 @@ describe('IngestionService — notification-toast reactor sequencing (Epic 34)',
       'w-1',
     );
     socketB.complete();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 34-6 — init() sequencing: the four ordered steps, as CALL ORDER
+//
+// ADR-005 §Decision 6 / architecture shard 02 §4 fix the order as
+//   (a) dispose the prior cycle
+//   (b) log.reset()
+//   (c) seed the replay (stopped teams)
+//   (d) wire the consumers, THEN open the socket
+//
+// Every spec below asserts on the SEQUENCE rather than on the outcome. That
+// distinction is the point: with a single team and a single init(), every order
+// produces a correct log, so an outcome-only assertion passes on an
+// implementation that has already lost the guarantee. The failure surfaces only
+// on a team switch, in production, as state from the previous team.
+// ---------------------------------------------------------------------------
+
+describe('IngestionService — init() ordering + self-wiring (Story 34-6)', () => {
+  let service: IngestionService;
+  let log: MessageLogService;
+
+  function mkStart(id: string): any {
+    return {
+      id,
+      parent_id: null,
+      team_id: 'team-X',
+      timestamp: '2026-08-14T00:00:00Z',
+      sender: makeAddress({ agent_id: 'a1' }),
+      display_type: 'other',
+      content: null,
+      __model__: 'akgentic.core.messages.orchestrator.StartMessage',
+    };
+  }
+
+  beforeEach(() => {
+    jasmine.clock().install();
+    jasmine.clock().mockDate(new Date(0));
+
+    TestBed.configureTestingModule({
+      providers: [
+        MessageLogService,
+        PerAgentStoreRegistry,
+        ProcessStores,
+        ReplaySeeder,
+        LoadingIndicator,
+        ConnectionToast,
+        NotificationToasts,
+        TeamSocket,
+        LogFeeder,
+        IngestionService,
+        ChatService,
+        {
+          provide: ApiService,
+          useValue: {
+            getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+            getAgentStates: jasmine
+              .createSpy('getAgentStates')
+              .and.resolveTo([]),
+          },
+        },
+        {
+          provide: MessageService,
+          useValue: {
+            add: jasmine.createSpy('add'),
+            clear: jasmine.createSpy('clear'),
+          },
+        },
+      ],
+    });
+    // NOTHING is injected here, on purpose. The self-wiring spec below has to
+    // install its spies BEFORE the graph is constructed, so every test in this
+    // block builds it for itself through `boot()`.
+  });
+
+  afterEach(() => jasmine.clock().uninstall());
+
+  /** Construct the graph — this is the moment a self-wired unit would act. */
+  function boot(): void {
+    service = TestBed.inject(IngestionService);
+    log = TestBed.inject(MessageLogService);
+  }
+
+  it('AC4: the whole graph is INERT until init() runs', () => {
+    // PROTOTYPE spies, installed before anything is injected. An instance spy
+    // cannot see a constructor-time call — it can only be attached once the
+    // instance exists, i.e. once the damage is done — so a guard built on one
+    // would pass against the very implementation it exists to reject.
+    const created = spyOn<any>(TeamSocket.prototype, 'createWebSocket');
+    const reset = spyOn(MessageLogService.prototype, 'reset').and.callThrough();
+    const appendAll = spyOn(
+      MessageLogService.prototype,
+      'appendAll',
+    ).and.callThrough();
+
+    boot();
+
+    // Every unit has been constructed by DI at this point — and that must be all
+    // that has happened. A constructor-time `subscribe`, `createWebSocket` or
+    // log mutation would put Angular's DI order in charge of a sequence the
+    // orchestrator owns, and every other spec in this suite would still pass: a
+    // green single-team suite is exactly what a self-wired implementation
+    // produces. This assertion, taken BEFORE init(), is the only one that sees
+    // it.
+    expect(created).not.toHaveBeenCalled();
+    expect(reset).not.toHaveBeenCalled();
+    expect(appendAll).not.toHaveBeenCalled();
+    expect(inboundSubject().observers.length).toBe(0);
+    expect((teamSocket() as any)._frames$.observers.length).toBe(0);
+    expect((teamSocket() as any)._status$.observers.length).toBe(0);
+  });
+
+  it('AC5: reset precedes the replay append, which precedes the socket', async () => {
+    boot();
+    const api = TestBed.inject(ApiService) as any;
+    api.getEvents.and.resolveTo([{ event: mkStart('r1') }]);
+
+    const calls: string[] = [];
+    spyOn(log, 'reset').and.callFake(() => calls.push('reset'));
+    spyOn(log, 'appendAll').and.callFake(() => calls.push('appendAll'));
+    (teamSocket() as any).createWebSocket = () => {
+      calls.push('createWebSocket');
+      return new Subject<any>() as unknown as WebSocketSubject<any>;
+    };
+
+    await service.init('proc-1', false);
+
+    // Call order, not final state. A `reset` after the replay would wipe the
+    // history it just seeded; a socket before the replay reopens the
+    // team-switch race.
+    expect(calls.indexOf('reset')).toBe(0);
+    expect(calls.lastIndexOf('appendAll')).toBeGreaterThan(
+      calls.indexOf('reset'),
+    );
+    expect(calls.indexOf('createWebSocket')).toBeGreaterThan(
+      calls.lastIndexOf('appendAll'),
+    );
+  });
+
+  it('AC6: a socket that delivers AS IT OPENS still lands after the replay', async () => {
+    boot();
+    const api = TestBed.inject(ApiService) as any;
+    api.getEvents.and.resolveTo([
+      { event: mkStart('r1') },
+      { event: mkStart('r2') },
+    ]);
+
+    // A transport that emits synchronously at subscribe time — which is exactly
+    // what a cursor-0 replay is. Were the socket opened before step (c), this
+    // frame would land in an EMPTY log and the replay would pile on top of it.
+    const stream = new Subject<any>();
+    (teamSocket() as any).createWebSocket = () =>
+      ({
+        subscribe: (observer: any) => {
+          const sub = stream.subscribe(observer);
+          observer.next(mkStart('live-1'));
+          return sub;
+        },
+        unsubscribe: () => stream.complete(),
+      }) as unknown as WebSocketSubject<any>;
+
+    await service.init('proc-1', false);
+    jasmine.clock().tick(17);
+
+    expect(log.snapshot().map((m: any) => m.id)).toEqual([
+      'r1',
+      'r2',
+      'live-1',
+    ]);
+  });
+
+  it('AC6: a STALE cycle socket contributes nothing to the fresh log', async () => {
+    boot();
+    // Cycle A, on a transport whose `unsubscribe` closes the delivery path but
+    // leaves the underlying stream usable — so this spec can keep pushing at it
+    // after the switch, which is the whole scenario.
+    const streamA = new Subject<any>();
+    let subA: Subscription | null = null;
+    (teamSocket() as any).createWebSocket = () =>
+      ({
+        subscribe: (observer: any) => {
+          subA = streamA.subscribe(observer);
+          return subA;
+        },
+        unsubscribe: () => subA?.unsubscribe(),
+      }) as unknown as WebSocketSubject<any>;
+
+    await service.init('proc-A', true);
+    streamA.next(mkStart('A-1'));
+    jasmine.clock().tick(17);
+    expect(log.snapshot().map((m: any) => m.id)).toEqual(['A-1']);
+
+    // Team switch.
+    const streamB = new Subject<any>();
+    (teamSocket() as any).createWebSocket = () =>
+      streamB as unknown as WebSocketSubject<any>;
+    await service.init('proc-B', true);
+
+    // A's transport keeps producing. Step (a) closed it, so nothing of A's can
+    // reach the inbound stream the fresh cycle's feeder is attached to. That
+    // subject is SHARED across cycles by design, so closing the old socket is
+    // the only thing standing between process-A's tail and process-B's log.
+    streamA.next(mkStart('A-2'));
+    streamA.next(mkStart('A-3'));
+    jasmine.clock().tick(17);
+
+    expect(log.snapshot()).toEqual([]);
+
+    streamB.next(mkStart('B-1'));
+    jasmine.clock().tick(17);
+    expect(log.snapshot().map((m: any) => m.id)).toEqual(['B-1']);
+  });
+
+  it('AC10: a frame with NO __model__ flips the spinner and appends nothing', async () => {
+    boot();
+    const stream = new Subject<any>();
+    (teamSocket() as any).createWebSocket = () =>
+      stream as unknown as WebSocketSubject<any>;
+
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+    expect(service.loadingProcess$.value).toBe(true);
+
+    stream.next({ hello: 'world' });
+    jasmine.clock().tick(17);
+
+    // Receiving bytes is proof the replay stream has started, so the spinner
+    // ends even for a frame nothing downstream can classify — and that same
+    // frame must never reach the log.
+    expect(service.loadingProcess$.value).toBe(false);
+    expect(log.snapshot()).toEqual([]);
+  });
+
+  it('FR9: N re-inits leave ONE tap per stream, and none after destroy', async () => {
+    // The re-init half of the leak guarantee, and the half the mount/unmount
+    // probe cannot reach: these two taps live on `frames$` and `status$`, not on
+    // the inbound stream. Wire either destroy-scoped — `takeUntilDestroyed()`,
+    // or any teardown that runs only in `ngOnDestroy` — and that probe stays
+    // green while these climb 1, 2, 3, 4.
+    boot();
+    const frames = (teamSocket() as any)._frames$;
+    const status = (teamSocket() as any)._status$;
+
+    for (let i = 0; i < 4; i++) {
+      const cycleStream = new Subject<any>();
+      (teamSocket() as any).createWebSocket = () =>
+        cycleStream as unknown as WebSocketSubject<any>;
+
+      await service.init('proc-' + i, true);
+
+      expect(frames.observers.length).toBe(1);
+      expect(status.observers.length).toBe(1);
+      // And the inbound stream stays at its own post-init bound throughout.
+      expect(inboundSubject().observers.length).toBe(3);
+    }
+
+    service.ngOnDestroy();
+
+    expect(frames.observers.length).toBe(0);
+    expect(status.observers.length).toBe(0);
+    expect(inboundSubject().observers.length).toBe(0);
   });
 });

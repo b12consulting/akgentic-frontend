@@ -1,9 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 
-import { BehaviorSubject, Subject, Subscription } from 'rxjs';
-import { bufferTime, filter } from 'rxjs/operators';
-import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
-import { ConfigService } from '../../../core/config/config.service';
+import { BehaviorSubject, Subscription } from 'rxjs';
 import {
   AkgenticMessage,
   CommandDescriptor,
@@ -11,6 +8,7 @@ import {
 
 import { ConnectionToast } from './connection-toast';
 import { LoadingIndicator } from './loading-indicator';
+import { LogFeeder } from './log-feeder';
 import { MessageLogService } from './message-log.service';
 import { NotificationToasts } from './notification-toasts';
 import { PerAgentStore } from './per-agent-store';
@@ -21,107 +19,90 @@ import {
 } from './per-agent-specs';
 import { ProcessStores } from './process-stores';
 import { ReplaySeeder } from './replay-seeder';
+import { TeamSocket, TeamSocketStatus } from './team-socket';
 import { MessageService } from 'primeng/api';
 
 /**
- * `IngestionService` — minimal ingestion surface (post Story 6.4 / Epic 17):
- *   - REST init replay is owned by `ReplaySeeder` (`replay-seeder.ts`, Epic 34 /
- *     ADR-025 §1), which OWNS both REST calls and the `synthesizeStateChanged`
- *     shaping; `init()` keeps the two `log.appendAll` calls that fold its output
- *     into `MessageLogService.log$`, because they are sequenced steps here. The
- *     registry folds that replay tail exactly as it folds live WS frames.
- *   - WS `bufferTime(16)` ingestion appends to the log; the registry derives
- *     per-agent `state` / `context` from `log$` (O(Δ), automatic replay/reset).
- *   - Spinner floor (`loadingProcess$`, AC7) is owned by `LoadingIndicator`
- *     (`loading-indicator.ts`, Epic 34 / ADR-025 §1); `init()` drives it at four
- *     call sites and re-exports its subject unchanged. The only wall-clock read
- *     and the only timer in the ingestion layer now live there, not here.
- *   - The WS-disconnect toast is owned by `ConnectionToast`
- *     (`connection-toast.ts`, Epic 34 / ADR-025 §1), which holds the payload,
- *     the dedup flag and the teardown suppression. This class keeps only the
- *     three sequencing calls (`start()` in `init()`, `show()` from the two WS
- *     callbacks, `stop()` first in `ngOnDestroy()`).
- *   - The notification-family toast surface (stories 31-3 / 31-4 / 31-5 / 31-6)
- *     is owned by `NotificationToasts` (`notification-toasts.ts`, Epic 34 /
- *     ADR-025 §1): severity dispatch, the summary, the payload, the closed-ids
- *     suppressor and the after-the-fact removal. This class keeps only the two
- *     sequencing calls, and hands `start()` the RAW `_wsInbound$` — never
- *     `log$` or anything downstream of `bufferTime(16)`, which would erase both
- *     the 16 ms cache lag and the stopped-REST-silent / running-WS-toasting
- *     replay asymmetry. Both are current behaviour; changing either is
- *     ADR-025 Open Question 1, not a refactor.
+ * `IngestionService` — the ORCHESTRATOR of the ingestion layer (Epic 34 /
+ * ADR-025). After the decomposition it does two things and no others: it
+ * SEQUENCES the units below, and it re-exports the five per-agent stores plus
+ * `loadingProcess$` so no consumer had to change.
  *
- *     Do NOT re-add a local disconnect toast here. It sat next to
- *     `showNotificationToast` with the OPPOSITE `closable` semantics, and the
- *     adjacency alone had already produced one copy-paste defect; the whole
- *     point of the move is that the two can no longer be read as variants of
- *     each other. `messageService.clear()` stays here, though — it empties the
- *     entire keyless toast container, notification toasts included, so it is
- *     lifecycle sequencing rather than either toast's business.
+ * Every unit it drives is inert until called — none subscribes, opens a socket
+ * or touches the log in its constructor (ADR-025 §2). That is what makes the
+ * order in `init()` the real order: if a unit self-wired, Angular DI would
+ * decide when its work happened, and the team-switch guarantee below would
+ * evaporate silently, because a green single-team suite is exactly what a
+ * self-wired implementation produces.
+ *
+ * The units, all component-scoped and provided on `ProcessComponent`:
+ *   - `TeamSocket` (`team-socket.ts`) — WS transport, the `createWebSocket`
+ *     seam, `inbound$` / `frames$` / `status$`.
+ *   - `LogFeeder` (`log-feeder.ts`) — `bufferTime(16)` → `log.appendAll`, the
+ *     only live-path writer of the log.
+ *   - `ReplaySeeder` (`replay-seeder.ts`) — the two stopped-team REST calls. The
+ *     `appendAll` of what it returns stays HERE, because it is a sequenced step.
+ *   - `ProcessStores` (`process-stores.ts`) — declares the five per-agent stores.
+ *   - `LoadingIndicator` (`loading-indicator.ts`) — the spinner floor; the only
+ *     `Date.now()` and `setTimeout` in the layer.
+ *   - `ConnectionToast` (`connection-toast.ts`) — the disconnect warning.
+ *   - `NotificationToasts` (`notification-toasts.ts`) — the notification family.
+ *     It is handed the RAW `inbound$`, never `log$` or anything downstream of
+ *     `bufferTime(16)`: routing it through the log would erase both the 16 ms
+ *     dismissal-cache lag and the stopped-REST-silent / running-WS-toasting
+ *     replay asymmetry. Both are current behaviour, and changing either is
+ *     ADR-025 Open Question 1 — a product decision, not a refactor.
+ *
+ * `messageService.clear()` stays here rather than moving into either toast unit:
+ * it empties the whole keyless `<p-toast>` container, both families at once, so
+ * it is lifecycle sequencing.
  *
  * Per-agent state (Epic 17 / ADR-014, re-homed by Epic 34 / ADR-025 §1):
  * `state`, `context`, `commands`, `systemPrompt` and `tokenUsage` are ALL
  * `PerAgentStore` instances owned by the component-scoped
- * `PerAgentStoreRegistry` (single `log$` subscription, replay + reset for free).
- * They are DECLARED by `ProcessStores` (`process-stores.ts`) and merely
- * re-exported here, so this service no longer injects the registry and holds no
- * `register()` call of its own; adding a new per-agent event is a single
- * `register({...})` line in `ProcessStores`. The five properties below keep
- * their names, types and semantics — consumers are unaffected by the move.
+ * `PerAgentStoreRegistry` and DECLARED by `ProcessStores`. They are merely
+ * re-exported below — aliases, never re-registrations, since `register()`
+ * returns a NEW store per call and a second one here would give the app two
+ * independent maps folding the same log, each correct in isolation.
  */
 @Injectable()
 export class IngestionService {
   messageService: MessageService = inject(MessageService);
-  private config: ConfigService = inject(ConfigService);
 
   /**
-   * Story 6.1 (ADR-005 §Decision 1): component-scoped append-only log of
-   * every WS + REST-replay message. Story 6.2 migrated KG presence + KG
-   * projection to pure selectors (`ToolPresenceService.hasKnowledgeGraph$`,
-   * `KGStateReducer.knowledgeGraph$`) — both fold the same log, so the
-   * message service no longer injects either of them.
+   * Story 6.1 (ADR-005 §Decision 1): component-scoped append-only log of every
+   * WS + REST-replay message. Reset in step (b) of every cycle; written by
+   * `LogFeeder` on the live path and by the two replay `appendAll` calls below.
    */
   private log: MessageLogService = inject(MessageLogService);
 
   /**
    * Epic 34 (ADR-025 §1): the projection unit that DECLARES the five per-agent
-   * stores. The five `readonly` fields below are aliases onto its instances —
-   * same objects, not copies — so `ingestion.state` and `processStores.state`
-   * are one store, folded once. Declared ABOVE those aliases: TypeScript
-   * initialises class fields in declaration order, so an alias declared first
-   * would read `undefined`.
+   * stores. Declared ABOVE the aliases that read it — TypeScript initialises
+   * class fields in declaration order, so an alias declared first reads
+   * `undefined`.
    */
   private readonly stores: ProcessStores = inject(ProcessStores);
 
-  /**
-   * Epic 34 (ADR-025 §1): the REST replay source. It performs both stopped-team
-   * REST calls and returns `AkgenticMessage[]`; the `appendAll` of what it
-   * returns stays in `init()` below, where the ordering is sequenced and
-   * visible.
-   */
+  /** Epic 34 (ADR-025 §1): the WS transport source. Opened LAST in `init()`. */
+  private readonly socket: TeamSocket = inject(TeamSocket);
+
+  /** Epic 34 (ADR-025 §1): the frame-batched log feed. Wired FIRST in step (d). */
+  private readonly feeder: LogFeeder = inject(LogFeeder);
+
+  /** Epic 34 (ADR-025 §1): the stopped-team REST replay source. */
   private readonly replay: ReplaySeeder = inject(ReplaySeeder);
 
   /**
    * Epic 34 (ADR-025 §0-§1): the spinner-floor reactor. Declared ABOVE the
-   * `loadingProcess$` alias below for the same reason as `stores`: TypeScript
-   * initialises class fields in declaration order, so an alias declared first
-   * would read `undefined`.
+   * `loadingProcess$` alias for the same declaration-order reason as `stores`.
    */
   private readonly loading: LoadingIndicator = inject(LoadingIndicator);
 
-  /**
-   * Epic 34 (ADR-025 §0-§1): the disconnect-toast reactor. Push-driven — this
-   * class calls `show()` from the two WS callbacks; the unit subscribes to
-   * nothing of its own.
-   */
+  /** Epic 34 (ADR-025 §0-§1): the disconnect-toast reactor, driven by `status$`. */
   private readonly connectionToast: ConnectionToast = inject(ConnectionToast);
 
-  /**
-   * Epic 34 (ADR-025 §0-§1): the notification-toast reactor. Subscription-driven
-   * but never self-wired — it opens nothing until `start()` hands it the two
-   * streams, and `init()` sequences that AFTER `setupBatchedSubscriber()` so the
-   * log feed is registered first.
-   */
+  /** Epic 34 (ADR-025 §0-§1): the notification-toast reactor. */
   private readonly notificationToasts: NotificationToasts =
     inject(NotificationToasts);
 
@@ -137,15 +118,9 @@ export class IngestionService {
   readonly loadingProcess$: BehaviorSubject<boolean> =
     this.loading.loadingProcess$;
 
-  webSocket: WebSocketSubject<any> = new WebSocketSubject({ url: '' });
-
   // Epic 34 (ADR-025 §1): the five per-agent stores, re-exported from
-  // `ProcessStores`. Aliases, never re-registrations — `register()` pushes a
-  // NEW bucket and returns a NEW store per call, so a second call here would
-  // give the app two independent maps folding the same log, each correct in
-  // isolation and therefore invisible to every existing spec. The rationale
-  // for each store's keying and reducer lives with its declaration in
-  // `process-stores.ts`.
+  // `ProcessStores`. The rationale for each store's keying and reducer lives
+  // with its declaration in `process-stores.ts`.
 
   /** Per-agent latest `{ schema, state }`. Declared by `ProcessStores.state`. */
   readonly state: PerAgentStore<AgentStateValue> = this.stores.state;
@@ -166,296 +141,198 @@ export class IngestionService {
   processId: string = '';
 
   /**
-   * Story 6.1 (ADR-005 §Decision 3): raw WS inbound stream. Every WS event
-   * is `next()`ed onto this Subject at the top of the `webSocket.subscribe`
-   * callback so the `bufferTime(16)` batched subscriber (and the spinner
-   * side-channel `LoadingIndicator` opens on it) can consume it without coupling
-   * to the per-model dispatch below — which stays intact in PR 1 for parallel
-   * populate (AC8).
+   * Epic 34 (ADR-025 §3): ALL of this cycle's subscriptions, in one bag. Three
+   * hand-managed `Subscription` fields collapsed into it — the log feed, the
+   * every-frame spinner tap and the connection-status tap.
+   *
+   * A FRESH bag per `init()`, and the old one unsubscribed before the new one is
+   * built: rxjs adds a child to an already-unsubscribed parent by unsubscribing
+   * the child immediately, so reusing a disposed bag would silently kill the
+   * fresh cycle's subscriptions.
+   *
+   * Disposed on BOTH re-init and destroy, and that is not
+   * `takeUntilDestroyed()` territory: `init()` runs several times per component
+   * lifetime (team switch), so destroy-scoped teardown alone leaks a cycle's
+   * subscriptions into the next — a leak the mount/unmount probe cannot see.
+   *
+   * Two teardown handles deliberately stay OUT of this bag because neither is a
+   * subscription: the socket (`TeamSocket.stop()`, a try/catch unsubscribe — a
+   * never-opened WS throws) and the pending spinner flip
+   * (`LoadingIndicator.stop()`, a `clearTimeout`).
    */
-  private readonly _wsInbound$ = new Subject<AkgenticMessage>();
-  /** Frame-batched subscriber (bufferTime 16ms). Held so init()'s (a) step
-   *  can dispose it deterministically before (b)-(e) run. */
-  private bufferSub: Subscription | null = null;
+  private cycle: Subscription | null = null;
 
+  /**
+   * ADR-005 §Decision 6 — the four ordered steps, in the order that ADR and
+   * architecture shard 02 §4 fix them. The order is load-bearing: it closes the
+   * team-switch race, and the failure it prevents is INVISIBLE in single-team
+   * testing, because with one `init()` every order works.
+   *
+   *   (a) dispose the prior cycle — old socket closed, old subscriptions gone,
+   *       so a stale team's pipeline cannot deliver into the fresh cycle;
+   *   (b) `log.reset()` — the registry sees the shrink, clears every map and
+   *       rewinds its cursor to 0. There is no per-store reset code, by design;
+   *   (c) seed the replay (stopped teams only) — `getAgentStates` + `getEvents`
+   *       → `appendAll`. Every selector then holds its history;
+   *   (d) wire the consumers, THEN open the socket. Both halves matter: the
+   *       consumers must be live before the first frame, and the socket must
+   *       open after the replay so nothing can arrive between (b) and (d).
+   *
+   * The non-ordering side effects keep their current relative positions: the
+   * toast clear and the disconnect re-arm sit after the reset and before the
+   * spinner turns on; the stopped-team spinner flip fires after the replay and
+   * before the socket opens.
+   */
   async init(processId: string, running: boolean): Promise<void> {
     this.processId = processId;
 
-    // --- ADR-005 §Decision 6 step (a) ---------------------------------
-    // Dispose prior WS + bufferTime + spinner subscriptions so a stale
-    // team's pipeline cannot deliver events into the fresh cycle.
-    // Load-bearing for AC5 (team-switch correctness) and AC7 (no leaks).
+    // --- (a) dispose the prior cycle ---------------------------------
     this.disposePriorSubscriptions();
 
-    // Story 6.2 (ADR-005 §Decision 4): KG state + KG presence are now pure
-    // selectors over `log$`. `this.log.reset()` below causes both selectors
-    // to re-emit their empty-log derivatives automatically — no explicit
-    // `resetForTeam()` calls required.
-
-    // --- ADR-005 §Decision 6 step (b) ---------------------------------
-    // Reset the log BEFORE any replay / WS wiring so process-A state cannot
-    // leak into process-B. Epic 17 (ADR-014 §Decision 3): the `state` /
-    // `context` / `commands` registry detects this log shrink, clears its maps,
-    // and rewinds its cursor automatically — no bespoke per-store reset needed.
+    // --- (b) reset the log -------------------------------------------
+    // Every selector and per-agent store is a fold over `log$`, so this one
+    // call is the whole of "clear process A's state" (ADR-014 §Decision 3).
     this.log.reset();
 
-    // Story 8-2: clear any stale toasts from a prior init() cycle
-    // so process-A's warnings do not persist into process-B.
+    // Story 8-2: clear any stale toasts from a prior init() cycle so process-A's
+    // warnings do not persist into process-B. Both families at once.
     this.messageService.clear();
-    // Epic 34 (ADR-025 §1): re-arm the disconnect toast for this cycle. Same
-    // position the inline flag reset held — after the toast clear, before the
-    // spinner cycle — so a prior team's disconnect cannot suppress this one's.
+    // Epic 34 (ADR-025 §1): re-arm the disconnect toast for this cycle, at
+    // exactly the point the inline flag reset held — after the toast clear,
+    // before the spinner cycle — so a prior team's disconnect cannot suppress
+    // this one's.
     this.connectionToast.start();
 
-    // Story 4-10 (AC7): start the spinner cycle — `LoadingIndicator` cancels any
-    // pending flip from a prior `init()` (team switch / re-init), resets its
-    // first-event latch, stamps `t0` and emits `true`. This call belongs HERE,
-    // BEFORE the `!running` REST replay below: moving it after the await would
-    // measure the 500ms floor from the end of a network round-trip, and would
-    // put the stopped-team flip ahead of the `true` it is supposed to follow.
+    // Story 4-10 (AC7): start the spinner cycle. This call belongs HERE, BEFORE
+    // the `!running` REST replay below: moving it after the await would measure
+    // the 500ms floor from the end of a network round-trip, and would put the
+    // stopped-team flip ahead of the `true` it is supposed to follow.
     this.loading.beginCycle();
 
+    // --- (c) seed the replay (stopped teams only) --------------------
     if (!running) {
-      // Story 25-1 (ADR-020 §2, !running gate): seed the per-agent `state`
-      // store from the dedicated snapshot endpoint for STOPPED teams ONLY. A
-      // stopped team has no live WS, and its durable event log carries no
-      // `StateChangedMessage` (ADR-013), so without this seed the backstory
-      // head-block (`state.forAgent(uuid)`) stays blank on load. A running team
-      // (including a freshly restored one, team Story 23-3) already receives its
-      // `StateChangedMessage`(s) on the cursor-0 WS replay, so the REST seed is
-      // redundant there and `getAgentStates` MUST NOT be called for it. The gate
-      // lives HERE and never inside the seeder, which knows no team status.
+      // Story 25-1 (ADR-020 §2, !running gate): a stopped team's durable event
+      // log carries no `StateChangedMessage` (ADR-013), so without this seed the
+      // backstory head-block stays blank. A running team — including a freshly
+      // restored one — already gets its `StateChangedMessage`(s) on the cursor-0
+      // WS replay, so `getAgentStates` MUST NOT be called for it. The gate lives
+      // HERE and never inside the seeder, which knows no team status.
+      //
+      // TWO sequential awaits and TWO appends, never `Promise.all` and never one
+      // merged array: the state seed must be folded BEFORE the event replay,
+      // since `stateSpec` is latest-wins and a real replayed
+      // `StateChangedMessage` has to be able to overwrite a synthesized seed
+      // (never the reverse). Parallelising would also change failure semantics —
+      // a `getAgentStates` rejection today means `getEvents` is never issued and
+      // `init()` rejects before the socket opens.
       const seeds: AkgenticMessage[] = await this.replay.seedMessages(processId);
       this.log.appendAll(seeds);
 
-      // V2: use getEvents() for stopped teams.
-      //
-      // --- ADR-005 §Decision 6 step (c) -------------------------------
-      // log.appendAll is the ONLY replay seeding now. Epic 17 (ADR-014
-      // §Decision 3): the registry folds this replay tail exactly as it folds
-      // live WS frames, so `state` / `context` / `commands` are reconstructed
-      // for free — replay is just another `log$` tail. The bespoke
-      // `latestStates` / `contextArrays` / `commandsByAgent` reconstruction
-      // loops are deleted (Story 17-2 / 17-3).
-      //
-      // TWO sequential awaits and TWO appends, never `Promise.all` and never
-      // one merged array: the state seed must be folded BEFORE the event
-      // replay, since `stateSpec` is latest-wins and a real replayed
-      // `StateChangedMessage` has to be able to overwrite a synthesized seed
-      // (never the reverse). Parallelising would also change failure
-      // semantics — a `getAgentStates` rejection today means `getEvents` is
-      // never issued and `init()` rejects before the socket opens.
       const replayMessages: AkgenticMessage[] =
         await this.replay.replayMessages(processId);
       this.log.appendAll(replayMessages);
 
-      // Story 6.4 (AC1): `GRAPH_RELEVANT_MODELS` filtering and the
-      // `createAgentGraph$` / `messages$` emits below are deleted along with
-      // the streams themselves. The agent graph + message list now consume
-      // log-derived selectors (`GraphDataService.graph$`, Story 6.3;
-      // `MessageLogService.messageList$`, Story 6.4).
-      // Story 6.3 (AC9, FR7): thinking-bubble lifecycle is reconstructed by
-      // `chatFold` over `log$` (seeded above by `log.appendAll`). The prior
-      // imperative replay loop has been deleted.
-    }
-
-    // V2: connect directly -- no ticket needed (community tier, AC8)
-    const wsProtocol =
-      window.location.protocol === 'https:' ? 'wss://' : 'ws://';
-    const api = this.config.api.replace(/(^\w+:|^)\/\//, '');
-
-    // Story 4-10 (AC2): stopped-team path has already populated replay state
-    // via HTTP getEvents() above — flip the spinner off BEFORE wiring up the
-    // WS subscription so the user never sees `#emptyState` flash.
-    // Site 3 of the four floor call sites: direct, NOT through the latch. It
-    // happens at most once per cycle by construction, and consuming the shared
-    // latch here would leave a later live frame finding it already spent.
-    if (!running) {
+      // Story 4-10 (AC2): replay state is populated — flip the spinner off
+      // BEFORE the socket is wired so the user never sees `#emptyState` flash.
+      // Site 3 of the four floor call sites: direct, NOT through the latch. It
+      // happens at most once per cycle by construction, and consuming the shared
+      // latch here would leave a later live frame finding it already spent.
       this.loading.scheduleSpinnerFlipFalse();
     }
 
-    // --- ADR-005 §Decision 6 step (d) ---------------------------------
-    // Wire the frame-batched subscriber AND the spinner side-channel BEFORE
-    // opening the WebSocket so every first `_wsInbound$.next(...)` fires
-    // against a live subscription. Load-bearing for AC3 / AC6. This is the
-    // SECOND cycle point and sits AFTER the replay await — separate from
-    // `beginCycle()` above by design; collapsing the two into one call would
-    // move `t0` past the network round-trip.
-    this.setupBatchedSubscriber();
-    this.loading.watchFirstEvent(this._wsInbound$);
-    // Epic 34 (ADR-025 §1): the notification-toast reactor, wired AFTER the log
-    // feed above and BEFORE the socket below. Both orderings are load-bearing:
-    // the batched subscriber must be registered first so "the frame reaches the
-    // log feed, then the toast fires" survives the move, and both must be live
-    // before the socket opens (ADR-005 §Decision 6).
-    //
-    // It is handed the RAW `_wsInbound$` — a plain Subject with one producer,
-    // fanning out synchronously at the same instant the old inline dispatch ran.
-    // `bufferTime(16)` sits on the log-feed subscriber, not on the subject, so
-    // this is equivalent to the inline call rather than a move downstream of the
-    // batching. Handing it `log$` instead would silently delete the 16 ms cache
-    // lag AND the replay asymmetry — a behaviour change, not a tidy.
+    // --- (d) wire the consumers, THEN open the socket -----------------
+    // Every subscription below is opened against a socket that is not yet
+    // constructed, so the first frame — including the first frame of a cursor-0
+    // replay, which a transport can deliver synchronously at subscribe time —
+    // always meets a live subscriber.
+    const cycle = new Subscription();
+    this.cycle = cycle;
+
+    // The log feed FIRST, so "the frame reaches the log, then the toast fires"
+    // survives the decomposition.
+    cycle.add(this.feeder.start(this.socket.inbound$));
+    // The spinner's `take(1)` side-channel on the protocol stream. Owned and
+    // disposed by `LoadingIndicator` itself (a `clearTimeout` lives alongside
+    // it), which is why it is not added to the bag.
+    this.loading.watchFirstEvent(this.socket.inbound$);
+    // Story 4-10 (AC1): the every-frame tap. Fires for frames with no
+    // `__model__` too — receiving bytes is proof the replay stream started. This
+    // is the direct `flipOnFirstEvent()` call the WS `next` handler used to make
+    // inline, now that the handler lives in another file.
+    cycle.add(this.socket.frames$.subscribe(() => this.loading.flipOnFirstEvent()));
+    cycle.add(
+      this.socket.status$.subscribe((status: TeamSocketStatus) =>
+        this.onSocketStatus(status),
+      ),
+    );
+    // Epic 34 (ADR-025 §1): the notification reactor, after the log feed and
+    // before the socket. It is handed the RAW protocol stream — see the class
+    // docblock for why `log$` would be a behaviour change rather than a tidy.
     this.notificationToasts.start(
-      this._wsInbound$.asObservable(),
+      this.socket.inbound$,
       this.log.closedNotificationIds$,
     );
 
     try {
-      this.webSocket = this.createWebSocket(
-        `${wsProtocol}${api}/ws/${this.processId}`,
-      );
+      this.socket.start(processId);
     } catch (err) {
       // Story 4-10 (AC3): synchronous ctor failure must not leave the UI
-      // spinning forever.
+      // spinning for ever — there is no socket left to deliver the event that
+      // would end the wait. `TeamSocket.start()` deliberately lets the throw
+      // out; the flip is sequenced here, and the error still reaches the caller.
       // Site 4: direct, NOT through the latch — same reason as site 3.
       console.error('WebSocket construction failed:', err);
       this.loading.scheduleSpinnerFlipFalse();
       throw err;
     }
-
-    this.webSocket.subscribe({
-      next: (data: any) => {
-        // Story 4-10 (AC1): first event over the wire ends the loading
-        // window (site 1, via the latch). Runs for EVERY event shape
-        // (including ones we ignore below) — receiving bytes is proof the
-        // replay stream has started, so this stays the FIRST statement here,
-        // ahead of the `__model__` guard.
-        this.loading.flipOnFirstEvent();
-
-        // V2: data is a raw Message with __model__ discriminator
-        const event = data;
-        if (!event || !event.__model__) return;
-
-        // Story 6.1 (Task 2.6 / AC8): feed the unified log via the frame
-        // batched subscriber. The batched path is now the SOLE producer of
-        // dict updates and log emissions (Story 6.4 retired the parallel
-        // per-__model__ dispatch).
-        this._wsInbound$.next(event as AkgenticMessage);
-
-        // Epic 34 (ADR-025 §1): the notification-toast dispatch that used to sit
-        // HERE is now a subscriber of `_wsInbound$` above (`NotificationToasts`).
-        // The `__model__` guard is what makes the two equivalent — it runs before
-        // the `next(...)`, so the reactor sees exactly the frames the inline call
-        // saw. Do NOT re-add a dispatch here.
-        // Story 6.4 (AC1): every other branch (StateChangedMessage,
-        // EventMessage, fallthrough) is now pure log-feed via
-        // `_wsInbound$.next(...)` above. The per-__model__ dispatch + VCR
-        // `paused` early-return have been deleted.
-      },
-      error: (err: any) => {
-        // Story 4-10 (AC3): failure before any event landed must not leave
-        // the UI spinning forever — flip the flag so the chat panel falls
-        // through to `#emptyState` (or the subsequent error affordance)
-        // instead of showing the "Loading process..." placeholder for ever.
-        this.loading.flipOnFirstEvent();
-        console.error('WebSocket error:', err);
-        // Story 8-2 (AC1, AC5): persistent warning toast replaces the
-        // transient 5-second error toast. flipOnFirstEvent() is preserved above.
-        this.connectionToast.show();
-      },
-      complete: () => {
-        console.log('webSocket - complete');
-        // Story 8-2 (AC2): persistent warning on stream completion. The dedup
-        // flag inside the unit is what makes error-then-complete one toast.
-        this.connectionToast.show();
-      },
-    });
   }
 
   /**
-   * Story 4-10: indirection point for WebSocket construction so tests can
-   * inject a fake Subject without trying to rewrite the rxjs module
-   * namespace (which is frozen under ES modules).
+   * Story 8-2 / Story 4-10 (AC3): the two socket endings, which are NOT
+   * symmetric. `error` flips the spinner as well as warning — a failure before
+   * any frame landed must not leave the UI spinning — while `complete` warns
+   * only, having already had its first frame.
    */
-  protected createWebSocket(url: string): WebSocketSubject<any> {
-    return webSocket(url);
+  private onSocketStatus(status: TeamSocketStatus): void {
+    if (status === 'error') this.loading.flipOnFirstEvent();
+    this.connectionToast.show();
   }
 
   /**
-   * Story 6.1 (ADR-005 §Decision 6 step (a)): dispose every subscription
-   * owned by a previous `init()` cycle in one place. Called from `init()`
-   * BEFORE any new state is wired so a stale WS / bufferTime subscription
-   * cannot bleed into the fresh team.
+   * ADR-005 §Decision 6 step (a): release everything a previous cycle owns, in
+   * one place, before any new state is wired.
+   *
+   * Each unit's `stop()` is per-cycle rather than destroy-scoped, and
+   * `notificationToasts.stop()` in particular is load-bearing HERE and not only
+   * in `ngOnDestroy`: drop it and `start()` leaves a SECOND live subscription on
+   * the inbound stream, doubling every toast — and its cache reset is what makes
+   * the per-cycle subscription equivalent to the service-lifetime one it
+   * replaced.
    */
   private disposePriorSubscriptions(): void {
-    try {
-      this.webSocket.unsubscribe();
-    } catch {
-      /* first-init path: no prior webSocket — ignore */
-    }
-    if (this.bufferSub) {
-      this.bufferSub.unsubscribe();
-      this.bufferSub = null;
-    }
-    // Epic 34 (ADR-025 §3): `LoadingIndicator` disposes its OWN side-channel
-    // and pending timer. Per-cycle, not destroy-scoped — `init()` runs again on
-    // every team switch within one component lifetime.
+    this.socket.stop();
+    this.cycle?.unsubscribe();
+    this.cycle = null;
     this.loading.stop();
-    // Epic 34 (ADR-025 §1-§2): same story for the notification-toast reactor —
-    // its two subscriptions are per-cycle, and `stop()` also clears its
-    // dismissal cache so the fresh cycle re-derives closures from an empty
-    // baseline (exactly what `log.reset()`'s empty emission did for the old
-    // service-lifetime subscription). Drop this call and `start()` below leaves a
-    // SECOND live subscription on `_wsInbound$`, doubling every toast.
     this.notificationToasts.stop();
   }
 
-  /**
-   * Story 6.1 (ADR-005 §Decision 3 + §Decision 5): frame-batched consumer
-   * of the raw WS inbound stream. `bufferTime(16)` coalesces every message
-   * that lands in a single 16ms window into one `log.appendAll` call and
-   * one `log$` emission (AC3). Epic 17 (ADR-014): `state` / `context` /
-   * `commands` are all folded off `log$` by the registry, so there is no
-   * remaining per-message dispatch — the batched subscriber only feeds the log.
-   */
-  private setupBatchedSubscriber(): void {
-    this.bufferSub = this._wsInbound$
-      .pipe(
-        bufferTime(16),
-        filter((batch: AkgenticMessage[]) => batch.length > 0),
-      )
-      .subscribe((batch: AkgenticMessage[]) => {
-        this.log.appendAll(batch);
-      });
-  }
-
-  ngOnDestroy() {
-    // FIRST, and load-bearing: `webSocket.unsubscribe()` below closes the
-    // socket, whose `complete` callback calls `connectionToast.show()`. Moving
-    // this line after it raises a "Connection Lost" toast on every intentional
-    // navigation. The two statements now live in different files, which makes
-    // the ordering easier to break and is why a spec pins it.
+  ngOnDestroy(): void {
+    // FIRST, and load-bearing: closing the socket below completes its stream,
+    // whose `complete` reaches `connectionToast.show()`. Moving this line after
+    // it raises a "Connection Lost" toast on every intentional navigation. The
+    // two statements now live in different files, which makes the ordering
+    // easier to break and is why a spec pins it.
     this.connectionToast.stop();
 
     // Story 8-2 (AC4): clear all toasts so navigating away removes warnings and
-    // a fresh process view starts clean. Stays HERE rather than moving into
-    // either toast unit: `clear()` empties the whole keyless container.
+    // a fresh process view starts clean.
     this.messageService.clear();
 
-    try {
-      this.webSocket.unsubscribe();
-    } catch {
-      /* never-opened WS — ignore */
-    }
-    // Story 6.1 (Task 4.1 / AC7): dispose the bufferTime + spinner
-    // subscriptions and complete the inbound Subject so no leaked listener
-    // survives the component teardown. Manual unsubscribe (not
-    // takeUntilDestroyed) is chosen for symmetry with `init()`'s (a) step,
-    // which must dispose these same subscriptions on re-init WITHOUT
-    // tearing the service down.
-    this.bufferSub?.unsubscribe();
-    this.loading.stop();
-    // Epic 34 (ADR-025 §1-§2): the notification-toast reactor owns the closed-ids
-    // subscription now, and disposes it here exactly as `init()`'s (a) step does
-    // per cycle. Before the move this was a service-lifetime subscription opened
-    // in a field initializer; it is per-cycle now, which is equivalent only
-    // because `stop()` also clears the dismissal cache.
-    this.notificationToasts.stop();
-    this._wsInbound$.complete();
-    // Epic 17 (ADR-014): the `commands` store is owned by the registry; its
-    // single `log$` subscription is torn down by `PerAgentStoreRegistry`'s own
-    // ngOnDestroy — no per-store completion needed here. Epic 34 (ADR-025 §3):
-    // the pending spinner flip is cleared by the `loading.stop()` above, which
-    // owns that timer.
+    this.disposePriorSubscriptions();
+
+    // Only on destroy, never per cycle: completing the socket's streams ends
+    // them for good, and the next cycle needs them alive.
+    this.socket.destroy();
   }
 }
