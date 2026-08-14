@@ -32,7 +32,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import { NamespaceValidationReport } from '../../../protocol/catalog.interface';
 import { ApiService } from '../../../core/http/api.service';
 import { AuthService } from '../../../core/auth/auth.service';
-import { HttpError } from '../../../core/http/fetch.service';
+import { HttpError, NetworkError } from '../../../core/http/fetch.service';
 import { NamespacePanelComponent } from './namespace-panel.component';
 import { ValidationReportComponent } from './validation-report/validation-report.component';
 
@@ -803,6 +803,50 @@ describe('NamespacePanelComponent', () => {
     expect(component.buffer).toBe('foo: 2\n');
     expect(component.saving).toBe(false);
     expect(messageSpy.add).not.toHaveBeenCalled();
+  });
+
+  // Story 33-5: before the FetchService failure contract was unified, a Save
+  // whose request never left the browser ran the SUCCESS branch —
+  // `importNamespace` resolved with the `undefined` sentinel, so the panel
+  // toasted "Namespace saved successfully", emitted `saved`, and advanced
+  // `serverYaml` to the unsaved buffer. That last part is the damaging one: it
+  // moved the drift baseline for a request the server never saw, so the next
+  // Save compared against a version that does not exist server-side and the
+  // drift prompt stopped firing when it should have. The fix is a consequence
+  // of the throw rather than a change here, which is exactly why it needs a
+  // spec of its own — nothing else in this file would notice its loss.
+  it('(33-5) Save against an unreachable server reports failure and does NOT advance the drift baseline', async () => {
+    await loaded('foo: 1\n');
+    component.buffer = 'foo: 2\n';
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('foo: 1\n'));
+    apiSpy.importNamespace.and.returnValue(
+      Promise.reject(
+        new NetworkError('Server unreachable. Check your connection.', {
+          cause: new TypeError('Failed to fetch'),
+        }),
+      ),
+    );
+    const savedEmit = spyOn(component.saved, 'emit');
+
+    await component.onSaveClick();
+
+    // The baseline stays where it was; the edit stays dirty and retryable.
+    expect(component.serverYaml).toBe('foo: 1\n');
+    expect(component.buffer).toBe('foo: 2\n');
+    expect(component.hasUnsavedChanges()).toBeTrue();
+    // None of the success side effects fire.
+    expect(savedEmit).not.toHaveBeenCalled();
+    expect(component.a11yAnnouncement).not.toBe('Namespace saved');
+    expect(component.saving).toBeFalse();
+    // A NetworkError carries no `status`, so it must reach `handleSaveError`'s
+    // generic bucket — the same one a 5xx lands in — and neither the
+    // 401-silent nor the 422-structured branch. No new toast site was added.
+    const toast = messageSpy.add.calls.mostRecent().args[0];
+    expect(toast.severity).toBe('error');
+    expect(toast.summary).toBe('Save failed');
+    expect(toast.sticky).toBeTrue();
+    expect(component.lastValidation).toBeNull();
+    expect(component.rawSaveError).toBeNull();
   });
 
   // ----- Save buffer-namespace guard -----
