@@ -177,6 +177,23 @@ describe('ProcessStores — folds without any start()/init() (Epic 34, ADR-025 �
   });
 });
 
+describe('ProcessStores — component-scoped, never root-provided (Epic 34)', () => {
+  it('is NOT reachable from an injector that does not provide it', () => {
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      // The registry it depends on IS provided here, so a failure to inject can
+      // only mean `ProcessStores` itself is unreachable. Give the class
+      // `providedIn: 'root'` and this injection SUCCEEDS instead — which is the
+      // regression worth catching: one root-scoped instance would outlive the
+      // component and serve one team's per-agent maps to the next team the user
+      // switches to. Component scope is what makes a team switch destroy them.
+      providers: [MessageLogService, PerAgentStoreRegistry],
+    });
+
+    expect(() => TestBed.inject(ProcessStores)).toThrowError(/No provider/);
+  });
+});
+
 describe('ProcessStores — projection, so no lifecycle surface (ADR-025 §2)', () => {
   it('exposes no start / stop / init / ngOnDestroy entry point', () => {
     const { stores } = setup();

@@ -49,7 +49,8 @@ export class ProcessStores {
    * replay + reset). Provided on `ProcessComponent` alongside
    * `MessageLogService`. Owns the maps the deleted dicts used to hold.
    */
-  private registry: PerAgentStoreRegistry = inject(PerAgentStoreRegistry);
+  private readonly registry: PerAgentStoreRegistry =
+    inject(PerAgentStoreRegistry);
 
   /**
    * Epic 17 (ADR-014 §5): per-agent latest `{ schema, state }` derived from
