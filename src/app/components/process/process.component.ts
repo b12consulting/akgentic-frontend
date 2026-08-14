@@ -7,6 +7,7 @@ import { AkgentService } from '../../core/ui/akgent.service';
 import { ContextService } from '../../core/context/context.service';
 import { KGStateReducer } from './selectors/knowledge-graph.selector';
 import { ConnectionToast } from './event/connection-toast';
+import { NotificationToasts } from './event/notification-toasts';
 import { LoadingIndicator } from './event/loading-indicator';
 import { MessageLogService } from './event/message-log.service';
 import { IngestionService } from './event/ingestion.service';
@@ -109,6 +110,12 @@ interface VisualizationOption {
     // per-team-cycle, and a root instance would outlive the team switch that
     // `start()` resets it for.
     ConnectionToast,
+    // Epic 34 (ADR-025 §0-§1): the notification-toast reactor (stories 31-3 /
+    // 31-4 / 31-5 / 31-6), provided BEFORE IngestionService, which injects it and
+    // drives its start/stop. Never `providedIn: 'root'` — it caches per-team
+    // dismissal state, and a root instance would carry one team's closed ids into
+    // the next, silently suppressing toasts that should have been raised.
+    NotificationToasts,
     IngestionService,
     // Epic 26 (ADR-022): component-scoped read surface over the `tokenUsage`
     // PerAgentStore. Provided AFTER IngestionService (which it injects); never

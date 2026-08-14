@@ -12,6 +12,7 @@ import { PerAgentStore, PerAgentStoreRegistry } from './per-agent-store';
 import { ProcessStores } from './process-stores';
 import { ReplaySeeder } from './replay-seeder';
 import { ConnectionToast } from './connection-toast';
+import { NotificationToasts } from './notification-toasts';
 import { LoadingIndicator } from './loading-indicator';
 import {
   AgentTokenUsage,
@@ -222,6 +223,7 @@ function configureBed(): {
       ReplaySeeder,
       LoadingIndicator,
       ConnectionToast,
+      NotificationToasts,
       IngestionService,
       {
         provide: ApiService,

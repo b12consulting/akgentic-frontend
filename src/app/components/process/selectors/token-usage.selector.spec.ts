@@ -9,6 +9,7 @@ import { PerAgentStoreRegistry } from '../event/per-agent-store';
 import { ProcessStores } from '../event/process-stores';
 import { ReplaySeeder } from '../event/replay-seeder';
 import { ConnectionToast } from '../event/connection-toast';
+import { NotificationToasts } from '../event/notification-toasts';
 import { LoadingIndicator } from '../event/loading-indicator';
 import { AgentTokenUsage } from '../event/per-agent-specs';
 import {
@@ -94,6 +95,7 @@ function configureBed(): {
       ReplaySeeder,
       LoadingIndicator,
       ConnectionToast,
+      NotificationToasts,
       IngestionService,
       TokenUsageSelector,
       {
