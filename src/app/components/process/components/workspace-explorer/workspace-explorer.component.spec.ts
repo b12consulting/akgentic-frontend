@@ -1056,14 +1056,26 @@ describe('WorkspaceExplorerComponent — NFR3 OnPush regression gate', () => {
 
   // --- the run-state gate (FR9 falsifiability gate) ------------------
   //
-  // The one assertion a wrong run-state implementation cannot fake. The specs
-  // in the `live run-state tracking` block call fixture.detectChanges(), which
-  // force-checks the view and therefore goes green even against a plain field
-  // write that never marks the OnPush chain dirty. Here the explorer sits
-  // inside an OnPush parent rendered once and NEVER re-marked, and the flip
-  // must land after whenStable() alone. That separates the real fix from both
-  // near-misses: a re-fetched snapshot never flips at all, and a field write
-  // with no markForCheck flips the field but not the view.
+  // Scenario 18's shape applied to run state: the explorer sits inside an
+  // OnPush parent rendered ONCE and never re-marked, and the flip must land
+  // after whenStable() alone — this spec calls detectChanges() nowhere. What it
+  // adds over the detectChanges()-driven specs in the `live run-state tracking`
+  // block is the PROPAGATION step: the repaint has to arrive via a
+  // scheduler-driven global ApplicationRef.tick() that walks past an ancestor
+  // nobody marked, so the notification must travel UP the chain — the running
+  // app's actual mechanism, and the one a bare field write cannot reach.
+  //
+  // Both near-misses are excluded, verified by mutation rather than argued: a
+  // re-fetched snapshot never flips at all (this spec + 6 siblings red), and a
+  // plain field write with no markForCheck flips the field but not the view
+  // (this spec + 5 siblings red).
+  //
+  // For whoever writes the next one of these: fixture.detectChanges() does NOT
+  // force-check the component under test. It runs change detection from the
+  // fixture's ROOT view, of which the component is an OnPush child, so the
+  // component's own view is skipped unless something marked it dirty. That is
+  // why the detectChanges()-based specs below are falsifiable too, and why a
+  // spec of this kind is a complement to them rather than the only real gate.
 
   it('scenario 36 — a run-state flip repaints the upload gate WITHOUT re-marking the OnPush parent', async () => {
     workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
@@ -1317,17 +1329,12 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
     expect(isDisabled('Upload to Root')).toBe(false);
   });
 
-  it('scenario 42 — no init hook remains to latch run state', () => {
-    fixture = TestBed.createComponent(WorkspaceExplorerComponent);
-    component = fixture.componentInstance;
-
-    const instance = component as unknown as {
-      ngOnInit?: unknown;
-      checkProcessStatus?: unknown;
-    };
-    expect(instance.ngOnInit).toBeUndefined();
-    expect(instance.checkProcessStatus).toBeUndefined();
-  });
+  // (A spec asserting `ngOnInit`/`checkProcessStatus` are `undefined` was
+  // dropped in review: it cannot fail for any run-state defect — it stayed
+  // green under BOTH near-miss mutations — while it WOULD fail the day an
+  // unrelated `ngOnInit` is added. "No init hook latches run state" is asserted
+  // behaviourally by scenarios 36-40 and 44, which prove the value tracks the
+  // stream after construction, and by 37/38's no-extra-call assertions.)
 
   it('scenario 43 — the run-state subscription is torn down on destroy', async () => {
     await createStopped();

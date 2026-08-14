@@ -91,8 +91,9 @@ export class WorkspaceExplorerComponent {
 
   /**
    * Run state read LIVE off the stream ADR-010 makes its sole writer, so a
-   * restore or a stop that happens without a page reload reaches the upload /
-   * create / delete gate immediately. `toSignal` in a field initializer picks
+   * restore or a stop that happens without a page reload reaches the disabled
+   * gate on the three upload controls immediately (the only controls this
+   * component gates on run state). `toSignal` in a field initializer picks
    * up the ambient `DestroyRef` and unsubscribes on destroy; a signal read
    * notifies the OnPush chain, so no `markForCheck` bookkeeping is needed.
    * Must stay BELOW `contextService` — field initializers run top-to-bottom.
