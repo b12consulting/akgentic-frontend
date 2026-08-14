@@ -21,6 +21,9 @@ import {
 import { ApiService } from '../http/api.service';
 import { isRunning, TeamContext, TeamPage, toTeamContext } from './team.interface';
 
+/** How long a stop or restore may take to land in the cached team status. */
+const TEAM_STATE_TIMEOUT_MS = 10_000;
+
 @Injectable({
   providedIn: 'root',
 })
@@ -163,7 +166,7 @@ export class ContextService {
 
   async stopTeamAndAwait(
     teamId: string,
-    timeoutMs: number = 10000,
+    timeoutMs: number = TEAM_STATE_TIMEOUT_MS,
   ): Promise<void> {
     await this.apiService.stopTeam(teamId);
 
@@ -184,6 +187,57 @@ export class ContextService {
         this.teams$.pipe(
           map((teams) => teams.find((t) => t.team_id === teamId)),
           filter((t): t is TeamContext => t !== undefined && !isRunning(t)),
+          take(1),
+          timeout(timeoutMs),
+        ),
+      );
+    } finally {
+      stop$.next();
+      stop$.complete();
+    }
+  }
+
+  /**
+   * Restart a stopped team and resolve once the cache reports it running
+   * (ADR-024 §Decision 1). Mirror of `stopTeamAndAwait` with the readiness
+   * predicate flipped to `isRunning`.
+   *
+   * Order is fixed: `POST /restore` is awaited FIRST — its 200 IS the readiness
+   * signal (there is no "team ready" event to subscribe to) — and only then does
+   * the bounded 1 s `refreshOneTeam` poll feed `_context$` until the cached team
+   * satisfies `isRunning`. Rejects with a `TimeoutError` when that has not
+   * happened within `timeoutMs`; the interval is torn down in the `finally` on
+   * both the resolve and the reject path.
+   *
+   * Deliberately does NOT write `currentTeamRunning$`: the constructor
+   * subscription is its sole writer (ADR-010), so the flip travels
+   * `refreshOneTeam` → `_upsertTeam` → `_context$` → `currentTeam$`. "The
+   * restore is done" and "the cache is fresh" are therefore the same statement.
+   *
+   * Because `teams$` replays the stale pre-restore snapshot at t=0 and the
+   * interval first emits at t≈1 s, this typically resolves ≈1 s after the 200
+   * even when the team is already ready. That latency is inherited from
+   * `stopTeamAndAwait` and is intentional (see issue #235).
+   */
+  async restoreTeamAndAwait(
+    teamId: string,
+    timeoutMs: number = TEAM_STATE_TIMEOUT_MS,
+  ): Promise<void> {
+    await this.apiService.restoreTeam(teamId);
+
+    const stop$ = new Subject<void>();
+    interval(1000)
+      .pipe(
+        takeUntil(stop$),
+        switchMap(() => this.refreshOneTeam(teamId)),
+      )
+      .subscribe();
+
+    try {
+      await firstValueFrom(
+        this.teams$.pipe(
+          map((teams) => teams.find((t) => t.team_id === teamId)),
+          filter((t): t is TeamContext => t !== undefined && isRunning(t)),
           take(1),
           timeout(timeoutMs),
         ),

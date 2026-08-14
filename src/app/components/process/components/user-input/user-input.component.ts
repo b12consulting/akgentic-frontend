@@ -3,6 +3,7 @@ import { Component, inject, Input, OnInit, DestroyRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 
+import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { DropdownModule } from 'primeng/dropdown';
 import { FloatLabelModule } from 'primeng/floatlabel';
@@ -14,6 +15,7 @@ import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 import { ConfigService } from '../../../../core/config/config.service';
 
 import { ApiService } from '../../../../core/http/api.service';
+import { FetchFailure } from '../../../../core/http/fetch.service';
 import { ChatService } from '../../selectors/chat.selector';
 import { ContextService } from '../../../../core/context/context.service';
 import { GraphDataService, HUMAN_ROLE } from '../../selectors/graph.selector';
@@ -22,6 +24,13 @@ import { IngestionService } from '../../event/ingestion.service';
 import { ENTRY_POINT_NAME } from '../../selectors/chat-message.model';
 import { CommandDescriptor } from '../../../../protocol/message.types';
 import { NodeInterface } from '../../models/types';
+
+/**
+ * Story 33-3: the submit lifecycle, as ONE value. `'restarting'` and
+ * `'sending'` are separate phases because the control renders them
+ * differently — a single boolean cannot say which one is in progress.
+ */
+type SubmitPhase = 'idle' | 'restarting' | 'sending';
 
 @Component({
   selector: 'app-user-input',
@@ -47,8 +56,30 @@ export class ProcessUserInputComponent implements OnInit {
   graphDataService: GraphDataService = inject(GraphDataService);
   ingestionService: IngestionService = inject(IngestionService);
   private config = inject(ConfigService);
+  private messageService: MessageService = inject(MessageService);
   userInput: string = '';
   userInputEnterKeySubmit: boolean = this.config.userInputEnterKeySubmit;
+
+  /**
+   * Story 33-3 (revises 33-1): where this submit is. Written ONLY in
+   * `sendMessage()`, and returned to `'idle'` by the single `finally` there —
+   * so its lifetime is the whole submit, restore *and* dispatch, rather than
+   * just the restore. It both rejects a re-entrant submit (never queues it) and
+   * drives the control's transient busy state, and because those two readings
+   * come from one value they cannot disagree.
+   */
+  phase: SubmitPhase = 'idle';
+  /** Submit-control label while the phase is `'restarting'`. */
+  readonly restoreLabel: string = 'Restarting team…';
+
+  /**
+   * The one predicate the re-entrancy guard and the template's `[loading]` /
+   * `[disabled]` bindings share. A second boolean here would reintroduce
+   * exactly the "two flags that must never disagree" defect story 33-3 removes.
+   */
+  get busy(): boolean {
+    return this.phase !== 'idle';
+  }
 
   // Mention configuration
   mentionItems: { name: string; actorName: string; agentId: string }[] = [];
@@ -148,18 +179,107 @@ export class ProcessUserInputComponent implements OnInit {
     return String(Date.now());
   }
 
+  /**
+   * Story 33-1 (ADR-024 §2): restore-then-send. A stopped team is restarted
+   * first and the typed message is sent afterwards, so a stopped team is no
+   * longer a read-only dead end and the user's intent is not lost.
+   *
+   * Story 33-3: the whole critical section — restore AND dispatch — sits inside
+   * one `try`/`finally`, so the guard's lifetime is the submit's by
+   * construction. A future `await` added inside that `try` is covered without
+   * anyone remembering to widen a flag.
+   */
   async sendMessage() {
-    if (!this.contextService.currentTeamRunning$.value || !this.userInput || this.userInput.trim() === '') {
+    // A submit already in flight: reject this one, never queue it. The
+    // template's `[disabled]` covers the click affordance, but the keydown
+    // handlers call this method directly, so this early return is the only
+    // defence on the keyboard path (story 33-3) — do not drop it.
+    if (this.busy) {
+      return;
+    }
+    if (!this.userInput || this.userInput.trim() === '') {
       return;
     }
 
+    try {
+      // Run state is consulted ONCE, and solely to decide whether a restore is
+      // needed. It is never re-read or re-used as a gate on the dispatch below:
+      // after a multi-second restore the captured value is stale by
+      // construction, and the live one flips only when the cache refresh lands
+      // (issue #235).
+      const running = this.contextService.currentTeamRunning$.value;
+      if (!running) {
+        this.phase = 'restarting';
+        if (!(await this.restoreBeforeSend())) {
+          return;
+        }
+      }
+
+      this.phase = 'sending';
+
+      // Capture the send-origin key AFTER any restore and immediately before
+      // dispatch — ADR-016 keys the top-anchor by send time, so a key taken
+      // before the restore would be stale by the length of the restore. Emitted
+      // only when a dispatch actually happens (never on the guards above, never
+      // on the no-candidate-recipient guard inside `dispatch`).
+      const justSentKey = this.nextJustSentKey();
+      if (!(await this.dispatch(justSentKey))) {
+        return;
+      }
+
+      this.userInput = '';
+    } finally {
+      // The ONE write back to idle, covering every exit path of both awaits.
+      this.phase = 'idle';
+    }
+  }
+
+  /**
+   * Restart the team and wait for the team cache to report it running, so the
+   * send that follows cannot race the backend's "team is not running"
+   * rejection. Returns false when the restore failed or timed out — the caller
+   * then dispatches nothing and leaves `userInput` untouched so the user can
+   * retry.
+   *
+   * Story 33-5 (ADR-026 §3): the guard narrows on `FetchFailure`, the base type
+   * whose meaning is "`FetchService` has already raised its own error toast" —
+   * *having been reported*, not *being HTTP*. So an unreachable server
+   * (`NetworkError`) and a 5xx (`HttpError`) are both silent here, while an rxjs
+   * `TimeoutError` — the restore returned 200 but the team never came up within
+   * the window, which nothing else has told the user about — still gets the
+   * toast below. Narrowing on the base keeps that correct when a third failure
+   * mode is added, instead of silently starting to double-toast.
+   *
+   * Story 33-3: this method does NO busy-state bookkeeping. It restores,
+   * handles its own error, and returns a boolean. The phase belongs to the
+   * submit, and a `finally` here would clear it before the dispatch is even
+   * awaited — which is precisely the double-send window this story closed.
+   */
+  private async restoreBeforeSend(): Promise<boolean> {
+    try {
+      await this.contextService.restoreTeamAndAwait(this.processId);
+      return true;
+    } catch (err) {
+      if (!(err instanceof FetchFailure)) {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Could not restart the team',
+          detail:
+            'The team did not come back up in time. Your message was not sent — try again.',
+        });
+      }
+      return false;
+    }
+  }
+
+  /**
+   * The four sender/recipient dispatch priorities (Story 7-2), unchanged.
+   * Returns false when no candidate recipient exists (Priority 2 edge case) so
+   * the caller preserves `userInput` and emits no just-sent key.
+   */
+  private async dispatch(justSentKey: string): Promise<boolean> {
     const hasSender = this.selectedSender !== null && this.selectedSender !== '';
     const hasRecipients = this.selectedAgents.length > 0;
-
-    // Capture the send-origin key BEFORE dispatch so it precedes the answer's
-    // arrival; emitted only after a dispatch actually happens (never on the
-    // early-return guards above or the no-candidate-recipient guard below).
-    const justSentKey = this.nextJustSentKey();
 
     if (hasSender && hasRecipients) {
       // Priority 1: explicit sender + explicit recipients
@@ -174,7 +294,7 @@ export class ProcessUserInputComponent implements OnInit {
       const defaultRecipient = this.dropdownAgents[0]?.value;
       if (!defaultRecipient) {
         // AC #3: no candidate recipient exists -> do not send, preserve input
-        return;
+        return false;
       }
       await this.apiService.sendMessageFromTo(
         this.processId, this.selectedSender!, defaultRecipient, this.userInput,
@@ -192,7 +312,7 @@ export class ProcessUserInputComponent implements OnInit {
       this.chatService.emitJustSent(justSentKey);
     }
 
-    this.userInput = '';
+    return true;
   }
 
   selectAgent = (item: any) => {

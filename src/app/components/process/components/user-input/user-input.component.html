@@ -64,12 +64,21 @@
       size="small"
       display="chip"
     ></p-multiSelect>
+    <!--
+      Story 33-1: the gate no longer depends on run state — a stopped team is
+      restored on submit. Story 33-3: it gates on empty text and on the submit
+      phase, the single value that also picks the label and the spinner, so the
+      control cannot read "idle" while a send is still in flight. This covers
+      the CLICK only — the keydown handlers above call sendMessage() directly,
+      and its own early return is what rejects a re-entrant key press.
+    -->
     <p-button
       size="small"
       icon="pi pi-send"
-      label="Submit"
+      [label]="phase === 'restarting' ? restoreLabel : 'Submit'"
+      [loading]="busy"
       (click)="sendMessage()"
-      [disabled]="!userInput || !(contextService.currentTeamRunning$ | async)"
+      [disabled]="!userInput || busy"
     />
   </div>
 </div>

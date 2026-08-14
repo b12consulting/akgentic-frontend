@@ -18,6 +18,27 @@ import { ConfigService } from '../config/config.service';
 export type FetchResponseType = 'json' | 'text';
 
 /**
+ * Any failure `FetchService` has ALREADY notified the user about (ADR-026 §1).
+ *
+ * That property — "the toast has been raised" — and NOT HTTP-ness is what
+ * callers branch on when deciding whether to raise their own error toast. A
+ * caller catching a `FetchFailure` must stay silent or it double-toasts;
+ * anything else (an rxjs `TimeoutError`, a programming error) has never been
+ * reported and is the caller's to surface.
+ *
+ * The base type exists so that check keeps working when a fourth failure mode
+ * is added, instead of being an enumeration that silently starts double-toasting.
+ */
+export class FetchFailure extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'FetchFailure';
+    // Restore prototype chain (TS target < ES6 / down-levelling safety).
+    Object.setPrototypeOf(this, FetchFailure.prototype);
+  }
+}
+
+/**
  * Error thrown by `FetchService.fetch` on non-OK HTTP responses (Story 11.3).
  *
  * `HttpError` exists so callers can branch on `.status` (e.g. 422 vs 5xx vs
@@ -29,7 +50,7 @@ export type FetchResponseType = 'json' | 'text';
  * The `.message` shape is preserved verbatim from the prior (non-throwing)
  * behaviour so existing notifications remain identical.
  */
-export class HttpError extends Error {
+export class HttpError extends FetchFailure {
   constructor(
     message: string,
     public readonly status: number,
@@ -39,6 +60,28 @@ export class HttpError extends Error {
     this.name = 'HttpError';
     // Restore prototype chain (TS target < ES6 / down-levelling safety).
     Object.setPrototypeOf(this, HttpError.prototype);
+  }
+}
+
+/**
+ * The request never reached the server: unreachable host, DNS failure, offline
+ * browser, aborted request, or a CORS rejection (ADR-026 §1).
+ *
+ * There is deliberately **no `status` property**. `HttpError` promises a real
+ * HTTP status and there is none here; minting `0` or `503` would mis-route the
+ * callers that branch on the value — the namespace-panel Save handler
+ * distinguishes 422 / 401 / other on `err.status`.
+ *
+ * The original rejection reason travels in `cause`, so an abort or a CORS
+ * rejection stays debuggable even though the user is shown the generic
+ * "Server unreachable" text.
+ */
+export class NetworkError extends FetchFailure {
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options);
+    this.name = 'NetworkError';
+    // Restore prototype chain (TS target < ES6 / down-levelling safety).
+    Object.setPrototypeOf(this, NetworkError.prototype);
   }
 }
 
@@ -72,12 +115,22 @@ export class FetchService {
    * 204/`content-length: 0` empty-body branch are identical for every
    * `responseType` — only the final body-parse call differs.
    *
-   * On non-OK responses, the method throws an `HttpError` carrying the HTTP
-   * status and response body. Callers that need to branch on the status
-   * (e.g. the namespace-panel Save handler: 422 vs 401 vs other) can narrow
-   * via `instanceof HttpError` or read `err.status`. Existing callers that
-   * wrap the call in a try/catch on `Error` still receive an Error whose
-   * `.message` matches the prior (non-throwing) notification text.
+   * ONE failure contract (ADR-026): the method either returns a parsed body or
+   * throws a `FetchFailure`. It never hands back a sentinel to signal failure,
+   * so a falsy return means a genuinely empty body (204 / `content-length: 0`)
+   * and nothing else.
+   *
+   * - non-OK status → `HttpError`, carrying the HTTP status and response body.
+   *   Callers that need to branch on the status (e.g. the namespace-panel Save
+   *   handler: 422 vs 401 vs other) narrow via `instanceof HttpError` or read
+   *   `err.status`. Its `.message` still matches the prior (non-throwing)
+   *   notification text, so callers catching on `Error` see the same string.
+   * - the request never reached the server → `NetworkError`, with the original
+   *   rejection reason in `cause` and deliberately no `status`.
+   *
+   * Both derive from `FetchFailure`, which is the type a caller checks to ask
+   * "has the user already been told?" — the toast is raised here, once, before
+   * either throw.
    *
    * @param responseType `'json'` (default) returns `response.json()`;
    *   `'text'` returns `response.text()` as a string.
@@ -102,13 +155,17 @@ export class FetchService {
     let response: Response;
     try {
       response = await fetch(url, options);
-    } catch {
+    } catch (cause) {
+      // Story 33-5 (ADR-026 §2): a network failure throws, like every other
+      // failure here. Returning `undefined` made "we never reached the server"
+      // indistinguishable from "the server returned an empty body", so callers
+      // rendered an empty view — or, on the restore path, read the sentinel as
+      // success and blamed a timeout ten seconds later.
+      const message =
+        errorMessage || 'Server unreachable. Check your connection.';
       console.error('Network error: server unreachable');
-      this.showNotification(
-        errorMessage || 'Server unreachable. Check your connection.',
-        'error'
-      );
-      return undefined;
+      this.showNotification(message, 'error');
+      throw new NetworkError(message, { cause });
     }
 
     if (!response.ok) {

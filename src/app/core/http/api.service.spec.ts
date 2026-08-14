@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { ApiService } from './api.service';
-import { FetchService } from './fetch.service';
+import { FetchService, NetworkError } from './fetch.service';
 import { AuthService } from '../auth/auth.service';
 import { Router } from '@angular/router';
 
@@ -422,6 +422,55 @@ describe('ApiService', () => {
       await expectAsync(
         service.emitClosedNotification('team-1', 'w-1'),
       ).toBeRejected();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Story 33-5 (ADR-026 §4) — an unreachable server is not an empty result.
+  //
+  // Each of these four methods coalesces a missing body to `[]` / `0`. That
+  // coalescing used to serve two masters: a genuine 204, and a failed request
+  // returning the `undefined` sentinel. It now serves only the first, so the
+  // rejection must travel out rather than being rendered as "nothing here".
+  // The empty-body specs above (`getAgentStates` :258, `getTeamsPage` :347)
+  // pin the case that legitimately remains.
+  // -------------------------------------------------------------------------
+
+  describe('an unreachable server rejects instead of resolving empty (Story 33-5)', () => {
+    /** A NetworkError as `FetchService` now throws it — status-free by design. */
+    function unreachable(): NetworkError {
+      return new NetworkError('Server unreachable. Check your connection.', {
+        cause: new TypeError('Failed to fetch'),
+      });
+    }
+
+    beforeEach(() => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.reject(unreachable()));
+    });
+
+    it('getTeams rejects rather than resolving to an empty team list', async () => {
+      await expectAsync(service.getTeams()).toBeRejectedWithError(
+        NetworkError,
+        'Server unreachable. Check your connection.',
+      );
+    });
+
+    it('getTeamsPage rejects rather than resolving to teams:[] / total_count:0', async () => {
+      await expectAsync(service.getTeamsPage(1, 250)).toBeRejectedWithError(
+        NetworkError,
+      );
+    });
+
+    it('getEvents rejects rather than claiming the team has no events', async () => {
+      await expectAsync(service.getEvents('team-1')).toBeRejectedWithError(
+        NetworkError,
+      );
+    });
+
+    it('getAgentStates rejects rather than resolving to an empty snapshot list', async () => {
+      await expectAsync(service.getAgentStates('team-1')).toBeRejectedWithError(
+        NetworkError,
+      );
     });
   });
 });

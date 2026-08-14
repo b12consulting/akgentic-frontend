@@ -2,13 +2,16 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
-  OnInit,
   inject,
   input,
   signal,
   ViewChild,
 } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import {
+  takeUntilDestroyed,
+  toObservable,
+  toSignal,
+} from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
 import { TreeModule } from 'primeng/tree';
 import { TreeNode } from 'primeng/api';
@@ -21,7 +24,7 @@ import { ToolbarModule } from 'primeng/toolbar';
 import { DividerModule } from 'primeng/divider';
 import { TagModule } from 'primeng/tag';
 import { MarkdownModule } from 'ngx-markdown';
-import { firstValueFrom, from, of, switchMap } from 'rxjs';
+import { from, of, switchMap } from 'rxjs';
 import { catchError, map, tap } from 'rxjs/operators';
 import {
   WorkspaceService,
@@ -67,7 +70,7 @@ interface RootLoadResult {
   // §Decision 1 — this is what removes the multi-second spinner stall).
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class WorkspaceExplorerComponent implements OnInit {
+export class WorkspaceExplorerComponent {
   @ViewChild(UploadModalComponent) uploadModal!: UploadModalComponent;
 
   /**
@@ -85,7 +88,19 @@ export class WorkspaceExplorerComponent implements OnInit {
   private destroyRef = inject(DestroyRef);
 
   processId: string = '';
-  isProcessRunning: boolean = false;
+
+  /**
+   * Run state read LIVE off the stream ADR-010 makes its sole writer, so a
+   * restore or a stop that happens without a page reload reaches the disabled
+   * gate on the three upload controls immediately (the only controls this
+   * component gates on run state). `toSignal` in a field initializer picks
+   * up the ambient `DestroyRef` and unsubscribes on destroy; a signal read
+   * notifies the OnPush chain, so no `markForCheck` bookkeeping is needed.
+   * Must stay BELOW `contextService` — field initializers run top-to-bottom.
+   */
+  isProcessRunning = toSignal(this.contextService.currentTeamRunning$, {
+    initialValue: false,
+  });
 
   // Template-bound state as signals — signal writes notify the OnPush chain.
   treeNodes = signal<TreeNode[]>([]);
@@ -107,8 +122,8 @@ export class WorkspaceExplorerComponent implements OnInit {
 
   constructor() {
     // Resolve processId synchronously from the BehaviorSubject so it is
-    // available at the root stream's first emission (ngOnInit's await would
-    // otherwise race the toObservable(workspaceId) first tick).
+    // available at the root stream's first emission (resolving it from an
+    // awaited init hook would race the toObservable(workspaceId) first tick).
     this.processId = this.contextService.currentProcessId$.value;
 
     // Declarative root-tree load: every workspaceId emission (incl. the initial
@@ -121,10 +136,6 @@ export class WorkspaceExplorerComponent implements OnInit {
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe((result) => this.applyRootLoad(result));
-  }
-
-  async ngOnInit() {
-    await this.checkProcessStatus();
   }
 
   /**
@@ -188,12 +199,6 @@ export class WorkspaceExplorerComponent implements OnInit {
     return ws
       ? this.workspaceService.getWorkspaceTree(this.processId, path, ws)
       : this.workspaceService.getWorkspaceTree(this.processId, path);
-  }
-
-  async checkProcessStatus() {
-    this.isProcessRunning = await firstValueFrom(
-      this.contextService.currentTeamRunning$,
-    );
   }
 
   convertToTreeNodes(nodes: FileNode[]): TreeNode[] {

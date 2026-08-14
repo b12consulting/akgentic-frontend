@@ -46,6 +46,7 @@ describe('ContextService', () => {
       'createTeam',
       'deleteTeam',
       'stopTeam',
+      'restoreTeam',
     ]);
     apiSpy.stopTeam.and.returnValue(Promise.resolve());
     routerSpy = jasmine.createSpyObj('Router', ['navigate']);
@@ -466,12 +467,6 @@ describe('ContextService', () => {
   // Story 10.5 — reactive stopTeamAndAwait
   // =======================================================================
 
-  it('(AC1 10.5) stopTeamAndAwait is defined on the service with (teamId, timeoutMs?) shape', () => {
-    expect(typeof service.stopTeamAndAwait).toBe('function');
-    // One required formal parameter: teamId. timeoutMs is optional (default 10000).
-    expect(service.stopTeamAndAwait.length).toBe(1);
-  });
-
   it('(AC2 10.5) stopTeamAndAwait resolves when refresh reports stopped', fakeAsync(() => {
     const running = makeTeam('team-A', 'running');
     const stopped = makeTeam('team-A', 'stopped');
@@ -501,28 +496,53 @@ describe('ContextService', () => {
     expect(apiSpy.getTeam).not.toHaveBeenCalled();
   }));
 
-  it('(AC3 10.5) stopTeamAndAwait rejects with TimeoutError when team never stops', fakeAsync(() => {
+  it('(AC3 10.5 / AC4 33.4) stopTeamAndAwait default deadline: pending 1 ms short of 10 000 ms, TimeoutError past it, then stops polling', fakeAsync(() => {
     const running = makeTeam('team-A', 'running');
     apiSpy.getTeams.and.returnValue(Promise.resolve([running]));
     service.getTeams();
     tick();
 
     apiSpy.stopTeam.and.returnValue(Promise.resolve());
+    // Never satisfies the readiness predicate — the team keeps reporting
+    // running, so only the deadline can settle the promise.
     apiSpy.getTeam.and.returnValue(Promise.resolve(running));
 
+    let resolved = false;
     let rejected: Error | null = null;
-    service.stopTeamAndAwait('team-A', 10000).catch((err: Error) => {
-      rejected = err;
-    });
+    // No second argument: the DEFAULT is what this spec pins. The tick amounts
+    // below state the expected policy independently, in bare numbers — deriving
+    // them from the constant would pass for 500 ms and 120 000 ms alike.
+    // `.catch` is attached at the call so a rejection lands in the flag rather
+    // than surfacing as a zone error.
+    service
+      .stopTeamAndAwait('team-A')
+      .then(() => {
+        resolved = true;
+      })
+      .catch((err: Error) => {
+        rejected = err;
+      });
 
+    // The POST settles here and the readiness pipeline subscribes: the deadline
+    // is measured from this point. The 1 s refresh poll does not reset it —
+    // `timeout()` sits after `filter`/`take(1)`, so its source emits nothing
+    // until the predicate passes.
     tick();
 
-    tick(11000);
+    tick(9999);
     flushMicrotasks();
+    // Still pending — neither settled. This half catches a SHRUNK default.
+    expect(resolved).toBe(false);
+    expect(rejected).toBeNull();
 
+    // 2 ms, not 1, so the spec does not depend on the deadline being inclusive.
+    tick(2);
+    flushMicrotasks();
+    // This half catches an ENLARGED default.
     expect(rejected).not.toBeNull();
     expect(rejected!.name).toBe('TimeoutError');
 
+    // Teardown on the reject path — a leaked 1 s poll is invisible otherwise.
     apiSpy.getTeam.calls.reset();
     tick(5000);
     expect(apiSpy.getTeam).not.toHaveBeenCalled();
@@ -971,4 +991,205 @@ describe('ContextService', () => {
     const value = await firstValueFrom(service.totalCount$);
     expect(value).toBe(0);
   });
+
+  // =======================================================================
+  // Story 33.1 — reactive restoreTeamAndAwait (mirror of stopTeamAndAwait)
+  // =======================================================================
+
+  it('(AC1, AC2, AC3 33.1) resolves when the refresh reports running, calls restoreTeam once, then stops polling', fakeAsync(() => {
+    const stopped = makeTeam('team-A', 'stopped');
+    const running = makeTeam('team-A', 'running');
+
+    apiSpy.getTeams.and.returnValue(Promise.resolve([stopped]));
+    service.getTeams();
+    tick();
+
+    apiSpy.restoreTeam.and.returnValue(
+      Promise.resolve(makeTeamResponse('team-A', 'running')),
+    );
+    apiSpy.getTeam.and.returnValue(Promise.resolve(running));
+
+    let resolved = false;
+    service.restoreTeamAndAwait('team-A').then(() => {
+      resolved = true;
+    });
+
+    tick();
+    // AC2: restoreTeam is awaited FIRST and issued exactly once.
+    expect(apiSpy.restoreTeam).toHaveBeenCalledOnceWith('team-A');
+    // teams$ replays the stale 'stopped' snapshot at t=0, so the promise cannot
+    // have settled before the first interval tick.
+    expect(resolved).toBe(false);
+
+    tick(1000);
+    flushMicrotasks();
+
+    expect(resolved).toBe(true);
+    expect(apiSpy.restoreTeam).toHaveBeenCalledTimes(1);
+
+    // AC3 (resolve path): the interval is torn down in the `finally`, so the
+    // clock advancing produces no further refresh calls.
+    apiSpy.getTeam.calls.reset();
+    tick(5000);
+    expect(apiSpy.getTeam).not.toHaveBeenCalled();
+  }));
+
+  it('(AC1, AC3 33.1 / AC3 33.4) restoreTeamAndAwait default deadline: pending 1 ms short of 10 000 ms, TimeoutError past it, then stops polling', fakeAsync(() => {
+    const stopped = makeTeam('team-A', 'stopped');
+
+    apiSpy.getTeams.and.returnValue(Promise.resolve([stopped]));
+    service.getTeams();
+    tick();
+
+    apiSpy.restoreTeam.and.returnValue(
+      Promise.resolve(makeTeamResponse('team-A', 'stopped')),
+    );
+    // Never satisfies the readiness predicate — the team keeps reporting
+    // stopped, so only the deadline can settle the promise.
+    apiSpy.getTeam.and.returnValue(Promise.resolve(stopped));
+
+    let resolved = false;
+    let rejected: Error | null = null;
+    // No second argument: the DEFAULT is what this spec pins. The tick amounts
+    // below state the expected policy independently, in bare numbers — deriving
+    // them from the constant would pass for 500 ms and 120 000 ms alike.
+    // `.catch` is attached at the call so a rejection lands in the flag rather
+    // than surfacing as a zone error.
+    service
+      .restoreTeamAndAwait('team-A')
+      .then(() => {
+        resolved = true;
+      })
+      .catch((err: Error) => {
+        rejected = err;
+      });
+
+    // The POST settles here and the readiness pipeline subscribes: the deadline
+    // is measured from this point. The 1 s refresh poll does not reset it —
+    // `timeout()` sits after `filter`/`take(1)`, so its source emits nothing
+    // until the predicate passes.
+    tick();
+
+    tick(9999);
+    flushMicrotasks();
+    // Still pending — neither settled. This half catches a SHRUNK default.
+    expect(resolved).toBe(false);
+    expect(rejected).toBeNull();
+
+    // 2 ms, not 1, so the spec does not depend on the deadline being inclusive.
+    tick(2);
+    flushMicrotasks();
+    // This half catches an ENLARGED default.
+    expect(rejected).not.toBeNull();
+    expect(rejected!.name).toBe('TimeoutError');
+
+    // AC3 (reject path): same teardown, exercised through the rejection.
+    apiSpy.getTeam.calls.reset();
+    tick(5000);
+    expect(apiSpy.getTeam).not.toHaveBeenCalled();
+  }));
+
+  it('(AC4 33.1) never writes currentTeamRunning$ directly: it stays false when currentProcessId$ points elsewhere', fakeAsync(() => {
+    const stopped = makeTeam('team-A', 'stopped');
+    const running = makeTeam('team-A', 'running');
+
+    apiSpy.getTeams.and.returnValue(Promise.resolve([stopped]));
+    service.getTeams();
+    tick();
+
+    // currentProcessId$ is left at its initial '' → currentTeam$ is null, so the
+    // sole writer (the constructor subscription) cannot legitimately flip the
+    // flag. A `currentTeamRunning$.next(true)` inside the helper would.
+    apiSpy.restoreTeam.and.returnValue(
+      Promise.resolve(makeTeamResponse('team-A', 'running')),
+    );
+    apiSpy.getTeam.and.returnValue(Promise.resolve(running));
+
+    let resolved = false;
+    service.restoreTeamAndAwait('team-A').then(() => {
+      resolved = true;
+    });
+
+    tick();
+    tick(1000);
+    flushMicrotasks();
+
+    expect(resolved).toBe(true);
+    expect(service.currentTeamRunning$.value).toBe(false);
+  }));
+
+  it('(AC4 33.1) currentTeamRunning$ flips to true through the cache refresh when currentProcessId$ points at the team', fakeAsync(() => {
+    const stopped = makeTeam('team-A', 'stopped');
+    const running = makeTeam('team-A', 'running');
+
+    apiSpy.getTeams.and.returnValue(Promise.resolve([stopped]));
+    service.getTeams();
+    tick();
+
+    service.currentProcessId$.next('team-A');
+    flushMicrotasks();
+    expect(service.currentTeamRunning$.value).toBe(false);
+
+    apiSpy.restoreTeam.and.returnValue(
+      Promise.resolve(makeTeamResponse('team-A', 'running')),
+    );
+    apiSpy.getTeam.and.returnValue(Promise.resolve(running));
+
+    let resolved = false;
+    service.restoreTeamAndAwait('team-A').then(() => {
+      resolved = true;
+    });
+
+    tick();
+    tick(1000);
+    flushMicrotasks();
+
+    expect(resolved).toBe(true);
+    // Carried entirely by refreshOneTeam → _upsertTeam → _context$ → currentTeam$.
+    expect(service.currentTeamRunning$.value).toBe(true);
+  }));
+
+  // Not an AC of story 33.1 — the `_upsertTeam` immutability guard the restore
+  // poll rides on. (33.1's AC #8, "run state is consulted once", is a
+  // user-input concern and is pinned in user-input.component.spec.ts.)
+  it('(33.1) restoreTeamAndAwait refresh updates _context$ immutably, preserving sibling identity', fakeAsync(() => {
+    const stoppedA = makeTeam('team-A', 'stopped');
+    const runningB = makeTeam('team-B', 'running');
+    const runningA = makeTeam('team-A', 'running');
+
+    apiSpy.getTeams.and.returnValue(Promise.resolve([stoppedA, runningB]));
+    service.getTeams();
+    tick();
+
+    let prev: TeamContext[] = [];
+    service.teams$
+      .subscribe((v) => {
+        prev = v;
+      })
+      .unsubscribe();
+    const prevB = prev.find((t) => t.team_id === 'team-B');
+
+    apiSpy.restoreTeam.and.returnValue(
+      Promise.resolve(makeTeamResponse('team-A', 'running')),
+    );
+    apiSpy.getTeam.and.returnValue(Promise.resolve(runningA));
+
+    service.restoreTeamAndAwait('team-A').catch(() => {
+      /* ignore */
+    });
+    tick();
+    tick(1000);
+    flushMicrotasks();
+
+    let next: TeamContext[] = [];
+    service.teams$
+      .subscribe((v) => {
+        next = v;
+      })
+      .unsubscribe();
+
+    expect(next).not.toBe(prev);
+    expect(next.find((t) => t.team_id === 'team-A')).toBe(runningA);
+    expect(next.find((t) => t.team_id === 'team-B')).toBe(prevB);
+  }));
 });
