@@ -1557,6 +1557,58 @@ describe('IngestionService — seed agent state on init (Story 25-1)', () => {
     sub.unsubscribe();
   });
 
+  // ---------- Epic 34 story 34-2: the ordering the extraction must not lose ----
+  // The REST replay now lives in `ReplaySeeder`, but the two `log.appendAll`
+  // calls stay HERE because they are two of the four centrally sequenced steps
+  // (dispose -> reset -> seed -> open socket). Nothing pinned that until these
+  // two specs: merging the seeder's two awaits into one array and one
+  // `appendAll` reorders nothing today, so every other spec in this suite stays
+  // green while the guarantee quietly disappears.
+
+  it('34-2: a stopped-team init makes exactly TWO appendAll calls — state seed FIRST, event replay SECOND', async () => {
+    apiService.getAgentStates.and.resolveTo([snapshot({ backstory: 'A.' })]);
+    apiService.getEvents.and.resolveTo([
+      {
+        event: {
+          id: 'sent-1',
+          parent_id: null,
+          team_id: 'team-1',
+          timestamp: '2026-06-18T00:00:00Z',
+          sender: makeAddress({ role: 'Worker' }),
+          display_type: 'ai',
+          content: 'hello',
+          __model__: 'akgentic.core.messages.orchestrator.SentMessage',
+        },
+      },
+    ]);
+
+    const appendSpy = spyOn(log, 'appendAll').and.callThrough();
+
+    await service.init('team-1', false);
+
+    // One merged batch would collapse two `log$` emissions into one AND remove
+    // the seed-before-replay guarantee: `stateSpec` is latest-wins, so a real
+    // replayed `StateChangedMessage` has to be able to overwrite a synthesized
+    // seed — never the reverse.
+    expect(appendSpy).toHaveBeenCalledTimes(2);
+    const batches = appendSpy.calls.allArgs().map((args: any[]) => args[0]);
+    expect(batches[0].map((m: any) => m.__model__)).toEqual([
+      'akgentic.core.messages.orchestrator.StateChangedMessage',
+    ]);
+    expect(batches[1].map((m: any) => m.id)).toEqual(['sent-1']);
+  });
+
+  it('34-2: a getAgentStates rejection rejects init() and getEvents is never issued', async () => {
+    apiService.getAgentStates.and.rejectWith(new Error('boom'));
+
+    // Two sequential awaits, no try/catch: the seed failing means the event
+    // replay is never requested and `init()` rejects before the socket opens.
+    // `Promise.all` would issue `getEvents` anyway and swallow that ordering.
+    await expectAsync(service.init('team-1', false)).toBeRejected();
+
+    expect(apiService.getEvents).not.toHaveBeenCalled();
+  });
+
   it('AC5: a team switch clears the seeded state (re-seeded from the new team on re-init)', async () => {
     apiService.getAgentStates.and.resolveTo([
       snapshot({ backstory: 'Team A backstory.' }),

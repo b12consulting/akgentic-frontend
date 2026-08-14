@@ -139,6 +139,11 @@ describe('ReplaySeeder.seedMessages — agent-state snapshots (Story 25-1, Epic 
     const second = await seeder.seedMessages('team-1');
 
     expect(second).toEqual(first);
+    // Equal results alone would ALSO be true of a unit that memoized the first
+    // response and never re-fetched — which is precisely the state a source may
+    // not hold. The call count is what makes this spec falsifiable: a stale
+    // snapshot served after a team's agents have moved on is the bug.
+    expect(api.getAgentStates).toHaveBeenCalledTimes(2);
   });
 });
 
