@@ -1,7 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { MessageService } from 'primeng/api';
 import { Toast } from 'primeng/toast';
-import { BehaviorSubject, Subject } from 'rxjs';
+import { BehaviorSubject, ReplaySubject, Subject } from 'rxjs';
 import { WebSocketSubject } from 'rxjs/webSocket';
 
 import { IngestionService } from './ingestion.service';
@@ -2588,6 +2588,35 @@ describe('IngestionService — notification-toast reactor sequencing (Epic 34)',
 
     expect(msgService.add).toHaveBeenCalledTimes(1);
     socketB.complete();
+  });
+
+  it('AC2 (ADR-005 §Decision 6): a frame delivered the instant the socket opens still toasts', async () => {
+    // The THIRD ordering this wiring depends on, and the one no other spec can
+    // see: `start()` must run BEFORE `createWebSocket(...)`, not merely after
+    // `setupBatchedSubscriber()`. Move it below the socket and every other spec
+    // in the suite stays green, because a plain `Subject` fake delivers nothing
+    // at subscribe time — the gap only opens for a transport that replays on
+    // subscription, which is exactly what a cursor-0 replay is and what story
+    // 34-6's `TeamSocket` may well be.
+    //
+    // A `ReplaySubject` models that: the frame is already buffered when
+    // `webSocket.subscribe({...})` runs, so it reaches `_wsInbound$` inside
+    // `init()` itself. A reactor started afterwards never sees it, and the
+    // notification is silently lost with nothing else failing.
+    const replaying = new ReplaySubject<any>(1);
+    replaying.next(mkWarning('w-1'));
+    (service as any).createWebSocket = jasmine
+      .createSpy('createWebSocket')
+      .and.returnValue(replaying as unknown as WebSocketSubject<any>);
+
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+
+    expect(msgService.add).toHaveBeenCalledTimes(1);
+    expect(msgService.add.calls.mostRecent().args[0].data.messageId).toBe(
+      'w-1',
+    );
+    replaying.complete();
   });
 
   it('AC3b: a STOPPED team replays through the log and raises NO toast, while the SAME event on a RUNNING team raises one', async () => {
