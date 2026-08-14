@@ -1212,7 +1212,7 @@ describe('ProcessUserInputComponent', () => {
       const pending = component.sendMessage();
       fixture.detectChanges();
 
-      expect(component.restoring).toBeTrue();
+      expect(component.phase).toBe('restarting');
       expect(submitButton().label).toBe('Restarting team…');
       expect(submitButton().loading).toBeTrue();
       expect(submitButton().disabled).toBeTruthy();
@@ -1225,7 +1225,7 @@ describe('ProcessUserInputComponent', () => {
       await pending;
       fixture.detectChanges();
 
-      expect(component.restoring).toBeFalse();
+      expect(component.phase).toBe('idle');
       expect(submitButton().label).toBe('Submit');
       expect(submitButton().loading).toBeFalse();
     });
@@ -1251,13 +1251,23 @@ describe('ProcessUserInputComponent', () => {
       expect(contextServiceStub.restoreTeamAndAwait).toHaveBeenCalledTimes(1);
     });
 
-    it('(AC9) clears the busy state once the restore resolves', async () => {
+    // Story 33-3 AC #8, success path: the phase returns to idle after a
+    // restore-then-send that worked, and the next submit is accepted.
+    it('(33-3 AC8) a successful restore-then-send ends idle and accepts the next submit', async () => {
       runningSubject.next(false);
+      component.selectedAgents = [];
       component.userInput = 'clears busy';
 
       await component.sendMessage();
 
-      expect(component.restoring).toBeFalse();
+      expect(component.phase).toBe('idle');
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledTimes(1);
+
+      component.userInput = 'and again';
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledTimes(2);
+      expect(component.phase).toBe('idle');
     });
 
     // --- AC #10 — failure and timeout -------------------------------------
@@ -1275,7 +1285,7 @@ describe('ProcessUserInputComponent', () => {
       expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
       expect(apiServiceSpy.sendMessageFromTo).not.toHaveBeenCalled();
       expect(component.userInput).toBe('kept verbatim');
-      expect(component.restoring).toBeFalse();
+      expect(component.phase).toBe('idle');
       expect(messageServiceSpy.add).toHaveBeenCalledTimes(1);
       expect(messageServiceSpy.add.calls.mostRecent().args[0].severity).toBe(
         'error',
@@ -1297,7 +1307,7 @@ describe('ProcessUserInputComponent', () => {
 
       expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
       expect(component.userInput).toBe('http failed');
-      expect(component.restoring).toBeFalse();
+      expect(component.phase).toBe('idle');
       // FetchService already toasted this one — a second toast would double up.
       expect(messageServiceSpy.add).not.toHaveBeenCalled();
     });
@@ -1368,6 +1378,272 @@ describe('ProcessUserInputComponent', () => {
       await component.sendMessage();
 
       expect(chatServiceMock.emitJustSent).not.toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Story 33-3 (FR10-FR13) — ONE submit-phase state closes the double-send
+  // window. Story 33-1's `restoring` flag was cleared when the RESTORE settled,
+  // not when the SUBMIT completed, so for the whole of the awaited POST loop the
+  // guard was open and the input still populated: a second click or Enter press
+  // re-sent the same message.
+  // -------------------------------------------------------------------------
+  describe('submit phase (Story 33-3)', () => {
+    /** A dispatch double the spec releases by hand, so "during the dispatch" —
+     *  the window this story closes — is observable rather than inferred. */
+    function deferredSend(): { release: () => void } {
+      let release!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      apiServiceSpy.sendMessage.and.returnValue(pending);
+      return { release };
+    }
+
+    /** A restore double the spec releases by hand (as in the 33-1 block). */
+    function deferredRestore(): { release: () => void } {
+      let release!: () => void;
+      const pending = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      contextServiceStub.restoreTeamAndAwait.and.returnValue(pending);
+      return { release };
+    }
+
+    function timeoutError(): Error {
+      const err = new Error('Timeout has occurred');
+      err.name = 'TimeoutError';
+      return err;
+    }
+
+    /** One macrotask drains every pending microtask, so these specs never
+     *  depend on counting the `await` ticks inside `sendMessage()`. */
+    const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    function submitButton() {
+      return fixture.debugElement.query(By.css('p-button')).componentInstance;
+    }
+
+    function textareaEl() {
+      return fixture.debugElement.query(By.css('textarea'));
+    }
+
+    // --- AC #5 — the decisive regression: the window is shut ---------------
+
+    it('(AC5) a second submit while the dispatch is in flight sends nothing extra', async () => {
+      const { release } = deferredSend();
+      runningSubject.next(false);
+      component.selectedAgents = [];
+      component.userInput = 'exactly once';
+
+      const first = component.sendMessage();
+      await flush();
+
+      // Restore done, dispatch pending — the window story 33-1 left open. The
+      // phase says so, which `restoring` could not: it read false here.
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledTimes(1);
+      expect(component.phase).toBe('sending');
+
+      // NEVER await the re-entrant submit: `and.returnValue` hands out the SAME
+      // pending promise on every call, so a submit that slipped past the guard
+      // would await it and hang the run instead of reddening the assertion.
+      void component.sendMessage();
+      await flush();
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledTimes(1);
+      // `emitJustSent` follows the awaited POST, so mid-window it has not fired
+      // yet — with or without the guard. The discriminating count is after the
+      // release: a re-entrant submit that got through emits a second time.
+      expect(chatServiceMock.emitJustSent).not.toHaveBeenCalled();
+
+      release();
+      await first;
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledTimes(1);
+      expect(chatServiceMock.emitJustSent).toHaveBeenCalledTimes(1);
+      expect(component.phase).toBe('idle');
+    });
+
+    // --- AC #6 — the same assertion driven through the keyboard -----------
+
+    it('(AC6) Enter while the dispatch is in flight sends nothing extra, and the control reads disabled', async () => {
+      const { release } = deferredSend();
+      runningSubject.next(false);
+      component.selectedAgents = [];
+      // The config default is false; the keyboard path only exists when on.
+      component.userInputEnterKeySubmit = true;
+      component.userInput = 'once via keyboard';
+
+      const first = component.sendMessage();
+      await flush();
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledTimes(1);
+      expect(component.phase).toBe('sending');
+
+      // The DOM gate covers the click affordance...
+      fixture.detectChanges();
+      expect(submitButton().disabled).toBeTruthy();
+
+      // ...and only the TS early return covers the key: `[disabled]` does not
+      // gate `(keydown.enter)`, which invokes sendMessage() directly.
+      textareaEl().triggerEventHandler('keydown.enter', {});
+      await flush();
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledTimes(1);
+
+      release();
+      await first;
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledTimes(1);
+      expect(chatServiceMock.emitJustSent).toHaveBeenCalledTimes(1);
+    });
+
+    // --- AC #2 / #9 — ONE derived predicate, and only one state -----------
+
+    it('(AC2) a non-idle phase rejects the submit outright: no restore, no send, no emit, input intact', async () => {
+      runningSubject.next(false);
+      component.selectedAgents = [];
+      component.userInput = 'not this time';
+      component.phase = 'sending';
+
+      await component.sendMessage();
+
+      expect(component.busy).toBeTrue();
+      expect(contextServiceStub.restoreTeamAndAwait).not.toHaveBeenCalled();
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+      expect(apiServiceSpy.sendMessageFromTo).not.toHaveBeenCalled();
+      expect(chatServiceMock.emitJustSent).not.toHaveBeenCalled();
+      expect(component.userInput).toBe('not this time');
+    });
+
+    it('(AC9) the component carries no second busy flag beside the phase', () => {
+      // `restoring` is gone, not kept alongside a new `sending`: two flags that
+      // must never disagree is the invariant this story exists to delete, and
+      // reintroducing either one turns this red.
+      expect('restoring' in component).toBeFalse();
+      expect('sending' in component).toBeFalse();
+      // `busy` is derived, never stored.
+      expect(Object.prototype.hasOwnProperty.call(component, 'busy')).toBeFalse();
+      expect(component.phase).toBe('idle');
+      expect(component.busy).toBeFalse();
+    });
+
+    // --- AC #3 — the two busy phases are distinguishable -------------------
+
+    it('(AC3) the restarting phase renders the restart label, a spinner and a disabled control', async () => {
+      const { release } = deferredRestore();
+      runningSubject.next(false);
+      component.selectedAgents = [];
+      component.userInput = 'restarting look';
+
+      const pending = component.sendMessage();
+      fixture.detectChanges();
+
+      expect(component.phase).toBe('restarting');
+      expect(submitButton().label).toBe('Restarting team…');
+      expect(submitButton().loading).toBeTrue();
+      expect(submitButton().disabled).toBeTruthy();
+
+      release();
+      await pending;
+    });
+
+    it('(AC3) the sending phase renders the Submit label, a spinner and a disabled control', async () => {
+      const { release } = deferredSend();
+      runningSubject.next(true);
+      component.selectedAgents = [];
+      component.userInput = 'sending look';
+
+      const pending = component.sendMessage();
+      await flush();
+      fixture.detectChanges();
+
+      expect(component.phase).toBe('sending');
+      expect(submitButton().label).toBe('Submit');
+      expect(submitButton().loading).toBeTrue();
+      expect(submitButton().disabled).toBeTruthy();
+
+      release();
+      await pending;
+    });
+
+    it('(AC3) the idle phase with text renders Submit, no spinner, enabled', () => {
+      component.userInput = 'at rest';
+      fixture.detectChanges();
+
+      expect(component.phase).toBe('idle');
+      expect(submitButton().label).toBe('Submit');
+      expect(submitButton().loading).toBeFalse();
+      expect(submitButton().disabled).toBeFalsy();
+    });
+
+    // --- AC #8 — every exit path ends idle, and the next submit is taken ---
+
+    it('(AC8) the empty/whitespace guard never leaves idle and the next submit is accepted', async () => {
+      runningSubject.next(false);
+      component.selectedAgents = [];
+      component.userInput = '   ';
+
+      await component.sendMessage();
+
+      expect(component.phase).toBe('idle');
+      expect(contextServiceStub.restoreTeamAndAwait).not.toHaveBeenCalled();
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+      expect(component.userInput).toBe('   ');
+
+      component.userInput = 'real text';
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledTimes(1);
+      expect(component.phase).toBe('idle');
+    });
+
+    it('(AC8) a rejected restore ends idle with the input preserved, and the retry is accepted', async () => {
+      contextServiceStub.restoreTeamAndAwait.and.returnValue(
+        Promise.reject(timeoutError()),
+      );
+      runningSubject.next(false);
+      component.selectedAgents = [];
+      component.userInput = 'survives the failure';
+
+      await component.sendMessage();
+
+      expect(component.phase).toBe('idle');
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+      expect(component.userInput).toBe('survives the failure');
+
+      contextServiceStub.restoreTeamAndAwait.and.returnValue(Promise.resolve());
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+        'test-team-id', 'survives the failure',
+      );
+      expect(component.phase).toBe('idle');
+    });
+
+    it('(AC8) a dispatch that finds no candidate recipient ends idle with the input preserved', async () => {
+      // Priority-2 edge: a sender is chosen, nothing to send it to.
+      runningSubject.next(true);
+      component.dropdownAgents = [];
+      component.selectedSender = '@Support';
+      component.selectedAgents = [];
+      component.userInput = 'orphan';
+
+      await component.sendMessage();
+
+      expect(component.phase).toBe('idle');
+      expect(apiServiceSpy.sendMessageFromTo).not.toHaveBeenCalled();
+      expect(chatServiceMock.emitJustSent).not.toHaveBeenCalled();
+      expect(component.userInput).toBe('orphan');
+
+      // A recipient appears: the very next submit goes through.
+      component.dropdownAgents = [{ label: 'Worker', value: '@Worker' }];
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessageFromTo).toHaveBeenCalledOnceWith(
+        'test-team-id', '@Support', '@Worker', 'orphan',
+      );
+      expect(component.phase).toBe('idle');
     });
   });
 });

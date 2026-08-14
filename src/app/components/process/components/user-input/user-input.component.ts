@@ -25,6 +25,13 @@ import { ENTRY_POINT_NAME } from '../../selectors/chat-message.model';
 import { CommandDescriptor } from '../../../../protocol/message.types';
 import { NodeInterface } from '../../models/types';
 
+/**
+ * Story 33-3: the submit lifecycle, as ONE value. `'restarting'` and
+ * `'sending'` are separate phases because the control renders them
+ * differently — a single boolean cannot say which one is in progress.
+ */
+type SubmitPhase = 'idle' | 'restarting' | 'sending';
+
 @Component({
   selector: 'app-user-input',
   imports: [
@@ -54,13 +61,25 @@ export class ProcessUserInputComponent implements OnInit {
   userInputEnterKeySubmit: boolean = this.config.userInputEnterKeySubmit;
 
   /**
-   * Story 33-1: a restore is in flight for this team. Drives the transient busy
-   * state on the submit control and rejects a re-entrant submit (never queues
-   * it), so one restore cannot produce two sends.
+   * Story 33-3 (revises 33-1): where this submit is. Written ONLY in
+   * `sendMessage()`, and returned to `'idle'` by the single `finally` there —
+   * so its lifetime is the whole submit, restore *and* dispatch, rather than
+   * just the restore. It both rejects a re-entrant submit (never queues it) and
+   * drives the control's transient busy state, and because those two readings
+   * come from one value they cannot disagree.
    */
-  restoring: boolean = false;
-  /** Submit-control label while `restoring`. */
+  phase: SubmitPhase = 'idle';
+  /** Submit-control label while the phase is `'restarting'`. */
   readonly restoreLabel: string = 'Restarting team…';
+
+  /**
+   * The one predicate the re-entrancy guard and the template's `[loading]` /
+   * `[disabled]` bindings share. A second boolean here would reintroduce
+   * exactly the "two flags that must never disagree" defect story 33-3 removes.
+   */
+  get busy(): boolean {
+    return this.phase !== 'idle';
+  }
 
   // Mention configuration
   mentionItems: { name: string; actorName: string; agentId: string }[] = [];
@@ -164,36 +183,55 @@ export class ProcessUserInputComponent implements OnInit {
    * Story 33-1 (ADR-024 §2): restore-then-send. A stopped team is restarted
    * first and the typed message is sent afterwards, so a stopped team is no
    * longer a read-only dead end and the user's intent is not lost.
+   *
+   * Story 33-3: the whole critical section — restore AND dispatch — sits inside
+   * one `try`/`finally`, so the guard's lifetime is the submit's by
+   * construction. A future `await` added inside that `try` is covered without
+   * anyone remembering to widen a flag.
    */
   async sendMessage() {
-    // A restore already in flight: reject the submit, never queue it.
-    if (this.restoring) {
+    // A submit already in flight: reject this one, never queue it. The
+    // template's `[disabled]` covers the click affordance, but the keydown
+    // handlers call this method directly, so this early return is the only
+    // defence on the keyboard path (story 33-3) — do not drop it.
+    if (this.busy) {
       return;
     }
     if (!this.userInput || this.userInput.trim() === '') {
       return;
     }
 
-    // Run state is consulted ONCE, and solely to decide whether a restore is
-    // needed. It is never re-read or re-used as a gate on the dispatch below:
-    // after a multi-second restore the captured value is stale by construction,
-    // and the live one flips only when the cache refresh lands (issue #235).
-    const running = this.contextService.currentTeamRunning$.value;
-    if (!running && !(await this.restoreBeforeSend())) {
-      return;
-    }
+    try {
+      // Run state is consulted ONCE, and solely to decide whether a restore is
+      // needed. It is never re-read or re-used as a gate on the dispatch below:
+      // after a multi-second restore the captured value is stale by
+      // construction, and the live one flips only when the cache refresh lands
+      // (issue #235).
+      const running = this.contextService.currentTeamRunning$.value;
+      if (!running) {
+        this.phase = 'restarting';
+        if (!(await this.restoreBeforeSend())) {
+          return;
+        }
+      }
 
-    // Capture the send-origin key AFTER any restore and immediately before
-    // dispatch — ADR-016 keys the top-anchor by send time, so a key taken
-    // before the restore would be stale by the length of the restore. Emitted
-    // only when a dispatch actually happens (never on the guards above, never
-    // on the no-candidate-recipient guard inside `dispatch`).
-    const justSentKey = this.nextJustSentKey();
-    if (!(await this.dispatch(justSentKey))) {
-      return;
-    }
+      this.phase = 'sending';
 
-    this.userInput = '';
+      // Capture the send-origin key AFTER any restore and immediately before
+      // dispatch — ADR-016 keys the top-anchor by send time, so a key taken
+      // before the restore would be stale by the length of the restore. Emitted
+      // only when a dispatch actually happens (never on the guards above, never
+      // on the no-candidate-recipient guard inside `dispatch`).
+      const justSentKey = this.nextJustSentKey();
+      if (!(await this.dispatch(justSentKey))) {
+        return;
+      }
+
+      this.userInput = '';
+    } finally {
+      // The ONE write back to idle, covering every exit path of both awaits.
+      this.phase = 'idle';
+    }
   }
 
   /**
@@ -207,9 +245,13 @@ export class ProcessUserInputComponent implements OnInit {
    * 200 but the team never came up within the window) is toasted here. An
    * `HttpError` has already raised `FetchService`'s own error toast, and a
    * second one would double up.
+   *
+   * Story 33-3: this method does NO busy-state bookkeeping. It restores,
+   * handles its own error, and returns a boolean. The phase belongs to the
+   * submit, and a `finally` here would clear it before the dispatch is even
+   * awaited — which is precisely the double-send window this story closed.
    */
   private async restoreBeforeSend(): Promise<boolean> {
-    this.restoring = true;
     try {
       await this.contextService.restoreTeamAndAwait(this.processId);
       return true;
@@ -223,8 +265,6 @@ export class ProcessUserInputComponent implements OnInit {
         });
       }
       return false;
-    } finally {
-      this.restoring = false;
     }
   }
 
