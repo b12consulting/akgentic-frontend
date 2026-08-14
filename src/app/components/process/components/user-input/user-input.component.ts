@@ -15,7 +15,7 @@ import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 import { ConfigService } from '../../../../core/config/config.service';
 
 import { ApiService } from '../../../../core/http/api.service';
-import { HttpError } from '../../../../core/http/fetch.service';
+import { FetchFailure } from '../../../../core/http/fetch.service';
 import { ChatService } from '../../selectors/chat.selector';
 import { ContextService } from '../../../../core/context/context.service';
 import { GraphDataService, HUMAN_ROLE } from '../../selectors/graph.selector';
@@ -241,10 +241,14 @@ export class ProcessUserInputComponent implements OnInit {
    * then dispatches nothing and leaves `userInput` untouched so the user can
    * retry.
    *
-   * Only the non-HTTP rejection (an rxjs `TimeoutError`: the restore returned
-   * 200 but the team never came up within the window) is toasted here. An
-   * `HttpError` has already raised `FetchService`'s own error toast, and a
-   * second one would double up.
+   * Story 33-5 (ADR-026 §3): the guard narrows on `FetchFailure`, the base type
+   * whose meaning is "`FetchService` has already raised its own error toast" —
+   * *having been reported*, not *being HTTP*. So an unreachable server
+   * (`NetworkError`) and a 5xx (`HttpError`) are both silent here, while an rxjs
+   * `TimeoutError` — the restore returned 200 but the team never came up within
+   * the window, which nothing else has told the user about — still gets the
+   * toast below. Narrowing on the base keeps that correct when a third failure
+   * mode is added, instead of silently starting to double-toast.
    *
    * Story 33-3: this method does NO busy-state bookkeeping. It restores,
    * handles its own error, and returns a boolean. The phase belongs to the
@@ -256,7 +260,7 @@ export class ProcessUserInputComponent implements OnInit {
       await this.contextService.restoreTeamAndAwait(this.processId);
       return true;
     } catch (err) {
-      if (!(err instanceof HttpError)) {
+      if (!(err instanceof FetchFailure)) {
         this.messageService.add({
           severity: 'error',
           summary: 'Could not restart the team',

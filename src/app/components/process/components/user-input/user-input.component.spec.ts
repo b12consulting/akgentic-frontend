@@ -6,7 +6,7 @@ import { BehaviorSubject } from 'rxjs';
 
 import { ProcessUserInputComponent } from './user-input.component';
 import { ApiService } from '../../../../core/http/api.service';
-import { HttpError } from '../../../../core/http/fetch.service';
+import { HttpError, NetworkError } from '../../../../core/http/fetch.service';
 import { ChatService } from '../../selectors/chat.selector';
 import { ContextService } from '../../../../core/context/context.service';
 import { GraphDataService } from '../../selectors/graph.selector';
@@ -1312,6 +1312,36 @@ describe('ProcessUserInputComponent', () => {
       expect(component.userInput).toBe('http failed');
       expect(component.phase).toBe('idle');
       // FetchService already toasted this one — a second toast would double up.
+      expect(messageServiceSpy.add).not.toHaveBeenCalled();
+    });
+
+    // Story 33-5 (ADR-026 §3): the third branch of the guard. Before this story
+    // an unreachable server did not reject at all — `FetchService` returned
+    // `undefined`, the restore read as SUCCESS, and the user waited out the full
+    // poll window to be told the team "did not come back up in time". Now it
+    // rejects with a `NetworkError`, and the guard must stay silent about it:
+    // `FetchService` raised the "Server unreachable" toast already.
+    it('(33-5) an unreachable server issues no send and does NOT raise a second toast', async () => {
+      contextServiceStub.restoreTeamAndAwait.and.returnValue(
+        Promise.reject(
+          new NetworkError('Server unreachable. Check your connection.', {
+            cause: new TypeError('Failed to fetch'),
+          }),
+        ),
+      );
+      runningSubject.next(false);
+      component.selectedAgents = [];
+      component.userInput = 'network down';
+
+      await component.sendMessage();
+
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+      expect(apiServiceSpy.sendMessageFromTo).not.toHaveBeenCalled();
+      expect(component.userInput).toBe('network down');
+      expect(component.phase).toBe('idle');
+      // The narrowing is on `FetchFailure`, not `HttpError` — a `NetworkError`
+      // is not an `HttpError`, so a guard still written against the subclass
+      // would double-toast right here.
       expect(messageServiceSpy.add).not.toHaveBeenCalled();
     });
 

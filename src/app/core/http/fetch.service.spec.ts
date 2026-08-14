@@ -2,7 +2,12 @@ import { TestBed } from '@angular/core/testing';
 import { MessageService } from 'primeng/api';
 
 import { ConfigService } from '../config/config.service';
-import { FetchService, HttpError } from './fetch.service';
+import {
+  FetchFailure,
+  FetchService,
+  HttpError,
+  NetworkError,
+} from './fetch.service';
 
 /** Build a minimal `Response`-like object usable by `FetchService.fetch`. */
 function makeResponse({
@@ -289,6 +294,112 @@ describe('FetchService', () => {
       // Existing toast-on-error behaviour preserved — the panel's save
       // handler relies on the global toast fired here for 401 fall-through.
       expect(messageServiceSpy.add).toHaveBeenCalledTimes(1);
+    });
+
+    it('the HttpError is also a FetchFailure, and still carries status + body', async () => {
+      const errBody = { detail: 'Nope' };
+      globalThis.fetch = jasmine.createSpy('fetch').and.resolveTo(
+        makeResponse({
+          ok: false,
+          status: 422,
+          statusText: 'Unprocessable Entity',
+          jsonValue: errBody,
+          textValue: JSON.stringify(errBody),
+        }),
+      );
+
+      let caught: unknown = null;
+      try {
+        await service.fetch({ url: 'https://x/api' });
+      } catch (err) {
+        caught = err;
+      }
+
+      // The base type is what `restoreBeforeSend` narrows on, so the relation
+      // must hold on an instance FetchService actually produced — a hand-built
+      // object would not prove the prototype chain survived down-levelling.
+      expect(caught instanceof FetchFailure).toBeTrue();
+      expect(caught instanceof HttpError).toBeTrue();
+      expect(caught instanceof NetworkError).toBeFalse();
+      expect((caught as HttpError).status).toBe(422);
+      expect((caught as HttpError).body).toEqual(errBody);
+    });
+  });
+
+  // --- Story 33-5 (ADR-026) — NetworkError thrown on a transport failure ---
+
+  describe('NetworkError on a transport failure (Story 33-5)', () => {
+    /** The shape `globalThis.fetch` rejects with when it never reached the
+     *  server: a plain TypeError, as the platform emits. */
+    function transportFailure(): Error {
+      return new TypeError('Failed to fetch');
+    }
+
+    it('rejects with a NetworkError and toasts exactly once', async () => {
+      globalThis.fetch = jasmine
+        .createSpy('fetch')
+        .and.rejectWith(transportFailure());
+
+      let caught: unknown = null;
+      try {
+        await service.fetch({ url: 'https://x/api' });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught instanceof NetworkError).toBeTrue();
+      expect((caught as NetworkError).name).toBe('NetworkError');
+      expect((caught as Error).message).toBe(
+        'Server unreachable. Check your connection.',
+      );
+      // FetchService stays the single place that tells the user a request
+      // failed — a caller adding its own toast would double up.
+      expect(messageServiceSpy.add).toHaveBeenCalledTimes(1);
+      expect(messageServiceSpy.add.calls.first().args[0].severity).toBe('error');
+    });
+
+    it('the NetworkError is a FetchFailure and an Error, has no status, and keeps the cause', async () => {
+      const reason = transportFailure();
+      globalThis.fetch = jasmine.createSpy('fetch').and.rejectWith(reason);
+
+      let caught: unknown = null;
+      try {
+        await service.fetch({ url: 'https://x/api' });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught instanceof FetchFailure).toBeTrue();
+      expect(caught instanceof Error).toBeTrue();
+      // Deliberately status-free: an HttpError with `status: 0` would mis-route
+      // the callers that branch on the value (422 / 401 / other).
+      expect(caught instanceof HttpError).toBeFalse();
+      expect('status' in (caught as object)).toBeFalse();
+      expect((caught as NetworkError & { status?: unknown }).status).toBeUndefined();
+      // An abort or a CORS rejection stays debuggable behind the generic text.
+      expect((caught as Error).cause).toBe(reason);
+    });
+
+    it('uses a caller-supplied errorMessage verbatim as both the toast and the NetworkError message', async () => {
+      globalThis.fetch = jasmine
+        .createSpy('fetch')
+        .and.rejectWith(transportFailure());
+
+      let caught: unknown = null;
+      try {
+        await service.fetch({
+          url: 'https://x/api',
+          errorMessage: 'Could not reach the catalog',
+        });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect((caught as Error).message).toBe('Could not reach the catalog');
+      expect(messageServiceSpy.add).toHaveBeenCalledTimes(1);
+      expect(messageServiceSpy.add.calls.first().args[0].summary).toBe(
+        'Could not reach the catalog',
+      );
     });
   });
 });

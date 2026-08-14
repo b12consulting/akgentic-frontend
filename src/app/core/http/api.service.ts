@@ -41,6 +41,9 @@ export class ApiService {
     const response: TeamListResponse = await this.fetchService.fetch({
       url: `${this.apiUrl}/teams`,
     });
+    // The coalescing covers a genuinely empty or 204 body ONLY. A failed
+    // request never lands here — it throws (ADR-026) — so an empty list now
+    // means the server really has no teams, not that we could not ask.
     const teams = response?.teams ?? [];
     return teams.map(toTeamContext);
   }
@@ -64,6 +67,8 @@ export class ApiService {
     const url = query ? `${this.apiUrl}/teams?${query}` : `${this.apiUrl}/teams`;
 
     const response: TeamListResponse = await this.fetchService.fetch({ url });
+    // Empty/204 body only — a failed request throws rather than reaching here
+    // (ADR-026), so an empty page is a real empty page.
     const teams = (response?.teams ?? []).map(toTeamContext);
     return { teams, total_count: response?.total_count ?? 0 };
   }
@@ -223,6 +228,9 @@ export class ApiService {
     const response: EventListResponse = await this.fetchService.fetch({
       url: `${this.apiUrl}/teams/${teamId}/events`,
     });
+    // Empty/204 body only — a failed request throws (ADR-026). This site is why
+    // the ADR exists: it used to render "this team has no events" for a browser
+    // that never reached the server.
     return response?.events ?? [];
   }
 
@@ -241,6 +249,8 @@ export class ApiService {
     const response: AgentStateListResponse = await this.fetchService.fetch({
       url: `${this.apiUrl}/teams/${teamId}/agent-states`,
     });
+    // Empty/204 body only — a failed request throws (ADR-026), so an empty
+    // snapshot list means the team genuinely has no per-agent state yet.
     return response?.states ?? [];
   }
 
