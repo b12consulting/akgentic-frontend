@@ -10,6 +10,7 @@ import { NotificationToastService } from '../../../core/ui/notification-toast.se
 import { ChatService } from '../selectors/chat.selector';
 import { MessageLogService } from './message-log.service';
 import { PerAgentStore, PerAgentStoreRegistry } from './per-agent-store';
+import { ProcessStores } from './process-stores';
 import {
   ActorAddress,
   CLOSED_NOTIFICATION_MODEL,
@@ -59,6 +60,7 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
       providers: [
         MessageLogService,
         PerAgentStoreRegistry,
+        ProcessStores,
         IngestionService,
         ChatService,
         {
@@ -301,6 +303,7 @@ describe('IngestionService — Story 6.1 (frame-batched log ingestion)', () => {
       providers: [
         MessageLogService,
         PerAgentStoreRegistry,
+        ProcessStores,
         IngestionService,
         ChatService,
         {
@@ -634,6 +637,7 @@ describe('IngestionService — commands PerAgentStore (Story 17-3, ADR-014/ADR-0
       providers: [
         MessageLogService,
         PerAgentStoreRegistry,
+        ProcessStores,
         IngestionService,
         ChatService,
         {
@@ -857,6 +861,7 @@ describe('IngestionService — registry is the only per-agent owner (Epic 17, AD
       providers: [
         MessageLogService,
         PerAgentStoreRegistry,
+        ProcessStores,
         IngestionService,
         ChatService,
         {
@@ -884,6 +889,24 @@ describe('IngestionService — registry is the only per-agent owner (Epic 17, AD
     expect(service.context).toBeInstanceOf(PerAgentStore);
     expect(service.commands).toBeInstanceOf(PerAgentStore);
     expect(service.systemPrompt).toBeInstanceOf(PerAgentStore);
+  });
+
+  it('re-exports the SAME instances ProcessStores registered (Epic 34, ADR-025 §1)', () => {
+    const service = TestBed.inject(IngestionService);
+    const stores = TestBed.inject(ProcessStores);
+
+    // Reference identity, deliberately — NOT `toEqual`. `registry.register()`
+    // pushes a NEW bucket and returns a NEW PerAgentStore per call, so if
+    // IngestionService re-registered instead of aliasing, the app would carry
+    // two independent maps folding the same log: each correct in isolation, so
+    // every other spec in this file would still pass, while consumers that
+    // assume one store silently read the wrong one. `toBe` is the only
+    // assertion that catches a duplicate registration.
+    expect(service.state).toBe(stores.state);
+    expect(service.context).toBe(stores.context);
+    expect(service.commands).toBe(stores.commands);
+    expect(service.systemPrompt).toBe(stores.systemPrompt);
+    expect(service.tokenUsage).toBe(stores.tokenUsage);
   });
 
   it('introduces NO bespoke per-agent BehaviorSubject of its own', () => {
@@ -934,6 +957,7 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
       providers: [
         MessageLogService,
         PerAgentStoreRegistry,
+        ProcessStores,
         IngestionService,
         ChatService,
         {
@@ -1141,6 +1165,7 @@ describe('IngestionService — state + context PerAgentStore (Story 17-2)', () =
       providers: [
         MessageLogService,
         PerAgentStoreRegistry,
+        ProcessStores,
         IngestionService,
         ChatService,
         {
@@ -1359,6 +1384,7 @@ describe('IngestionService — seed agent state on init (Story 25-1)', () => {
       providers: [
         MessageLogService,
         PerAgentStoreRegistry,
+        ProcessStores,
         IngestionService,
         ChatService,
         {
@@ -1618,6 +1644,7 @@ describe('IngestionService — Story 31-3 (notification toast)', () => {
       providers: [
         MessageLogService,
         PerAgentStoreRegistry,
+        ProcessStores,
         IngestionService,
         ChatService,
         {
@@ -1875,6 +1902,7 @@ describe('IngestionService — Story 31-6 (error parity, severity, summary)', ()
       providers: [
         MessageLogService,
         PerAgentStoreRegistry,
+        ProcessStores,
         IngestionService,
         ChatService,
         {
@@ -2247,6 +2275,7 @@ describe('IngestionService — Story 31-4 (closed-notification suppression)', ()
       providers: [
         MessageLogService,
         PerAgentStoreRegistry,
+        ProcessStores,
         IngestionService,
         ChatService,
         {
@@ -2548,6 +2577,7 @@ describe('IngestionService — Story 31-5 (reactive toast removal)', () => {
       providers: [
         MessageLogService,
         PerAgentStoreRegistry,
+        ProcessStores,
         IngestionService,
         ChatService,
         MessageService,

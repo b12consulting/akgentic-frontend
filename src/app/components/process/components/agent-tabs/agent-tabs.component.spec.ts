@@ -9,6 +9,7 @@ import { GraphDataService } from '../../selectors/graph.selector';
 import { IngestionService } from '../../event/ingestion.service';
 import { MessageLogService } from '../../event/message-log.service';
 import { PerAgentStoreRegistry } from '../../event/per-agent-store';
+import { ProcessStores } from '../../event/process-stores';
 import { ChatService } from '../../selectors/chat.selector';
 import { ApiService } from '../../../../core/http/api.service';
 
@@ -86,6 +87,7 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
       providers: [
         MessageLogService,
         PerAgentStoreRegistry,
+        ProcessStores,
         IngestionService,
         ChatService,
         {

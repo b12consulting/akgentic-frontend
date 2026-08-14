@@ -22,20 +22,13 @@ import {
 
 import { ApiService } from '../../../core/http/api.service';
 import { MessageLogService } from './message-log.service';
-import {
-  PerAgentStore,
-  PerAgentStoreRegistry,
-} from './per-agent-store';
+import { PerAgentStore } from './per-agent-store';
 import {
   AgentStateValue,
   AgentTokenUsage,
-  commandsSpec,
-  contextSpec,
-  stateSpec,
-  systemPromptSpec,
   SystemPromptValue,
-  tokenUsageSpec,
 } from './per-agent-specs';
+import { ProcessStores } from './process-stores';
 import { MessageService } from 'primeng/api';
 import { NotificationToastService } from '../../../core/ui/notification-toast.service';
 
@@ -116,18 +109,15 @@ function synthesizeStateChanged(snapshot: AgentStateResponse): StateChangedMessa
  *     per-agent `state` / `context` from `log$` (O(Δ), automatic replay/reset).
  *   - Spinner floor (`loadingProcess$`, AC7) — UX concern owned by ingestion.
  *
- * Per-agent state (Epic 17 / ADR-014): `state`, `context`, `commands`, and
- * `systemPrompt` are ALL `PerAgentStore` instances owned by the
- * component-scoped `PerAgentStoreRegistry` (single `log$` subscription, replay +
- * reset for free). Story 17-3 migrated `commands` (driven by
- * `CommandsAnnouncedEvent`, ADR-013) off the bespoke `commandsByAgent$`
- * `BehaviorSubject` and re-keyed it by `sender.agent_id`. Story 17-4 migrated
- * the last per-agent concern — the system-prompt head block — onto the
- * `systemPrompt` instance (custom reducer: latest `LlmSystemPromptEvent` parts
- * win, else first `LlmMessageEvent` system parts) and turned
- * `SystemPromptSelector` into a thin delegating façade. The registry is now the
- * SOLE owner of per-agent maps: adding a new per-agent event is a single
- * `register({...})` call.
+ * Per-agent state (Epic 17 / ADR-014, re-homed by Epic 34 / ADR-025 §1):
+ * `state`, `context`, `commands`, `systemPrompt` and `tokenUsage` are ALL
+ * `PerAgentStore` instances owned by the component-scoped
+ * `PerAgentStoreRegistry` (single `log$` subscription, replay + reset for free).
+ * They are DECLARED by `ProcessStores` (`process-stores.ts`) and merely
+ * re-exported here, so this service no longer injects the registry and holds no
+ * `register()` call of its own; adding a new per-agent event is a single
+ * `register({...})` line in `ProcessStores`. The five properties below keep
+ * their names, types and semantics — consumers are unaffected by the move.
  */
 @Injectable()
 export class IngestionService {
@@ -165,75 +155,40 @@ export class IngestionService {
   private log: MessageLogService = inject(MessageLogService);
 
   /**
-   * Epic 17 (ADR-014): component-scoped registry that folds `log$` into the
-   * per-agent `state` / `context` maps (single subscription, O(Δ), automatic
-   * replay + reset). Provided on `ProcessComponent` alongside
-   * `MessageLogService`. Owns the maps the deleted dicts used to hold.
+   * Epic 34 (ADR-025 §1): the projection unit that DECLARES the five per-agent
+   * stores. The five `readonly` fields below are aliases onto its instances —
+   * same objects, not copies — so `ingestion.state` and `processStores.state`
+   * are one store, folded once. Declared ABOVE those aliases: TypeScript
+   * initialises class fields in declaration order, so an alias declared first
+   * would read `undefined`.
    */
-  private registry: PerAgentStoreRegistry = inject(PerAgentStoreRegistry);
+  private readonly stores: ProcessStores = inject(ProcessStores);
 
   webSocket: WebSocketSubject<any> = new WebSocketSubject({ url: '' });
 
-  /**
-   * Epic 17 (ADR-014 §5): per-agent latest `{ schema, state }` derived from
-   * `StateChangedMessage`. Replaces the bespoke `stateDict$`. Default key
-   * `sender.agent_id`; `schema` is an empty object literal exactly as before
-   * (V2 sends an empty schema; raw state rendered as JSON). Read via
-   * `state.forAgent(id)`.
-   */
-  readonly state: PerAgentStore<AgentStateValue> =
-    this.registry.register<AgentStateValue>(stateSpec);
+  // Epic 34 (ADR-025 §1): the five per-agent stores, re-exported from
+  // `ProcessStores`. Aliases, never re-registrations — `register()` pushes a
+  // NEW bucket and returns a NEW store per call, so a second call here would
+  // give the app two independent maps folding the same log, each correct in
+  // isolation and therefore invisible to every existing spec. The rationale
+  // for each store's keying and reducer lives with its declaration in
+  // `process-stores.ts`.
 
-  /**
-   * Epic 17 (ADR-014 §5): per-agent ordered conversation array derived by
-   * appending each `LlmMessageEvent` envelope's inner `message`. Replaces the
-   * bespoke `contextDict$`. Default key `sender.agent_id`; the append is
-   * O(Δ)/frame (the registry walks only `log.slice(processedCount)` and
-   * `appendWith` concats once per new message). Read via `context.forAgent(id)`.
-   */
-  readonly context: PerAgentStore<unknown[]> =
-    this.registry.register<unknown[]>(contextSpec);
+  /** Per-agent latest `{ schema, state }`. Declared by `ProcessStores.state`. */
+  readonly state: PerAgentStore<AgentStateValue> = this.stores.state;
 
-  /**
-   * Epic 17 (ADR-014 §5): per-agent slash-command store derived from
-   * `CommandsAnnouncedEvent` riding the `EventMessage` passthrough. Replaces
-   * the bespoke `commandsByAgent$`. Default key `sender.agent_id` (ADR-013
-   * keying fix — the emitting agent is the outer sender, so
-   * `sender.agent_id === inner.agent.agent_id`, ADR-014 §2), so a fired/re-hired
-   * display-name reuse can never serve the wrong agent's commands. `replaceWith`
-   * gives the same replace-on-re-announce semantics the backend relies on (the
-   * full list is re-emitted on change). Read via `commands.forAgent(id)` /
-   * `commands.snapshot(id)` by the `/` mention consumers.
-   */
-  readonly commands: PerAgentStore<CommandDescriptor[]> =
-    this.registry.register<CommandDescriptor[]>(commandsSpec);
+  /** Per-agent ordered conversation array. Declared by `ProcessStores.context`. */
+  readonly context: PerAgentStore<unknown[]> = this.stores.context;
 
-  /**
-   * Epic 17 (ADR-014 §5): per-agent system-prompt head block derived from
-   * `LlmSystemPromptEvent` (primary, latest-wins, FR1) with a first
-   * `LlmMessageEvent` system-part fallback (FR2). Replaces the bespoke
-   * `SystemPromptSelector` `log$` fold — the selector is now a thin façade that
-   * delegates to `systemPrompt.forAgent(id)`. The reducer is a custom one
-   * (`systemPromptReduce`) because the precedence is "latest primary OR first
-   * fallback", not a stock factory; `match` (`systemPromptMatch`) admits BOTH
-   * `LlmSystemPromptEvent` and `LlmMessageEvent` inners so both reach the
-   * reducer. Default key `sender.agent_id`. Read via the façade or directly via
-   * `systemPrompt.forAgent(id)` (value `{ rows, hasPrimary }`; the façade
-   * projects `.rows`).
-   */
+  /** Per-agent slash commands. Declared by `ProcessStores.commands`. */
+  readonly commands: PerAgentStore<CommandDescriptor[]> = this.stores.commands;
+
+  /** Per-agent system-prompt head block. Declared by `ProcessStores.systemPrompt`. */
   readonly systemPrompt: PerAgentStore<SystemPromptValue> =
-    this.registry.register<SystemPromptValue>(systemPromptSpec);
+    this.stores.systemPrompt;
 
-  /**
-   * Epic 26 (ADR-022 §Decision 2): per-agent token-usage derived from
-   * `LlmUsageEvent` riding the `EventMessage` passthrough. Default key
-   * `sender.agent_id` (the agent that ran the model). Folded by the same
-   * component-scoped registry as `state` / `context` / `commands` /
-   * `systemPrompt` — replay + reset for free. Read via `tokenUsage.forAgent(id)`
-   * (per-agent) and `tokenUsage.all$` (the `TokenUsageSelector.teamTotals$` sum).
-   */
-  readonly tokenUsage: PerAgentStore<AgentTokenUsage> =
-    this.registry.register<AgentTokenUsage>(tokenUsageSpec);
+  /** Per-agent token usage. Declared by `ProcessStores.tokenUsage`. */
+  readonly tokenUsage: PerAgentStore<AgentTokenUsage> = this.stores.tokenUsage;
 
   processId: string = '';
 

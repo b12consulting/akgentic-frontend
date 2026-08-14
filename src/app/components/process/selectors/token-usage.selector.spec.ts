@@ -6,6 +6,7 @@ import { ApiService } from '../../../core/http/api.service';
 import { IngestionService } from '../event/ingestion.service';
 import { MessageLogService } from '../event/message-log.service';
 import { PerAgentStoreRegistry } from '../event/per-agent-store';
+import { ProcessStores } from '../event/process-stores';
 import { AgentTokenUsage } from '../event/per-agent-specs';
 import {
   ModelTokenTotals,
@@ -86,6 +87,7 @@ function configureBed(): {
     providers: [
       MessageLogService,
       PerAgentStoreRegistry,
+      ProcessStores,
       IngestionService,
       TokenUsageSelector,
       {

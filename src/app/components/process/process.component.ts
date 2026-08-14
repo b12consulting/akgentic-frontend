@@ -9,6 +9,7 @@ import { KGStateReducer } from './selectors/knowledge-graph.selector';
 import { MessageLogService } from './event/message-log.service';
 import { IngestionService } from './event/ingestion.service';
 import { PerAgentStoreRegistry } from './event/per-agent-store';
+import { ProcessStores } from './event/process-stores';
 import { SystemPromptSelector } from './selectors/system-prompt.selector';
 import { TokenUsageSelector } from './selectors/token-usage.selector';
 import { ToolPresenceService } from './selectors/tool-presence.selector';
@@ -79,6 +80,12 @@ interface VisualizationOption {
     // a team switch destroys this component, destroying the registry and its
     // single `log$` subscription (same lifecycle guarantee as MessageLogService).
     PerAgentStoreRegistry,
+    // Epic 34 (ADR-025 §1): the projection unit declaring the five per-agent
+    // stores. Provided BETWEEN the registry (which it injects) and
+    // IngestionService (which injects it and re-exports its stores). Never
+    // `providedIn: 'root'` — it wraps the component-scoped registry, and root
+    // scope would leak per-agent state across team switches.
+    ProcessStores,
     IngestionService,
     // Epic 26 (ADR-022): component-scoped read surface over the `tokenUsage`
     // PerAgentStore. Provided AFTER IngestionService (which it injects); never

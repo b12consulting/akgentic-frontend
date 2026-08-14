@@ -9,6 +9,7 @@ import { ApiService } from '../../../core/http/api.service';
 import { IngestionService } from './ingestion.service';
 import { MessageLogService } from './message-log.service';
 import { PerAgentStore, PerAgentStoreRegistry } from './per-agent-store';
+import { ProcessStores } from './process-stores';
 import {
   AgentTokenUsage,
   contextMatch,
@@ -214,6 +215,7 @@ function configureBed(): {
     providers: [
       MessageLogService,
       PerAgentStoreRegistry,
+      ProcessStores,
       IngestionService,
       {
         provide: ApiService,
