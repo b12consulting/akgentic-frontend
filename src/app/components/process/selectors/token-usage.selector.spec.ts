@@ -7,6 +7,7 @@ import { IngestionService } from '../event/ingestion.service';
 import { MessageLogService } from '../event/message-log.service';
 import { PerAgentStoreRegistry } from '../event/per-agent-store';
 import { ProcessStores } from '../event/process-stores';
+import { ReplaySeeder } from '../event/replay-seeder';
 import { AgentTokenUsage } from '../event/per-agent-specs';
 import {
   ModelTokenTotals,
@@ -88,6 +89,7 @@ function configureBed(): {
       MessageLogService,
       PerAgentStoreRegistry,
       ProcessStores,
+      ReplaySeeder,
       IngestionService,
       TokenUsageSelector,
       {

@@ -5,22 +5,15 @@ import { bufferTime, filter, take } from 'rxjs/operators';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 import { ConfigService } from '../../../core/config/config.service';
 import {
-  ActorAddress,
   AkgenticMessage,
   CommandDescriptor,
   ErrorMessage,
   NotificationMessage,
   notificationSeverity,
   NotificationSeverity,
-  StateChangedMessage,
   WarningMessage,
 } from '../../../protocol/message.types';
-import {
-  AgentStateResponse,
-  EventResponse,
-} from '../../../core/context/team.interface';
 
-import { ApiService } from '../../../core/http/api.service';
 import { MessageLogService } from './message-log.service';
 import { PerAgentStore } from './per-agent-store';
 import {
@@ -29,6 +22,7 @@ import {
   SystemPromptValue,
 } from './per-agent-specs';
 import { ProcessStores } from './process-stores';
+import { ReplaySeeder } from './replay-seeder';
 import { MessageService } from 'primeng/api';
 import { NotificationToastService } from '../../../core/ui/notification-toast.service';
 
@@ -68,43 +62,12 @@ const TOAST_FALLBACK: Record<NotificationSeverity, string> = {
 const ORCHESTRATOR_ROLE = 'Orchestrator';
 
 /**
- * Story 25-1 (ADR-020 §2): build a synthesized `StateChangedMessage` from one
- * `AgentStateResponse` snapshot so `stateSpec` (`match: isStateChangedMessage`,
- * default key `sender.agent_id`, value `{ schema: {}, state }`) folds it into
- * the `state` store. Only `sender.agent_id` (the agent UUID, team Epic 23) and
- * `state` are read by the fold; the other type-required `BaseMessage` /
- * `ActorAddress` fields are inert placeholders. `id` is left empty so
- * `MessageLogService.appendAll` never dedups one seeded entry against another
- * (dedup only applies to truthy ids); `state` is treated as
- * `Record<string, unknown>` exactly as `EventResponse.event` is treated as
- * `AkgenticMessage` — no broad `any` cast beyond the state payload.
- */
-function synthesizeStateChanged(snapshot: AgentStateResponse): StateChangedMessage {
-  const sender: ActorAddress = {
-    __actor_address__: true,
-    agent_id: snapshot.agent_id,
-    name: snapshot.name ?? '',
-    role: '',
-    squad_id: '',
-    user_message: false,
-  };
-  return {
-    id: '',
-    parent_id: null,
-    team_id: '',
-    timestamp: snapshot.updated_at,
-    sender,
-    display_type: 'other',
-    content: null,
-    __model__: 'akgentic.core.messages.orchestrator.StateChangedMessage',
-    state: snapshot.state,
-  };
-}
-
-/**
  * `IngestionService` — minimal ingestion surface (post Story 6.4 / Epic 17):
- *   - REST init replays events into `MessageLogService.log$`; the registry
- *     folds that replay tail exactly as it folds live WS frames.
+ *   - REST init replay is owned by `ReplaySeeder` (`replay-seeder.ts`, Epic 34 /
+ *     ADR-025 §1), which OWNS both REST calls and the `synthesizeStateChanged`
+ *     shaping; `init()` keeps the two `log.appendAll` calls that fold its output
+ *     into `MessageLogService.log$`, because they are sequenced steps here. The
+ *     registry folds that replay tail exactly as it folds live WS frames.
  *   - WS `bufferTime(16)` ingestion appends to the log; the registry derives
  *     per-agent `state` / `context` from `log$` (O(Δ), automatic replay/reset).
  *   - Spinner floor (`loadingProcess$`, AC7) — UX concern owned by ingestion.
@@ -121,7 +84,6 @@ function synthesizeStateChanged(snapshot: AgentStateResponse): StateChangedMessa
  */
 @Injectable()
 export class IngestionService {
-  apiService: ApiService = inject(ApiService);
   messageService: MessageService = inject(MessageService);
   private config: ConfigService = inject(ConfigService);
 
@@ -163,6 +125,14 @@ export class IngestionService {
    * would read `undefined`.
    */
   private readonly stores: ProcessStores = inject(ProcessStores);
+
+  /**
+   * Epic 34 (ADR-025 §1): the REST replay source. It performs both stopped-team
+   * REST calls and returns `AkgenticMessage[]`; the `appendAll` of what it
+   * returns stays in `init()` below, where the ordering is sequenced and
+   * visible.
+   */
+  private readonly replay: ReplaySeeder = inject(ReplaySeeder);
 
   webSocket: WebSocketSubject<any> = new WebSocketSubject({ url: '' });
 
@@ -323,13 +293,13 @@ export class IngestionService {
       // head-block (`state.forAgent(uuid)`) stays blank on load. A running team
       // (including a freshly restored one, team Story 23-3) already receives its
       // `StateChangedMessage`(s) on the cursor-0 WS replay, so the REST seed is
-      // redundant there and `getAgentStates` MUST NOT be called for it.
-      await this.seedAgentStates(processId);
+      // redundant there and `getAgentStates` MUST NOT be called for it. The gate
+      // lives HERE and never inside the seeder, which knows no team status.
+      const seeds: AkgenticMessage[] = await this.replay.seedMessages(processId);
+      this.log.appendAll(seeds);
 
-      // V2: use getEvents() for stopped teams
-      const eventResponses: EventResponse[] =
-        await this.apiService.getEvents(processId);
-
+      // V2: use getEvents() for stopped teams.
+      //
       // --- ADR-005 §Decision 6 step (c) -------------------------------
       // log.appendAll is the ONLY replay seeding now. Epic 17 (ADR-014
       // §Decision 3): the registry folds this replay tail exactly as it folds
@@ -337,9 +307,16 @@ export class IngestionService {
       // for free — replay is just another `log$` tail. The bespoke
       // `latestStates` / `contextArrays` / `commandsByAgent` reconstruction
       // loops are deleted (Story 17-2 / 17-3).
-      const replayMessages: AkgenticMessage[] = eventResponses
-        .map((er: EventResponse) => er.event as AkgenticMessage)
-        .filter((evt) => !!evt && !!evt.__model__);
+      //
+      // TWO sequential awaits and TWO appends, never `Promise.all` and never
+      // one merged array: the state seed must be folded BEFORE the event
+      // replay, since `stateSpec` is latest-wins and a real replayed
+      // `StateChangedMessage` has to be able to overwrite a synthesized seed
+      // (never the reverse). Parallelising would also change failure
+      // semantics — a `getAgentStates` rejection today means `getEvents` is
+      // never issued and `init()` rejects before the socket opens.
+      const replayMessages: AkgenticMessage[] =
+        await this.replay.replayMessages(processId);
       this.log.appendAll(replayMessages);
 
       // Story 6.4 (AC1): `GRAPH_RELEVANT_MODELS` filtering and the
@@ -444,23 +421,6 @@ export class IngestionService {
         this.showDisconnectToast();
       },
     });
-  }
-
-  /**
-   * Story 25-1 (ADR-020 §2): fetch per-agent state snapshots and feed them into
-   * the log as synthesized `StateChangedMessage` entries so the registry's
-   * `stateSpec` folds them into the `state` store exactly as it folds live WS
-   * frames. Called from `init()` ONLY for STOPPED teams (inside the `!running`
-   * block, alongside the `getEvents` replay): a running/restored team gets its
-   * state from the live WS cursor-0 replay (team Story 23-3), so seeding it via
-   * REST is redundant. Mirrors the stopped-team `getEvents` replay seeding: one
-   * REST call, then a single `log.appendAll(...)`.
-   */
-  private async seedAgentStates(processId: string): Promise<void> {
-    const states: AgentStateResponse[] =
-      await this.apiService.getAgentStates(processId);
-    if (states.length === 0) return;
-    this.log.appendAll(states.map((s) => synthesizeStateChanged(s)));
   }
 
   /**

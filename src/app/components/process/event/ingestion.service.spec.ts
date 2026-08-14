@@ -11,6 +11,7 @@ import { ChatService } from '../selectors/chat.selector';
 import { MessageLogService } from './message-log.service';
 import { PerAgentStore, PerAgentStoreRegistry } from './per-agent-store';
 import { ProcessStores } from './process-stores';
+import { ReplaySeeder } from './replay-seeder';
 import {
   ActorAddress,
   CLOSED_NOTIFICATION_MODEL,
@@ -61,6 +62,7 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
         MessageLogService,
         PerAgentStoreRegistry,
         ProcessStores,
+        ReplaySeeder,
         IngestionService,
         ChatService,
         {
@@ -304,6 +306,7 @@ describe('IngestionService — Story 6.1 (frame-batched log ingestion)', () => {
         MessageLogService,
         PerAgentStoreRegistry,
         ProcessStores,
+        ReplaySeeder,
         IngestionService,
         ChatService,
         {
@@ -638,6 +641,7 @@ describe('IngestionService — commands PerAgentStore (Story 17-3, ADR-014/ADR-0
         MessageLogService,
         PerAgentStoreRegistry,
         ProcessStores,
+        ReplaySeeder,
         IngestionService,
         ChatService,
         {
@@ -862,6 +866,7 @@ describe('IngestionService — registry is the only per-agent owner (Epic 17, AD
         MessageLogService,
         PerAgentStoreRegistry,
         ProcessStores,
+        ReplaySeeder,
         IngestionService,
         ChatService,
         {
@@ -958,6 +963,7 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
         MessageLogService,
         PerAgentStoreRegistry,
         ProcessStores,
+        ReplaySeeder,
         IngestionService,
         ChatService,
         {
@@ -1166,6 +1172,7 @@ describe('IngestionService — state + context PerAgentStore (Story 17-2)', () =
         MessageLogService,
         PerAgentStoreRegistry,
         ProcessStores,
+        ReplaySeeder,
         IngestionService,
         ChatService,
         {
@@ -1385,6 +1392,7 @@ describe('IngestionService — seed agent state on init (Story 25-1)', () => {
         MessageLogService,
         PerAgentStoreRegistry,
         ProcessStores,
+        ReplaySeeder,
         IngestionService,
         ChatService,
         {
@@ -1645,6 +1653,7 @@ describe('IngestionService — Story 31-3 (notification toast)', () => {
         MessageLogService,
         PerAgentStoreRegistry,
         ProcessStores,
+        ReplaySeeder,
         IngestionService,
         ChatService,
         {
@@ -1903,6 +1912,7 @@ describe('IngestionService — Story 31-6 (error parity, severity, summary)', ()
         MessageLogService,
         PerAgentStoreRegistry,
         ProcessStores,
+        ReplaySeeder,
         IngestionService,
         ChatService,
         {
@@ -2276,6 +2286,7 @@ describe('IngestionService — Story 31-4 (closed-notification suppression)', ()
         MessageLogService,
         PerAgentStoreRegistry,
         ProcessStores,
+        ReplaySeeder,
         IngestionService,
         ChatService,
         {
@@ -2578,6 +2589,7 @@ describe('IngestionService — Story 31-5 (reactive toast removal)', () => {
         MessageLogService,
         PerAgentStoreRegistry,
         ProcessStores,
+        ReplaySeeder,
         IngestionService,
         ChatService,
         MessageService,

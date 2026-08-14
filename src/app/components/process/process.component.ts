@@ -10,6 +10,7 @@ import { MessageLogService } from './event/message-log.service';
 import { IngestionService } from './event/ingestion.service';
 import { PerAgentStoreRegistry } from './event/per-agent-store';
 import { ProcessStores } from './event/process-stores';
+import { ReplaySeeder } from './event/replay-seeder';
 import { SystemPromptSelector } from './selectors/system-prompt.selector';
 import { TokenUsageSelector } from './selectors/token-usage.selector';
 import { ToolPresenceService } from './selectors/tool-presence.selector';
@@ -86,6 +87,12 @@ interface VisualizationOption {
     // `providedIn: 'root'` — it wraps the component-scoped registry, and root
     // scope would leak per-agent state across team switches.
     ProcessStores,
+    // Epic 34 (ADR-025 §1): the REST replay source, provided BEFORE
+    // IngestionService (which injects it). Never `providedIn: 'root'` — it is
+    // stateless, so root scope would leak nothing today, but the folder's
+    // uniform component scoping keeps this list readable and keeps a future
+    // stateful mistake contained to one team's lifetime.
+    ReplaySeeder,
     IngestionService,
     // Epic 26 (ADR-022): component-scoped read surface over the `tokenUsage`
     // PerAgentStore. Provided AFTER IngestionService (which it injects); never

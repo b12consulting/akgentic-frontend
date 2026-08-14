@@ -8,6 +8,7 @@ import { MessageLogService } from '../event/message-log.service';
 import { IngestionService } from '../event/ingestion.service';
 import { PerAgentStore, PerAgentStoreRegistry } from '../event/per-agent-store';
 import { ProcessStores } from '../event/process-stores';
+import { ReplaySeeder } from '../event/replay-seeder';
 import {
   SystemPromptRow,
   SystemPromptSelector,
@@ -137,6 +138,7 @@ function configureBed(): {
       MessageLogService,
       PerAgentStoreRegistry,
       ProcessStores,
+      ReplaySeeder,
       IngestionService,
       SystemPromptSelector,
       ChatService,
