@@ -6,10 +6,17 @@ import { isRunning } from '../../core/context/team.interface';
 import { AkgentService } from '../../core/ui/akgent.service';
 import { ContextService } from '../../core/context/context.service';
 import { KGStateReducer } from './selectors/knowledge-graph.selector';
+import { ConnectionToast } from './event/connection-toast';
+import { NotificationToasts } from './event/notification-toasts';
+import { LoadingIndicator } from './event/loading-indicator';
+import { LogFeeder } from './event/log-feeder';
 import { MessageLogService } from './event/message-log.service';
 import { IngestionService } from './event/ingestion.service';
 import { PerAgentStoreRegistry } from './event/per-agent-store';
+import { ProcessStores } from './event/process-stores';
+import { ReplaySeeder } from './event/replay-seeder';
 import { SystemPromptSelector } from './selectors/system-prompt.selector';
+import { TeamSocket } from './event/team-socket';
 import { TokenUsageSelector } from './selectors/token-usage.selector';
 import { ToolPresenceService } from './selectors/tool-presence.selector';
 import { WorkspaceRegistryService } from './selectors/workspace-registry.selector';
@@ -79,6 +86,49 @@ interface VisualizationOption {
     // a team switch destroys this component, destroying the registry and its
     // single `log$` subscription (same lifecycle guarantee as MessageLogService).
     PerAgentStoreRegistry,
+    // Epic 34 (ADR-025 §1): the projection unit declaring the five per-agent
+    // stores. Provided BETWEEN the registry (which it injects) and
+    // IngestionService (which injects it and re-exports its stores). Never
+    // `providedIn: 'root'` — it wraps the component-scoped registry, and root
+    // scope would leak per-agent state across team switches.
+    ProcessStores,
+    // Epic 34 (ADR-025 §1): the REST replay source, provided BEFORE
+    // IngestionService (which injects it). Never `providedIn: 'root'` — it is
+    // stateless, so root scope would leak nothing today, but the folder's
+    // uniform component scoping keeps this list readable and keeps a future
+    // stateful mistake contained to one team's lifetime.
+    ReplaySeeder,
+    // Epic 34 (ADR-025 §0-§1): the spinner-floor reactor, provided BEFORE
+    // IngestionService (which injects it and re-exports its `loadingProcess$`).
+    // Never `providedIn: 'root'` — a root instance would outlive this view and
+    // carry a prior team's spinner state, and its `| async`-bound subject, into
+    // the next one.
+    LoadingIndicator,
+    // Epic 34 (ADR-025 §0-§1): the WS-disconnect toast reactor, provided BEFORE
+    // IngestionService (which injects it and drives its start/show/stop). A
+    // separate class from the notification toast on purpose — the two carry
+    // opposite `closable` semantics and their old adjacency had already caused
+    // one copy-paste defect. Never `providedIn: 'root'` — its dedup flag is
+    // per-team-cycle, and a root instance would outlive the team switch that
+    // `start()` resets it for.
+    ConnectionToast,
+    // Epic 34 (ADR-025 §0-§1): the notification-toast reactor (stories 31-3 /
+    // 31-4 / 31-5 / 31-6), provided BEFORE IngestionService, which injects it and
+    // drives its start/stop. Never `providedIn: 'root'` — it caches per-team
+    // dismissal state, and a root instance would carry one team's closed ids into
+    // the next, silently suppressing toasts that should have been raised.
+    NotificationToasts,
+    // Epic 34 (ADR-025 §1): the WS transport source, provided BEFORE
+    // IngestionService (which injects it and opens it LAST in `init()`). Never
+    // `providedIn: 'root'` — a root instance would share ONE socket across every
+    // team switch, which is the transport half of the race ADR-005 §Decision 6
+    // closes.
+    TeamSocket,
+    // Epic 34 (ADR-025 §1): the frame-batched log feed, provided BEFORE
+    // IngestionService (which injects it and hands it the socket's inbound
+    // stream). Never `providedIn: 'root'` — a root instance would feed one
+    // team's frames into the next team's log.
+    LogFeeder,
     IngestionService,
     // Epic 26 (ADR-022): component-scoped read surface over the `tokenUsage`
     // PerAgentStore. Provided AFTER IngestionService (which it injects); never

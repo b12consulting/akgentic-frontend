@@ -7,6 +7,13 @@ import { ChatService } from './chat.selector';
 import { MessageLogService } from '../event/message-log.service';
 import { IngestionService } from '../event/ingestion.service';
 import { PerAgentStore, PerAgentStoreRegistry } from '../event/per-agent-store';
+import { ProcessStores } from '../event/process-stores';
+import { ReplaySeeder } from '../event/replay-seeder';
+import { ConnectionToast } from '../event/connection-toast';
+import { NotificationToasts } from '../event/notification-toasts';
+import { LogFeeder } from '../event/log-feeder';
+import { TeamSocket } from '../event/team-socket';
+import { LoadingIndicator } from '../event/loading-indicator';
 import {
   SystemPromptRow,
   SystemPromptSelector,
@@ -135,6 +142,13 @@ function configureBed(): {
     providers: [
       MessageLogService,
       PerAgentStoreRegistry,
+      ProcessStores,
+      ReplaySeeder,
+      LoadingIndicator,
+      ConnectionToast,
+      NotificationToasts,
+      TeamSocket,
+      LogFeeder,
       IngestionService,
       SystemPromptSelector,
       ChatService,

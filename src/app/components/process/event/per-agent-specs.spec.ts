@@ -9,6 +9,13 @@ import { ApiService } from '../../../core/http/api.service';
 import { IngestionService } from './ingestion.service';
 import { MessageLogService } from './message-log.service';
 import { PerAgentStore, PerAgentStoreRegistry } from './per-agent-store';
+import { ProcessStores } from './process-stores';
+import { ReplaySeeder } from './replay-seeder';
+import { ConnectionToast } from './connection-toast';
+import { NotificationToasts } from './notification-toasts';
+import { LogFeeder } from './log-feeder';
+import { TeamSocket } from './team-socket';
+import { LoadingIndicator } from './loading-indicator';
 import {
   AgentTokenUsage,
   contextMatch,
@@ -214,6 +221,13 @@ function configureBed(): {
     providers: [
       MessageLogService,
       PerAgentStoreRegistry,
+      ProcessStores,
+      ReplaySeeder,
+      LoadingIndicator,
+      ConnectionToast,
+      NotificationToasts,
+      TeamSocket,
+      LogFeeder,
       IngestionService,
       {
         provide: ApiService,
