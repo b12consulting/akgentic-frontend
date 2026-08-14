@@ -467,12 +467,6 @@ describe('ContextService', () => {
   // Story 10.5 — reactive stopTeamAndAwait
   // =======================================================================
 
-  it('(AC1 10.5) stopTeamAndAwait is defined on the service with (teamId, timeoutMs?) shape', () => {
-    expect(typeof service.stopTeamAndAwait).toBe('function');
-    // One required formal parameter: teamId. timeoutMs is optional (default 10000).
-    expect(service.stopTeamAndAwait.length).toBe(1);
-  });
-
   it('(AC2 10.5) stopTeamAndAwait resolves when refresh reports stopped', fakeAsync(() => {
     const running = makeTeam('team-A', 'running');
     const stopped = makeTeam('team-A', 'stopped');
@@ -502,28 +496,53 @@ describe('ContextService', () => {
     expect(apiSpy.getTeam).not.toHaveBeenCalled();
   }));
 
-  it('(AC3 10.5) stopTeamAndAwait rejects with TimeoutError when team never stops', fakeAsync(() => {
+  it('(AC3 10.5 / AC4 33.4) stopTeamAndAwait default deadline: pending 1 ms short of 10 000 ms, TimeoutError past it, then stops polling', fakeAsync(() => {
     const running = makeTeam('team-A', 'running');
     apiSpy.getTeams.and.returnValue(Promise.resolve([running]));
     service.getTeams();
     tick();
 
     apiSpy.stopTeam.and.returnValue(Promise.resolve());
+    // Never satisfies the readiness predicate — the team keeps reporting
+    // running, so only the deadline can settle the promise.
     apiSpy.getTeam.and.returnValue(Promise.resolve(running));
 
+    let resolved = false;
     let rejected: Error | null = null;
-    service.stopTeamAndAwait('team-A', 10000).catch((err: Error) => {
-      rejected = err;
-    });
+    // No second argument: the DEFAULT is what this spec pins. The tick amounts
+    // below state the expected policy independently, in bare numbers — deriving
+    // them from the constant would pass for 500 ms and 120 000 ms alike.
+    // `.catch` is attached at the call so a rejection lands in the flag rather
+    // than surfacing as a zone error.
+    service
+      .stopTeamAndAwait('team-A')
+      .then(() => {
+        resolved = true;
+      })
+      .catch((err: Error) => {
+        rejected = err;
+      });
 
+    // The POST settles here and the readiness pipeline subscribes: the deadline
+    // is measured from this point. The 1 s refresh poll does not reset it —
+    // `timeout()` sits after `filter`/`take(1)`, so its source emits nothing
+    // until the predicate passes.
     tick();
 
-    tick(11000);
+    tick(9999);
     flushMicrotasks();
+    // Still pending — neither settled. This half catches a SHRUNK default.
+    expect(resolved).toBe(false);
+    expect(rejected).toBeNull();
 
+    // 2 ms, not 1, so the spec does not depend on the deadline being inclusive.
+    tick(2);
+    flushMicrotasks();
+    // This half catches an ENLARGED default.
     expect(rejected).not.toBeNull();
     expect(rejected!.name).toBe('TimeoutError');
 
+    // Teardown on the reject path — a leaked 1 s poll is invisible otherwise.
     apiSpy.getTeam.calls.reset();
     tick(5000);
     expect(apiSpy.getTeam).not.toHaveBeenCalled();
@@ -977,12 +996,6 @@ describe('ContextService', () => {
   // Story 33.1 — reactive restoreTeamAndAwait (mirror of stopTeamAndAwait)
   // =======================================================================
 
-  it('(AC1 33.1) restoreTeamAndAwait is defined on the service with (teamId, timeoutMs?) shape', () => {
-    expect(typeof service.restoreTeamAndAwait).toBe('function');
-    // One required formal parameter: teamId. timeoutMs is optional (default 10000).
-    expect(service.restoreTeamAndAwait.length).toBe(1);
-  });
-
   it('(AC1, AC2, AC3 33.1) resolves when the refresh reports running, calls restoreTeam once, then stops polling', fakeAsync(() => {
     const stopped = makeTeam('team-A', 'stopped');
     const running = makeTeam('team-A', 'running');
@@ -1021,7 +1034,7 @@ describe('ContextService', () => {
     expect(apiSpy.getTeam).not.toHaveBeenCalled();
   }));
 
-  it('(AC1, AC3 33.1) rejects with TimeoutError when the team never reports running, then stops polling', fakeAsync(() => {
+  it('(AC1, AC3 33.1 / AC3 33.4) restoreTeamAndAwait default deadline: pending 1 ms short of 10 000 ms, TimeoutError past it, then stops polling', fakeAsync(() => {
     const stopped = makeTeam('team-A', 'stopped');
 
     apiSpy.getTeams.and.returnValue(Promise.resolve([stopped]));
@@ -1031,17 +1044,42 @@ describe('ContextService', () => {
     apiSpy.restoreTeam.and.returnValue(
       Promise.resolve(makeTeamResponse('team-A', 'stopped')),
     );
+    // Never satisfies the readiness predicate — the team keeps reporting
+    // stopped, so only the deadline can settle the promise.
     apiSpy.getTeam.and.returnValue(Promise.resolve(stopped));
 
+    let resolved = false;
     let rejected: Error | null = null;
-    service.restoreTeamAndAwait('team-A', 10000).catch((err: Error) => {
-      rejected = err;
-    });
+    // No second argument: the DEFAULT is what this spec pins. The tick amounts
+    // below state the expected policy independently, in bare numbers — deriving
+    // them from the constant would pass for 500 ms and 120 000 ms alike.
+    // `.catch` is attached at the call so a rejection lands in the flag rather
+    // than surfacing as a zone error.
+    service
+      .restoreTeamAndAwait('team-A')
+      .then(() => {
+        resolved = true;
+      })
+      .catch((err: Error) => {
+        rejected = err;
+      });
 
+    // The POST settles here and the readiness pipeline subscribes: the deadline
+    // is measured from this point. The 1 s refresh poll does not reset it —
+    // `timeout()` sits after `filter`/`take(1)`, so its source emits nothing
+    // until the predicate passes.
     tick();
-    tick(11000);
-    flushMicrotasks();
 
+    tick(9999);
+    flushMicrotasks();
+    // Still pending — neither settled. This half catches a SHRUNK default.
+    expect(resolved).toBe(false);
+    expect(rejected).toBeNull();
+
+    // 2 ms, not 1, so the spec does not depend on the deadline being inclusive.
+    tick(2);
+    flushMicrotasks();
+    // This half catches an ENLARGED default.
     expect(rejected).not.toBeNull();
     expect(rejected!.name).toBe('TimeoutError');
 

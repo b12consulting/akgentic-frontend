@@ -21,6 +21,9 @@ import {
 import { ApiService } from '../http/api.service';
 import { isRunning, TeamContext, TeamPage, toTeamContext } from './team.interface';
 
+/** How long a stop or restore may take to land in the cached team status. */
+const TEAM_STATE_TIMEOUT_MS = 10_000;
+
 @Injectable({
   providedIn: 'root',
 })
@@ -163,7 +166,7 @@ export class ContextService {
 
   async stopTeamAndAwait(
     teamId: string,
-    timeoutMs: number = 10000,
+    timeoutMs: number = TEAM_STATE_TIMEOUT_MS,
   ): Promise<void> {
     await this.apiService.stopTeam(teamId);
 
@@ -218,7 +221,7 @@ export class ContextService {
    */
   async restoreTeamAndAwait(
     teamId: string,
-    timeoutMs: number = 10000,
+    timeoutMs: number = TEAM_STATE_TIMEOUT_MS,
   ): Promise<void> {
     await this.apiService.restoreTeam(teamId);
 
