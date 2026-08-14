@@ -231,11 +231,41 @@ describe('ConnectionToast — separate from the notification toast (AC9)', () =>
     // A guard against the reunification this story exists to prevent: the two
     // toast systems must not grow a shared payload builder, base class or
     // constant. This unit's whole surface is its three lifecycle calls.
-    const surface = Object.getOwnPropertyNames(
-      Object.getPrototypeOf(unit),
-    ).filter((name) => name !== 'constructor');
+    //
+    // Walks the WHOLE prototype chain, not one level. `getOwnPropertyNames` on
+    // `getPrototypeOf(unit)` alone reads only `ConnectionToast.prototype`, so a
+    // builder inherited from a shared base class is invisible to it — see the
+    // chain assertion below, which is the falsifiable half of this pair.
+    const surface: string[] = [];
+    for (
+      let proto = Object.getPrototypeOf(unit);
+      proto !== null && proto !== Object.prototype;
+      proto = Object.getPrototypeOf(proto)
+    ) {
+      surface.push(...Object.getOwnPropertyNames(proto));
+    }
 
-    expect(new Set(surface)).toEqual(new Set(['start', 'show', 'stop']));
+    expect(new Set(surface.filter((name) => name !== 'constructor'))).toEqual(
+      new Set(['start', 'show', 'stop']),
+    );
+  });
+
+  it('AC9: the unit has NO base class — nothing to share a payload builder through', () => {
+    const { unit } = setup();
+
+    // The mutation this exists for, and it is not hypothetical: extracting the
+    // payload literal into an `abstract class SharedToastPayloadBuilder` and
+    // calling `this.buildPayload()` from `show()` left the ENTIRE suite green,
+    // because a one-level surface check cannot see an inherited member. That is
+    // exactly the shared payload builder AC9 forbids — the two toasts' opposite
+    // `closable` semantics reunited behind one literal, which is the copy-paste
+    // trap coming back through the front door.
+    //
+    // `ConnectionToast.prototype`'s own prototype must be `Object.prototype`:
+    // any `extends` at all replaces it with the base's prototype and this fails.
+    expect(Object.getPrototypeOf(Object.getPrototypeOf(unit))).toBe(
+      Object.prototype,
+    );
   });
 });
 
