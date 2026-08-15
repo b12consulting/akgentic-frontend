@@ -59,11 +59,15 @@ const ORCHESTRATOR_ROLE = 'Orchestrator';
  *     now behave identically. The old REPLAY ASYMMETRY — silent on REST,
  *     toasting on WS, decided by the transport alone — was the reported defect
  *     and is gone.
- *   - IDEMPOTENCE IS THE LOG'S. An id is admitted once per team session, so a
- *     post-restore cursor-0 re-replay raises nothing: `appendAll` filters every
- *     already-seen id before the delta is published. There is no "already
- *     toasted" set here, and adding one would duplicate that dedup and drift
- *     from it.
+ *   - IDEMPOTENCE IS THE LOG'S. A re-delivered id is filtered by `appendAll`
+ *     before the delta is published, so a post-restore cursor-0 re-replay raises
+ *     nothing. Read the guarantee at its real width: the filter is computed from
+ *     the log as it stood BEFORE the batch, so it dedups ACROSS appends and not
+ *     WITHIN one — two copies of an id inside a single `appendAll` both enter and
+ *     both toast. That is pre-existing log behaviour and no concern of this unit,
+ *     which is the point: there is no "already toasted" set here, and adding one
+ *     to close that seam would put a second copy of the log's dedup in the one
+ *     place guaranteed to drift from it.
  *   - the closed-ids cache NO LONGER LAGS. `MessageLogService` emits `_log$`
  *     before `_appended$`, so the fold has absorbed the batch by the time this
  *     unit sees it: a notification arriving in the same batch as its own

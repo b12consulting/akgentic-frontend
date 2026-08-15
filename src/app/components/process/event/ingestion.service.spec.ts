@@ -3190,4 +3190,28 @@ describe('IngestionService — Story 35-1 (toasts dispatch from the log)', () =>
     expect(raised().map((m) => m.data.messageId)).toEqual(['w-1', 'w-2']);
     expect(raised().map((m) => m.summary)).toEqual(['@First', '@Second']);
   });
+
+  // The sharpest SEMANTIC SHIFT of this story, pinned so a future reader cannot
+  // mistake it for an accident: the same id arriving twice on the wire used to
+  // raise TWO toasts, because the reactor sat upstream of the log's dedup and
+  // kept no record of what it had already shown. It now raises one. AC #9 states
+  // the same property for the REST-then-socket burst; this states it for the
+  // transport alone, which is where the old behaviour was visible.
+  //
+  // Scope of the guarantee, exactly: `appendAll` computes its id filter from the
+  // log as it stood BEFORE the batch, so the dedup is ACROSS batches — hence the
+  // two flushes below. Two copies inside a single 16 ms window are one batch and
+  // are not filtered. That is pre-existing log behaviour, unchanged here, and it
+  // is why the class docblock's idempotence claim is scoped rather than absolute.
+  it('the SAME notification delivered twice over the socket raises ONE toast', async () => {
+    await service.init('proc-1', true);
+    const dup = mkNotification('w-1', WARNING_MODEL, '@Researcher', 'over limit');
+
+    fakeSocket.next(dup);
+    jasmine.clock().tick(20);
+    fakeSocket.next(dup);
+    jasmine.clock().tick(20);
+
+    expect(raised().map((m) => m.data.messageId)).toEqual(['w-1']);
+  });
 });
