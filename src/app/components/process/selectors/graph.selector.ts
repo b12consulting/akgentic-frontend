@@ -1,6 +1,7 @@
 import { inject, Injectable } from '@angular/core';
 import { BehaviorSubject, distinctUntilChanged, map, Observable, shareReplay } from 'rxjs';
 
+import { AgentsById, agentsByIdReduce } from './agents-by-id.selector';
 import { ENTRY_POINT_NAME } from './chat-message.model';
 import {
   AkgenticMessage,
@@ -60,15 +61,26 @@ export class GraphBuilder {
     );
   }
 
-  buildNode(): NodeInterface {
+  /**
+   * Build the node for a `StartMessage`.
+   *
+   * Story 34-8: `role` and `actorName` are the agent's DISPLAY identity and are
+   * resolved through the shared `agentsById` projection (`identity`), falling
+   * back to the message's own sender when the map holds no entry for this
+   * `agent_id`. Every OTHER `sender` read here — `name` (which holds the
+   * `agent_id`), `squadId`, `userMessage` and the `userProxy` check below — is
+   * message-local data, not display identity, and stays inline.
+   */
+  buildNode(identity?: AgentsById): NodeInterface {
     if (!isStartMessage(this.message)) {
       throw new Error('Invalid message type for node');
     }
+    const agentId = this.message.sender.agent_id;
     const userProxy = this.message.sender.role === HUMAN_ROLE;
     return {
-      name: this.message.sender.agent_id,
-      role: this.message.sender.role,
-      actorName: this.message.sender.name,
+      name: agentId,
+      role: identity?.[agentId]?.role ?? this.message.sender.role,
+      actorName: identity?.[agentId]?.name ?? this.message.sender.name,
       parentId: this.message.parent?.agent_id ?? '',
       squadId: this.message.sender.squad_id || '',
       userMessage: this.message.sender.user_message || false,
@@ -155,11 +167,12 @@ function applyStartMessage(
   state: GraphState,
   msg: StartMessage,
   categoryService: CategoryService,
+  identity?: AgentsById,
 ): GraphState {
   if (msg.sender.__actor_type__ === ORCHESTRATOR_CLASS) return state;
 
   const builder = new GraphBuilder(msg);
-  const node = builder.buildNode();
+  const node = builder.buildNode(identity);
   const nextNodes = [...state.nodes, node];
 
   const existingCat = state.squad.find((c) => c.squadId === node.squadId);
@@ -300,18 +313,24 @@ function applyErrorMessage(state: GraphState, msg: ErrorMessage): GraphState {
  * Pure per-message transition (Task 1.3). Discriminates on `__model__` and
  * delegates to a helper. Returns `state` unchanged for unhandled
  * discriminants (FR11 passthrough — AC6).
+ *
+ * `identity` (Story 34-8) is the `agent_id → { name, role }` map folded from
+ * the same log by `agentsByIdReduce`. Optional and trailing so existing
+ * per-message call sites stay source-compatible; omitting it resolves node
+ * identity from each `StartMessage`'s own sender.
  */
 export function graphStep(
   state: GraphState,
   msg: AkgenticMessage,
   categoryService: CategoryService,
+  identity?: AgentsById,
 ): GraphState {
   if (!msg?.__model__) return state;
   const kind = msg.__model__.split('.').pop();
   switch (kind) {
     case 'StartMessage':
       return isStartMessage(msg)
-        ? applyStartMessage(state, msg, categoryService)
+        ? applyStartMessage(state, msg, categoryService, identity)
         : state;
     case 'SentMessage':
       return isSentMessage(msg) ? applySentMessage(state, msg) : state;
@@ -334,13 +353,19 @@ export function graphStep(
  * Pure fold over the full log (Task 1.4). `categoryService` is an injected
  * companion dependency (Path 1 — kept-stateful `squadDict` mutation). The
  * fold is pure w.r.t. the `(log, categoryService)` pair.
+ *
+ * Story 34-8: the `agent_id → { name, role }` map is folded from the SAME log
+ * once per emission and passed into the step, so node display identity has a
+ * single owner (`agentsByIdReduce`) without `graph$` gaining a second source
+ * observable. One extra linear pass — the fold was already O(n) per emission.
  */
 export function graphFold(
   log: AkgenticMessage[],
   categoryService: CategoryService,
 ): GraphState {
+  const identity = agentsByIdReduce(log);
   return log.reduce(
-    (s, m) => graphStep(s, m, categoryService),
+    (s, m) => graphStep(s, m, categoryService, identity),
     EMPTY_GRAPH,
   );
 }

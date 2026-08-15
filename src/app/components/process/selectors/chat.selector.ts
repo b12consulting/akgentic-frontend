@@ -7,6 +7,7 @@ import {
   Subject,
 } from 'rxjs';
 
+import { AgentsById, agentsByIdReduce } from './agents-by-id.selector';
 import {
   buildClearMarker,
   buildCompactionMarker,
@@ -157,6 +158,7 @@ function messageFromSent(msg: SentMessage): ChatMessage | null {
 function applyReceivedToThinking(
   state: ChatState,
   msg: ReceivedMessage,
+  identity?: AgentsById,
 ): ChatState {
   // HumanProxy agents wait for user input, not "thinking". Skip bubble.
   if (msg.sender.role === HUMAN_ROLE) return state;
@@ -166,7 +168,12 @@ function applyReceivedToThinking(
   if (hasNonFinal) return state;
   const next: ThinkingState = {
     agent_id: msg.sender.agent_id,
-    agent_name: msg.sender.name,
+    // Story 34-8: resolve display identity through the shared `agentsById`
+    // projection, falling back to the message's own sender when the log holds
+    // no Start for this agent (most fixtures, and any replay tail that begins
+    // mid-conversation). `??` not `||` — a name that is legitimately the empty
+    // string must resolve to the empty string, not skip to the fallback.
+    agent_name: identity?.[msg.sender.agent_id]?.name ?? msg.sender.name,
     start_time: new Date(msg.timestamp),
     anchor_message_id: msg.message_id,
     tools: [],
@@ -281,8 +288,17 @@ function applyMarker(state: ChatState, marker: ChatMessage): ChatState {
 }
 
 /** Pure per-message transition (Task 3.4). Returns `state` unchanged for
- *  unhandled discriminants (FR11 passthrough — AC6). */
-export function chatStep(state: ChatState, msg: AkgenticMessage): ChatState {
+ *  unhandled discriminants (FR11 passthrough — AC6).
+ *
+ *  `identity` (Story 34-8) is the `agent_id → { name, role }` map folded from
+ *  the same log by `agentsByIdReduce`. Optional and trailing so existing
+ *  per-message call sites stay source-compatible; omitting it resolves identity
+ *  from each message's own sender. */
+export function chatStep(
+  state: ChatState,
+  msg: AkgenticMessage,
+  identity?: AgentsById,
+): ChatState {
   if (!msg?.__model__) return state;
   if (isSentMessage(msg)) {
     const afterMsg = applyMessageFromSent(state, msg);
@@ -292,7 +308,7 @@ export function chatStep(state: ChatState, msg: AkgenticMessage): ChatState {
     return applyProcessedToThinking(state, msg);
   }
   if (isReceivedMessage(msg)) {
-    return applyReceivedToThinking(state, msg);
+    return applyReceivedToThinking(state, msg, identity);
   }
   if (isEventMessage(msg)) {
     const inner = (msg as EventMessage).event;
@@ -321,9 +337,20 @@ export function chatStep(state: ChatState, msg: AkgenticMessage): ChatState {
  * Task 3.6 purity assessment: no timers, no `Date.now()`, no DOM, no
  * out-of-order retroactive corrections. `new Date(msg.timestamp)` is
  * deterministic given the log.
+ *
+ * Story 34-8: the `agent_id → { name, role }` map is folded from the SAME log
+ * once per emission and passed into the step, so identity has a single owner
+ * (`agentsByIdReduce`) without `chat$` gaining a second source observable.
+ * One extra linear pass — the fold was already O(n) per emission.
+ *
+ * The callback is wrapped deliberately: `Array.prototype.reduce` passes
+ * `(acc, value, index, array)`, so a bare `reduce(chatStep, …)` would hand the
+ * array INDEX to `chatStep`'s third parameter. It would not throw; every
+ * lookup would silently miss and fall through to the fallback.
  */
 export function chatFold(log: AkgenticMessage[]): ChatState {
-  return log.reduce(chatStep, EMPTY_CHAT);
+  const identity = agentsByIdReduce(log);
+  return log.reduce((s, m) => chatStep(s, m, identity), EMPTY_CHAT);
 }
 
 /**

@@ -16,6 +16,7 @@ import {
 } from '../../../protocol/message.types';
 import { NodeInterface } from '../models/types';
 import { CategoryService } from '../../../core/ui/category.service';
+import { agentsByIdReduce } from './agents-by-id.selector';
 import {
   EMPTY_GRAPH,
   GraphBuilder,
@@ -574,5 +575,103 @@ describe('graphFold parity (AC5 — REST batch vs WS per-message)', () => {
     );
 
     expect(JSON.stringify(batchState)).toBe(JSON.stringify(wsState));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 34-8 — node identity resolved through the shared `agentsById`
+// projection instead of read inline off `msg.sender`.
+// ---------------------------------------------------------------------------
+
+describe('graphFold — node identity via the shared projection (Story 34-8)', () => {
+  let cs: CategoryService;
+
+  beforeEach(() => {
+    cs = new CategoryService();
+  });
+
+  it('(AC7) every node carries exactly the identity agentsByIdReduce derives for its agent_id', () => {
+    // A contract pin, not a discriminating test: `buildNode` runs only on a
+    // StartMessage and `agentsByIdReduce` folds only StartMessages, so at this
+    // site the lookup and the inline read read the same object. No reachable
+    // fixture separates them — see the story Dev Notes.
+    const log: AkgenticMessage[] = [
+      makeStart({
+        sender: makeAddress({ agent_id: 'a1', name: '@Alpha', role: 'Manager', squad_id: 'sq-1' }),
+      }),
+      makeStart({
+        sender: makeAddress({ agent_id: 'a2', name: '@Beta', role: 'Worker', squad_id: 'sq-1' }),
+      }),
+      makeStart({
+        sender: makeAddress({ agent_id: 'a3', name: '@Gamma', role: 'Worker', squad_id: 'sq-2' }),
+      }),
+      makeReceived('a2'),
+    ];
+    const s = graphFold(log, cs);
+    const identity = agentsByIdReduce(log);
+
+    expect(s.nodes.length).toBe(3);
+    for (const node of s.nodes) {
+      // `NodeInterface.name` holds the agent_id; `actorName` holds the display name.
+      expect({ name: node.actorName, role: node.role }).toEqual(identity[node.name]);
+    }
+  });
+
+  it('(AC5) graphStep with NO identity map → node identity falls back to the message own sender', () => {
+    const start = makeStart({
+      sender: makeAddress({ agent_id: 'a1', name: '@Solo', role: 'Manager' }),
+    });
+    const s = graphStep(EMPTY_GRAPH, start, cs);
+    expect(s.nodes[0].actorName).toBe('@Solo');
+    expect(s.nodes[0].role).toBe('Manager');
+  });
+
+  it('(AC5) graphStep with an identity map holding no entry for the agent → same fallback', () => {
+    const start = makeStart({
+      sender: makeAddress({ agent_id: 'a1', name: '@Solo', role: 'Manager' }),
+    });
+    const s = graphStep(EMPTY_GRAPH, start, cs, { 'other-agent': { name: '@X', role: 'Y' } });
+    expect(s.nodes[0].actorName).toBe('@Solo');
+    expect(s.nodes[0].role).toBe('Manager');
+  });
+
+  it('(AC1) the userProxy symbol still derives from the message own sender.role', () => {
+    const human = makeStart({
+      sender: makeAddress({ agent_id: 'h1', name: '@Human', role: HUMAN_ROLE }),
+    });
+    const worker = makeStart({
+      sender: makeAddress({ agent_id: 'w1', name: '@Worker', role: 'Worker' }),
+    });
+    const s = graphFold([human, worker], cs);
+    expect(s.nodes[0].symbol).toBe('circle');
+    expect(s.nodes[1].symbol).toBe('roundRect');
+  });
+});
+
+describe('(34-8 AC3) GraphDataService resolves identity with NO AgentsByIdService provider', () => {
+  let log: MessageLogService;
+  let service: GraphDataService;
+
+  beforeEach(() => {
+    // Deliberately omits AgentsByIdService: were `GraphDataService` to inject
+    // it, `TestBed.inject` would throw NullInjectorError.
+    TestBed.configureTestingModule({
+      providers: [MessageLogService, CategoryService, GraphDataService],
+    });
+    log = TestBed.inject(MessageLogService);
+    service = TestBed.inject(GraphDataService);
+  });
+
+  it('graph$ emits synchronously off log$ alone with identity resolved', () => {
+    log.append(
+      makeStart({ sender: makeAddress({ agent_id: 'a1', name: '@Alpha', role: 'Manager' }) }),
+    );
+    let received: GraphState | undefined;
+    const sub = service.graph$.subscribe((v) => (received = v));
+    expect(received).toBeDefined();
+    expect(received!.nodes.length).toBe(1);
+    expect(received!.nodes[0].actorName).toBe('@Alpha');
+    expect(received!.nodes[0].role).toBe('Manager');
+    sub.unsubscribe();
   });
 });

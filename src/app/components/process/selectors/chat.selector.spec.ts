@@ -443,6 +443,124 @@ describe('chatFold / chatStep (pure)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Story 34-8 — agent identity resolved through the shared `agentsById`
+// projection instead of read inline off `msg.sender`.
+// ---------------------------------------------------------------------------
+
+describe('chatFold — agent identity via the shared projection (Story 34-8)', () => {
+  it('(AC6) identity from an EARLIER StartMessage wins over an unpopulated sender on a LATER ReceivedMessage', () => {
+    // The discriminating case: the inline read yields '', the projection
+    // lookup yields the name the agent was started under. Only one of the two
+    // implementations passes this.
+    const start = makeStart({
+      sender: makeAddress({ name: '@Researcher', role: 'Worker', agent_id: 'agent-1' }),
+    });
+    const rcv = makeReceived({
+      sender: makeAddress({ name: '', role: 'Worker', agent_id: 'agent-1' }),
+    });
+    const state = chatFold([start, rcv]);
+    expect(state.thinkingAgents.length).toBe(1);
+    expect(state.thinkingAgents[0].agent_id).toBe('agent-1');
+    expect(state.thinkingAgents[0].agent_name).toBe('@Researcher');
+  });
+
+  it('(AC6) a later Start for the same agent_id supersedes the earlier identity (last-wins, matching agentsByIdReduce)', () => {
+    const first = makeStart({
+      id: 'start-a',
+      sender: makeAddress({ name: '@Old', role: 'Worker', agent_id: 'agent-1' }),
+    });
+    const second = makeStart({
+      id: 'start-b',
+      sender: makeAddress({ name: '@New', role: 'Worker', agent_id: 'agent-1' }),
+    });
+    const rcv = makeReceived({
+      sender: makeAddress({ name: '', role: 'Worker', agent_id: 'agent-1' }),
+    });
+    expect(chatFold([first, second, rcv]).thinkingAgents[0].agent_name).toBe('@New');
+  });
+
+  it('(AC5) an agent with NO StartMessage in the log falls back to the message own sender', () => {
+    // The fallback is load-bearing, not defensive: most existing fixtures fold
+    // logs with no StartMessage at all, so the identity map is `{}`.
+    const rcv = makeReceived({
+      sender: makeAddress({ name: '@Unlisted', role: 'Worker', agent_id: 'ghost-1' }),
+    });
+    const state = chatFold([rcv]);
+    expect(state.thinkingAgents.length).toBe(1);
+    expect(state.thinkingAgents[0].agent_name).toBe('@Unlisted');
+  });
+
+  it('(AC5) a Start for a DIFFERENT agent does not leak its name into the fallback', () => {
+    const start = makeStart({
+      sender: makeAddress({ name: '@Other', role: 'Worker', agent_id: 'agent-9' }),
+    });
+    const rcv = makeReceived({
+      sender: makeAddress({ name: '@Unlisted', role: 'Worker', agent_id: 'ghost-1' }),
+    });
+    expect(chatFold([start, rcv]).thinkingAgents[0].agent_name).toBe('@Unlisted');
+  });
+
+  it('(AC3) chatStep called WITHOUT an identity map still resolves from the message sender', () => {
+    // Pins that the trailing parameter is genuinely optional, which is what
+    // keeps `graphStep`-style per-message call sites source-compatible.
+    const rcv = makeReceived({
+      sender: makeAddress({ name: '@Researcher', role: 'Worker', agent_id: 'agent-1' }),
+    });
+    const state = chatStep(EMPTY_CHAT, rcv);
+    expect(state.thinkingAgents[0].agent_name).toBe('@Researcher');
+  });
+
+  it('(AC4) chatFold over a multi-agent fixture is identical to the same log folded per message', () => {
+    const log: AkgenticMessage[] = [
+      makeStart({ id: 'start-a', sender: makeAddress({ name: '@Alpha', agent_id: 'a1' }) }),
+      makeStart({ id: 'start-b', sender: makeAddress({ name: '@Beta', agent_id: 'a2' }) }),
+      makeReceived({ id: 'rcv-a', sender: makeAddress({ name: '@Alpha', agent_id: 'a1' }) }),
+      makeReceived({ id: 'rcv-b', sender: makeAddress({ name: '@Beta', agent_id: 'a2' }) }),
+      makeSent({ sender: makeAddress({ name: '@Alpha', role: 'Worker', agent_id: 'a1' }) }),
+    ];
+    const batch = chatFold(log);
+    const perMessage = log.reduce((s, m) => chatStep(s, m), EMPTY_CHAT);
+    expect(JSON.stringify(batch)).toBe(JSON.stringify(perMessage));
+  });
+});
+
+describe('(34-8 AC3) ChatService resolves identity with NO AgentsByIdService provider', () => {
+  let log: MessageLogService;
+  let service: ChatService;
+
+  beforeEach(() => {
+    // Deliberately provides ONLY MessageLogService: were `ChatService` to
+    // inject `AgentsByIdService`, `TestBed.inject` would throw NullInjectorError.
+    TestBed.configureTestingModule({
+      providers: [MessageLogService, ChatService],
+    });
+    log = TestBed.inject(MessageLogService);
+    service = TestBed.inject(ChatService);
+  });
+
+  it('instantiates and emits identity resolved from the projection', async () => {
+    log.append(
+      makeStart({ sender: makeAddress({ name: '@Researcher', agent_id: 'agent-1' }) }),
+    );
+    log.append(
+      makeReceived({ sender: makeAddress({ name: '', role: 'Worker', agent_id: 'agent-1' }) }),
+    );
+    const states = await firstValueFrom(service.thinkingAgents$);
+    expect(states.length).toBe(1);
+    expect(states[0].agent_name).toBe('@Researcher');
+  });
+
+  it('chat$ emits synchronously off log$ alone (no second source observable)', () => {
+    log.append(makeReceived());
+    let received: ChatState | undefined;
+    const sub = service.chat$.subscribe((v) => (received = v));
+    expect(received).toBeDefined();
+    expect(received!.thinkingAgents.length).toBe(1);
+    sub.unsubscribe();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // chatStep — context-management markers (Epic 29 / ADR-010 §3/§8)
 // ---------------------------------------------------------------------------
 
