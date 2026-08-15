@@ -1,5 +1,5 @@
 import { AsyncPipe, CommonModule } from '@angular/common';
-import { Component, inject, OnDestroy } from '@angular/core';
+import { AfterViewInit, Component, inject, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 
 import { isRunning } from '../../core/context/team.interface';
@@ -143,7 +143,7 @@ interface VisualizationOption {
   templateUrl: './process.component.html',
   styleUrl: './process.component.scss',
 })
-export class ProcessComponent implements OnDestroy {
+export class ProcessComponent implements AfterViewInit, OnDestroy {
   route: ActivatedRoute = inject(ActivatedRoute);
   router: Router = inject(Router);
 
@@ -212,10 +212,20 @@ export class ProcessComponent implements OnDestroy {
   isRightColumnCollapsed$ =
     this.viewService.isRightColumnCollapsed$.asObservable();
 
+  /**
+   * Gates the right column's collapse transition, which must not run on the
+   * first paint: arriving from the home page with details already hidden would
+   * otherwise show the panel sliding shut, as if the user had just closed it.
+   * Turned on one macrotask after the view exists, so the initial state paints
+   * with `transition-duration: 0` and every later toggle animates.
+   */
+  animateRightColumn = false;
+
   isLoading$ = this.graphDataService.isLoading$;
 
   private presenceSub: Subscription | null = null;
   private workspaceSub: Subscription | null = null;
+  private animationTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     // Active-mode reset guard (AC3 last clause, AC8): if the user is viewing
@@ -266,7 +276,17 @@ export class ProcessComponent implements OnDestroy {
     await this.ingestionService.init(this.processId, isRunning(currentProcess));
   }
 
+  ngAfterViewInit(): void {
+    this.animationTimer = setTimeout(() => {
+      this.animateRightColumn = true;
+    });
+  }
+
   ngOnDestroy() {
+    if (this.animationTimer !== null) {
+      clearTimeout(this.animationTimer);
+      this.animationTimer = null;
+    }
     this.akgentService.unselect();
     this.presenceSub?.unsubscribe();
     this.presenceSub = null;
