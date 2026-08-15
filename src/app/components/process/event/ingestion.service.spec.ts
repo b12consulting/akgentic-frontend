@@ -590,18 +590,18 @@ describe('IngestionService — Story 6.1 (frame-batched log ingestion)', () => {
         .and.returnValue(cycleSocket as unknown as WebSocketSubject<any>);
 
       await service.init('proc-' + i, true);
-      // After a full init() the three live subscribers are `LogFeeder`'s
-      // batched feed, `LoadingIndicator`'s take(1) side-channel and
-      // `NotificationToasts` — exactly 3, never more.
+      // After a full init() the two live subscribers are `LogFeeder`'s batched
+      // feed and `LoadingIndicator`'s take(1) side-channel — exactly 2, never
+      // more.
       //
-      // Epic 34 / story 34-5 raised this bound from 2 to 3: the notification
-      // dispatch used to sit INLINE in the WS `next` callback and is a
-      // subscriber of this subject now. The number is not the guarantee — its
-      // CONSTANCY across the five cycles is, and that is what catches a reactor
-      // whose per-cycle subscription is never disposed. Removing
-      // `notificationToasts.stop()` from `disposePriorSubscriptions()` makes
-      // this climb 3, 4, 5, 6, 7.
-      expect((inbound as any).observers.length).toBe(3);
+      // Story 34-5 raised this bound from 2 to 3 when the notification dispatch
+      // became a subscriber of this subject; Story 35-1 took it back down by
+      // moving that reactor onto `log.appended$`, which is the observable
+      // consequence of the argument change. The number is not the guarantee —
+      // its CONSTANCY across the five cycles is, and that is what catches a
+      // subscription that is never disposed. Removing `feeder`'s teardown from
+      // the cycle bag makes this climb 2, 3, 4, 5, 6.
+      expect((inbound as any).observers.length).toBe(2);
       expect(inbound.observed).toBeTrue();
     }
 
@@ -2228,6 +2228,10 @@ describe('IngestionService — Story 31-4 (closed-notification suppression)', ()
     msgService.add.calls.reset();
 
     fakeSocket.next(mkNotification('w-1', 'token budget exceeded'));
+    // Story 35-1: the dispatch is downstream of the log now, so without this
+    // flush nothing would toast for ANY reason and the assertion below would
+    // hold vacuously. Ticking is what keeps it a suppression spec.
+    jasmine.clock().tick(20);
 
     expect(msgService.add).not.toHaveBeenCalled();
   });
@@ -2434,20 +2438,41 @@ describe('IngestionService — Story 31-5 (reactive toast removal)', () => {
     jasmine.clock().tick(20);
   }
 
-  // --- AC #4: the reload regression, written as "one THEN zero" -------------
+  // --- AC #4: the reload regression, now written as "zero throughout" -------
 
-  it('AC #4: the same pair delivered in ONE replay frame also ends with zero toasts', async () => {
+  it('AC #4: the same pair delivered in ONE replay frame raises NO toast at all', async () => {
     // History replays in a burst, so both frames routinely land inside the same
-    // 16 ms window. The suppressor cannot fire here (the closure has not been
-    // folded when the warning is dispatched), so this is removal or nothing.
+    // 16 ms window. Under Story 31-5 this was removal — the warning toasted on
+    // the raw stream and the closure took it back off the screen one buffer
+    // later — and this spec asserted the flash in between.
+    //
+    // Story 35-1 (ADR-027 §5) closed that window deliberately. Both frames now
+    // reach the log in ONE batch, `_log$` emits before `_appended$`, so
+    // `closedNotificationIds$` has folded the closure by the time the reactor
+    // sees the warning and the SUPPRESSOR fires instead. Zero before the flush
+    // (nothing has reached the log yet) and zero after it (suppressed, not
+    // removed) — the difference between those two zeroes is what
+    // `FakeToastContainer` exists to express.
+    //
+    // Expressing it takes BOTH witnesses, and that is not belt-and-braces. The
+    // container is only ever inspected between ticks, while a suppressor
+    // failure would raise the toast and remove it again INSIDE the single
+    // synchronous flush below — leaving `messages` empty at both observation
+    // points. Swap the two `next` calls in `appendAll` and the container sees
+    // nothing wrong; `add` is the only witness to the flash. Conversely `add`
+    // alone cannot tell a suppressed toast from a removed one, which is the
+    // distinction 31-5 was written for.
     await start();
+
+    const add = spyOn(messageService, 'add').and.callThrough();
 
     fakeSocket.next(mkWarning('w-1'));
     fakeSocket.next(mkClosedNotification('c-1', 'w-1'));
-    expect(toastContainer.messageIds()).toEqual(['w-1']);
+    expect(toastContainer.messageIds()).toEqual([]);
 
     flushFrames();
 
+    expect(add).not.toHaveBeenCalled();
     expect(toastContainer.messages).toEqual([]);
   });
 
@@ -2457,6 +2482,11 @@ describe('IngestionService — Story 31-5 (reactive toast removal)', () => {
     await start();
 
     fakeSocket.next(mkWarning('w-1'));
+    // Story 35-1: the warning toasts when it reaches the LOG, so it must be
+    // flushed before the disconnect toast is raised or the two arrive in the
+    // opposite order. The assertion below is unchanged — this preserves its
+    // meaning rather than relaxing it.
+    flushFrames();
     TestBed.inject(ConnectionToast).show();
     expect(toastContainer.summaries()).toEqual([
       '@Researcher',
@@ -2510,6 +2540,9 @@ describe('IngestionService — Story 31-5 (reactive toast removal)', () => {
   it('a team switch re-arms removal for the new team', async () => {
     await start();
     fakeSocket.next(mkWarning('w-1'));
+    // Story 35-1: a frame toasts once it reaches the log, so each push below
+    // needs its buffer flushed before the on-screen assertion.
+    flushFrames();
     expect(toastContainer.messageIds()).toEqual(['w-1']);
 
     const socketB = new Subject<any>();
@@ -2522,6 +2555,7 @@ describe('IngestionService — Story 31-5 (reactive toast removal)', () => {
     expect(toastContainer.messages).toEqual([]);
 
     socketB.next(mkWarning('w-9'));
+    flushFrames();
     expect(toastContainer.messageIds()).toEqual(['w-9']);
 
     socketB.next(mkClosedNotification('c-9', 'w-9'));
@@ -2536,19 +2570,22 @@ describe('IngestionService — Story 31-5 (reactive toast removal)', () => {
 // Epic 34 / story 34-5 — how the orchestrator SEQUENCES the notification-toast
 // reactor.
 //
-// `notification-toasts.spec.ts` proves what the unit does. These two specs prove
-// the two things only this file can see, because both are properties of the
-// wiring rather than of the unit:
+// `notification-toasts.spec.ts` proves what the unit does. These specs prove
+// what only this file can see, because each is a property of the wiring rather
+// than of the unit:
 //
 //   * that `init()` disposes the previous cycle's reactor before opening a new
 //     one — drop `notificationToasts.stop()` from `disposePriorSubscriptions()`
 //     and the second cycle leaves TWO live subscriptions on the one shared
-//     `_wsInbound$`, doubling every toast for the rest of the component's life;
-//   * that the reactor is fed the RAW stream and NOT `log$`, which is what makes
-//     a stopped team's REST replay silent while a running team's WS replay
-//     toasts. Fold `log$` into the reactor "to tidy the 16 ms lag away" and this
-//     spec goes red instead of the change landing unnoticed (ADR-025 Open
-//     Question 1 — a product decision, not a refactor).
+//     stream, doubling every toast for the rest of the component's life;
+//   * that a frame delivered the instant the socket opens still toasts;
+//   * that both delivery paths toast the SAME WAY. This last one is the
+//     inversion Story 35-1 (ADR-027) landed. It used to read "a STOPPED team
+//     raises NO toast, while the SAME event on a RUNNING team raises one" and
+//     it pinned the reported defect as if it were a guarantee — the transport
+//     decided whether an operator saw an error. The reactor reads
+//     `log.appended$` now, so the asymmetry is gone and this spec asserts its
+//     absence.
 // ---------------------------------------------------------------------------
 
 describe('IngestionService — notification-toast reactor sequencing (Epic 34)', () => {
@@ -2641,6 +2678,10 @@ describe('IngestionService — notification-toast reactor sequencing (Epic 34)',
     msgService.add.calls.reset();
 
     socketB.next(mkWarning('w-1'));
+    // Story 35-1: the toast is raised when the frame reaches the LOG, one
+    // buffer window later. The assertion is unchanged and still catches the
+    // leak it was written for — a second live subscription doubles this to 2.
+    jasmine.clock().tick(20);
 
     expect(msgService.add).toHaveBeenCalledTimes(1);
     socketB.complete();
@@ -2675,24 +2716,26 @@ describe('IngestionService — notification-toast reactor sequencing (Epic 34)',
     replaying.complete();
   });
 
-  it('AC3b: a STOPPED team replays through the log and raises NO toast, while the SAME event on a RUNNING team raises one', async () => {
-    // The replay asymmetry, in one spec because the two halves are only
-    // meaningful against each other. Same historical event, same team; the
-    // transport alone decides.
+  it('AC3b (inverted by Story 35-1): a STOPPED team and a RUNNING team raise the SAME toast for the same event', async () => {
+    // Symmetry, in one spec because the two halves are only meaningful against
+    // each other. Same historical event, same team, two transports — and now
+    // one outcome. This spec previously asserted the opposite and was the
+    // clearest statement of the defect anywhere in the suite.
     const api = TestBed.inject(ApiService) as any;
     api.getEvents.and.resolveTo([{ event: mkWarning('w-1') }]);
 
     await service.init('proc-1', false);
     jasmine.clock().tick(600);
 
-    // REST replay went through `log.appendAll`, which the reactor does not
-    // subscribe. Silent — and it must stay silent: a reload of a stopped team
-    // would otherwise reopen every warning it ever raised.
-    expect(msgService.add).not.toHaveBeenCalled();
+    // The REST replay goes through `log.appendAll`, which is what the reactor
+    // subscribes now. Leave `notificationToasts.start(...)` below the replay
+    // block and this assertion is the one that fails.
+    expect(msgService.add).toHaveBeenCalledTimes(1);
+    expect(msgService.add.calls.mostRecent().args[0].data.messageId).toBe(
+      'w-1',
+    );
 
-    // The same frame over the wire on a running team DOES toast. Folding `log$`
-    // into the reactor would make the first assertion above fail; removing the
-    // raw subscription would make this one fail.
+    // The same frame over the wire on a running team raises the same toast.
     const socketB = new Subject<any>();
     (teamSocket() as any).createWebSocket = jasmine
       .createSpy('createWebSocket')
@@ -2702,6 +2745,7 @@ describe('IngestionService — notification-toast reactor sequencing (Epic 34)',
     msgService.add.calls.reset();
 
     socketB.next(mkWarning('w-1'));
+    jasmine.clock().tick(20);
 
     expect(msgService.add).toHaveBeenCalledTimes(1);
     expect(msgService.add.calls.mostRecent().args[0].data.messageId).toBe(
@@ -2962,7 +3006,9 @@ describe('IngestionService — init() ordering + self-wiring (Story 34-6)', () =
       expect(frames.observers.length).toBe(1);
       expect(status.observers.length).toBe(1);
       // And the inbound stream stays at its own post-init bound throughout.
-      expect(inboundSubject().observers.length).toBe(3);
+      // Story 35-1 lowered that bound from 3 to 2: the notification reactor
+      // reads `log.appended$` now, not this subject.
+      expect(inboundSubject().observers.length).toBe(2);
     }
 
     service.ngOnDestroy();
@@ -2970,5 +3016,178 @@ describe('IngestionService — init() ordering + self-wiring (Story 34-6)', () =
     expect(frames.observers.length).toBe(0);
     expect(status.observers.length).toBe(0);
     expect(inboundSubject().observers.length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 35-1 — the notification reactor reads the LOG, wired ABOVE the replay
+//
+// The reported defect and its fix, at the only level either is visible: a
+// stopped team reaches the log through `replay → log.appendAll`, never through
+// the socket, so a reactor hanging off the transport is silent for it.
+//
+// Two invariants are pinned here, and NEITHER is expressible in
+// `notification-toasts.spec.ts`, whose harness has no `init()`:
+//
+//   * the reactor is fed `log.appended$`, so every delivery path toasts;
+//   * `start(...)` is called BEFORE the `if (!running)` replay block. `appended$`
+//     is a plain `Subject`, so a subscriber that arrives after `appendAll` gets
+//     nothing. Move the call back below the replay and the stopped-team spec
+//     below goes red while every live-path spec in this file stays green — which
+//     is exactly the shape of the bug being fixed.
+// ---------------------------------------------------------------------------
+
+describe('IngestionService — Story 35-1 (toasts dispatch from the log)', () => {
+  let service: IngestionService;
+  let msgService: any;
+  let fakeSocket: Subject<any>;
+
+  beforeEach(() => {
+    jasmine.clock().install();
+    jasmine.clock().mockDate(new Date(0));
+
+    fakeSocket = new Subject<any>();
+
+    TestBed.configureTestingModule({
+      providers: [
+        MessageLogService,
+        PerAgentStoreRegistry,
+        ProcessStores,
+        ReplaySeeder,
+        LoadingIndicator,
+        ConnectionToast,
+        NotificationToasts,
+        TeamSocket,
+        LogFeeder,
+        IngestionService,
+        ChatService,
+        {
+          provide: ApiService,
+          useValue: {
+            getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+            getAgentStates: jasmine
+              .createSpy('getAgentStates')
+              .and.resolveTo([]),
+          },
+        },
+        {
+          provide: MessageService,
+          useValue: {
+            add: jasmine.createSpy('add'),
+            clear: jasmine.createSpy('clear'),
+          },
+        },
+      ],
+    });
+    service = TestBed.inject(IngestionService);
+    msgService = TestBed.inject(MessageService);
+
+    spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
+      fakeSocket as unknown as WebSocketSubject<any>,
+    );
+  });
+
+  afterEach(() => {
+    try {
+      fakeSocket.complete();
+    } catch {
+      /* already closed */
+    }
+    jasmine.clock().uninstall();
+  });
+
+  /** Every `MessageService.add` payload, in the order it was raised. */
+  function raised(): any[] {
+    return msgService.add.calls.allArgs().map((a: any[]) => a[0]);
+  }
+
+  it('AC #7: a STOPPED team raises one toast per replayed notification', async () => {
+    const api = TestBed.inject(ApiService) as any;
+    api.getEvents.and.resolveTo([
+      { event: mkNotification('e-1', ERROR_MODEL, '@Researcher', 'boom') },
+      {
+        event: mkNotification('w-1', WARNING_MODEL, '@Researcher', 'over limit'),
+      },
+    ]);
+
+    await service.init('proc-1', false);
+    // The spinner floor, exactly as the neighbouring stopped-team specs drive
+    // it. The toasts themselves need no tick: the replay is awaited inside
+    // `init()` and `appended$` delivers synchronously.
+    jasmine.clock().tick(600);
+
+    // NO `msgService.add.calls.reset()` here, deliberately: `init()`'s
+    // `messageService.clear()` runs at step (b), BEFORE the replay, so the only
+    // `add` calls are the two being asserted — and a reset placed after
+    // `init()` would erase exactly the evidence.
+    expect(raised().length).toBe(2);
+    expect(raised().map((m) => m.severity)).toEqual(['error', 'warn']);
+    expect(raised().map((m) => m.data.messageId)).toEqual(['e-1', 'w-1']);
+  });
+
+  it('AC #9: a post-restore cursor-0 RE-replay of the same events is silent', async () => {
+    // The burst. ADR-024 does not re-run `init()` on restore: the parked socket
+    // resumes at cursor 0 and pushes the whole history back through the wire.
+    // Every id is already in the log, so `appendAll` filters the batch before
+    // `appended$` sees it and no second toast is possible.
+    const api = TestBed.inject(ApiService) as any;
+    const events = [
+      mkNotification('e-1', ERROR_MODEL, '@Researcher', 'boom'),
+      mkNotification('w-1', WARNING_MODEL, '@Researcher', 'over limit'),
+    ];
+    api.getEvents.and.resolveTo(events.map((event) => ({ event })));
+
+    await service.init('proc-1', false);
+    jasmine.clock().tick(600);
+    expect(raised().length).toBe(2);
+
+    fakeSocket.next(events[0]);
+    fakeSocket.next(events[1]);
+    jasmine.clock().tick(20);
+
+    expect(raised().length).toBe(2);
+  });
+
+  it('AC #10: a second cycle inherits no batch from the first', async () => {
+    // `appended$` is a plain `Subject`. Were it a `ReplaySubject`, the new
+    // cycle's `start()` would receive team A's final batch and re-toast it —
+    // the exact data bug the sequencing rule buys.
+    const api = TestBed.inject(ApiService) as any;
+    api.getEvents.and.resolveTo([
+      { event: mkNotification('a-1', WARNING_MODEL, '@Researcher', 'team A') },
+    ]);
+
+    await service.init('proc-A', false);
+    jasmine.clock().tick(600);
+    expect(raised().map((m) => m.data.messageId)).toEqual(['a-1']);
+
+    api.getEvents.and.resolveTo([]);
+    const socketB = new Subject<any>();
+    (teamSocket() as any).createWebSocket = jasmine
+      .createSpy('createWebSocket')
+      .and.returnValue(socketB as unknown as WebSocketSubject<any>);
+    msgService.add.calls.reset();
+
+    await service.init('proc-B', false);
+    jasmine.clock().tick(600);
+
+    expect(raised()).toEqual([]);
+    socketB.complete();
+  });
+
+  it('AC #11: two notifications in ONE batch toast in array order', async () => {
+    // `concatAll()` at the wiring site. A `mergeAll` there passes this by luck
+    // on a synchronous array and stops being a guarantee.
+    const api = TestBed.inject(ApiService) as any;
+    api.getEvents.and.resolveTo([
+      { event: mkNotification('w-1', WARNING_MODEL, '@First', 'first') },
+      { event: mkNotification('w-2', WARNING_MODEL, '@Second', 'second') },
+    ]);
+
+    await service.init('proc-1', false);
+    jasmine.clock().tick(600);
+
+    expect(raised().map((m) => m.data.messageId)).toEqual(['w-1', 'w-2']);
+    expect(raised().map((m) => m.summary)).toEqual(['@First', '@Second']);
   });
 });

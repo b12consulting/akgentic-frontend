@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 
-import { BehaviorSubject, Subscription } from 'rxjs';
+import { BehaviorSubject, concatAll, Subscription } from 'rxjs';
 import {
   AkgenticMessage,
   CommandDescriptor,
@@ -47,11 +47,13 @@ import { MessageService } from 'primeng/api';
  *     `Date.now()` and `setTimeout` in the layer.
  *   - `ConnectionToast` (`connection-toast.ts`) — the disconnect warning.
  *   - `NotificationToasts` (`notification-toasts.ts`) — the notification family.
- *     It is handed the RAW `inbound$`, never `log$` or anything downstream of
- *     `bufferTime(16)`: routing it through the log would erase both the 16 ms
- *     dismissal-cache lag and the stopped-REST-silent / running-WS-toasting
- *     replay asymmetry. Both are current behaviour, and changing either is
- *     ADR-025 Open Question 1 — a product decision, not a refactor.
+ *     Story 35-1 (ADR-027) took it off the transport: it is handed
+ *     `log.appended$`, the post-dedup delta, so every delivery path toasts and
+ *     the log's id-dedup is the only idempotence there is. Its WIRING POSITION
+ *     is part of that contract — see step (b) in `init()`. `LoadingIndicator`
+ *     and `ConnectionToast` stay on the raw socket, and correctly so: they are
+ *     transport concerns, which is why this folder now has reactors on both
+ *     streams. Do not "unify" the two.
  *
  * `messageService.clear()` stays here rather than moving into either toast unit:
  * it empties the whole keyless `<p-toast>` container, both families at once, so
@@ -171,7 +173,10 @@ export class IngestionService {
    *   (a) dispose the prior cycle — old socket closed, old subscriptions gone,
    *       so a stale team's pipeline cannot deliver into the fresh cycle;
    *   (b) `log.reset()` — the registry sees the shrink, clears every map and
-   *       rewinds its cursor to 0. There is no per-store reset code, by design;
+   *       rewinds its cursor to 0. There is no per-store reset code, by design.
+   *       Story 35-1 (ADR-027 §3) also starts `NotificationToasts` here, since
+   *       it now reads the log rather than the socket and the replay in (c)
+   *       must find it already subscribed;
    *   (c) seed the replay (stopped teams only) — `getAgentStates` + `getEvents`
    *       → `appendAll`. Every selector then holds its history;
    *   (d) wire the consumers, THEN open the socket. Both halves matter: the
@@ -208,6 +213,22 @@ export class IngestionService {
     // the 500ms floor from the end of a network round-trip, and would put the
     // stopped-team flip ahead of the `true` it is supposed to follow.
     this.loading.beginCycle();
+
+    // Story 35-1 (ADR-027 §2-§3): the notification reactor, fed the LOG's
+    // post-dedup delta and wired ABOVE the replay block below — that position is
+    // the fix, not the argument. `appended$` is a plain `Subject`, so a
+    // subscriber arriving after an `appendAll` receives nothing: leave this call
+    // in step (d) and the stopped-team replay emits into no subscriber, the
+    // reported bug survives, and every live-path spec still passes. It can sit
+    // here because both arguments come from `MessageLogService` and neither
+    // needs the socket; it must stay after step (a)'s
+    // `disposePriorSubscriptions()`, which calls `stop()`. `concatAll` and never
+    // `mergeAll`: within-batch order is what the reactor's per-message contract
+    // is written against.
+    this.notificationToasts.start(
+      this.log.appended$.pipe(concatAll()),
+      this.log.closedNotificationIds$,
+    );
 
     // --- (c) seed the replay (stopped teams only) --------------------
     if (!running) {
@@ -265,13 +286,6 @@ export class IngestionService {
         this.onSocketStatus(status),
       ),
     );
-    // Epic 34 (ADR-025 §1): the notification reactor, after the log feed and
-    // before the socket. It is handed the RAW protocol stream — see the class
-    // docblock for why `log$` would be a behaviour change rather than a tidy.
-    this.notificationToasts.start(
-      this.socket.inbound$,
-      this.log.closedNotificationIds$,
-    );
 
     try {
       this.socket.start(processId);
@@ -305,7 +319,7 @@ export class IngestionService {
    * Each unit's `stop()` is per-cycle rather than destroy-scoped, and
    * `notificationToasts.stop()` in particular is load-bearing HERE and not only
    * in `ngOnDestroy`: drop it and `start()` leaves a SECOND live subscription on
-   * the inbound stream, doubling every toast — and its cache reset is what makes
+   * `log.appended$`, doubling every toast — and its cache reset is what makes
    * the per-cycle subscription equivalent to the service-lifetime one it
    * replaced.
    */

@@ -1,5 +1,11 @@
 import { Injectable } from '@angular/core';
-import { BehaviorSubject, distinctUntilChanged, map, Observable } from 'rxjs';
+import {
+  BehaviorSubject,
+  distinctUntilChanged,
+  map,
+  Observable,
+  Subject,
+} from 'rxjs';
 
 import {
   AkgenticMessage,
@@ -140,12 +146,42 @@ export class MessageLogService {
     distinctUntilChanged(sameIdSet),
   );
 
+  private readonly _appended$ = new Subject<AkgenticMessage[]>();
+
+  /**
+   * Story 35-1 (ADR-027 §1): the DELTA — exactly the messages that just entered
+   * the log, post id-dedup. `appendAll` already computes it (`newMsgs`, the
+   * batch surviving the id filter) and `append` already knows whether its one
+   * message survived, so no consumer has to diff `log$` to recover what the log
+   * can answer for free. A reactor wants the delta; `log$` re-emits the whole
+   * array and `messageList$` is an allowlist tuned for a table.
+   *
+   * A plain `Subject`, and that is load-bearing: a `BehaviorSubject`,
+   * `ReplaySubject` or `shareReplay` would hand a late subscriber a past batch,
+   * so the next team's `NotificationToasts.start()` would re-toast the previous
+   * team's final batch. The cost is a sequencing rule — a consumer must be
+   * subscribed BEFORE the append it cares about, which is why
+   * `IngestionService` wires the reactor above its replay block — and that rule
+   * is cheaper than the data bug.
+   *
+   * Emitted AFTER `_log$`, never before: `closedNotificationIds$` and every
+   * other log-derived fold must have absorbed the batch by the time a
+   * subscriber here reacts to it. That ordering is what lets a notification
+   * arriving in the same batch as its own `ClosedNotification` be suppressed
+   * pre-emptively instead of toasting and being taken back off the screen.
+   *
+   * `reset()` emits nothing — it is the team-switch boundary, not an append.
+   */
+  readonly appended$: Observable<AkgenticMessage[]> =
+    this._appended$.asObservable();
+
   /** Append a single message to the log. Prefer `appendAll` when a batch is
    *  available — `appendAll` produces one `log$` emission per batch, whereas
    *  calling `append` N times produces N emissions. Skips duplicates by `id`. */
   append(msg: AkgenticMessage): void {
     if (msg.id && this._log$.value.some(m => m.id === msg.id)) return;
     this._log$.next([...this._log$.value, msg]);
+    this._appended$.next([msg]);
   }
 
   /** Append N messages in a single emission, deduplicating by `id`.
@@ -161,7 +197,12 @@ export class MessageLogService {
     const existingIds = new Set(current.map(m => m.id).filter(Boolean));
     const newMsgs = msgs.filter(m => !m.id || !existingIds.has(m.id));
     if (newMsgs.length === 0) return;
+    // Story 35-1 (ADR-027 §1): `_log$` FIRST, `_appended$` second. Swap these
+    // two lines and a batch carrying a notification together with its own
+    // `ClosedNotification` toasts and is then removed, instead of never being
+    // raised — the closed-ids fold has not run yet when the reactor sees it.
     this._log$.next([...current, ...newMsgs]);
+    this._appended$.next(newMsgs);
   }
 
   /** Reset the log to empty. Called in `IngestionService.init()` step (b)

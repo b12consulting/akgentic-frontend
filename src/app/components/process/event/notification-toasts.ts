@@ -48,39 +48,42 @@ const ORCHESTRATOR_ROLE = 'Orchestrator';
  * three load-bearing omissions, the pre-emptive closed-ids suppressor and the
  * after-the-fact removal.
  *
- * It reads the RAW, UNBATCHED inbound stream, and that is deliberate rather than
- * incidental. `IngestionService` hands `start()` its `_wsInbound$` — a plain
- * `Subject` with one producer — so this unit sees the same frames, in the same
- * order, at the same synchronous instant the inline dispatch used to run at.
- * `bufferTime(16)` lives on the LOG-FEED subscriber, never on the subject, so
- * the batching delays the log and never this fan-out. Two current behaviours
- * depend on exactly that, and both are preserved here on purpose:
+ * It reads THE LOG, one message at a time (Story 35-1 / ADR-027).
+ * `IngestionService` hands `start()` its `log.appended$.pipe(concatAll())` — the
+ * post-dedup delta, flattened at the wiring site so this unit keeps its
+ * per-message contract. Three consequences, and each is the point rather than a
+ * side effect:
  *
- *   - the closed-ids cache LAGS THE WIRE by up to one 16 ms window, because a
- *     `ClosedNotification` reaches the log only when its frame is flushed. A
- *     notification arriving in the same frame as its own closure therefore still
- *     toasts, and is taken back off the screen by `onClosedNotificationIds`.
- *   - the REPLAY ASYMMETRY survives: a stopped team's REST replay goes through
- *     `log.appendAll` and raises NO toast, while a running team's cursor-0 WS
- *     replay goes through this stream and raises one per notification. Same
- *     historical events, different behaviour, decided by the transport alone.
+ *   - EVERY delivery path toasts. A stopped team's REST replay reaches the log
+ *     through `log.appendAll` exactly as a running team's frames do, so the two
+ *     now behave identically. The old REPLAY ASYMMETRY — silent on REST,
+ *     toasting on WS, decided by the transport alone — was the reported defect
+ *     and is gone.
+ *   - IDEMPOTENCE IS THE LOG'S. An id is admitted once per team session, so a
+ *     post-restore cursor-0 re-replay raises nothing: `appendAll` filters every
+ *     already-seen id before the delta is published. There is no "already
+ *     toasted" set here, and adding one would duplicate that dedup and drift
+ *     from it.
+ *   - the closed-ids cache NO LONGER LAGS. `MessageLogService` emits `_log$`
+ *     before `_appended$`, so the fold has absorbed the batch by the time this
+ *     unit sees it: a notification arriving in the same batch as its own
+ *     `ClosedNotification` is suppressed pre-emptively instead of toasting and
+ *     being taken back off the screen.
  *
- * Subscribing `log$`, `messageList$` or anything downstream of `bufferTime(16)`
- * would erase both at once. That is a BEHAVIOUR CHANGE (ADR-025 Open Question 1)
- * needing a product decision on its own evidence — not a tidy, and not this
- * unit's to make.
+ * The wiring POSITION carries the first of those, not the argument alone:
+ * `appended$` is a plain `Subject`, so `start()` must run before the replay that
+ * feeds it (`ingestion.service.ts` step (b)). Nothing here can detect a
+ * violation — the stream simply stays quiet — which is why a spec pins it.
  *
  * A reactor that HOLDS STATE, which the epic's review test otherwise forbids
  * ("if a unit needs to remember something, it is a projection, not a reactor").
  * Unlike `LoadingIndicator`'s and `ConnectionToast`'s transport state, this one
  * is NOT a sanctioned exemption: `closedNotificationIds` is manifestly DOMAIN
  * state, derived from the log — `MessageLogService.closedNotificationIds$` is
- * already a fold over it. It is cached here only because the dispatch runs
- * inside a callback that cannot await an observable, and that inlining is the
- * direct cause of the 16 ms lag above. ADR-025 §0 names this the exact seam
- * where the tiers are currently smeared. This story RELOCATES that seam
- * unchanged and does not resolve it; resolving it means folding `log$`, i.e. the
- * behaviour change above.
+ * already a fold over it. Reading the log removed the lag that caching caused
+ * (above) but not the caching itself: the dispatch still runs inside a
+ * subscriber that cannot await an observable. ADR-025 §0 names this the exact
+ * seam where the tiers are smeared, and it is still open.
  *
  * Nothing is self-wired: the constructor subscribes to nothing (ADR-025 §2,
  * restating ADR-005 §Decision 6). That is the concrete defect being removed —
@@ -91,7 +94,9 @@ const ORCHESTRATOR_ROLE = 'Orchestrator';
  *
  * `start()` takes `Observable`s rather than reaching for a service, which is
  * what makes story 34-6 cheap: when `TeamSocket` appears, only the ARGUMENT
- * changes, never this unit.
+ * changes, never this unit. Story 35-1 collected on that promise — moving the
+ * dispatch off the transport and onto the log cost one argument at the wiring
+ * site and not one line of logic here.
  *
  * Component-scoped (`@Injectable()` with no `providedIn`), provided on
  * `ProcessComponent` before `IngestionService`, which injects it. Root scope
@@ -118,19 +123,22 @@ export class NotificationToasts {
 
   /**
    * Story 31-4 (AC #9): latest snapshot of `MessageLogService.closedNotificationIds$`,
-   * cached synchronously because `showNotificationToast` runs inside the inbound
-   * callback and cannot await an observable.
+   * cached synchronously because `showNotificationToast` runs inside the message
+   * subscriber and cannot await an observable.
    *
-   * The cache lags the wire by up to one `bufferTime(16)` window — a
-   * `ClosedNotification` reaches the log only when its frame is flushed. That is
-   * by design: on the live path a dismissal always precedes the next delivery of
-   * that message by far more than a frame, and the replay path (where the
-   * ordering genuinely bites) is story 31-5's batch computation. Do NOT close the
-   * gap with a synchronous side-channel off the inbound stream — that is a
-   * partial, untested version of 31-5.
+   * Story 35-1 closed the gap this cache used to carry. While the dispatch hung
+   * off the raw socket the cache lagged the wire by up to one `bufferTime(16)`
+   * window, so a notification arriving in the same frame as its own closure
+   * toasted and was then removed. Reading the log removes that by construction:
+   * both travel in the same batch, and `MessageLogService` emits `_log$` before
+   * `_appended$`, so the fold has already run — the pair is now suppressed
+   * pre-emptively and nothing flashes. The cache remains synchronous only
+   * because the dispatch still runs inside a subscriber, never because the value
+   * could be stale.
    *
-   * Story 31-5 kept that instruction and answered the ordering the other way
-   * round: see `onClosedNotificationIds` below.
+   * Story 31-5 covers the opposite arrival order — a closure folded AFTER its
+   * toast opened — by removing it after the fact: see `onClosedNotificationIds`
+   * below. Both directions are still needed; 35-1 removed a race, not an order.
    *
    * Reset to an empty `Set` by `stop()` (AC9). Before Epic 34 this subscription
    * lived for the whole service lifetime and cleared itself on a team switch,
@@ -159,12 +167,18 @@ export class NotificationToasts {
    * had by construction: the cache subscribed at construction, i.e. before any
    * frame could arrive. `closedNotificationIds$` is a `BehaviorSubject`
    * derivative, so this subscription populates the cache synchronously with the
-   * current set before the inbound one is even created.
+   * current set before the message one is even created.
    *
-   * `inbound$` MUST be the raw, unbatched stream (see the class docblock).
+   * `messages$` carries ONE MESSAGE AT A TIME, already in the log — Story 35-1
+   * makes that the contract, replacing "the raw, unbatched stream". The caller
+   * flattens `log.appended$` with `concatAll()` so within-batch order survives;
+   * `mergeAll` there would silently interleave. The stream must ALSO already be
+   * live when the log is first written: `appended$` replays nothing, so a
+   * `start()` sequenced after an `appendAll` observes an empty stream and fails
+   * quietly (see the class docblock).
    */
   start(
-    inbound$: Observable<AkgenticMessage>,
+    messages$: Observable<AkgenticMessage>,
     closedIds$: Observable<Set<string>>,
   ): void {
     const subs = new Subscription();
@@ -174,12 +188,12 @@ export class NotificationToasts {
       ),
     );
     subs.add(
-      inbound$.subscribe((event: AkgenticMessage) => {
+      messages$.subscribe((event: AkgenticMessage) => {
         // Story 31-6 (FR17): all three severities take ONE dispatch, classified
         // once through the shared `notificationSeverity`. `null` means "not a
-        // notification": no toast, and no early return either — the log feed is a
-        // separate subscriber of the same subject and must be unaffected either
-        // way.
+        // notification": no toast, and no early return either — most of what the
+        // log admits is not a notification, and this subscriber must be
+        // indifferent to it.
         //
         // The cast is what the `data: any` WS callback did implicitly before this
         // moved onto a typed stream: `notificationSeverity` returns

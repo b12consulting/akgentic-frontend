@@ -163,6 +163,166 @@ describe('MessageLogService (Story 6.1)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Story 35-1 (ADR-027 §1) — appended$, the post-dedup delta
+//
+// `log$` says what the log CONTAINS; `appended$` says what just ENTERED it. The
+// difference is the whole point: a reactor that wants "one action per new
+// message" would otherwise have to diff successive `log$` arrays to recover a
+// value `appendAll` already computed.
+//
+// Two properties below are invariants rather than conveniences, and each has a
+// spec that fails when it is reversed:
+//   * it is a plain `Subject`, so a late subscriber receives nothing — a
+//     `ReplaySubject` would re-deliver the previous team's last batch to the
+//     next team's reactor;
+//   * `log$` emits BEFORE `appended$`, so every log-derived fold has absorbed
+//     the batch by the time a subscriber here reacts to it.
+// ---------------------------------------------------------------------------
+
+describe('MessageLogService.appended$ (Story 35-1)', () => {
+  let service: MessageLogService;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ providers: [MessageLogService] });
+    service = TestBed.inject(MessageLogService);
+  });
+
+  it('appendAll emits exactly the batch that entered the log', () => {
+    const deltas: AkgenticMessage[][] = [];
+    const sub = service.appended$.subscribe((v) => deltas.push(v));
+
+    service.appendAll([msg('a'), msg('b')]);
+
+    expect(deltas.length).toBe(1);
+    expect(deltas[0].map((m) => m.id)).toEqual(['a', 'b']);
+    sub.unsubscribe();
+  });
+
+  it('appendAll emits ONLY the messages that survived id-dedup', () => {
+    service.appendAll([msg('a')]);
+
+    const deltas: AkgenticMessage[][] = [];
+    const sub = service.appended$.subscribe((v) => deltas.push(v));
+
+    service.appendAll([msg('a'), msg('b')]);
+
+    // The delta is the batch that ENTERED, not the batch that was offered.
+    expect(deltas.length).toBe(1);
+    expect(deltas[0].map((m) => m.id)).toEqual(['b']);
+    sub.unsubscribe();
+  });
+
+  it('appendAll whose whole batch is deduped away emits nothing', () => {
+    service.appendAll([msg('a'), msg('b')]);
+
+    const deltas: AkgenticMessage[][] = [];
+    const sub = service.appended$.subscribe((v) => deltas.push(v));
+
+    service.appendAll([msg('a'), msg('b')]);
+
+    expect(deltas).toEqual([]);
+    sub.unsubscribe();
+  });
+
+  it('appendAll([]) emits nothing', () => {
+    const deltas: AkgenticMessage[][] = [];
+    const sub = service.appended$.subscribe((v) => deltas.push(v));
+
+    service.appendAll([]);
+
+    expect(deltas).toEqual([]);
+    sub.unsubscribe();
+  });
+
+  it('append emits the single message as a one-element batch', () => {
+    const deltas: AkgenticMessage[][] = [];
+    const sub = service.appended$.subscribe((v) => deltas.push(v));
+
+    service.append(msg('1'));
+    service.append(msg('2'));
+
+    expect(deltas.map((d) => d.map((m) => m.id))).toEqual([['1'], ['2']]);
+    sub.unsubscribe();
+  });
+
+  it('a duplicate append emits nothing', () => {
+    service.append(msg('1'));
+
+    const deltas: AkgenticMessage[][] = [];
+    const sub = service.appended$.subscribe((v) => deltas.push(v));
+
+    service.append(msg('1'));
+
+    expect(deltas).toEqual([]);
+    sub.unsubscribe();
+  });
+
+  it('reset() emits nothing — it is the team-switch boundary, not an append', () => {
+    service.appendAll([msg('a')]);
+
+    const deltas: AkgenticMessage[][] = [];
+    const sub = service.appended$.subscribe((v) => deltas.push(v));
+
+    service.reset();
+
+    expect(deltas).toEqual([]);
+    sub.unsubscribe();
+  });
+
+  // A `ReplaySubject`/`BehaviorSubject`/`shareReplay` is the tempting way to
+  // make wiring order stop mattering. It trades a sequencing rule for a data
+  // bug: the next team's reactor would receive the previous team's final batch
+  // and re-toast it. This spec is what refuses that trade.
+  it('a LATE subscriber receives nothing — it is a plain Subject', () => {
+    service.appendAll([msg('a'), msg('b')]);
+
+    const deltas: AkgenticMessage[][] = [];
+    const sub = service.appended$.subscribe((v) => deltas.push(v));
+
+    expect(deltas).toEqual([]);
+
+    // ...and it is live, not dead: the NEXT append does arrive.
+    service.appendAll([msg('c')]);
+    expect(deltas.map((d) => d.map((m) => m.id))).toEqual([['c']]);
+    sub.unsubscribe();
+  });
+
+  // The ordering `closedNotificationIds$` depends on, stated at the level it is
+  // actually written: recording both arrivals in one array makes "which came
+  // first" an assertion instead of a comment.
+  it('log$ emits BEFORE appended$ for the same appendAll', () => {
+    const order: string[] = [];
+    const logSub = service.log$.subscribe(() => order.push('log$'));
+    const appendedSub = service.appended$.subscribe(() =>
+      order.push('appended$'),
+    );
+    // `log$` is a BehaviorSubject, so subscribing already pushed one entry.
+    order.length = 0;
+
+    service.appendAll([msg('a')]);
+
+    expect(order).toEqual(['log$', 'appended$']);
+    logSub.unsubscribe();
+    appendedSub.unsubscribe();
+  });
+
+  it('log$ emits BEFORE appended$ for a single append', () => {
+    const order: string[] = [];
+    const logSub = service.log$.subscribe(() => order.push('log$'));
+    const appendedSub = service.appended$.subscribe(() =>
+      order.push('appended$'),
+    );
+    order.length = 0;
+
+    service.append(msg('1'));
+
+    expect(order).toEqual(['log$', 'appended$']);
+    logSub.unsubscribe();
+    appendedSub.unsubscribe();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Story 6.4 (AC4) — messageList$ selector
 // ---------------------------------------------------------------------------
 
@@ -456,5 +616,31 @@ describe('MessageLogService.closedNotificationIds$ (Story 31-4, AC #7)', () => {
 
     expect((observed as Set<string> | null)?.size).toBe(0);
     sub.unsubscribe();
+  });
+
+  // Story 35-1 (ADR-027 §1): the consequence `NotificationToasts` relies on. By
+  // the time the delta is observed, a `ClosedNotification` carried in the SAME
+  // batch has already been folded here — which is what turns "toast, then
+  // remove it" into "never raise it". Swap the two `next` calls in `appendAll`
+  // and this goes red.
+  it('has folded the batch before appended$ fires (Story 35-1)', () => {
+    let closed = new Set<string>();
+    const closedSub = service.closedNotificationIds$.subscribe(
+      (ids) => (closed = ids),
+    );
+
+    let seenAtDelta: boolean | null = null;
+    const appendedSub = service.appended$.subscribe(() => {
+      seenAtDelta = closed.has('w-1');
+    });
+
+    service.appendAll([
+      msg('w-1', 'WarningMessage'),
+      closedNotification('c-1', 'w-1'),
+    ]);
+
+    expect(seenAtDelta).toBeTrue();
+    closedSub.unsubscribe();
+    appendedSub.unsubscribe();
   });
 });
