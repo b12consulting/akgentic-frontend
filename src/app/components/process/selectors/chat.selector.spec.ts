@@ -510,6 +510,19 @@ describe('chatFold — agent identity via the shared projection (Story 34-8)', (
     expect(state.thinkingAgents[0].agent_name).toBe('@Researcher');
   });
 
+  it('(AC2) an identity whose name is the empty string resolves to the empty string, not the fallback', () => {
+    // Pins `??` against `||`. Under `||` the empty name is falsy, the lookup
+    // skips to the message sender and this reads '@Fallback' — the map would
+    // quietly stop meaning "the answer" and start meaning "a hint". No LOG can
+    // produce that divergence (identity is immutable), so the contract is
+    // exercised through the parameter, which is what the parameter is for.
+    const rcv = makeReceived({
+      sender: makeAddress({ name: '@Fallback', role: 'Worker', agent_id: 'agent-1' }),
+    });
+    const state = chatStep(EMPTY_CHAT, rcv, { 'agent-1': { name: '', role: 'Worker' } });
+    expect(state.thinkingAgents[0].agent_name).toBe('');
+  });
+
   it('(AC4) chatFold over a multi-agent fixture is identical to the same log folded per message', () => {
     const log: AkgenticMessage[] = [
       makeStart({ id: 'start-a', sender: makeAddress({ name: '@Alpha', agent_id: 'a1' }) }),

@@ -635,6 +635,34 @@ describe('graphFold — node identity via the shared projection (Story 34-8)', (
     expect(s.nodes[0].role).toBe('Manager');
   });
 
+  it('(AC1) an identity map entry WINS over the message own sender name/role', () => {
+    // Without this, nothing at the graph site pins the lookup at all: deleting
+    // it and keeping the fallback leaves the whole suite green, AC7's contract
+    // pin included, because no reachable LOG can make the map and the message
+    // disagree here. Asserting through the parameter closes that hole without
+    // pinning retroactive last-wins on a synthetic duplicate-Start log.
+    const start = makeStart({
+      sender: makeAddress({ agent_id: 'a1', name: '@Stale', role: 'StaleRole' }),
+    });
+    const s = graphStep(EMPTY_GRAPH, start, cs, {
+      a1: { name: '@Canonical', role: 'Manager' },
+    });
+    expect(s.nodes[0].actorName).toBe('@Canonical');
+    expect(s.nodes[0].role).toBe('Manager');
+    // `name` holds the agent_id — message-local data, deliberately NOT routed
+    // through the projection.
+    expect(s.nodes[0].name).toBe('a1');
+  });
+
+  it('(AC1) an identity whose name is the empty string resolves to the empty string, not the fallback', () => {
+    // The `??`-not-`||` pin, mirroring the chat site.
+    const start = makeStart({
+      sender: makeAddress({ agent_id: 'a1', name: '@Fallback', role: 'Manager' }),
+    });
+    const s = graphStep(EMPTY_GRAPH, start, cs, { a1: { name: '', role: 'Manager' } });
+    expect(s.nodes[0].actorName).toBe('');
+  });
+
   it('(AC1) the userProxy symbol still derives from the message own sender.role', () => {
     const human = makeStart({
       sender: makeAddress({ agent_id: 'h1', name: '@Human', role: HUMAN_ROLE }),
