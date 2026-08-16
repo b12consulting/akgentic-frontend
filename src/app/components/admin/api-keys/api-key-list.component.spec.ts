@@ -1,16 +1,23 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { MessageService } from 'primeng/api';
+import { BehaviorSubject } from 'rxjs';
 
+import { AuthService } from '../../../core/auth/auth.service';
 import { ApiService } from '../../../core/http/api.service';
 import { HttpError, NetworkError } from '../../../core/http/fetch.service';
-import { ApiKeyRecord } from '../../../protocol/api-key.interface';
+import {
+  ApiKeyRecord,
+  CreateApiKeyResponse,
+} from '../../../protocol/api-key.interface';
 import {
   ApiKeyListComponent,
   NEVER_EXPIRES_LABEL,
   NO_ROLES_PLACEHOLDER,
+  toRecord,
 } from './api-key-list.component';
-import { CREATE_DISABLED_REASON } from './api-key.model';
+import { ApiKeyRevealComponent } from './api-key-reveal.component';
 
 /**
  * Story 36-5 — the API-keys pane and the three answers it must keep apart.
@@ -58,19 +65,78 @@ function key(overrides: Partial<ApiKeyRecord> = {}): ApiKeyRecord {
   };
 }
 
-describe('ApiKeyListComponent (Story 36-5)', () => {
+/** The one-time plaintext, distinctive enough that any stray copy is obvious. */
+const SENTINEL = 'ak_testkeyid_SENTINELPLAINTEXTVALUE';
+
+const ADMIN_USER = {
+  user_id: 'u-acme',
+  email: 'operator@acme.test',
+  name: 'Acme Operator',
+  roles: ['admin'],
+};
+
+function createdKey(
+  overrides: Partial<CreateApiKeyResponse> = {},
+): CreateApiKeyResponse {
+  return {
+    key_id: 'ak-acme-9',
+    owner_id: 'u-acme',
+    owner_email: 'operator@acme.test',
+    roles: ['admin'],
+    expiration: null,
+    created_at: '2026-08-16T09:00:00Z',
+    plaintext_key: SENTINEL,
+    ...overrides,
+  };
+}
+
+/**
+ * Does `value` hold the sentinel ANYWHERE — through nested objects and arrays?
+ *
+ * A shallow scan would miss `keys[0].plaintext_key`, which is the single most
+ * likely way this feature ships a leak (`this.keys.unshift(response)` is one
+ * reasonable-looking line). Cycles are tracked because component state reaches
+ * framework objects that reference themselves.
+ */
+function containsSentinel(
+  value: unknown,
+  sentinel: string,
+  seen: Set<unknown> = new Set(),
+): boolean {
+  if (typeof value === 'string') {
+    return value.includes(sentinel);
+  }
+  if (value === null || typeof value !== 'object') {
+    return false;
+  }
+  if (seen.has(value)) {
+    return false;
+  }
+  seen.add(value);
+  const children = Array.isArray(value)
+    ? value
+    : Object.values(value as Record<string, unknown>);
+  return children.some((child) => containsSentinel(child, sentinel, seen));
+}
+
+describe('ApiKeyListComponent (Stories 36-5, 36-6)', () => {
   let fixture: ComponentFixture<ApiKeyListComponent>;
   let apiSpy: jasmine.SpyObj<ApiService>;
   let messageSpy: jasmine.SpyObj<MessageService>;
+  let currentUser$: BehaviorSubject<unknown>;
 
   beforeEach(async () => {
     apiSpy = jasmine.createSpyObj<ApiService>('ApiService', [
       'getApiKeys',
       'getNamespaces',
       'getEntries',
+      'createApiKey',
+      'rotateApiKey',
+      'revokeApiKey',
     ]);
     apiSpy.getApiKeys.and.returnValue(Promise.resolve([]));
     messageSpy = jasmine.createSpyObj<MessageService>('MessageService', ['add']);
+    currentUser$ = new BehaviorSubject<unknown>(ADMIN_USER);
 
     // Mounted NORMALLY — no CUSTOM_ELEMENTS_SCHEMA. Absence assertions are
     // worthless in a schema-suppressed fixture, and absence is most of what
@@ -80,6 +146,10 @@ describe('ApiKeyListComponent (Story 36-5)', () => {
       providers: [
         { provide: ApiService, useValue: apiSpy },
         { provide: MessageService, useValue: messageSpy },
+        {
+          provide: AuthService,
+          useValue: { currentUser$: currentUser$.asObservable() },
+        },
       ],
     }).compileComponents();
 
@@ -160,20 +230,24 @@ describe('ApiKeyListComponent (Story 36-5)', () => {
       expect(messageSpy.add).toHaveBeenCalledTimes(0);
     });
 
-    it('offers the create control, disabled with its reason (AC 16)', async () => {
+    it('offers the create control ENABLED, and it opens the dialog (36-6 AC 22)', async () => {
       apiSpy.getApiKeys.and.returnValue(Promise.resolve([key()]));
 
       await render();
 
       const btn = byTest('api-key-create-btn') as HTMLButtonElement;
       expect(btn).not.toBeNull();
-      // Present but visibly not yet usable — 36-6 enables it. The reason rides
-      // on `title` because a disabled button fires no mouse events.
-      expect(btn.disabled).toBeTrue();
-      // The REASON, not merely some title: a disabled control with an empty or
-      // placeholder tooltip is the silently-inert button AC 16 rules out, and
-      // `toBeTruthy()` would have passed for any string at all.
-      expect(btn.getAttribute('title')).toBe(CREATE_DISABLED_REASON);
+      // 36-5 shipped this control disabled with a reason, and pinned the
+      // reason. Story 36-6 enables it, which makes that constant dead — it was
+      // deleted rather than kept alive to keep an assertion green, and this is
+      // the replacement assertion.
+      expect(btn.disabled).toBeFalse();
+      expect(byTest('api-key-create-form')).toBeNull();
+
+      btn.click();
+      await settle();
+
+      expect(byTest('api-key-create-form')).not.toBeNull();
     });
   });
 
@@ -327,15 +401,24 @@ describe('ApiKeyListComponent (Story 36-5)', () => {
   });
 
   describe('the table (AC 12, 13, 14)', () => {
-    it('renders five columns in order: key, owner, roles, created, expiry', async () => {
+    it('renders the columns in order: key, owner, roles, created, expiry, actions', async () => {
       apiSpy.getApiKeys.and.returnValue(Promise.resolve([key()]));
 
       await render();
 
+      // 36-5's five columns, unchanged and in the same order; Story 36-6 adds
+      // the per-row Rotate / Revoke column at the end.
       const headers = Array.from(
         fixture.nativeElement.querySelectorAll('th'),
       ).map((th) => (th as HTMLElement).textContent?.trim());
-      expect(headers).toEqual(['Key', 'Owner', 'Roles', 'Created', 'Expiry']);
+      expect(headers).toEqual([
+        'Key',
+        'Owner',
+        'Roles',
+        'Created',
+        'Expiry',
+        'Actions',
+      ]);
     });
 
     it('renders owner_email, falling back to owner_id when the email is blank', async () => {
@@ -438,5 +521,660 @@ describe('ApiKeyListComponent (Story 36-5)', () => {
       expect(text).not.toContain('hash-must-not-render');
       expect(text).not.toContain('sk-must-not-render');
     });
+  });
+
+  // =========================================================================
+  // Story 36-6 — create, rotate, revoke, and the one-time reveal.
+  // =========================================================================
+
+  /** Open the create dialog, fill the one required field, and submit. */
+  async function submitCreate(roles = 'admin'): Promise<void> {
+    (byTest('api-key-create-btn') as HTMLButtonElement).click();
+    await settle();
+    const rolesInput = byTest('api-key-create-roles') as HTMLInputElement;
+    rolesInput.value = roles;
+    rolesInput.dispatchEvent(new Event('input'));
+    await settle();
+    (byTest('api-key-create-submit-btn') as HTMLButtonElement).click();
+    await settle();
+  }
+
+  async function clickRotate(keyId: string): Promise<void> {
+    (byTest(`api-key-rotate-btn-${keyId}`) as HTMLButtonElement).click();
+    await settle();
+  }
+
+  /** Open the revoke confirmation and press Proceed. */
+  async function revoke(keyId: string): Promise<void> {
+    (byTest(`api-key-revoke-btn-${keyId}`) as HTMLButtonElement).click();
+    await settle();
+    (byTest('api-key-revoke-proceed-btn') as HTMLButtonElement).click();
+    await settle();
+  }
+
+  function pressEscape(): void {
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    fixture.detectChanges();
+  }
+
+  function revealComponents(): unknown[] {
+    return fixture.debugElement.queryAll(By.directive(ApiKeyRevealComponent));
+  }
+
+  /**
+   * THE ASSERTION THIS STORY EXISTS FOR — taken AFTER the panel is gone, over
+   * state the implementation was never asked about.
+   *
+   * A spec that only checked "the value is on screen" would pass on an
+   * implementation that also wrote it to a service field, a component array and
+   * the console. This looks in all of those places instead, and looks for the
+   * value's ABSENCE.
+   */
+  function expectSentinelGone(consoleSpies: jasmine.Spy[]): void {
+    const component = fixture.componentInstance;
+
+    // 1. Component state, recursed — `keys[0].plaintext_key` is the leak this
+    //    feature is most likely to ship.
+    for (const [name, value] of Object.entries(
+      component as unknown as Record<string, unknown>,
+    )) {
+      expect(containsSentinel(value, SENTINEL))
+        .withContext(`ApiKeyListComponent.${name} holds the plaintext`)
+        .toBeFalse();
+    }
+
+    // 2. The injected service. Its methods are spies, so the meaningful check
+    //    is that no NON-function state was hung off it (`api.lastCreated = …`)
+    //    — which is exactly the shape such a leak takes.
+    for (const [name, value] of Object.entries(
+      apiSpy as unknown as Record<string, unknown>,
+    )) {
+      if (typeof value === 'function') {
+        continue;
+      }
+      expect(containsSentinel(value, SENTINEL))
+        .withContext(`ApiService.${name} holds the plaintext`)
+        .toBeFalse();
+    }
+
+    // 3. The rendered DOM.
+    expect(fixture.nativeElement.textContent as string).not.toContain(SENTINEL);
+
+    // 4. Both web storages, over every key.
+    for (const storage of [window.localStorage, window.sessionStorage]) {
+      for (let i = 0; i < storage.length; i++) {
+        const storageKey = storage.key(i) as string;
+        expect(storageKey).not.toContain(SENTINEL);
+        expect(storage.getItem(storageKey) ?? '').not.toContain(SENTINEL);
+      }
+    }
+
+    // 5. The URL.
+    expect(window.location.href).not.toContain(SENTINEL);
+
+    // 6. Every console channel — including a debug line added while working
+    //    and forgotten, which is the one nobody writes on purpose.
+    for (const spy of consoleSpies) {
+      for (const call of spy.calls.all()) {
+        expect(containsSentinel(call.args, SENTINEL))
+          .withContext(`console.${spy.and.identity} received the plaintext`)
+          .toBeFalse();
+      }
+    }
+  }
+
+  function spyOnEveryConsoleChannel(): jasmine.Spy[] {
+    return [
+      spyOn(console, 'log'),
+      spyOn(console, 'info'),
+      spyOn(console, 'debug'),
+      spyOn(console, 'warn'),
+      spyOn(console, 'error'),
+    ];
+  }
+
+  describe('the secret is gone after dismissal (AC 11) — the specs that matter', () => {
+    it('leaves the plaintext NOWHERE after the create flow is dismissed', async () => {
+      const consoleSpies = spyOnEveryConsoleChannel();
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([key()]));
+      apiSpy.createApiKey.and.returnValue(Promise.resolve(createdKey()));
+
+      await render();
+      await submitCreate();
+
+      // It WAS shown — otherwise the absence below would be vacuous.
+      expect(byTest('api-key-reveal-value')?.textContent).toContain(SENTINEL);
+
+      (byTest('api-key-reveal-done-btn') as HTMLButtonElement).click();
+      await settle();
+
+      expect(byTest('api-key-reveal')).toBeNull();
+      expectSentinelGone(consoleSpies);
+    });
+
+    it('leaves the plaintext NOWHERE after the rotate flow is dismissed', async () => {
+      const consoleSpies = spyOnEveryConsoleChannel();
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([key({ key_id: 'ak-1' })]));
+      apiSpy.rotateApiKey.and.returnValue(
+        Promise.resolve(createdKey({ key_id: 'ak-1' })),
+      );
+
+      await render();
+      await clickRotate('ak-1');
+
+      expect(byTest('api-key-reveal-value')?.textContent).toContain(SENTINEL);
+
+      (byTest('api-key-reveal-done-btn') as HTMLButtonElement).click();
+      await settle();
+
+      expect(byTest('api-key-reveal')).toBeNull();
+      expectSentinelGone(consoleSpies);
+    });
+
+    it('re-opening the pane never shows the plaintext again (AC 14)', async () => {
+      const consoleSpies = spyOnEveryConsoleChannel();
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([key()]));
+      apiSpy.createApiKey.and.returnValue(Promise.resolve(createdKey()));
+
+      await render();
+      await submitCreate();
+      (byTest('api-key-reveal-done-btn') as HTMLButtonElement).click();
+      await settle();
+
+      // Re-open the create dialog: no reveal rides along with it.
+      (byTest('api-key-create-btn') as HTMLButtonElement).click();
+      await settle();
+      expect(byTest('api-key-reveal')).toBeNull();
+      (byTest('api-key-create-cancel-btn') as HTMLButtonElement).click();
+      await settle();
+
+      // Re-run the load path: the server cannot re-issue the plaintext, and
+      // neither can the client.
+      await fixture.componentInstance.loadKeys();
+      await settle();
+
+      expect(byTest('api-keys-table')).not.toBeNull();
+      expect(byTest('api-key-reveal')).toBeNull();
+      expectSentinelGone(consoleSpies);
+    });
+  });
+
+  describe('the row is an allowlist projection, never the response (AC 12)', () => {
+    it('drops plaintext_key AND an unknown stray field on the way into keys[]', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([]));
+      // A secret-bearing DTO must lose anything the projection has never heard
+      // of — a rest-destructure would carry `key_hash` straight through.
+      apiSpy.createApiKey.and.returnValue(
+        Promise.resolve({
+          ...createdKey(),
+          key_hash: 'leaked-hash',
+        } as CreateApiKeyResponse),
+      );
+
+      await render();
+      await submitCreate();
+      (byTest('api-key-reveal-done-btn') as HTMLButtonElement).click();
+      await settle();
+
+      const row = fixture.componentInstance.keys[0] as unknown as Record<
+        string,
+        unknown
+      >;
+      expect(Object.keys(row).sort()).toEqual([
+        'created_at',
+        'expiration',
+        'key_id',
+        'owner_email',
+        'owner_id',
+        'roles',
+      ]);
+      const text = fixture.nativeElement.textContent as string;
+      expect(text).not.toContain('leaked-hash');
+      expect(text).not.toContain(SENTINEL);
+    });
+
+    it('toRecord names exactly the six non-secret fields', () => {
+      const record = toRecord({
+        ...createdKey(),
+        key_hash: 'leaked-hash',
+      } as CreateApiKeyResponse);
+
+      expect(record).toEqual({
+        key_id: 'ak-acme-9',
+        owner_id: 'u-acme',
+        owner_email: 'operator@acme.test',
+        roles: ['admin'],
+        expiration: null,
+        created_at: '2026-08-16T09:00:00Z',
+      });
+    });
+  });
+
+  describe('create (AC 8b, 13)', () => {
+    it('prepends the new row and flips empty -> rows, with NO second request', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([]));
+      apiSpy.createApiKey.and.returnValue(Promise.resolve(createdKey()));
+
+      await render();
+      expectOnlyState('api-keys-empty');
+
+      await submitCreate();
+
+      expect(byTest('api-keys-table')).not.toBeNull();
+      expect(fixture.componentInstance.keys.map((k) => k.key_id)).toEqual([
+        'ak-acme-9',
+      ]);
+      // A refetch would be a second request racing the panel already on
+      // screen, for data the response already carried.
+      expect(apiSpy.getApiKeys).toHaveBeenCalledTimes(1);
+    });
+
+    it('prepends ahead of the existing rows — the server sorts newest-first', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([key({ key_id: 'ak-1' })]));
+      apiSpy.createApiKey.and.returnValue(Promise.resolve(createdKey()));
+
+      await render();
+      await submitCreate();
+
+      expect(fixture.componentInstance.keys.map((k) => k.key_id)).toEqual([
+        'ak-acme-9',
+        'ak-1',
+      ]);
+    });
+
+    it('closes the create dialog BEFORE the reveal opens — never both at once', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([]));
+      apiSpy.createApiKey.and.returnValue(Promise.resolve(createdKey()));
+
+      await render();
+      await submitCreate();
+
+      expect(byTest('api-key-reveal')).not.toBeNull();
+      expect(byTest('api-key-create-form')).toBeNull();
+    });
+
+    it('keeps the dialog open with its values after a rejected submit, and adds no toast', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([]));
+      apiSpy.createApiKey.and.returnValue(
+        Promise.reject(new HttpError('Boom', 500, null)),
+      );
+
+      await render();
+      await submitCreate('operator');
+
+      // Discarding a filled form on a 500 is its own small disaster.
+      expect(byTest('api-key-create-form')).not.toBeNull();
+      expect((byTest('api-key-create-roles') as HTMLInputElement).value).toBe(
+        'operator',
+      );
+      expect(byTest('api-key-reveal')).toBeNull();
+      // `createApiKey` keeps the default `notifyOnError`, so FetchService has
+      // already reported it — a component toast would be the second one.
+      expect(messageSpy.add).toHaveBeenCalledTimes(0);
+    });
+  });
+
+  describe('rotate (AC 9, 15)', () => {
+    it('mounts the SAME reveal component type as create', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([key({ key_id: 'ak-1' })]));
+      apiSpy.createApiKey.and.returnValue(Promise.resolve(createdKey()));
+      apiSpy.rotateApiKey.and.returnValue(
+        Promise.resolve(createdKey({ key_id: 'ak-1' })),
+      );
+
+      await render();
+      await submitCreate();
+      expect(revealComponents().length).toBe(1);
+      (byTest('api-key-reveal-done-btn') as HTMLButtonElement).click();
+      await settle();
+
+      await clickRotate('ak-1');
+
+      // One component type, two flows — a second reveal would be two code
+      // paths rendering a secret.
+      expect(revealComponents().length).toBe(1);
+    });
+
+    it('replaces the row located by the OLD key_id when the store re-mints the id', async () => {
+      apiSpy.getApiKeys.and.returnValue(
+        Promise.resolve([key({ key_id: 'ak-1' }), key({ key_id: 'ak-2' })]),
+      );
+      // A re-mint store issues a NEW id; an in-place store keeps the old one.
+      // Both are legal, so the row cannot be patched on the assumption that
+      // the id survives.
+      apiSpy.rotateApiKey.and.returnValue(
+        Promise.resolve(createdKey({ key_id: 'ak-1-rotated' })),
+      );
+
+      await render();
+      await clickRotate('ak-1');
+
+      const ids = fixture.componentInstance.keys.map((k) => k.key_id);
+      expect(ids).toEqual(['ak-1-rotated', 'ak-2']);
+      expect(ids.length).toBe(2);
+      expect(byTest('api-key-row-ak-1')).toBeNull();
+      expect(byTest('api-key-row-ak-1-rotated')).not.toBeNull();
+    });
+
+    it('leaves the row untouched on a rejection and adds no toast of its own', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([key({ key_id: 'ak-1' })]));
+      apiSpy.rotateApiKey.and.returnValue(
+        Promise.reject(new HttpError('Boom', 500, null)),
+      );
+
+      await render();
+      await clickRotate('ak-1');
+
+      expect(byTest('api-key-row-ak-1')).not.toBeNull();
+      expect(byTest('api-key-reveal')).toBeNull();
+      expect(messageSpy.add).toHaveBeenCalledTimes(0);
+    });
+  });
+
+  describe('revoke (AC 16, 17)', () => {
+    it('asks for confirmation NAMING the key_id, and issues nothing on Cancel', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([key({ key_id: 'ak-1' })]));
+
+      await render();
+      (byTest('api-key-revoke-btn-ak-1') as HTMLButtonElement).click();
+      await settle();
+
+      // Asserted on the dialog's CONTENT, not on its `p-dialog` host: PrimeNG
+      // leaves the host element in place and renders the body only while the
+      // dialog is open, so the host is present either way and proves nothing.
+      expect(
+        byTest('api-key-revoke-confirm-key-id')?.textContent?.trim(),
+      ).toBe('ak-1');
+
+      (byTest('api-key-revoke-cancel-btn') as HTMLButtonElement).click();
+      await settle();
+
+      expect(byTest('api-key-revoke-confirm-key-id')).toBeNull();
+      expect(apiSpy.revokeApiKey).not.toHaveBeenCalled();
+      expect(byTest('api-key-row-ak-1')).not.toBeNull();
+    });
+
+    it('removes the row on a 204, silently', async () => {
+      apiSpy.getApiKeys.and.returnValue(
+        Promise.resolve([key({ key_id: 'ak-1' }), key({ key_id: 'ak-2' })]),
+      );
+      apiSpy.revokeApiKey.and.returnValue(Promise.resolve(undefined));
+
+      await render();
+      await revoke('ak-1');
+
+      expect(apiSpy.revokeApiKey).toHaveBeenCalledOnceWith('ak-1');
+      expect(byTest('api-key-row-ak-1')).toBeNull();
+      expect(byTest('api-key-row-ak-2')).not.toBeNull();
+      expect(messageSpy.add).toHaveBeenCalledTimes(0);
+    });
+
+    it('treats a 404 as idempotent SUCCESS — the row goes, and no toast', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([key({ key_id: 'ak-1' })]));
+      apiSpy.revokeApiKey.and.returnValue(
+        Promise.reject(new HttpError('Request failed: Not Found', 404, null)),
+      );
+
+      await render();
+      await revoke('ak-1');
+
+      // "Already gone" is the outcome that was asked for. A red toast over a
+      // row that just correctly disappeared is the pane contradicting itself.
+      expect(byTest('api-key-row-ak-1')).toBeNull();
+      expect(messageSpy.add).toHaveBeenCalledTimes(0);
+      // The last row leaving flips the pane back to its empty state.
+      expectOnlyState('api-keys-empty');
+    });
+
+    for (const status of [500, 403]) {
+      it(`keeps the row and raises exactly one toast on ${status}`, async () => {
+        apiSpy.getApiKeys.and.returnValue(
+          Promise.resolve([key({ key_id: 'ak-1' })]),
+        );
+        apiSpy.revokeApiKey.and.returnValue(
+          Promise.reject(new HttpError('Upstream vault is down', status, null)),
+        );
+
+        await render();
+        await revoke('ak-1');
+
+        expect(byTest('api-key-row-ak-1')).not.toBeNull();
+        // `revokeApiKey` opted out of FetchService's toast, so this one is not
+        // a double-report — it is the only report.
+        expect(messageSpy.add).toHaveBeenCalledTimes(1);
+        expect(messageSpy.add.calls.first().args[0].summary).toBe(
+          'Upstream vault is down',
+        );
+      });
+    }
+
+    it('stays silent on a NetworkError — FetchService always toasts that branch', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([key({ key_id: 'ak-1' })]));
+      apiSpy.revokeApiKey.and.returnValue(
+        Promise.reject(new NetworkError('Server unreachable.')),
+      );
+
+      await render();
+      await revoke('ak-1');
+
+      // A NetworkError carries NO status, so a bare `err.status` read would be
+      // `undefined` and could not be told apart from the 404 branch above.
+      expect(byTest('api-key-row-ak-1')).not.toBeNull();
+      expect(messageSpy.add).toHaveBeenCalledTimes(0);
+    });
+  });
+
+  describe('one writer, no double-submit (AC 21)', () => {
+    it('refuses a second create while the first is in flight — asserted on the TS guard', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([]));
+      let resolveCreate: (r: CreateApiKeyResponse) => void = () => undefined;
+      apiSpy.createApiKey.and.returnValue(
+        new Promise<CreateApiKeyResponse>((resolve) => {
+          resolveCreate = resolve;
+        }),
+      );
+
+      await render();
+      (byTest('api-key-create-btn') as HTMLButtonElement).click();
+      await settle();
+      const rolesInput = byTest('api-key-create-roles') as HTMLInputElement;
+      rolesInput.value = 'admin';
+      rolesInput.dispatchEvent(new Event('input'));
+      await settle();
+      (byTest('api-key-create-submit-btn') as HTMLButtonElement).click();
+      await settle();
+
+      // Straight at the method, bypassing `[disabled]` — a disabled attribute
+      // does not gate a keyboard-driven submit (epic 33's lesson), so the
+      // guard has to be in TypeScript.
+      await fixture.componentInstance.onCreateSubmit({
+        owner_id: 'u-acme',
+        owner_email: '',
+        roles: ['admin'],
+      });
+
+      expect(apiSpy.createApiKey).toHaveBeenCalledTimes(1);
+      resolveCreate(createdKey());
+      await settle();
+    });
+
+    it('refuses a second rotate and a revoke while a rotate is in flight', async () => {
+      apiSpy.getApiKeys.and.returnValue(
+        Promise.resolve([key({ key_id: 'ak-1' }), key({ key_id: 'ak-2' })]),
+      );
+      let resolveRotate: (r: CreateApiKeyResponse) => void = () => undefined;
+      apiSpy.rotateApiKey.and.returnValue(
+        new Promise<CreateApiKeyResponse>((resolve) => {
+          resolveRotate = resolve;
+        }),
+      );
+
+      await render();
+      void fixture.componentInstance.onRotate(fixture.componentInstance.keys[0]);
+      await settle();
+
+      await fixture.componentInstance.onRotate(fixture.componentInstance.keys[1]);
+      fixture.componentInstance.pendingRevoke = fixture.componentInstance.keys[1];
+      await fixture.componentInstance.onRevokeProceed();
+
+      expect(apiSpy.rotateApiKey).toHaveBeenCalledTimes(1);
+      expect(apiSpy.revokeApiKey).not.toHaveBeenCalled();
+      // Every row control is visibly locked too, off the same one field.
+      expect(fixture.componentInstance.isWriteInFlight).toBeTrue();
+      expect(
+        (byTest('api-key-rotate-btn-ak-2') as HTMLButtonElement).disabled,
+      ).toBeTrue();
+
+      resolveRotate(createdKey({ key_id: 'ak-1' }));
+      await settle();
+      expect(fixture.componentInstance.isWriteInFlight).toBeFalse();
+    });
+  });
+
+  describe('the Escape contract (AC 18, 19, 20)', () => {
+    it('dismisses the reveal AND clears the plaintext (AC 19)', async () => {
+      const consoleSpies = spyOnEveryConsoleChannel();
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([]));
+      apiSpy.createApiKey.and.returnValue(Promise.resolve(createdKey()));
+
+      await render();
+      await submitCreate();
+      expect(byTest('api-key-reveal')).not.toBeNull();
+
+      pressEscape();
+      await settle();
+
+      // The dismissal path most likely to be wired straight to a visibility
+      // flag, bypassing the one clearing method — which is exactly how the
+      // secret would survive.
+      expect(byTest('api-key-reveal')).toBeNull();
+      expect(fixture.componentInstance.revealPlaintext).toBeNull();
+      expectSentinelGone(consoleSpies);
+    });
+
+    it('cancels the revoke confirmation and issues no request', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([key({ key_id: 'ak-1' })]));
+
+      await render();
+      (byTest('api-key-revoke-btn-ak-1') as HTMLButtonElement).click();
+      await settle();
+
+      pressEscape();
+      await settle();
+
+      expect(byTest('api-key-revoke-confirm-key-id')).toBeNull();
+      expect(apiSpy.revokeApiKey).not.toHaveBeenCalled();
+      expect(byTest('api-key-row-ak-1')).not.toBeNull();
+    });
+
+    it('closes the create dialog when it is the only layer open', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([]));
+
+      await render();
+      (byTest('api-key-create-btn') as HTMLButtonElement).click();
+      await settle();
+
+      pressEscape();
+      await settle();
+
+      expect(byTest('api-key-create-form')).toBeNull();
+    });
+
+    it('takes the reveal FIRST when a lower layer is also open', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([key({ key_id: 'ak-1' })]));
+      apiSpy.rotateApiKey.and.returnValue(
+        Promise.resolve(createdKey({ key_id: 'ak-1' })),
+      );
+
+      await render();
+      // Force the ordering question: a pending revoke underneath an open
+      // reveal. One keystroke must take the topmost layer and only it.
+      fixture.componentInstance.pendingRevoke = fixture.componentInstance.keys[0];
+      await clickRotate('ak-1');
+
+      pressEscape();
+      await settle();
+
+      expect(fixture.componentInstance.revealPlaintext).toBeNull();
+      expect(fixture.componentInstance.pendingRevoke).not.toBeNull();
+    });
+
+    it('does NOTHING while a write is in flight — every channel locks together', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([key({ key_id: 'ak-1' })]));
+      let resolveRevoke: () => void = () => undefined;
+      apiSpy.revokeApiKey.and.returnValue(
+        new Promise<void>((resolve) => {
+          resolveRevoke = resolve;
+        }),
+      );
+
+      await render();
+      (byTest('api-key-revoke-btn-ak-1') as HTMLButtonElement).click();
+      await settle();
+      (byTest('api-key-revoke-proceed-btn') as HTMLButtonElement).click();
+      await settle();
+
+      pressEscape();
+      await settle();
+
+      expect(fixture.componentInstance.pendingRevoke).not.toBeNull();
+      expect(byTest('api-key-revoke-confirm-key-id')).not.toBeNull();
+
+      resolveRevoke();
+      await settle();
+    });
+
+    it('does nothing at all when no dialog is open', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([key({ key_id: 'ak-1' })]));
+
+      await render();
+      pressEscape();
+      await settle();
+
+      expectOnlyState('api-keys-table');
+      expect(apiSpy.revokeApiKey).not.toHaveBeenCalled();
+    });
+
+    it('leaves PrimeNG no Escape listener of its own — one keystroke, one action', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([key({ key_id: 'ak-1' })]));
+
+      await render();
+
+      // `closeOnEscape` is a DOCUMENT-level listener PER DIALOG, so leaving it
+      // on anywhere would give one keystroke more than one action — the exact
+      // failure this contract exists to prevent (ADR-018 amendment (b)).
+      const dialogs = fixture.debugElement
+        .queryAll(By.css('p-dialog'))
+        .map((de) => de.componentInstance as { closeOnEscape: boolean; modal: boolean; draggable: boolean });
+      expect(dialogs.length).toBe(3);
+      for (const dialog of dialogs) {
+        expect(dialog.closeOnEscape).toBeFalse();
+        expect(dialog.modal).toBeTrue();
+        expect(dialog.draggable).toBeFalse();
+      }
+    });
+  });
+
+  describe('the create control keeps 36-5\'s presence rule (AC 23)', () => {
+    for (const status of [404, 500]) {
+      it(`renders no create, rotate or revoke control after a ${status}`, async () => {
+        apiSpy.getApiKeys.and.returnValue(
+          Promise.reject(new HttpError('Nope', status, null)),
+        );
+
+        await render();
+
+        expect(byTest('api-key-create-btn')).toBeNull();
+        // Row actions are absent by construction — there is no row.
+        expect(
+          fixture.nativeElement.querySelector('[data-test^="api-key-rotate-btn-"]'),
+        ).toBeNull();
+        expect(
+          fixture.nativeElement.querySelector('[data-test^="api-key-revoke-btn-"]'),
+        ).toBeNull();
+      });
+    }
   });
 });

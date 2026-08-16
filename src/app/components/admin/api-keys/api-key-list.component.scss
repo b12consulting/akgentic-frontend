@@ -39,3 +39,57 @@
   font-family: var(--font-family-mono, monospace);
   font-size: 0.85rem;
 }
+
+// Story 36-6 — per-row actions and the revoke confirmation, shaped like the
+// catalog pane's next door so the admin area reads as one thing.
+
+.admin-api-keys__actions {
+  display: flex;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.admin-api-keys__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.admin-api-keys__confirm-message {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.admin-api-keys__confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding-top: 1rem;
+}
+
+// Dark-red destructive style for the row Revoke and the confirm's Proceed.
+// `::ng-deep` because PrimeNG's button tokens otherwise win on specificity,
+// and because the dialog's button is teleported out of this component's DOM.
+:host ::ng-deep {
+  .admin-api-keys__danger {
+    &,
+    &.p-button {
+      background: #991b1b !important;
+      border-color: #991b1b !important;
+      color: #ffffff !important;
+    }
+
+    &:enabled:hover,
+    &.p-button:enabled:hover {
+      background: #7f1d1d !important;
+      border-color: #7f1d1d !important;
+    }
+
+    &:disabled,
+    &.p-button:disabled {
+      background: var(--surface-200, #e5e7eb) !important;
+      border-color: var(--surface-300, #d1d5db) !important;
+      color: var(--text-color-secondary, #6b7280) !important;
+    }
+  }
+}

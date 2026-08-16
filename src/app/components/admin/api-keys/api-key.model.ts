@@ -46,14 +46,8 @@ export type ApiKeyPaneState =
  */
 export const ENDPOINT_ABSENT_STATUSES: readonly number[] = [404, 501];
 
-/**
- * The text shown while the create control cannot be used yet.
- *
- * Following this epic's established idiom (36-3's row Delete): a control that
- * is present but visibly not usable, with the reason on the native `title`,
- * rather than one that silently does nothing when clicked. Story 36-6 enables
- * it and attaches the dialog. `title` and not `pTooltip` — a disabled button
- * fires no mouse events, so a PrimeNG tooltip would be written and never read.
- */
-export const CREATE_DISABLED_REASON =
-  'Creating API keys is not available yet';
+// `CREATE_DISABLED_REASON` lived here while 36-5 shipped the create control
+// disabled with its reason. Story 36-6 enabled the control and attached the
+// dialog, which made the constant dead — so it was deleted rather than kept
+// alive to keep its assertion green. The spec that pinned it now pins that the
+// control is enabled and opens the dialog.

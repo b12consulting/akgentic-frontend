@@ -34,3 +34,47 @@ export interface ApiKeyRecord {
   /** ISO-8601. */
   created_at: string;
 }
+
+/**
+ * THE ONE DTO THAT EVER CARRIES A SECRET (Story 36-6, ADR-028 §D7).
+ *
+ * It is an `ApiKeyRecord` plus one field, mirroring the server's own
+ * `CreateApiKeyResponse(ApiKeyRecord)`. Both `POST /auth/apikeys` and
+ * `POST /auth/apikeys/{key_id}/rotate` answer with this shape — which is why
+ * ONE reveal component serves both flows rather than two that can drift.
+ *
+ * It lives here, beside `ApiKeyRecord`, because `ApiService` imports it and
+ * `core -> page` is a forbidden ESLint edge. Same reasoning, same file.
+ */
+export interface CreateApiKeyResponse extends ApiKeyRecord {
+  /**
+   * The plaintext key. The server surfaces it EXACTLY ONCE, on create and on
+   * rotate, and never again — it is not recoverable from any other route, by
+   * the server or by this client.
+   *
+   * Render it, offer a copy control, then DROP it. It must never be written to
+   * a service field, a subject, a component property that outlives the panel, a
+   * URL, `localStorage` / `sessionStorage`, or a log line. Anything derived
+   * from this DTO for storage goes through an explicit allowlist projection
+   * (`toRecord`), never a spread or a rest-destructure — an unknown field on a
+   * secret-bearing DTO must be dropped by default, not carried through.
+   */
+  plaintext_key: string;
+}
+
+/**
+ * The create body — `POST /auth/apikeys` takes these as inlined `Body` fields.
+ *
+ * `owner_id` / `owner_email` are free-form on the server and the route is
+ * admin-gated, so an admin may mint a key in another identity's name. The
+ * dialog defaults them to the caller precisely so that stays a deliberate edit.
+ *
+ * `owner_email` may legitimately be `''`: a machine identity has none.
+ */
+export interface CreateApiKeyRequest {
+  owner_id: string;
+  owner_email: string;
+  roles: string[];
+  /** ISO-8601, or `null` / omitted for a key that never expires. */
+  expiration?: string | null;
+}

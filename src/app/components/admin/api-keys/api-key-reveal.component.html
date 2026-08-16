@@ -1,0 +1,55 @@
+<div class="api-key-reveal" data-test="api-key-reveal">
+  <p class="api-key-reveal__warning" data-test="api-key-reveal-warning">
+    Copy this key now — it is shown once and cannot be recovered afterwards.
+  </p>
+
+  <p class="api-key-reveal__key-id" data-test="api-key-reveal-key-id">
+    Key ID: <strong>{{ keyId }}</strong>
+  </p>
+
+  <!--
+    The value, bound straight from the input. It is rendered here and nowhere
+    else: no field caches it, and the `*ngIf` in the host destroys this whole
+    subtree the moment the host clears its plaintext field.
+  -->
+  <code class="api-key-reveal__value" data-test="api-key-reveal-value">{{
+    plaintext
+  }}</code>
+
+  <div class="api-key-reveal__actions">
+    <button
+      pButton
+      type="button"
+      size="small"
+      severity="secondary"
+      label="Copy"
+      icon="pi pi-copy"
+      (click)="onCopy()"
+      data-test="api-key-reveal-copy-btn"
+    ></button>
+    <button
+      pButton
+      type="button"
+      size="small"
+      label="Done"
+      (click)="onDone()"
+      data-test="api-key-reveal-done-btn"
+    ></button>
+  </div>
+
+  <!-- Copy feedback. Says whether the clipboard took it — never the value. -->
+  <p
+    *ngIf="copyState === 'copied'"
+    class="api-key-reveal__feedback"
+    data-test="api-key-reveal-copied"
+  >
+    Copied to clipboard.
+  </p>
+  <p
+    *ngIf="copyState === 'failed'"
+    class="api-key-reveal__feedback api-key-reveal__feedback--failed"
+    data-test="api-key-reveal-copy-failed"
+  >
+    Could not write to the clipboard — select the key above and copy it by hand.
+  </p>
+</div>
