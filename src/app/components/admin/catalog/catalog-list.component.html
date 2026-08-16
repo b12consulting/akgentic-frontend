@@ -1,0 +1,229 @@
+<div data-test="admin-catalog-pane" class="admin-pane admin-catalog">
+  <div class="admin-catalog__toolbar">
+    <h2 class="admin-catalog__title">Catalog</h2>
+
+    <!--
+      Admin-only "show all namespaces" toggle. `*ngIf` on the ELEMENT so a
+      non-admin (and the anonymous user) gets no toggle in the DOM at all —
+      absent, not disabled. Consumed through the `async` pipe: `/auth/me`
+      resolves after first render, so a snapshot would hide it from a genuine
+      admin until the next navigation. Default off (the firehose is opt-in);
+      flipping it re-runs the single `loadRows()` path with `all: true`, which
+      `NamespaceRowsService` threads to all seven calls.
+
+      Shape copied from the Home toolbar — deliberately NOT imported from it:
+      `page-admin` may not depend on `page-home` (ESLint boundaries).
+    -->
+    <span *ngIf="isAdmin$ | async" class="admin-catalog__show-all">
+      <p-toggleswitch
+        [ngModel]="showAll"
+        (ngModelChange)="onToggleShowAll($event)"
+        data-test="show-all-namespaces-toggle"
+        inputId="admin-show-all-namespaces-toggle"
+      ></p-toggleswitch>
+      <label for="admin-show-all-namespaces-toggle">Show all namespaces</label>
+    </span>
+
+    <button
+      pButton
+      type="button"
+      size="small"
+      severity="secondary"
+      label="Refresh"
+      icon="pi pi-refresh"
+      [disabled]="loading"
+      (click)="loadRows()"
+      data-test="catalog-refresh-btn"
+    ></button>
+  </div>
+
+  <div *ngIf="loading" class="admin-catalog__loading" data-test="catalog-loading">
+    <span class="pi pi-spinner pi-spin"></span> Loading namespaces…
+  </div>
+
+  <ng-container *ngIf="!loading">
+    <!--
+      A rejected load and an empty catalog are DIFFERENT facts and never render
+      alike: an empty table here would assert "this deployment has no
+      namespaces" for a request that never got an answer. No toast is added —
+      FetchService already raised one.
+    -->
+    <div
+      *ngIf="loadFailed; else loadedBranch"
+      class="admin-catalog__failed"
+      data-test="catalog-load-failed"
+    >
+      The catalog could not be loaded. Use Refresh to try again.
+    </div>
+
+    <ng-template #loadedBranch>
+      <div
+        *ngIf="rows.length === 0; else tableBranch"
+        class="admin-catalog__empty"
+        data-test="catalog-empty"
+      >
+        No namespaces
+      </div>
+
+      <ng-template #tableBranch>
+        <p-table
+          [value]="rows"
+          [tableStyle]="{ 'min-width': '55rem' }"
+          data-test="catalog-table"
+        >
+          <ng-template #header>
+            <tr>
+              <th>Namespace</th>
+              <th>Owner</th>
+              <th>Visibility</th>
+              <th>Entries</th>
+              <th></th>
+            </tr>
+          </ng-template>
+
+          <ng-template #body let-row>
+            <tr [attr.data-test]="'ns-row-' + row.namespace">
+              <td>
+                <div class="admin-catalog__ns-name">{{ row.name }}</div>
+                <div
+                  class="admin-catalog__ns-id"
+                  [attr.data-test]="'ns-id-' + row.namespace"
+                >
+                  {{ row.namespace }}
+                </div>
+              </td>
+
+              <!--
+                The raw `user_id` — the frontend has no user directory to
+                resolve it against. `null` is an UNKNOWN owner, not "nobody".
+              -->
+              <td [attr.data-test]="'ns-owner-' + row.namespace">
+                {{ row.owner ?? 'unknown' }}
+              </td>
+
+              <td
+                class="admin-catalog__chips"
+                [attr.data-test]="'ns-visibility-' + row.namespace"
+              >
+                <!-- Exactly one of public/private — never neither, never both. -->
+                <p-tag
+                  [severity]="row.public ? 'success' : 'secondary'"
+                  [value]="row.public ? 'public' : 'private'"
+                ></p-tag>
+                <p-tag
+                  *ngIf="row.shareable"
+                  severity="info"
+                  value="shareable"
+                ></p-tag>
+                <!-- Exactly one of team/library, from the `team` boolean. -->
+                <p-tag
+                  severity="secondary"
+                  [value]="row.team ? 'team' : 'library'"
+                ></p-tag>
+              </td>
+
+              <!--
+                All six kinds, every row. A `0` renders as `0`; a kind whose
+                page-wide list call failed renders `—` for EVERY row, because
+                the failure is page-level, not per-row.
+              -->
+              <td class="admin-catalog__counts">
+                <span *ngFor="let kind of entryKinds" class="admin-catalog__count">
+                  <span class="admin-catalog__count-kind">{{ kind }}</span>
+                  <span
+                    class="admin-catalog__count-value"
+                    [attr.data-test]="'ns-count-' + row.namespace + '-' + kind"
+                    >{{ countLabel(row, kind) }}</span
+                  >
+                </span>
+              </td>
+
+              <td class="admin-catalog__actions">
+                <!--
+                  Label differs by entitlement; the DESTINATION does not — both
+                  Configure and View open the same shipped deep link.
+                -->
+                <a
+                  pButton
+                  size="small"
+                  severity="secondary"
+                  [routerLink]="['/admin/catalog/namespace', row.namespace]"
+                  [attr.data-test]="'ns-configure-' + row.namespace"
+                  >{{ primaryActionLabel(row) }}</a
+                >
+                <!--
+                  Disabled, never hidden, and carrying the reason as a native
+                  `title` — a disabled button fires no mouse events, so
+                  `pTooltip` would never show it.
+                -->
+                <button
+                  pButton
+                  type="button"
+                  size="small"
+                  label="Delete"
+                  class="admin-catalog__danger"
+                  [disabled]="!canModify(row)"
+                  [attr.title]="deleteDisabledReason(row)"
+                  (click)="onDeleteClick(row)"
+                  [attr.data-test]="'ns-delete-' + row.namespace"
+                ></button>
+              </td>
+            </tr>
+          </ng-template>
+        </p-table>
+      </ng-template>
+    </ng-template>
+  </ng-container>
+</div>
+
+<!--
+  Delete confirmation. Follows the secondary-modal contract (ADR-018) so Story
+  36-4's coordinated Escape handler can fold it in without rework:
+  `[modal]="true"`, `[draggable]="false"`, and `[closeOnEscape]="false"` plus
+  the component's own Escape→cancel below. PrimeNG attaches `closeOnEscape` as
+  a DOCUMENT-level listener per dialog, so leaving it on would make one Escape
+  close this dialog AND 36-4's panel host in turn.
+-->
+<p-dialog
+  [visible]="confirmDialogVisible"
+  (visibleChange)="onConfirmVisibleChange($event)"
+  (onShow)="onConfirmDialogShow()"
+  [modal]="true"
+  [draggable]="false"
+  [closeOnEscape]="false"
+  [style]="{ width: '30rem' }"
+  header="Delete namespace"
+  data-test="delete-confirm-dialog"
+>
+  <div class="admin-catalog__confirm" (keydown.escape)="onDeleteCancel()">
+    <p class="admin-catalog__confirm-message" data-test="delete-confirm-message">
+      Delete the namespace
+      <strong data-test="delete-confirm-namespace">{{
+        pendingDelete?.namespace
+      }}</strong>
+      and all its entries? This cannot be undone.
+    </p>
+    <div class="admin-catalog__confirm-actions">
+      <button
+        pButton
+        type="button"
+        size="small"
+        severity="secondary"
+        label="Cancel"
+        (click)="onDeleteCancel()"
+        data-test="delete-cancel-btn"
+      ></button>
+      <button
+        #confirmProceedBtn
+        pButton
+        type="button"
+        size="small"
+        class="admin-catalog__danger"
+        label="Proceed"
+        [disabled]="deleting"
+        (click)="onDeleteProceed()"
+        data-test="delete-proceed-btn"
+      ></button>
+    </div>
+  </div>
+</p-dialog>

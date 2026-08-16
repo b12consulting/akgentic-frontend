@@ -2,6 +2,7 @@ import { Component } from '@angular/core';
 import { TestBed, ComponentFixture } from '@angular/core/testing';
 import { Router, RouterOutlet } from '@angular/router';
 import { RouterTestingModule } from '@angular/router/testing';
+import { MessageService } from 'primeng/api';
 import { BehaviorSubject, of } from 'rxjs';
 import { map } from 'rxjs/operators';
 
@@ -9,6 +10,7 @@ import { routes } from '../../app.routes';
 import { AuthGuard } from '../../core/auth/auth.guard';
 import { AuthService } from '../../core/auth/auth.service';
 import { ConfigService } from '../../core/config/config.service';
+import { ApiService } from '../../core/http/api.service';
 import { ADMIN_ROUTES } from './admin.routes';
 import { AdminShellComponent } from './admin-shell.component';
 
@@ -55,6 +57,20 @@ describe('admin routes (Story 36-1)', () => {
           provide: ConfigService,
           useValue: { hideLogin: true, hideHome: false, api: 'http://t' },
         },
+        // Story 36-3 gave the catalog pane real dependencies (it composes its
+        // rows from the catalog endpoints). These specs mount that pane
+        // through the router, so they must stub the data layer or the mount
+        // fails on injection — and would otherwise issue real requests from a
+        // unit test.
+        {
+          provide: ApiService,
+          useValue: {
+            getNamespaces: () => Promise.resolve([]),
+            getEntries: () => Promise.resolve([]),
+            deleteNamespace: () => Promise.resolve(),
+          },
+        },
+        { provide: MessageService, useValue: { add: (): void => {} } },
       ],
     }).compileComponents();
 

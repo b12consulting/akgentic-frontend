@@ -1,0 +1,116 @@
+// Story 36-3 — admin catalog pane. Minimal chrome; the table itself is
+// PrimeNG's, styled by the app's Aura preset.
+
+.admin-catalog__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.admin-catalog__title {
+  margin: 0;
+  margin-right: auto;
+}
+
+.admin-catalog__show-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.admin-catalog__loading,
+.admin-catalog__failed,
+.admin-catalog__empty {
+  padding: 1rem 0;
+  color: var(--text-color-secondary, #6b7280);
+}
+
+.admin-catalog__ns-name {
+  font-weight: 600;
+}
+
+.admin-catalog__ns-id {
+  font-size: 0.8rem;
+  color: var(--text-color-secondary, #6b7280);
+}
+
+.admin-catalog__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.admin-catalog__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.admin-catalog__count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+}
+
+.admin-catalog__count-kind {
+  color: var(--text-color-secondary, #6b7280);
+}
+
+.admin-catalog__count-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.admin-catalog__actions {
+  display: flex;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.admin-catalog__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.admin-catalog__confirm-message {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.admin-catalog__confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding-top: 1rem;
+}
+
+// Dark-red destructive style for the row Delete and the confirm's Proceed.
+// `::ng-deep` because PrimeNG's button tokens otherwise win on specificity,
+// and because the dialog's button is teleported out of this component's DOM.
+:host ::ng-deep {
+  .admin-catalog__danger {
+    &,
+    &.p-button {
+      background: #991b1b !important;
+      border-color: #991b1b !important;
+      color: #ffffff !important;
+    }
+
+    &:enabled:hover,
+    &.p-button:enabled:hover {
+      background: #7f1d1d !important;
+      border-color: #7f1d1d !important;
+    }
+
+    &:disabled,
+    &.p-button:disabled {
+      background: var(--surface-200, #e5e7eb) !important;
+      border-color: var(--surface-300, #d1d5db) !important;
+      color: var(--text-color-secondary, #6b7280) !important;
+    }
+  }
+}
