@@ -582,19 +582,21 @@ describe('CatalogListComponent (Story 36-3)', () => {
 
   // --- Story 36-11 AC6/AC8: the visibility chip has its OWN severity --------
   //
-  // All four severities are asserted, not just the one that changed. The
-  // property being protected is that the VISIBILITY pair (public/private) stays
-  // distinguishable from the KIND pair (team/library) beside it — a later change
-  // making `team` `warn` too would restore exactly the defect this fixes and
-  // would sail past a one-assertion spec. The rows come from the same `row()`
-  // helper the `(AC4)` value specs above use; a second fixture shape here would
-  // be a second source of truth for the same four states.
+  // `public` is `success`, `private` is `info`, `shareable` is `warn` and the
+  // kind chip is `secondary`. All four are asserted, not just the ones that
+  // changed. The property being protected is that the VISIBILITY pair
+  // (public/private) stays distinguishable from the KIND pair (team/library)
+  // beside it — a later change making `team` `info` too would restore exactly
+  // the defect this fixes and would sail past a one-assertion spec. The rows
+  // come from the same `row()` helper the `(AC4)` value specs above use; a
+  // second fixture shape here would be a second source of truth for the same
+  // four states.
 
-  it('(36-11 AC6) a PRIVATE namespace renders its visibility chip as warn', async () => {
+  it('(36-11 AC6) a PRIVATE namespace renders its visibility chip as info', async () => {
     resolveRows([row('acme-c', { public: false, shareable: true, team: true })]);
     await render();
 
-    expect(chipSeverities('acme-c')['private']).toBe('warn');
+    expect(chipSeverities('acme-c')['private']).toBe('info');
   });
 
   it('(36-11 AC6) a PUBLIC namespace renders its visibility chip as success', async () => {
@@ -604,11 +606,11 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(chipSeverities('acme-a')['public']).toBe('success');
   });
 
-  it('(36-11 AC6) the shareable chip stays info', async () => {
+  it('(36-11 AC6) the shareable chip renders as warn', async () => {
     resolveRows([row('acme-c', { public: false, shareable: true, team: true })]);
     await render();
 
-    expect(chipSeverities('acme-c')['shareable']).toBe('info');
+    expect(chipSeverities('acme-c')['shareable']).toBe('warn');
   });
 
   it('(36-11 AC6) the KIND chip stays secondary — for team and for library', async () => {
@@ -640,7 +642,7 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(hooked).not.toBeNull();
     const tag = hooked.componentInstance as Tag;
     expect(tag.value).toBe('private');
-    expect(tag.severity).toBe('warn');
+    expect(tag.severity).toBe('info');
   });
 
   // --- AC 5: counts --------------------------------------------------------

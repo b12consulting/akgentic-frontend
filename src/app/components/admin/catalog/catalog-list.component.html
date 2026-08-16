@@ -253,25 +253,24 @@
                   <!--
                     Exactly one of public/private — never neither, never both.
 
-                    Story 36-11: `private` is `warn`, NOT `secondary`. The kind
-                    chip below is `secondary`, so while `private` was too, a
-                    private team namespace rendered two identical grey chips
-                    saying different kinds of thing and the colour carried
-                    nothing. `warn` because private is the state to notice
-                    before sharing a link — a caution, not an error (`danger`
-                    overstates it) and not neutral. Do NOT tidy this back to
-                    `secondary`, and do not give the kind chip a severity of its
-                    own: what is being protected is that the visibility pair
-                    stays distinguishable from the kind pair beside it.
+                    The visibility chip carries a severity of its OWN so it can
+                    never render identically to the `secondary` kind chip beside
+                    it: `public` is `success`, `private` is `info`. `shareable`
+                    is `warn` — orange is the one that should catch the eye,
+                    because it is the fact that says this namespace can leave
+                    your hands. Do NOT tidy either back to `secondary`, do not
+                    swap them round again, and do not give the kind chip a
+                    severity of its own: what is being protected is that the
+                    visibility pair stays distinguishable from the kind pair.
                   -->
                   <p-tag
-                    [severity]="row.public ? 'success' : 'warn'"
+                    [severity]="row.public ? 'success' : 'info'"
                     [value]="row.public ? 'public' : 'private'"
                     [attr.data-test]="'ns-visibility-chip-' + row.namespace"
                   ></p-tag>
                   <p-tag
                     *ngIf="row.shareable"
-                    severity="info"
+                    severity="warn"
                     value="shareable"
                   ></p-tag>
                   <!-- Exactly one of team/library, from the `team` boolean. -->
