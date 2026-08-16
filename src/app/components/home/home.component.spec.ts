@@ -13,8 +13,30 @@ import { AuthService } from '../../core/auth/auth.service';
 import { ConfigService } from '../../core/config/config.service';
 import { ContextService } from '../../core/context/context.service';
 import { TeamContext } from '../../core/context/team.interface';
+import {
+  ENTRY_KINDS,
+  EntryKind,
+  NamespaceKindCount,
+} from '../../protocol/catalog.interface';
 import { NamespacePanelComponent } from '../catalog/namespace-panel/namespace-panel.component';
 import { HomeComponent } from './home.component';
+
+/**
+ * The six-key tally every `NamespaceSummary` carries since Story 36-8.
+ *
+ * The picker ignores `owner` and `counts` entirely — it reads `namespace`,
+ * `name` and the visibility flags. The literals below still spell both fields
+ * out rather than being weakened to optional: an optional `counts` would let a
+ * response with a missing kind type-check, which is the ambiguity the DTO's own
+ * docblock argues against.
+ */
+function nsCounts(): Record<EntryKind, NamespaceKindCount> {
+  const counts = {} as Record<EntryKind, NamespaceKindCount>;
+  for (const kind of ENTRY_KINDS) {
+    counts[kind] = { total: 0 };
+  }
+  return counts;
+}
 
 function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
   return {
@@ -225,6 +247,8 @@ describe('HomeComponent', () => {
       team: true,
       shareable: false,
       public: false,
+      owner: null,
+      counts: nsCounts(),
     };
     component.selectedNamespace$.next(ns);
     // The component has not invoked ngOnInit yet (no detectChanges in this
@@ -253,6 +277,8 @@ describe('HomeComponent', () => {
           team: true,
           shareable: false,
           public: false,
+          owner: null,
+          counts: nsCounts(),
         },
         {
           namespace: 'rag-team-v1',
@@ -261,6 +287,8 @@ describe('HomeComponent', () => {
           team: true,
           shareable: false,
           public: false,
+          owner: null,
+          counts: nsCounts(),
         },
       ]),
     );
@@ -278,6 +306,8 @@ describe('HomeComponent', () => {
       team: true,
       shareable: false,
       public: false,
+      owner: null,
+      counts: nsCounts(),
     });
     apiSpy.createTeam.calls.reset();
     await component.createTeam();
@@ -292,6 +322,8 @@ describe('HomeComponent', () => {
       team: true,
       shareable: false,
       public: false,
+      owner: null,
+      counts: nsCounts(),
     });
     contextSpy.createTeamAndNavigate.calls.reset();
     await component.createTeamAndNavigate();
@@ -424,6 +456,8 @@ describe('HomeComponent', () => {
           team: true,
           shareable: false,
           public: false,
+          owner: null,
+          counts: nsCounts(),
         },
       ]),
     );
@@ -434,6 +468,8 @@ describe('HomeComponent', () => {
       team: true,
       shareable: false,
       public: false,
+      owner: null,
+      counts: nsCounts(),
     });
     fixture.detectChanges();
     await fixture.whenStable();
@@ -456,6 +492,8 @@ describe('HomeComponent', () => {
           team: true,
           shareable: false,
           public: false,
+          owner: null,
+          counts: nsCounts(),
         },
       ]),
     );
@@ -466,6 +504,8 @@ describe('HomeComponent', () => {
       team: true,
       shareable: false,
       public: false,
+      owner: null,
+      counts: nsCounts(),
     });
     fixture.detectChanges();
     await fixture.whenStable();
@@ -595,6 +635,8 @@ describe('HomeComponent', () => {
         team: true,
         shareable: false,
         public: false,
+        owner: null,
+        counts: nsCounts(),
       },
       {
         namespace: 'rag-team-v1',
@@ -603,6 +645,8 @@ describe('HomeComponent', () => {
         team: true,
         shareable: false,
         public: false,
+        owner: null,
+        counts: nsCounts(),
       },
     ];
     apiSpy.getNamespaces.calls.reset();
@@ -623,6 +667,8 @@ describe('HomeComponent', () => {
       team: true,
       shareable: false,
       public: false,
+      owner: null,
+      counts: nsCounts(),
     });
     const refreshed = [
       {
@@ -632,6 +678,8 @@ describe('HomeComponent', () => {
         team: true,
         shareable: false,
         public: false,
+        owner: null,
+        counts: nsCounts(),
       },
       {
         namespace: 'rag-team-v1',
@@ -640,6 +688,8 @@ describe('HomeComponent', () => {
         team: true,
         shareable: false,
         public: false,
+        owner: null,
+        counts: nsCounts(),
       },
     ];
     apiSpy.getNamespaces.and.returnValue(Promise.resolve(refreshed));
@@ -659,6 +709,8 @@ describe('HomeComponent', () => {
       team: true,
       shareable: false,
       public: false,
+      owner: null,
+      counts: nsCounts(),
     };
     component.selectedNamespace$.next(original);
 
@@ -672,6 +724,8 @@ describe('HomeComponent', () => {
         team: true,
         shareable: false,
         public: false,
+        owner: null,
+        counts: nsCounts(),
       },
       {
         namespace: 'rag-team-v1',
@@ -680,6 +734,8 @@ describe('HomeComponent', () => {
         team: true,
         shareable: false,
         public: false,
+        owner: null,
+        counts: nsCounts(),
       },
     ];
     apiSpy.getNamespaces.and.returnValue(Promise.resolve(refreshed));
@@ -699,6 +755,8 @@ describe('HomeComponent', () => {
       team: true,
       shareable: false,
       public: false,
+      owner: null,
+      counts: nsCounts(),
     });
     apiSpy.getNamespaces.and.returnValue(Promise.resolve([]));
 
@@ -737,6 +795,8 @@ describe('HomeComponent', () => {
           team: true,
           shareable: false,
           public: false,
+          owner: null,
+          counts: nsCounts(),
         },
         {
           namespace: 'rag-team-v1',
@@ -745,6 +805,8 @@ describe('HomeComponent', () => {
           team: true,
           shareable: false,
           public: false,
+          owner: null,
+          counts: nsCounts(),
         },
       ]),
     );
@@ -763,6 +825,8 @@ describe('HomeComponent', () => {
         team: true,
         shareable: false,
         public: false,
+        owner: null,
+        counts: nsCounts(),
       },
     ]);
     apiSpy.getNamespaces.and.returnValue(Promise.reject(new Error('boom')));
@@ -779,6 +843,8 @@ describe('HomeComponent', () => {
         team: true,
         shareable: false,
         public: false,
+        owner: null,
+        counts: nsCounts(),
       },
     ]);
   });
@@ -792,6 +858,8 @@ describe('HomeComponent', () => {
         team: true,
         shareable: false,
         public: false,
+        owner: null,
+        counts: nsCounts(),
       },
       {
         namespace: 'bar',
@@ -800,6 +868,8 @@ describe('HomeComponent', () => {
         team: true,
         shareable: false,
         public: false,
+        owner: null,
+        counts: nsCounts(),
       },
     ]);
     expect(component.namespaceIdentifiers).toEqual(['foo', 'bar']);
@@ -928,6 +998,8 @@ describe('HomeComponent', () => {
       team: true,
       shareable: false,
       public: false,
+      owner: null,
+      counts: nsCounts(),
     });
     expect(component.namespaceLabel).toBe('Foo Display');
   });
@@ -976,6 +1048,8 @@ describe('HomeComponent', () => {
         team: true,
         shareable: false,
         public: false,
+        owner: null,
+        counts: nsCounts(),
       },
       {
         namespace: 'beta',
@@ -984,6 +1058,8 @@ describe('HomeComponent', () => {
         team: true,
         shareable: false,
         public: false,
+        owner: null,
+        counts: nsCounts(),
       },
     ];
     apiSpy.getNamespaces.and.returnValue(Promise.resolve(list));
@@ -1077,6 +1153,8 @@ describe('HomeComponent', () => {
           team: true,
           shareable: false,
           public: false,
+          owner: null,
+          counts: nsCounts(),
         },
       ]),
     );
@@ -1097,6 +1175,8 @@ describe('HomeComponent', () => {
       team: true,
       shareable: false,
       public: false,
+      owner: null,
+      counts: nsCounts(),
     };
     apiSpy.getNamespaces.and.returnValue(Promise.resolve([foreign]));
     apiSpy.getNamespaces.calls.reset();
@@ -1142,6 +1222,8 @@ describe('HomeComponent', () => {
       team: true,
       shareable: false,
       public: false,
+      owner: null,
+      counts: nsCounts(),
     });
     const refreshed = [
       {
@@ -1151,6 +1233,8 @@ describe('HomeComponent', () => {
         team: true,
         shareable: false,
         public: false,
+        owner: null,
+        counts: nsCounts(),
       },
       {
         namespace: 'rag-team-v1',
@@ -1159,6 +1243,8 @@ describe('HomeComponent', () => {
         team: true,
         shareable: false,
         public: false,
+        owner: null,
+        counts: nsCounts(),
       },
     ];
     apiSpy.getNamespaces.and.returnValue(Promise.resolve(refreshed));
@@ -1182,6 +1268,8 @@ describe('HomeComponent', () => {
       team: true,
       shareable: false,
       public: false,
+      owner: null,
+      counts: nsCounts(),
     };
     component.selectedNamespace$.next(original);
     apiSpy.getNamespaces.and.returnValue(
@@ -1193,6 +1281,8 @@ describe('HomeComponent', () => {
           team: true,
           shareable: false,
           public: false,
+          owner: null,
+          counts: nsCounts(),
         },
         {
           namespace: 'rag-team-v1',
@@ -1201,6 +1291,8 @@ describe('HomeComponent', () => {
           team: true,
           shareable: false,
           public: false,
+          owner: null,
+          counts: nsCounts(),
         },
       ]),
     );
@@ -1321,6 +1413,8 @@ describe('HomeComponent', () => {
       team: true,
       shareable: false,
       public: false,
+      owner: null,
+      counts: nsCounts(),
     });
     component.currentPage = 4;
     component.first = 750;
@@ -1447,6 +1541,8 @@ describe('HomeComponent', () => {
             team: true,
             shareable: false,
             public: false,
+            owner: null,
+            counts: nsCounts(),
           },
         ]),
       );
@@ -1457,6 +1553,8 @@ describe('HomeComponent', () => {
         team: true,
         shareable: false,
         public: false,
+        owner: null,
+        counts: nsCounts(),
       });
       // Seed an EMPTY page so the create branch runs.
       contextSpy.loadTeamsPage.and.callFake(async () => {

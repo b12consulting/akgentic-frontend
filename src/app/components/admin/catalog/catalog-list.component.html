@@ -9,7 +9,7 @@
       resolves after first render, so a snapshot would hide it from a genuine
       admin until the next navigation. Default off (the firehose is opt-in);
       flipping it re-runs the single `loadRows()` path with `all: true`, which
-      `NamespaceRowsService` threads to all seven calls.
+      is threaded to the ONE request that paints the page.
 
       Shape copied from the Home toolbar — deliberately NOT imported from it:
       `page-admin` may not depend on `page-home` (ESLint boundaries).
@@ -123,9 +123,10 @@
               </td>
 
               <!--
-                All six kinds, every row. A `0` renders as `0`; a kind whose
-                page-wide list call failed renders `—` for EVERY row, because
-                the failure is page-level, not per-row.
+                All six kinds, every row — the server zero-fills, so every key
+                is present. A `0` renders as `0`, never a blank: one request
+                paints the page, so there is no per-column failure left to
+                distinguish a blank from.
               -->
               <td class="admin-catalog__counts">
                 <span *ngFor="let kind of entryKinds" class="admin-catalog__count">

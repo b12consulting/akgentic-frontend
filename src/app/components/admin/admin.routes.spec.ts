@@ -110,17 +110,16 @@ describe('admin routes (Story 36-1)', () => {
             ...config,
           },
         },
-        // Story 36-3 gave the catalog pane real dependencies (it composes its
-        // rows from the catalog endpoints). These specs mount that pane
-        // through the router, so they must stub the data layer or the mount
-        // fails on injection — and would otherwise issue real requests from a
-        // unit test. 36-4 added the panel route to the same subtree, so its
-        // reads are stubbed here too.
+        // Story 36-3 gave the catalog pane real dependencies (it reads the
+        // catalog endpoint). These specs mount that pane through the router,
+        // so they must stub the data layer or the mount fails on injection —
+        // and would otherwise issue real requests from a unit test. 36-4 added
+        // the panel route to the same subtree, so its reads are stubbed here
+        // too.
         {
           provide: ApiService,
           useValue: {
             getNamespaces: () => Promise.resolve([]),
-            getEntries: () => Promise.resolve([]),
             deleteNamespace: () => Promise.resolve(),
             exportNamespace: () => Promise.resolve(''),
             importNamespace: () => Promise.resolve(),

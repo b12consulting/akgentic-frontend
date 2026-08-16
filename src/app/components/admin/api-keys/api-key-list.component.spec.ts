@@ -129,7 +129,6 @@ describe('ApiKeyListComponent (Stories 36-5, 36-6)', () => {
     apiSpy = jasmine.createSpyObj<ApiService>('ApiService', [
       'getApiKeys',
       'getNamespaces',
-      'getEntries',
       'createApiKey',
       'rotateApiKey',
       'revokeApiKey',
@@ -196,7 +195,6 @@ describe('ApiKeyListComponent (Stories 36-5, 36-6)', () => {
       // with the first, and would still have to be believed over the answer.
       expect(apiSpy.getApiKeys).toHaveBeenCalledTimes(1);
       expect(apiSpy.getNamespaces).not.toHaveBeenCalled();
-      expect(apiSpy.getEntries).not.toHaveBeenCalled();
     });
 
     it('re-issues exactly one call when Retry is pressed, and nothing else', async () => {
@@ -292,7 +290,6 @@ describe('ApiKeyListComponent (Stories 36-5, 36-6)', () => {
         // answer already in hand is the only signal.
         expect(apiSpy.getApiKeys).toHaveBeenCalledTimes(1);
         expect(apiSpy.getNamespaces).not.toHaveBeenCalled();
-        expect(apiSpy.getEntries).not.toHaveBeenCalled();
       });
     }
 

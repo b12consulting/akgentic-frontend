@@ -51,15 +51,14 @@ describe('adminGuard (Story 36-1)', () => {
           provide: ConfigService,
           useValue: { hideLogin: true, hideHome: false, api: 'http://t' },
         },
-        // Story 36-3 gave the catalog pane real dependencies (it composes its
-        // rows from the catalog endpoints). These specs route INTO that pane,
-        // so they must stub the data layer or the mount fails on injection —
-        // and would otherwise issue real requests from a unit test.
+        // Story 36-3 gave the catalog pane real dependencies (it reads the
+        // catalog endpoint). These specs route INTO that pane, so they must
+        // stub the data layer or the mount fails on injection — and would
+        // otherwise issue real requests from a unit test.
         {
           provide: ApiService,
           useValue: {
             getNamespaces: () => Promise.resolve([]),
-            getEntries: () => Promise.resolve([]),
             deleteNamespace: () => Promise.resolve(),
           },
         },

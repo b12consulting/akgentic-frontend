@@ -8,7 +8,7 @@ import {
   CreateApiKeyRequest,
   CreateApiKeyResponse,
 } from '../../protocol/api-key.interface';
-import { Entry } from '../../protocol/catalog.interface';
+import { NamespaceSummary } from '../../protocol/catalog.interface';
 
 describe('ApiService', () => {
   let service: ApiService;
@@ -50,7 +50,9 @@ describe('ApiService', () => {
 
   describe('getNamespaces (Story 1.9)', () => {
     it('hits GET /catalog/namespaces and returns the array', async () => {
-      const payload = [
+      // The wire shape as the server sends it since Story 36-8: the original
+      // six fields plus `owner` and the six-key `counts` map.
+      const payload: NamespaceSummary[] = [
         {
           namespace: 'agent-team-v1',
           name: 'Agent Team',
@@ -58,6 +60,15 @@ describe('ApiService', () => {
           team: true,
           shareable: false,
           public: false,
+          owner: 'u-acme',
+          counts: {
+            team: { total: 1 },
+            agent: { total: 3 },
+            tool: { total: 0 },
+            model: { total: 0 },
+            prompt: { total: 0 },
+            meta: { total: 1 },
+          },
         },
       ];
       fetchServiceSpy.fetch.and.returnValue(Promise.resolve(payload));
@@ -93,63 +104,6 @@ describe('ApiService', () => {
       const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
       expect(callArgs.url).toMatch(/\/admin\/catalog\/namespaces$/);
       expect(callArgs.url).not.toContain('?all');
-    });
-  });
-
-  describe('getEntries (Story 36.2 AC1, AC4)', () => {
-    it('GETs /admin/catalog/{kind} and returns the bare array (no envelope)', async () => {
-      const payload: Entry[] = [
-        {
-          id: 'e1',
-          kind: 'tool',
-          namespace: 'acme-coding',
-          user_id: 'acme-owner',
-          model_type: 'TavilySearchTool',
-          description: 'search',
-          payload: {},
-        },
-      ];
-      fetchServiceSpy.fetch.and.returnValue(Promise.resolve(payload));
-
-      const result = await service.getEntries('tool');
-
-      expect(fetchServiceSpy.fetch).toHaveBeenCalledTimes(1);
-      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
-      expect(callArgs.url).toMatch(/\/admin\/catalog\/tool$/);
-      expect(callArgs.url).not.toContain('?all');
-      expect(result).toEqual(payload);
-    });
-
-    it('appends ?all=true when opts.all is truthy', async () => {
-      fetchServiceSpy.fetch.and.returnValue(Promise.resolve([]));
-
-      await service.getEntries('agent', { all: true });
-
-      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
-      expect(callArgs.url).toMatch(/\/admin\/catalog\/agent\?all=true$/);
-    });
-
-    it('omits the query parameter entirely when opts.all is false', async () => {
-      fetchServiceSpy.fetch.and.returnValue(Promise.resolve([]));
-
-      await service.getEntries('meta', { all: false });
-
-      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
-      expect(callArgs.url).toMatch(/\/admin\/catalog\/meta$/);
-      expect(callArgs.url).not.toContain('?all');
-    });
-
-    it('coalesces an empty/204 body to []', async () => {
-      fetchServiceSpy.fetch.and.returnValue(Promise.resolve(undefined));
-
-      await expectAsync(service.getEntries('prompt')).toBeResolvedTo([]);
-    });
-
-    it('REJECTS on a failed request — never coalesced to []', async () => {
-      const failure = new NetworkError('Server unreachable');
-      fetchServiceSpy.fetch.and.returnValue(Promise.reject(failure));
-
-      await expectAsync(service.getEntries('team')).toBeRejectedWith(failure);
     });
   });
 

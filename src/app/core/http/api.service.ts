@@ -21,7 +21,6 @@ import {
 } from '../../protocol/api-key.interface';
 import {
   Entry,
-  EntryKind,
   NamespaceSummary,
   NamespaceValidationReport,
 } from '../../protocol/catalog.interface';
@@ -264,9 +263,13 @@ export class ApiService {
 
   /**
    * List catalog namespaces (flat summary) — powers the home-screen team
-   * creation dropdown. Consumes catalog Story 16.6's `GET /catalog/namespaces`
-   * endpoint, which returns `NamespaceSummary[]` directly (always a list,
-   * even when empty).
+   * creation dropdown AND the admin catalog pane. Consumes catalog Story
+   * 16.6's `GET /catalog/namespaces` endpoint, which returns
+   * `NamespaceSummary[]` directly (always a list, even when empty).
+   *
+   * Each summary now carries `owner` and the six-kind `counts` map, so the
+   * admin pane paints from THIS call alone — there is no per-kind fan-out to
+   * compose them from, and no client-side derivation of either.
    *
    * The optional `all` flag appends `?all=true`, the admin-only "see all"
    * lever: it surfaces every tenant's namespaces (not just owner+public).
@@ -281,38 +284,6 @@ export class ApiService {
       ? `${this.apiUrl}/admin/catalog/namespaces?all=true`
       : `${this.apiUrl}/admin/catalog/namespaces`;
     return await this.fetchService.fetch({ url });
-  }
-
-  /**
-   * List every catalog entry of ONE kind, across all namespaces the caller can
-   * see — `GET /admin/catalog/{kind}`.
-   *
-   * The response body is a bare JSON array of `Entry` (the server declares
-   * `response_model=list[Entry]`); there is no envelope and no `.entries` key
-   * to unwrap. Each entry carries `namespace`, `kind` and `user_id`, which is
-   * everything a per-namespace grouping needs.
-   *
-   * The optional `all` flag appends `?all=true`, exactly as `getNamespaces`
-   * does. It is declared once as a router-level dependency on the whole
-   * `/admin/catalog/*` mount, so it is an accepted query parameter on this
-   * per-kind route too — it is NOT a catalog list parameter. `all=true` is
-   * honoured server-side ONLY for callers whose roles include `admin` and only
-   * on GETs; a non-admin sending it is silently treated as `all=false` (no
-   * error, no privilege grant). The flag is a convenience surface, not the
-   * authorization boundary.
-   *
-   * Empty/204 bodies coalesce to `[]`; a non-2xx response REJECTS (ADR-026) —
-   * it is never flattened to an empty list, because "no entries of this kind"
-   * and "we never got an answer" are different facts to the caller.
-   */
-  async getEntries(
-    kind: EntryKind,
-    opts?: { all?: boolean },
-  ): Promise<Entry[]> {
-    const base = `${this.apiUrl}/admin/catalog/${kind}`;
-    const url = opts?.all ? `${base}?all=true` : base;
-    const response: Entry[] = await this.fetchService.fetch({ url });
-    return response ?? [];
   }
 
   /**

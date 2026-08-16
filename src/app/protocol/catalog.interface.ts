@@ -3,20 +3,47 @@
  */
 
 /**
+ * One kind's entry tally for one namespace — an OBJECT, never a bare number.
+ *
+ * Mirrors the server's `NamespaceKindCount`. The nesting is deliberate: a
+ * second tally (an `imported` count) is wanted later, and the object shape
+ * makes that an ADDITIVE field instead of a breaking reshape of a response
+ * this client already parses. Flattening it here to `number` would force
+ * exactly the migration the shape was chosen to avoid.
+ */
+export interface NamespaceKindCount {
+  total: number;
+}
+
+/**
  * Flat summary of a catalog namespace, returned by `GET /catalog/namespaces`.
  *
  * Maps to the catalog backend's `NamespaceSummary` DTO (catalog Story 16.6):
  * a purpose-built, picker-friendly shape — no `Entry` envelope, no payload,
  * no user/parent/model metadata.
  *
- * All six fields the server pins are declared here, in its declaration order.
- * `team` / `shareable` / `public` are REQUIRED, not optional: the server always
- * sends them, and an optional boolean would reintroduce the absent-vs-false
- * ambiguity that renders a public namespace as private.
+ * All EIGHT fields the server pins are declared here, in its declaration
+ * order: the original six, then `owner` and `counts`, both folded onto this
+ * DTO server-side so the admin catalog pane paints from ONE request instead of
+ * composing seven client-side. Every field is REQUIRED, not optional: the
+ * server always sends them, and an optional field would reintroduce the
+ * absent-vs-false (and absent-vs-zero) ambiguity that renders a public
+ * namespace as private, or an empty namespace as uncounted.
  *
  * * `team` — a `kind="team"` entry exists (false for team-less libraries).
  * * `shareable` — the `kind="meta"` entry's `payload.shareable` is `true`.
  * * `public` — the `kind="meta"` entry's `payload.public` is `true`.
+ * * `owner` — the `kind="team"` entry's `user_id`, falling back to the
+ *   `kind="meta"` entry's, `null` when neither carries one. This is the same
+ *   ownership anchor the server's own owner-or-admin gate resolves, so a
+ *   client-side "can I modify this?" check cannot disagree with the gate that
+ *   will actually answer the request. `null` reads as "unknown owner" and must
+ *   fail closed.
+ * * `counts` — per-kind entry tallies. ALWAYS carries all six
+ *   {@link ENTRY_KINDS} keys, zero-valued where the namespace holds none of
+ *   that kind, so a consumer never has to distinguish an absent key from a
+ *   zero. Tallied through the server's visibility-filtered listing, so the
+ *   numbers agree with what this caller could actually list.
  */
 export interface NamespaceSummary {
   namespace: string;
@@ -25,6 +52,8 @@ export interface NamespaceSummary {
   team: boolean;
   shareable: boolean;
   public: boolean;
+  owner: string | null;
+  counts: Record<EntryKind, NamespaceKindCount>;
 }
 
 /**
@@ -38,9 +67,9 @@ export interface NamespaceSummary {
  * v2 (promoted to first-class so they can be referenced via the ref-sentinel
  * mechanism); `meta` carries the namespace's own metadata entry.
  *
- * Callers that need to iterate the kinds (one list call per kind, a counts map
- * seeded at zero) use this tuple, and `EntryKind` is derived from it — so the
- * runtime list and the type can never disagree.
+ * Callers that need to iterate the kinds (the admin catalog's counts cell, a
+ * fixture seeding every key at zero) use this tuple, and `EntryKind` is derived
+ * from it — so the runtime list and the type can never disagree.
  */
 export const ENTRY_KINDS = [
   'team',

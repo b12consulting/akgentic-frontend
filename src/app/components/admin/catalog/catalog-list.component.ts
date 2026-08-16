@@ -19,10 +19,12 @@ import { Observable, combineLatest } from 'rxjs';
 
 import { AuthService } from '../../../core/auth/auth.service';
 import { ApiService } from '../../../core/http/api.service';
-import { ENTRY_KINDS, EntryKind } from '../../../protocol/catalog.interface';
+import {
+  ENTRY_KINDS,
+  EntryKind,
+  NamespaceSummary,
+} from '../../../protocol/catalog.interface';
 import { NamespacePanelComponent } from '../../catalog/namespace-panel/namespace-panel.component';
-import { NamespaceRow } from './namespace-row.model';
-import { NamespaceRowsService } from './namespace-rows.service';
 
 /**
  * Why a Delete control the caller may not use is DISABLED and not HIDDEN.
@@ -69,8 +71,13 @@ interface CatalogViewer {
  * change between page load and click, so a 403 on delete is expected, handled,
  * and leaves the row exactly where it was.
  *
- * `NamespaceRowsService` is a bare `@Injectable()` (ADR-015 §2b) and is
- * provided here — component-scoped, one composition per mounted pane.
+ * ONE request paints the whole page. `GET /admin/catalog/namespaces` returns
+ * `owner` and the six-kind `counts` on every row, so the pane composes nothing:
+ * no per-kind fan-out, no client-side grouping, no zero-fill and no owner
+ * resolution of its own. Story 36-8 deleted all four along with the service
+ * that did them, and deliberately left NO fallback — a deployment whose backend
+ * predates the widened DTO is a deployment problem with a deployment fix, not a
+ * version-detecting branch rotting on a data path.
  *
  * Story 36-4 made this pane a DIALOG HOST as well as a table: the row's
  * primary action opens `NamespacePanelComponent` in a `p-dialog` over the list
@@ -97,12 +104,10 @@ interface CatalogViewer {
     ToggleSwitchModule,
     NamespacePanelComponent,
   ],
-  providers: [NamespaceRowsService],
   templateUrl: './catalog-list.component.html',
   styleUrls: ['./catalog-list.component.scss'],
 })
 export class CatalogListComponent implements OnInit {
-  readonly #rowsService = inject(NamespaceRowsService);
   readonly #api = inject(ApiService);
   readonly #auth = inject(AuthService);
   readonly #destroyRef = inject(DestroyRef);
@@ -118,15 +123,14 @@ export class CatalogListComponent implements OnInit {
    */
   readonly isAdmin$: Observable<boolean> = this.#auth.isAdmin$;
 
-  rows: NamespaceRow[] = [];
-  unavailableKinds: EntryKind[] = [];
+  rows: NamespaceSummary[] = [];
   loading = false;
   /** A rejected load is NOT an empty catalog — the two never render alike. */
   loadFailed = false;
   showAll = false;
 
   confirmDialogVisible = false;
-  pendingDelete: NamespaceRow | null = null;
+  pendingDelete: NamespaceSummary | null = null;
   deleting = false;
 
   /** Whether the namespace-configuration dialog is open (Story 36-4). */
@@ -175,22 +179,21 @@ export class CatalogListComponent implements OnInit {
 
   /**
    * The ONE path that loads rows — `ngOnInit`, the toggle and Refresh all come
-   * through here, so `all` can never diverge between them.
+   * through here, so `all` can never diverge between them — and now exactly ONE
+   * request, whose rows are rendered verbatim. Nothing is derived here: `owner`
+   * and `counts` arrive on the response and are neither recomputed nor coerced.
    */
   async loadRows(): Promise<void> {
     this.loading = true;
     this.loadFailed = false;
     try {
-      const result = await this.#rowsService.getRows({ all: this.showAll });
-      this.rows = result.rows;
-      this.unavailableKinds = result.unavailableKinds;
+      this.rows = await this.#api.getNamespaces({ all: this.showAll });
     } catch {
       // FetchService already toasted (ADR-026); adding another would
       // double-report. Render the failure state — never an empty table, which
       // would assert "this deployment has no namespaces" for a request that
       // never got an answer.
       this.rows = [];
-      this.unavailableKinds = [];
       this.loadFailed = true;
     } finally {
       this.loading = false;
@@ -210,7 +213,7 @@ export class CatalogListComponent implements OnInit {
    * (`null`) fails closed on the ownership half: denied for a non-admin,
    * still allowed for an admin.
    */
-  canModify(row: NamespaceRow): boolean {
+  canModify(row: NamespaceSummary): boolean {
     return (
       this.#viewer.isAdmin ||
       (row.owner !== null && row.owner === this.#viewer.userId)
@@ -228,27 +231,32 @@ export class CatalogListComponent implements OnInit {
    * owner-or-admin preflight and the server's 403 are the real boundary, and
    * always were.
    */
-  primaryActionLabel(row: NamespaceRow): string {
+  primaryActionLabel(row: NamespaceSummary): string {
     return this.canModify(row) ? 'Configure' : 'View';
   }
 
   /** `null` when allowed, so the attribute is absent rather than empty. */
-  deleteDisabledReason(row: NamespaceRow): string | null {
+  deleteDisabledReason(row: NamespaceSummary): string | null {
     return this.canModify(row) ? null : DELETE_DENIED_REASON;
   }
 
   /**
-   * A count, or `—` when that kind's page-wide list call failed.
+   * A count, read off the NESTED tally — `counts[kind].total`, never
+   * `counts[kind]`.
+   *
+   * No unavailable branch: with one request there is no per-column failure to
+   * degrade to, so `—` has nothing left to mean. A whole-load failure is a
+   * different fact and still has `loadFailed`.
    *
    * Zero is rendered as the character `0`: a namespace with no tools is a fact
-   * worth stating, and blanking it would be indistinguishable from the
-   * unavailable case.
+   * worth stating, and blanking it would now be indistinguishable from nothing
+   * at all.
    */
-  countLabel(row: NamespaceRow, kind: EntryKind): string {
-    return this.unavailableKinds.includes(kind) ? '—' : String(row.counts[kind]);
+  countLabel(row: NamespaceSummary, kind: EntryKind): string {
+    return String(row.counts[kind].total);
   }
 
-  onDeleteClick(row: NamespaceRow): void {
+  onDeleteClick(row: NamespaceSummary): void {
     this.pendingDelete = row;
     this.confirmDialogVisible = true;
   }
@@ -305,7 +313,7 @@ export class CatalogListComponent implements OnInit {
    * namespace. Not a navigation — the list must stay mounted behind the dialog
    * for `existingNamespaces` and the `(saved)` refresh to mean anything.
    */
-  onPrimaryActionClick(row: NamespaceRow): void {
+  onPrimaryActionClick(row: NamespaceSummary): void {
     this.panelNamespace = row.namespace;
     this.panelLabel = row.name === '' ? row.namespace : row.name;
     this.panelVisible = true;

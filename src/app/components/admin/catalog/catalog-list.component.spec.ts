@@ -16,14 +16,18 @@ import { BehaviorSubject } from 'rxjs';
 import { AuthService } from '../../../core/auth/auth.service';
 import { HttpError } from '../../../core/http/fetch.service';
 import { ApiService } from '../../../core/http/api.service';
-import { ENTRY_KINDS, EntryKind } from '../../../protocol/catalog.interface';
+import {
+  ENTRY_KINDS,
+  EntryKind,
+  NamespaceKindCount,
+  NamespaceSummary,
+} from '../../../protocol/catalog.interface';
 import { NamespacePanelComponent } from '../../catalog/namespace-panel/namespace-panel.component';
 import {
   CatalogListComponent,
   DELETE_DENIED_REASON,
 } from './catalog-list.component';
-import { NamespaceRow, NamespaceRowsResult } from './namespace-row.model';
-import { NamespaceRowsService } from './namespace-rows.service';
+import { EXPECTED_COUNTS, NAMESPACES } from './catalog-list.fixtures';
 
 /**
  * Story 36-3 — the admin catalog table and its per-row authorization.
@@ -42,6 +46,15 @@ import { NamespaceRowsService } from './namespace-rows.service';
  * Story 36-4 added the in-page dialog host to the same component, so this file
  * also covers the three-layer Escape coordination, the dirty-close channels and
  * the derived `existingNamespaces`.
+ *
+ * Story 36-8 deleted the composing service — the server now sends `owner` and
+ * `counts` on `NamespaceSummary`, so the pane issues ONE request and derives
+ * nothing. The harness below therefore stubs `ApiService.getNamespaces`
+ * directly, and the assertions the deleted service's own suite used to carry
+ * (one request per load, `?all=` threading, the five-namespace fixture, the
+ * present-key-with-zero rule, `owner: null` surviving untouched) are re-homed
+ * here rather than deleted with it. Every AUTHORIZATION `it(...)` below is
+ * unchanged from 36-3 — that is the evidence the rule did not move.
  */
 
 const OWNER = 'u-owner';
@@ -98,19 +111,24 @@ class StubNamespacePanelComponent {
   }
 }
 
-/** Zero counts for every kind — overridden per row where the value matters. */
-function zeroCounts(): Record<EntryKind, number> {
-  const counts = {} as Record<EntryKind, number>;
+/**
+ * Zero counts for every kind — overridden per row where the value matters.
+ *
+ * The value is `{ total: 0 }`, NOT `0`: the catalog nests the tally so a second
+ * one can be added without reshaping a response this client already parses.
+ */
+function zeroCounts(): Record<EntryKind, NamespaceKindCount> {
+  const counts = {} as Record<EntryKind, NamespaceKindCount>;
   for (const kind of ENTRY_KINDS) {
-    counts[kind] = 0;
+    counts[kind] = { total: 0 };
   }
   return counts;
 }
 
 function row(
   namespace: string,
-  overrides: Partial<NamespaceRow> = {},
-): NamespaceRow {
+  overrides: Partial<NamespaceSummary> = {},
+): NamespaceSummary {
   return {
     namespace,
     name: `${namespace} display`,
@@ -125,16 +143,26 @@ function row(
 }
 
 /** `acme-team` is owned by OWNER; `contoso-product` is owned by someone else. */
-function defaultRows(): NamespaceRow[] {
+function defaultRows(): NamespaceSummary[] {
   return [
     row('acme-team', {
-      counts: { ...zeroCounts(), team: 1, agent: 5, meta: 1 },
+      counts: {
+        ...zeroCounts(),
+        team: { total: 1 },
+        agent: { total: 5 },
+        meta: { total: 1 },
+      },
     }),
     row('contoso-product', {
       owner: OTHER,
       public: true,
       shareable: true,
-      counts: { ...zeroCounts(), team: 1, agent: 6, tool: 3 },
+      counts: {
+        ...zeroCounts(),
+        team: { total: 1 },
+        agent: { total: 6 },
+        tool: { total: 3 },
+      },
     }),
   ];
 }
@@ -142,17 +170,12 @@ function defaultRows(): NamespaceRow[] {
 describe('CatalogListComponent (Story 36-3)', () => {
   let fixture: ComponentFixture<CatalogListComponent>;
   let component: CatalogListComponent;
-  let rowsSpy: jasmine.SpyObj<NamespaceRowsService>;
   let apiSpy: jasmine.SpyObj<ApiService>;
   let messageSpy: jasmine.SpyObj<MessageService>;
   let currentUser$: BehaviorSubject<any>;
   let isAdmin$: BehaviorSubject<boolean>;
 
   beforeEach(async () => {
-    rowsSpy = jasmine.createSpyObj<NamespaceRowsService>(
-      'NamespaceRowsService',
-      ['getRows'],
-    );
     apiSpy = jasmine.createSpyObj<ApiService>('ApiService', [
       'deleteNamespace',
       'getNamespaces',
@@ -183,23 +206,13 @@ describe('CatalogListComponent (Story 36-3)', () => {
         },
       ],
     })
-      // Two swaps in ONE override — `set` cannot be combined with
-      // `add`/`remove`, so both go through the latter pair.
-      //
-      // 1. `NamespaceRowsService` is component-scoped by design, so it must be
-      //    replaced on the component itself; a root-level provider would never
-      //    be consulted.
-      // 2. The `@defer`-hosted panel is swapped for a stub (Story 36-4) so the
-      //    real Monaco chunk never loads here.
+      // ONE swap now that 36-8 deleted the composing service: the
+      // `@defer`-hosted panel is replaced by a stub (Story 36-4) so the real
+      // Monaco chunk never loads in a spec about the host. The pane's data
+      // layer is the root `ApiService`, stubbed above like any other caller's.
       .overrideComponent(CatalogListComponent, {
-        remove: {
-          imports: [NamespacePanelComponent],
-          providers: [NamespaceRowsService],
-        },
-        add: {
-          imports: [StubNamespacePanelComponent],
-          providers: [{ provide: NamespaceRowsService, useValue: rowsSpy }],
-        },
+        remove: { imports: [NamespacePanelComponent] },
+        add: { imports: [StubNamespacePanelComponent] },
       })
       .compileComponents();
 
@@ -207,12 +220,9 @@ describe('CatalogListComponent (Story 36-3)', () => {
     component = fixture.componentInstance;
   });
 
-  function resolveRows(
-    rows: NamespaceRow[],
-    unavailableKinds: EntryKind[] = [],
-  ): void {
-    const result: NamespaceRowsResult = { rows, unavailableKinds };
-    rowsSpy.getRows.and.returnValue(Promise.resolve(result));
+  /** Serve one page's worth of rows from the ONE request the pane issues. */
+  function resolveRows(rows: NamespaceSummary[]): void {
+    apiSpy.getNamespaces.and.returnValue(Promise.resolve(rows));
   }
 
   /** Mount and let the initial load settle. */
@@ -301,30 +311,56 @@ describe('CatalogListComponent (Story 36-3)', () => {
     return el === null ? null : el.textContent!.trim();
   }
 
+  /**
+   * Total calls across EVERY method on the `ApiService` spy.
+   *
+   * The "one request" claim is about the DATA LAYER, not about one method, so
+   * counting a single spy would still pass with a per-kind fan-out re-added
+   * through another one.
+   */
+  function totalApiCalls(): number {
+    return Object.values(apiSpy as unknown as Record<string, unknown>)
+      .filter((value): value is jasmine.Spy => {
+        return typeof value === 'function' && 'calls' in value;
+      })
+      .reduce((total, spy) => total + spy.calls.count(), 0);
+  }
+
   // --- AC 1, 2: the component shell and the single load path ----------------
 
-  it('(AC1) mounts through its own NamespaceRowsService provider', async () => {
+  it('(AC1) mounts and paints from the root ApiService alone', async () => {
     await render();
 
     expect(byTest('admin-catalog-pane')).not.toBeNull();
-    // Resolving the component-scoped token at all proves the `providers` entry
-    // is present: the service is a bare `@Injectable()` with no `providedIn`.
-    expect(fixture.debugElement.injector.get(NamespaceRowsService)).toBe(
-      rowsSpy,
-    );
+    // The pane holds NamespaceSummary rows verbatim — no row model of its own,
+    // and no component-scoped composing provider to resolve.
+    expect(component.rows).toEqual(defaultRows());
   });
 
-  it('(AC2) loads once on init, through getRows, defaulting to all=false', async () => {
+  it('(36-8 AC2) ONE request paints the page — not seven', async () => {
+    // Supersedes 36-2's assertion of SEVEN, which lived in the service suite
+    // this story deleted. Assert the NUMBER: "few requests" is not an
+    // invariant, and a re-introduced per-kind fan-out would be invisible
+    // without it.
     await render();
 
-    expect(rowsSpy.getRows).toHaveBeenCalledTimes(1);
-    expect(rowsSpy.getRows).toHaveBeenCalledWith({ all: false });
+    expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(1);
+    // ...and NOTHING else on the data layer. Counting every method on the spy
+    // is what catches a fan-out coming back through a different door.
+    expect(totalApiCalls()).toBe(1);
+  });
+
+  it('(AC2) loads once on init, through getNamespaces, defaulting to all=false', async () => {
+    await render();
+
+    expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(1);
+    expect(apiSpy.getNamespaces).toHaveBeenCalledWith({ all: false });
   });
 
   it('(AC2) shows a loading indicator while the load is in flight', async () => {
-    let release!: (result: NamespaceRowsResult) => void;
-    rowsSpy.getRows.and.returnValue(
-      new Promise<NamespaceRowsResult>((resolve) => {
+    let release!: (rows: NamespaceSummary[]) => void;
+    apiSpy.getNamespaces.and.returnValue(
+      new Promise<NamespaceSummary[]>((resolve) => {
         release = resolve;
       }),
     );
@@ -333,7 +369,7 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(byTest('catalog-loading')).not.toBeNull();
     expect(byTest('catalog-table')).toBeNull();
 
-    release({ rows: defaultRows(), unavailableKinds: [] });
+    release(defaultRows());
     await settle();
 
     expect(byTest('catalog-loading')).toBeNull();
@@ -346,13 +382,50 @@ describe('CatalogListComponent (Story 36-3)', () => {
     (byTest('catalog-refresh-btn') as HTMLButtonElement).click();
     await settle();
 
-    expect(rowsSpy.getRows).toHaveBeenCalledTimes(2);
-    expect(rowsSpy.getRows.calls.mostRecent().args).toEqual([{ all: false }]);
+    expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(2);
+    expect(apiSpy.getNamespaces.calls.mostRecent().args).toEqual([
+      { all: false },
+    ]);
+  });
+
+  it('(36-8 AC2) the five-namespace fixture yields the same rows, in order', async () => {
+    // The row set the deleted composition produced from seven responses, now
+    // produced from one. Same namespaces, same order, same per-kind numbers.
+    resolveRows(NAMESPACES);
+    await render();
+
+    const ids = Array.from(
+      fixture.nativeElement.querySelectorAll('[data-test^="ns-id-"]'),
+    ).map((el) => (el as HTMLElement).textContent!.trim());
+    expect(ids).toEqual([
+      'acme-team',
+      'acme-coding',
+      'contoso-product',
+      'global',
+      'global-tools',
+    ]);
+
+    for (const namespace of ids) {
+      for (const kind of ENTRY_KINDS) {
+        expect(countValue(namespace, kind))
+          .withContext(`${namespace}/${kind}`)
+          .toBe(String(EXPECTED_COUNTS[namespace][kind]));
+      }
+    }
+  });
+
+  it('(36-8 AC2) the two team-less library namespaces survive as rows', async () => {
+    resolveRows(NAMESPACES);
+    await render();
+
+    const libraries = component.rows.filter((r) => !r.team).map((r) => r.namespace);
+    expect(libraries).toEqual(['global', 'global-tools']);
+    expect(countValue('global-tools', 'tool')).toBe('8');
   });
 
   // --- AC 3: one row per namespace -----------------------------------------
 
-  it('(AC3) renders one row per namespace, in the service order', async () => {
+  it('(AC3) renders one row per namespace, in the response order', async () => {
     await render();
 
     const ids = Array.from(
@@ -376,6 +449,23 @@ describe('CatalogListComponent (Story 36-3)', () => {
     await render();
 
     expect(byTest('ns-owner-global')!.textContent!.trim()).toBe('unknown');
+  });
+
+  it('(36-8 AC6) owner reaches canModify EXACTLY as it arrived — null stays null', async () => {
+    // The pane derives no owner and coerces none. A `?? ''` or a `|| ''`
+    // anywhere on this path would turn `null` into `''`, and `canModify`
+    // guards on `row.owner !== null` — so an empty string would be compared
+    // against the caller's `user_id` instead of failing closed, silently
+    // changing who may delete.
+    resolveRows([
+      row('global', { owner: null, team: false }),
+      row('acme-team', { owner: OWNER }),
+    ]);
+    await render();
+
+    expect(component.rows[0].owner).toBeNull();
+    expect(component.rows[0].owner).not.toBe('');
+    expect(component.rows[1].owner).toBe(OWNER);
   });
 
   // --- AC 4: visibility chips ----------------------------------------------
@@ -447,14 +537,62 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(countValue('acme-team', 'prompt')).toBe('0');
   });
 
-  it('(AC5) an unavailable kind renders — for EVERY row, not just some', async () => {
-    resolveRows(defaultRows(), ['tool']);
+  it('(36-8 AC5) every row carries all six keys, PRESENT and zero-valued', async () => {
+    // Re-homed from the deleted service suite, where the zero-fill was the
+    // client's. It is the server's now — the assertion survives the move
+    // because "a present key whose total is 0" is what the pane depends on,
+    // whoever fills it. An absent key would render as the empty string here,
+    // indistinguishable from nothing at all now that `—` is gone.
+    resolveRows(NAMESPACES);
     await render();
 
-    expect(countValue('acme-team', 'tool')).toBe('—');
-    expect(countValue('contoso-product', 'tool')).toBe('—');
-    // The other kinds are unaffected — the failure is per-column, not per-row.
-    expect(countValue('contoso-product', 'agent')).toBe('6');
+    const expectedKeys = [...ENTRY_KINDS].sort();
+    for (const summary of component.rows) {
+      expect(Object.keys(summary.counts).sort())
+        .withContext(summary.namespace)
+        .toEqual(expectedKeys);
+    }
+
+    const acmeTeam = component.rows.find((r) => r.namespace === 'acme-team')!;
+    expect(acmeTeam.counts.tool).toEqual({ total: 0 });
+    expect(countValue('acme-team', 'tool')).toBe('0');
+  });
+
+  it('(36-8 AC5) the count is read off the NESTED total, never the object', async () => {
+    // `String(counts[kind])` on the nested shape renders "[object Object]".
+    // This is the spec that catches a flattening done on the wrong side.
+    await render();
+
+    for (const kind of ENTRY_KINDS) {
+      expect(countValue('acme-team', kind))
+        .withContext(kind)
+        .not.toContain('object');
+    }
+    expect(countValue('acme-team', 'agent')).toBe('5');
+  });
+
+  it('(36-8 AC10) the pane applies NO visibility logic — it renders what it is given', async () => {
+    // The server tallies through its visibility-filtered listing, so the
+    // numbers already match what THIS caller could list. The pane must not
+    // second-guess them: the same response renders identically for an admin
+    // and for a non-admin.
+    resolveRows(NAMESPACES);
+    isAdmin$.next(false);
+    currentUser$.next({ user_id: OTHER, roles: ['user'] });
+    await render();
+
+    const asNonAdmin = ENTRY_KINDS.map((k) => countValue('acme-coding', k));
+
+    isAdmin$.next(true);
+    currentUser$.next({ user_id: 'u-admin', roles: ['admin'] });
+    await settle();
+
+    expect(ENTRY_KINDS.map((k) => countValue('acme-coding', k))).toEqual(
+      asNonAdmin,
+    );
+    expect(asNonAdmin).toEqual(
+      ENTRY_KINDS.map((k) => String(EXPECTED_COUNTS['acme-coding'][k])),
+    );
   });
 
   // --- AC 6: the admin-only toggle -----------------------------------------
@@ -492,13 +630,36 @@ describe('CatalogListComponent (Story 36-3)', () => {
     await render();
 
     expect(component.showAll).toBeFalse();
-    expect(rowsSpy.getRows).toHaveBeenCalledWith({ all: false });
+    expect(apiSpy.getNamespaces).toHaveBeenCalledWith({ all: false });
 
     component.onToggleShowAll(true);
     await settle();
 
-    expect(rowsSpy.getRows).toHaveBeenCalledTimes(2);
-    expect(rowsSpy.getRows.calls.mostRecent().args).toEqual([{ all: true }]);
+    expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(2);
+    expect(apiSpy.getNamespaces.calls.mostRecent().args).toEqual([
+      { all: true },
+    ]);
+  });
+
+  it('(36-8 AC8) the all flag threads BOTH ways, and adds no other parameter', async () => {
+    // The catalog introduced NO new query parameter with the widened DTO —
+    // `?all=` on this route already existed. Flipping the toggle back must
+    // return to `{ all: false }`, not merely stop sending `true`.
+    isAdmin$.next(true);
+    await render();
+
+    component.onToggleShowAll(true);
+    await settle();
+    expect(apiSpy.getNamespaces.calls.mostRecent().args).toEqual([
+      { all: true },
+    ]);
+
+    component.onToggleShowAll(false);
+    await settle();
+    expect(apiSpy.getNamespaces.calls.mostRecent().args).toEqual([
+      { all: false },
+    ]);
+    expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(3);
   });
 
   // --- AC 7-10: THE RULE ---------------------------------------------------
@@ -759,7 +920,7 @@ describe('CatalogListComponent (Story 36-3)', () => {
       'team',
     ]);
     expect(countValue('contoso-product', 'agent')).toBe('6');
-    expect(rowsSpy.getRows).toHaveBeenCalledTimes(1);
+    expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(1);
   });
 
   it('(AC14) a 403 leaves the row and surfaces the message exactly ONCE', async () => {
@@ -808,7 +969,7 @@ describe('CatalogListComponent (Story 36-3)', () => {
   // --- AC 16: failure and empty are different states ------------------------
 
   it('(AC16) a rejected load renders the failure state and NO table', async () => {
-    rowsSpy.getRows.and.returnValue(Promise.reject(new Error('boom')));
+    apiSpy.getNamespaces.and.returnValue(Promise.reject(new Error('boom')));
     await render();
 
     expect(byTest('catalog-load-failed')).not.toBeNull();
@@ -1223,7 +1384,7 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(component.confirmDialogVisible).toBeFalse();
     expect(component.pendingDelete).toBeNull();
     expect(apiSpy.deleteNamespace).not.toHaveBeenCalled();
-    expect(rowsSpy.getRows).toHaveBeenCalledTimes(1);
+    expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(1);
   });
 
   it('(36-4 AC10) the pane owns exactly ONE Escape handler — one keystroke, one action', async () => {
@@ -1244,7 +1405,7 @@ describe('CatalogListComponent (Story 36-3)', () => {
     // The panel was never opened, so a second action would have to show up as
     // one of these — a stray delete or a phantom reload.
     expect(apiSpy.deleteNamespace).not.toHaveBeenCalled();
-    expect(rowsSpy.getRows).toHaveBeenCalledTimes(1);
+    expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(1);
   });
 
   // --- AC 14, 15: existingNamespaces, from data already on screen -----------
@@ -1252,11 +1413,11 @@ describe('CatalogListComponent (Story 36-3)', () => {
   it('(36-4 AC14) opening the dialog issues NO additional request', async () => {
     currentUser$.next({ user_id: OWNER, roles: ['user'] });
     await render();
-    rowsSpy.getRows.calls.reset();
+    apiSpy.getNamespaces.calls.reset();
 
     await openPanel('acme-team');
 
-    expect(rowsSpy.getRows).not.toHaveBeenCalled();
+    expect(totalApiCalls()).toBe(0);
     expect(apiSpy.getNamespaces).not.toHaveBeenCalled();
     expect(panelStub()!.existingNamespaces).toEqual([
       'acme-team',
@@ -1288,7 +1449,7 @@ describe('CatalogListComponent (Story 36-3)', () => {
     currentUser$.next({ user_id: OWNER, roles: ['user'] });
     await render();
     await openPanel('acme-team');
-    rowsSpy.getRows.calls.reset();
+    apiSpy.getNamespaces.calls.reset();
 
     // A namespace present only in the SECOND response — e.g. one the panel's
     // Clone just created.
@@ -1296,7 +1457,7 @@ describe('CatalogListComponent (Story 36-3)', () => {
     panelStub()!.saved.emit();
     await settle();
 
-    expect(rowsSpy.getRows).toHaveBeenCalledTimes(1);
+    expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(1);
     expect(byTest('ns-id-acme-cloned')).not.toBeNull();
     expect(panelStub()!.existingNamespaces).toContain('acme-cloned');
   });
