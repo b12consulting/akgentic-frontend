@@ -11,6 +11,7 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { RouterTestingModule } from '@angular/router/testing';
 import { MessageService } from 'primeng/api';
 import { Dialog } from 'primeng/dialog';
+import { Table } from 'primeng/table';
 import { Tag } from 'primeng/tag';
 import { BehaviorSubject } from 'rxjs';
 
@@ -2544,5 +2545,227 @@ describe('CatalogListComponent (Story 36-3)', () => {
           .toBeFalse();
       }
     }
+  });
+
+  // === Story 36-12: the whole row is the target =============================
+  //
+  // EVERY spec below drives a REAL DOM interaction — a click on an actual
+  // element, a keydown on an actual row. None of them calls
+  // `component.onRowSelect(...)` or `component.onPrimaryActionClick(...)`.
+  // This story is nothing but template wiring, and a spec that calls the
+  // handler proves the handler works while saying nothing about whether the
+  // row is clickable at all — which is the entire point.
+
+  /** The `<tr>` for a namespace, by the hook 36-3 put on it. */
+  function rowFor(namespace: string): HTMLTableRowElement {
+    return byTest(`ns-row-${namespace}`) as HTMLTableRowElement;
+  }
+
+  /**
+   * Click a CELL of the row — never a button — which is the click an operator
+   * makes. Two settles for the same reason `openPanel()` needs two: the first
+   * renders the `@defer` block, the second binds its inputs.
+   */
+  async function clickRow(namespace: string): Promise<void> {
+    (byTest(`ns-owner-${namespace}`) as HTMLElement).click();
+    await settle();
+    await settle();
+  }
+
+  /** The one `p-table` this pane renders — read for its internal selection. */
+  function tableInstance(): Table {
+    return fixture.debugElement.query(By.directive(Table))
+      .componentInstance as Table;
+  }
+
+  it('(36-12 AC1) clicking a row CELL opens the panel on that row', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    expect(panelStub()).toBeUndefined();
+
+    await clickRow('acme-team');
+
+    expect(component.panelVisible).toBeTrue();
+    expect(panelStub()!.namespace).toBe('acme-team');
+  });
+
+  it('(36-12 AC2) the row reaches the panel through the SAME handler Configure calls', async () => {
+    // One destination, not two: the row click must not become a second way in
+    // with a label or a namespace of its own.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    const primary = spyOn(component, 'onPrimaryActionClick').and.callThrough();
+
+    await clickRow('acme-team');
+
+    expect(primary).toHaveBeenCalledTimes(1);
+    expect(component.panelNamespace).toBe('acme-team');
+    expect(component.panelLabel).toBe('acme-team display');
+
+    // Switching rows re-binds the same dialog, exactly as Configure does.
+    await clickRow('contoso-product');
+
+    expect(panelStub()!.namespace).toBe('contoso-product');
+    expect(component.panelLabel).toBe('contoso-product display');
+  });
+
+  it('(36-12 AC3) Configure opens the panel exactly ONCE and selects no row', async () => {
+    // What this establishes, and what it does not: PrimeNG's `handleRowClick`
+    // already returns early when the click target — or its immediate parent —
+    // is a BUTTON, so this spec stays green with the `stopPropagation`
+    // removed. It pins the guarantee; it does not test our implementation of
+    // it. See the Completion Notes.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    const primary = spyOn(component, 'onPrimaryActionClick').and.callThrough();
+
+    primaryAction('acme-team').click();
+    await settle();
+    await settle();
+
+    expect(primary).toHaveBeenCalledTimes(1);
+    expect(panelStub()!.namespace).toBe('acme-team');
+    // The row's own click path did not run: no row became the table's
+    // selection.
+    expect(tableInstance().selection).toBeFalsy();
+  });
+
+  it('(36-12 AC4) export does NOT open the panel', async () => {
+    stubObjectUrl();
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('kind: team\n'));
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    (byTest('ns-export-acme-team') as HTMLButtonElement).click();
+    await settle();
+    await settle();
+
+    expect(apiSpy.exportNamespace).toHaveBeenCalledOnceWith('acme-team', {
+      all: false,
+    });
+    expect(component.panelVisible).toBeFalse();
+    expect(panelStub()).toBeUndefined();
+    expect(tableInstance().selection).toBeFalsy();
+  });
+
+  it('(36-12 AC5) delete opens the confirmation and NOTHING behind it', async () => {
+    // Two stacked dialogs is the failure this AC exists to prevent: both are
+    // `[closeOnEscape]="false"` and Escape is arbitrated by one document-level
+    // handler that was never designed for this pairing.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    deleteBtn('acme-team').click();
+    await settle();
+    await settle();
+
+    expect(byTest('delete-confirm-namespace')!.textContent!.trim()).toBe(
+      'acme-team',
+    );
+    expect(component.panelVisible).toBeFalse();
+    expect(panelStub()).toBeUndefined();
+  });
+
+  it('(36-12 AC6) a DISABLED delete opens neither dialog', async () => {
+    // `HTMLElement.click()` on a disabled form control is a no-op per the HTML
+    // spec, and a real user click on one dispatches no event at all — nothing
+    // reaches the `<tr>`. So this is the faithful simulation, and the
+    // guarantee comes from the platform rather than from our code. It is still
+    // worth pinning: it reddens the day the denial is expressed as a CSS class
+    // or a TypeScript early return instead of the `disabled` attribute, at
+    // which point the row WOULD open under a control that just said no.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    isAdmin$.next(false);
+    await render();
+
+    const btn = deleteBtn('contoso-product');
+    expect(btn.disabled).toBeTrue();
+
+    btn.click();
+    await settle();
+    await settle();
+
+    expect(byTest('delete-proceed-btn')).toBeNull();
+    expect(component.panelVisible).toBeFalse();
+    expect(panelStub()).toBeUndefined();
+  });
+
+  it('(36-12 AC7) clicking the SAME row twice reopens the panel', async () => {
+    // THE TRAP. PrimeNG single selection is a TOGGLE with `metaKeySelection`
+    // false: the second click on an already-selected row emits
+    // `onRowUnselect` and NOT `onRowSelect`. An operator hits this on their
+    // second interaction.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    await clickRow('acme-team');
+    expect(component.panelVisible).toBeTrue();
+
+    panelStub()!.closed.emit();
+    await settle();
+    expect(component.panelVisible).toBeFalse();
+
+    await clickRow('acme-team');
+
+    expect(component.panelVisible).toBeTrue();
+    expect(panelStub()!.namespace).toBe('acme-team');
+  });
+
+  it('(36-12 AC8) every row is keyboard-reachable and Enter opens the panel', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    for (const namespace of ['acme-team', 'contoso-product']) {
+      expect(rowFor(namespace).hasAttribute('tabindex'))
+        .withContext(namespace)
+        .toBeTrue();
+    }
+
+    // `SelectableRow.onKeyDown` switches on `event.code`, so a `key`-only
+    // event reaches nothing.
+    rowFor('contoso-product').dispatchEvent(
+      new KeyboardEvent('keydown', { code: 'Enter', bubbles: true }),
+    );
+    await settle();
+    await settle();
+
+    expect(component.panelVisible).toBeTrue();
+    expect(panelStub()!.namespace).toBe('contoso-product');
+
+    // The roving tabindex, which is what `[pSelectableRowIndex]` buys: once a
+    // row has been activated, IT is the one tab stop and its neighbours step
+    // out of the tab order. Omit the index binding and the directive's `index`
+    // is `undefined` on every row — but so is `anchorRowIndex`, since it is
+    // read from that same index, so the two compare EQUAL and every row keeps
+    // 0. The `-1` below is therefore the only half of this that discriminates;
+    // the `hasAttribute` checks above and the `0` here pass either way.
+    expect(rowFor('contoso-product').getAttribute('tabindex')).toBe('0');
+    expect(rowFor('acme-team').getAttribute('tabindex')).toBe('-1');
+  });
+
+  it('(36-12 AC8) the row is a PrimeNG selectable row, not a hand-rolled click', async () => {
+    // The marker `pSelectableRow` puts on its host. Asserted rather than
+    // assumed: hover affordance, the selected-row class, `tabindex` and
+    // keyboard navigation all come from that directive, and a hand-rolled
+    // `(click)` on the `<tr>` would silently take all four away.
+    await render();
+
+    expect(rowFor('acme-team').getAttribute('data-p-selectable-row')).toBe(
+      'true',
+    );
+  });
+
+  it('(36-12 AC10) the actions cell still holds exactly three controls', async () => {
+    // The clickable row is an ADDITION. Clone stays inside the namespace
+    // panel, and Configure/View — the entitlement affordance — stays put.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    const actions = rowFor('acme-team').querySelector(
+      '.admin-catalog__actions',
+    )!;
+    expect(actions.querySelectorAll('button').length).toBe(3);
+    expect(primaryAction('acme-team').textContent!.trim()).toBe('Configure');
   });
 });

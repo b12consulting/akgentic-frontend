@@ -139,8 +139,29 @@
       </div>
 
       <ng-container *ngIf="filteredRows.length > 0">
+        <!--
+          THE WHOLE ROW IS THE TARGET (Story 36-12). `selectionMode="single"`
+          plus `pSelectableRow` below is PrimeNG's own mechanism — the same one
+          the Home table uses — so hover affordance, the selected-row class,
+          `tabindex` and Enter/Space activation all come from `SelectableRow`
+          rather than from a hand-rolled `(click)` on the `<tr>`. Copied and
+          NOT imported: `page-admin` may not depend on `page-home`.
+
+          `(onRowUnselect)` is bound to the SAME handler on purpose. Single
+          selection here is a TOGGLE (`metaKeySelection` defaults to false), so
+          clicking an already-selected row emits `onRowUnselect` and NOT
+          `onRowSelect`. Without this line the operator's second click on the
+          same row — after closing the panel — does nothing at all. Whichever
+          of the two events fires, that row's panel opens.
+
+          No `dataKey`: rows are compared by reference, which is what the
+          filter path preserves.
+        -->
         <p-table
           [value]="filteredRows"
+          selectionMode="single"
+          (onRowSelect)="onRowSelect($event)"
+          (onRowUnselect)="onRowSelect($event)"
           [tableStyle]="{ 'min-width': '55rem' }"
           data-test="catalog-table"
         >
@@ -154,8 +175,25 @@
             </tr>
           </ng-template>
 
-          <ng-template #body let-row>
-            <tr [attr.data-test]="'ns-row-' + row.namespace">
+          <!--
+            `[pSelectableRowIndex]` is what gives the table a ROVING tabindex:
+            `setRowTabIndex()` returns 0 while nothing is selected, and
+            afterwards 0 only for the anchor row and -1 for the rest, so the
+            activated row is the one tab stop.
+
+            Omit it and the directive's `index` is `undefined` on every row —
+            but `anchorRowIndex` is read from that same index, so the two
+            compare equal and every row keeps 0 (verified by mutation; it does
+            NOT collapse to -1 as one might expect). What is actually lost is
+            the roving stop, and the meaning of `anchorRowIndex` for the
+            arrow/Home/End paths that read it.
+          -->
+          <ng-template #body let-row let-rowIndex="rowIndex">
+            <tr
+              [pSelectableRow]="row"
+              [pSelectableRowIndex]="rowIndex"
+              [attr.data-test]="'ns-row-' + row.namespace"
+            >
               <!--
                 IDENTIFIER FIRST, name beneath. The identifier is what an
                 operator acts on, deep-links to and filters against; the display
@@ -292,6 +330,19 @@
                 secondary, a `pi` icon), copied and not imported: `page-admin`
                 may not depend on `page-home`.
               -->
+              <!--
+                Every control here stops the click from also reaching the row
+                (Story 36-12) — the WRAPPER deliberately does not, so the
+                whitespace between the buttons stays part of the clickable row.
+
+                PrimeNG's `handleRowClick` already returns early when the click
+                target, or its immediate parent, is a BUTTON, so today this is
+                a guarantee we are TAKING OWNERSHIP of rather than one we are
+                creating. It is not decoration: it survives wrapping a glyph
+                one level deeper, adding a non-button control to this cell, or
+                someone replacing `pSelectableRow` with a hand-rolled `(click)`
+                on the `<tr>` — and nothing else would catch any of the three.
+              -->
               <td>
                 <div class="admin-catalog__actions">
                   <!--
@@ -319,7 +370,7 @@
                     [rounded]="true"
                     [icon]="primaryActionIcon(row)"
                     [label]="primaryActionLabel(row)"
-                    (click)="onPrimaryActionClick(row)"
+                    (click)="onPrimaryActionClick(row); $event.stopPropagation()"
                     [attr.data-test]="'ns-configure-' + row.namespace"
                   ></button>
                   <!--
@@ -333,7 +384,7 @@
                     [rounded]="true"
                     icon="pi pi-download"
                     [attr.aria-label]="'Export namespace ' + row.namespace"
-                    (click)="onExportClick(row)"
+                    (click)="onExportClick(row); $event.stopPropagation()"
                     [attr.data-test]="'ns-export-' + row.namespace"
                   ></button>
                   <!--
@@ -359,7 +410,7 @@
                     [attr.aria-label]="'Delete namespace ' + row.namespace"
                     [disabled]="!canModify(row)"
                     [attr.title]="deleteDisabledReason(row)"
-                    (click)="onDeleteClick(row)"
+                    (click)="onDeleteClick(row); $event.stopPropagation()"
                     [attr.data-test]="'ns-delete-' + row.namespace"
                   ></button>
                 </div>

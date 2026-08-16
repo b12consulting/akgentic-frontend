@@ -13,7 +13,7 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
-import { TableModule } from 'primeng/table';
+import { TableModule, TableRowSelectEvent } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { Observable, combineLatest } from 'rxjs';
@@ -592,6 +592,32 @@ export class CatalogListComponent implements OnInit {
     this.panelNamespace = row.namespace;
     this.panelLabel = row.name === '' ? row.namespace : row.name;
     this.panelVisible = true;
+  }
+
+  /**
+   * A click (or Enter) anywhere on the row that is not one of its own controls
+   * — Story 36-12, so the whole row is the target and not just the button at
+   * the far right of it.
+   *
+   * It DELEGATES and does nothing else. One destination, one rule: the row and
+   * Configure/View reach the panel through the same method, so there is no
+   * second way in that could drift to a different label or a different
+   * namespace.
+   *
+   * Bound to BOTH `(onRowSelect)` and `(onRowUnselect)` — see the template for
+   * why single selection being a toggle makes that necessary rather than
+   * defensive.
+   *
+   * `data` is narrowed rather than cast: the array branch and `undefined` are
+   * both unreachable in single-selection mode, and a bare `as` here would
+   * survive a mode change as a lie.
+   */
+  onRowSelect(event: TableRowSelectEvent<NamespaceSummary>): void {
+    const row = event.data;
+    if (row === undefined || Array.isArray(row)) {
+      return;
+    }
+    this.onPrimaryActionClick(row);
   }
 
   /**
