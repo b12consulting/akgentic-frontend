@@ -176,9 +176,17 @@ describe('CatalogListComponent (Story 36-3)', () => {
   let isAdmin$: BehaviorSubject<boolean>;
 
   beforeEach(async () => {
+    // The pane calls exactly two of these. The other four are stubbed anyway so
+    // that `totalApiCalls()` below actually spans the catalog surface: a
+    // re-introduced fan-out through one of them must be COUNTED, not merely
+    // crash on an undefined method inside `loadRows()`'s bare `catch`.
     apiSpy = jasmine.createSpyObj<ApiService>('ApiService', [
       'deleteNamespace',
       'getNamespaces',
+      'exportNamespace',
+      'importNamespace',
+      'validatePersistedNamespace',
+      'validateNamespaceBuffer',
     ]);
     apiSpy.getNamespaces.and.returnValue(Promise.resolve([]));
     messageSpy = jasmine.createSpyObj<MessageService>('MessageService', ['add']);
@@ -312,11 +320,15 @@ describe('CatalogListComponent (Story 36-3)', () => {
   }
 
   /**
-   * Total calls across EVERY method on the `ApiService` spy.
+   * Total calls across EVERY method on the `ApiService` spy — which is stubbed
+   * with the whole catalog surface, not just the two the pane uses.
    *
    * The "one request" claim is about the DATA LAYER, not about one method, so
    * counting a single spy would still pass with a per-kind fan-out re-added
-   * through another one.
+   * through another one. Spanning the surface is what makes THIS assertion the
+   * one that fails, with a number in the message, rather than some downstream
+   * row expectation going red because an undefined method threw into
+   * `loadRows()`'s bare `catch`.
    */
   function totalApiCalls(): number {
     return Object.values(apiSpy as unknown as Record<string, unknown>)
