@@ -2268,6 +2268,14 @@ describe('CatalogListComponent (Story 36-3)', () => {
 
     expect(renderedNamespaces()).toEqual(['ns-one', 'ns-two']);
     expect(component.filterHidesEverything).toBeFalse();
+    // THE assertion that actually bites. Everything above stays green with the
+    // empty-term guard deleted: `''.includes('')` is true for every field, so
+    // one blank term matches every row and the visible outcome is identical.
+    // What differs is that the unfiltered path assigns `rows` ITSELF, while a
+    // blank term walks the predicate and builds a new array. Verified by
+    // mutation: drop `.filter((term) => term !== '')` and only this line goes
+    // red — the whole suite was green without it.
+    expect(component.filteredRows).toBe(component.rows);
   });
 
   // --- AC 4: a null owner ---------------------------------------------------
@@ -2304,6 +2312,10 @@ describe('CatalogListComponent (Story 36-3)', () => {
     );
     expect(block.textContent).toContain(CATALOG_NO_MATCH_MESSAGE);
     expect(block.textContent).toContain('no-such-namespace');
+    // The TRIM itself, at its source. Every assertion above survives a
+    // `trimmedFilter` that forgot to trim: `.trim()` on the read side and
+    // `toContain` both hide the padding, and HTML collapses it on screen.
+    expect(component.trimmedFilter).toBe('no-such-namespace');
   });
 
   it('(36-10 AC5) the clear control restores every row, the field AND the box', async () => {
@@ -2404,5 +2416,42 @@ describe('CatalogListComponent (Story 36-3)', () => {
 
     expect(totalApiCalls()).toBe(before);
     expect(renderedNamespaces()).toEqual(['ns-one', 'ns-two']);
+  });
+
+  // --- the flex wrappers are DIVS, never the cell itself --------------------
+
+  it('no <td> carries a flex-wrapper class — they belong to the div inside', async () => {
+    // The defect a user found and 1760 green specs missed: `display: flex` on a
+    // `<td>` drops `table-cell`, so the header keeps rendering five columns
+    // while the row renders two. The DOM tree is IDENTICAL either way, which is
+    // why no structural spec saw it.
+    //
+    // `(36-9 AC11)` asserts `cells[2].querySelector('.admin-catalog__chips')`
+    // is not null — but that still passes if the class is ALSO re-applied to
+    // the `<td>`, which is exactly how the bug would come back. This is the
+    // other half: the cell's OWN classList must not carry any of the three.
+    await render();
+
+    const wrappers = [
+      'admin-catalog__chips',
+      'admin-catalog__counts',
+      'admin-catalog__actions',
+    ];
+    const row = byTest('ns-row-acme-team')!;
+    const cells = Array.from(row.querySelectorAll('td'));
+
+    for (const wrapper of wrappers) {
+      // Present on a div inside a cell — so this cannot pass by the class
+      // having been renamed out of existence.
+      const el = row.querySelector('.' + wrapper);
+      expect(el).withContext(wrapper).not.toBeNull();
+      expect(el!.tagName).withContext(wrapper).toBe('DIV');
+
+      for (const cell of cells) {
+        expect(cell.classList.contains(wrapper))
+          .withContext(wrapper + ' on a <td>')
+          .toBeFalse();
+      }
+    }
   });
 });
