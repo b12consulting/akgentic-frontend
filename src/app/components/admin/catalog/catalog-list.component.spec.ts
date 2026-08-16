@@ -2768,4 +2768,93 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(actions.querySelectorAll('button').length).toBe(3);
     expect(primaryAction('acme-team').textContent!.trim()).toBe('Configure');
   });
+
+  /**
+   * Does a REAL click on `control` reach the `<tr>` it sits in?
+   *
+   * This is what the four specs below observe, and it is the ONLY thing that
+   * distinguishes our three `stopPropagation` calls from PrimeNG's own
+   * two-level heuristic. `handleRowClick` returns early when the click target
+   * or its immediate parent is a BUTTON, so AC3-AC6 stay green with all three
+   * removed — measured, not assumed. They pin the guarantee; these pin the
+   * implementation of it, which is the half that would otherwise ship
+   * unexercised.
+   *
+   * The listener is removed before asserting so a failing expectation cannot
+   * leave it attached to a later spec's DOM.
+   */
+  function clickReachesRow(namespace: string, control: HTMLElement): boolean {
+    const row = rowFor(namespace);
+    let reached = false;
+    const listener = (): void => {
+      reached = true;
+    };
+    row.addEventListener('click', listener);
+    control.click();
+    row.removeEventListener('click', listener);
+    return reached;
+  }
+
+  it('(36-12) a click on a plain CELL does reach the row — the control for the three below', async () => {
+    // Without this, all three `toBeFalse()` specs below would pass just as
+    // happily with the listener never wired at all.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    expect(
+      clickReachesRow('acme-team', byTest('ns-owner-acme-team')!),
+    ).toBeTrue();
+  });
+
+  it('(36-12) Configure stops the click from reaching the row', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    expect(clickReachesRow('acme-team', primaryAction('acme-team'))).toBeFalse();
+  });
+
+  it('(36-12) export stops the click from reaching the row', async () => {
+    stubObjectUrl();
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('kind: team\n'));
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    expect(
+      clickReachesRow('acme-team', byTest('ns-export-acme-team')!),
+    ).toBeFalse();
+
+    await settle();
+  });
+
+  it('(36-12) delete stops the click from reaching the row', async () => {
+    // The dangerous one: a click that reached the row would open the config
+    // panel BEHIND the confirmation, and one Escape would resolve the wrong
+    // dialog.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    expect(clickReachesRow('acme-team', deleteBtn('acme-team'))).toBeFalse();
+  });
+
+  it('(36-12 AC2) a NON-OWNER row click reaches the same handler, same panel', async () => {
+    // One destination, one rule — on the row the entitlement label calls
+    // "View", not just on an owned one. ADR-028 §D4's amendment records that
+    // "View" is a label only today; what this pins is that the row click never
+    // grows an entitlement branch of its own that Configure/View does not
+    // have.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    isAdmin$.next(false);
+    await render();
+
+    expect(primaryAction('contoso-product').textContent!.trim()).toBe('View');
+    expect(deleteBtn('contoso-product').disabled).toBeTrue();
+
+    const primary = spyOn(component, 'onPrimaryActionClick').and.callThrough();
+
+    await clickRow('contoso-product');
+
+    expect(primary).toHaveBeenCalledTimes(1);
+    expect(component.panelNamespace).toBe('contoso-product');
+    expect(panelStub()!.namespace).toBe('contoso-product');
+  });
 });
