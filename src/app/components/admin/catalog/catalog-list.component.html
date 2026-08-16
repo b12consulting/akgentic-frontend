@@ -264,19 +264,20 @@
                     class="admin-catalog__visibility-chips"
                     [attr.data-test]="'ns-visibility-' + row.namespace"
                   >
-                  <!--
-                    Exactly one of public/private — never neither, never both.
+                    <!--
+                      Exactly one of public/private — never neither, never both.
 
-                    The visibility chip carries a severity of its OWN so it can
-                    never render identically to the `secondary` kind chip beside
-                    it: `public` is `success`, `private` is `info`. `shareable`
-                    is `warn` — orange is the one that should catch the eye,
-                    because it is the fact that says this namespace can leave
-                    your hands. Do NOT tidy either back to `secondary`, do not
-                    swap them round again, and do not move the kind chip off
-                    `secondary`: what is being protected is that the visibility
-                    pair stays distinguishable from the kind pair beside it.
-                  -->
+                      The visibility chip carries a severity of its OWN so it
+                      can never render identically to the `secondary` kind chip
+                      beside it: `public` is `success`, `private` is `info`.
+                      `shareable` is `warn` — orange is the one that should
+                      catch the eye, because it is the fact that says this
+                      namespace can leave your hands. Do NOT tidy either back to
+                      `secondary`, do not swap them round again, and do not move
+                      the kind chip off `secondary`: what is being protected is
+                      that the visibility pair stays distinguishable from the
+                      kind pair beside it.
+                    -->
                     <p-tag
                       [severity]="row.public ? 'success' : 'info'"
                       [value]="row.public ? 'public' : 'private'"

@@ -193,7 +193,6 @@ export class CatalogListComponent implements OnInit, AfterViewChecked {
   readonly shownEntryKinds = SHOWN_ENTRY_KINDS;
 
   readonly deleteDeniedReason = DELETE_DENIED_REASON;
-  readonly cloneDeniedReason = CLONE_DENIED_REASON;
   readonly filterPlaceholder = CATALOG_FILTER_PLACEHOLDER;
   readonly noMatchMessage = CATALOG_NO_MATCH_MESSAGE;
 
@@ -731,7 +730,7 @@ export class CatalogListComponent implements OnInit, AfterViewChecked {
       return;
     }
     this.#pendingClone = null;
-    queueMicrotask(() => this.#firePendingClone());
+    queueMicrotask(() => this.#firePendingClone(pending));
   }
 
   /**
@@ -739,10 +738,21 @@ export class CatalogListComponent implements OnInit, AfterViewChecked {
    * can go dirty — or the operator can close the dialog — between the gate
    * opening and this microtask running, and a Clone modal over a dismissed
    * dialog is worse than no Clone at all.
+   *
+   * It re-checks the NAMESPACE too, and not only the two liveness conditions.
+   * The gate above has already cleared `#pendingClone`, so nothing else still
+   * names the row this clone was asked for — and the one failure this whole
+   * path exists to prevent is a clone running against a namespace the operator
+   * did not click. Re-validating the value rather than trusting the position
+   * costs one comparison and keeps the guard true no matter what else learns to
+   * re-bind the panel.
    */
-  #firePendingClone(): void {
+  #firePendingClone(pending: string): void {
     const panel = this.panel;
     if (panel === undefined || !this.panelVisible || !panel.canClone) {
+      return;
+    }
+    if (panel.namespace !== pending) {
       return;
     }
     panel.onCloneClick();
