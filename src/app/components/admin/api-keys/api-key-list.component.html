@@ -213,6 +213,11 @@
   subtree rather than hiding it, so no detached node keeps the value alive. The
   X and the mask route through `onRevealVisibleChange`, which calls the same
   `dismissReveal()` as Done and as Escape — there is no fourth way to close it.
+
+  `[dismissableMask]="true"` is set EXPLICITLY: PrimeNG's default is `false`, so
+  without it the mask is not a dismissal channel at all and the sentence above
+  would be describing something that does not happen. It is safe precisely
+  because the channel it opens ends in `dismissReveal()` like every other one.
 -->
 <p-dialog
   [visible]="revealPlaintext !== null"
@@ -220,6 +225,7 @@
   [modal]="true"
   [draggable]="false"
   [closeOnEscape]="false"
+  [dismissableMask]="true"
   [style]="{ width: '34rem' }"
   header="Your new API key"
   data-test="api-key-reveal-dialog"
@@ -232,10 +238,18 @@
   ></app-api-key-reveal>
 </p-dialog>
 
-<!-- Revoke confirmation. It NAMES the key, in its own asserted element. -->
+<!--
+  Revoke confirmation. It NAMES the key, in its own asserted element.
+
+  `(onShow)` puts focus on Proceed the moment the dialog mounts, as the delete
+  confirmation next door does: without it a keyboard operator is left focused
+  behind the modal, with nothing to Tab from and no way to answer the question
+  the dialog just asked.
+-->
 <p-dialog
   [visible]="pendingRevoke !== null"
   (visibleChange)="onRevokeVisibleChange($event)"
+  (onShow)="onRevokeDialogShow()"
   [modal]="true"
   [draggable]="false"
   [closeOnEscape]="false"
@@ -264,6 +278,7 @@
         data-test="api-key-revoke-cancel-btn"
       ></button>
       <button
+        #revokeProceedBtn
         pButton
         type="button"
         size="small"

@@ -1,5 +1,12 @@
 import { CommonModule } from '@angular/common';
-import { Component, HostListener, OnInit, inject } from '@angular/core';
+import {
+  Component,
+  ElementRef,
+  HostListener,
+  OnInit,
+  ViewChild,
+  inject,
+} from '@angular/core';
 import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
@@ -148,6 +155,10 @@ export class ApiKeyListComponent implements OnInit {
   /** The row awaiting revoke confirmation; `null` when the dialog is closed. */
   pendingRevoke: ApiKeyRecord | null = null;
 
+  /** Proceed, so the confirmation can take focus when it mounts. */
+  @ViewChild('revokeProceedBtn')
+  private revokeProceedBtn?: ElementRef<HTMLButtonElement>;
+
   ngOnInit(): void {
     void this.loadKeys();
   }
@@ -202,7 +213,12 @@ export class ApiKeyListComponent implements OnInit {
     this.createDialogVisible = true;
   }
 
-  /** The X and the mask. In-flight locks every dismissal channel together. */
+  /**
+   * The X, and Cancel. NOT the mask: `dismissableMask` is left at PrimeNG's
+   * `false` here on purpose, so a stray click beside a filled form does not
+   * throw the operator's input away. In-flight locks this channel with the
+   * others.
+   */
   onCreateVisibleChange(visible: boolean): void {
     if (visible || this.isWriteInFlight) {
       return;
@@ -286,7 +302,16 @@ export class ApiKeyListComponent implements OnInit {
     this.pendingRevoke = null;
   }
 
-  /** The X and the mask, mirroring the create dialog's channel. */
+  /**
+   * Focus Proceed as the confirmation mounts, as the delete confirmation next
+   * door does. A modal that asks a destructive question while focus is still
+   * behind it leaves a keyboard operator with nothing to answer it from.
+   */
+  onRevokeDialogShow(): void {
+    this.revokeProceedBtn?.nativeElement.focus();
+  }
+
+  /** The X, mirroring the create dialog's channel — and, like it, no mask. */
   onRevokeVisibleChange(visible: boolean): void {
     if (visible || this.isWriteInFlight) {
       return;

@@ -599,6 +599,28 @@ describe('ApiKeyListComponent (Stories 36-5, 36-6)', () => {
         .toBeFalse();
     }
 
+    // 2b. THE OTHER SERVICE THE PANE INJECTS. A toast is a leak channel with a
+    //     life of its own: `MessageService` queues the text, and the queue
+    //     outlives the panel that raised it. `summary: response.plaintext_key`
+    //     is one plausible line, and neither the DOM check nor the console
+    //     spies below would see it — the toast renders in a `p-toast` mounted
+    //     somewhere else entirely.
+    for (const call of messageSpy.add.calls.all()) {
+      expect(containsSentinel(call.args, SENTINEL))
+        .withContext('MessageService.add received the plaintext')
+        .toBeFalse();
+    }
+    for (const [name, value] of Object.entries(
+      messageSpy as unknown as Record<string, unknown>,
+    )) {
+      if (typeof value === 'function') {
+        continue;
+      }
+      expect(containsSentinel(value, SENTINEL))
+        .withContext(`MessageService.${name} holds the plaintext`)
+        .toBeFalse();
+    }
+
     // 3. The rendered DOM.
     expect(fixture.nativeElement.textContent as string).not.toContain(SENTINEL);
 
@@ -1154,6 +1176,61 @@ describe('ApiKeyListComponent (Stories 36-5, 36-6)', () => {
         expect(dialog.modal).toBeTrue();
         expect(dialog.draggable).toBeFalse();
       }
+    });
+
+    it('makes the reveal mask a REAL dismissal channel, and only the reveal (AC 10)', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([key({ key_id: 'ak-1' })]));
+
+      await render();
+
+      // PrimeNG defaults `dismissableMask` to FALSE, so naming the mask as a
+      // dismissal channel without setting it describes something that never
+      // happens. The reveal sets it, because that channel ends in
+      // `dismissReveal()` like every other one; the create dialog does NOT,
+      // because a stray click beside a filled form must not discard it.
+      const dialog = (hook: string): { dismissableMask: boolean } =>
+        fixture.debugElement.query(By.css(`p-dialog[data-test="${hook}"]`))
+          .componentInstance as { dismissableMask: boolean };
+
+      expect(dialog('api-key-reveal-dialog').dismissableMask).toBeTrue();
+      expect(dialog('api-key-create-dialog').dismissableMask).toBeFalse();
+      expect(dialog('api-key-revoke-confirm-dialog').dismissableMask).toBeFalse();
+    });
+
+    it('clears the plaintext when the reveal is dismissed through the mask channel', async () => {
+      const consoleSpies = spyOnEveryConsoleChannel();
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([]));
+      apiSpy.createApiKey.and.returnValue(Promise.resolve(createdKey()));
+
+      await render();
+      await submitCreate();
+      expect(byTest('api-key-reveal')).not.toBeNull();
+
+      // The mask and the X both arrive as the same `visibleChange(false)`, so
+      // this is the assertion that the channel the mask opens ends where every
+      // other one does — and not at a bare visibility flag.
+      fixture.componentInstance.onRevealVisibleChange(false);
+      await settle();
+
+      expect(byTest('api-key-reveal')).toBeNull();
+      expect(fixture.componentInstance.revealPlaintext).toBeNull();
+      expectSentinelGone(consoleSpies);
+    });
+  });
+
+  describe('the revoke confirmation takes focus (Dev Notes: copy the pane next door)', () => {
+    it('focuses Proceed when the dialog shows, so the keyboard lands inside it', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([key({ key_id: 'ak-1' })]));
+
+      await render();
+      (byTest('api-key-revoke-btn-ak-1') as HTMLButtonElement).click();
+      await settle();
+
+      fixture.componentInstance.onRevokeDialogShow();
+
+      // Asking a destructive question from a modal while focus is still behind
+      // it leaves a keyboard operator with nothing to answer it from.
+      expect(document.activeElement).toBe(byTest('api-key-revoke-proceed-btn'));
     });
   });
 
