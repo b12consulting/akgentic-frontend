@@ -583,7 +583,13 @@ describe('CatalogListComponent (Story 36-3)', () => {
   // --- Story 36-11 AC6/AC8: the visibility chip has its OWN severity --------
   //
   // `public` is `success`, `private` is `info`, `shareable` is `warn` and the
-  // kind chip is `secondary`. All four are asserted, not just the ones that
+  // kind chip is `secondary`. The two middle values are NOT 36-11's: it shipped
+  // `private` as `warn` and `shareable` as `info`, and Story 36-13 swapped them.
+  // 36-11's story text therefore names the OLD pair — the comment beside the
+  // chips in the template is the one that states what is true, and the titles
+  // below keep the 36-11 prefix only because that is where the specs came from.
+  //
+  // All four are asserted, not just the ones that
   // changed. The property being protected is that the VISIBILITY pair
   // (public/private) stays distinguishable from the KIND pair (team/library)
   // beside it — a later change making `team` `info` too would restore exactly
