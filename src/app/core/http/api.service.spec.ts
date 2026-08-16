@@ -1,8 +1,9 @@
 import { TestBed } from '@angular/core/testing';
 import { ApiService } from './api.service';
-import { FetchService, NetworkError } from './fetch.service';
+import { FetchService, HttpError, NetworkError } from './fetch.service';
 import { AuthService } from '../auth/auth.service';
 import { Router } from '@angular/router';
+import { ApiKeyRecord } from '../../protocol/api-key.interface';
 import { Entry } from '../../protocol/catalog.interface';
 
 describe('ApiService', () => {
@@ -145,6 +146,62 @@ describe('ApiService', () => {
       fetchServiceSpy.fetch.and.returnValue(Promise.reject(failure));
 
       await expectAsync(service.getEntries('team')).toBeRejectedWith(failure);
+    });
+  });
+
+  describe('getApiKeys (Story 36-5 AC3, AC4)', () => {
+    const record: ApiKeyRecord = {
+      key_id: 'ak-1',
+      owner_id: 'u-acme',
+      owner_email: 'operator@acme.test',
+      roles: ['admin'],
+      expiration: null,
+      created_at: '2026-01-05T09:00:00Z',
+    };
+
+    it('GETs exactly /auth/apikeys — no trailing slash, no query string', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve([record]));
+
+      const result = await service.getApiKeys();
+
+      expect(fetchServiceSpy.fetch).toHaveBeenCalledTimes(1);
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.url).toMatch(/\/auth\/apikeys$/);
+      expect(callArgs.url).not.toContain('?');
+      expect(result).toEqual([record]);
+    });
+
+    it('opts out of the generic error toast — the pane owns its failure branches', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve([]));
+
+      await service.getApiKeys();
+
+      expect(fetchServiceSpy.fetch.calls.first().args[0].notifyOnError).toBeFalse();
+    });
+
+    it('coalesces an empty/204 body to []', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve(undefined));
+
+      await expectAsync(service.getApiKeys()).toBeResolvedTo([]);
+    });
+
+    it('REJECTS on a 404 carrying the status — never flattened to []', async () => {
+      // The distinction the pane is built on: a missing route must arrive as a
+      // rejection with a readable status, not as "you have no keys".
+      const failure = new HttpError('Request failed: Not Found', 404, {
+        detail: 'Not Found',
+      });
+      fetchServiceSpy.fetch.and.returnValue(Promise.reject(failure));
+
+      let caught: unknown = null;
+      try {
+        await service.getApiKeys();
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught instanceof HttpError).toBeTrue();
+      expect((caught as HttpError).status).toBe(404);
     });
   });
 

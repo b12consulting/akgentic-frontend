@@ -1,0 +1,41 @@
+// Story 36-5 — admin API-keys pane. Minimal chrome; the table itself is
+// PrimeNG's, styled by the app's Aura preset. Shape mirrors the catalog pane
+// next door so the two read as one area.
+
+.admin-api-keys__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.admin-api-keys__title {
+  margin: 0;
+  margin-right: auto;
+}
+
+.admin-api-keys__loading,
+.admin-api-keys__unavailable,
+.admin-api-keys__failed,
+.admin-api-keys__empty {
+  padding: 1rem 0;
+  color: var(--text-color-secondary, #6b7280);
+}
+
+.admin-api-keys__failed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.admin-api-keys__failed-message {
+  margin: 0;
+  line-height: 1.4;
+  white-space: pre-line;
+}
+
+.admin-api-keys__key-id {
+  font-family: var(--font-family-mono, monospace);
+  font-size: 0.85rem;
+}

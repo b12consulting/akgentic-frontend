@@ -1,0 +1,146 @@
+<div data-test="admin-api-keys-pane" class="admin-pane admin-api-keys">
+  <div class="admin-api-keys__toolbar">
+    <h2 class="admin-api-keys__title">API Keys</h2>
+
+    <!--
+      Present only where the route has demonstrably answered — `rows` and
+      `empty`. Absent from the DOM (not disabled) in `unavailable` and `error`:
+      offering to create a key against a route that just 404'd, or that failed
+      for an unknown reason, invites a second failure with no better
+      information.
+
+      Where it IS present it ships disabled with the reason on the native
+      `title`, following 36-3's row Delete — Story 36-6 enables it and attaches
+      the dialog. `title` and not `pTooltip`: a disabled button fires no mouse
+      events, so a PrimeNG tooltip would never be read.
+    -->
+    <button
+      *ngIf="state === 'rows' || state === 'empty'"
+      pButton
+      type="button"
+      size="small"
+      label="Create key"
+      icon="pi pi-plus"
+      [disabled]="true"
+      [attr.title]="createDisabledReason"
+      data-test="api-key-create-btn"
+    ></button>
+  </div>
+
+  <div
+    *ngIf="state === 'loading'"
+    class="admin-api-keys__loading"
+    data-test="api-keys-loading"
+  >
+    <span class="pi pi-spinner pi-spin"></span> Loading API keys…
+  </div>
+
+  <!--
+    THE DISTINCTION THIS PANE EXISTS FOR. Three separate branches, never one:
+    a route that is not mounted here, a deployment that genuinely has no keys,
+    and a request that failed. Collapsing any pair of them makes the pane state
+    something the server never said.
+  -->
+  <div
+    *ngIf="state === 'unavailable'"
+    class="admin-api-keys__unavailable"
+    data-test="api-keys-unavailable"
+  >
+    API keys are not available on this deployment.
+  </div>
+
+  <!--
+    A failure, with the server's own message and a retry. Deliberately NOT the
+    unavailable text: hiding a 500 behind "not available on this deployment"
+    would turn an outage into a shrug.
+  -->
+  <div
+    *ngIf="state === 'error'"
+    class="admin-api-keys__failed"
+    data-test="api-keys-load-failed"
+  >
+    <p class="admin-api-keys__failed-message" data-test="api-keys-error-message">
+      {{ errorMessage }}
+    </p>
+    <button
+      pButton
+      type="button"
+      size="small"
+      severity="secondary"
+      label="Retry"
+      icon="pi pi-refresh"
+      (click)="loadKeys()"
+      data-test="api-keys-retry-btn"
+    ></button>
+  </div>
+
+  <div
+    *ngIf="state === 'empty'"
+    class="admin-api-keys__empty"
+    data-test="api-keys-empty"
+  >
+    No API keys yet
+  </div>
+
+  <p-table
+    *ngIf="state === 'rows'"
+    [value]="keys"
+    [tableStyle]="{ 'min-width': '55rem' }"
+    data-test="api-keys-table"
+  >
+    <ng-template #header>
+      <tr>
+        <th>Key</th>
+        <th>Owner</th>
+        <th>Roles</th>
+        <th>Created</th>
+        <th>Expiry</th>
+      </tr>
+    </ng-template>
+
+    <ng-template #body let-key>
+      <tr [attr.data-test]="'api-key-row-' + key.key_id">
+        <td class="admin-api-keys__key-id" [attr.data-test]="'api-key-id-' + key.key_id">
+          {{ key.key_id }}
+        </td>
+
+        <!--
+          `owner_email`, falling back to `owner_id`. A machine identity may
+          carry no email, and a blank owner cell is not an answer.
+        -->
+        <td [attr.data-test]="'api-key-owner-' + key.key_id">
+          {{ ownerLabel(key) }}
+        </td>
+
+        <!-- An empty roles array renders `—`, never an empty cell. -->
+        <td [attr.data-test]="'api-key-roles-' + key.key_id">
+          {{ rolesLabel(key) }}
+        </td>
+
+        <td [attr.data-test]="'api-key-created-' + key.key_id">
+          {{ key.created_at | date: 'medium' }}
+        </td>
+
+        <!--
+          `null` renders the WORD "never" — an empty cell would read as missing
+          data when the truth is a key with no expiry. A past expiry keeps its
+          date and gains the marker beside it.
+        -->
+        <td [attr.data-test]="'api-key-expiry-' + key.key_id">
+          <span *ngIf="key.expiration === null; else expiryDate">{{
+            neverExpiresLabel
+          }}</span>
+          <ng-template #expiryDate>
+            {{ key.expiration | date: 'medium' }}
+            <p-tag
+              *ngIf="isExpired(key)"
+              severity="danger"
+              value="expired"
+              [attr.data-test]="'api-key-expired-' + key.key_id"
+            ></p-tag>
+          </ng-template>
+        </td>
+      </tr>
+    </ng-template>
+  </p-table>
+</div>

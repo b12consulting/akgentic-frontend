@@ -14,6 +14,7 @@ import {
   AgentStateListResponse,
   toTeamContext,
 } from '../context/team.interface';
+import { ApiKeyRecord } from '../../protocol/api-key.interface';
 import {
   Entry,
   EntryKind,
@@ -307,6 +308,38 @@ export class ApiService {
     const base = `${this.apiUrl}/admin/catalog/${kind}`;
     const url = opts?.all ? `${base}?all=true` : base;
     const response: Entry[] = await this.fetchService.fetch({ url });
+    return response ?? [];
+  }
+
+  /**
+   * List the API keys this caller may see — `GET /auth/apikeys`.
+   *
+   * ONE request, and no capability probing. There is no `HEAD`, no `OPTIONS`,
+   * no feature-flag endpoint and no second call of any kind: the response to
+   * this list call IS the signal for whether the deployment offers API keys at
+   * all. A probe would be a second contract to keep in sync with the first,
+   * and would still have to be believed over the actual answer.
+   *
+   * No filter parameters are plumbed. The route accepts them (`owner_id`,
+   * `role`, `expired`, …) but this pane has no consumer for one, and an unused
+   * parameter is a second contract for the same reason.
+   *
+   * `notifyOnError: false` — THE CALLER OWNS EVERY FAILURE BRANCH of this one
+   * call. A 404/501 here does not mean something went wrong; it means the
+   * route is not mounted on this deployment, which the pane states in place.
+   * The generic "Request failed: Not Found" toast would contradict that
+   * sentence while it is on screen. Everything that IS a failure (500, 401,
+   * 403) still rejects, and `ApiKeyListComponent` raises its own toast for it.
+   *
+   * Empty/204 bodies coalesce to `[]`; a non-2xx REJECTS and is never
+   * flattened into an empty list (ADR-026) — "you have no keys" and "we could
+   * not ask" are the two facts this whole pane exists to keep apart.
+   */
+  async getApiKeys(): Promise<ApiKeyRecord[]> {
+    const response: ApiKeyRecord[] = await this.fetchService.fetch({
+      url: `${this.apiUrl}/auth/apikeys`,
+      notifyOnError: false,
+    });
     return response ?? [];
   }
 
