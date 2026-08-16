@@ -1,11 +1,14 @@
 # akgentic-frontend
 
-Angular 19 web client for the [Akgentic](https://github.com/b12consulting) multi-agent framework.
+Angular 19 web client for the
+[Akgentic](https://github.com/b12consulting/akgentic-framework) multi-agent framework
+(open-source bundle).
 
 It talks to `akgentic-infra` over **HTTP + WebSocket** and holds no framework code of its own. That
 boundary is deliberate: the frontend is the one Akgentic package that is *not* part of the Python UV
 workspace and has no Python import relationship with any other package — the contract between them is
-a network protocol, not a module dependency.
+a network protocol, not a module dependency. It is distributed as an npm/container artifact, not on
+PyPI, so it is absent from the `akgentic-framework` bundle distribution.
 
 ## What it renders
 
@@ -18,7 +21,8 @@ A running team, from a single append-only event log fed by one WebSocket:
 - **Knowledge-graph panel** — reconnected through `ToolStateEvent`
 - **Catalog admin** — templates, tools, agents, teams
 
-Architecture documentation lives in the parent workspace at
+Architecture documentation lives in the parent
+[akgentic-framework](https://github.com/b12consulting/akgentic-framework) bundle at
 `_bmad-output/akgentic-frontend/architecture/` (sharded; start at `index.md`). Decision records are in
 `_bmad-output/akgentic-frontend/decisions/`.
 
@@ -29,7 +33,7 @@ Architecture documentation lives in the parent workspace at
 
 ## Running against a local backend
 
-Start the backend first (from the workspace root):
+Start the backend first, from the root of the `akgentic-framework` bundle checkout:
 
 ```bash
 python src/infra_server.py          # serves on :8000, no auto-reload — restart to load code changes
@@ -90,9 +94,11 @@ npm run lint                         # eslint over src/**/*.ts
 
 ## Working in this repository
 
-This package is a git submodule of the `akgentic-quick-start` workspace. Read that workspace's
-`CLAUDE.md` before contributing — it carries the Golden Rules (branch/issue conventions, commit
-standards, module boundaries) that apply to every change here.
+This package is a git submodule of the
+[akgentic-framework](https://github.com/b12consulting/akgentic-framework) bundle. Clone that
+repository and run `git submodule update --init` to get a checkout with the frontend in place, then
+read its `CLAUDE.md` before contributing — it carries the Golden Rules (branch/issue conventions,
+commit standards, module boundaries) that apply to every change here.
 
 Every branch is linked to a GitHub issue and named `<type>/<issue-number>-<short-description>`.
 Commits are signed (`git commit -s`) and follow Conventional Commits. Never push directly to `master`.
