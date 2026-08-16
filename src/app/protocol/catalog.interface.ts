@@ -8,25 +8,51 @@
  * Maps to the catalog backend's `NamespaceSummary` DTO (catalog Story 16.6):
  * a purpose-built, picker-friendly shape — no `Entry` envelope, no payload,
  * no user/parent/model metadata.
+ *
+ * All six fields the server pins are declared here, in its declaration order.
+ * `team` / `shareable` / `public` are REQUIRED, not optional: the server always
+ * sends them, and an optional boolean would reintroduce the absent-vs-false
+ * ambiguity that renders a public namespace as private.
+ *
+ * * `team` — a `kind="team"` entry exists (false for team-less libraries).
+ * * `shareable` — the `kind="meta"` entry's `payload.shareable` is `true`.
+ * * `public` — the `kind="meta"` entry's `payload.public` is `true`.
  */
 export interface NamespaceSummary {
   namespace: string;
   name: string;
   description: string;
+  team: boolean;
+  shareable: boolean;
+  public: boolean;
 }
 
 /**
- * The five catalog entry kinds.
+ * The six catalog entry kinds, as a runtime tuple.
  *
  * Mirrors the server-side `EntryKind` literal at
  * `packages/akgentic-catalog/src/akgentic/catalog/models/entry.py`:
- * `Literal["team", "agent", "tool", "model", "prompt"]`.
+ * `Literal["team", "agent", "tool", "model", "prompt", "meta"]`.
  *
  * `team`, `agent`, `tool` keep v1 semantics; `model` and `prompt` are new in
  * v2 (promoted to first-class so they can be referenced via the ref-sentinel
- * mechanism).
+ * mechanism); `meta` carries the namespace's own metadata entry.
+ *
+ * Callers that need to iterate the kinds (one list call per kind, a counts map
+ * seeded at zero) use this tuple, and `EntryKind` is derived from it — so the
+ * runtime list and the type can never disagree.
  */
-export type EntryKind = 'team' | 'agent' | 'tool' | 'model' | 'prompt';
+export const ENTRY_KINDS = [
+  'team',
+  'agent',
+  'tool',
+  'model',
+  'prompt',
+  'meta',
+] as const;
+
+/** One catalog entry kind — derived from {@link ENTRY_KINDS}. */
+export type EntryKind = (typeof ENTRY_KINDS)[number];
 
 /**
  * Unified v2 catalog entry — mirrors the server's Pydantic `Entry` model at

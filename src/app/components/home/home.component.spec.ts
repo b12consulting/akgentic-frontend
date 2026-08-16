@@ -218,7 +218,14 @@ describe('HomeComponent', () => {
   });
 
   it('(AC4 10.4) HomeComponent.createTeamAndNavigate delegates to contextService and has no reload compensation', async () => {
-    const ns = { namespace: 'cat-1', name: 'Cat One', description: 'first cat' };
+    const ns = {
+      namespace: 'cat-1',
+      name: 'Cat One',
+      description: 'first cat',
+      team: true,
+      shareable: false,
+      public: false,
+    };
     component.selectedNamespace$.next(ns);
     // The component has not invoked ngOnInit yet (no detectChanges in this
     // test), so contextSpy.getTeams should not have been called. Reset to
@@ -239,8 +246,22 @@ describe('HomeComponent', () => {
   it('(AC1 1.9) ngOnInit loads namespaces via getNamespaces and selects the first', async () => {
     apiSpy.getNamespaces.and.returnValue(
       Promise.resolve([
-        { namespace: 'agent-team-v1', name: 'Agent Team', description: 'Default' },
-        { namespace: 'rag-team-v1', name: 'RAG Team', description: 'With RAG' },
+        {
+          namespace: 'agent-team-v1',
+          name: 'Agent Team',
+          description: 'Default',
+          team: true,
+          shareable: false,
+          public: false,
+        },
+        {
+          namespace: 'rag-team-v1',
+          name: 'RAG Team',
+          description: 'With RAG',
+          team: true,
+          shareable: false,
+          public: false,
+        },
       ]),
     );
     await component.ngOnInit();
@@ -254,6 +275,9 @@ describe('HomeComponent', () => {
       namespace: 'agent-team-v1',
       name: 'Agent Team',
       description: 'Default',
+      team: true,
+      shareable: false,
+      public: false,
     });
     apiSpy.createTeam.calls.reset();
     await component.createTeam();
@@ -265,6 +289,9 @@ describe('HomeComponent', () => {
       namespace: 'rag-team-v1',
       name: 'RAG Team',
       description: 'With RAG',
+      team: true,
+      shareable: false,
+      public: false,
     });
     contextSpy.createTeamAndNavigate.calls.reset();
     await component.createTeamAndNavigate();
@@ -389,12 +416,24 @@ describe('HomeComponent', () => {
     // the seeded selection — otherwise the reconciliation correctly drops a
     // selection absent from the fetched list, clearing it to null.
     apiSpy.getNamespaces.and.returnValue(
-      Promise.resolve([{ namespace: 'foo', name: 'Foo', description: '' }]),
+      Promise.resolve([
+        {
+          namespace: 'foo',
+          name: 'Foo',
+          description: '',
+          team: true,
+          shareable: false,
+          public: false,
+        },
+      ]),
     );
     component.selectedNamespace$.next({
       namespace: 'foo',
       name: 'Foo',
       description: '',
+      team: true,
+      shareable: false,
+      public: false,
     });
     fixture.detectChanges();
     await fixture.whenStable();
@@ -409,12 +448,24 @@ describe('HomeComponent', () => {
     // See note above: keep the seeded selection present in the fetched list so
     // the reconciliation does not drop it during ngOnInit.
     apiSpy.getNamespaces.and.returnValue(
-      Promise.resolve([{ namespace: 'foo', name: 'Foo', description: '' }]),
+      Promise.resolve([
+        {
+          namespace: 'foo',
+          name: 'Foo',
+          description: '',
+          team: true,
+          shareable: false,
+          public: false,
+        },
+      ]),
     );
     component.selectedNamespace$.next({
       namespace: 'foo',
       name: 'Foo',
       description: '',
+      team: true,
+      shareable: false,
+      public: false,
     });
     fixture.detectChanges();
     await fixture.whenStable();
@@ -537,8 +588,22 @@ describe('HomeComponent', () => {
     // Prime a new list and invoke the (saved) handler — the dropdown must
     // refresh.
     const updated = [
-      { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
-      { namespace: 'rag-team-v1', name: 'RAG Team', description: 'd2' },
+      {
+        namespace: 'agent-team-v1',
+        name: 'Agent Team',
+        description: 'd1',
+        team: true,
+        shareable: false,
+        public: false,
+      },
+      {
+        namespace: 'rag-team-v1',
+        name: 'RAG Team',
+        description: 'd2',
+        team: true,
+        shareable: false,
+        public: false,
+      },
     ];
     apiSpy.getNamespaces.calls.reset();
     apiSpy.getNamespaces.and.returnValue(Promise.resolve(updated));
@@ -555,10 +620,27 @@ describe('HomeComponent', () => {
       namespace: 'agent-team-v1_copy',
       name: 'Agent Team_copy',
       description: 'clone',
+      team: true,
+      shareable: false,
+      public: false,
     });
     const refreshed = [
-      { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
-      { namespace: 'rag-team-v1', name: 'RAG Team', description: 'd2' },
+      {
+        namespace: 'agent-team-v1',
+        name: 'Agent Team',
+        description: 'd1',
+        team: true,
+        shareable: false,
+        public: false,
+      },
+      {
+        namespace: 'rag-team-v1',
+        name: 'RAG Team',
+        description: 'd2',
+        team: true,
+        shareable: false,
+        public: false,
+      },
     ];
     apiSpy.getNamespaces.and.returnValue(Promise.resolve(refreshed));
 
@@ -574,14 +656,31 @@ describe('HomeComponent', () => {
       namespace: 'rag-team-v1',
       name: 'RAG Team',
       description: 'original',
+      team: true,
+      shareable: false,
+      public: false,
     };
     component.selectedNamespace$.next(original);
 
     // Refresh returns a DIFFERENT object instance with the SAME namespace —
     // proves identity is compared on `namespace`, not object reference.
     const refreshed = [
-      { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
-      { namespace: 'rag-team-v1', name: 'RAG Team', description: 'refreshed copy' },
+      {
+        namespace: 'agent-team-v1',
+        name: 'Agent Team',
+        description: 'd1',
+        team: true,
+        shareable: false,
+        public: false,
+      },
+      {
+        namespace: 'rag-team-v1',
+        name: 'RAG Team',
+        description: 'refreshed copy',
+        team: true,
+        shareable: false,
+        public: false,
+      },
     ];
     apiSpy.getNamespaces.and.returnValue(Promise.resolve(refreshed));
 
@@ -597,6 +696,9 @@ describe('HomeComponent', () => {
       namespace: 'only-team-v1',
       name: 'Only Team',
       description: 'last one',
+      team: true,
+      shareable: false,
+      public: false,
     });
     apiSpy.getNamespaces.and.returnValue(Promise.resolve([]));
 
@@ -628,8 +730,22 @@ describe('HomeComponent', () => {
     expect(component.selectedNamespace$.value).toBeNull();
     apiSpy.getNamespaces.and.returnValue(
       Promise.resolve([
-        { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
-        { namespace: 'rag-team-v1', name: 'RAG Team', description: 'd2' },
+        {
+          namespace: 'agent-team-v1',
+          name: 'Agent Team',
+          description: 'd1',
+          team: true,
+          shareable: false,
+          public: false,
+        },
+        {
+          namespace: 'rag-team-v1',
+          name: 'RAG Team',
+          description: 'd2',
+          team: true,
+          shareable: false,
+          public: false,
+        },
       ]),
     );
 
@@ -640,7 +756,14 @@ describe('HomeComponent', () => {
 
   it('(14.2 AC7) getNamespaces failure leaves namespaces$ unchanged and logs', async () => {
     component.namespaces$.next([
-      { namespace: 'existing-v1', name: 'Existing', description: 'd' },
+      {
+        namespace: 'existing-v1',
+        name: 'Existing',
+        description: 'd',
+        team: true,
+        shareable: false,
+        public: false,
+      },
     ]);
     apiSpy.getNamespaces.and.returnValue(Promise.reject(new Error('boom')));
     const consoleErrorSpy = spyOn(console, 'error');
@@ -649,14 +772,35 @@ describe('HomeComponent', () => {
 
     expect(consoleErrorSpy).toHaveBeenCalled();
     expect(component.namespaces$.value).toEqual([
-      { namespace: 'existing-v1', name: 'Existing', description: 'd' },
+      {
+        namespace: 'existing-v1',
+        name: 'Existing',
+        description: 'd',
+        team: true,
+        shareable: false,
+        public: false,
+      },
     ]);
   });
 
   it('(11.5 AC13) namespaceIdentifiers returns the `.namespace` field of each namespaces$ entry', () => {
     component.namespaces$.next([
-      { namespace: 'foo', name: 'F', description: '' },
-      { namespace: 'bar', name: 'B', description: '' },
+      {
+        namespace: 'foo',
+        name: 'F',
+        description: '',
+        team: true,
+        shareable: false,
+        public: false,
+      },
+      {
+        namespace: 'bar',
+        name: 'B',
+        description: '',
+        team: true,
+        shareable: false,
+        public: false,
+      },
     ]);
     expect(component.namespaceIdentifiers).toEqual(['foo', 'bar']);
   });
@@ -781,6 +925,9 @@ describe('HomeComponent', () => {
       namespace: 'foo',
       name: 'Foo Display',
       description: '',
+      team: true,
+      shareable: false,
+      public: false,
     });
     expect(component.namespaceLabel).toBe('Foo Display');
   });
@@ -822,8 +969,22 @@ describe('HomeComponent', () => {
     // the default empty list: make `getNamespaces` resolve with the pair we
     // want to observe on the binding.
     const list = [
-      { namespace: 'alpha', name: 'Alpha', description: '' },
-      { namespace: 'beta', name: 'Beta', description: '' },
+      {
+        namespace: 'alpha',
+        name: 'Alpha',
+        description: '',
+        team: true,
+        shareable: false,
+        public: false,
+      },
+      {
+        namespace: 'beta',
+        name: 'Beta',
+        description: '',
+        team: true,
+        shareable: false,
+        public: false,
+      },
     ];
     apiSpy.getNamespaces.and.returnValue(Promise.resolve(list));
 
@@ -909,7 +1070,14 @@ describe('HomeComponent', () => {
     apiSpy.getNamespaces.calls.reset();
     apiSpy.getNamespaces.and.returnValue(
       Promise.resolve([
-        { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd' },
+        {
+          namespace: 'agent-team-v1',
+          name: 'Agent Team',
+          description: 'd',
+          team: true,
+          shareable: false,
+          public: false,
+        },
       ]),
     );
 
@@ -926,6 +1094,9 @@ describe('HomeComponent', () => {
       namespace: 'other-tenant-ns',
       name: 'Other Tenant',
       description: 'foreign-owned',
+      team: true,
+      shareable: false,
+      public: false,
     };
     apiSpy.getNamespaces.and.returnValue(Promise.resolve([foreign]));
     apiSpy.getNamespaces.calls.reset();
@@ -968,10 +1139,27 @@ describe('HomeComponent', () => {
       namespace: 'stale-ns',
       name: 'Stale',
       description: 'gone',
+      team: true,
+      shareable: false,
+      public: false,
     });
     const refreshed = [
-      { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
-      { namespace: 'rag-team-v1', name: 'RAG Team', description: 'd2' },
+      {
+        namespace: 'agent-team-v1',
+        name: 'Agent Team',
+        description: 'd1',
+        team: true,
+        shareable: false,
+        public: false,
+      },
+      {
+        namespace: 'rag-team-v1',
+        name: 'RAG Team',
+        description: 'd2',
+        team: true,
+        shareable: false,
+        public: false,
+      },
     ];
     apiSpy.getNamespaces.and.returnValue(Promise.resolve(refreshed));
 
@@ -991,12 +1179,29 @@ describe('HomeComponent', () => {
       namespace: 'rag-team-v1',
       name: 'RAG Team',
       description: 'original',
+      team: true,
+      shareable: false,
+      public: false,
     };
     component.selectedNamespace$.next(original);
     apiSpy.getNamespaces.and.returnValue(
       Promise.resolve([
-        { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
-        { namespace: 'rag-team-v1', name: 'RAG Team', description: 'refreshed' },
+        {
+          namespace: 'agent-team-v1',
+          name: 'Agent Team',
+          description: 'd1',
+          team: true,
+          shareable: false,
+          public: false,
+        },
+        {
+          namespace: 'rag-team-v1',
+          name: 'RAG Team',
+          description: 'refreshed',
+          team: true,
+          shareable: false,
+          public: false,
+        },
       ]),
     );
 
@@ -1113,6 +1318,9 @@ describe('HomeComponent', () => {
       namespace: 'agent-team-v1',
       name: 'Agent Team',
       description: 'd',
+      team: true,
+      shareable: false,
+      public: false,
     });
     component.currentPage = 4;
     component.first = 750;
@@ -1232,13 +1440,23 @@ describe('HomeComponent', () => {
       // clears it to null and the create branch has no namespace to use).
       apiSpy.getNamespaces.and.returnValue(
         Promise.resolve([
-          { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd' },
+          {
+            namespace: 'agent-team-v1',
+            name: 'Agent Team',
+            description: 'd',
+            team: true,
+            shareable: false,
+            public: false,
+          },
         ]),
       );
       component.selectedNamespace$.next({
         namespace: 'agent-team-v1',
         name: 'Agent Team',
         description: 'd',
+        team: true,
+        shareable: false,
+        public: false,
       });
       // Seed an EMPTY page so the create branch runs.
       contextSpy.loadTeamsPage.and.callFake(async () => {
