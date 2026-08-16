@@ -315,6 +315,24 @@ describe('admin routes (Story 36-1)', () => {
     expect(shell.querySelector('app-namespace-panel-route')).not.toBeNull();
   });
 
+  it('(36-11 review) the deep link mounts inside the shell SURFACE, not merely inside the shell', async () => {
+    // Story 36-11 put the card on `.admin-content` and asserted containment for
+    // the two rail destinations only. This is the third, and it is the one that
+    // brought its own page chrome from the days it was a top-level route — so
+    // pin it where the other two are pinned. Structure only: whether the
+    // container is painted is not something Karma can see.
+    await setUp({ user_id: 'anonymous' });
+    mountOutlet();
+
+    await goTo('/admin/catalog/namespace/acme-team-v1');
+
+    const surface = fixture!.nativeElement.querySelector(
+      '[data-test="admin-content"]',
+    );
+    expect(surface).not.toBeNull();
+    expect(surface.querySelector('app-namespace-panel-route')).not.toBeNull();
+  });
+
   it('(36-4 AC2) /admin/catalog still resolves to the catalog pane, not the panel', async () => {
     await setUp({ user_id: 'anonymous' });
     mountOutlet();

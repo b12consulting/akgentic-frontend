@@ -1,11 +1,20 @@
 // Story 11.6 — full-page admin layout wrapper for the namespace-panel
 // deep-link route. Minimal chrome; the panel owns its own styles.
 
+// Story 36-11 review — this route is the admin shell's THIRD destination
+// (36-4 re-parented it), so it renders inside `.admin-content`, which now
+// carries the card's padding and stretches to the shell's height. The page
+// chrome this section carried when it was a top-level route is therefore
+// double: its own inset stacked on the card's, making the deep link sit
+// further inside the card than Catalog and API Keys do — two card treatments,
+// which is exactly what putting the surface on the shell exists to prevent.
+// The `min-height` compounded it, demanding a full viewport inside a box that
+// is a viewport minus the card's margin and padding, so the section overflowed
+// the card it sits on. Both belong to the container now; the panel's editor
+// keeps its own `min-height: 400px`, so nothing here collapses.
 .namespace-panel-route {
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 4rem);
-  padding: 1.5rem 2rem;
   gap: 1rem;
   box-sizing: border-box;
 
