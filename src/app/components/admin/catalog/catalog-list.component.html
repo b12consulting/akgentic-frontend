@@ -180,9 +180,14 @@
   Delete confirmation. Follows the secondary-modal contract (ADR-018) so Story
   36-4's coordinated Escape handler can fold it in without rework:
   `[modal]="true"`, `[draggable]="false"`, and `[closeOnEscape]="false"` plus
-  the component's own Escape→cancel below. PrimeNG attaches `closeOnEscape` as
-  a DOCUMENT-level listener per dialog, so leaving it on would make one Escape
+  the component's own Escape→cancel. PrimeNG attaches `closeOnEscape` as a
+  DOCUMENT-level listener per dialog, so leaving it on would make one Escape
   close this dialog AND 36-4's panel host in turn.
+
+  The handler sits on the DIALOG HOST, not on the message body: the dialog's
+  own header close button is a sibling of that body, so a handler scoped to it
+  would leave Escape dead for a user who reached the header — and with
+  PrimeNG's own Escape deliberately off, nothing else would catch it.
 -->
 <p-dialog
   [visible]="confirmDialogVisible"
@@ -194,8 +199,9 @@
   [style]="{ width: '30rem' }"
   header="Delete namespace"
   data-test="delete-confirm-dialog"
+  (keydown.escape)="onDeleteCancel()"
 >
-  <div class="admin-catalog__confirm" (keydown.escape)="onDeleteCancel()">
+  <div class="admin-catalog__confirm">
     <p class="admin-catalog__confirm-message" data-test="delete-confirm-message">
       Delete the namespace
       <strong data-test="delete-confirm-namespace">{{

@@ -1,7 +1,9 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { RouterTestingModule } from '@angular/router/testing';
 import { MessageService } from 'primeng/api';
+import { Dialog } from 'primeng/dialog';
 import { BehaviorSubject } from 'rxjs';
 
 import { AuthService } from '../../../core/auth/auth.service';
@@ -436,6 +438,23 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(deleteBtn('global').disabled).toBeFalse();
   });
 
+  it('(AC7) an unknown owner stays closed when the caller has no user_id either', async () => {
+    // The fail-closed half of the predicate, on the ONLY input that can catch
+    // it. Every other spec names its caller, and `null === 'u-owner'` is false
+    // whether or not the explicit `owner !== null` guard is there — so without
+    // this spec that guard can be deleted with the suite still green, and
+    // `null === null` then hands every unowned namespace to every caller.
+    resolveRows([row('global', { owner: null, team: false })]);
+    currentUser$.next({ name: 'No identity' }); // no `user_id` at all
+    isAdmin$.next(false);
+    await render();
+
+    expect(component.canModify(component.rows[0])).toBeFalse();
+    expect(deleteBtn('global').disabled).toBeTrue();
+    expect(deleteBtn('global').getAttribute('title')).toBe(DELETE_DENIED_REASON);
+    expect(primaryAction('global').textContent!.trim()).toBe('View');
+  });
+
   it('(AC7b) a LATE admin resolution enables a non-owned row WITHOUT remounting', async () => {
     // `/auth/me` resolves after first render. A snapshot taken in the
     // constructor would leave a genuine admin looking at a disabled Delete
@@ -526,6 +545,62 @@ describe('CatalogListComponent (Story 36-3)', () => {
 
     expect(component.confirmDialogVisible).toBeFalse();
     expect(apiSpy.deleteNamespace).not.toHaveBeenCalled();
+  });
+
+  it('(AC12) the dialog keeps PrimeNG off Escape and takes it itself, for 36-4', async () => {
+    // Story 36-4 must fold this dialog into a coordinated Escape handler.
+    // PrimeNG attaches `closeOnEscape` as a DOCUMENT-level listener per
+    // dialog, so flipping it back on would make one Escape close this dialog
+    // AND 36-4's panel host in turn — silently, since the Escape spec below
+    // would still pass with PrimeNG doing the closing.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    deleteBtn('acme-team').click();
+    await settle();
+
+    const dialog = fixture.debugElement.query(By.directive(Dialog));
+    expect(dialog).not.toBeNull();
+    expect(dialog.componentInstance.closeOnEscape).toBeFalse();
+    expect(dialog.componentInstance.modal).toBeTrue();
+    expect(dialog.componentInstance.draggable).toBeFalse();
+  });
+
+  it('(AC12) Escape cancels from the dialog itself, not only from its message body', async () => {
+    // The dialog's own header close button is a SIBLING of the message body,
+    // so an Escape handler scoped to that body leaves Escape dead for anyone
+    // who reached the header — and PrimeNG's own Escape is deliberately off,
+    // so nothing else would catch it. Dispatching on the dialog host (which
+    // the body cannot see) discriminates the two placements.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    deleteBtn('acme-team').click();
+    await settle();
+    expect(component.confirmDialogVisible).toBeTrue();
+
+    byTest('delete-confirm-dialog')!.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
+    await settle();
+
+    expect(component.confirmDialogVisible).toBeFalse();
+    expect(component.pendingDelete).toBeNull();
+    expect(apiSpy.deleteNamespace).not.toHaveBeenCalled();
+  });
+
+  it('(AC12) the confirmation opens with Proceed focused', async () => {
+    // AC 12's affirmative-focused contract. The `@ViewChild` behind it is
+    // resolved by a template reference; renaming or moving that reference
+    // leaves the dialog opening with focus nowhere, which no other spec sees.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    deleteBtn('acme-team').click();
+    await settle();
+    component.onConfirmDialogShow();
+
+    expect(document.activeElement).toBe(byTest('delete-proceed-btn'));
   });
 
   it('(AC13) a successful delete removes that row and ONLY that row', async () => {
