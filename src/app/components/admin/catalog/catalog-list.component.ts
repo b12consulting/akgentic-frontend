@@ -12,10 +12,12 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
+import { InputTextModule } from 'primeng/inputtext';
 import { TableModule } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { Observable, combineLatest } from 'rxjs';
+import { map } from 'rxjs/operators';
 
 import { AuthService } from '../../../core/auth/auth.service';
 import { ApiService } from '../../../core/http/api.service';
@@ -25,6 +27,7 @@ import {
   NamespaceSummary,
 } from '../../../protocol/catalog.interface';
 import { NamespacePanelComponent } from '../../catalog/namespace-panel/namespace-panel.component';
+import { AdminSectionCounts } from '../admin-section-counts.service';
 
 /**
  * Why a Delete control the caller may not use is DISABLED and not HIDDEN.
@@ -37,6 +40,39 @@ import { NamespacePanelComponent } from '../../catalog/namespace-panel/namespace
  */
 export const DELETE_DENIED_REASON =
   'Only the owner or an admin can delete this namespace';
+
+/**
+ * What the pane says it is showing, which depends on who is asking.
+ *
+ * An admin's list is the deployment; everyone else's is their own namespaces
+ * plus whatever is shared publicly. Stating that inline is what stops an
+ * ordinary user reading a short list as "the deployment is nearly empty".
+ * Exported so the spec imports the strings instead of duplicating them.
+ */
+export const CATALOG_DESCRIPTION_ADMIN =
+  'Every namespace on this deployment. Select one to edit its configuration.';
+
+export const CATALOG_DESCRIPTION_MEMBER =
+  'Namespaces you own, plus those shared publicly. Select one to edit its configuration.';
+
+/** The filter box's placeholder — the only text that says what it filters. */
+export const CATALOG_FILTER_PLACEHOLDER = 'Filter namespaces…';
+
+/**
+ * The kinds the Entries column RENDERS — every kind except `meta`.
+ *
+ * `meta` is the namespace's own `_meta` implementation entry: always 0 or 1,
+ * never something an operator acts on, and pure noise in a list whose job is to
+ * say how much a namespace holds. It stays on the wire and in the model (all
+ * six keys) — only the column narrows.
+ *
+ * DERIVED from {@link ENTRY_KINDS} rather than hand-written, so a seventh kind
+ * added server-side appears here without an edit. Hand-writing the five is the
+ * one way this list can silently fall behind the protocol.
+ */
+export const SHOWN_ENTRY_KINDS: readonly EntryKind[] = ENTRY_KINDS.filter(
+  (kind) => kind !== 'meta',
+);
 
 /**
  * Who is looking at the table, as one value read from the live auth streams.
@@ -99,6 +135,7 @@ interface CatalogViewer {
     FormsModule,
     ButtonModule,
     DialogModule,
+    InputTextModule,
     TableModule,
     TagModule,
     ToggleSwitchModule,
@@ -111,11 +148,16 @@ export class CatalogListComponent implements OnInit {
   readonly #api = inject(ApiService);
   readonly #auth = inject(AuthService);
   readonly #destroyRef = inject(DestroyRef);
+  readonly #sectionCounts = inject(AdminSectionCounts);
 
-  /** Iterated by the counts cell — the tuple, never a hand-written list. */
-  readonly entryKinds = ENTRY_KINDS;
+  /**
+   * Iterated by the counts cell — DERIVED from the protocol tuple, never a
+   * hand-written list. `meta` is excluded; see {@link SHOWN_ENTRY_KINDS}.
+   */
+  readonly shownEntryKinds = SHOWN_ENTRY_KINDS;
 
   readonly deleteDeniedReason = DELETE_DENIED_REASON;
+  readonly filterPlaceholder = CATALOG_FILTER_PLACEHOLDER;
 
   /**
    * Gates the admin-only "show all namespaces" toggle, consumed through the
@@ -123,11 +165,34 @@ export class CatalogListComponent implements OnInit {
    */
   readonly isAdmin$: Observable<boolean> = this.#auth.isAdmin$;
 
+  /**
+   * What the pane says it is showing. Off the same stream as everything else
+   * role-driven here, so a late `/auth/me` rewrites it in place rather than
+   * leaving an admin told they are looking at their own namespaces.
+   */
+  readonly description$: Observable<string> = this.#auth.isAdmin$.pipe(
+    map((isAdmin) =>
+      isAdmin ? CATALOG_DESCRIPTION_ADMIN : CATALOG_DESCRIPTION_MEMBER,
+    ),
+  );
+
+  /** Every row the ONE request returned — the rail's count reads this. */
   rows: NamespaceSummary[] = [];
+  /**
+   * The subset the table renders. A FIELD, recomputed by `#applyFilter()`, and
+   * deliberately not a getter: `p-table` treats a new array reference as new
+   * input and re-processes its whole value, so a getter allocating per change
+   * detection would re-run that on every pass.
+   */
+  filteredRows: NamespaceSummary[] = [];
+  /** The filter box's raw text; matching is on its trimmed, lowered form. */
+  filterText = '';
   loading = false;
   /** A rejected load is NOT an empty catalog — the two never render alike. */
   loadFailed = false;
   showAll = false;
+  /** True while an export is in flight — the single-flight gate reads it. */
+  exporting = false;
 
   confirmDialogVisible = false;
   pendingDelete: NamespaceSummary | null = null;
@@ -188,14 +253,22 @@ export class CatalogListComponent implements OnInit {
     this.loadFailed = false;
     try {
       this.rows = await this.#api.getNamespaces({ all: this.showAll });
+      // The rail states what the deployment holds, so it reads the LOADED
+      // count, never the filtered one.
+      this.#sectionCounts.setCatalog(this.rows.length);
     } catch {
       // FetchService already toasted (ADR-026); adding another would
       // double-report. Render the failure state — never an empty table, which
       // would assert "this deployment has no namespaces" for a request that
       // never got an answer.
       this.rows = [];
+      // ...and for the same reason the rail goes back to UNKNOWN rather than
+      // to `0`: a badge reading `0` would make the same false claim in the
+      // margin that the empty table would make in the middle of the page.
+      this.#sectionCounts.setCatalog(null);
       this.loadFailed = true;
     } finally {
+      this.#applyFilter();
       this.loading = false;
     }
   }
@@ -203,6 +276,47 @@ export class CatalogListComponent implements OnInit {
   onToggleShowAll(value: boolean): void {
     this.showAll = value;
     void this.loadRows();
+  }
+
+  /**
+   * The filter box. Client-side over rows ALREADY IN MEMORY — typing issues no
+   * request, which is the whole point of Story 36-8's single load.
+   */
+  onFilterChange(value: string): void {
+    this.filterText = value;
+    this.#applyFilter();
+  }
+
+  /**
+   * Recompute `filteredRows` from `rows` and the current needle.
+   *
+   * Matches case-insensitively against BOTH the identifier and the display
+   * name: an operator who knows a namespace by either should find it by
+   * either. Every path that rebuilds `rows` must come through here — a load, a
+   * filter keystroke, and the delete-success path, which otherwise leaves a
+   * deleted row standing in the filtered view.
+   */
+  #applyFilter(): void {
+    const needle = this.filterText.trim().toLowerCase();
+    this.filteredRows =
+      needle === ''
+        ? this.rows
+        : this.rows.filter(
+            (row) =>
+              row.namespace.toLowerCase().includes(needle) ||
+              row.name.toLowerCase().includes(needle),
+          );
+  }
+
+  /**
+   * True iff the filter is hiding every loaded row.
+   *
+   * A DIFFERENT fact from an empty catalog, and rendered differently: "no
+   * namespaces match this filter" is about the box the operator just typed in,
+   * while `catalog-empty` claims the deployment holds nothing at all.
+   */
+  get filterHidesEverything(): boolean {
+    return this.rows.length > 0 && this.filteredRows.length === 0;
   }
 
   /**
@@ -214,10 +328,21 @@ export class CatalogListComponent implements OnInit {
    * still allowed for an admin.
    */
   canModify(row: NamespaceSummary): boolean {
-    return (
-      this.#viewer.isAdmin ||
-      (row.owner !== null && row.owner === this.#viewer.userId)
-    );
+    return this.#viewer.isAdmin || this.isOwnedByViewer(row);
+  }
+
+  /**
+   * The ownership half of the rule, ALONE — the `you` chip's predicate.
+   *
+   * Extracted from `canModify` rather than written a second time: an admin who
+   * is not the owner must get no `you` chip, so the chip needs this half
+   * without the disjunction, and two copies of an equality drift.
+   *
+   * The `owner !== null` guard is load-bearing. Drop it and `null === null`
+   * hands every unowned namespace to every caller who also has no `user_id`.
+   */
+  isOwnedByViewer(row: NamespaceSummary): boolean {
+    return row.owner !== null && row.owner === this.#viewer.userId;
   }
 
   /**
@@ -233,6 +358,16 @@ export class CatalogListComponent implements OnInit {
    */
   primaryActionLabel(row: NamespaceSummary): string {
     return this.canModify(row) ? 'Configure' : 'View';
+  }
+
+  /**
+   * The icon beside that label. The control keeps its text — Configure-vs-View
+   * IS the entitlement affordance, and it is where a non-owner learns they are
+   * read-only before clicking — so this reinforces the label rather than
+   * replacing it.
+   */
+  primaryActionIcon(row: NamespaceSummary): string {
+    return this.canModify(row) ? 'pi pi-cog' : 'pi pi-eye';
   }
 
   /** `null` when allowed, so the attribute is absent rather than empty. */
@@ -254,6 +389,79 @@ export class CatalogListComponent implements OnInit {
    */
   countLabel(row: NamespaceSummary, kind: EntryKind): string {
     return String(row.counts[kind].total);
+  }
+
+  /** True for a kind this namespace holds none of — rendered dimmed, never hidden. */
+  isZeroCount(row: NamespaceSummary, kind: EntryKind): boolean {
+    return row.counts[kind].total === 0;
+  }
+
+  /**
+   * The `Σ` total: the sum of the kinds the column SHOWS.
+   *
+   * It excludes `meta` for the same reason the column does — a total that
+   * counted a kind the row does not display would not add up on inspection,
+   * and an operator checking the arithmetic would conclude the numbers are
+   * wrong rather than that one is hidden.
+   */
+  shownTotal(row: NamespaceSummary): number {
+    return SHOWN_ENTRY_KINDS.reduce(
+      (total, kind) => total + row.counts[kind].total,
+      0,
+    );
+  }
+
+  /**
+   * Export this namespace as YAML and hand it to the browser as a download.
+   *
+   * `all` is threaded exactly as `loadRows()` threads it, so an admin looking
+   * at "show all" can export a namespace they do not own — the flag that made
+   * the row visible is the flag that makes it readable.
+   *
+   * The re-entrancy guard is the TypeScript early return, NOT a `[disabled]`
+   * attribute: a disabled attribute does not stop a keyboard-driven activation
+   * (epic 33's lesson), and two overlapping exports would race two downloads
+   * of the same name.
+   *
+   * A rejection leaves the row untouched and raises NO toast of its own —
+   * `FetchService` already surfaced the server's message (ADR-026).
+   */
+  async onExportClick(row: NamespaceSummary): Promise<void> {
+    if (this.exporting) {
+      return;
+    }
+    this.exporting = true;
+    try {
+      const yaml = await this.#api.exportNamespace(row.namespace, {
+        all: this.showAll,
+      });
+      this.#download(`${row.namespace}.yaml`, yaml);
+    } catch {
+      // Deliberately empty: the row survives and the toast is not ours.
+    } finally {
+      this.exporting = false;
+    }
+  }
+
+  /**
+   * Hand `text` to the browser as a file named `filename`.
+   *
+   * Its own method so the export flow has a seam a spec can observe: the
+   * object URL is created and REVOKED around a single synthetic click, and a
+   * spec asserts both halves rather than letting a real navigation happen.
+   */
+  #download(filename: string, text: string): void {
+    const url = URL.createObjectURL(
+      new Blob([text], { type: 'application/yaml' }),
+    );
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    // Revoked immediately: the click has already handed the blob to the
+    // download, and an un-revoked object URL leaks its buffer for the life of
+    // the document.
+    URL.revokeObjectURL(url);
   }
 
   onDeleteClick(row: NamespaceSummary): void {
@@ -297,6 +505,10 @@ export class CatalogListComponent implements OnInit {
     try {
       await this.#api.deleteNamespace(row.namespace);
       this.rows = this.rows.filter((r) => r.namespace !== row.namespace);
+      // The filtered view is derived, so it must be rebuilt here too — without
+      // this the deleted row survives in the table whenever a filter is on.
+      this.#applyFilter();
+      this.#sectionCounts.setCatalog(this.rows.length);
     } catch {
       // Deliberately empty: the row survives and the toast is not ours.
     } finally {

@@ -1,19 +1,40 @@
 <div class="admin-shell">
-  <ng-container *ngIf="sections$ | async as sections">
+  <ng-container *ngIf="railItems$ | async as items">
     <!--
-      `*ngIf` on the section COUNT, not an `*ngFor` over a filtered list: an
+      `*ngIf` on the item COUNT, not an `*ngFor` over a filtered list: an
       `*ngFor` yielding zero items still leaves this <nav> in the DOM, and the
       contract is that a one-section area renders no rail at all.
     -->
-    <nav class="admin-rail" *ngIf="sections.length > 1">
+    <nav class="admin-rail" *ngIf="items.length > 1">
+      <!--
+        Names the area the rail belongs to. A non-anchor on purpose — it is a
+        heading, not a destination — and it exists only where the rail does.
+      -->
+      <span class="admin-rail-eyebrow" data-test="admin-rail-eyebrow"
+        >ADMINISTRATION</span
+      >
+
       <a
-        *ngFor="let section of sections"
+        *ngFor="let item of items"
         class="admin-rail-item"
-        [routerLink]="['/admin', section.path]"
+        [routerLink]="['/admin', item.section.path]"
         routerLinkActive="active"
       >
-        <span [class]="section.icon"></span>
-        <span class="admin-rail-label">{{ section.label }}</span>
+        <span [class]="item.section.icon"></span>
+        <span class="admin-rail-label">{{ item.section.label }}</span>
+        <!--
+          Trailing count, published by the pane that already loaded the data —
+          the shell fetches nothing. `!== null` and not truthiness: a known ZERO
+          renders `0`, while an unknown count renders no element at all. Testing
+          truthiness here would collapse the two into one blank.
+        -->
+        <p-tag
+          *ngIf="item.count !== null"
+          class="admin-rail-count"
+          severity="secondary"
+          [value]="item.count.toString()"
+          [attr.data-test]="'admin-rail-count-' + item.section.path"
+        ></p-tag>
       </a>
     </nav>
   </ng-container>

@@ -18,6 +18,15 @@
   box-sizing: border-box;
 }
 
+// Story 36-9 — names the area the rail belongs to.
+.admin-rail-eyebrow {
+  padding: 0 0.75rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-color-secondary, #6b7280);
+}
+
 .admin-rail-item {
   display: flex;
   align-items: center;
@@ -33,10 +42,23 @@
   }
 
   // `routerLinkActive` marks the pane currently mounted in the outlet.
+  //
+  // Story 36-9: deliberately NOT the same declaration as `:hover` above. When
+  // both painted `--surface-hover`, the pointer made every item look active and
+  // the active one indistinguishable. The accent and the inset rule are what
+  // separate them; all three values come from theme tokens, so the treatment
+  // follows the preset in light and dark.
   &.active {
-    background: var(--surface-hover, #f3f4f6);
+    background: var(--surface-100, #f3f4f6);
+    color: var(--primary-color, #2563eb);
     font-weight: 600;
+    box-shadow: inset 3px 0 0 0 var(--primary-color, #2563eb);
   }
+}
+
+// Trailing and right-aligned: the label owns the row, the number trails it.
+.admin-rail-count {
+  margin-left: auto;
 }
 
 .admin-content {

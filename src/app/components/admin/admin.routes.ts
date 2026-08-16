@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 
 import { namespacePanelCanDeactivate } from '../catalog/namespace-panel/namespace-panel.guard';
+import { AdminSectionCounts } from './admin-section-counts.service';
 import { AdminShellComponent } from './admin-shell.component';
 import { adminGuard } from './admin.guard';
 
@@ -20,11 +21,18 @@ import { adminGuard } from './admin.guard';
  * Story 36-4 added the namespace-panel deep link as the FIRST child, so the
  * shipped `/admin/catalog/namespace/:namespace` URL now renders inside the
  * shell rather than replacing the page.
+ *
+ * Story 36-9 registered `AdminSectionCounts` on THIS route's `providers`. A
+ * route-level provider creates one environment injector for the route and its
+ * `loadComponent` children together, so the shell and both panes resolve the
+ * same instance and the rail's counts cost no request. It is deliberately not
+ * `providedIn: 'root'` — see that service for why.
  */
 export const ADMIN_ROUTES: Routes = [
   {
     path: '',
     component: AdminShellComponent,
+    providers: [AdminSectionCounts],
     children: [
       {
         // Story 11.6's deep link, re-parented here by Story 36-4. The URL it

@@ -23,9 +23,14 @@ import {
   NamespaceSummary,
 } from '../../../protocol/catalog.interface';
 import { NamespacePanelComponent } from '../../catalog/namespace-panel/namespace-panel.component';
+import { AdminSectionCounts } from '../admin-section-counts.service';
 import {
+  CATALOG_DESCRIPTION_ADMIN,
+  CATALOG_DESCRIPTION_MEMBER,
+  CATALOG_FILTER_PLACEHOLDER,
   CatalogListComponent,
   DELETE_DENIED_REASON,
+  SHOWN_ENTRY_KINDS,
 } from './catalog-list.component';
 import { EXPECTED_COUNTS, NAMESPACES } from './catalog-list.fixtures';
 
@@ -174,6 +179,7 @@ describe('CatalogListComponent (Story 36-3)', () => {
   let messageSpy: jasmine.SpyObj<MessageService>;
   let currentUser$: BehaviorSubject<any>;
   let isAdmin$: BehaviorSubject<boolean>;
+  let sectionCounts: AdminSectionCounts;
 
   beforeEach(async () => {
     // The pane calls exactly two of these. The other four are stubbed anyway so
@@ -212,6 +218,11 @@ describe('CatalogListComponent (Story 36-3)', () => {
           provide: AuthService,
           useValue: { currentUser$, isAdmin$ },
         },
+        // The REAL holder (Story 36-9), registered on the shell's route in
+        // production. The pane publishes its row count into it; asserting on
+        // what it holds is how the rail's number is checked without mounting
+        // the shell.
+        AdminSectionCounts,
       ],
     })
       // ONE swap now that 36-8 deleted the composing service: the
@@ -224,9 +235,17 @@ describe('CatalogListComponent (Story 36-3)', () => {
       })
       .compileComponents();
 
+    sectionCounts = TestBed.inject(AdminSectionCounts);
     fixture = TestBed.createComponent(CatalogListComponent);
     component = fixture.componentInstance;
   });
+
+  /** The value the pane last published for the admin rail's Catalog badge. */
+  function publishedCatalogCount(): number | null {
+    let published: number | null = null;
+    sectionCounts.catalog$.subscribe((value) => (published = value)).unsubscribe();
+    return published;
+  }
 
   /** Serve one page's worth of rows from the ONE request the pane issues. */
   function resolveRows(rows: NamespaceSummary[]): void {
@@ -418,7 +437,11 @@ describe('CatalogListComponent (Story 36-3)', () => {
     ]);
 
     for (const namespace of ids) {
-      for (const kind of ENTRY_KINDS) {
+      // SHOWN_ENTRY_KINDS, not ENTRY_KINDS: Story 36-9 dropped `meta` from the
+      // COLUMN (FR21) while leaving it on the wire and in the model, the same
+      // way 36-8 superseded 36-2's seven-request count. The numbers themselves
+      // are unchanged.
+      for (const kind of SHOWN_ENTRY_KINDS) {
         expect(countValue(namespace, kind))
           .withContext(`${namespace}/${kind}`)
           .toBe(String(EXPECTED_COUNTS[namespace][kind]));
@@ -529,15 +552,22 @@ describe('CatalogListComponent (Story 36-3)', () => {
 
   // --- AC 5: counts --------------------------------------------------------
 
-  it('(AC5) renders all six kinds for every row', async () => {
+  it('(AC5) renders every SHOWN kind for every row, and no meta cell', async () => {
+    // Superseded from 36-3's "all six kinds" by Story 36-9 / FR21: `meta` is the
+    // `_meta` implementation entry, always 0 or 1, and noise in an operator's
+    // list. It stays on the wire and in the model — only the column narrows,
+    // which is what the absence assertion below pins.
     await render();
 
     for (const namespace of ['acme-team', 'contoso-product']) {
-      for (const kind of ENTRY_KINDS) {
+      for (const kind of SHOWN_ENTRY_KINDS) {
         expect(countValue(namespace, kind))
           .withContext(`${namespace}/${kind}`)
           .not.toBeNull();
       }
+      expect(byTest(`ns-count-${namespace}-meta`))
+        .withContext(`${namespace}/meta`)
+        .toBeNull();
     }
   });
 
@@ -575,7 +605,7 @@ describe('CatalogListComponent (Story 36-3)', () => {
     // This is the spec that catches a flattening done on the wrong side.
     await render();
 
-    for (const kind of ENTRY_KINDS) {
+    for (const kind of SHOWN_ENTRY_KINDS) {
       expect(countValue('acme-team', kind))
         .withContext(kind)
         .not.toContain('object');
@@ -593,17 +623,19 @@ describe('CatalogListComponent (Story 36-3)', () => {
     currentUser$.next({ user_id: OTHER, roles: ['user'] });
     await render();
 
-    const asNonAdmin = ENTRY_KINDS.map((k) => countValue('acme-coding', k));
+    const asNonAdmin = SHOWN_ENTRY_KINDS.map((k) =>
+      countValue('acme-coding', k),
+    );
 
     isAdmin$.next(true);
     currentUser$.next({ user_id: 'u-admin', roles: ['admin'] });
     await settle();
 
-    expect(ENTRY_KINDS.map((k) => countValue('acme-coding', k))).toEqual(
+    expect(SHOWN_ENTRY_KINDS.map((k) => countValue('acme-coding', k))).toEqual(
       asNonAdmin,
     );
     expect(asNonAdmin).toEqual(
-      ENTRY_KINDS.map((k) => String(EXPECTED_COUNTS['acme-coding'][k])),
+      SHOWN_ENTRY_KINDS.map((k) => String(EXPECTED_COUNTS['acme-coding'][k])),
     );
   });
 
@@ -1455,6 +1487,547 @@ describe('CatalogListComponent (Story 36-3)', () => {
     await settle();
 
     expect(component.existingNamespaces).toEqual(['contoso-product']);
+  });
+
+  // =========================================================================
+  // Story 36-9 — the mockup's information architecture, on the app's own style
+  // =========================================================================
+
+  // --- AC 4: what the pane publishes to the rail ---------------------------
+
+  it('(36-9 AC4) a successful load publishes the LOADED row count', async () => {
+    resolveRows(NAMESPACES);
+    await render();
+
+    expect(publishedCatalogCount()).toBe(5);
+  });
+
+  it('(36-9 AC4) a FAILED load publishes unknown, never zero', async () => {
+    // A `0` in the rail would make the same false claim the empty table would:
+    // "this deployment has no namespaces", for a request that never answered.
+    apiSpy.getNamespaces.and.returnValue(Promise.reject(new Error('boom')));
+    await render();
+
+    expect(component.loadFailed).toBeTrue();
+    expect(publishedCatalogCount()).toBeNull();
+  });
+
+  it('(36-9 AC4) an EMPTY catalog publishes zero — a fact, not an absence', async () => {
+    resolveRows([]);
+    await render();
+
+    expect(publishedCatalogCount()).toBe(0);
+  });
+
+  it('(36-9 AC2) the published count is the LOADED count, not the filtered one', async () => {
+    // The rail states what the deployment holds; the filter box is about what
+    // the operator is currently looking at. Publishing the filtered length
+    // would make the rail's number jump around as they type.
+    await render();
+    expect(publishedCatalogCount()).toBe(2);
+
+    component.onFilterChange('acme');
+    await settle();
+
+    expect(component.filteredRows.length).toBe(1);
+    expect(publishedCatalogCount()).toBe(2);
+  });
+
+  it('(36-9 AC4) a delete republishes the smaller count', async () => {
+    apiSpy.deleteNamespace.and.returnValue(Promise.resolve());
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    expect(publishedCatalogCount()).toBe(2);
+
+    deleteBtn('acme-team').click();
+    await settle();
+    (byTest('delete-proceed-btn') as HTMLButtonElement).click();
+    await settle();
+
+    expect(publishedCatalogCount()).toBe(1);
+  });
+
+  // --- AC 7: the role-aware description ------------------------------------
+
+  it('(36-9 AC7) an admin is told the list is the whole deployment', async () => {
+    isAdmin$.next(true);
+    await render();
+
+    expect(byTest('catalog-description')!.textContent!.trim()).toBe(
+      CATALOG_DESCRIPTION_ADMIN,
+    );
+  });
+
+  it('(36-9 AC7) everyone else is told what their own list contains', async () => {
+    currentUser$.next({ user_id: OTHER, roles: ['user'] });
+    await render();
+
+    expect(byTest('catalog-description')!.textContent!.trim()).toBe(
+      CATALOG_DESCRIPTION_MEMBER,
+    );
+  });
+
+  it('(36-9 AC7) a LATE admin resolution rewrites the description in place', async () => {
+    // `/auth/me` resolves after first render, so a snapshot would leave a
+    // genuine admin told they are looking only at their own namespaces.
+    await render();
+    expect(byTest('catalog-description')!.textContent!.trim()).toBe(
+      CATALOG_DESCRIPTION_MEMBER,
+    );
+
+    isAdmin$.next(true);
+    await settle();
+
+    expect(byTest('catalog-description')!.textContent!.trim()).toBe(
+      CATALOG_DESCRIPTION_ADMIN,
+    );
+  });
+
+  // --- AC 8, 9: the client-side filter -------------------------------------
+
+  it('(36-9 AC8) the filter box is present and says what it filters', async () => {
+    await render();
+
+    const input = byTest('catalog-filter') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    expect(input.getAttribute('placeholder')).toBe(CATALOG_FILTER_PLACEHOLDER);
+  });
+
+  it('(36-9 AC8) filtering narrows on the IDENTIFIER, case-insensitively', async () => {
+    await render();
+
+    component.onFilterChange('CONTOSO');
+    await settle();
+
+    expect(byTest('ns-id-contoso-product')).not.toBeNull();
+    expect(byTest('ns-id-acme-team')).toBeNull();
+  });
+
+  it('(36-9 AC8) filtering narrows on the DISPLAY NAME too', async () => {
+    // The fixture's names are `<namespace> display`, so a needle that only the
+    // NAME carries is the one that proves both fields are matched.
+    resolveRows([
+      row('ns-one', { name: 'Payroll workspace' }),
+      row('ns-two', { name: 'Sandbox' }),
+    ]);
+    await render();
+
+    component.onFilterChange('payroll');
+    await settle();
+
+    expect(byTest('ns-id-ns-one')).not.toBeNull();
+    expect(byTest('ns-id-ns-two')).toBeNull();
+  });
+
+  it('(36-9 AC8) the needle is TRIMMED before matching', async () => {
+    await render();
+
+    component.onFilterChange('  acme  ');
+    await settle();
+
+    expect(byTest('ns-id-acme-team')).not.toBeNull();
+    expect(byTest('ns-id-contoso-product')).toBeNull();
+  });
+
+  it('(36-9 AC8) typing issues ZERO requests', async () => {
+    // The whole point of Story 36-8's single load. A request per keystroke
+    // would give it back with interest, and only a NUMBER catches that.
+    await render();
+    const before = totalApiCalls();
+
+    component.onFilterChange('a');
+    await settle();
+    component.onFilterChange('ac');
+    await settle();
+    component.onFilterChange('acme');
+    await settle();
+    component.onFilterChange('');
+    await settle();
+
+    expect(totalApiCalls()).toBe(before);
+  });
+
+  it('(36-9 AC8) clearing the filter restores every row', async () => {
+    await render();
+    component.onFilterChange('acme');
+    await settle();
+    expect(byTest('ns-id-contoso-product')).toBeNull();
+
+    component.onFilterChange('');
+    await settle();
+
+    expect(byTest('ns-id-acme-team')).not.toBeNull();
+    expect(byTest('ns-id-contoso-product')).not.toBeNull();
+  });
+
+  it('(36-9 AC8) the loaded set is untouched by filtering', async () => {
+    // `component.rows` stays what the server sent — the filter is a view over
+    // it, not a replacement for it.
+    await render();
+
+    component.onFilterChange('acme');
+    await settle();
+
+    expect(component.rows).toEqual(defaultRows());
+  });
+
+  it('(36-9 AC9) a filter matching nothing is NOT an empty catalog', async () => {
+    // Three distinct states, three distinct hooks. Collapsing the no-match case
+    // into `catalog-empty` would tell the operator the deployment is empty
+    // when their own filter is what is hiding everything.
+    await render();
+
+    component.onFilterChange('nothing-matches-this');
+    await settle();
+
+    expect(byTest('catalog-no-match')).not.toBeNull();
+    expect(byTest('catalog-empty')).toBeNull();
+    expect(byTest('catalog-load-failed')).toBeNull();
+    expect(byTest('catalog-table')).toBeNull();
+  });
+
+  it('(36-9 AC9) an EMPTY catalog still renders catalog-empty, not the no-match state', async () => {
+    resolveRows([]);
+    await render();
+
+    expect(byTest('catalog-empty')).not.toBeNull();
+    expect(byTest('catalog-no-match')).toBeNull();
+  });
+
+  it('(36-9 AC9) a deleted row leaves the FILTERED view too', async () => {
+    // The delete-success path rebuilds `rows`; if it does not rebuild the
+    // filtered view, the row survives on screen whenever a filter is on.
+    apiSpy.deleteNamespace.and.returnValue(Promise.resolve());
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    component.onFilterChange('acme');
+    await settle();
+    expect(byTest('ns-id-acme-team')).not.toBeNull();
+
+    deleteBtn('acme-team').click();
+    await settle();
+    (byTest('delete-proceed-btn') as HTMLButtonElement).click();
+    await settle();
+
+    expect(byTest('ns-id-acme-team')).toBeNull();
+    expect(component.filteredRows.map((r) => r.namespace)).toEqual([]);
+  });
+
+  // --- AC 10: identifier first ---------------------------------------------
+
+  it('(36-9 AC10) the Namespace cell puts the IDENTIFIER before the display name', async () => {
+    // DOM ORDER, not a class and not a font: the identifier is what you act on,
+    // deep-link to and filter against, so it leads.
+    await render();
+
+    const idEl = byTest('ns-id-acme-team')!;
+    const cell = idEl.parentElement!;
+    const nameEl = cell.querySelector('.admin-catalog__ns-name')!;
+
+    expect(idEl.textContent!.trim()).toBe('acme-team');
+    expect(nameEl.textContent!.trim()).toBe('acme-team display');
+    expect(
+      idEl.compareDocumentPosition(nameEl) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  // --- AC 11: the `you` chip -----------------------------------------------
+
+  it('(36-9 AC11) the owner gets a "you" chip on their own row', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    expect(byTest('ns-owner-you-acme-team')).not.toBeNull();
+    expect(byTest('ns-owner-you-acme-team')!.textContent!.trim()).toBe('you');
+    // ...and not on the row they do not own.
+    expect(byTest('ns-owner-you-contoso-product')).toBeNull();
+  });
+
+  it('(36-9 AC11) an ADMIN who is not the owner gets NO chip', async () => {
+    // The chip says "yours", not "you may". An admin may modify every row and
+    // owns none of them here — marking them all would make the chip meaningless.
+    currentUser$.next({ user_id: 'u-admin', roles: ['admin'] });
+    isAdmin$.next(true);
+    await render();
+
+    expect(component.canModify(component.rows[0])).toBeTrue();
+    expect(byTest('ns-owner-you-acme-team')).toBeNull();
+    expect(byTest('ns-owner-you-contoso-product')).toBeNull();
+  });
+
+  it('(36-9 AC11) an UNKNOWN owner gets no chip, whoever is asking', async () => {
+    // `owner === null` must not coincide with a caller who also has none.
+    resolveRows([row('global', { owner: null, team: false })]);
+    currentUser$.next({ name: 'No identity' });
+    await render();
+
+    expect(component.isOwnedByViewer(component.rows[0])).toBeFalse();
+    expect(byTest('ns-owner-you-global')).toBeNull();
+  });
+
+  it('(36-9 AC11) the chip and canModify read ONE expression', async () => {
+    // The refactor's evidence: `canModify` is `isAdmin || isOwnedByViewer`, so
+    // for a non-admin the two must agree row for row. A second equality written
+    // for the chip would drift from this one.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    isAdmin$.next(false);
+    await render();
+
+    for (const r of component.rows) {
+      expect(component.canModify(r))
+        .withContext(r.namespace)
+        .toBe(component.isOwnedByViewer(r));
+    }
+  });
+
+  // --- AC 12: the Σ total and dimmed zeros ---------------------------------
+
+  it('(36-9 AC12) Σ sums the SHOWN kinds, excluding meta', async () => {
+    // `acme-team` is team 1, agent 5, tool 0, model 0, prompt 1, meta 1. The
+    // total is 7, not 8 — the fixture is chosen so that dropping `meta` changes
+    // the answer, which is the only way this assertion proves anything.
+    resolveRows(NAMESPACES);
+    await render();
+
+    expect(byTest('ns-total-acme-team')!.textContent!.trim()).toBe('7');
+    expect(component.shownTotal(component.rows[0])).toBe(7);
+  });
+
+  it('(36-9 AC12) Σ agrees with the numbers rendered beside it', async () => {
+    // The column must add up on inspection, for every row.
+    resolveRows(NAMESPACES);
+    await render();
+
+    for (const summary of component.rows) {
+      const shown = SHOWN_ENTRY_KINDS.map((kind) =>
+        Number(countValue(summary.namespace, kind)),
+      ).reduce((a, b) => a + b, 0);
+      expect(byTest(`ns-total-${summary.namespace}`)!.textContent!.trim())
+        .withContext(summary.namespace)
+        .toBe(String(shown));
+    }
+  });
+
+  it('(36-9 AC12) a zero is PRESENT and marked, never hidden', async () => {
+    // Absent would read as "unknown", which is exactly what a zero is not —
+    // Story 36-8 works hard to guarantee a present zero. The marker is asserted,
+    // the colour and the opacity are not: a spec pinned to those makes the
+    // theme unchangeable.
+    await render();
+
+    const zero = byTest('ns-count-acme-team-tool')!;
+    expect(zero.textContent!.trim()).toBe('0');
+    expect(
+      zero.closest('.admin-catalog__count')!.classList,
+    ).toContain('admin-catalog__count--zero');
+
+    const nonZero = byTest('ns-count-acme-team-agent')!;
+    expect(nonZero.textContent!.trim()).toBe('5');
+    expect(
+      nonZero.closest('.admin-catalog__count')!.classList,
+    ).not.toContain('admin-catalog__count--zero');
+  });
+
+  it('(36-9 AC12) the shown kinds are DERIVED from the protocol tuple', async () => {
+    // Hand-writing the five is the one way this list falls silently behind a
+    // seventh kind added server-side.
+    expect(SHOWN_ENTRY_KINDS).toEqual(
+      ENTRY_KINDS.filter((kind) => kind !== 'meta'),
+    );
+    expect(SHOWN_ENTRY_KINDS).not.toContain('meta');
+  });
+
+  // --- AC 13, 15: three controls, in order ---------------------------------
+
+  it('(36-9 AC13) the row carries Configure/View, export and delete, in that order', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    const hooks = Array.from(
+      byTest('ns-row-acme-team')!.querySelectorAll(
+        '[data-test^="ns-configure-"], [data-test^="ns-export-"], [data-test^="ns-delete-"]',
+      ),
+    ).map((el) => el.getAttribute('data-test'));
+    expect(hooks).toEqual([
+      'ns-configure-acme-team',
+      'ns-export-acme-team',
+      'ns-delete-acme-team',
+    ]);
+  });
+
+  it('(36-9 AC13) all three stay NATIVE buttons', async () => {
+    // A `<p-button>` component would keep the `data-test` hook on its own host,
+    // so `.tagName` and `.disabled` — which the authorization specs read —
+    // would report `P-BUTTON` and `undefined`.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    for (const hook of ['ns-configure', 'ns-export', 'ns-delete']) {
+      expect(byTest(`${hook}-acme-team`)!.tagName)
+        .withContext(hook)
+        .toBe('BUTTON');
+    }
+  });
+
+  it('(36-9 AC13) the primary action keeps its visible label', async () => {
+    // Not a style preference: Configure-vs-View IS the entitlement affordance,
+    // and it is where a non-owner learns they are read-only before clicking.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    expect(primaryAction('acme-team').textContent!.trim()).toBe('Configure');
+    expect(primaryAction('contoso-product').textContent!.trim()).toBe('View');
+  });
+
+  it('(36-9 AC15) the icon delete keeps disabled + title on a NON-OWNER row', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    isAdmin$.next(false);
+    await render();
+
+    const btn = deleteBtn('contoso-product');
+    expect(btn).not.toBeNull();
+    expect(btn.disabled).toBeTrue();
+    expect(btn.getAttribute('title')).toBe(DELETE_DENIED_REASON);
+  });
+
+  it('(36-9 AC15) an ENTITLED row carries NO title — the name comes from aria-label', async () => {
+    // `title` means one thing here: the denial reason. A well-meaning
+    // `title="Delete namespace"` added for the icon-only case would redden the
+    // AC8 and AC10 authorization specs above.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    const btn = deleteBtn('acme-team');
+    expect(btn.disabled).toBeFalse();
+    expect(btn.getAttribute('title')).toBeNull();
+    expect(btn.getAttribute('aria-label')).toBe('Delete namespace acme-team');
+  });
+
+  it('(36-9 AC13) delete no longer carries the destructive class', async () => {
+    // Destructive intent lives in the confirmation dialog, whose Proceed keeps
+    // its treatment — asserted here so the two do not both drift.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    expect(deleteBtn('acme-team').classList).not.toContain(
+      'admin-catalog__danger',
+    );
+
+    deleteBtn('acme-team').click();
+    await settle();
+
+    expect(
+      (byTest('delete-proceed-btn') as HTMLButtonElement).classList,
+    ).toContain('admin-catalog__danger');
+  });
+
+  // --- AC 14: export -------------------------------------------------------
+
+  /** Watch the object-URL lifecycle instead of letting a real download run. */
+  function stubObjectUrl(): { create: jasmine.Spy; revoke: jasmine.Spy } {
+    return {
+      create: spyOn(URL, 'createObjectURL').and.returnValue('blob:stub'),
+      revoke: spyOn(URL, 'revokeObjectURL'),
+    };
+  }
+
+  it('(36-9 AC14) export calls the existing client with the row and all=false', async () => {
+    stubObjectUrl();
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('kind: team\n'));
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    (byTest('ns-export-acme-team') as HTMLButtonElement).click();
+    await settle();
+
+    expect(apiSpy.exportNamespace).toHaveBeenCalledOnceWith('acme-team', {
+      all: false,
+    });
+  });
+
+  it('(36-9 AC14) export threads `all` exactly as loadRows does', async () => {
+    // So an admin in "show all" can export a namespace they do not own: the
+    // flag that made the row visible is the flag that makes it readable.
+    stubObjectUrl();
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('kind: team\n'));
+    isAdmin$.next(true);
+    currentUser$.next({ user_id: 'u-admin', roles: ['admin'] });
+    await render();
+    component.onToggleShowAll(true);
+    await settle();
+
+    (byTest('ns-export-contoso-product') as HTMLButtonElement).click();
+    await settle();
+
+    expect(apiSpy.exportNamespace).toHaveBeenCalledOnceWith('contoso-product', {
+      all: true,
+    });
+  });
+
+  it('(36-9 AC14) the YAML is handed to the browser as <namespace>.yaml', async () => {
+    const url = stubObjectUrl();
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('kind: team\n'));
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    (byTest('ns-export-acme-team') as HTMLButtonElement).click();
+    await settle();
+
+    expect(url.create).toHaveBeenCalledTimes(1);
+    expect(url.create.calls.mostRecent().args[0] instanceof Blob).toBeTrue();
+    // The leak check: an un-revoked object URL holds its buffer for the life of
+    // the document.
+    expect(url.revoke).toHaveBeenCalledOnceWith('blob:stub');
+  });
+
+  it('(36-9 AC14) a SECOND activation while one export is in flight is refused', async () => {
+    // By a TypeScript early return, not by a `[disabled]` attribute: a disabled
+    // attribute does not stop a keyboard-driven activation (epic 33's lesson),
+    // so the guard is driven here by calling the handler directly.
+    stubObjectUrl();
+    let release!: (yaml: string) => void;
+    apiSpy.exportNamespace.and.returnValue(
+      new Promise<string>((resolve) => {
+        release = resolve;
+      }),
+    );
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    void component.onExportClick(component.rows[0]);
+    void component.onExportClick(component.rows[0]);
+    await settle();
+
+    expect(apiSpy.exportNamespace).toHaveBeenCalledTimes(1);
+
+    release('kind: team\n');
+    await settle();
+
+    // ...and the gate reopens once the first one lands.
+    void component.onExportClick(component.rows[0]);
+    await settle();
+    expect(apiSpy.exportNamespace).toHaveBeenCalledTimes(2);
+  });
+
+  it('(36-9 AC14) a rejected export leaves the row and raises NO toast of its own', async () => {
+    // FetchService already surfaced the server's message (ADR-026); a second
+    // would report one failure twice.
+    const url = stubObjectUrl();
+    apiSpy.exportNamespace.and.callFake(async () => {
+      messageSpy.add({ severity: 'error', summary: 'Error', detail: 'boom' });
+      throw new HttpError('boom', 500, 'boom');
+    });
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    (byTest('ns-export-acme-team') as HTMLButtonElement).click();
+    await settle();
+
+    expect(byTest('ns-id-acme-team')).not.toBeNull();
+    expect(messageSpy.add).toHaveBeenCalledTimes(1);
+    expect(url.create).not.toHaveBeenCalled();
+    // ...and the single-flight gate is released, not stuck closed.
+    expect(component.exporting).toBeFalse();
   });
 
   it('(36-4 AC15) (saved) refreshes the table AND the panel list in ONE call', async () => {

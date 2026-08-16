@@ -1,6 +1,32 @@
 <div data-test="admin-catalog-pane" class="admin-pane admin-catalog">
   <div class="admin-catalog__toolbar">
-    <h2 class="admin-catalog__title">Catalog</h2>
+    <div class="admin-catalog__heading">
+      <h2 class="admin-catalog__title">Catalog</h2>
+      <!--
+        What the list actually contains, which depends on who is asking. Off
+        `isAdmin$` through the `async` pipe like every other role-driven surface
+        here, so a late `/auth/me` rewrites it in place.
+      -->
+      <span class="admin-catalog__description" data-test="catalog-description">{{
+        description$ | async
+      }}</span>
+    </div>
+
+    <!--
+      Client-side filter over rows ALREADY IN MEMORY. It issues NO request:
+      Story 36-8 reduced this pane to one load, and a request per keystroke
+      would give that back with interest.
+    -->
+    <input
+      pInputText
+      type="text"
+      class="admin-catalog__filter"
+      [placeholder]="filterPlaceholder"
+      [ngModel]="filterText"
+      (ngModelChange)="onFilterChange($event)"
+      data-test="catalog-filter"
+      aria-label="Filter namespaces"
+    />
 
     <!--
       Admin-only "show all namespaces" toggle. `*ngIf` on the ELEMENT so a
@@ -56,18 +82,37 @@
       The catalog could not be loaded. Use Refresh to try again.
     </div>
 
+    <!--
+      Three MUTUALLY EXCLUSIVE branches, each a different fact:
+
+        rows = 0                      -> this deployment has no namespaces
+        rows > 0, filtered = 0        -> the operator's filter is hiding them
+        filtered > 0                  -> the table
+
+      Written as three sibling conditions rather than a chain of `else`
+      templates: an `#else` reference does not resolve across embedded views,
+      and the flat form is what makes the exclusivity readable.
+    -->
     <ng-template #loadedBranch>
       <div
-        *ngIf="rows.length === 0; else tableBranch"
+        *ngIf="rows.length === 0"
         class="admin-catalog__empty"
         data-test="catalog-empty"
       >
         No namespaces
       </div>
 
-      <ng-template #tableBranch>
+      <div
+        *ngIf="filterHidesEverything"
+        class="admin-catalog__empty"
+        data-test="catalog-no-match"
+      >
+        No namespaces match this filter
+      </div>
+
+      <ng-container *ngIf="filteredRows.length > 0">
         <p-table
-          [value]="rows"
+          [value]="filteredRows"
           [tableStyle]="{ 'min-width': '55rem' }"
           data-test="catalog-table"
         >
@@ -83,22 +128,38 @@
 
           <ng-template #body let-row>
             <tr [attr.data-test]="'ns-row-' + row.namespace">
+              <!--
+                IDENTIFIER FIRST, name beneath. The identifier is what an
+                operator acts on, deep-links to and filters against; the display
+                name is a courtesy. Monospace for the same reason: it is a key,
+                and a proportional face makes two near-identical keys look alike.
+              -->
               <td>
-                <div class="admin-catalog__ns-name">{{ row.name }}</div>
                 <div
                   class="admin-catalog__ns-id"
                   [attr.data-test]="'ns-id-' + row.namespace"
                 >
                   {{ row.namespace }}
                 </div>
+                <div class="admin-catalog__ns-name">{{ row.name }}</div>
               </td>
 
               <!--
                 The raw `user_id` — the frontend has no user directory to
                 resolve it against. `null` is an UNKNOWN owner, not "nobody".
+
+                The `you` chip marks the caller's OWN rows, off the same
+                ownership expression `canModify` uses. An admin who is not the
+                owner gets no chip: the chip says "yours", not "you may".
               -->
               <td [attr.data-test]="'ns-owner-' + row.namespace">
                 {{ row.owner ?? 'unknown' }}
+                <p-tag
+                  *ngIf="isOwnedByViewer(row)"
+                  severity="info"
+                  value="you"
+                  [attr.data-test]="'ns-owner-you-' + row.namespace"
+                ></p-tag>
               </td>
 
               <td
@@ -123,13 +184,24 @@
               </td>
 
               <!--
-                All six kinds, every row — the server zero-fills, so every key
-                is present. A `0` renders as `0`, never a blank: one request
-                paints the page, so there is no per-column failure left to
-                distinguish a blank from.
+                The five SHOWN kinds, every row — the server zero-fills, so
+                every key is present. A `0` renders as `0`, never a blank: one
+                request paints the page, so there is no per-column failure left
+                to distinguish a blank from. A zero is DIMMED and present, not
+                hidden: absent would read as "unknown", which is the one thing
+                it is not.
+
+                `meta` is the namespace's own `_meta` entry — always 0 or 1, and
+                noise here. It stays on the wire and in the model; only this
+                column narrows. `Σ` sums exactly what is shown, so the column
+                adds up on inspection.
               -->
               <td class="admin-catalog__counts">
-                <span *ngFor="let kind of entryKinds" class="admin-catalog__count">
+                <span
+                  *ngFor="let kind of shownEntryKinds"
+                  class="admin-catalog__count"
+                  [class.admin-catalog__count--zero]="isZeroCount(row, kind)"
+                >
                   <span class="admin-catalog__count-kind">{{ kind }}</span>
                   <span
                     class="admin-catalog__count-value"
@@ -137,8 +209,26 @@
                     >{{ countLabel(row, kind) }}</span
                   >
                 </span>
+                <span class="admin-catalog__count admin-catalog__count--total">
+                  <span class="admin-catalog__count-kind">Σ</span>
+                  <span
+                    class="admin-catalog__count-value"
+                    [attr.data-test]="'ns-total-' + row.namespace"
+                    >{{ shownTotal(row) }}</span
+                  >
+                </span>
               </td>
 
+              <!--
+                Three controls, in the order an operator reaches for them:
+                configure, export, delete. All three are NATIVE <button> with
+                the `pButton` directive — a <p-button> component would put the
+                `data-test` hook on its own host, so the authorization specs'
+                `.tagName` and `.disabled` reads would break for a purely
+                cosmetic reason. Styled as Home's row actions (rounded,
+                secondary, a `pi` icon), copied and not imported: `page-admin`
+                may not depend on `page-home`.
+              -->
               <td class="admin-catalog__actions">
                 <!--
                   Label differs by entitlement; the DESTINATION does not — both
@@ -147,28 +237,61 @@
                   in-page open, so the list stays mounted behind the panel. The
                   deep-link URL is still bookmarkable, just no longer reached by
                   clicking here.
+
+                  It KEEPS its visible label while its two neighbours are
+                  icon-only. Configure-vs-View is the entitlement affordance —
+                  it is where a non-owner learns they are read-only before
+                  clicking — so hiding it behind an icon would take the one
+                  piece of text that carries the rule.
                 -->
                 <button
                   pButton
                   type="button"
                   size="small"
                   severity="secondary"
+                  [rounded]="true"
+                  [icon]="primaryActionIcon(row)"
+                  [label]="primaryActionLabel(row)"
                   (click)="onPrimaryActionClick(row)"
                   [attr.data-test]="'ns-configure-' + row.namespace"
-                >
-                  {{ primaryActionLabel(row) }}
-                </button>
+                ></button>
                 <!--
-                  Disabled, never hidden, and carrying the reason as a native
-                  `title` — a disabled button fires no mouse events, so
-                  `pTooltip` would never show it.
+                  Export the namespace as YAML. Read-only, entitlement-free: it
+                  returns exactly what the caller could already list.
                 -->
                 <button
                   pButton
                   type="button"
                   size="small"
-                  label="Delete"
-                  class="admin-catalog__danger"
+                  severity="secondary"
+                  [rounded]="true"
+                  icon="pi pi-download"
+                  [attr.aria-label]="'Export namespace ' + row.namespace"
+                  (click)="onExportClick(row)"
+                  [attr.data-test]="'ns-export-' + row.namespace"
+                ></button>
+                <!--
+                  Disabled, never hidden, and carrying the reason as a native
+                  `title` — a disabled button fires no mouse events, so
+                  `pTooltip` would never show it.
+
+                  `title` means ONE thing here: the denial reason, absent when
+                  there is none. The accessible name comes from `aria-label`
+                  instead, so an entitled row's button carries no `title` at all
+                  — which is what the authorization specs assert.
+
+                  Not red. This app carries destructive intent in the
+                  confirmation dialog (the Proceed button below keeps its
+                  treatment), exactly as Home does with Delete Team.
+                -->
+                <button
+                  pButton
+                  type="button"
+                  size="small"
+                  severity="secondary"
+                  [rounded]="true"
+                  icon="pi pi-times"
+                  [attr.aria-label]="'Delete namespace ' + row.namespace"
                   [disabled]="!canModify(row)"
                   [attr.title]="deleteDisabledReason(row)"
                   (click)="onDeleteClick(row)"
@@ -178,7 +301,7 @@
             </tr>
           </ng-template>
         </p-table>
-      </ng-template>
+      </ng-container>
     </ng-template>
   </ng-container>
 </div>

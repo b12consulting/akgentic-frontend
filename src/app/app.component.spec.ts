@@ -480,6 +480,63 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
     expect(component.items?.some((i) => i.label === 'Home')).toBeTrue();
     expect(adminEntry()).toBeDefined();
   });
+
+  // --- Story 36-9 — the `admin` tag on the menubar user chip ---------------
+  //
+  // Asserted on the DOM, unlike the entries above: the claim is that a tag is
+  // RENDERED inside the username entry, which `component.items` cannot show.
+  // `MenubarModule` and `TagModule` are both in this suite's override set, so
+  // the menubar really renders and an absent tag really is absent.
+
+  function adminTag(): HTMLElement | null {
+    return fixture.nativeElement.querySelector(
+      '[data-test="menubar-admin-tag"]',
+    );
+  }
+
+  it('(36-9 AC6) an admin gets an "admin" tag on the username entry', async () => {
+    await emitUser({ name: 'Alice', user_id: 'u-1', roles: ['admin'] });
+
+    const tag = adminTag();
+    expect(tag).not.toBeNull();
+    expect(tag!.textContent!.trim()).toBe('admin');
+    // Inside the username entry, not floating somewhere else on the bar.
+    expect(tag!.closest('.username-menu')).not.toBeNull();
+  });
+
+  it('(36-9 AC6) a non-admin gets NO tag element at all', async () => {
+    await emitUser({ name: 'Bob', user_id: 'u-2', roles: ['user'] });
+
+    expect(adminTag()).toBeNull();
+  });
+
+  it('(36-9 AC6) the anonymous user gets no tag either', async () => {
+    await emitUser({ user_id: 'anonymous', name: 'Anonymous' });
+
+    expect(adminTag()).toBeNull();
+  });
+
+  it('(36-9 AC6) exactly ONE tag renders, not one per menubar entry', async () => {
+    // The `#item` template renders for every entry, so a predicate that only
+    // tested `isAdmin` would stamp the tag onto Home, Clear and Admin as well.
+    await emitUser({ name: 'Alice', user_id: 'u-1', roles: ['admin'] });
+
+    expect(
+      fixture.nativeElement.querySelectorAll('[data-test="menubar-admin-tag"]')
+        .length,
+    ).toBe(1);
+  });
+
+  it('(36-9 AC6) a LATE admin resolution makes the tag appear without a remount', async () => {
+    await emitUser({ user_id: 'anonymous', name: 'Anonymous' });
+    expect(adminTag()).toBeNull();
+
+    const componentBefore = component;
+    await emitUser({ name: 'Alice', user_id: 'u-1', roles: ['admin'] });
+
+    expect(component).toBe(componentBefore);
+    expect(adminTag()).not.toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------

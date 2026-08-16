@@ -8,9 +8,27 @@
   margin-bottom: 1rem;
 }
 
+.admin-catalog__heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-right: auto;
+}
+
 .admin-catalog__title {
   margin: 0;
-  margin-right: auto;
+}
+
+// Story 36-9 — what the list contains, beside the heading rather than above it.
+.admin-catalog__description {
+  font-size: 0.85rem;
+  color: var(--text-color-secondary, #6b7280);
+}
+
+.admin-catalog__filter {
+  width: 16rem;
+  max-width: 100%;
 }
 
 .admin-catalog__show-all {
@@ -27,11 +45,16 @@
   color: var(--text-color-secondary, #6b7280);
 }
 
-.admin-catalog__ns-name {
+// Story 36-9 inverted the cell: the IDENTIFIER leads, in the monospace face
+// used for keys across the admin area (the API-keys pane next door does the
+// same for `key_id`), and the display name trails it, muted.
+.admin-catalog__ns-id {
+  font-family: var(--font-family-mono, monospace);
   font-weight: 600;
+  font-size: 0.85rem;
 }
 
-.admin-catalog__ns-id {
+.admin-catalog__ns-name {
   font-size: 0.8rem;
   color: var(--text-color-secondary, #6b7280);
 }
@@ -62,6 +85,19 @@
 .admin-catalog__count-value {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
+}
+
+// A kind this namespace holds none of: DIMMED and present, never hidden.
+// Absence would read as "unknown", which is exactly what a zero is not.
+.admin-catalog__count--zero {
+  opacity: 0.45;
+}
+
+// The `Σ` over the shown kinds, set apart from them by a rule rather than by a
+// colour, so it reads as a total and not as a sixth kind.
+.admin-catalog__count--total {
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--surface-border, #e5e7eb);
 }
 
 .admin-catalog__actions {

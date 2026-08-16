@@ -11,6 +11,7 @@ import {
   ApiKeyRecord,
   CreateApiKeyResponse,
 } from '../../../protocol/api-key.interface';
+import { AdminSectionCounts } from '../admin-section-counts.service';
 import {
   ApiKeyListComponent,
   NEVER_EXPIRES_LABEL,
@@ -124,6 +125,7 @@ describe('ApiKeyListComponent (Stories 36-5, 36-6)', () => {
   let apiSpy: jasmine.SpyObj<ApiService>;
   let messageSpy: jasmine.SpyObj<MessageService>;
   let currentUser$: BehaviorSubject<unknown>;
+  let sectionCounts: AdminSectionCounts;
 
   beforeEach(async () => {
     apiSpy = jasmine.createSpyObj<ApiService>('ApiService', [
@@ -149,11 +151,22 @@ describe('ApiKeyListComponent (Stories 36-5, 36-6)', () => {
           provide: AuthService,
           useValue: { currentUser$: currentUser$.asObservable() },
         },
+        // The REAL holder (Story 36-9), registered on the shell's route in
+        // production. The pane publishes its key count into it.
+        AdminSectionCounts,
       ],
     }).compileComponents();
 
+    sectionCounts = TestBed.inject(AdminSectionCounts);
     fixture = TestBed.createComponent(ApiKeyListComponent);
   });
+
+  /** The value the pane last published for the admin rail's API Keys badge. */
+  function publishedKeyCount(): number | null {
+    let published: number | null = null;
+    sectionCounts.apiKeys$.subscribe((value) => (published = value)).unsubscribe();
+    return published;
+  }
 
   /** Mount and let the initial load settle — `ngOnInit` starts an async call. */
   async function render(): Promise<void> {
@@ -1250,5 +1263,87 @@ describe('ApiKeyListComponent (Stories 36-5, 36-6)', () => {
         ).toBeNull();
       });
     }
+  });
+
+  // =========================================================================
+  // Story 36-9 — what this pane publishes to the admin rail
+  // =========================================================================
+
+  describe('the rail count is honest per state (36-9 AC4)', () => {
+    it('publishes the key count in the rows state', async () => {
+      apiSpy.getApiKeys.and.returnValue(
+        Promise.resolve([key({ key_id: 'ak-acme-1' }), key({ key_id: 'ak-acme-2' })]),
+      );
+
+      await render();
+
+      expect(publishedKeyCount()).toBe(2);
+    });
+
+    it('publishes ZERO in the empty state — a fact, not an absence', async () => {
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([]));
+
+      await render();
+
+      expect(publishedKeyCount()).toBe(0);
+    });
+
+    it('publishes UNKNOWN while the load is in flight', async () => {
+      let release!: (keys: ApiKeyRecord[]) => void;
+      apiSpy.getApiKeys.and.returnValue(
+        new Promise<ApiKeyRecord[]>((resolve) => {
+          release = resolve;
+        }),
+      );
+
+      fixture.detectChanges();
+      expect(publishedKeyCount()).toBeNull();
+
+      release([key()]);
+      await settle();
+      expect(publishedKeyCount()).toBe(1);
+    });
+
+    for (const status of [404, 501]) {
+      it(`publishes UNKNOWN after a ${status} — the community-tier answer`, async () => {
+        // This tier mounts no `/auth/**` at all, so the pane sits here forever
+        // and its badge is correctly absent forever. A `0` would claim the
+        // deployment has no keys, which it cannot know.
+        apiSpy.getApiKeys.and.returnValue(
+          Promise.reject(new HttpError('Nope', status, null)),
+        );
+
+        await render();
+
+        expect(publishedKeyCount()).toBeNull();
+      });
+    }
+
+    it('publishes UNKNOWN after a 500 — an outage is not a zero either', async () => {
+      apiSpy.getApiKeys.and.returnValue(
+        Promise.reject(new HttpError('boom', 500, 'boom')),
+      );
+
+      await render();
+
+      expect(publishedKeyCount()).toBeNull();
+    });
+
+    it('republishes after a revoke removes a row', async () => {
+      apiSpy.getApiKeys.and.returnValue(
+        Promise.resolve([key({ key_id: 'ak-acme-1' }), key({ key_id: 'ak-acme-2' })]),
+      );
+      apiSpy.revokeApiKey.and.returnValue(Promise.resolve());
+      await render();
+      expect(publishedKeyCount()).toBe(2);
+
+      fixture.componentInstance.onRevokeClick(
+        fixture.componentInstance.keys[0],
+      );
+      await fixture.componentInstance.onRevokeProceed();
+      await settle();
+
+      expect(publishedKeyCount()).toBe(1);
+    });
   });
 });

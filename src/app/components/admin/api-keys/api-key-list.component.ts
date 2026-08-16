@@ -20,6 +20,7 @@ import {
   CreateApiKeyRequest,
   CreateApiKeyResponse,
 } from '../../../protocol/api-key.interface';
+import { AdminSectionCounts } from '../admin-section-counts.service';
 import { ApiKeyCreateDialogComponent } from './api-key-create.dialog';
 import { ApiKeyRevealComponent } from './api-key-reveal.component';
 import { ApiKeyPaneState, ENDPOINT_ABSENT_STATUSES } from './api-key.model';
@@ -124,6 +125,7 @@ export function toRecord(response: CreateApiKeyResponse): ApiKeyRecord {
 export class ApiKeyListComponent implements OnInit {
   readonly #api = inject(ApiService);
   readonly #messages = inject(MessageService);
+  readonly #sectionCounts = inject(AdminSectionCounts);
 
   readonly noRolesPlaceholder = NO_ROLES_PLACEHOLDER;
   readonly neverExpiresLabel = NEVER_EXPIRES_LABEL;
@@ -176,6 +178,9 @@ export class ApiKeyListComponent implements OnInit {
   async loadKeys(): Promise<void> {
     this.state = 'loading';
     this.errorMessage = '';
+    // In flight there is no honest number, so the rail's badge goes away rather
+    // than showing the previous load's answer as if it were this one's.
+    this.#publishCount();
     try {
       const keys = await this.#api.getApiKeys();
       this.keys = keys;
@@ -199,7 +204,23 @@ export class ApiKeyListComponent implements OnInit {
       if (!(err instanceof NetworkError)) {
         this.#messages.add({ severity: 'error', summary: this.errorMessage });
       }
+    } finally {
+      this.#publishCount();
     }
+  }
+
+  /**
+   * Publish the key count to the admin rail, or `null` for UNKNOWN.
+   *
+   * Only `rows` and `empty` carry an honest number; `loading`, `unavailable`
+   * and `error` do not, and each must render no badge rather than a `0`. On the
+   * community tier — which mounts no `/auth/**` at all — this pane sits in
+   * `unavailable` forever, so its badge is correctly absent forever. That is
+   * the case the `null` exists for.
+   */
+  #publishCount(): void {
+    const known = this.state === 'rows' || this.state === 'empty';
+    this.#sectionCounts.setApiKeys(known ? this.keys.length : null);
   }
 
   /** True while any write is in flight — every dismissal channel reads this. */
@@ -250,6 +271,7 @@ export class ApiKeyListComponent implements OnInit {
       this.createDialogVisible = false;
       this.keys = [toRecord(response), ...this.keys];
       this.state = 'rows';
+      this.#publishCount();
       this.#openReveal(response);
     } catch {
       // Deliberately empty: the dialog survives with its values, and the toast
@@ -372,6 +394,7 @@ export class ApiKeyListComponent implements OnInit {
     if (this.keys.length === 0) {
       this.state = 'empty';
     }
+    this.#publishCount();
   }
 
   // --- The one-time reveal --------------------------------------------------
