@@ -1,5 +1,6 @@
 import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { Router } from '@angular/router';
 import { RouterTestingModule } from '@angular/router/testing';
 import { BehaviorSubject, of } from 'rxjs';
@@ -270,5 +271,63 @@ describe('AdminShellComponent (Story 36-1)', () => {
     const active = anchors.filter((a) => a.classList.contains('active'));
     expect(active.length).toBe(1);
     expect(active[0].getAttribute('href')).toBe('/admin/catalog');
+  });
+
+  // =========================================================================
+  // Story 36-11 — the card surface, and the honest limit of asserting it here
+  //
+  // WHAT THESE TWO SPECS ESTABLISH: the surface container exists, carries its
+  // hook, and contains the outlet — so every routed pane, present and future,
+  // is mounted inside it rather than beside it.
+  //
+  // WHAT THEY CANNOT ESTABLISH, and this is not a choice: that the container is
+  // PAINTED at all, that its tint matches Home's, that the radius is visible,
+  // that the padding is right, or that the panes' loading / empty / no-match /
+  // unavailable states stay legible on it. Karma sees the DOM tree, not the box
+  // model — during 36-9 a `display: flex` on a `<td>` dropped a whole column out
+  // of the table's grid and 1760 green specs did not see it. A
+  // `getComputedStyle` assertion added here would pin the theme and STILL not
+  // prove legibility, so the visual half is discharged by looking at the running
+  // app, not by these.
+  //
+  // The stated limit: moving the hook up to `.admin-shell` leaves both specs
+  // green, because the shell also contains the outlet. They prove the outlet is
+  // inside the HOOKED element, not that the hooked element is the painted one.
+  // =========================================================================
+
+  function adminContent(): HTMLElement | null {
+    return byTest('admin-content');
+  }
+
+  it('(36-11 AC5) the surface container wraps the outlet', async () => {
+    await render(ADMIN);
+
+    const content = adminContent();
+    expect(content).not.toBeNull();
+    // Scoped to the container, not to the fixture: an outlet that had drifted
+    // OUT of the surface would still answer a fixture-wide query, and every
+    // routed pane would then render off the card.
+    expect(content!.querySelector('router-outlet')).not.toBeNull();
+  });
+
+  it('(36-11 AC5) both admin destinations mount INSIDE the surface', async () => {
+    await render(ADMIN);
+    const router = TestBed.inject(Router);
+
+    for (const url of ['/admin/catalog', '/admin/api-keys']) {
+      await fixture.ngZone!.run(() => router.navigateByUrl(url));
+      fixture.detectChanges();
+
+      // The routed component's own host element — Angular inserts it as a
+      // sibling of the `<router-outlet>`, so containment is the assertion that
+      // says "this pane renders on the card". `BlankPaneComponent` renders an
+      // empty template but still has a host, which is why the existing harness
+      // is enough and the real panes are not mounted here.
+      const routed = fixture.debugElement.query(By.directive(BlankPaneComponent));
+      expect(routed).withContext(url).not.toBeNull();
+      expect(adminContent()!.contains(routed.nativeElement))
+        .withContext(url)
+        .toBe(true);
+    }
   });
 });

@@ -61,9 +61,34 @@
   margin-left: auto;
 }
 
+// Story 36-11 — the admin panes sit on the SAME card Home's table sits on.
+//
+// Declared here and nowhere else: `.admin-content` is the only element between
+// the shell's layout and the `router-outlet`, so one declaration covers
+// Catalog, API Keys, the namespace deep link and every pane added after this.
+// Per-pane copies would be two shades on the day they ship and a third pane
+// that forgot, later — so neither pane's stylesheet carries a background.
+//
+// The tint, radius and padding are `.main-container` in `home.component.scss`,
+// taken verbatim. The literal is repeated rather than tokenised because the
+// app's Aura preset (`app.theme.ts`) customises only the `primary` ramp and the
+// datatable header cell and defines NO token equal to this colour — a
+// `--surface-*` substitution here would ship a different colour under a token's
+// name and give the app two card shades. Hoisting it to a shared custom
+// property read by both files is the real fix and wants its own story; this
+// duplication is the interim, not the destination.
+//
+// Home declares no border, so this gets none. The padding is Home's `1rem` and
+// the breathing room is `margin` — outside the painted box, because a card with
+// a 1rem inset and a card with a 1.5rem/2rem inset read as two components. The
+// shell is `align-items: stretch`, which sizes a flex item's OUTER box, so the
+// margin shortens the card instead of overflowing the shell's `min-height`.
 .admin-content {
   flex: 1 1 auto;
   min-width: 0;
-  padding: 1.5rem 2rem;
+  background-color: #f2f7f9;
+  border-radius: 6px;
+  padding: 1rem;
+  margin: 1rem;
   box-sizing: border-box;
 }

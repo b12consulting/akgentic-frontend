@@ -11,6 +11,7 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { RouterTestingModule } from '@angular/router/testing';
 import { MessageService } from 'primeng/api';
 import { Dialog } from 'primeng/dialog';
+import { Tag } from 'primeng/tag';
 import { BehaviorSubject } from 'rxjs';
 
 import { AuthService } from '../../../core/auth/auth.service';
@@ -334,6 +335,33 @@ describe('CatalogListComponent (Story 36-3)', () => {
     );
   }
 
+  /**
+   * Story 36-11 — the `severity` INPUT each chip in a row's visibility cell
+   * received, keyed by the chip's value.
+   *
+   * The INPUT, not the rendered class and not a computed colour. `severity` is a
+   * documented `@Input()` on PrimeNG's `Tag`, which PrimeNG maps internally to
+   * `p-tag-warn`; asserting that class would couple these specs to PrimeNG's
+   * class scheme, and asserting a background would couple them to the theme.
+   * Both make the theme unchangeable and neither proves more than this does.
+   *
+   * Read off the MOUNTED instances after `detectChanges()`, never off a
+   * component property: both of 36-11's changes are template-only, so a spec
+   * that read the component would prove nothing about what a browser renders.
+   */
+  function chipSeverities(namespace: string): Record<string, string | undefined> {
+    const cell = byTest(`ns-visibility-${namespace}`)!;
+    const severities: Record<string, string | undefined> = {};
+    for (const debugEl of fixture.debugElement.queryAll(By.directive(Tag))) {
+      if (!cell.contains(debugEl.nativeElement)) {
+        continue;
+      }
+      const tag = debugEl.componentInstance as Tag;
+      severities[tag.value!] = tag.severity;
+    }
+    return severities;
+  }
+
   function countValue(namespace: string, kind: EntryKind): string | null {
     const el = byTest(`ns-count-${namespace}-${kind}`);
     return el === null ? null : el.textContent!.trim();
@@ -549,6 +577,69 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(chips.filter((c) => c === 'public' || c === 'private').length).toBe(
       1,
     );
+  });
+
+  // --- Story 36-11 AC6/AC8: the visibility chip has its OWN severity --------
+  //
+  // All four severities are asserted, not just the one that changed. The
+  // property being protected is that the VISIBILITY pair (public/private) stays
+  // distinguishable from the KIND pair (team/library) beside it — a later change
+  // making `team` `warn` too would restore exactly the defect this fixes and
+  // would sail past a one-assertion spec. The rows come from the same `row()`
+  // helper the `(AC4)` value specs above use; a second fixture shape here would
+  // be a second source of truth for the same four states.
+
+  it('(36-11 AC6) a PRIVATE namespace renders its visibility chip as warn', async () => {
+    resolveRows([row('acme-c', { public: false, shareable: true, team: true })]);
+    await render();
+
+    expect(chipSeverities('acme-c')['private']).toBe('warn');
+  });
+
+  it('(36-11 AC6) a PUBLIC namespace renders its visibility chip as success', async () => {
+    resolveRows([row('acme-a', { public: true, shareable: true, team: true })]);
+    await render();
+
+    expect(chipSeverities('acme-a')['public']).toBe('success');
+  });
+
+  it('(36-11 AC6) the shareable chip stays info', async () => {
+    resolveRows([row('acme-c', { public: false, shareable: true, team: true })]);
+    await render();
+
+    expect(chipSeverities('acme-c')['shareable']).toBe('info');
+  });
+
+  it('(36-11 AC6) the KIND chip stays secondary — for team and for library', async () => {
+    // The assertion that makes the change mean something: `private` is only a
+    // signal while the chip next to it is not the same severity.
+    resolveRows([
+      row('acme-c', { public: false, team: true }),
+      row('global', { public: false, team: false, owner: null }),
+    ]);
+    await render();
+
+    expect(chipSeverities('acme-c')['team']).toBe('secondary');
+    expect(chipSeverities('global')['library']).toBe('secondary');
+    // ...and in the same DOM, distinct from the visibility chip beside it.
+    expect(chipSeverities('acme-c')['private']).not.toBe(
+      chipSeverities('acme-c')['team'],
+    );
+  });
+
+  it('(36-11 AC8) the new hook addresses the VISIBILITY chip, not a neighbour', async () => {
+    // Without this, the hook could drift onto the shareable or kind chip and
+    // every assertion above would still pass through `By.directive(Tag)`.
+    resolveRows([row('acme-c', { public: false, shareable: true, team: true })]);
+    await render();
+
+    const hooked = fixture.debugElement.query(
+      By.css('[data-test="ns-visibility-chip-acme-c"]'),
+    );
+    expect(hooked).not.toBeNull();
+    const tag = hooked.componentInstance as Tag;
+    expect(tag.value).toBe('private');
+    expect(tag.severity).toBe('warn');
   });
 
   // --- AC 5: counts --------------------------------------------------------

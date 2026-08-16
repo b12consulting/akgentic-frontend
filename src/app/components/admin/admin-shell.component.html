@@ -39,7 +39,13 @@
     </nav>
   </ng-container>
 
-  <section class="admin-content">
+  <!--
+    Story 36-11 — the card surface. The outlet lives INSIDE it, which is what
+    makes every routed pane render on the card without any pane knowing about
+    it. The hook addresses the surface itself; see the spec file for what a
+    structural assertion can and cannot establish about a painted box.
+  -->
+  <section class="admin-content" data-test="admin-content">
     <router-outlet></router-outlet>
   </section>
 </div>
