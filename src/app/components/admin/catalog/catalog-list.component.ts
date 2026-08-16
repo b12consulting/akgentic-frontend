@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
 import {
+  AfterViewChecked,
   Component,
   DestroyRef,
   ElementRef,
@@ -13,7 +14,7 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
-import { TableModule, TableRowSelectEvent } from 'primeng/table';
+import { Table, TableModule, TableRowSelectEvent } from 'primeng/table';
 import { TagModule } from 'primeng/tag';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { Observable, combineLatest } from 'rxjs';
@@ -40,6 +41,22 @@ import { AdminSectionCounts } from '../admin-section-counts.service';
  */
 export const DELETE_DENIED_REASON =
   'Only the owner or an admin can delete this namespace';
+
+/**
+ * Why a blocked Clone says something DIFFERENT from a blocked Delete.
+ *
+ * Delete's denial is about entitlement — who you are. Clone's is not: Clone
+ * creates a NEW namespace, which the server permits any caller, so it is never
+ * entitlement-gated. What blocks it is the shared panel behind this list: one
+ * panel, one buffer, one clone engine, and it cannot clone while it holds
+ * unsaved edits. Repeating Delete's wording here would send the operator
+ * looking for a permission problem that is not there.
+ *
+ * Travels as the native `title` for the same reason Delete's does: a disabled
+ * button fires no mouse events, so `pTooltip` would be written and never read.
+ */
+export const CLONE_DENIED_REASON =
+  'The configuration panel has unsaved changes — save or discard them before cloning';
 
 /**
  * What the pane says it is showing, which depends on who is asking.
@@ -127,12 +144,19 @@ interface CatalogViewer {
  * predates the widened DTO is a deployment problem with a deployment fix, not a
  * version-detecting branch rotting on a data path.
  *
- * Story 36-4 made this pane a DIALOG HOST as well as a table: the row's
- * primary action opens `NamespacePanelComponent` in a `p-dialog` over the list
- * instead of navigating away, so the list stays mounted behind it (which is
- * what lets `existingNamespaces` come from data already on screen and lets a
- * save refresh the table). The deep-link URL survives as a bookmark — it is
- * simply no longer reachable by clicking.
+ * Story 36-4 made this pane a DIALOG HOST as well as a table: clicking a row
+ * opens `NamespacePanelComponent` in a `p-dialog` over the list instead of
+ * navigating away, so the list stays mounted behind it (which is what lets
+ * `existingNamespaces` come from data already on screen and lets a save refresh
+ * the table). The deep-link URL survives as a bookmark — it is simply no longer
+ * reachable by clicking.
+ *
+ * Story 36-14 made the row click the SOLE entry to that panel: the
+ * Configure/View control is gone, and with it the one place a non-owner learned
+ * they were read-only before clicking. The `read-only` tag beside the
+ * visibility chips is that warning, off the same `canModify` predicate. It says
+ * "you may not save", not "you may not open" — the panel is writable by design
+ * (ADR-028 §D4's amendment) and this story did not change that.
  *
  * That makes THREE dialog layers this pane must arbitrate between on a single
  * Escape: the delete confirmation, the config host, and the panel's own Clone /
@@ -156,7 +180,7 @@ interface CatalogViewer {
   templateUrl: './catalog-list.component.html',
   styleUrls: ['./catalog-list.component.scss'],
 })
-export class CatalogListComponent implements OnInit {
+export class CatalogListComponent implements OnInit, AfterViewChecked {
   readonly #api = inject(ApiService);
   readonly #auth = inject(AuthService);
   readonly #destroyRef = inject(DestroyRef);
@@ -169,6 +193,7 @@ export class CatalogListComponent implements OnInit {
   readonly shownEntryKinds = SHOWN_ENTRY_KINDS;
 
   readonly deleteDeniedReason = DELETE_DENIED_REASON;
+  readonly cloneDeniedReason = CLONE_DENIED_REASON;
   readonly filterPlaceholder = CATALOG_FILTER_PLACEHOLDER;
   readonly noMatchMessage = CATALOG_NO_MATCH_MESSAGE;
 
@@ -222,6 +247,17 @@ export class CatalogListComponent implements OnInit {
   private confirmProceedBtn?: ElementRef<HTMLButtonElement>;
 
   /**
+   * The one `p-table` this pane renders — held ONLY so the row selection can be
+   * cleared the moment it is made (Story 36-14).
+   *
+   * Optional and must stay so: the table lives inside the "rows loaded and not
+   * all filtered away" branch, so it is absent while loading, on a failed load,
+   * on an empty catalog and in the no-match state.
+   */
+  @ViewChild(Table)
+  table?: Table;
+
+  /**
    * The hosted panel, resolved once the `@defer` block has actually rendered —
    * i.e. NOT before the first change-detection pass after `panelVisible` flips
    * true. Every read must stay optional: the close flow runs on a pane whose
@@ -242,6 +278,21 @@ export class CatalogListComponent implements OnInit {
    * owning nothing, so the first paint denies rather than grants.
    */
   #viewer: CatalogViewer = { isAdmin: false, userId: null };
+
+  /**
+   * The namespace a row-Clone was requested for, held until the shared panel is
+   * actually showing it (Story 36-14). `null` means no clone is pending.
+   *
+   * It exists because the panel behind this list is REUSED: `@defer` resolves
+   * once, so opening a different row only re-binds `[namespace]` and the panel
+   * reloads asynchronously in its own `ngOnChanges`. A Clone fired synchronously
+   * after opening would run against whatever namespace the panel last held — and
+   * `onCloneClick()` reads the panel's BUFFER, so the operator would name a
+   * destination for row B and get row A's bundle written under it. Mid-load is
+   * no better: the panel clears its buffer first, so the same click would clone
+   * nothing at all. See `ngAfterViewChecked` for the gate that closes both.
+   */
+  #pendingClone: string | null = null;
 
   constructor() {
     combineLatest([this.#auth.isAdmin$, this.#auth.currentUser$])
@@ -408,31 +459,6 @@ export class CatalogListComponent implements OnInit {
     return row.owner !== null && row.owner === this.#viewer.userId;
   }
 
-  /**
-   * The primary action's LABEL. Its destination never varies — both Configure
-   * and View open the same panel, on the same namespace, in the same dialog.
-   *
-   * `View` is a label and not a mode. The panel's editor is writable by design
-   * and exposes no read-only input; adding one would be an edit inside
-   * `components/catalog/namespace-panel/`, which this pane does not make. A
-   * non-owner may therefore open the panel and type — the panel's Save-time
-   * owner-or-admin preflight and the server's 403 are the real boundary, and
-   * always were.
-   */
-  primaryActionLabel(row: NamespaceSummary): string {
-    return this.canModify(row) ? 'Configure' : 'View';
-  }
-
-  /**
-   * The icon beside that label. The control keeps its text — Configure-vs-View
-   * IS the entitlement affordance, and it is where a non-owner learns they are
-   * read-only before clicking — so this reinforces the label rather than
-   * replacing it.
-   */
-  primaryActionIcon(row: NamespaceSummary): string {
-    return this.canModify(row) ? 'pi pi-cog' : 'pi pi-eye';
-  }
-
   /** `null` when allowed, so the attribute is absent rather than empty. */
   deleteDisabledReason(row: NamespaceSummary): string | null {
     return this.canModify(row) ? null : DELETE_DENIED_REASON;
@@ -584,11 +610,19 @@ export class CatalogListComponent implements OnInit {
   // --- The configuration dialog host (Story 36-4) ---------------------------
 
   /**
-   * The row's primary action: open the panel over the list, on THIS row's
-   * namespace. Not a navigation — the list must stay mounted behind the dialog
-   * for `existingNamespaces` and the `(saved)` refresh to mean anything.
+   * THE one way into the panel: open it over the list, on THIS row's namespace.
+   * Not a navigation — the list must stay mounted behind the dialog for
+   * `existingNamespaces` and the `(saved)` refresh to mean anything.
+   *
+   * Story 36-14 removed the Configure/View control, so the row click and the
+   * row's Clone are now its only two callers, and both come through here.
    */
   onPrimaryActionClick(row: NamespaceSummary): void {
+    if (this.#pendingClone !== null && this.#pendingClone !== row.namespace) {
+      // A Clone was waiting on a DIFFERENT row and the operator has moved on.
+      // Firing it now would clone whatever this open is about instead.
+      this.#pendingClone = null;
+    }
     this.panelNamespace = row.namespace;
     this.panelLabel = row.name === '' ? row.namespace : row.name;
     this.panelVisible = true;
@@ -596,13 +630,21 @@ export class CatalogListComponent implements OnInit {
 
   /**
    * A click (or Enter) anywhere on the row that is not one of its own controls
-   * — Story 36-12, so the whole row is the target and not just the button at
-   * the far right of it.
+   * — Story 36-12, so the whole row is the target and not just a button at the
+   * far right of it.
    *
-   * It DELEGATES and does nothing else. One destination, one rule: the row and
-   * Configure/View reach the panel through the same method, so there is no
-   * second way in that could drift to a different label or a different
-   * namespace.
+   * It DELEGATES, then CLEARS the selection (Story 36-14). Home gets the second
+   * half for free because selecting a row there navigates away; here the list
+   * stays mounted behind the dialog, so a retained selection is a highlighted
+   * row the operator comes back to and cannot get rid of. The clear is
+   * synchronous on purpose: PrimeNG emits `onRowSelect` BEFORE it calls
+   * `tableService.onSelectionChange()`, so the notification it is about to fire
+   * already carries the cleared value and the rows un-highlight in the same
+   * pass.
+   *
+   * What is deliberately kept is `pSelectableRow` itself — hover affordance,
+   * `tabindex` and Enter/Space activation are the directive's, and only the
+   * RETAINED state goes.
    *
    * Bound to BOTH `(onRowSelect)` and `(onRowUnselect)` — see the template for
    * why single selection being a toggle makes that necessary rather than
@@ -618,6 +660,92 @@ export class CatalogListComponent implements OnInit {
       return;
     }
     this.onPrimaryActionClick(row);
+    if (this.table !== undefined) {
+      this.table.selection = null;
+    }
+  }
+
+  /**
+   * The row's Clone: a SHORTCUT into the panel's own Clone, never a second
+   * implementation of it. The collision list, the destination-name suggestions
+   * and the clone gating all belong to `NamespacePanelComponent` and stay there
+   * (ADR-028 §D8), so this pane gains no clone client of its own.
+   *
+   * It opens the panel through the one entry above and records the request. It
+   * MUST NOT call `panel.onCloneClick()` here: on a first-ever open there is no
+   * panel yet, and on any later one the panel is still showing the previous
+   * row. `ngAfterViewChecked` fires it once the panel is genuinely on this row.
+   *
+   * Not gated on `canModify`: Clone creates a NEW namespace, which the server
+   * permits any caller. Gating it would take a capability the server grants —
+   * the same mistake as gating Delete on `isAdmin` alone.
+   */
+  onCloneRowClick(row: NamespaceSummary): void {
+    this.onPrimaryActionClick(row);
+    this.#pendingClone = row.namespace;
+  }
+
+  /**
+   * Whether the row Clone is live. PANEL-scoped, and therefore the same on
+   * every row: there is one panel, one buffer and one clone engine behind this
+   * list, and it cannot clone while it holds unsaved edits or is mid-clone.
+   *
+   * `true` when no panel exists yet — nothing is blocking, and a control
+   * disabled before its blocker exists reads as "you may never clone this".
+   */
+  get canCloneRow(): boolean {
+    return this.panel === undefined || this.panel.canClone;
+  }
+
+  /** `null` when allowed, so the attribute is absent rather than empty. */
+  get cloneDisabledReason(): string | null {
+    return this.canCloneRow ? null : CLONE_DENIED_REASON;
+  }
+
+  /**
+   * The readiness gate for a pending row-Clone — all THREE conditions, because
+   * each closes a window in which the clone runs against the wrong data:
+   *
+   *   1. the panel instance exists      — else there is nothing to call at all
+   *   2. `panel.namespace === pending`  — else it still holds the PREVIOUS row,
+   *      and `onCloneClick()` derives its suggestions from that row's buffer
+   *   3. `panel.loading === false`      — else the panel has already cleared its
+   *      buffer for the incoming load and would clone an empty bundle
+   *
+   * `ngAfterViewChecked` rather than a timer: the panel's load resolves as a
+   * promise, and every resolution is followed by a change-detection pass, so
+   * this runs exactly when there is something new to look at. A `setTimeout`
+   * loop would spin against specs that drive change detection by hand.
+   *
+   * The call itself is deferred to a microtask: the child's template has
+   * already been checked in this pass, so opening its modal synchronously here
+   * would raise `ExpressionChangedAfterItHasBeenCheckedError`.
+   */
+  ngAfterViewChecked(): void {
+    const pending = this.#pendingClone;
+    if (pending === null) {
+      return;
+    }
+    const panel = this.panel;
+    if (panel === undefined || panel.namespace !== pending || panel.loading) {
+      return;
+    }
+    this.#pendingClone = null;
+    queueMicrotask(() => this.#firePendingClone());
+  }
+
+  /**
+   * Fire the clone, re-checking at the moment it actually happens. The panel
+   * can go dirty — or the operator can close the dialog — between the gate
+   * opening and this microtask running, and a Clone modal over a dismissed
+   * dialog is worse than no Clone at all.
+   */
+  #firePendingClone(): void {
+    const panel = this.panel;
+    if (panel === undefined || !this.panelVisible || !panel.canClone) {
+      return;
+    }
+    panel.onCloneClick();
   }
 
   /**
@@ -636,6 +764,10 @@ export class CatalogListComponent implements OnInit {
       // Opening: the primary-action handler already set the flag. No-op.
       return;
     }
+    // A Clone still waiting on a load is abandoned here, not held: the operator
+    // dismissed the dialog, and a trigger that outlived the close would fire
+    // against whichever row they open next.
+    this.#pendingClone = null;
     const panel = this.panel;
     if (!panel || !panel.hasUnsavedChanges()) {
       this.panelVisible = false;
@@ -647,6 +779,16 @@ export class CatalogListComponent implements OnInit {
         this.panelVisible = false;
       }
     });
+  }
+
+  /**
+   * The panel's own `(closed)`. It closes unconditionally — the panel raises it
+   * only once it is satisfied there is nothing to lose — but it must drop a
+   * pending Clone for the same reason the dismissal channels do.
+   */
+  onPanelClosed(): void {
+    this.#pendingClone = null;
+    this.panelVisible = false;
   }
 
   /**

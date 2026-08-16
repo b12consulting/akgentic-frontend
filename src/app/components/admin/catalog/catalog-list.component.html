@@ -248,8 +248,22 @@
                 in the DOM tree the cells are still correct siblings — so the
                 rule is stated here rather than left to a spec.
               -->
-              <td [attr.data-test]="'ns-visibility-' + row.namespace">
+              <td>
                 <div class="admin-catalog__chips">
+                  <!--
+                    THE HOOK IS ON THIS WRAPPER, not on the <td> where it used
+                    to sit (Story 36-14). The chip specs read EVERY `p-tag`
+                    inside `ns-visibility-{ns}` and assert exact arrays, so the
+                    `read-only` tag below would append itself to all of them if
+                    the hook still addressed the cell. Scoping it to exactly the
+                    three visibility chips is what lets that tag be added with
+                    every 36-4/36-11/36-13 chip assertion passing unmodified —
+                    and it is why the wrapper must not be deleted as redundant.
+                  -->
+                  <div
+                    class="admin-catalog__visibility-chips"
+                    [attr.data-test]="'ns-visibility-' + row.namespace"
+                  >
                   <!--
                     Exactly one of public/private — never neither, never both.
 
@@ -263,20 +277,49 @@
                     `secondary`: what is being protected is that the visibility
                     pair stays distinguishable from the kind pair beside it.
                   -->
+                    <p-tag
+                      [severity]="row.public ? 'success' : 'info'"
+                      [value]="row.public ? 'public' : 'private'"
+                      [attr.data-test]="'ns-visibility-chip-' + row.namespace"
+                    ></p-tag>
+                    <p-tag
+                      *ngIf="row.shareable"
+                      severity="warn"
+                      value="shareable"
+                    ></p-tag>
+                    <!-- Exactly one of team/library, from the `team` boolean. -->
+                    <p-tag
+                      severity="secondary"
+                      [value]="row.team ? 'team' : 'library'"
+                    ></p-tag>
+                  </div>
+                  <!--
+                    The entitlement warning (Story 36-14). Until this story the
+                    Configure/View label carried it — it was the ONLY place a
+                    non-owner learned they were read-only BEFORE clicking — and
+                    removing that control without replacing the signal would
+                    have taken the warning rather than moved it.
+
+                    Off `canModify(row)`, the SAME predicate the Delete button
+                    reads. A second expression here is exactly how the row and
+                    its Delete drift apart.
+
+                    `contrast` because none of the four severities already in
+                    this cell (`success` / `info` / `warn` / `secondary`) may be
+                    reused without the tag reading as one of them, and because
+                    read-only is not an error: `danger` or `warn` would
+                    over-state it.
+
+                    It says "you may not SAVE", not "you may not open" — the
+                    panel is writable by design (ADR-028 §D4's amendment), the
+                    server's 403 is the real boundary, and this story did not
+                    change either.
+                  -->
                   <p-tag
-                    [severity]="row.public ? 'success' : 'info'"
-                    [value]="row.public ? 'public' : 'private'"
-                    [attr.data-test]="'ns-visibility-chip-' + row.namespace"
-                  ></p-tag>
-                  <p-tag
-                    *ngIf="row.shareable"
-                    severity="warn"
-                    value="shareable"
-                  ></p-tag>
-                  <!-- Exactly one of team/library, from the `team` boolean. -->
-                  <p-tag
-                    severity="secondary"
-                    [value]="row.team ? 'team' : 'library'"
+                    *ngIf="!canModify(row)"
+                    severity="contrast"
+                    value="read-only"
+                    [attr.data-test]="'ns-readonly-' + row.namespace"
                   ></p-tag>
                 </div>
               </td>
@@ -321,13 +364,15 @@
 
               <!--
                 Three controls, in the order an operator reaches for them:
-                configure, export, delete. All three are NATIVE <button> with
-                the `pButton` directive — a <p-button> component would put the
-                `data-test` hook on its own host, so the authorization specs'
-                `.tagName` and `.disabled` reads would break for a purely
-                cosmetic reason. Styled as Home's row actions (rounded,
-                secondary, a `pi` icon), copied and not imported: `page-admin`
-                may not depend on `page-home`.
+                export, clone, delete. Opening the namespace is NOT among them
+                any more — Story 36-14 removed the Configure/View button and
+                made the row click the sole entry to the panel. All three are
+                NATIVE <button> with the `pButton` directive — a <p-button>
+                component would put the `data-test` hook on its own host, so the
+                authorization specs' `.tagName` and `.disabled` reads would
+                break for a purely cosmetic reason. Styled as Home's row actions
+                (rounded, secondary, a `pi` icon), copied and not imported:
+                `page-admin` may not depend on `page-home`.
               -->
               <!--
                 Every control here stops the click from also reaching the row
@@ -345,18 +390,8 @@
               <td>
                 <div class="admin-catalog__actions">
                   <!--
-                    Label differs by entitlement; the DESTINATION does not — both
-                    Configure and View open the same panel on this row, in the
-                    dialog below. A button and not a link: Story 36-4 made this an
-                    in-page open, so the list stays mounted behind the panel. The
-                    deep-link URL is still bookmarkable, just no longer reached by
-                    clicking here.
-
-                    It KEEPS its visible label while its two neighbours are
-                    icon-only. Configure-vs-View is the entitlement affordance —
-                    it is where a non-owner learns they are read-only before
-                    clicking — so hiding it behind an icon would take the one
-                    piece of text that carries the rule.
+                    Export the namespace as YAML. Read-only, entitlement-free: it
+                    returns exactly what the caller could already list.
 
                     No `size`: Home's row actions carry none either, and the
                     admin area's rows are the same rows. Setting `small` here
@@ -367,24 +402,37 @@
                     type="button"
                     severity="secondary"
                     [rounded]="true"
-                    [icon]="primaryActionIcon(row)"
-                    [label]="primaryActionLabel(row)"
-                    (click)="onPrimaryActionClick(row); $event.stopPropagation()"
-                    [attr.data-test]="'ns-configure-' + row.namespace"
+                    icon="pi pi-download"
+                    [attr.aria-label]="'Export namespace ' + row.namespace"
+                    (click)="onExportClick(row); $event.stopPropagation()"
+                    [attr.data-test]="'ns-export-' + row.namespace"
                   ></button>
                   <!--
-                    Export the namespace as YAML. Read-only, entitlement-free: it
-                    returns exactly what the caller could already list.
+                    Clone (Story 36-14) — a shortcut into the PANEL's Clone, not
+                    a second one. The handler opens the panel on this row and
+                    lets the readiness gate fire it once the panel has actually
+                    loaded this namespace; firing it here would clone whichever
+                    namespace the reused panel last held.
+
+                    Entitlement-FREE, unlike its neighbour to the right: Clone
+                    creates a new namespace, which the server permits any caller.
+                    What CAN disable it is the shared panel holding unsaved
+                    edits, and that is the same on every row — one panel, one
+                    buffer. The reason travels as a native `title`, exactly as
+                    delete's does, and says why rather than repeating delete's
+                    entitlement wording.
                   -->
                   <button
                     pButton
                     type="button"
                     severity="secondary"
                     [rounded]="true"
-                    icon="pi pi-download"
-                    [attr.aria-label]="'Export namespace ' + row.namespace"
-                    (click)="onExportClick(row); $event.stopPropagation()"
-                    [attr.data-test]="'ns-export-' + row.namespace"
+                    icon="pi pi-copy"
+                    [attr.aria-label]="'Clone namespace ' + row.namespace"
+                    [disabled]="!canCloneRow"
+                    [attr.title]="cloneDisabledReason"
+                    (click)="onCloneRowClick(row); $event.stopPropagation()"
+                    [attr.data-test]="'ns-clone-' + row.namespace"
                   ></button>
                   <!--
                     Disabled, never hidden, and carrying the reason as a native
@@ -531,7 +579,7 @@
       [namespace]="panelNamespace"
       [existingNamespaces]="existingNamespaces"
       [showAll]="showAll"
-      (closed)="panelVisible = false"
+      (closed)="onPanelClosed()"
       (saved)="onPanelSaved()"
     />
   }

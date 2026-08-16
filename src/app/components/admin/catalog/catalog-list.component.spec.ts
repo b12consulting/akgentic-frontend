@@ -2,7 +2,10 @@ import {
   Component,
   EventEmitter,
   Input,
+  OnChanges,
+  OnInit,
   Output,
+  SimpleChanges,
   forwardRef,
 } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
@@ -11,7 +14,7 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { RouterTestingModule } from '@angular/router/testing';
 import { MessageService } from 'primeng/api';
 import { Dialog } from 'primeng/dialog';
-import { Table } from 'primeng/table';
+import { SelectableRow, Table } from 'primeng/table';
 import { Tag } from 'primeng/tag';
 import { BehaviorSubject } from 'rxjs';
 
@@ -31,6 +34,7 @@ import {
   CATALOG_DESCRIPTION_MEMBER,
   CATALOG_FILTER_PLACEHOLDER,
   CATALOG_NO_MATCH_MESSAGE,
+  CLONE_DENIED_REASON,
   CatalogListComponent,
   DELETE_DENIED_REASON,
   SHOWN_ENTRY_KINDS,
@@ -88,7 +92,7 @@ const OTHER = 'u-other';
     },
   ],
 })
-class StubNamespacePanelComponent {
+class StubNamespacePanelComponent implements OnInit, OnChanges {
   @Input() namespace = '';
   @Input() existingNamespaces: string[] = [];
   @Input() showAll = false;
@@ -106,6 +110,12 @@ class StubNamespacePanelComponent {
   /** What `handleSecondaryEscape()` reports — i.e. "a modal of mine ate it". */
   secondaryConsumesEscape = false;
 
+  /** Story 36-14 — the real panel's clone gate, driven per spec. */
+  canClone = true;
+  cloneDialogVisible = false;
+  /** The namespace the stub HELD when clone was requested — the trap's witness. */
+  cloneOpenedFor: string[] = [];
+
   hasUnsavedChanges(): boolean {
     return this.dirty;
   }
@@ -114,8 +124,41 @@ class StubNamespacePanelComponent {
     return Promise.resolve(true);
   }
 
+  /**
+   * Records WHICH namespace it was showing when the host fired, not merely that
+   * the host fired. That is what makes the 36-14 specs discriminate: a
+   * synchronous trigger records the previous row, a correctly gated one records
+   * the row the operator clicked, and "the modal opened" would pass either way.
+   */
+  onCloneClick(): void {
+    this.cloneOpenedFor.push(this.namespace);
+    this.cloneDialogVisible = true;
+  }
+
+  /**
+   * The real panel loads ASYNCHRONOUSLY on mount and again on every namespace
+   * re-bind, clearing its buffer first. A stub that landed instantly could not
+   * tell a correct readiness gate from a broken one, so both loads are modelled
+   * and the spec releases them explicitly through `finishLoad()`.
+   */
+  ngOnInit(): void {
+    this.loading = true;
+  }
+
+  ngOnChanges(changes: SimpleChanges): void {
+    const change = changes['namespace'];
+    if (change && !change.firstChange) {
+      this.loading = true;
+    }
+  }
+
+  finishLoad(): void {
+    this.loading = false;
+  }
+
+  /** Mirrors the real panel: its Clone modal consumes Escape too. */
   handleSecondaryEscape(): boolean {
-    return this.secondaryConsumesEscape;
+    return this.cloneDialogVisible || this.secondaryConsumesEscape;
   }
 }
 
@@ -285,8 +328,16 @@ describe('CatalogListComponent (Story 36-3)', () => {
     return byTest(`ns-delete-${namespace}`) as HTMLButtonElement;
   }
 
-  function primaryAction(namespace: string): HTMLButtonElement {
-    return byTest(`ns-configure-${namespace}`) as HTMLButtonElement;
+  /**
+   * Story 36-14 — the row's `read-only` warning, present iff `canModify(row)`
+   * is false.
+   *
+   * It replaces the Configure/View label as the per-row entitlement signal:
+   * that label was the only place a non-owner learned they were read-only
+   * BEFORE clicking, and 36-14 removed the control, not the fact.
+   */
+  function readOnlyTag(namespace: string): HTMLElement | null {
+    return byTest(`ns-readonly-${namespace}`);
   }
 
   /** The two `Dialog` instances this pane owns, by their `data-test` hook. */
@@ -308,14 +359,30 @@ describe('CatalogListComponent (Story 36-3)', () => {
   }
 
   /**
-   * Open the config dialog through the row's own control and let the `@defer`
-   * block resolve. Two settles: the first renders the deferred block, the
-   * second binds its inputs and resolves the host's `@ViewChild`.
+   * Click a CELL of the row — never a button — which is the click an operator
+   * makes. Two settles: the first renders the `@defer` block, the second binds
+   * its inputs and resolves the host's `@ViewChild`.
+   *
+   * Hoisted here from 36-12's block at the bottom of the file so `openPanel`
+   * can delegate to it rather than duplicate it.
+   */
+  async function clickRow(namespace: string): Promise<void> {
+    (byTest(`ns-owner-${namespace}`) as HTMLElement).click();
+    await settle();
+    await settle();
+  }
+
+  /**
+   * Open the config dialog and let the `@defer` block resolve.
+   *
+   * Story 36-14 removed the Configure/View button this used to click, making
+   * the ROW the sole entry to the panel — so the helper re-points rather than
+   * every 36-4 dialog spec being rewritten. Changing the helper is what keeps
+   * those specs byte-identical: what they are about is the dialog, not the
+   * control that opened it.
    */
   async function openPanel(namespace: string): Promise<void> {
-    primaryAction(namespace).click();
-    await settle();
-    await settle();
+    await clickRow(namespace);
   }
 
   /**
@@ -819,7 +886,18 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(component.canModify(component.rows[0])).toBeTrue();
     expect(deleteBtn('acme-team').disabled).toBeFalse();
     expect(deleteBtn('acme-team').getAttribute('title')).toBeNull();
-    expect(primaryAction('acme-team').textContent!.trim()).toBe('Configure');
+  });
+
+  it('(AC8) an OWNED row carries NO read-only tag, for a non-admin owner', async () => {
+    // Story 36-14 removed the Configure/View control this block used to read
+    // ("Configure" for an entitled row). The FACT it proved — entitlement is
+    // observable on the row, per row, before clicking anything — is migrated
+    // here onto the tag that now carries it, off the same `canModify`.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    isAdmin$.next(false);
+    await render();
+
+    expect(readOnlyTag('acme-team')).toBeNull();
   });
 
   it('(AC9) neither owner nor admin: Delete is PRESENT, disabled, and carries the reason', async () => {
@@ -831,7 +909,18 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(btn).not.toBeNull(); // present, never hidden
     expect(btn.disabled).toBeTrue();
     expect(btn.getAttribute('title')).toBe(DELETE_DENIED_REASON);
-    expect(primaryAction('contoso-product').textContent!.trim()).toBe('View');
+  });
+
+  it('(AC9) neither owner nor admin: the row carries the read-only tag', async () => {
+    // Migrated from this block's `'View'` assertion (Story 36-14). Same caller,
+    // same row, same fact — the warning a non-owner gets BEFORE clicking.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    isAdmin$.next(false);
+    await render();
+
+    const tag = readOnlyTag('contoso-product');
+    expect(tag).not.toBeNull();
+    expect(tag!.textContent!.trim()).toBe('read-only');
   });
 
   it('(AC10) an ADMIN who is NOT the owner gets both controls live', async () => {
@@ -842,9 +931,18 @@ describe('CatalogListComponent (Story 36-3)', () => {
 
     expect(deleteBtn('contoso-product').disabled).toBeFalse();
     expect(deleteBtn('contoso-product').getAttribute('title')).toBeNull();
-    expect(primaryAction('contoso-product').textContent!.trim()).toBe(
-      'Configure',
-    );
+  });
+
+  it('(AC10) an ADMIN who is NOT the owner gets NO read-only tag', async () => {
+    // Migrated from this block's `'Configure'` assertion. The disjunction seen
+    // from the tag's side: admin-not-owner must read as entitled, which is the
+    // case an ownership-only predicate would get wrong.
+    currentUser$.next({ user_id: 'u-admin', roles: ['admin'] });
+    isAdmin$.next(true);
+    await render();
+
+    expect(readOnlyTag('contoso-product')).toBeNull();
+    expect(readOnlyTag('acme-team')).toBeNull();
   });
 
   it('(AC7) an unknown owner fails closed for a non-admin and opens for an admin', async () => {
@@ -874,7 +972,19 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(component.canModify(component.rows[0])).toBeFalse();
     expect(deleteBtn('global').disabled).toBeTrue();
     expect(deleteBtn('global').getAttribute('title')).toBe(DELETE_DENIED_REASON);
-    expect(primaryAction('global').textContent!.trim()).toBe('View');
+  });
+
+  it('(AC7) an unknown owner and no caller identity: the row reads read-only', async () => {
+    // Migrated from this block's `'View'` assertion (Story 36-14), on the same
+    // fail-closed input: `owner: null` and a caller with no `user_id` at all.
+    resolveRows([row('global', { owner: null, team: false })]);
+    currentUser$.next({ name: 'No identity' }); // no `user_id` at all
+    isAdmin$.next(false);
+    await render();
+
+    const tag = readOnlyTag('global');
+    expect(tag).not.toBeNull();
+    expect(tag!.textContent!.trim()).toBe('read-only');
   });
 
   it('(AC7b) a LATE admin resolution enables a non-owned row WITHOUT remounting', async () => {
@@ -889,9 +999,22 @@ describe('CatalogListComponent (Story 36-3)', () => {
     await settle();
 
     expect(deleteBtn('contoso-product').disabled).toBeFalse();
-    expect(primaryAction('contoso-product').textContent!.trim()).toBe(
-      'Configure',
-    );
+  });
+
+  it('(AC7b) a LATE admin resolution REMOVES the read-only tag, without remounting', async () => {
+    // Migrated from this block's `'Configure'` assertion (Story 36-14), on the
+    // same lever. THE spec that fails if the tag is computed once at mount
+    // instead of read off the live predicate: `/auth/me` resolves after first
+    // render, and a snapshot would leave a genuine admin warned they are
+    // read-only on a row they may in fact edit.
+    await render();
+    expect(readOnlyTag('contoso-product')).not.toBeNull();
+
+    currentUser$.next({ user_id: 'u-admin', roles: ['admin'] });
+    isAdmin$.next(true);
+    await settle();
+
+    expect(readOnlyTag('contoso-product')).toBeNull();
   });
 
   it('(AC7b) a LATE ownership resolution enables the owned row WITHOUT remounting', async () => {
@@ -909,16 +1032,17 @@ describe('CatalogListComponent (Story 36-3)', () => {
 
   // --- AC 15 (36-3) / AC 6 (36-4): the destination never varies -------------
 
-  it('(36-4 AC6) Configure and View open the SAME dialog, each on its own row', async () => {
+  it('(36-4 AC6) an owned and a non-owned row open the SAME dialog, each on its own row', async () => {
     // 36-3's AC 15 asserted this on a `routerLink`. 36-4 changed the control's
     // destination from a navigation to an in-page dialog, so the assertion
     // moves with it — same intent, relocated. It is the one 36-3 assertion this
     // story is entitled to rewrite.
+    //
+    // The two label reads it opened with belonged to the Configure/View control
+    // Story 36-14 removed; the destination assertions below are the point and
+    // are untouched.
     currentUser$.next({ user_id: OWNER, roles: ['user'] });
     await render();
-
-    expect(primaryAction('acme-team').textContent!.trim()).toBe('Configure');
-    expect(primaryAction('contoso-product').textContent!.trim()).toBe('View');
 
     await openPanel('acme-team');
     expect(component.panelVisible).toBeTrue();
@@ -931,16 +1055,32 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(panelStub()!.namespace).toBe('contoso-product');
   });
 
-  it('(36-4 AC6) the primary action is a button, not a link to the deep link', async () => {
+  it('(36-4 AC6) opening the panel does not navigate away from the list', async () => {
     // The URL survives as a bookmark (see admin.routes.spec.ts) but is no
     // longer reachable by clicking: a leftover `href` would navigate away from
     // the list and silently undo the whole story.
+    //
+    // Story 36-14 removed the Configure/View button this used to inspect, so
+    // the guarantee is re-homed onto what opens the panel NOW — the row itself
+    // — plus the Clone control beside it. Deleting it instead would leave a
+    // `routerLink` creeping back onto either one unguarded.
     currentUser$.next({ user_id: OWNER, roles: ['user'] });
     await render();
 
-    const control = primaryAction('acme-team');
-    expect(control.tagName).toBe('BUTTON');
-    expect(control.getAttribute('href')).toBeNull();
+    const before = window.location.href;
+    const rowEl = rowFor('acme-team');
+    expect(rowEl.tagName).toBe('TR');
+    expect(rowEl.getAttribute('href')).toBeNull();
+    expect(rowEl.querySelector('a')).toBeNull();
+
+    await clickRow('acme-team');
+
+    expect(component.panelVisible).toBeTrue();
+    expect(window.location.href).toBe(before);
+
+    const clone = byTest('ns-clone-acme-team')!;
+    expect(clone.tagName).toBe('BUTTON');
+    expect(clone.getAttribute('href')).toBeNull();
   });
 
   // --- AC 12, 13, 14: delete -----------------------------------------------
@@ -1997,18 +2137,21 @@ describe('CatalogListComponent (Story 36-3)', () => {
 
   // --- AC 13, 15: three controls, in order ---------------------------------
 
-  it('(36-9 AC13) the row carries Configure/View, export and delete, in that order', async () => {
+  it('(36-9 AC13) the row carries export, clone and delete, in that order', async () => {
+    // Story 36-14: Configure/View is gone (the row click replaces it) and Clone
+    // takes the middle slot, between the read-only export and the destructive
+    // delete.
     currentUser$.next({ user_id: OWNER, roles: ['user'] });
     await render();
 
     const hooks = Array.from(
       byTest('ns-row-acme-team')!.querySelectorAll(
-        '[data-test^="ns-configure-"], [data-test^="ns-export-"], [data-test^="ns-delete-"]',
+        '[data-test^="ns-export-"], [data-test^="ns-clone-"], [data-test^="ns-delete-"]',
       ),
     ).map((el) => el.getAttribute('data-test'));
     expect(hooks).toEqual([
-      'ns-configure-acme-team',
       'ns-export-acme-team',
+      'ns-clone-acme-team',
       'ns-delete-acme-team',
     ]);
   });
@@ -2020,21 +2163,28 @@ describe('CatalogListComponent (Story 36-3)', () => {
     currentUser$.next({ user_id: OWNER, roles: ['user'] });
     await render();
 
-    for (const hook of ['ns-configure', 'ns-export', 'ns-delete']) {
+    for (const hook of ['ns-export', 'ns-clone', 'ns-delete']) {
       expect(byTest(`${hook}-acme-team`)!.tagName)
         .withContext(hook)
         .toBe('BUTTON');
     }
   });
 
-  it('(36-9 AC13) the primary action keeps its visible label', async () => {
-    // Not a style preference: Configure-vs-View IS the entitlement affordance,
-    // and it is where a non-owner learns they are read-only before clicking.
+  it('(36-9 AC13) the row still says, in TEXT, who may modify it', async () => {
+    // This block used to assert the Configure/View label, and its subject is
+    // gone. What it EXISTED to guarantee is not: the entitlement affordance is
+    // a piece of text on the row, readable before clicking anything, and not a
+    // colour or a disabled state a non-owner has to infer. Story 36-14 moved it
+    // onto the `read-only` tag; asserting the tag is asserting the same
+    // guarantee on its new carrier.
     currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    isAdmin$.next(false);
     await render();
 
-    expect(primaryAction('acme-team').textContent!.trim()).toBe('Configure');
-    expect(primaryAction('contoso-product').textContent!.trim()).toBe('View');
+    expect(readOnlyTag('acme-team')).toBeNull();
+    expect(readOnlyTag('contoso-product')!.textContent!.trim()).toBe(
+      'read-only',
+    );
   });
 
   it('(36-9 AC15) the icon delete keeps disabled + title on a NON-OWNER row', async () => {
@@ -2569,17 +2719,6 @@ describe('CatalogListComponent (Story 36-3)', () => {
     return byTest(`ns-row-${namespace}`) as HTMLTableRowElement;
   }
 
-  /**
-   * Click a CELL of the row — never a button — which is the click an operator
-   * makes. Two settles for the same reason `openPanel()` needs two: the first
-   * renders the `@defer` block, the second binds its inputs.
-   */
-  async function clickRow(namespace: string): Promise<void> {
-    (byTest(`ns-owner-${namespace}`) as HTMLElement).click();
-    await settle();
-    await settle();
-  }
-
   /** The one `p-table` this pane renders — read for its internal selection. */
   function tableInstance(): Table {
     return fixture.debugElement.query(By.directive(Table))
@@ -2618,17 +2757,20 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(component.panelLabel).toBe('contoso-product display');
   });
 
-  it('(36-12 AC3) Configure opens the panel exactly ONCE and selects no row', async () => {
+  it('(36-12 AC3) a row control opens the panel exactly ONCE and selects no row', async () => {
     // What this establishes, and what it does not: PrimeNG's `handleRowClick`
     // already returns early when the click target — or its immediate parent —
     // is a BUTTON, so this spec stays green with the `stopPropagation`
     // removed. It pins the guarantee; it does not test our implementation of
     // it. See the Completion Notes.
+    //
+    // Re-homed onto Clone (Story 36-14): Configure was the control it clicked
+    // and Clone is the one that now opens the panel from inside the cell.
     currentUser$.next({ user_id: OWNER, roles: ['user'] });
     await render();
     const primary = spyOn(component, 'onPrimaryActionClick').and.callThrough();
 
-    primaryAction('acme-team').click();
+    (byTest('ns-clone-acme-team') as HTMLButtonElement).click();
     await settle();
     await settle();
 
@@ -2741,15 +2883,28 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(component.panelVisible).toBeTrue();
     expect(panelStub()!.namespace).toBe('contoso-product');
 
-    // The roving tabindex, which is what `[pSelectableRowIndex]` buys: once a
-    // row has been activated, IT is the one tab stop and its neighbours step
-    // out of the tab order. Omit the index binding and the directive's `index`
-    // is `undefined` on every row — but so is `anchorRowIndex`, since it is
-    // read from that same index, so the two compare EQUAL and every row keeps
-    // 0. The `-1` below is therefore the only half of this that discriminates;
-    // the `hasAttribute` checks above and the `0` here pass either way.
+    // `[pSelectableRowIndex]` is STILL bound and still meaningful — that is
+    // what 36-12 was protecting here, through the roving tabindex it produced
+    // (`0` on the activated row, `-1` on its neighbours).
+    //
+    // Story 36-14 retains no selection, and `setRowTabIndex()` short-circuits
+    // to `0` for every row while `dt.selection` is falsy, so the `-1` — the
+    // only half of that pair that discriminated — cannot hold any more. The
+    // INTENT migrates onto the directive itself: deleting the binding leaves
+    // `index` `undefined` on every row and reddens this. Every row staying at
+    // `0` is a better outcome for keyboard users than a roving stop, not a
+    // regression.
+    // `injector.get`, not `componentInstance`: `SelectableRow` is a DIRECTIVE,
+    // so `componentInstance` on its host resolves to the enclosing component
+    // and every `index` reads `undefined` — green for the wrong reason if the
+    // expectation were weaker than an exact array.
+    expect(
+      fixture.debugElement
+        .queryAll(By.directive(SelectableRow))
+        .map((de) => de.injector.get(SelectableRow).index),
+    ).toEqual([0, 1]);
     expect(rowFor('contoso-product').getAttribute('tabindex')).toBe('0');
-    expect(rowFor('acme-team').getAttribute('tabindex')).toBe('-1');
+    expect(rowFor('acme-team').getAttribute('tabindex')).toBe('0');
   });
 
   it('(36-12 AC8) the row is a PrimeNG selectable row, not a hand-rolled click', async () => {
@@ -2765,8 +2920,9 @@ describe('CatalogListComponent (Story 36-3)', () => {
   });
 
   it('(36-12 AC10) the actions cell still holds exactly three controls', async () => {
-    // The clickable row is an ADDITION. Clone stays inside the namespace
-    // panel, and Configure/View — the entitlement affordance — stays put.
+    // Still three, but not the same three: Story 36-14 removed Configure/View
+    // and added Clone. The count is what this pins — a fourth control appearing
+    // in this cell is a change to the row's shape, whatever it is.
     currentUser$.next({ user_id: OWNER, roles: ['user'] });
     await render();
 
@@ -2774,7 +2930,6 @@ describe('CatalogListComponent (Story 36-3)', () => {
       '.admin-catalog__actions',
     )!;
     expect(actions.querySelectorAll('button').length).toBe(3);
-    expect(primaryAction('acme-team').textContent!.trim()).toBe('Configure');
   });
 
   /**
@@ -2814,11 +2969,20 @@ describe('CatalogListComponent (Story 36-3)', () => {
     ).toBeTrue();
   });
 
-  it('(36-12) Configure stops the click from reaching the row', async () => {
+  it('(36-12) clone stops the click from reaching the row', async () => {
+    // Re-homed from Configure (Story 36-14), which removed that control and put
+    // Clone in the cell in its place. Clone must join export and delete here:
+    // a click that also reached the row would open the panel a second time,
+    // through a second path, while the first is still settling.
     currentUser$.next({ user_id: OWNER, roles: ['user'] });
     await render();
 
-    expect(clickReachesRow('acme-team', primaryAction('acme-team'))).toBeFalse();
+    expect(
+      clickReachesRow('acme-team', byTest('ns-clone-acme-team')!),
+    ).toBeFalse();
+
+    await settle();
+    await settle();
   });
 
   it('(36-12) export stops the click from reaching the row', async () => {
@@ -2845,16 +3009,17 @@ describe('CatalogListComponent (Story 36-3)', () => {
   });
 
   it('(36-12 AC2) a NON-OWNER row click reaches the same handler, same panel', async () => {
-    // One destination, one rule — on the row the entitlement label calls
-    // "View", not just on an owned one. ADR-028 §D4's amendment records that
-    // "View" is a label only today; what this pins is that the row click never
-    // grows an entitlement branch of its own that Configure/View does not
-    // have.
+    // One destination, one rule — on the row the entitlement signal marks
+    // `read-only`, not just on an owned one. ADR-028 §D4's amendment records
+    // that the warning is a warning only: the panel is writable and the
+    // server's 403 is the boundary. What this pins is that the row click never
+    // grows an entitlement branch of its own, which matters more now that the
+    // row click is the ONLY way in (Story 36-14).
     currentUser$.next({ user_id: OWNER, roles: ['user'] });
     isAdmin$.next(false);
     await render();
 
-    expect(primaryAction('contoso-product').textContent!.trim()).toBe('View');
+    expect(readOnlyTag('contoso-product')).not.toBeNull();
     expect(deleteBtn('contoso-product').disabled).toBeTrue();
 
     const primary = spyOn(component, 'onPrimaryActionClick').and.callThrough();
@@ -2864,5 +3029,450 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(primary).toHaveBeenCalledTimes(1);
     expect(component.panelNamespace).toBe('contoso-product');
     expect(panelStub()!.namespace).toBe('contoso-product');
+  });
+
+  // === Story 36-14: no lingering selection, no Configure, and row Clone ======
+  //
+  // EVERY spec below drives a REAL DOM interaction. This epic has now shipped
+  // six defects of one shape — a spec asserting something computed in
+  // TypeScript while the TEMPLATE BINDING that produces it in a browser goes
+  // unexercised — and one of them (the blank-query guard) could be deleted
+  // outright with the whole suite green. So: `byTest('ns-clone-…')!.click()`,
+  // never `component.onCloneRowClick(…)`.
+
+  /** The row's Clone control, clicked for real. */
+  function cloneBtn(namespace: string): HTMLButtonElement {
+    return byTest(`ns-clone-${namespace}`) as HTMLButtonElement;
+  }
+
+  /**
+   * Click the row's Clone and let the pane's readiness gate have its two
+   * change-detection passes — the first renders the `@defer` block or re-binds
+   * `[namespace]`, the second lets the gate look at the result.
+   *
+   * It deliberately does NOT release the panel's load: the whole point of the
+   * gate is that a clone must wait for it, so every spec below releases it
+   * explicitly through `finishLoad()`.
+   */
+  async function clickClone(namespace: string): Promise<void> {
+    cloneBtn(namespace).click();
+    await settle();
+    await settle();
+  }
+
+  /** Release the panel's modelled load and let the gate re-evaluate. */
+  async function releaseLoad(): Promise<void> {
+    panelStub()!.finishLoad();
+    await settle();
+  }
+
+  // --- (a) no persistent selection ------------------------------------------
+
+  it('(36-14 AC1) a row click leaves NO selection behind — state and DOM', async () => {
+    // Both halves, because either alone can be true while the operator still
+    // sees a highlighted row: `selection` is the table's internal state and
+    // `p-datatable-row-selected` is `SelectableRow`'s own host binding, which
+    // is what actually paints. Home never needed this — selecting a row there
+    // NAVIGATES AWAY — but here the list stays mounted behind the dialog, so a
+    // retained selection is a highlight the operator comes back to.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    await clickRow('acme-team');
+
+    expect(component.panelVisible).toBeTrue();
+    expect(tableInstance().selection).toBeFalsy();
+    expect(
+      fixture.nativeElement.querySelectorAll('tr.p-datatable-row-selected')
+        .length,
+    ).toBe(0);
+  });
+
+  it('(36-14 AC1) the highlight is still gone after the panel closes', async () => {
+    // The state the 36-12 review actually reported: the row stayed lit once the
+    // operator dismissed the dialog and was looking at the list again.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    await clickRow('acme-team');
+    panelStub()!.closed.emit();
+    await settle();
+
+    expect(component.panelVisible).toBeFalse();
+    expect(tableInstance().selection).toBeFalsy();
+    expect(rowFor('acme-team').classList).not.toContain(
+      'p-datatable-row-selected',
+    );
+  });
+
+  it('(36-14 AC2) pSelectableRow SURVIVES — hover host, tabindex and Enter', async () => {
+    // Only the RETAINED selection goes. The directive is what gives the row its
+    // hover affordance, its `tabindex` and its keyboard activation, and a
+    // "cleanup" that removed it along with the highlight would take all three.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    for (const namespace of ['acme-team', 'contoso-product']) {
+      expect(rowFor(namespace).getAttribute('data-p-selectable-row'))
+        .withContext(namespace)
+        .toBe('true');
+      expect(rowFor(namespace).hasAttribute('tabindex'))
+        .withContext(namespace)
+        .toBeTrue();
+    }
+
+    rowFor('contoso-product').dispatchEvent(
+      new KeyboardEvent('keydown', { code: 'Enter', bubbles: true }),
+    );
+    await settle();
+    await settle();
+
+    expect(component.panelVisible).toBeTrue();
+    expect(panelStub()!.namespace).toBe('contoso-product');
+    // ...and Enter leaves no highlight either — the clear is on the handler,
+    // not on the mouse path.
+    expect(tableInstance().selection).toBeFalsy();
+  });
+
+  it('(36-14 AC4) clicking the same row twice still reopens the panel', async () => {
+    // 36-12 AC7's trap, re-asserted under the new rule. With nothing ever
+    // selected, PrimeNG's single-selection TOGGLE now always emits
+    // `onRowSelect` rather than alternating with `onRowUnselect` — a change in
+    // which event fires, and no change at all in what the operator gets.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    await clickRow('acme-team');
+    expect(component.panelVisible).toBeTrue();
+    panelStub()!.closed.emit();
+    await settle();
+
+    await clickRow('acme-team');
+
+    expect(component.panelVisible).toBeTrue();
+    expect(panelStub()!.namespace).toBe('acme-team');
+    expect(tableInstance().selection).toBeFalsy();
+  });
+
+  // --- (b) the Configure/View control is gone -------------------------------
+
+  it('(36-14 AC5) no Configure/View control exists on any row', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    isAdmin$.next(false);
+    await render();
+
+    expect(
+      fixture.nativeElement.querySelectorAll('[data-test^="ns-configure-"]')
+        .length,
+    ).toBe(0);
+  });
+
+  it('(36-14 AC5) the label and icon helpers are GONE from the component', async () => {
+    // Dead code on an entitlement path is worse than dead code anywhere else:
+    // a later reader finds a `canModify`-driven label helper and reasonably
+    // concludes something renders it.
+    const api = component as unknown as Record<string, unknown>;
+
+    expect(api['primaryActionLabel']).toBeUndefined();
+    expect(api['primaryActionIcon']).toBeUndefined();
+  });
+
+  it('(36-14 AC6) the row click is the SOLE entry, and re-binds to the row clicked', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    const primary = spyOn(component, 'onPrimaryActionClick').and.callThrough();
+
+    await clickRow('acme-team');
+    expect(panelStub()!.namespace).toBe('acme-team');
+
+    await clickRow('contoso-product');
+
+    expect(primary).toHaveBeenCalledTimes(2);
+    expect(panelStub()!.namespace).toBe('contoso-product');
+    expect(component.panelNamespace).toBe('contoso-product');
+  });
+
+  it('(36-14 AC7) the read-only tag tracks canModify, row by row, on ONE render', async () => {
+    // The tag and the delete button must never disagree: both read the same
+    // predicate. Asserted on the same DOM, on two rows with opposite verdicts,
+    // which is what a second expression would eventually get wrong.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    isAdmin$.next(false);
+    await render();
+
+    expect(component.canModify(component.rows[0])).toBeTrue();
+    expect(readOnlyTag('acme-team')).toBeNull();
+    expect(deleteBtn('acme-team').disabled).toBeFalse();
+
+    expect(component.canModify(component.rows[1])).toBeFalse();
+    expect(readOnlyTag('contoso-product')).not.toBeNull();
+    expect(deleteBtn('contoso-product').disabled).toBeTrue();
+  });
+
+  it('(36-14 AC7) an ADMIN sees the tag on NO row', async () => {
+    currentUser$.next({ user_id: 'u-admin', roles: ['admin'] });
+    isAdmin$.next(true);
+    await render();
+
+    expect(
+      fixture.nativeElement.querySelectorAll('[data-test^="ns-readonly-"]')
+        .length,
+    ).toBe(0);
+  });
+
+  it('(36-14 AC8) a LATE ownership resolution removes the tag WITHOUT a remount', async () => {
+    // The other half of AC7b's lever: `isAdmin` never moves, only the caller's
+    // identity. This is the spec that fails if the tag is computed once.
+    await render();
+    expect(readOnlyTag('acme-team')).not.toBeNull();
+
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await settle();
+
+    expect(readOnlyTag('acme-team')).toBeNull();
+    expect(isAdmin$.value).toBeFalse();
+  });
+
+  it('(36-14 AC7) the tag does NOT join the visibility chips', async () => {
+    // The hook move this story turns on: `ns-visibility-{ns}` addresses a
+    // wrapper holding exactly the three visibility chips, so the read-only tag
+    // is a sibling of that wrapper and not a fourth chip inside it. Get this
+    // wrong and seven frozen chip assertions go red — this states the rule
+    // directly rather than leaving it to be inferred from their survival.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    isAdmin$.next(false);
+    await render();
+
+    expect(chipValues('contoso-product')).toEqual([
+      'public',
+      'shareable',
+      'team',
+    ]);
+
+    const chipsWrapper = rowFor('contoso-product').querySelector(
+      '.admin-catalog__chips',
+    )!;
+    const tag = readOnlyTag('contoso-product')!;
+    expect(chipsWrapper.contains(tag)).toBeTrue();
+    expect(byTest('ns-visibility-contoso-product')!.contains(tag)).toBeFalse();
+  });
+
+  // --- (c) Clone ------------------------------------------------------------
+
+  it('(36-14 AC10) Clone sits between export and delete, styled like them', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    const clone = cloneBtn('acme-team');
+    const del = deleteBtn('acme-team');
+
+    expect(clone.tagName).toBe('BUTTON');
+    expect(clone.getAttribute('aria-label')).toBe('Clone namespace acme-team');
+    expect(clone.querySelector('.pi-copy')).not.toBeNull();
+    for (const cls of ['p-button-rounded', 'p-button-secondary']) {
+      expect(clone.classList.contains(cls)).withContext(cls).toBeTrue();
+      // ...and the same treatment as the control beside it, so the cell cannot
+      // drift into two button styles.
+      expect(del.classList.contains(cls)).withContext(cls).toBeTrue();
+    }
+  });
+
+  it('(36-14 AC11) Clone on row B after opening row A operates on B', async () => {
+    // ***THE SPEC.*** The config dialog's `@defer` resolves ONCE, so the panel
+    // instance survives every close and opening a different row only re-binds
+    // `[namespace]`; the panel reloads asynchronously in its own `ngOnChanges`.
+    // A Clone fired synchronously here reads the panel's BUFFER — still row A's
+    // — and the operator confirms A's bundle under a name they chose for B. A
+    // write, successful, silent, and wrong.
+    //
+    // `cloneOpenedFor` records the namespace the panel HELD at the moment it
+    // was asked, which is what makes this discriminate: asserting only "the
+    // modal opened" passes for the broken implementation too.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    await clickRow('acme-team');
+    await releaseLoad();
+    expect(panelStub()!.namespace).toBe('acme-team');
+    panelStub()!.closed.emit();
+    await settle();
+
+    await clickClone('contoso-product');
+    await releaseLoad();
+
+    expect(panelStub()!.cloneOpenedFor).toEqual(['contoso-product']);
+    expect(panelStub()!.cloneDialogVisible).toBeTrue();
+  });
+
+  it('(36-14 AC12) the gate waits for the LOAD, not just the re-bind', async () => {
+    // The second wrong-data window, and the subtler one. `loadNamespace` clears
+    // the buffer before it fetches, so mid-load `canClone` is TRUE (an empty
+    // buffer is a clean one) and the modal would open on nothing at all.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    await clickRow('acme-team');
+    await releaseLoad();
+    panelStub()!.closed.emit();
+    await settle();
+
+    await clickClone('contoso-product');
+
+    // Re-bound, but still loading: nothing has fired.
+    expect(panelStub()!.namespace).toBe('contoso-product');
+    expect(panelStub()!.loading).toBeTrue();
+    expect(panelStub()!.cloneOpenedFor).toEqual([]);
+
+    await releaseLoad();
+
+    expect(panelStub()!.cloneOpenedFor).toEqual(['contoso-product']);
+  });
+
+  it('(36-14 AC13) a FIRST-EVER open still reaches the Clone modal', async () => {
+    // No `@ViewChild` at all at click time: a synchronous `panel.onCloneClick()`
+    // either throws or silently does nothing, depending on how it is written.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    expect(panelStub()).toBeUndefined();
+
+    await clickClone('acme-team');
+
+    expect(component.panelVisible).toBeTrue();
+    expect(panelStub()).not.toBeUndefined();
+    expect(panelStub()!.cloneOpenedFor).toEqual([]);
+
+    await releaseLoad();
+
+    expect(panelStub()!.cloneOpenedFor).toEqual(['acme-team']);
+    expect(panelStub()!.cloneDialogVisible).toBeTrue();
+  });
+
+  it('(36-14 AC14) canClone false → Clone PRESENT, disabled, reason on hover', async () => {
+    // Panel-scoped, so it blocks every row: one panel, one buffer, one clone
+    // engine. The `title` says WHY rather than repeating delete's entitlement
+    // wording — an operator sent looking for a permission problem would not
+    // find one.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    await clickRow('acme-team');
+    await releaseLoad();
+    panelStub()!.canClone = false;
+    await settle();
+
+    for (const namespace of ['acme-team', 'contoso-product']) {
+      const btn = cloneBtn(namespace);
+      expect(btn).withContext(namespace).not.toBeNull();
+      expect(btn.disabled).withContext(namespace).toBeTrue();
+      expect(btn.getAttribute('title'))
+        .withContext(namespace)
+        .toBe(CLONE_DENIED_REASON);
+    }
+    expect(CLONE_DENIED_REASON).not.toBe(DELETE_DENIED_REASON);
+  });
+
+  it('(36-14 AC14) canClone true, and no panel at all, leave Clone live and TITLE-less', async () => {
+    // `title` means one thing in this row — the denial reason — exactly as it
+    // does on delete. A control disabled before its blocker even exists would
+    // read as "you may never clone this".
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    expect(component.panel).toBeUndefined();
+    expect(cloneBtn('acme-team').disabled).toBeFalse();
+    expect(cloneBtn('acme-team').getAttribute('title')).toBeNull();
+
+    await clickRow('acme-team');
+    await releaseLoad();
+    expect(panelStub()!.canClone).toBeTrue();
+
+    expect(cloneBtn('acme-team').disabled).toBeFalse();
+    expect(cloneBtn('acme-team').getAttribute('title')).toBeNull();
+  });
+
+  it('(36-14 AC15) Clone is NOT entitlement-gated, on the very row Delete is', async () => {
+    // Two different rules on one row, asserted together on purpose: Clone
+    // creates a NEW namespace, which the server permits any caller, so gating
+    // it on `canModify` would take a capability the server grants. This is the
+    // cheapest guard against someone tidying the two into one predicate.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    isAdmin$.next(false);
+    await render();
+
+    expect(component.canModify(component.rows[1])).toBeFalse();
+    expect(readOnlyTag('contoso-product')).not.toBeNull();
+    expect(deleteBtn('contoso-product').disabled).toBeTrue();
+
+    expect(cloneBtn('contoso-product').disabled).toBeFalse();
+    expect(cloneBtn('contoso-product').getAttribute('title')).toBeNull();
+
+    await clickClone('contoso-product');
+    await releaseLoad();
+
+    expect(panelStub()!.cloneOpenedFor).toEqual(['contoso-product']);
+  });
+
+  it('(36-14 AC16) a pending clone is CANCELLED when the panel closes', async () => {
+    // A trigger that outlived its dialog would fire against whichever row the
+    // operator opens next — the same wrong-namespace write AC11 is about,
+    // reached by a different route.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    await clickClone('acme-team');
+    expect(panelStub()!.loading).toBeTrue(); // the load never settled
+
+    clickDialogClose();
+    await settle();
+    expect(component.panelVisible).toBeFalse();
+
+    await clickRow('contoso-product');
+    await releaseLoad();
+
+    expect(panelStub()!.namespace).toBe('contoso-product');
+    expect(panelStub()!.cloneOpenedFor).toEqual([]);
+    expect(panelStub()!.cloneDialogVisible).toBeFalse();
+  });
+
+  it('(36-14 AC17) Escape with the row-opened Clone modal up closes ONLY it', async () => {
+    // 36-4's precedence, unchanged: the panel owns its own modals, reports that
+    // it consumed the keystroke, and the config dialog stays exactly where it
+    // is. Reached here through the ROW's Clone rather than the panel's own.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    await clickClone('acme-team');
+    await releaseLoad();
+    expect(panelStub()!.cloneDialogVisible).toBeTrue();
+
+    const confirmDiscard = spyOn(panelStub()!, 'confirmDiscard');
+    pressEscape();
+    await settle();
+
+    expect(component.panelVisible).toBeTrue();
+    expect(confirmDiscard).not.toHaveBeenCalled();
+  });
+
+  it('(36-14 AC18) all THREE row controls stop the click, and a plain cell does not', async () => {
+    // The positive control is the half that matters: without it the three
+    // `toBeFalse()` reads below would pass just as happily with the listener
+    // never wired at all.
+    stubObjectUrl();
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve('kind: team\n'));
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    expect(
+      clickReachesRow('acme-team', byTest('ns-owner-acme-team')!),
+    ).toBeTrue();
+
+    for (const hook of ['ns-export', 'ns-clone', 'ns-delete']) {
+      expect(clickReachesRow('acme-team', byTest(`${hook}-acme-team`)!))
+        .withContext(hook)
+        .toBeFalse();
+    }
+
+    await settle();
+    await settle();
   });
 });

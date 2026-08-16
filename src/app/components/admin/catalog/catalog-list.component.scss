@@ -88,6 +88,19 @@
   gap: 0.25rem;
 }
 
+// Story 36-14 — a wrapper that exists for the TEST HOOK, not for layout: it
+// scopes `ns-visibility-{ns}` to the three visibility chips so the `read-only`
+// tag beside them is not swept up by the chip assertions.
+//
+// `display: contents` because it must be invisible to the layout: the three
+// chips stay direct flex children of `.admin-catalog__chips` above and keep
+// exactly the gap and wrapping they had before the wrapper existed. Giving it a
+// flex box of its own would nest a second flex context here and change the
+// wrapping behaviour of a cell nobody asked to change.
+.admin-catalog__visibility-chips {
+  display: contents;
+}
+
 .admin-catalog__counts {
   display: flex;
   flex-wrap: wrap;
