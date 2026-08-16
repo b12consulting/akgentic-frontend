@@ -9,6 +9,7 @@ import { routes } from '../../app.routes';
 import { AuthService } from '../../core/auth/auth.service';
 import { ConfigService } from '../../core/config/config.service';
 import { adminGuard } from './admin.guard';
+import { ADMIN_ROUTES } from './admin.routes';
 
 /**
  * Story 36-1 (AC #9, #10) — `adminGuard` redirects, it does not 403.
@@ -108,9 +109,18 @@ describe('adminGuard (Story 36-1)', () => {
     ).toBeNull();
   });
 
-  it('(AC9) the guard is a functional CanActivateFn attached to the api-keys route', async () => {
-    await setUp({ user_id: 'u-1', roles: ['admin'] });
+  it('(AC9) the guard is a functional CanActivateFn attached to the api-keys route', () => {
+    // `typeof adminGuard === 'function'` is true of ANY function and stays
+    // green with the guard detached from the route entirely — so the
+    // attachment half of AC 9 is pinned here, on the route config itself. The
+    // redirect specs above prove the behaviour; this one proves it is wired to
+    // the pane it is meant to protect.
+    const apiKeys = (ADMIN_ROUTES[0].children ?? []).find(
+      (r) => r.path === 'api-keys',
+    );
 
     expect(typeof adminGuard).toBe('function');
+    expect(apiKeys).toBeDefined();
+    expect(apiKeys!.canActivate).toContain(adminGuard);
   });
 });

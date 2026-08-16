@@ -6,6 +6,7 @@ import { BehaviorSubject, of } from 'rxjs';
 import { map } from 'rxjs/operators';
 
 import { routes } from '../../app.routes';
+import { AuthGuard } from '../../core/auth/auth.guard';
 import { AuthService } from '../../core/auth/auth.service';
 import { ConfigService } from '../../core/config/config.service';
 import { ADMIN_ROUTES } from './admin.routes';
@@ -159,6 +160,19 @@ describe('admin routes (Story 36-1)', () => {
     expect(typeof entry!.loadChildren).toBe('function');
     expect(entry!.component).toBeUndefined();
     expect(entry!.children).toBeUndefined();
+  });
+
+  it('(AC9) AuthGuard stays on the PARENT admin route — adminGuard depends on it', () => {
+    // `adminGuard` reads `isAdmin$` with `take(1)`, so it needs `/auth/me`
+    // already resolved when it runs. Angular runs a parent's `canActivate` to
+    // completion before a child's, and `AuthGuard` is what does the resolving.
+    // Remove it here and the child guard starts redirecting genuine admins on
+    // every tier that authenticates — a regression NO behavioural spec in this
+    // file or in admin.guard.spec.ts would catch, because both run with
+    // `hideLogin: true`, under which `AuthGuard` short-circuits to `of(true)`.
+    const entry = routes.find((r) => r.path === 'admin');
+
+    expect(entry!.canActivate).toContain(AuthGuard);
   });
 
   it('(AC12) both panes are loadComponent-split', () => {
