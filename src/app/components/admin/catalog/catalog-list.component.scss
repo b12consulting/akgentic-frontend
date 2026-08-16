@@ -21,8 +21,11 @@
 }
 
 // Story 36-9 — what the list contains, beside the heading rather than above it.
+//
+// Muted, NOT shrunk. The admin panes read at the app's default type size, the
+// same as the Home table; a pane-local scale made the whole area look like a
+// different product. Colour is the only thing that makes this secondary.
 .admin-catalog__description {
-  font-size: 0.85rem;
   color: var(--text-color-secondary, #6b7280);
 }
 
@@ -35,7 +38,6 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  font-size: 0.9rem;
 }
 
 .admin-catalog__loading,
@@ -48,17 +50,28 @@
 // Story 36-9 inverted the cell: the IDENTIFIER leads, in the monospace face
 // used for keys across the admin area (the API-keys pane next door does the
 // same for `key_id`), and the display name trails it, muted.
+//
+// The two sizes MATCH Home's `.team-name` / `.team-description` exactly — 1rem
+// over 0.875rem. They are the same shape of cell (a primary key with a
+// secondary line beneath it), so inventing a smaller scale here made the admin
+// table read as a different application from the one behind it.
 .admin-catalog__ns-id {
   font-family: var(--font-family-mono, monospace);
   font-weight: 600;
-  font-size: 0.85rem;
+  font-size: 1rem;
 }
 
 .admin-catalog__ns-name {
-  font-size: 0.8rem;
+  font-size: 0.875rem;
   color: var(--text-color-secondary, #6b7280);
 }
 
+// THE THREE FLEX WRAPPERS. Each of these is a <div> INSIDE its <td>, never the
+// <td> itself. `display: flex` on a table cell removes `table-cell`, so the
+// browser drops it from the column grid and wraps the surviving cells in
+// anonymous table boxes — the header keeps rendering five columns while the row
+// renders two, with the three flex cells stacked outside the grid. The DOM tree
+// is unchanged by any of that, which is why 1760 green specs never saw it.
 .admin-catalog__chips {
   display: flex;
   flex-wrap: wrap;
@@ -69,7 +82,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  font-size: 0.8rem;
 }
 
 .admin-catalog__count {

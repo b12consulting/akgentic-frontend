@@ -35,14 +35,18 @@
   white-space: pre-line;
 }
 
+// Monospace because it is a key. NOT shrunk: the admin panes read at the app's
+// default type size, the same as the Home table.
 .admin-api-keys__key-id {
   font-family: var(--font-family-mono, monospace);
-  font-size: 0.85rem;
 }
 
 // Story 36-6 — per-row actions and the revoke confirmation, shaped like the
 // catalog pane's next door so the admin area reads as one thing.
 
+// A <div> INSIDE the actions <td>, never the <td> itself: `display: flex` on a
+// table cell drops it out of the column grid entirely (see the catalog pane's
+// stylesheet for the full account).
 .admin-api-keys__actions {
   display: flex;
   gap: 0.5rem;

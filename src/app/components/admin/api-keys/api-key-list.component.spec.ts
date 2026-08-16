@@ -1266,6 +1266,38 @@ describe('ApiKeyListComponent (Stories 36-5, 36-6)', () => {
   });
 
   // =========================================================================
+  // Story 36-9 review — the table's own cell contract
+  // =========================================================================
+
+  it('(36-9 review) the actions live INSIDE their cell, and the row has six', async () => {
+    // The catalog pane next door shipped three `<td>`s carrying a
+    // `display: flex` class, which stops a cell being a `table-cell` and drops
+    // it out of the column grid; this pane's actions cell had the same class.
+    // Karma cannot see the breakage — the `<td>`s are correct siblings either
+    // way — so what is pinned here is the structural contract the CSS must not
+    // contradict: as many body cells as header cells, with the actions nested
+    // inside the last one.
+    apiSpy.getApiKeys.and.returnValue(Promise.resolve([key({ key_id: 'ak-1' })]));
+    await render();
+
+    const headerCells = fixture.nativeElement.querySelectorAll(
+      '.p-datatable-thead > tr > th',
+    ).length;
+    const cells = Array.from(
+      byTest('api-key-row-ak-1')!.querySelectorAll('td'),
+    );
+
+    expect(cells.length).toBe(6);
+    expect(cells.length).toBe(headerCells);
+    expect(
+      cells[5].querySelector('[data-test="api-key-rotate-btn-ak-1"]'),
+    ).not.toBeNull();
+    expect(
+      cells[5].querySelector('[data-test="api-key-revoke-btn-ak-1"]'),
+    ).not.toBeNull();
+  });
+
+  // =========================================================================
   // Story 36-9 — what this pane publishes to the admin rail
   // =========================================================================
 
@@ -1327,6 +1359,22 @@ describe('ApiKeyListComponent (Stories 36-5, 36-6)', () => {
       await render();
 
       expect(publishedKeyCount()).toBeNull();
+    });
+
+    it('republishes after a create adds a row', async () => {
+      // The pane publishes from four places, and only the two load-time ones
+      // are forced by the states above. The create path changes
+      // `keys.length` without a reload, so without its own republish the rail
+      // keeps showing the count from before the key existed — the exact stale
+      // number the `null`-means-unknown rule exists to avoid.
+      apiSpy.getApiKeys.and.returnValue(Promise.resolve([key()]));
+      apiSpy.createApiKey.and.returnValue(Promise.resolve(createdKey()));
+      await render();
+      expect(publishedKeyCount()).toBe(1);
+
+      await submitCreate();
+
+      expect(publishedKeyCount()).toBe(2);
     });
 
     it('republishes after a revoke removes a row', async () => {

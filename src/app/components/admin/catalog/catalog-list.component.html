@@ -50,11 +50,16 @@
       <label for="admin-show-all-namespaces-toggle">Show all namespaces</label>
     </span>
 
+    <!--
+      NO `severity`, so it renders as the app's solid primary button — which is
+      what Home's Create / Configuration / Refresh are. `severity="secondary"`
+      here made the admin area's only toolbar button a pale outline nothing else
+      in the app uses, and the pane read as a bolt-on rather than a screen.
+    -->
     <button
       pButton
       type="button"
       size="small"
-      severity="secondary"
       label="Refresh"
       icon="pi pi-refresh"
       [disabled]="loading"
@@ -162,25 +167,33 @@
                 ></p-tag>
               </td>
 
-              <td
-                class="admin-catalog__chips"
-                [attr.data-test]="'ns-visibility-' + row.namespace"
-              >
-                <!-- Exactly one of public/private — never neither, never both. -->
-                <p-tag
-                  [severity]="row.public ? 'success' : 'secondary'"
-                  [value]="row.public ? 'public' : 'private'"
-                ></p-tag>
-                <p-tag
-                  *ngIf="row.shareable"
-                  severity="info"
-                  value="shareable"
-                ></p-tag>
-                <!-- Exactly one of team/library, from the `team` boolean. -->
-                <p-tag
-                  severity="secondary"
-                  [value]="row.team ? 'team' : 'library'"
-                ></p-tag>
+              <!--
+                The flex layout lives on the WRAPPER, never on the <td>. A
+                `display: flex` cell stops being a `table-cell`: the browser
+                drops it out of the column grid and builds anonymous table
+                boxes around whatever real cells are left, so the header keeps
+                five columns while the row renders two. Karma cannot see it —
+                in the DOM tree the cells are still correct siblings — so the
+                rule is stated here rather than left to a spec.
+              -->
+              <td [attr.data-test]="'ns-visibility-' + row.namespace">
+                <div class="admin-catalog__chips">
+                  <!-- Exactly one of public/private — never neither, never both. -->
+                  <p-tag
+                    [severity]="row.public ? 'success' : 'secondary'"
+                    [value]="row.public ? 'public' : 'private'"
+                  ></p-tag>
+                  <p-tag
+                    *ngIf="row.shareable"
+                    severity="info"
+                    value="shareable"
+                  ></p-tag>
+                  <!-- Exactly one of team/library, from the `team` boolean. -->
+                  <p-tag
+                    severity="secondary"
+                    [value]="row.team ? 'team' : 'library'"
+                  ></p-tag>
+                </div>
               </td>
 
               <!--
@@ -196,27 +209,29 @@
                 column narrows. `Σ` sums exactly what is shown, so the column
                 adds up on inspection.
               -->
-              <td class="admin-catalog__counts">
-                <span
-                  *ngFor="let kind of shownEntryKinds"
-                  class="admin-catalog__count"
-                  [class.admin-catalog__count--zero]="isZeroCount(row, kind)"
-                >
-                  <span class="admin-catalog__count-kind">{{ kind }}</span>
+              <td>
+                <div class="admin-catalog__counts">
                   <span
-                    class="admin-catalog__count-value"
-                    [attr.data-test]="'ns-count-' + row.namespace + '-' + kind"
-                    >{{ countLabel(row, kind) }}</span
+                    *ngFor="let kind of shownEntryKinds"
+                    class="admin-catalog__count"
+                    [class.admin-catalog__count--zero]="isZeroCount(row, kind)"
                   >
-                </span>
-                <span class="admin-catalog__count admin-catalog__count--total">
-                  <span class="admin-catalog__count-kind">Σ</span>
-                  <span
-                    class="admin-catalog__count-value"
-                    [attr.data-test]="'ns-total-' + row.namespace"
-                    >{{ shownTotal(row) }}</span
-                  >
-                </span>
+                    <span class="admin-catalog__count-kind">{{ kind }}</span>
+                    <span
+                      class="admin-catalog__count-value"
+                      [attr.data-test]="'ns-count-' + row.namespace + '-' + kind"
+                      >{{ countLabel(row, kind) }}</span
+                    >
+                  </span>
+                  <span class="admin-catalog__count admin-catalog__count--total">
+                    <span class="admin-catalog__count-kind">Σ</span>
+                    <span
+                      class="admin-catalog__count-value"
+                      [attr.data-test]="'ns-total-' + row.namespace"
+                      >{{ shownTotal(row) }}</span
+                    >
+                  </span>
+                </div>
               </td>
 
               <!--
@@ -229,74 +244,77 @@
                 secondary, a `pi` icon), copied and not imported: `page-admin`
                 may not depend on `page-home`.
               -->
-              <td class="admin-catalog__actions">
-                <!--
-                  Label differs by entitlement; the DESTINATION does not — both
-                  Configure and View open the same panel on this row, in the
-                  dialog below. A button and not a link: Story 36-4 made this an
-                  in-page open, so the list stays mounted behind the panel. The
-                  deep-link URL is still bookmarkable, just no longer reached by
-                  clicking here.
+              <td>
+                <div class="admin-catalog__actions">
+                  <!--
+                    Label differs by entitlement; the DESTINATION does not — both
+                    Configure and View open the same panel on this row, in the
+                    dialog below. A button and not a link: Story 36-4 made this an
+                    in-page open, so the list stays mounted behind the panel. The
+                    deep-link URL is still bookmarkable, just no longer reached by
+                    clicking here.
 
-                  It KEEPS its visible label while its two neighbours are
-                  icon-only. Configure-vs-View is the entitlement affordance —
-                  it is where a non-owner learns they are read-only before
-                  clicking — so hiding it behind an icon would take the one
-                  piece of text that carries the rule.
-                -->
-                <button
-                  pButton
-                  type="button"
-                  size="small"
-                  severity="secondary"
-                  [rounded]="true"
-                  [icon]="primaryActionIcon(row)"
-                  [label]="primaryActionLabel(row)"
-                  (click)="onPrimaryActionClick(row)"
-                  [attr.data-test]="'ns-configure-' + row.namespace"
-                ></button>
-                <!--
-                  Export the namespace as YAML. Read-only, entitlement-free: it
-                  returns exactly what the caller could already list.
-                -->
-                <button
-                  pButton
-                  type="button"
-                  size="small"
-                  severity="secondary"
-                  [rounded]="true"
-                  icon="pi pi-download"
-                  [attr.aria-label]="'Export namespace ' + row.namespace"
-                  (click)="onExportClick(row)"
-                  [attr.data-test]="'ns-export-' + row.namespace"
-                ></button>
-                <!--
-                  Disabled, never hidden, and carrying the reason as a native
-                  `title` — a disabled button fires no mouse events, so
-                  `pTooltip` would never show it.
+                    It KEEPS its visible label while its two neighbours are
+                    icon-only. Configure-vs-View is the entitlement affordance —
+                    it is where a non-owner learns they are read-only before
+                    clicking — so hiding it behind an icon would take the one
+                    piece of text that carries the rule.
 
-                  `title` means ONE thing here: the denial reason, absent when
-                  there is none. The accessible name comes from `aria-label`
-                  instead, so an entitled row's button carries no `title` at all
-                  — which is what the authorization specs assert.
+                    No `size`: Home's row actions carry none either, and the
+                    admin area's rows are the same rows. Setting `small` here
+                    shrank them below every other action button in the app.
+                  -->
+                  <button
+                    pButton
+                    type="button"
+                    severity="secondary"
+                    [rounded]="true"
+                    [icon]="primaryActionIcon(row)"
+                    [label]="primaryActionLabel(row)"
+                    (click)="onPrimaryActionClick(row)"
+                    [attr.data-test]="'ns-configure-' + row.namespace"
+                  ></button>
+                  <!--
+                    Export the namespace as YAML. Read-only, entitlement-free: it
+                    returns exactly what the caller could already list.
+                  -->
+                  <button
+                    pButton
+                    type="button"
+                    severity="secondary"
+                    [rounded]="true"
+                    icon="pi pi-download"
+                    [attr.aria-label]="'Export namespace ' + row.namespace"
+                    (click)="onExportClick(row)"
+                    [attr.data-test]="'ns-export-' + row.namespace"
+                  ></button>
+                  <!--
+                    Disabled, never hidden, and carrying the reason as a native
+                    `title` — a disabled button fires no mouse events, so
+                    `pTooltip` would never show it.
 
-                  Not red. This app carries destructive intent in the
-                  confirmation dialog (the Proceed button below keeps its
-                  treatment), exactly as Home does with Delete Team.
-                -->
-                <button
-                  pButton
-                  type="button"
-                  size="small"
-                  severity="secondary"
-                  [rounded]="true"
-                  icon="pi pi-times"
-                  [attr.aria-label]="'Delete namespace ' + row.namespace"
-                  [disabled]="!canModify(row)"
-                  [attr.title]="deleteDisabledReason(row)"
-                  (click)="onDeleteClick(row)"
-                  [attr.data-test]="'ns-delete-' + row.namespace"
-                ></button>
+                    `title` means ONE thing here: the denial reason, absent when
+                    there is none. The accessible name comes from `aria-label`
+                    instead, so an entitled row's button carries no `title` at all
+                    — which is what the authorization specs assert.
+
+                    Not red. This app carries destructive intent in the
+                    confirmation dialog (the Proceed button below keeps its
+                    treatment), exactly as Home does with Delete Team.
+                  -->
+                  <button
+                    pButton
+                    type="button"
+                    severity="secondary"
+                    [rounded]="true"
+                    icon="pi pi-times"
+                    [attr.aria-label]="'Delete namespace ' + row.namespace"
+                    [disabled]="!canModify(row)"
+                    [attr.title]="deleteDisabledReason(row)"
+                    (click)="onDeleteClick(row)"
+                    [attr.data-test]="'ns-delete-' + row.namespace"
+                  ></button>
+                </div>
               </td>
             </tr>
           </ng-template>

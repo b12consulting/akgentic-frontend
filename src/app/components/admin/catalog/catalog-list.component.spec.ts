@@ -1593,6 +1593,24 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(input.getAttribute('placeholder')).toBe(CATALOG_FILTER_PLACEHOLDER);
   });
 
+  it('(36-9 AC8) typing in the BOX itself narrows the table', async () => {
+    // Every other filter spec drives `onFilterChange` directly, which leaves
+    // the template's own `(ngModelChange)` binding unasserted: delete that
+    // binding and all of them stay green while the box does nothing at all in
+    // a browser. This is the one spec that goes through the input an operator
+    // actually types in, so the wiring is a fact and not an assumption.
+    await render();
+
+    const input = byTest('catalog-filter') as HTMLInputElement;
+    input.value = 'contoso';
+    input.dispatchEvent(new Event('input'));
+    await settle();
+
+    expect(component.filterText).toBe('contoso');
+    expect(byTest('ns-id-contoso-product')).not.toBeNull();
+    expect(byTest('ns-id-acme-team')).toBeNull();
+  });
+
   it('(36-9 AC8) filtering narrows on the IDENTIFIER, case-insensitively', async () => {
     await render();
 
@@ -1826,6 +1844,45 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(
       nonZero.closest('.admin-catalog__count')!.classList,
     ).not.toContain('admin-catalog__count--zero');
+  });
+
+  // --- The table's own cell contract ----------------------------------------
+
+  it('(36-9 review) each column lives INSIDE its own cell, and the row has five', async () => {
+    // WHAT THIS CANNOT DO, said plainly: it does not catch the bug it was
+    // written for. Three `<td>`s carried a class whose SCSS set
+    // `display: flex`, which stops a cell being a `table-cell` — the browser
+    // drops it from the column grid, wraps the survivors in anonymous table
+    // boxes, and the row renders two columns under a five-column header. In
+    // the DOM those `<td>`s are still correct siblings, so Karma sees nothing
+    // wrong; the table rendered broken from Story 36-3 through 36-8 with a
+    // fully green suite. Asserting a computed style instead would pin the
+    // theme, which the epic's testing rule forbids and which would not have
+    // caught it either (the cell was legitimately flex — on the wrong node).
+    //
+    // What IS assertable is the structural contract the CSS must not
+    // contradict: as many body cells as header cells, and every column's
+    // content nested inside its own cell rather than beside it. A future
+    // refactor that hoists content back out of a `<td>` goes red here.
+    resolveRows(NAMESPACES);
+    await render();
+
+    const headerCells = fixture.nativeElement.querySelectorAll(
+      '.p-datatable-thead > tr > th',
+    ).length;
+    const row = byTest('ns-row-acme-team')!;
+    const cells = Array.from(row.querySelectorAll('td'));
+
+    expect(cells.length).toBe(5);
+    expect(cells.length).toBe(headerCells);
+    expect(cells[0].querySelector('[data-test="ns-id-acme-team"]')).not.toBeNull();
+    expect(cells[2].querySelector('.admin-catalog__chips')).not.toBeNull();
+    expect(
+      cells[3].querySelector('[data-test="ns-total-acme-team"]'),
+    ).not.toBeNull();
+    expect(
+      cells[4].querySelector('[data-test="ns-delete-acme-team"]'),
+    ).not.toBeNull();
   });
 
   it('(36-9 AC12) the shown kinds are DERIVED from the protocol tuple', async () => {

@@ -147,30 +147,36 @@
           hide, because there is no row. Both disable off the pane's single
           write phase, so a second click during a request is refused by the
           attribute AND by the TypeScript guard behind it.
+
+          The flex layout sits on the WRAPPER, never on the <td>: a
+          `display: flex` cell is no longer a `table-cell`, so it falls out of
+          the column grid and the row silently loses a column.
         -->
-        <td class="admin-api-keys__actions">
-          <button
-            pButton
-            type="button"
-            size="small"
-            severity="secondary"
-            label="Rotate"
-            icon="pi pi-refresh"
-            [disabled]="isWriteInFlight"
-            (click)="onRotate(key)"
-            [attr.data-test]="'api-key-rotate-btn-' + key.key_id"
-          ></button>
-          <button
-            pButton
-            type="button"
-            size="small"
-            class="admin-api-keys__danger"
-            label="Revoke"
-            icon="pi pi-trash"
-            [disabled]="isWriteInFlight"
-            (click)="onRevokeClick(key)"
-            [attr.data-test]="'api-key-revoke-btn-' + key.key_id"
-          ></button>
+        <td>
+          <div class="admin-api-keys__actions">
+            <button
+              pButton
+              type="button"
+              size="small"
+              severity="secondary"
+              label="Rotate"
+              icon="pi pi-refresh"
+              [disabled]="isWriteInFlight"
+              (click)="onRotate(key)"
+              [attr.data-test]="'api-key-rotate-btn-' + key.key_id"
+            ></button>
+            <button
+              pButton
+              type="button"
+              size="small"
+              class="admin-api-keys__danger"
+              label="Revoke"
+              icon="pi pi-trash"
+              [disabled]="isWriteInFlight"
+              (click)="onRevokeClick(key)"
+              [attr.data-test]="'api-key-revoke-btn-' + key.key_id"
+            ></button>
+          </div>
         </td>
       </tr>
     </ng-template>
