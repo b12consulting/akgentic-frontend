@@ -3,13 +3,13 @@ import {
   Component,
   DestroyRef,
   ElementRef,
+  HostListener,
   OnInit,
   ViewChild,
   inject,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { TableModule } from 'primeng/table';
@@ -20,6 +20,7 @@ import { Observable, combineLatest } from 'rxjs';
 import { AuthService } from '../../../core/auth/auth.service';
 import { ApiService } from '../../../core/http/api.service';
 import { ENTRY_KINDS, EntryKind } from '../../../protocol/catalog.interface';
+import { NamespacePanelComponent } from '../../catalog/namespace-panel/namespace-panel.component';
 import { NamespaceRow } from './namespace-row.model';
 import { NamespaceRowsService } from './namespace-rows.service';
 
@@ -70,6 +71,18 @@ interface CatalogViewer {
  *
  * `NamespaceRowsService` is a bare `@Injectable()` (ADR-015 §2b) and is
  * provided here — component-scoped, one composition per mounted pane.
+ *
+ * Story 36-4 made this pane a DIALOG HOST as well as a table: the row's
+ * primary action opens `NamespacePanelComponent` in a `p-dialog` over the list
+ * instead of navigating away, so the list stays mounted behind it (which is
+ * what lets `existingNamespaces` come from data already on screen and lets a
+ * save refresh the table). The deep-link URL survives as a bookmark — it is
+ * simply no longer reachable by clicking.
+ *
+ * That makes THREE dialog layers this pane must arbitrate between on a single
+ * Escape: the delete confirmation, the config host, and the panel's own Clone /
+ * confirm modals. `onEscape` below is the one handler that decides; every
+ * dialog sets `[closeOnEscape]="false"` so PrimeNG never decides for it.
  */
 @Component({
   selector: 'app-admin-catalog-list',
@@ -77,12 +90,12 @@ interface CatalogViewer {
   imports: [
     CommonModule,
     FormsModule,
-    RouterLink,
     ButtonModule,
     DialogModule,
     TableModule,
     TagModule,
     ToggleSwitchModule,
+    NamespacePanelComponent,
   ],
   providers: [NamespaceRowsService],
   templateUrl: './catalog-list.component.html',
@@ -116,8 +129,31 @@ export class CatalogListComponent implements OnInit {
   pendingDelete: NamespaceRow | null = null;
   deleting = false;
 
+  /** Whether the namespace-configuration dialog is open (Story 36-4). */
+  panelVisible = false;
+  /** The identifier bound to the panel's `[namespace]` input. */
+  panelNamespace = '';
+  /** The dialog header's display name; falls back to the identifier. */
+  panelLabel = '';
+
   @ViewChild('confirmProceedBtn')
   private confirmProceedBtn?: ElementRef<HTMLButtonElement>;
+
+  /**
+   * The hosted panel, resolved once the `@defer` block has actually rendered —
+   * i.e. NOT before the first change-detection pass after `panelVisible` flips
+   * true. Every read must stay optional: the close flow runs on a pane whose
+   * dialog was never opened, and "not mounted" means "nothing to discard".
+   *
+   * `@defer` resolves ONCE. After that the panel instance SURVIVES a close, so
+   * switching rows only re-binds `[namespace]` and the panel's own `ngOnChanges`
+   * reloads it — nothing here remounts or resets it by hand. It also means an
+   * abandoned dirty buffer is cleared by `confirmDiscard()`'s Proceed branch and
+   * by nothing else, which is why the close flow must route through it rather
+   * than just flipping `panelVisible`.
+   */
+  @ViewChild(NamespacePanelComponent)
+  panel?: NamespacePanelComponent;
 
   /**
    * Seeded closed: until the streams say otherwise the viewer is a non-admin
@@ -181,7 +217,17 @@ export class CatalogListComponent implements OnInit {
     );
   }
 
-  /** The primary action's label. Its DESTINATION never varies (AC 15). */
+  /**
+   * The primary action's LABEL. Its destination never varies — both Configure
+   * and View open the same panel, on the same namespace, in the same dialog.
+   *
+   * `View` is a label and not a mode. The panel's editor is writable by design
+   * and exposes no read-only input; adding one would be an edit inside
+   * `components/catalog/namespace-panel/`, which this pane does not make. A
+   * non-owner may therefore open the panel and type — the panel's Save-time
+   * owner-or-admin preflight and the server's 403 are the real boundary, and
+   * always were.
+   */
   primaryActionLabel(row: NamespaceRow): string {
     return this.canModify(row) ? 'Configure' : 'View';
   }
@@ -250,5 +296,129 @@ export class CatalogListComponent implements OnInit {
       this.confirmDialogVisible = false;
       this.pendingDelete = null;
     }
+  }
+
+  // --- The configuration dialog host (Story 36-4) ---------------------------
+
+  /**
+   * The row's primary action: open the panel over the list, on THIS row's
+   * namespace. Not a navigation — the list must stay mounted behind the dialog
+   * for `existingNamespaces` and the `(saved)` refresh to mean anything.
+   */
+  onPrimaryActionClick(row: NamespaceRow): void {
+    this.panelNamespace = row.namespace;
+    this.panelLabel = row.name === '' ? row.namespace : row.name;
+    this.panelVisible = true;
+  }
+
+  /**
+   * Dirty-close guard for BOTH dismissal channels (the X and the dismissable
+   * mask), and the flow Escape delegates to once no secondary modal wants the
+   * keystroke.
+   *
+   * `[(visible)]` is split into `[visible]` + `(visibleChange)` precisely so
+   * this can intercept a dismissal: on a dirty panel it RE-ASSERTS visibility
+   * to hold the dialog open while the panel's own confirm modal runs, and
+   * closes only when that resolves `true`. A clean panel — or one that was
+   * never mounted — closes immediately and is never asked.
+   */
+  onPanelVisibleChange(visible: boolean): void {
+    if (visible) {
+      // Opening: the primary-action handler already set the flag. No-op.
+      return;
+    }
+    const panel = this.panel;
+    if (!panel || !panel.hasUnsavedChanges()) {
+      this.panelVisible = false;
+      return;
+    }
+    this.panelVisible = true;
+    void panel.confirmDiscard().then((discard) => {
+      if (discard) {
+        this.panelVisible = false;
+      }
+    });
+  }
+
+  /**
+   * The panel's `(saved)`. Re-runs the pane's ONE load path, which refreshes
+   * the table and `existingNamespaces` together — they are the same data, so
+   * one call keeps them from disagreeing.
+   */
+  onPanelSaved(): void {
+    void this.loadRows();
+  }
+
+  /**
+   * The Clone modal's collision list, DERIVED from the rows already on screen.
+   *
+   * A getter, not a copied array: a field would be a second source of truth for
+   * data the table is already rendering, and would go stale the moment a row is
+   * deleted. Opening the dialog therefore issues no request of its own.
+   */
+  get existingNamespaces(): string[] {
+    return this.rows.map((r) => r.namespace);
+  }
+
+  /**
+   * True iff a DESTRUCTIVE request is in flight. Reads (`validating`,
+   * `loading`) are deliberately excluded: an operator may dismiss the dialog
+   * while a Validate is mid-flight, and widening this to cover reads would
+   * silently take that away.
+   *
+   * Drives `[closable]` / `[dismissableMask]` and the first branch of
+   * `onEscape` — all three dismissal channels lock together or not at all.
+   */
+  get isWriteInFlight(): boolean {
+    return this.panel?.saving === true || this.panel?.cloning === true;
+  }
+
+  /**
+   * THE Escape handler for this pane — one keystroke, exactly one action.
+   *
+   * It must be DOCUMENT-level. PrimeNG teleports each dialog to `<body>` as a
+   * sibling overlay, so a keydown inside one does not bubble through this
+   * pane's element tree, and a dialog-scoped handler would simply not see it.
+   * For the same reason PrimeNG's own `closeOnEscape` is off on every dialog
+   * here: it registers ONE document listener PER DIALOG, so an inner modal
+   * calling `stopPropagation()` cannot stop an outer dialog's listener — they
+   * are siblings on `document`, not parent and child. Coordination has to be
+   * ours, in one place.
+   *
+   * Priority order, first match wins:
+   *   1. a write is in flight while the config dialog is open → NOTHING. All
+   *      dismissal channels are locked together (`isWriteInFlight`).
+   *   2. the delete confirmation is open → cancel only it, issue no request.
+   *   3. the config dialog is open and the panel consumed the keystroke (its
+   *      confirm modal, else its Clone modal) → stop; the config dialog stays.
+   *   4. the config dialog is open and no secondary modal is → the same close
+   *      flow as the X, so a dirty buffer still routes through `confirmDiscard`.
+   *   5. nothing open → nothing happens.
+   *
+   * Branch 2 is not observable today: the config host is modal, so the row's
+   * Delete cannot be clicked while it is open and the two never coexist. It is
+   * ordered anyway — that makes the handler total instead of accidentally
+   * correct, and costs one `if`. Deleting it because the states "cannot"
+   * overlap is exactly the reasoning a fourth dialog would invalidate.
+   */
+  @HostListener('document:keydown.escape', ['$event'])
+  onEscape(event: Event): void {
+    if (this.panelVisible && this.isWriteInFlight) {
+      return;
+    }
+    if (this.confirmDialogVisible) {
+      this.onDeleteCancel();
+      event.preventDefault();
+      return;
+    }
+    if (!this.panelVisible) {
+      return;
+    }
+    if (this.panel?.handleSecondaryEscape() === true) {
+      event.preventDefault();
+      return;
+    }
+    this.onPanelVisibleChange(false);
+    event.preventDefault();
   }
 }

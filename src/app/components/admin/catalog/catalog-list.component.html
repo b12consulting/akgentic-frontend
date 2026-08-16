@@ -141,16 +141,22 @@
               <td class="admin-catalog__actions">
                 <!--
                   Label differs by entitlement; the DESTINATION does not — both
-                  Configure and View open the same shipped deep link.
+                  Configure and View open the same panel on this row, in the
+                  dialog below. A button and not a link: Story 36-4 made this an
+                  in-page open, so the list stays mounted behind the panel. The
+                  deep-link URL is still bookmarkable, just no longer reached by
+                  clicking here.
                 -->
-                <a
+                <button
                   pButton
+                  type="button"
                   size="small"
                   severity="secondary"
-                  [routerLink]="['/admin/catalog/namespace', row.namespace]"
+                  (click)="onPrimaryActionClick(row)"
                   [attr.data-test]="'ns-configure-' + row.namespace"
-                  >{{ primaryActionLabel(row) }}</a
                 >
+                  {{ primaryActionLabel(row) }}
+                </button>
                 <!--
                   Disabled, never hidden, and carrying the reason as a native
                   `title` — a disabled button fires no mouse events, so
@@ -177,17 +183,17 @@
 </div>
 
 <!--
-  Delete confirmation. Follows the secondary-modal contract (ADR-018) so Story
-  36-4's coordinated Escape handler can fold it in without rework:
-  `[modal]="true"`, `[draggable]="false"`, and `[closeOnEscape]="false"` plus
-  the component's own Escape→cancel. PrimeNG attaches `closeOnEscape` as a
-  DOCUMENT-level listener per dialog, so leaving it on would make one Escape
-  close this dialog AND 36-4's panel host in turn.
+  Delete confirmation. Follows the secondary-modal contract (ADR-018):
+  `[modal]="true"`, `[draggable]="false"`, `[closeOnEscape]="false"`. PrimeNG
+  attaches `closeOnEscape` as a DOCUMENT-level listener per dialog, so leaving
+  it on would make one Escape close this dialog AND the config host below in
+  turn.
 
-  The handler sits on the DIALOG HOST, not on the message body: the dialog's
-  own header close button is a sibling of that body, so a handler scoped to it
-  would leave Escape dead for a user who reached the header — and with
-  PrimeNG's own Escape deliberately off, nothing else would catch it.
+  36-3 gave this dialog its own `(keydown.escape)` binding; Story 36-4 REMOVED
+  it. Escape is now owned entirely by the component's single document-level
+  `onEscape`, which cancels this dialog as its second branch. Two handlers
+  would mean two actions for one keystroke — the exact failure the contract
+  exists to prevent.
 -->
 <p-dialog
   [visible]="confirmDialogVisible"
@@ -199,7 +205,6 @@
   [style]="{ width: '30rem' }"
   header="Delete namespace"
   data-test="delete-confirm-dialog"
-  (keydown.escape)="onDeleteCancel()"
 >
   <div class="admin-catalog__confirm">
     <p class="admin-catalog__confirm-message" data-test="delete-confirm-message">
@@ -232,4 +237,62 @@
       ></button>
     </div>
   </div>
+</p-dialog>
+
+<!--
+  The namespace-configuration host (Story 36-4). Declared AFTER the delete
+  confirmation so `By.directive(Dialog)` in 36-3's pinning spec keeps finding
+  the confirm dialog first.
+
+  `@defer (when panelVisible)` keeps the panel and its Monaco chunk out of the
+  catalog pane's bundle until the first open. It resolves ONCE — the panel
+  instance then survives every later close, which is why switching rows only
+  re-binds `[namespace]` (the panel's own `ngOnChanges` reloads it) and why an
+  abandoned dirty buffer must be cleared by `confirmDiscard()` rather than by
+  destruction.
+
+  `[(visible)]` is split into `[visible]` + `(visibleChange)` so the dirty-close
+  guard can intercept a dismissal; `[closable]` / `[dismissableMask]` lock the X
+  and mask channels together during an in-flight WRITE only — a Validate or a
+  load leaves both live.
+
+  `[closeOnEscape]="false"`, like every dialog this pane owns. Escape belongs to
+  `onEscape`; see its docstring for why that has to be a single document-level
+  handler.
+-->
+<p-dialog
+  [visible]="panelVisible"
+  (visibleChange)="onPanelVisibleChange($event)"
+  [modal]="true"
+  [style]="{ width: '90vw', height: '90vh' }"
+  [closable]="!isWriteInFlight"
+  [closeOnEscape]="false"
+  [dismissableMask]="!isWriteInFlight"
+  data-test="namespace-config-dialog"
+>
+  <ng-template pTemplate="header">
+    <span class="p-dialog-title">
+      {{ panelLabel }}
+      <!--
+        Present ONLY while the panel is dirty — absent from the DOM otherwise,
+        so its absence is a fact a spec can assert rather than a style.
+      -->
+      <span
+        *ngIf="panel?.hasUnsavedChanges() === true"
+        class="admin-catalog__dirty-indicator"
+        aria-label="Unsaved changes"
+        data-test="dirty-indicator-dialog"
+        >●</span
+      >
+    </span>
+  </ng-template>
+  @defer (when panelVisible) {
+    <app-namespace-panel
+      [namespace]="panelNamespace"
+      [existingNamespaces]="existingNamespaces"
+      [showAll]="showAll"
+      (closed)="panelVisible = false"
+      (saved)="onPanelSaved()"
+    />
+  }
 </p-dialog>

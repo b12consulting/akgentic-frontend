@@ -1,3 +1,10 @@
+import {
+  Component,
+  EventEmitter,
+  Input,
+  Output,
+  forwardRef,
+} from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
@@ -10,6 +17,7 @@ import { AuthService } from '../../../core/auth/auth.service';
 import { HttpError } from '../../../core/http/fetch.service';
 import { ApiService } from '../../../core/http/api.service';
 import { ENTRY_KINDS, EntryKind } from '../../../protocol/catalog.interface';
+import { NamespacePanelComponent } from '../../catalog/namespace-panel/namespace-panel.component';
 import {
   CatalogListComponent,
   DELETE_DENIED_REASON,
@@ -30,10 +38,65 @@ import { NamespaceRowsService } from './namespace-rows.service';
  * collapse into the owner case.
  *
  * Names are `acme` / `contoso` placeholders; they are incidental.
+ *
+ * Story 36-4 added the in-page dialog host to the same component, so this file
+ * also covers the three-layer Escape coordination, the dirty-close channels and
+ * the derived `existingNamespaces`.
  */
 
 const OWNER = 'u-owner';
 const OTHER = 'u-other';
+
+/**
+ * Stands in for `NamespacePanelComponent` inside the host's `@defer` block.
+ *
+ * It PROVIDES the real component's token (`useExisting`), so the host's
+ * `@ViewChild(NamespacePanelComponent)` still resolves to it — the wiring under
+ * test is exercised rather than bypassed, while Monaco and the panel's own HTTP
+ * surface stay out of a spec about the host. The panel has its own suite; this
+ * one must not re-test it through the dialog.
+ */
+@Component({
+  selector: 'app-namespace-panel',
+  standalone: true,
+  template: '<div data-test="stub-panel"></div>',
+  providers: [
+    {
+      provide: NamespacePanelComponent,
+      useExisting: forwardRef(() => StubNamespacePanelComponent),
+    },
+  ],
+})
+class StubNamespacePanelComponent {
+  @Input() namespace = '';
+  @Input() existingNamespaces: string[] = [];
+  @Input() showAll = false;
+  @Output() closed = new EventEmitter<void>();
+  @Output() saved = new EventEmitter<void>();
+
+  /** The four state flags the host reads. Writes are the real panel's job. */
+  saving = false;
+  cloning = false;
+  validating = false;
+  loading = false;
+
+  /** Flipped per spec; `hasUnsavedChanges()` reports it. */
+  dirty = false;
+  /** What `handleSecondaryEscape()` reports — i.e. "a modal of mine ate it". */
+  secondaryConsumesEscape = false;
+
+  hasUnsavedChanges(): boolean {
+    return this.dirty;
+  }
+
+  confirmDiscard(): Promise<boolean> {
+    return Promise.resolve(true);
+  }
+
+  handleSecondaryEscape(): boolean {
+    return this.secondaryConsumesEscape;
+  }
+}
 
 /** Zero counts for every kind — overridden per row where the value matters. */
 function zeroCounts(): Record<EntryKind, number> {
@@ -92,7 +155,9 @@ describe('CatalogListComponent (Story 36-3)', () => {
     );
     apiSpy = jasmine.createSpyObj<ApiService>('ApiService', [
       'deleteNamespace',
+      'getNamespaces',
     ]);
+    apiSpy.getNamespaces.and.returnValue(Promise.resolve([]));
     messageSpy = jasmine.createSpyObj<MessageService>('MessageService', ['add']);
 
     // Independent streams. Deriving `isAdmin$` from `currentUser$` here would
@@ -118,10 +183,21 @@ describe('CatalogListComponent (Story 36-3)', () => {
         },
       ],
     })
-      // The service is component-scoped by design, so it must be replaced on
-      // the component itself — a root-level provider would never be consulted.
+      // Two swaps in ONE override — `set` cannot be combined with
+      // `add`/`remove`, so both go through the latter pair.
+      //
+      // 1. `NamespaceRowsService` is component-scoped by design, so it must be
+      //    replaced on the component itself; a root-level provider would never
+      //    be consulted.
+      // 2. The `@defer`-hosted panel is swapped for a stub (Story 36-4) so the
+      //    real Monaco chunk never loads here.
       .overrideComponent(CatalogListComponent, {
-        set: {
+        remove: {
+          imports: [NamespacePanelComponent],
+          providers: [NamespaceRowsService],
+        },
+        add: {
+          imports: [StubNamespacePanelComponent],
           providers: [{ provide: NamespaceRowsService, useValue: rowsSpy }],
         },
       })
@@ -169,8 +245,48 @@ describe('CatalogListComponent (Story 36-3)', () => {
     return byTest(`ns-delete-${namespace}`) as HTMLButtonElement;
   }
 
-  function primaryAction(namespace: string): HTMLAnchorElement {
-    return byTest(`ns-configure-${namespace}`) as HTMLAnchorElement;
+  function primaryAction(namespace: string): HTMLButtonElement {
+    return byTest(`ns-configure-${namespace}`) as HTMLButtonElement;
+  }
+
+  /** The two `Dialog` instances this pane owns, by their `data-test` hook. */
+  function dialogInstance(dataTest: string): Dialog {
+    const found = fixture.debugElement
+      .queryAll(By.directive(Dialog))
+      .find((de) => de.attributes['data-test'] === dataTest);
+    return found!.componentInstance as Dialog;
+  }
+
+  function configDialog(): Dialog {
+    return dialogInstance('namespace-config-dialog');
+  }
+
+  /** The stubbed panel, once the `@defer` block has rendered it. */
+  function panelStub(): StubNamespacePanelComponent | undefined {
+    return fixture.debugElement.query(By.directive(StubNamespacePanelComponent))
+      ?.componentInstance;
+  }
+
+  /**
+   * Open the config dialog through the row's own control and let the `@defer`
+   * block resolve. Two settles: the first renders the deferred block, the
+   * second binds its inputs and resolves the host's `@ViewChild`.
+   */
+  async function openPanel(namespace: string): Promise<void> {
+    primaryAction(namespace).click();
+    await settle();
+    await settle();
+  }
+
+  /**
+   * A REAL keystroke on `document`. A non-bubbling event dispatched on an inner
+   * element never reaches a `document:` HostListener, and a spec written that
+   * way would pass for the wrong reason.
+   */
+  function pressEscape(): void {
+    document.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+    );
   }
 
   function chipValues(namespace: string): string[] {
@@ -485,21 +601,40 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(isAdmin$.value).toBeFalse();
   });
 
-  // --- AC 15: the destination never varies ---------------------------------
+  // --- AC 15 (36-3) / AC 6 (36-4): the destination never varies -------------
 
-  it('(AC15) Configure and View target the same deep link', async () => {
+  it('(36-4 AC6) Configure and View open the SAME dialog, each on its own row', async () => {
+    // 36-3's AC 15 asserted this on a `routerLink`. 36-4 changed the control's
+    // destination from a navigation to an in-page dialog, so the assertion
+    // moves with it — same intent, relocated. It is the one 36-3 assertion this
+    // story is entitled to rewrite.
     currentUser$.next({ user_id: OWNER, roles: ['user'] });
     await render();
 
     expect(primaryAction('acme-team').textContent!.trim()).toBe('Configure');
     expect(primaryAction('contoso-product').textContent!.trim()).toBe('View');
 
-    expect(primaryAction('acme-team').getAttribute('href')).toBe(
-      '/admin/catalog/namespace/acme-team',
-    );
-    expect(primaryAction('contoso-product').getAttribute('href')).toBe(
-      '/admin/catalog/namespace/contoso-product',
-    );
+    await openPanel('acme-team');
+    expect(component.panelVisible).toBeTrue();
+    expect(component.panelNamespace).toBe('acme-team');
+
+    // Switching rows re-binds the SAME dialog rather than opening another.
+    await openPanel('contoso-product');
+    expect(component.panelVisible).toBeTrue();
+    expect(component.panelNamespace).toBe('contoso-product');
+    expect(panelStub()!.namespace).toBe('contoso-product');
+  });
+
+  it('(36-4 AC6) the primary action is a button, not a link to the deep link', async () => {
+    // The URL survives as a bookmark (see admin.routes.spec.ts) but is no
+    // longer reachable by clicking: a leftover `href` would navigate away from
+    // the list and silently undo the whole story.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    const control = primaryAction('acme-team');
+    expect(control.tagName).toBe('BUTTON');
+    expect(control.getAttribute('href')).toBeNull();
   });
 
   // --- AC 12, 13, 14: delete -----------------------------------------------
@@ -690,5 +825,453 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(byTest('catalog-empty')).not.toBeNull();
     expect(byTest('catalog-empty')!.textContent!.trim()).toBe('No namespaces');
     expect(byTest('catalog-load-failed')).toBeNull();
+  });
+
+  // =========================================================================
+  // Story 36-4 — the in-page dialog host
+  // =========================================================================
+
+  // --- AC 7: the host's structure ------------------------------------------
+
+  it('(36-4 AC7) the panel is absent from the DOM until the dialog is first opened', async () => {
+    // The `@defer` claim, asserted structurally: mounted normally (no
+    // CUSTOM_ELEMENTS_SCHEMA), so an absent element really is absent.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    expect(byTest('stub-panel')).toBeNull();
+    expect(panelStub()).toBeUndefined();
+
+    await openPanel('acme-team');
+
+    expect(byTest('stub-panel')).not.toBeNull();
+    // The host's `@ViewChild(NamespacePanelComponent)` resolves to the stub,
+    // which provides that token — so the query itself is under test here, not
+    // stubbed around.
+    expect(component.panel as unknown).toBe(panelStub()!);
+  });
+
+  it('(36-4 AC7) the host dialog is modal, splits visible, and keeps PrimeNG off Escape', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-team');
+
+    const dialog = configDialog();
+    expect(dialog.visible).toBeTrue();
+    expect(dialog.modal).toBeTrue();
+    expect(dialog.closeOnEscape).toBeFalse();
+    expect(dialog.closable).toBeTrue();
+    expect(dialog.dismissableMask).toBeTrue();
+  });
+
+  it('(36-4 AC12) closeOnEscape is off on BOTH dialogs this pane owns', async () => {
+    // Pinned on the instances, because flipping either back is otherwise
+    // SILENT: PrimeNG would do the closing and the behavioural Escape specs
+    // would still pass while the coordination they guard was gone. Extends
+    // 36-3's guard on the confirm dialog rather than replacing it.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-team');
+    component.onDeleteClick(component.rows[0]);
+    await settle();
+
+    expect(configDialog().closeOnEscape).toBeFalse();
+    expect(dialogInstance('delete-confirm-dialog').closeOnEscape).toBeFalse();
+  });
+
+  it('(36-4 AC7) the header names the namespace being configured', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-team');
+
+    // The row's display name, which is what an operator recognises.
+    expect(component.panelLabel).toBe('acme-team display');
+    expect(q('.p-dialog-title')!.textContent).toContain('acme-team display');
+  });
+
+  it('(36-4 AC7) the header falls back to the identifier when the row has no name', async () => {
+    resolveRows([row('acme-nameless', { name: '' })]);
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-nameless');
+
+    expect(component.panelLabel).toBe('acme-nameless');
+  });
+
+  it('(36-4 AC7) the dirty indicator is ABSENT from the DOM while the panel is clean', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-team');
+
+    expect(panelStub()!.hasUnsavedChanges()).toBeFalse();
+    expect(byTest('dirty-indicator-dialog')).toBeNull();
+
+    panelStub()!.dirty = true;
+    await settle();
+
+    expect(byTest('dirty-indicator-dialog')).not.toBeNull();
+  });
+
+  it('(36-4 AC7) the panel receives the row, the derived list and the pane showAll', async () => {
+    isAdmin$.next(true);
+    currentUser$.next({ user_id: OWNER, roles: ['admin'] });
+    await render();
+    component.onToggleShowAll(true);
+    await settle();
+
+    await openPanel('acme-team');
+
+    const panel = panelStub()!;
+    expect(panel.namespace).toBe('acme-team');
+    expect(panel.existingNamespaces).toEqual(['acme-team', 'contoso-product']);
+    expect(panel.showAll).toBeTrue();
+  });
+
+  it('(36-4 AC7) the panel (closed) output dismisses the dialog', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-team');
+
+    panelStub()!.closed.emit();
+    await settle();
+
+    expect(component.panelVisible).toBeFalse();
+  });
+
+  // --- AC 8: the two dirty-close channels ----------------------------------
+
+  /** The X: PrimeNG's header close button, clicked for real. */
+  function clickDialogClose(): void {
+    const closeBtn = fixture.nativeElement.querySelector(
+      '.p-dialog-close-button',
+    ) as HTMLButtonElement;
+    closeBtn.click();
+  }
+
+  /**
+   * The dismissable mask: PrimeNG binds `mousedown` on the mask element and
+   * closes only when the mask itself is the target.
+   */
+  function clickDialogMask(): void {
+    const mask = fixture.nativeElement.querySelector(
+      '.p-dialog-mask',
+    ) as HTMLElement;
+    mask.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  }
+
+  it('(36-4 AC8) the X on a DIRTY panel holds the dialog open and asks first', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-team');
+    const panel = panelStub()!;
+    panel.dirty = true;
+    let resolveDiscard!: (v: boolean) => void;
+    const confirmDiscard = spyOn(panel, 'confirmDiscard').and.returnValue(
+      new Promise<boolean>((r) => (resolveDiscard = r)),
+    );
+
+    clickDialogClose();
+    await settle();
+
+    expect(confirmDiscard).toHaveBeenCalledTimes(1);
+    expect(component.panelVisible).toBeTrue();
+
+    resolveDiscard(true);
+    await settle();
+
+    expect(component.panelVisible).toBeFalse();
+  });
+
+  it('(36-4 AC8) Cancel on that confirm leaves the dialog open and the buffer intact', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-team');
+    const panel = panelStub()!;
+    panel.dirty = true;
+    spyOn(panel, 'confirmDiscard').and.returnValue(Promise.resolve(false));
+
+    clickDialogClose();
+    await settle();
+
+    expect(component.panelVisible).toBeTrue();
+  });
+
+  it('(36-4 AC8) the dismissable MASK on a dirty panel routes through the same handler', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-team');
+    const panel = panelStub()!;
+    panel.dirty = true;
+    const confirmDiscard = spyOn(panel, 'confirmDiscard').and.returnValue(
+      Promise.resolve(false),
+    );
+
+    clickDialogMask();
+    await settle();
+
+    expect(confirmDiscard).toHaveBeenCalledTimes(1);
+    expect(component.panelVisible).toBeTrue();
+  });
+
+  it('(36-4 AC8) the X on a CLEAN panel closes at once, asking nothing', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-team');
+    const confirmDiscard = spyOn(panelStub()!, 'confirmDiscard');
+
+    clickDialogClose();
+    await settle();
+
+    expect(confirmDiscard).not.toHaveBeenCalled();
+    expect(component.panelVisible).toBeFalse();
+  });
+
+  it('(36-4 AC8) the MASK on a clean panel closes at once, asking nothing', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-team');
+    const confirmDiscard = spyOn(panelStub()!, 'confirmDiscard');
+
+    clickDialogMask();
+    await settle();
+
+    expect(confirmDiscard).not.toHaveBeenCalled();
+    expect(component.panelVisible).toBeFalse();
+  });
+
+  it('(36-4 AC8) a dialog whose panel never mounted closes without a confirm', async () => {
+    // The `@ViewChild` is `undefined` until the deferred block has rendered.
+    // "Not mounted" must read as "nothing to discard", not as a crash.
+    await render();
+    component.panelVisible = true;
+
+    component.onPanelVisibleChange(false);
+
+    expect(component.panel).toBeUndefined();
+    expect(component.panelVisible).toBeFalse();
+  });
+
+  // --- AC 9: a write locks every channel; a read locks none ----------------
+
+  it('(36-4 AC9) saving locks the X, the mask and Escape together', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-team');
+    const panel = panelStub()!;
+    panel.dirty = true;
+    panel.saving = true;
+    const confirmDiscard = spyOn(panel, 'confirmDiscard');
+    await settle();
+
+    expect(component.isWriteInFlight).toBeTrue();
+    expect(configDialog().closable).toBeFalse();
+    expect(configDialog().dismissableMask).toBeFalse();
+
+    pressEscape();
+    await settle();
+
+    expect(confirmDiscard).not.toHaveBeenCalled();
+    expect(component.panelVisible).toBeTrue();
+  });
+
+  it('(36-4 AC9) cloning locks them too — a write is a write', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-team');
+    panelStub()!.cloning = true;
+    await settle();
+
+    expect(component.isWriteInFlight).toBeTrue();
+    expect(configDialog().closable).toBeFalse();
+    expect(configDialog().dismissableMask).toBeFalse();
+  });
+
+  it('(36-4 AC9) validating leaves every channel LIVE — reads are not writes', async () => {
+    // `isWriteInFlight` must not silently widen to include reads: a Validate
+    // in flight must never trap the operator inside the dialog.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-team');
+    const panel = panelStub()!;
+    panel.validating = true;
+    panel.loading = true;
+    await settle();
+
+    expect(component.isWriteInFlight).toBeFalse();
+    expect(configDialog().closable).toBeTrue();
+    expect(configDialog().dismissableMask).toBeTrue();
+
+    pressEscape();
+    await settle();
+
+    expect(component.panelVisible).toBeFalse();
+  });
+
+  // --- AC 10, 11: three layers, one action per keystroke --------------------
+
+  it('(36-4 AC11.2) Escape with the delete confirmation open closes ONLY that', async () => {
+    // The named case. The config host is modal, so in practice these two never
+    // coexist — both are opened here deliberately, because the point of the
+    // ordering is that the handler is TOTAL rather than accidentally correct.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-team');
+    component.onDeleteClick(component.rows[0]);
+    await settle();
+    const confirmDiscard = spyOn(panelStub()!, 'confirmDiscard');
+    const secondary = spyOn(panelStub()!, 'handleSecondaryEscape');
+
+    pressEscape();
+    await settle();
+
+    expect(component.confirmDialogVisible).toBeFalse();
+    expect(component.pendingDelete).toBeNull();
+    expect(apiSpy.deleteNamespace).not.toHaveBeenCalled();
+    expect(byTest('ns-id-acme-team')).not.toBeNull(); // the row is intact
+    // The config dialog is untouched, and the panel was never consulted.
+    expect(component.panelVisible).toBeTrue();
+    expect(secondary).not.toHaveBeenCalled();
+    expect(confirmDiscard).not.toHaveBeenCalled();
+  });
+
+  it('(36-4 AC11.3) Escape with the Clone sub-dialog open closes ONLY the sub-dialog', async () => {
+    // The other named case. The panel reports that one of ITS modals consumed
+    // the keystroke; the config dialog must stay open and stay unasked.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-team');
+    const panel = panelStub()!;
+    panel.dirty = true;
+    panel.secondaryConsumesEscape = true;
+    const confirmDiscard = spyOn(panel, 'confirmDiscard');
+    const secondary = spyOn(panel, 'handleSecondaryEscape').and.returnValue(
+      true,
+    );
+
+    pressEscape();
+    await settle();
+
+    expect(secondary).toHaveBeenCalledTimes(1);
+    expect(component.panelVisible).toBeTrue();
+    expect(confirmDiscard).not.toHaveBeenCalled();
+  });
+
+  it('(36-4 AC11.4) Escape with no secondary modal runs the close flow — dirty asks', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-team');
+    const panel = panelStub()!;
+    panel.dirty = true;
+    const confirmDiscard = spyOn(panel, 'confirmDiscard').and.returnValue(
+      Promise.resolve(true),
+    );
+
+    pressEscape();
+    await settle();
+
+    expect(confirmDiscard).toHaveBeenCalledTimes(1);
+    expect(component.panelVisible).toBeFalse();
+  });
+
+  it('(36-4 AC11.4) Escape on a clean panel closes it without asking', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-team');
+    const confirmDiscard = spyOn(panelStub()!, 'confirmDiscard');
+
+    pressEscape();
+    await settle();
+
+    expect(confirmDiscard).not.toHaveBeenCalled();
+    expect(component.panelVisible).toBeFalse();
+  });
+
+  it('(36-4 AC11.5) Escape with nothing open does nothing at all', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    pressEscape();
+    await settle();
+
+    expect(component.panelVisible).toBeFalse();
+    expect(component.confirmDialogVisible).toBeFalse();
+    expect(component.pendingDelete).toBeNull();
+    expect(apiSpy.deleteNamespace).not.toHaveBeenCalled();
+    expect(rowsSpy.getRows).toHaveBeenCalledTimes(1);
+  });
+
+  it('(36-4 AC10) the pane owns exactly ONE Escape handler — one keystroke, one action', async () => {
+    // 36-3 put a `(keydown.escape)` binding on the confirm dialog itself. If it
+    // came back, this Escape would cancel the delete AND then be seen again by
+    // the document handler. Driving one keystroke and counting the effects is
+    // what catches that.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    deleteBtn('acme-team').click();
+    await settle();
+    expect(component.confirmDialogVisible).toBeTrue();
+
+    pressEscape();
+    await settle();
+
+    expect(component.confirmDialogVisible).toBeFalse();
+    // The panel was never opened, so a second action would have to show up as
+    // one of these — a stray delete or a phantom reload.
+    expect(apiSpy.deleteNamespace).not.toHaveBeenCalled();
+    expect(rowsSpy.getRows).toHaveBeenCalledTimes(1);
+  });
+
+  // --- AC 14, 15: existingNamespaces, from data already on screen -----------
+
+  it('(36-4 AC14) opening the dialog issues NO additional request', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    rowsSpy.getRows.calls.reset();
+
+    await openPanel('acme-team');
+
+    expect(rowsSpy.getRows).not.toHaveBeenCalled();
+    expect(apiSpy.getNamespaces).not.toHaveBeenCalled();
+    expect(panelStub()!.existingNamespaces).toEqual([
+      'acme-team',
+      'contoso-product',
+    ]);
+  });
+
+  it('(36-4 AC14) existingNamespaces is DERIVED, not a copied field', async () => {
+    // A copied array would go stale the moment the table changed under it —
+    // here, when a delete drops a row.
+    apiSpy.deleteNamespace.and.returnValue(Promise.resolve());
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+
+    expect(component.existingNamespaces).toEqual([
+      'acme-team',
+      'contoso-product',
+    ]);
+
+    deleteBtn('acme-team').click();
+    await settle();
+    (byTest('delete-proceed-btn') as HTMLButtonElement).click();
+    await settle();
+
+    expect(component.existingNamespaces).toEqual(['contoso-product']);
+  });
+
+  it('(36-4 AC15) (saved) refreshes the table AND the panel list in ONE call', async () => {
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-team');
+    rowsSpy.getRows.calls.reset();
+
+    // A namespace present only in the SECOND response — e.g. one the panel's
+    // Clone just created.
+    resolveRows([...defaultRows(), row('acme-cloned')]);
+    panelStub()!.saved.emit();
+    await settle();
+
+    expect(rowsSpy.getRows).toHaveBeenCalledTimes(1);
+    expect(byTest('ns-id-acme-cloned')).not.toBeNull();
+    expect(panelStub()!.existingNamespaces).toContain('acme-cloned');
   });
 });

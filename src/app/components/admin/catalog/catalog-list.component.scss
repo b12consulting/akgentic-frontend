@@ -88,6 +88,18 @@
   padding-top: 1rem;
 }
 
+// Story 36-4 — dirty marker in the config dialog's header. `::ng-deep` for the
+// same reason the danger button needs it: PrimeNG renders the dialog header
+// outside this component's view-encapsulated tree. The `●` is decorative; the
+// aria-label carries the meaning, so contrast here is informational.
+:host ::ng-deep .admin-catalog__dirty-indicator {
+  color: #f59e0b;
+  font-weight: 700;
+  margin-left: 0.4rem;
+  font-size: 1rem;
+  vertical-align: middle;
+}
+
 // Dark-red destructive style for the row Delete and the confirm's Proceed.
 // `::ng-deep` because PrimeNG's button tokens otherwise win on specificity,
 // and because the dialog's button is teleported out of this component's DOM.
