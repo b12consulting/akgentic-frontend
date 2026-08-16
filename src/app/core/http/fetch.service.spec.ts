@@ -377,6 +377,31 @@ describe('FetchService', () => {
       expect(messageServiceSpy.add).toHaveBeenCalledTimes(1);
       expect(messageServiceSpy.add.calls.first().args[0].severity).toBe('error');
     });
+
+    it('does NOT cover the transport branch — a NetworkError still toasts even with notifyOnError false', async () => {
+      // The seam this option creates. `ApiKeyListComponent` stays silent on a
+      // NetworkError precisely because FetchService is still reporting it; if
+      // a later "make it consistent" change widened the flag to cover this
+      // branch, an unreachable server would be reported by nobody and no other
+      // spec in the tree would notice. This one would.
+      globalThis.fetch = jasmine
+        .createSpy('fetch')
+        .and.rejectWith(new TypeError('Failed to fetch'));
+
+      let caught: unknown = null;
+      try {
+        await service.fetch({
+          url: 'https://x/auth/apikeys',
+          notifyOnError: false,
+        });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught instanceof NetworkError).toBeTrue();
+      expect(messageServiceSpy.add).toHaveBeenCalledTimes(1);
+      expect(messageServiceSpy.add.calls.first().args[0].severity).toBe('error');
+    });
   });
 
   // --- Story 33-5 (ADR-026) — NetworkError thrown on a transport failure ---

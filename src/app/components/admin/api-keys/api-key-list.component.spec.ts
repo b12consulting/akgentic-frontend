@@ -10,6 +10,7 @@ import {
   NEVER_EXPIRES_LABEL,
   NO_ROLES_PLACEHOLDER,
 } from './api-key-list.component';
+import { CREATE_DISABLED_REASON } from './api-key.model';
 
 /**
  * Story 36-5 — the API-keys pane and the three answers it must keep apart.
@@ -169,7 +170,10 @@ describe('ApiKeyListComponent (Story 36-5)', () => {
       // Present but visibly not yet usable — 36-6 enables it. The reason rides
       // on `title` because a disabled button fires no mouse events.
       expect(btn.disabled).toBeTrue();
-      expect(btn.getAttribute('title')).toBeTruthy();
+      // The REASON, not merely some title: a disabled control with an empty or
+      // placeholder tooltip is the silently-inert button AC 16 rules out, and
+      // `toBeTruthy()` would have passed for any string at all.
+      expect(btn.getAttribute('title')).toBe(CREATE_DISABLED_REASON);
     });
   });
 
@@ -184,6 +188,8 @@ describe('ApiKeyListComponent (Story 36-5)', () => {
       // The route answered, so creating a key is a reasonable thing to offer.
       expect(byTest('api-key-create-btn')).not.toBeNull();
       expect(messageSpy.add).toHaveBeenCalledTimes(0);
+      // AC 4 covers EVERY state, not just the populated one.
+      expect(apiSpy.getApiKeys).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -206,6 +212,13 @@ describe('ApiKeyListComponent (Story 36-5)', () => {
         // "This deployment does not offer the feature" is not a failure to
         // report. A toast here would contradict the sentence beside it.
         expect(messageSpy.add).toHaveBeenCalledTimes(0);
+        // AC 4 pinned WHERE IT MATTERS MOST: this is the state a capability
+        // probe would be bolted onto — a HEAD or a feature endpoint to
+        // "confirm" the route is really absent. One call, still, and the
+        // answer already in hand is the only signal.
+        expect(apiSpy.getApiKeys).toHaveBeenCalledTimes(1);
+        expect(apiSpy.getNamespaces).not.toHaveBeenCalled();
+        expect(apiSpy.getEntries).not.toHaveBeenCalled();
       });
     }
 
