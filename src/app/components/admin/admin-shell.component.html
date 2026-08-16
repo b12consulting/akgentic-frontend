@@ -1,0 +1,24 @@
+<div class="admin-shell">
+  <ng-container *ngIf="sections$ | async as sections">
+    <!--
+      `*ngIf` on the section COUNT, not an `*ngFor` over a filtered list: an
+      `*ngFor` yielding zero items still leaves this <nav> in the DOM, and the
+      contract is that a one-section area renders no rail at all.
+    -->
+    <nav class="admin-rail" *ngIf="sections.length > 1">
+      <a
+        *ngFor="let section of sections"
+        class="admin-rail-item"
+        [routerLink]="['/admin', section.path]"
+        routerLinkActive="active"
+      >
+        <span [class]="section.icon"></span>
+        <span class="admin-rail-label">{{ section.label }}</span>
+      </a>
+    </nav>
+  </ng-container>
+
+  <section class="admin-content">
+    <router-outlet></router-outlet>
+  </section>
+</div>

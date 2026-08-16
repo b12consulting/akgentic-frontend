@@ -6,6 +6,7 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { Router } from '@angular/router';
 import { Table } from 'primeng/table';
 import { BehaviorSubject, of } from 'rxjs';
+import { map } from 'rxjs/operators';
 
 import { ApiService } from '../../core/http/api.service';
 import { AuthService } from '../../core/auth/auth.service';
@@ -114,6 +115,12 @@ describe('HomeComponent', () => {
     currentUser$ = new BehaviorSubject<any>({ user_id: 'anonymous' });
     authSpy = jasmine.createSpyObj('AuthService', ['checkAuth'], {
       currentUser$,
+      // Story 36-1: the predicate now lives on AuthService, so the double
+      // supplies it — DERIVED from this stub's own `currentUser$` so the
+      // admin-toggle specs below keep driving it by pushing a user.
+      isAdmin$: currentUser$.pipe(
+        map((u) => u?.roles?.includes('admin') === true),
+      ),
       get currentUserValue() {
         return currentUser$.value;
       },

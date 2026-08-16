@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 import { BehaviorSubject, from, Observable, of } from 'rxjs';
-import { catchError, tap } from 'rxjs/operators';
+import { catchError, map, tap } from 'rxjs/operators';
 import { ConfigService } from '../config/config.service';
 
 const ANONYMOUS_USER = { user_id: 'anonymous', email: '', name: 'Anonymous' };
@@ -12,6 +12,25 @@ export class AuthService {
   private config = inject(ConfigService);
   private currentUserSubject = new BehaviorSubject<any>(ANONYMOUS_USER);
   currentUser$ = this.currentUserSubject.asObservable();
+
+  /**
+   * The app's single admin predicate (Story 36-1).
+   *
+   * Derived from `currentUser$` (NOT a one-shot eager read) because
+   * `AppComponent.ngOnInit` fires `checkAuth()`, which resolves `/auth/me`
+   * AFTER first render — reading `currentUserValue` once would miss the late
+   * admin resolution, so a role-dependent surface built at first render would
+   * never relabel. The menubar renders earlier than any page, so it is the
+   * most exposed consumer of this rule.
+   *
+   * `roles` is read off the verbatim `/auth/me` body (typed `any`); the
+   * optional chain yields `false` for the anonymous user (no `roles`) and for
+   * `null`. Consume it via the `async` pipe or a subscription, never by
+   * snapshotting it once.
+   */
+  isAdmin$: Observable<boolean> = this.currentUser$.pipe(
+    map((u) => u?.roles?.includes('admin') === true)
+  );
 
   /**
    * Check auth status against the backend.

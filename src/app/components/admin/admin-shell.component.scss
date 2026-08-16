@@ -1,0 +1,47 @@
+// Story 36-1 — admin area layout: a section rail beside the pane outlet.
+// Minimal chrome; each pane owns its own styles.
+
+.admin-shell {
+  display: flex;
+  align-items: stretch;
+  min-height: calc(100vh - 4rem);
+  box-sizing: border-box;
+}
+
+.admin-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 0 0 12rem;
+  padding: 1.5rem 0.75rem;
+  border-right: 1px solid var(--surface-border, #e5e7eb);
+  box-sizing: border-box;
+}
+
+.admin-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.9rem;
+
+  &:hover {
+    background: var(--surface-hover, #f3f4f6);
+  }
+
+  // `routerLinkActive` marks the pane currently mounted in the outlet.
+  &.active {
+    background: var(--surface-hover, #f3f4f6);
+    font-weight: 600;
+  }
+}
+
+.admin-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 1.5rem 2rem;
+  box-sizing: border-box;
+}

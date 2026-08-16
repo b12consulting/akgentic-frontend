@@ -105,6 +105,11 @@ module.exports = tseslint.config(
         // edges are simply absent from the allow list and therefore forbidden.
         { type: 'page-home', pattern: 'src/app/components/home' },
         { type: 'page-login', pattern: 'src/app/components/login' },
+        // Story 36-1 — the admin area is a page-level element like the others.
+        // Without this entry its files match no pattern, are tagged "unknown",
+        // and the DAG rule never fires on them: lint would stay green while a
+        // whole top-level folder sat outside the graph.
+        { type: 'page-admin', pattern: 'src/app/components/admin' },
       ],
     },
     rules: {
@@ -126,8 +131,10 @@ module.exports = tseslint.config(
 
             // Pages -> core, shared, protocol; NO sibling-page imports — EXCEPT
             // the reusable feature-catalog dialog, which pages may embed.
+            // `page-admin` carries the feature-catalog edge for the same
+            // reason page-home does: story 36-4 embeds the namespace panel.
             {
-              from: { type: ['page-home', 'page-login'] },
+              from: { type: ['page-home', 'page-login', 'page-admin'] },
               allow: { to: { type: ['core', 'shared', 'protocol', 'feature-catalog'] } },
             },
 
