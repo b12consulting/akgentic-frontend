@@ -59,6 +59,26 @@ describe('NamespaceRowsService', () => {
       expect(kinds.slice().sort()).toEqual([...ENTRY_KINDS].sort());
     });
 
+    it('issues the six kind calls WITHOUT waiting for the namespaces round trip', async () => {
+      let resolveNamespaces!: (value: NamespaceSummary[]) => void;
+      apiSpy.getNamespaces.and.returnValue(
+        new Promise<NamespaceSummary[]>((resolve) => {
+          resolveNamespaces = resolve;
+        }),
+      );
+
+      const pending = service.getRows();
+
+      // Nothing has resolved yet. If the kind calls queued behind the
+      // namespaces response, the pane would cost two serial round trips to
+      // paint instead of one — this reddens the moment anyone re-serializes it.
+      expect(apiSpy.getEntries).toHaveBeenCalledTimes(6);
+
+      resolveNamespaces(NAMESPACES);
+      const { rows } = await pending;
+      expect(rows.length).toBe(5);
+    });
+
     it('passes all: true to the namespaces call AND all six kind calls', async () => {
       await service.getRows({ all: true });
 

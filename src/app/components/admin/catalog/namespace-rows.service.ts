@@ -19,6 +19,35 @@ import { NamespaceRow, NamespaceRowsResult } from './namespace-row.model';
 const OWNER_ANCHOR_KINDS: readonly EntryKind[] = ['team', 'meta'];
 
 /**
+ * One kind's entries, bucketed by namespace in response order.
+ *
+ * Grouping once per kind is what keeps the composition linear in the size of
+ * the catalog. Re-scanning a kind's flat list for every namespace instead is
+ * correct but quadratic, and this page is exactly where that bites: `all: true`
+ * hands an admin every tenant's namespaces AND every tenant's entries at once,
+ * on the browser's main thread.
+ */
+type EntriesByNamespace = Map<string, Entry[]>;
+
+/**
+ * Bucket one kind's flat response by namespace, PRESERVING response order
+ * inside each bucket — the owner anchor reads the first entry of a bucket, so
+ * the order is load-bearing, not incidental.
+ */
+function groupByNamespace(entries: Entry[]): EntriesByNamespace {
+  const byNamespace: EntriesByNamespace = new Map();
+  for (const entry of entries) {
+    const bucket = byNamespace.get(entry.namespace);
+    if (bucket) {
+      bucket.push(entry);
+    } else {
+      byNamespace.set(entry.namespace, [entry]);
+    }
+  }
+  return byNamespace;
+}
+
+/**
  * Composes the admin catalog's `NamespaceRow` list out of the catalog endpoints
  * that already exist — no new server surface (ADR-028 §D6).
  *
@@ -27,6 +56,10 @@ const OWNER_ANCHOR_KINDS: readonly EntryKind[] = ['team', 'meta'];
  * `GET /admin/catalog/{kind}` per kind, each returning every namespace's entries
  * of that kind, grouped client-side. A per-namespace loop would be 30+ calls on
  * a five-namespace catalog and would grow with it.
+ *
+ * All seven leave together and are awaited separately — the kind calls do not
+ * queue behind the namespaces round trip, so the pane costs one round trip to
+ * paint rather than two.
  *
  * The spine propagates, the columns degrade: the namespaces call is awaited on
  * its own and allowed to reject (there is no row set to degrade to), while the
@@ -54,19 +87,24 @@ export class NamespaceRowsService {
   async getRows(opts?: { all?: boolean }): Promise<NamespaceRowsResult> {
     const all = opts?.all ?? false;
 
-    const summaries = await this.#api.getNamespaces({ all });
-    const settled = await Promise.allSettled(
+    // Issue all seven, then await them separately. `allSettled` never rejects,
+    // so a rejecting namespaces call cannot leave the gather unhandled.
+    const summariesPending = this.#api.getNamespaces({ all });
+    const kindsPending = Promise.allSettled(
       ENTRY_KINDS.map((kind) => this.#api.getEntries(kind, { all })),
     );
 
-    const entriesByKind = new Map<EntryKind, Entry[]>();
+    const summaries = await summariesPending;
+    const settled = await kindsPending;
+
+    const entriesByKind = new Map<EntryKind, EntriesByNamespace>();
     const unavailableKinds: EntryKind[] = [];
     ENTRY_KINDS.forEach((kind, i) => {
       const outcome = settled[i];
       if (outcome.status === 'fulfilled') {
-        entriesByKind.set(kind, outcome.value);
+        entriesByKind.set(kind, groupByNamespace(outcome.value));
       } else {
-        entriesByKind.set(kind, []);
+        entriesByKind.set(kind, new Map());
         unavailableKinds.push(kind);
       }
     });
@@ -90,13 +128,11 @@ export class NamespaceRowsService {
    */
   #countsFor(
     namespace: string,
-    entriesByKind: Map<EntryKind, Entry[]>,
+    entriesByKind: Map<EntryKind, EntriesByNamespace>,
   ): Record<EntryKind, number> {
     const counts = {} as Record<EntryKind, number>;
     for (const kind of ENTRY_KINDS) {
-      counts[kind] = (entriesByKind.get(kind) ?? []).filter(
-        (entry) => entry.namespace === namespace,
-      ).length;
+      counts[kind] = entriesByKind.get(kind)?.get(namespace)?.length ?? 0;
     }
     return counts;
   }
@@ -111,11 +147,11 @@ export class NamespaceRowsService {
    */
   #resolveOwner(
     namespace: string,
-    entriesByKind: Map<EntryKind, Entry[]>,
+    entriesByKind: Map<EntryKind, EntriesByNamespace>,
   ): string | null {
     for (const kind of OWNER_ANCHOR_KINDS) {
-      const owner = (entriesByKind.get(kind) ?? []).find(
-        (entry) => entry.namespace === namespace && !!entry.user_id,
+      const owner = (entriesByKind.get(kind)?.get(namespace) ?? []).find(
+        (entry) => !!entry.user_id,
       )?.user_id;
       if (owner) {
         return owner;
