@@ -1109,6 +1109,32 @@ describe('CatalogListComponent (Story 36-3)', () => {
 
   // --- AC 10, 11: three layers, one action per keystroke --------------------
 
+  it('(36-4 AC11.1) a write in flight outranks even the delete confirmation', async () => {
+    // AC 11 puts the write-lock FIRST: while a write is in flight NOTHING
+    // closes, not even a layer that would otherwise cancel freely.
+    //
+    // With only the config dialog open the two orderings are
+    // indistinguishable — branch 2 falls through on its own — so every other
+    // Escape spec stays green if the write-lock is demoted below the
+    // delete-confirm branch. This arrangement is the one that separates them,
+    // and without it the ordering AC 11 enumerates is not actually pinned.
+    currentUser$.next({ user_id: OWNER, roles: ['user'] });
+    await render();
+    await openPanel('acme-team');
+    component.onDeleteClick(component.rows[0]);
+    panelStub()!.saving = true;
+    await settle();
+
+    pressEscape();
+    await settle();
+
+    // Neither layer moved, and no request was issued.
+    expect(component.confirmDialogVisible).toBeTrue();
+    expect(component.pendingDelete).not.toBeNull();
+    expect(component.panelVisible).toBeTrue();
+    expect(apiSpy.deleteNamespace).not.toHaveBeenCalled();
+  });
+
   it('(36-4 AC11.2) Escape with the delete confirmation open closes ONLY that', async () => {
     // The named case. The config host is modal, so in practice these two never
     // coexist — both are opened here deliberately, because the point of the
