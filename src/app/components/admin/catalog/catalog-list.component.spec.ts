@@ -28,6 +28,7 @@ import {
   CATALOG_DESCRIPTION_ADMIN,
   CATALOG_DESCRIPTION_MEMBER,
   CATALOG_FILTER_PLACEHOLDER,
+  CATALOG_NO_MATCH_MESSAGE,
   CatalogListComponent,
   DELETE_DENIED_REASON,
   SHOWN_ENTRY_KINDS,
@@ -2102,5 +2103,306 @@ describe('CatalogListComponent (Story 36-3)', () => {
     expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(1);
     expect(byTest('ns-id-acme-cloned')).not.toBeNull();
     expect(panelStub()!.existingNamespaces).toContain('acme-cloned');
+  });
+
+  // =========================================================================
+  // Story 36-10 — the filter matches every field the row already carries
+  // =========================================================================
+
+  /**
+   * Rows whose four fields do NOT echo one another — the only shape that can
+   * prove per-field matching.
+   *
+   * `defaultRows()` cannot: `row()` derives `name` and `description` from the
+   * namespace, so a needle like `acme` hits three fields at once and a spec
+   * written over it would stay green with three of the four fields unmatched.
+   * Here each needle below is carried by exactly ONE field of ONE row:
+   *
+   *   `ns-one`     → namespace only
+   *   `workspace`  → name only
+   *   `ingestion`  → description only
+   *   `marie`      → owner only
+   *
+   * `ns-two` carries none of them.
+   */
+  function distinctFieldRows(): NamespaceSummary[] {
+    return [
+      row('ns-one', {
+        name: 'Payroll workspace',
+        description: 'handles ingestion of monthly files',
+        owner: 'u-marie',
+      }),
+      row('ns-two', {
+        name: 'Sandbox',
+        description: 'scratch space',
+        owner: OTHER,
+      }),
+    ];
+  }
+
+  /** The identifiers currently rendered, in table order. */
+  function renderedNamespaces(): string[] {
+    return component.filteredRows.map((r) => r.namespace);
+  }
+
+  /** Type into the box an operator actually types in, not into the handler. */
+  async function typeInFilterBox(text: string): Promise<void> {
+    const input = byTest('catalog-filter') as HTMLInputElement;
+    input.value = text;
+    input.dispatchEvent(new Event('input'));
+    await settle();
+  }
+
+  // --- AC 1: all four fields are matched, each on its own -------------------
+
+  it('(36-10 AC1) a needle only the NAMESPACE carries narrows the table', async () => {
+    resolveRows(distinctFieldRows());
+    await render();
+
+    component.onFilterChange('ns-one');
+    await settle();
+
+    expect(renderedNamespaces()).toEqual(['ns-one']);
+    expect(byTest('ns-id-ns-two')).toBeNull();
+  });
+
+  it('(36-10 AC1) a needle only the DISPLAY NAME carries narrows the table', async () => {
+    resolveRows(distinctFieldRows());
+    await render();
+
+    component.onFilterChange('workspace');
+    await settle();
+
+    expect(renderedNamespaces()).toEqual(['ns-one']);
+    expect(byTest('ns-id-ns-two')).toBeNull();
+  });
+
+  it('(36-10 AC1) a needle only the DESCRIPTION carries narrows the table', async () => {
+    // The one that matters most: no column renders `description`, so without
+    // this spec the field could be matched by nobody and missed by everybody.
+    resolveRows(distinctFieldRows());
+    await render();
+
+    component.onFilterChange('ingestion');
+    await settle();
+
+    expect(renderedNamespaces()).toEqual(['ns-one']);
+    expect(byTest('ns-id-ns-two')).toBeNull();
+  });
+
+  it('(36-10 AC1) a needle only the OWNER carries narrows the table', async () => {
+    resolveRows(distinctFieldRows());
+    await render();
+
+    component.onFilterChange('marie');
+    await settle();
+
+    expect(renderedNamespaces()).toEqual(['ns-one']);
+    expect(byTest('ns-id-ns-two')).toBeNull();
+  });
+
+  it('(36-10 AC1) matching is a SUBSTRING and case-insensitive on every field', async () => {
+    // Not a prefix: `gestio` sits in the middle of `ingestion`, and an operator
+    // typing a fragment of a description is the reported use.
+    resolveRows(distinctFieldRows());
+    await render();
+
+    for (const needle of ['S-ON', 'WORKSPACE', 'gestio', 'MARIE']) {
+      component.onFilterChange(needle);
+      await settle();
+      expect(renderedNamespaces()).withContext(needle).toEqual(['ns-one']);
+    }
+  });
+
+  // --- AC 2: terms are ANDed, fields are ORed -------------------------------
+
+  it('(36-10 AC2) a row matching only ONE of two terms is EXCLUDED', async () => {
+    // The AND. Flip `every` to `some` and `ns-three` — which carries `marie`
+    // and nothing else — comes back, which is what this fixture separates.
+    resolveRows([
+      ...distinctFieldRows(),
+      row('ns-three', { name: 'Archive', description: 'cold storage', owner: 'u-marie' }),
+    ]);
+    await render();
+
+    component.onFilterChange('marie payroll');
+    await settle();
+
+    expect(renderedNamespaces()).toEqual(['ns-one']);
+    expect(byTest('ns-id-ns-three')).toBeNull();
+  });
+
+  it('(36-10 AC2) two terms landing on two DIFFERENT fields both count', async () => {
+    // The OR across fields, inside the AND across terms: `marie` is only in
+    // `owner` and `ns-one` is only in `namespace`, so neither term alone is
+    // the match and no single field carries both.
+    resolveRows(distinctFieldRows());
+    await render();
+
+    await typeInFilterBox('marie ns-one');
+
+    expect(component.filterText).toBe('marie ns-one');
+    expect(renderedNamespaces()).toEqual(['ns-one']);
+    expect(byTest('ns-id-ns-one')).not.toBeNull();
+    expect(byTest('ns-id-ns-two')).toBeNull();
+  });
+
+  it('(36-10 AC2) runs of whitespace collapse — the query is the same query', async () => {
+    resolveRows(distinctFieldRows());
+    await render();
+
+    component.onFilterChange('  marie   ns-one  ');
+    await settle();
+
+    expect(renderedNamespaces()).toEqual(['ns-one']);
+  });
+
+  it('(36-10 AC2) a query of nothing but whitespace hides no row', async () => {
+    // `'   '.trim().split(/\s+/)` is `['']`, and an empty term matches every
+    // string — so an unfiltered term list must be EMPTY, not one blank term.
+    resolveRows(distinctFieldRows());
+    await render();
+
+    component.onFilterChange('   ');
+    await settle();
+
+    expect(renderedNamespaces()).toEqual(['ns-one', 'ns-two']);
+    expect(component.filterHidesEverything).toBeFalse();
+  });
+
+  // --- AC 4: a null owner ---------------------------------------------------
+
+  it('(36-10 AC4) a null owner neither throws nor matches, and survives an empty filter', async () => {
+    resolveRows([row('ns-unowned', { owner: null }), row('ns-two')]);
+    await render();
+
+    expect(() => component.onFilterChange('marie')).not.toThrow();
+    await settle();
+    // Excluded by a term it does not otherwise carry...
+    expect(renderedNamespaces()).toEqual([]);
+
+    component.onFilterChange('');
+    await settle();
+
+    // ...and back when the filter is empty.
+    expect(renderedNamespaces()).toEqual(['ns-unowned', 'ns-two']);
+  });
+
+  // --- AC 5: the no-match state names the query and offers a way out --------
+
+  it('(36-10 AC5) the no-match state NAMES the trimmed query', async () => {
+    resolveRows(distinctFieldRows());
+    await render();
+
+    component.onFilterChange('  no-such-namespace  ');
+    await settle();
+
+    const block = byTest('catalog-no-match')!;
+    expect(block).not.toBeNull();
+    expect(byTest('catalog-no-match-query')!.textContent!.trim()).toBe(
+      'no-such-namespace',
+    );
+    expect(block.textContent).toContain(CATALOG_NO_MATCH_MESSAGE);
+    expect(block.textContent).toContain('no-such-namespace');
+  });
+
+  it('(36-10 AC5) the clear control restores every row, the field AND the box', async () => {
+    // The box's own `value` is asserted because a handler that reset only
+    // `filterText` would leave the operator reading a query that no longer
+    // applies — the state and the control disagreeing on screen.
+    resolveRows(distinctFieldRows());
+    await render();
+
+    await typeInFilterBox('no-such-namespace');
+    expect(byTest('catalog-no-match')).not.toBeNull();
+
+    const clear = byTest('catalog-no-match-clear') as HTMLButtonElement;
+    expect(clear).not.toBeNull();
+    expect(clear.tagName).toBe('BUTTON');
+    clear.click();
+    await settle();
+
+    expect(component.filterText).toBe('');
+    expect((byTest('catalog-filter') as HTMLInputElement).value).toBe('');
+    expect(renderedNamespaces()).toEqual(['ns-one', 'ns-two']);
+    expect(byTest('catalog-no-match')).toBeNull();
+    expect(byTest('catalog-table')).not.toBeNull();
+  });
+
+  // --- AC 6: empty catalog and no-match are different facts -----------------
+
+  it('(36-10 AC6) an empty catalog and a filter hiding everything render DIFFERENTLY', async () => {
+    // Both directions in one body, so the distinction cannot be half-lost:
+    // rendering `catalog-empty` for a loaded catalog tells the operator their
+    // data is gone.
+    resolveRows([]);
+    await render();
+
+    expect(byTest('catalog-empty')).not.toBeNull();
+    expect(byTest('catalog-no-match')).toBeNull();
+    expect(byTest('catalog-load-failed')).toBeNull();
+
+    resolveRows(distinctFieldRows());
+    await component.loadRows();
+    await settle();
+    component.onFilterChange('no-such-namespace');
+    await settle();
+
+    expect(byTest('catalog-no-match')).not.toBeNull();
+    expect(byTest('catalog-empty')).toBeNull();
+    expect(byTest('catalog-load-failed')).toBeNull();
+  });
+
+  // --- AC 7: the description reaches the namespace cell's title -------------
+
+  it('(36-10 AC7) the namespace cell carries the DESCRIPTION as its title', async () => {
+    // The field is matched but rendered in no column, so a row that matched on
+    // it would otherwise look like it matched on nothing.
+    await render();
+
+    const cell = byTest('ns-id-acme-team')!.parentElement!;
+    expect(cell.tagName).toBe('TD');
+    expect(cell.getAttribute('title')).toBe('acme-team description');
+  });
+
+  it('(36-10 AC7) an EMPTY description leaves no title attribute at all', async () => {
+    // `[attr.title]=""` renders `title=""`, which hovers as an empty tooltip
+    // box and reads to a spec as "a title is present".
+    resolveRows([row('ns-undescribed', { description: '' })]);
+    await render();
+
+    const cell = byTest('ns-id-ns-undescribed')!.parentElement!;
+    expect(cell.getAttribute('title')).toBeNull();
+  });
+
+  it('(36-10 AC7) the cell keeps its two children, in order', async () => {
+    // The title goes ON the existing cell — no new element, no wrapper, no
+    // move. `(36-9 AC10)` walks this markup.
+    await render();
+
+    const idEl = byTest('ns-id-acme-team')!;
+    const cell = idEl.parentElement!;
+    expect(cell.children.length).toBe(2);
+    expect(cell.children[0]).toBe(idEl);
+    expect(cell.children[1].classList).toContain('admin-catalog__ns-name');
+  });
+
+  // --- AC 8: still zero requests --------------------------------------------
+
+  it('(36-10 AC8) a MULTI-TERM query and the clear control issue ZERO requests', async () => {
+    // Across the WHOLE spy: a single-method count would pass with a fan-out
+    // returning through another door.
+    resolveRows(distinctFieldRows());
+    await render();
+    const before = totalApiCalls();
+
+    await typeInFilterBox('marie ns-one');
+    await typeInFilterBox('marie ns-one extra');
+    await typeInFilterBox('no-such-namespace');
+    (byTest('catalog-no-match-clear') as HTMLButtonElement).click();
+    await settle();
+
+    expect(totalApiCalls()).toBe(before);
+    expect(renderedNamespaces()).toEqual(['ns-one', 'ns-two']);
   });
 });

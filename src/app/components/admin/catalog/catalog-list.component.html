@@ -107,12 +107,35 @@
         No namespaces
       </div>
 
+      <!--
+        NAMES the query and offers a way out. An operator who mistyped a term
+        three fields ago cannot see what is excluding their rows unless the
+        state says so, and the box they would clear is at the other end of the
+        pane. The button lives INSIDE this block, so it exists only in the
+        state it is about — and is a native <button pButton> like every other
+        control here, so its `data-test` hook sits on the button itself.
+      -->
       <div
         *ngIf="filterHidesEverything"
-        class="admin-catalog__empty"
+        class="admin-catalog__empty admin-catalog__no-match"
         data-test="catalog-no-match"
       >
-        No namespaces match this filter
+        <span
+          >{{ noMatchMessage }}
+          <strong data-test="catalog-no-match-query">{{
+            trimmedFilter
+          }}</strong></span
+        >
+        <button
+          pButton
+          type="button"
+          size="small"
+          severity="secondary"
+          label="Clear filter"
+          icon="pi pi-filter-slash"
+          (click)="onClearFilter()"
+          data-test="catalog-no-match-clear"
+        ></button>
       </div>
 
       <ng-container *ngIf="filteredRows.length > 0">
@@ -139,7 +162,18 @@
                 name is a courtesy. Monospace for the same reason: it is a key,
                 and a proportional face makes two near-identical keys look alike.
               -->
-              <td>
+              <!--
+                The DESCRIPTION rides on this cell's native `title`. It is one
+                of the four fields the filter matches and the only one no
+                column renders, so a row that matched on it would otherwise
+                look like it matched on nothing. No new column: the table is
+                already five wide, and a description is a sentence.
+
+                `|| null` so an undescribed namespace carries NO attribute —
+                `[attr.title]=""` renders `title=""`, which hovers as an empty
+                tooltip box in some browsers and reads as "a title is present".
+              -->
+              <td [attr.title]="row.description || null">
                 <div
                   class="admin-catalog__ns-id"
                   [attr.data-test]="'ns-id-' + row.namespace"

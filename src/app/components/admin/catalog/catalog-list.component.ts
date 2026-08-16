@@ -59,6 +59,18 @@ export const CATALOG_DESCRIPTION_MEMBER =
 export const CATALOG_FILTER_PLACEHOLDER = 'Filter namespaces…';
 
 /**
+ * What the pane says when the FILTER is hiding everything — never when the
+ * catalog is empty.
+ *
+ * The two are different facts and must not read alike: `No namespaces` for a
+ * deployment that holds rows tells the operator their data is gone. This
+ * message is deliberately incomplete on its own — the query is rendered beside
+ * it, so the sentence names what is being excluded rather than leaving the
+ * operator to remember what they typed.
+ */
+export const CATALOG_NO_MATCH_MESSAGE = 'No namespaces match';
+
+/**
  * The kinds the Entries column RENDERS — every kind except `meta`.
  *
  * `meta` is the namespace's own `_meta` implementation entry: always 0 or 1,
@@ -158,6 +170,7 @@ export class CatalogListComponent implements OnInit {
 
   readonly deleteDeniedReason = DELETE_DENIED_REASON;
   readonly filterPlaceholder = CATALOG_FILTER_PLACEHOLDER;
+  readonly noMatchMessage = CATALOG_NO_MATCH_MESSAGE;
 
   /**
    * Gates the admin-only "show all namespaces" toggle, consumed through the
@@ -288,35 +301,85 @@ export class CatalogListComponent implements OnInit {
   }
 
   /**
-   * Recompute `filteredRows` from `rows` and the current needle.
+   * Empty the box and put every loaded row back — the no-match state's way out.
    *
-   * Matches case-insensitively against BOTH the identifier and the display
-   * name: an operator who knows a namespace by either should find it by
-   * either. Every path that rebuilds `rows` must come through here — a load, a
-   * filter keystroke, and the delete-success path, which otherwise leaves a
-   * deleted row standing in the filtered view.
+   * Re-applies through the SAME private method every other path uses rather
+   * than assigning `filteredRows` itself: a second copy of the reset is a
+   * second place for the rule to drift. Setting `filterText` is what puts the
+   * box back to empty too — it is `[ngModel]`-bound, so the field is the
+   * control's value, and resetting only the internal state would leave the
+   * operator reading a query that no longer applies.
+   */
+  onClearFilter(): void {
+    this.filterText = '';
+    this.#applyFilter();
+  }
+
+  /**
+   * Recompute `filteredRows` from `rows` and the current query.
+   *
+   * The query is split on whitespace into TERMS, and a row matches iff EVERY
+   * term matches AT LEAST ONE field — AND across terms, OR across the four
+   * fields the row already carries. So `marie ingestion` finds the namespace
+   * marie owns whose description mentions ingestion, and neither term alone
+   * suffices. A single term degrades to the old behaviour over a wider field
+   * set, which is why nothing an operator already learned stops working.
+   *
+   * Every path that rebuilds `rows` must come through here — a load, a filter
+   * keystroke, the clear control, and the delete-success path, which otherwise
+   * leaves a deleted row standing in the filtered view.
    */
   #applyFilter(): void {
-    const needle = this.filterText.trim().toLowerCase();
+    const terms = this.filterText
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((term) => term !== '');
+    // NOT `terms[0] === ''`: an empty term matches every string, so a blank
+    // query has to produce NO terms rather than one empty one.
     this.filteredRows =
-      needle === ''
+      terms.length === 0
         ? this.rows
-        : this.rows.filter(
-            (row) =>
-              row.namespace.toLowerCase().includes(needle) ||
-              row.name.toLowerCase().includes(needle),
-          );
+        : this.rows.filter((row) => this.#matchesAllTerms(row, terms));
+  }
+
+  /**
+   * The four fields a query is matched against, in one readable place.
+   *
+   * `description` is matched but rendered in no column — the namespace cell's
+   * `title` is what makes such a match explicable rather than mysterious.
+   * `owner` is nullable and coerced to `''`, which both keeps the row out of a
+   * non-empty term's results and stops an unowned namespace throwing.
+   *
+   * Substring matching, never a `RegExp` built from the query: an operator
+   * typing `(` would otherwise throw, and escaping is a bug factory this
+   * feature does not need.
+   */
+  #matchesAllTerms(row: NamespaceSummary, terms: string[]): boolean {
+    const fields = [
+      row.namespace,
+      row.name,
+      row.description,
+      row.owner ?? '',
+    ].map((field) => field.toLowerCase());
+    return terms.every((term) => fields.some((field) => field.includes(term)));
   }
 
   /**
    * True iff the filter is hiding every loaded row.
    *
-   * A DIFFERENT fact from an empty catalog, and rendered differently: "no
-   * namespaces match this filter" is about the box the operator just typed in,
-   * while `catalog-empty` claims the deployment holds nothing at all.
+   * A DIFFERENT fact from an empty catalog, and rendered differently: the
+   * no-match state is about the box the operator just typed in — and names
+   * what they typed — while `catalog-empty` claims the deployment holds
+   * nothing at all.
    */
   get filterHidesEverything(): boolean {
     return this.rows.length > 0 && this.filteredRows.length === 0;
+  }
+
+  /** The query as it was MATCHED, which is what the no-match state names. */
+  get trimmedFilter(): string {
+    return this.filterText.trim();
   }
 
   /**

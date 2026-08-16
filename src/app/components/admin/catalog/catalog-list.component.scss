@@ -47,6 +47,16 @@
   color: var(--text-color-secondary, #6b7280);
 }
 
+// Story 36-10 — the no-match state carries the query and its way out on one
+// line. Flex is safe HERE and nowhere near a `<td>`: this is a plain <div>, not
+// a table cell (see the note on the three flex wrappers below).
+.admin-catalog__no-match {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
 // Story 36-9 inverted the cell: the IDENTIFIER leads, in the monospace face
 // used for keys across the admin area (the API-keys pane next door does the
 // same for `key_id`), and the display name trails it, muted.
