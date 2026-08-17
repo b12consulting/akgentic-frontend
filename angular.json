@@ -38,12 +38,6 @@
               "sourceMap": true
             },
             "production": {
-              "fileReplacements": [
-                {
-                  "replace": "src/environments/environment.ts",
-                  "with": "src/environments/environment.prod.ts"
-                }
-              ],
               "optimization": true,
               "outputHashing": "all"
             }
@@ -83,9 +77,6 @@
             },
             "local": {
               "buildTarget": "akgent-app:build:local"
-            },
-            "sdworx": {
-              "buildTarget": "akgent-app:build:sdworx"
             },
             "production": {
               "buildTarget": "akgent-app:build:production"

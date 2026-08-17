@@ -1,0 +1,129 @@
+name: Release
+
+# Manual release: reads the version from package.json on the selected branch,
+# tags that branch's HEAD, builds the production bundle, and creates a GitHub
+# Release with the bundle attached as a tarball.
+#
+# The artifact is the deployable web root (dist/akgent-app/browser): the
+# contents of the tarball go straight behind nginx (see nginx.conf /
+# frontend.Dockerfile). It is environment-agnostic — deployment-specific
+# settings are supplied at runtime via a config.json placed next to
+# index.html, not baked into the build (see README, Configuration).
+#
+# The branch input lets a maintenance line be released without touching master.
+#
+# Bumping the version is a separate maintainer action via a normal PR. This
+# workflow does NOT push commits — branch protection blocks that. The release
+# flow is therefore two-step:
+#   1. Open a "chore: bump version to X.Y.Z" PR against the branch; merge it.
+#   2. Trigger this workflow from the Actions tab, picking the branch.
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Branch to release from"
+        required: false
+        default: master
+        type: string
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout ${{ inputs.branch }}
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.branch }}
+          fetch-depth: 0
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Read version from package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "Releasing version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag does not already exist
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "::error::Tag v$VERSION already exists. Bump the version in package.json first."
+            exit 1
+          fi
+
+      - name: Tag ${{ inputs.branch }} HEAD
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production bundle
+        run: npm run build -- --configuration production
+
+      - name: Package the web root
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          tar -czf "akgentic-frontend-v$VERSION.tar.gz" -C dist/akgent-app/browser .
+
+      - name: Collect the commits in this release
+        id: commits
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # generate_release_notes below builds "What's Changed" from PULL
+          # REQUESTS only, so a release whose range is direct pushes renders an
+          # empty section. Ask GitHub what it WOULD generate before creating
+          # the release. If it can list PRs, leave the body empty so the notes
+          # stay exactly as they are today. Only when it cannot do we supply
+          # the commit list, which the API pre-pends to the compare link.
+          NOTES=$(gh api --method POST \
+            "repos/$GITHUB_REPOSITORY/releases/generate-notes" \
+            -f tag_name="v$VERSION" --jq .body 2>/dev/null || true)
+          if printf '%s' "$NOTES" | grep -q "What's Changed"; then
+            echo "PR-based notes available -- leaving the release body empty."
+            exit 0
+          fi
+          echo "No PRs in range -- falling back to a commit list."
+          PREV=$(git describe --tags --abbrev=0 "v$VERSION^" 2>/dev/null || true)
+          if [ -n "$PREV" ]; then
+            RANGE="$PREV..v$VERSION"
+            HEADING="### Commits since $PREV"
+          else
+            RANGE="v$VERSION"
+            HEADING="### Commits"
+          fi
+          {
+            echo "body<<RELEASE_BODY_EOF"
+            echo "$HEADING"
+            echo
+            git log --no-merges --reverse --pretty=format:'- %s (`%h`)' "$RANGE"
+            echo
+            echo "RELEASE_BODY_EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ steps.version.outputs.version }}"
+          name: "v${{ steps.version.outputs.version }}"
+          files: akgentic-frontend-v*.tar.gz
+          body: ${{ steps.commits.outputs.body }}
+          generate_release_notes: true

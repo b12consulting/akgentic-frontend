@@ -62,6 +62,38 @@ the runtime layer and silently ignores whatever the deployment set.
 Recognised keys: `api`, `logo`, `favicon`, `welcomeMessage`, `autoRedirectContext`, `hideHome`,
 `hideLogin`, `initRightPanelCollapsed`, `userInputEnterKeySubmit`, `loginProviders`, `production`.
 
+### Using config.json
+
+`config.json` lives **next to `index.html` in the deployed web root** and contains only the keys you
+want to override — anything absent falls back to the build-time default. The repository ships an
+empty `public/config.json` (`{}`), so a plain build behaves exactly like `environment.ts`.
+
+Example — point a deployed bundle at another backend and trim the login options:
+
+```json
+{
+  "api": "https://akgentic.example.com",
+  "hideHome": true,
+  "loginProviders": ["apikey"]
+}
+```
+
+To configure a deployment, **replace the file after (or outside) the build** — never rebuild:
+
+- **Static hosting / nginx**: drop your `config.json` into the web root, overwriting the shipped one.
+- **Docker**: mount it over the baked-in copy:
+
+  ```bash
+  docker run -v ./config.json:/usr/share/nginx/html/config.json:ro <image>
+  ```
+
+- **Kubernetes**: project a ConfigMap onto `/usr/share/nginx/html/config.json`.
+
+The file is fetched once, before the app renders, relative to the document base href — it honours a
+non-root `--base-href` deployment. A malformed or missing file is not an error: the build-time
+defaults stand. Verify what a running deployment resolved by fetching `<app-url>/config.json`
+directly in a browser.
+
 ## Building
 
 ```bash
@@ -71,8 +103,26 @@ npm run build -- --configuration dep
 npm run build -- --configuration local
 ```
 
-Artifacts land in `dist/`. `frontend.Dockerfile` + `nginx.conf` build the container image, which
-serves the static bundle and expects `config.json` to be mounted or baked in per environment.
+Artifacts land in `dist/akgent-app/browser` — that folder is the deployable web root.
+`frontend.Dockerfile` + `nginx.conf` build the container image, which serves the static bundle and
+expects `config.json` to be mounted or baked in per environment (see *Using config.json* above).
+
+## CI and releasing
+
+`.github/workflows/ci.yml` runs on every push and on PRs to `master`: `npm ci`, lint, the headless
+Karma suite (with coverage), and a production build. A story is not done until this pipeline is
+green.
+
+`.github/workflows/release.yml` is a **manual** workflow (Actions tab → Release → *Run workflow*),
+mirroring the Python packages' release flow:
+
+1. Merge a `chore: bump version to X.Y.Z` PR updating `version` in `package.json`.
+2. Trigger the workflow, picking the branch (default `master`). It tags `vX.Y.Z`, builds the
+   production bundle, and publishes a GitHub Release with `akgentic-frontend-vX.Y.Z.tar.gz`
+   attached — the tarball is the web root, ready to extract behind any static file server.
+
+The released bundle is **environment-agnostic**: deploy the same tarball everywhere and configure
+each environment with its own `config.json`.
 
 ## Tests
 
@@ -85,8 +135,8 @@ npm run test -- --watch=false --karma-config=karma.conf.js --browsers=ChromeHead
 
 `CHROME_BIN` is set ambiently by the workspace tooling; do not prepend it manually.
 
-There is **no** end-to-end suite and no GitHub Actions pipeline in this repository — the local Karma
-run is the completion gate for a story.
+There is **no** end-to-end suite. The same lint + headless-Karma + production-build sequence runs in
+CI (see *CI and releasing*).
 
 ```bash
 npm run lint                         # eslint over src/**/*.ts
@@ -102,3 +152,9 @@ commit standards, module boundaries) that apply to every change here.
 
 Every branch is linked to a GitHub issue and named `<type>/<issue-number>-<short-description>`.
 Commits are signed (`git commit -s`) and follow Conventional Commits. Never push directly to `master`.
+
+## License
+
+This project is licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](https://github.com/b12consulting/akgentic-frontend/blob/master/LICENSE).
+
+> **Dual licensing & CLA** — Akgentic is available under the AGPL-3.0 open-source license. A commercial license is also planned for organizations that require alternative terms. Contact [Yuma](https://www.weareyuma.com/en/contact) for more information. External contributions will be accepted once a Contributor License Agreement (CLA) is in place. Until then, please hold off on submitting pull requests.
