@@ -422,7 +422,11 @@ export class ProcessUserInputComponent implements OnInit {
           allowSpace: true,
           mentionSelect: this.selectAgent,
           dropUp: true,
-          maxItems: 10,
+          // -1 = unlimited (the library default). A positive cap hard-truncates
+          // the match list before rendering — items past the cap are absent
+          // from the DOM, unreachable by scroll or arrow keys (issue #272).
+          // The list itself is height-capped and scrollable (.scrollable-menu).
+          maxItems: -1,
           items: this.mentionItems,
         },
         {
@@ -431,7 +435,9 @@ export class ProcessUserInputComponent implements OnInit {
           allowSpace: false,
           mentionSelect: this.selectCommand,
           dropUp: true,
-          maxItems: 10,
+          // -1 = unlimited, same rationale as the `@` entry above (issue #272):
+          // a cap of 10 made every command past the 10th unreachable.
+          maxItems: -1,
           // `angular-mentions` re-sorts every list by `labelKey` (here `name`)
           // unless told not to — that would clobber the tool-family ordering
           // `commandItems` builds. Opt out so our `tool_card`-then-name order
