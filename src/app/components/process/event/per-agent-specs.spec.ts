@@ -16,6 +16,8 @@ import { NotificationToasts } from './notification-toasts';
 import { LogFeeder } from './log-feeder';
 import { TeamSocket } from './team-socket';
 import { LoadingIndicator } from './loading-indicator';
+import { TeamStatusReactor } from './team-status-reactor';
+import { ContextService } from '../../../core/context/context.service';
 import {
   AgentTokenUsage,
   contextMatch,
@@ -228,7 +230,15 @@ function configureBed(): {
       NotificationToasts,
       TeamSocket,
       LogFeeder,
+      TeamStatusReactor,
       IngestionService,
+      // Story 37-2: `IngestionService` injects `TeamStatusReactor`, which
+      // injects the root-scoped `ContextService`. A real one would need a
+      // `Router` this bed has no use for.
+      {
+        provide: ContextService,
+        useValue: { markStopped: jasmine.createSpy('markStopped') },
+      },
       {
         provide: ApiService,
         useValue: {

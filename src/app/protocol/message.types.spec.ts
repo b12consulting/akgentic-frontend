@@ -12,6 +12,7 @@ import {
   isLlmSystemPromptEvent,
   isLlmUsageEvent,
   isNotificationMessage,
+  isTeamStoppingEvent,
   isWarningMessage,
   isWelcomeAnnouncement,
   isWelcomeMessage,
@@ -426,6 +427,70 @@ describe('isClosedNotification (Story 31-4, AC #1)', () => {
     expect(isLlmContextCompactedEvent(closed)).toBe(false);
     expect(isLlmContextClearedEvent(closed)).toBe(false);
     expect(isLlmMessageEvent(closed)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isTeamStoppingEvent — inner-event check (Story 37-2, AC1)
+//
+// The tag is written INLINE rather than imported: this payload is read-only, so
+// it has no exported constant on purpose (only the one envelope the frontend
+// CONSTRUCTS needs a byte-exact literal). The `Llm*Event` blocks above do the
+// same for the same reason.
+// ---------------------------------------------------------------------------
+
+const TEAM_STOPPING_MODEL =
+  'akgentic.core.messages.orchestrator.TeamStoppingEvent';
+
+describe('isTeamStoppingEvent (Story 37-2, AC1)', () => {
+  it('returns true for a TeamStoppingEvent inner event', () => {
+    expect(isTeamStoppingEvent({ __model__: TEAM_STOPPING_MODEL })).toBe(true);
+  });
+
+  it('returns false for null, undefined and a __model__-less object', () => {
+    expect(isTeamStoppingEvent(null)).toBe(false);
+    expect(isTeamStoppingEvent(undefined)).toBe(false);
+    expect(isTeamStoppingEvent({})).toBe(false);
+  });
+
+  it('returns false for every other inner event on the wire', () => {
+    for (const model of [
+      CLOSED_NOTIFICATION_MODEL,
+      'akgentic.llm.event.LlmUsageEvent',
+      'akgentic.llm.event.LlmSystemPromptEvent',
+      'akgentic.llm.event.LlmContextCompactedEvent',
+      'akgentic.llm.event.LlmContextClearedEvent',
+      'akgentic.tool.command.CommandsAnnouncedEvent',
+    ]) {
+      expect(isTeamStoppingEvent({ __model__: model })).toBe(false);
+    }
+  });
+
+  // The trap the guard exists to avoid: it takes the INNER payload, never the
+  // envelope. A guard that fired on the envelope would fire for EVERY
+  // EventMessage, and the reactor built on it would mark healthy teams dead.
+  it('returns false for the EventMessage envelope tag', () => {
+    expect(isTeamStoppingEvent({ __model__: EVENT_MESSAGE_MODEL })).toBe(false);
+  });
+
+  // Mutual exclusion with `isClosedNotification`, in BOTH directions. That pair
+  // is the one that matters: `ClosedNotification` is a real payload the app
+  // already depends on, so a collision here would break dismissed-notification
+  // replay rather than something hypothetical.
+  it('is mutually exclusive with isClosedNotification in both directions', () => {
+    const stopping = { __model__: TEAM_STOPPING_MODEL };
+    const closed = { __model__: CLOSED_NOTIFICATION_MODEL };
+    expect(isClosedNotification(stopping)).toBe(false);
+    expect(isTeamStoppingEvent(closed)).toBe(false);
+  });
+
+  it('no other inner-event guard fires for a TeamStoppingEvent', () => {
+    const stopping = { __model__: TEAM_STOPPING_MODEL };
+    expect(isLlmUsageEvent(stopping)).toBe(false);
+    expect(isLlmSystemPromptEvent(stopping)).toBe(false);
+    expect(isLlmContextCompactedEvent(stopping)).toBe(false);
+    expect(isLlmContextClearedEvent(stopping)).toBe(false);
+    expect(isLlmMessageEvent(stopping)).toBe(false);
   });
 });
 

@@ -14,6 +14,8 @@ import { NotificationToasts } from '../event/notification-toasts';
 import { LogFeeder } from '../event/log-feeder';
 import { TeamSocket } from '../event/team-socket';
 import { LoadingIndicator } from '../event/loading-indicator';
+import { TeamStatusReactor } from '../event/team-status-reactor';
+import { ContextService } from '../../../core/context/context.service';
 import {
   SystemPromptRow,
   SystemPromptSelector,
@@ -149,7 +151,15 @@ function configureBed(): {
       NotificationToasts,
       TeamSocket,
       LogFeeder,
+      TeamStatusReactor,
       IngestionService,
+      // Story 37-2: `IngestionService` injects `TeamStatusReactor`, which
+      // injects the root-scoped `ContextService`. A real one would need a
+      // `Router` this bed has no use for.
+      {
+        provide: ContextService,
+        useValue: { markStopped: jasmine.createSpy('markStopped') },
+      },
       SystemPromptSelector,
       ChatService,
       {

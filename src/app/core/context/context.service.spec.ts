@@ -1193,3 +1193,183 @@ describe('ContextService', () => {
     expect(next.find((t) => t.team_id === 'team-B')).toBe(prevB);
   }));
 });
+
+// ---------------------------------------------------------------------------
+// Story 37-2 — markStopped: the push half of team status (AC2-AC5)
+//
+// Every spec below drives the method through the PUBLIC surface only: teams are
+// seeded through `getTeams()` and read back through `teams$` / `currentTeam$`.
+// `apiSpy` is asserted to stay untouched on the markStopped path — the whole
+// point of this method is that a remote stop needs no round-trip.
+// ---------------------------------------------------------------------------
+
+describe('ContextService.markStopped (Story 37-2)', () => {
+  let service: ContextService;
+  let apiSpy: jasmine.SpyObj<ApiService>;
+  let routerSpy: jasmine.SpyObj<Router>;
+
+  beforeEach(() => {
+    apiSpy = jasmine.createSpyObj('ApiService', [
+      'getTeams',
+      'getTeamsPage',
+      'getTeam',
+      'createTeam',
+      'deleteTeam',
+      'stopTeam',
+      'restoreTeam',
+    ]);
+    routerSpy = jasmine.createSpyObj('Router', ['navigate']);
+    routerSpy.navigate.and.returnValue(Promise.resolve(true));
+
+    TestBed.configureTestingModule({
+      providers: [
+        ContextService,
+        { provide: ApiService, useValue: apiSpy },
+        { provide: Router, useValue: routerSpy },
+      ],
+    });
+
+    service = TestBed.inject(ContextService);
+  });
+
+  async function seed(teams: TeamContext[]): Promise<void> {
+    apiSpy.getTeams.and.returnValue(Promise.resolve(teams));
+    await service.getTeams();
+  }
+
+  // --- AC2 ---------------------------------------------------------------
+
+  it('(AC2) currentTeam$ emits a DIFFERENT object reference whose status is stopped', async () => {
+    const running = makeTeam('team-A', 'running');
+    await seed([running]);
+    service.currentProcessId$.next('team-A');
+
+    const emissions: (TeamContext | null)[] = [];
+    const sub = service.currentTeam$.subscribe((t) => emissions.push(t));
+    const before = emissions[emissions.length - 1];
+    expect(before).toBe(running);
+
+    service.markStopped('team-A');
+
+    const after = emissions[emissions.length - 1];
+    // BOTH assertions, and the reference one is the load-bearing half:
+    // `currentTeam$` ends in `distinctUntilChanged()` with default reference
+    // equality, so an in-place `team.status = 'stopped'` would leave the status
+    // assertion green while nothing re-emitted and no OnPush view repainted.
+    expect(after).not.toBe(before);
+    expect(after!.status).toBe('stopped');
+    // The source object is untouched — this is a copy, not a mutation.
+    expect(running.status).toBe('running');
+
+    sub.unsubscribe();
+  });
+
+  it('(AC2) currentTeamRunning$ follows the patch to false', async () => {
+    await seed([makeTeam('team-A', 'running')]);
+    service.currentProcessId$.next('team-A');
+    expect(service.currentTeamRunning$.value).toBe(true);
+
+    service.markStopped('team-A');
+
+    expect(service.currentTeamRunning$.value).toBe(false);
+  });
+
+  it('(AC2) issues no HTTP call', async () => {
+    await seed([makeTeam('team-A', 'running')]);
+    apiSpy.getTeam.calls.reset();
+
+    service.markStopped('team-A');
+
+    expect(apiSpy.getTeam).not.toHaveBeenCalled();
+    expect(apiSpy.getTeams).toHaveBeenCalledTimes(1); // the seed only
+    expect(apiSpy.stopTeam).not.toHaveBeenCalled();
+  });
+
+  // --- AC3 ---------------------------------------------------------------
+
+  it('(AC3) is idempotent: an already-stopped team produces NO emission', async () => {
+    await seed([makeTeam('team-A', 'stopped')]);
+
+    const emissions: TeamContext[][] = [];
+    const sub = service.teams$.subscribe((v) => emissions.push(v));
+    expect(emissions.length).toBe(1);
+
+    service.markStopped('team-A');
+    service.markStopped('team-A');
+
+    expect(emissions.length).toBe(1);
+    sub.unsubscribe();
+  });
+
+  it('(AC3) a second call after a real patch emits nothing further', async () => {
+    await seed([makeTeam('team-A', 'running')]);
+
+    const emissions: TeamContext[][] = [];
+    const sub = service.teams$.subscribe((v) => emissions.push(v));
+
+    service.markStopped('team-A');
+    expect(emissions.length).toBe(2);
+
+    service.markStopped('team-A');
+    expect(emissions.length).toBe(2);
+
+    sub.unsubscribe();
+  });
+
+  // --- AC4 ---------------------------------------------------------------
+
+  it('(AC4) an unknown team id creates NO phantom row and emits nothing', async () => {
+    await seed([makeTeam('team-A', 'running')]);
+
+    const emissions: TeamContext[][] = [];
+    const sub = service.teams$.subscribe((v) => emissions.push(v));
+
+    service.markStopped('team-does-not-exist');
+
+    // The guard must run BEFORE `_upsertTeam`, which APPENDS on an absent id —
+    // that append is the phantom.
+    expect(emissions.length).toBe(1);
+    expect(emissions[0].length).toBe(1);
+    expect(emissions[0][0].team_id).toBe('team-A');
+
+    sub.unsubscribe();
+  });
+
+  it('(AC4) an unknown team id on an EMPTY cache is a silent no-op', () => {
+    const emissions: TeamContext[][] = [];
+    const sub = service.teams$.subscribe((v) => emissions.push(v));
+
+    service.markStopped('team-A');
+
+    expect(emissions.length).toBe(1);
+    expect(emissions[0]).toEqual([]);
+    sub.unsubscribe();
+  });
+
+  // --- AC5 ---------------------------------------------------------------
+
+  it('(AC5) untouched rows keep reference identity; only the array is new', async () => {
+    const teamA = makeTeam('team-A', 'running');
+    const teamB = makeTeam('team-B', 'running');
+    const teamC = makeTeam('team-C', 'stopped');
+    await seed([teamA, teamB, teamC]);
+
+    const prev = await firstValueFrom(service.teams$);
+
+    service.markStopped('team-B');
+
+    const next = await firstValueFrom(service.teams$);
+
+    expect(next).not.toBe(prev);
+    expect(next.length).toBe(3);
+    expect(next[0]).toBe(teamA);
+    expect(next[2]).toBe(teamC);
+    expect(next[1]).not.toBe(teamB);
+    expect(next[1].status).toBe('stopped');
+    // Order is preserved and every other field survives the copy.
+    expect(next[1].team_id).toBe('team-B');
+    expect(next[1].name).toBe(teamB.name);
+    expect(next[1].created_at).toBe(teamB.created_at);
+    expect(next[1].config_name).toBe(teamB.config_name);
+  });
+});

@@ -164,6 +164,40 @@ export class ContextService {
     this._context$.next(next);
   }
 
+  /**
+   * Story 37-2: record that a team has stopped, without asking the server.
+   *
+   * The SECOND caller of the `_upsertTeam` seam that the comment on `_context$`
+   * has anticipated since this service was written — a push, not a fetch. It
+   * exists for the REMOTE stop: the idle timer, another tab, an operator, a
+   * worker crash. `stopTeamAndAwait` already covers the local one by polling,
+   * but when this tab did not issue the stop, nothing writes `_context$` at all
+   * and `currentTeam$` reports a live session that has ceased to exist.
+   *
+   * COPY-AND-OVERRIDE, never `team.status = 'stopped'`. `currentTeam$` ends in a
+   * `distinctUntilChanged()` with default reference equality, so an in-place
+   * mutation re-emits nothing and no OnPush consumer repaints — the write would
+   * appear to work, the cached value would even be correct, and the screen would
+   * still show a running team. The new object reference IS the notification.
+   *
+   * Guarded BEFORE the write, and both halves of the guard are load-bearing:
+   *   - unknown id — `_upsertTeam` APPENDS when the id is absent, so an
+   *     unguarded call would materialise a phantom team row out of an event for
+   *     a team this tab has never listed;
+   *   - already not running — a re-entry writes nothing and emits nothing, which
+   *     is what makes a stopped-team cold load (whose REST replay carries the
+   *     stop event) a no-op rather than a redundant write.
+   *
+   * The literal `'stopped'` and not an enum: `TeamContext.status` is a plain
+   * string here and `isRunning` compares against `'running'`. Widening that to
+   * an enum is its own change with its own blast radius.
+   */
+  markStopped(teamId: string): void {
+    const team = this._context$.value.find((t) => t.team_id === teamId);
+    if (!team || !isRunning(team)) return;
+    this._upsertTeam({ ...team, status: 'stopped' });
+  }
+
   async stopTeamAndAwait(
     teamId: string,
     timeoutMs: number = TEAM_STATE_TIMEOUT_MS,
