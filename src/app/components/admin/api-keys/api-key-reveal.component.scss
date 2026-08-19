@@ -1,0 +1,51 @@
+// Story 36-6 — the one-time reveal. The value is the only thing on this panel
+// that matters, so it gets the emphasis: monospace, wrapping (a long key must
+// never be clipped out of reach of a manual copy), and a surface of its own.
+
+.api-key-reveal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.api-key-reveal__warning {
+  margin: 0;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.api-key-reveal__key-id {
+  margin: 0;
+  color: var(--text-color-secondary, #6b7280);
+  font-size: 0.85rem;
+}
+
+.api-key-reveal__value {
+  display: block;
+  padding: 0.75rem;
+  border-radius: 6px;
+  background: var(--surface-100, #f3f4f6);
+  border: 1px solid var(--surface-300, #d1d5db);
+  font-family: var(--font-family-mono, monospace);
+  font-size: 0.9rem;
+  // Wrap rather than clip: a key the operator cannot see is a key they cannot
+  // select by hand, and there is no second chance to fetch it.
+  word-break: break-all;
+  user-select: all;
+}
+
+.api-key-reveal__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.api-key-reveal__feedback {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-color-secondary, #6b7280);
+}
+
+.api-key-reveal__feedback--failed {
+  color: #991b1b;
+}

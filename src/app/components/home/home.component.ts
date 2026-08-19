@@ -10,7 +10,7 @@ import {
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { BehaviorSubject, firstValueFrom, Observable } from 'rxjs';
-import { filter, map, take } from 'rxjs/operators';
+import { filter, take } from 'rxjs/operators';
 
 import { ApiService } from '../../core/http/api.service';
 import { isRunning } from '../../core/context/team.interface';
@@ -107,16 +107,11 @@ export class HomeComponent {
   // always-on firehose).
   showAllNamespaces = false;
 
-  // Reactive admin predicate. Derived from `authService.currentUser$` (NOT a
-  // one-shot eager read) because `ngOnInit` fires `checkAuth()` which resolves
-  // `/auth/me` AFTER first render — reading `currentUserValue` once would miss
-  // the late admin resolution. `roles` is read off the verbatim `/auth/me`
-  // body (typed `any`); the optional chain yields `false` for the anonymous
-  // user (no `roles`). Consumed in the template via the `async` pipe so the
-  // toggle appears once the deferred admin user lands.
-  isAdmin$: Observable<boolean> = this.authService.currentUser$.pipe(
-    map((u) => u?.roles?.includes('admin') === true),
-  );
+  // Reactive admin predicate, owned by `AuthService` (Story 36-1) — this page
+  // reads it, it does not define it. Consumed in the template via the `async`
+  // pipe so the toggle appears once the deferred admin user lands; see
+  // `AuthService.isAdmin$` for why it must stay an `Observable`.
+  isAdmin$: Observable<boolean> = this.authService.isAdmin$;
 
   @ViewChildren('descriptionInput') descriptionInputs!: QueryList<ElementRef>;
 

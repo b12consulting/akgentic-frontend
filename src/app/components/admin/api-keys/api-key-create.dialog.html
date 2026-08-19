@@ -1,0 +1,84 @@
+<div class="api-key-create" data-test="api-key-create-form">
+  <label class="api-key-create__field">
+    <span class="api-key-create__label">Owner ID</span>
+    <input
+      pInputText
+      type="text"
+      [(ngModel)]="ownerId"
+      (ngModelChange)="onOwnerEdited()"
+      name="owner_id"
+      data-test="api-key-create-owner-id"
+    />
+  </label>
+
+  <label class="api-key-create__field">
+    <span class="api-key-create__label">Owner email</span>
+    <input
+      pInputText
+      type="text"
+      [(ngModel)]="ownerEmail"
+      (ngModelChange)="onOwnerEdited()"
+      name="owner_email"
+      data-test="api-key-create-owner-email"
+    />
+  </label>
+
+  <!--
+    Whose name the key carries, said out loud. The fields default to the caller,
+    so issuing a key for another identity is a deliberate edit rather than an
+    accident of an empty form.
+  -->
+  <p class="api-key-create__helper" data-test="api-key-create-owner-helper">
+    {{ ownerHelperText }}
+  </p>
+
+  <label class="api-key-create__field">
+    <span class="api-key-create__label">Roles</span>
+    <input
+      pInputText
+      type="text"
+      placeholder="admin, operator"
+      [(ngModel)]="rolesText"
+      name="roles"
+      data-test="api-key-create-roles"
+    />
+    <span class="api-key-create__hint"
+      >Comma-separated. At least one is required — a key with no role can
+      authenticate and do nothing.</span
+    >
+  </label>
+
+  <label class="api-key-create__field">
+    <span class="api-key-create__label">Expiration (optional)</span>
+    <p-datepicker
+      [(ngModel)]="expiration"
+      [showTime]="true"
+      [showClear]="true"
+      name="expiration"
+      data-test="api-key-create-expiration"
+    ></p-datepicker>
+    <span class="api-key-create__hint">Left empty, the key never expires.</span>
+  </label>
+
+  <div class="api-key-create__actions">
+    <button
+      pButton
+      type="button"
+      size="small"
+      severity="secondary"
+      label="Cancel"
+      [disabled]="submitting"
+      (click)="onCancel()"
+      data-test="api-key-create-cancel-btn"
+    ></button>
+    <button
+      pButton
+      type="button"
+      size="small"
+      label="Create key"
+      [disabled]="!canSubmit"
+      (click)="onSubmit()"
+      data-test="api-key-create-submit-btn"
+    ></button>
+  </div>
+</div>

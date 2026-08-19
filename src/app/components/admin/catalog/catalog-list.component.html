@@ -1,0 +1,587 @@
+<div data-test="admin-catalog-pane" class="admin-pane admin-catalog">
+  <div class="admin-catalog__toolbar">
+    <div class="admin-catalog__heading">
+      <h2 class="admin-catalog__title">Catalog</h2>
+      <!--
+        What the list actually contains, which depends on who is asking. Off
+        `isAdmin$` through the `async` pipe like every other role-driven surface
+        here, so a late `/auth/me` rewrites it in place.
+      -->
+      <span class="admin-catalog__description" data-test="catalog-description">{{
+        description$ | async
+      }}</span>
+    </div>
+
+    <!--
+      Client-side filter over rows ALREADY IN MEMORY. It issues NO request:
+      Story 36-8 reduced this pane to one load, and a request per keystroke
+      would give that back with interest.
+    -->
+    <input
+      pInputText
+      type="text"
+      class="admin-catalog__filter"
+      [placeholder]="filterPlaceholder"
+      [ngModel]="filterText"
+      (ngModelChange)="onFilterChange($event)"
+      data-test="catalog-filter"
+      aria-label="Filter namespaces"
+    />
+
+    <!--
+      Admin-only "show all namespaces" toggle. `*ngIf` on the ELEMENT so a
+      non-admin (and the anonymous user) gets no toggle in the DOM at all —
+      absent, not disabled. Consumed through the `async` pipe: `/auth/me`
+      resolves after first render, so a snapshot would hide it from a genuine
+      admin until the next navigation. Default off (the firehose is opt-in);
+      flipping it re-runs the single `loadRows()` path with `all: true`, which
+      is threaded to the ONE request that paints the page.
+
+      Shape copied from the Home toolbar — deliberately NOT imported from it:
+      `page-admin` may not depend on `page-home` (ESLint boundaries).
+    -->
+    <span *ngIf="isAdmin$ | async" class="admin-catalog__show-all">
+      <p-toggleswitch
+        [ngModel]="showAll"
+        (ngModelChange)="onToggleShowAll($event)"
+        data-test="show-all-namespaces-toggle"
+        inputId="admin-show-all-namespaces-toggle"
+      ></p-toggleswitch>
+      <label for="admin-show-all-namespaces-toggle">Show all namespaces</label>
+    </span>
+
+    <!--
+      NO `severity`, so it renders as the app's solid primary button — which is
+      what Home's Create / Configuration / Refresh are. `severity="secondary"`
+      here made the admin area's only toolbar button a pale outline nothing else
+      in the app uses, and the pane read as a bolt-on rather than a screen.
+    -->
+    <button
+      pButton
+      type="button"
+      size="small"
+      label="Refresh"
+      icon="pi pi-refresh"
+      [disabled]="loading"
+      (click)="loadRows()"
+      data-test="catalog-refresh-btn"
+    ></button>
+  </div>
+
+  <div *ngIf="loading" class="admin-catalog__loading" data-test="catalog-loading">
+    <span class="pi pi-spinner pi-spin"></span> Loading namespaces…
+  </div>
+
+  <ng-container *ngIf="!loading">
+    <!--
+      A rejected load and an empty catalog are DIFFERENT facts and never render
+      alike: an empty table here would assert "this deployment has no
+      namespaces" for a request that never got an answer. No toast is added —
+      FetchService already raised one.
+    -->
+    <div
+      *ngIf="loadFailed; else loadedBranch"
+      class="admin-catalog__failed"
+      data-test="catalog-load-failed"
+    >
+      The catalog could not be loaded. Use Refresh to try again.
+    </div>
+
+    <!--
+      Three MUTUALLY EXCLUSIVE branches, each a different fact:
+
+        rows = 0                      -> this deployment has no namespaces
+        rows > 0, filtered = 0        -> the operator's filter is hiding them
+        filtered > 0                  -> the table
+
+      Written as three sibling conditions rather than a chain of `else`
+      templates: an `#else` reference does not resolve across embedded views,
+      and the flat form is what makes the exclusivity readable.
+    -->
+    <ng-template #loadedBranch>
+      <div
+        *ngIf="rows.length === 0"
+        class="admin-catalog__empty"
+        data-test="catalog-empty"
+      >
+        No namespaces
+      </div>
+
+      <!--
+        NAMES the query and offers a way out. An operator who mistyped a term
+        three fields ago cannot see what is excluding their rows unless the
+        state says so, and the box they would clear is at the other end of the
+        pane. The button lives INSIDE this block, so it exists only in the
+        state it is about — and is a native <button pButton> like every other
+        control here, so its `data-test` hook sits on the button itself.
+      -->
+      <div
+        *ngIf="filterHidesEverything"
+        class="admin-catalog__empty admin-catalog__no-match"
+        data-test="catalog-no-match"
+      >
+        <span
+          >{{ noMatchMessage }}
+          <strong data-test="catalog-no-match-query">{{
+            trimmedFilter
+          }}</strong></span
+        >
+        <button
+          pButton
+          type="button"
+          size="small"
+          severity="secondary"
+          label="Clear filter"
+          icon="pi pi-filter-slash"
+          (click)="onClearFilter()"
+          data-test="catalog-no-match-clear"
+        ></button>
+      </div>
+
+      <ng-container *ngIf="filteredRows.length > 0">
+        <!--
+          THE WHOLE ROW IS THE TARGET (Story 36-12). `selectionMode="single"`
+          plus `pSelectableRow` below is PrimeNG's own mechanism — the same one
+          the Home table uses — so hover affordance, the selected-row class,
+          `tabindex` and Enter/Space activation all come from `SelectableRow`
+          rather than from a hand-rolled `(click)` on the `<tr>`. Copied and
+          NOT imported: `page-admin` may not depend on `page-home`.
+
+          `(onRowUnselect)` is bound to the SAME handler on purpose. Single
+          selection here is a TOGGLE (`metaKeySelection` defaults to false), so
+          clicking an already-selected row emits `onRowUnselect` and NOT
+          `onRowSelect`. Without this line the operator's second click on the
+          same row — after closing the panel — does nothing at all. Whichever
+          of the two events fires, that row's panel opens.
+
+          No `dataKey`: rows are compared by reference, which is what the
+          filter path preserves.
+        -->
+        <p-table
+          [value]="filteredRows"
+          selectionMode="single"
+          (onRowSelect)="onRowSelect($event)"
+          (onRowUnselect)="onRowSelect($event)"
+          [tableStyle]="{ 'min-width': '55rem' }"
+          data-test="catalog-table"
+        >
+          <ng-template #header>
+            <tr>
+              <th>Namespace</th>
+              <th>Owner</th>
+              <th>Visibility</th>
+              <th>Entries</th>
+              <th></th>
+            </tr>
+          </ng-template>
+
+          <!--
+            `[pSelectableRowIndex]` is what gives the table a ROVING tabindex:
+            `setRowTabIndex()` returns 0 while nothing is selected, and
+            afterwards 0 only for the anchor row and -1 for the rest, so the
+            activated row is the one tab stop.
+
+            Omit it and the directive's `index` is `undefined` on every row —
+            but `anchorRowIndex` is read from that same index, so the two
+            compare equal and every row keeps 0 (verified by mutation; it does
+            NOT collapse to -1 as one might expect). What is actually lost is
+            the roving stop, and the meaning of `anchorRowIndex` for the
+            arrow/Home/End paths that read it.
+          -->
+          <ng-template #body let-row let-rowIndex="rowIndex">
+            <tr
+              [pSelectableRow]="row"
+              [pSelectableRowIndex]="rowIndex"
+              [attr.data-test]="'ns-row-' + row.namespace"
+            >
+              <!--
+                IDENTIFIER FIRST, name beneath. The identifier is what an
+                operator acts on, deep-links to and filters against; the display
+                name is a courtesy. Monospace for the same reason: it is a key,
+                and a proportional face makes two near-identical keys look alike.
+              -->
+              <!--
+                The DESCRIPTION rides on this cell's native `title`. It is one
+                of the four fields the filter matches and the only one no
+                column renders, so a row that matched on it would otherwise
+                look like it matched on nothing. No new column: the table is
+                already five wide, and a description is a sentence.
+
+                `|| null` so an undescribed namespace carries NO attribute —
+                `[attr.title]=""` renders `title=""`, which hovers as an empty
+                tooltip box in some browsers and reads as "a title is present".
+              -->
+              <td [attr.title]="row.description || null">
+                <div
+                  class="admin-catalog__ns-id"
+                  [attr.data-test]="'ns-id-' + row.namespace"
+                >
+                  {{ row.namespace }}
+                </div>
+                <div class="admin-catalog__ns-name">{{ row.name }}</div>
+              </td>
+
+              <!--
+                The raw `user_id` — the frontend has no user directory to
+                resolve it against. `null` is an UNKNOWN owner, not "nobody".
+
+                The `you` chip marks the caller's OWN rows, off the same
+                ownership expression `canModify` uses. An admin who is not the
+                owner gets no chip: the chip says "yours", not "you may".
+              -->
+              <td [attr.data-test]="'ns-owner-' + row.namespace">
+                {{ row.owner ?? 'unknown' }}
+                <p-tag
+                  *ngIf="isOwnedByViewer(row)"
+                  severity="info"
+                  value="you"
+                  [attr.data-test]="'ns-owner-you-' + row.namespace"
+                ></p-tag>
+              </td>
+
+              <!--
+                The flex layout lives on the WRAPPER, never on the <td>. A
+                `display: flex` cell stops being a `table-cell`: the browser
+                drops it out of the column grid and builds anonymous table
+                boxes around whatever real cells are left, so the header keeps
+                five columns while the row renders two. Karma cannot see it —
+                in the DOM tree the cells are still correct siblings — so the
+                rule is stated here rather than left to a spec.
+              -->
+              <td>
+                <div class="admin-catalog__chips">
+                  <!--
+                    THE HOOK IS ON THIS WRAPPER, not on the <td> where it used
+                    to sit (Story 36-14). The chip specs read EVERY `p-tag`
+                    inside `ns-visibility-{ns}` and assert exact arrays, so the
+                    `read-only` tag below would append itself to all of them if
+                    the hook still addressed the cell. Scoping it to exactly the
+                    three visibility chips is what lets that tag be added with
+                    every 36-4/36-11/36-13 chip assertion passing unmodified —
+                    and it is why the wrapper must not be deleted as redundant.
+                  -->
+                  <div
+                    class="admin-catalog__visibility-chips"
+                    [attr.data-test]="'ns-visibility-' + row.namespace"
+                  >
+                    <!--
+                      Exactly one of public/private — never neither, never both.
+
+                      The visibility chip carries a severity of its OWN so it
+                      can never render identically to the `secondary` kind chip
+                      beside it: `public` is `success`, `private` is `info`.
+                      `shareable` is `warn` — orange is the one that should
+                      catch the eye, because it is the fact that says this
+                      namespace can leave your hands. Do NOT tidy either back to
+                      `secondary`, do not swap them round again, and do not move
+                      the kind chip off `secondary`: what is being protected is
+                      that the visibility pair stays distinguishable from the
+                      kind pair beside it.
+                    -->
+                    <p-tag
+                      [severity]="row.public ? 'success' : 'info'"
+                      [value]="row.public ? 'public' : 'private'"
+                      [attr.data-test]="'ns-visibility-chip-' + row.namespace"
+                    ></p-tag>
+                    <p-tag
+                      *ngIf="row.shareable"
+                      severity="warn"
+                      value="shareable"
+                    ></p-tag>
+                    <!-- Exactly one of team/library, from the `team` boolean. -->
+                    <p-tag
+                      severity="secondary"
+                      [value]="row.team ? 'team' : 'library'"
+                    ></p-tag>
+                  </div>
+                  <!--
+                    The entitlement warning (Story 36-14). Until this story the
+                    Configure/View label carried it — it was the ONLY place a
+                    non-owner learned they were read-only BEFORE clicking — and
+                    removing that control without replacing the signal would
+                    have taken the warning rather than moved it.
+
+                    Off `canModify(row)`, the SAME predicate the Delete button
+                    reads. A second expression here is exactly how the row and
+                    its Delete drift apart.
+
+                    `contrast` because none of the four severities already in
+                    this cell (`success` / `info` / `warn` / `secondary`) may be
+                    reused without the tag reading as one of them, and because
+                    read-only is not an error: `danger` or `warn` would
+                    over-state it.
+
+                    It says "you may not SAVE", not "you may not open" — the
+                    panel is writable by design (ADR-028 §D4's amendment), the
+                    server's 403 is the real boundary, and this story did not
+                    change either.
+                  -->
+                  <p-tag
+                    *ngIf="!canModify(row)"
+                    severity="contrast"
+                    value="read-only"
+                    [attr.data-test]="'ns-readonly-' + row.namespace"
+                  ></p-tag>
+                </div>
+              </td>
+
+              <!--
+                The five SHOWN kinds, every row — the server zero-fills, so
+                every key is present. A `0` renders as `0`, never a blank: one
+                request paints the page, so there is no per-column failure left
+                to distinguish a blank from. A zero is DIMMED and present, not
+                hidden: absent would read as "unknown", which is the one thing
+                it is not.
+
+                `meta` is the namespace's own `_meta` entry — always 0 or 1, and
+                noise here. It stays on the wire and in the model; only this
+                column narrows. `Σ` sums exactly what is shown, so the column
+                adds up on inspection.
+              -->
+              <td>
+                <div class="admin-catalog__counts">
+                  <span
+                    *ngFor="let kind of shownEntryKinds"
+                    class="admin-catalog__count"
+                    [class.admin-catalog__count--zero]="isZeroCount(row, kind)"
+                  >
+                    <span class="admin-catalog__count-kind">{{ kind }}</span>
+                    <span
+                      class="admin-catalog__count-value"
+                      [attr.data-test]="'ns-count-' + row.namespace + '-' + kind"
+                      >{{ countLabel(row, kind) }}</span
+                    >
+                  </span>
+                  <span class="admin-catalog__count admin-catalog__count--total">
+                    <span class="admin-catalog__count-kind">Σ</span>
+                    <span
+                      class="admin-catalog__count-value"
+                      [attr.data-test]="'ns-total-' + row.namespace"
+                      >{{ shownTotal(row) }}</span
+                    >
+                  </span>
+                </div>
+              </td>
+
+              <!--
+                Three controls, in the order an operator reaches for them:
+                export, clone, delete. Opening the namespace is NOT among them
+                any more — Story 36-14 removed the Configure/View button and
+                made the row click the sole entry to the panel. All three are
+                NATIVE <button> with the `pButton` directive — a <p-button>
+                component would put the `data-test` hook on its own host, so the
+                authorization specs' `.tagName` and `.disabled` reads would
+                break for a purely cosmetic reason. Styled as Home's row actions
+                (rounded, secondary, a `pi` icon), copied and not imported:
+                `page-admin` may not depend on `page-home`.
+              -->
+              <!--
+                Every control here stops the click from also reaching the row
+                (Story 36-12) — the WRAPPER deliberately does not, so the
+                whitespace between the buttons stays part of the clickable row.
+
+                PrimeNG's `handleRowClick` already returns early when the click
+                target, or its immediate parent, is a BUTTON, so today this is
+                a guarantee we are TAKING OWNERSHIP of rather than one we are
+                creating. It is not decoration: it survives wrapping a glyph
+                one level deeper, adding a non-button control to this cell, or
+                someone replacing `pSelectableRow` with a hand-rolled `(click)`
+                on the `<tr>` — and nothing else would catch any of the three.
+              -->
+              <td>
+                <div class="admin-catalog__actions">
+                  <!--
+                    Export the namespace as YAML. Read-only, entitlement-free: it
+                    returns exactly what the caller could already list.
+
+                    No `size`: Home's row actions carry none either, and the
+                    admin area's rows are the same rows. Setting `small` here
+                    shrank them below every other action button in the app.
+                  -->
+                  <button
+                    pButton
+                    type="button"
+                    severity="secondary"
+                    [rounded]="true"
+                    icon="pi pi-download"
+                    [attr.aria-label]="'Export namespace ' + row.namespace"
+                    (click)="onExportClick(row); $event.stopPropagation()"
+                    [attr.data-test]="'ns-export-' + row.namespace"
+                  ></button>
+                  <!--
+                    Clone (Story 36-14) — a shortcut into the PANEL's Clone, not
+                    a second one. The handler opens the panel on this row and
+                    lets the readiness gate fire it once the panel has actually
+                    loaded this namespace; firing it here would clone whichever
+                    namespace the reused panel last held.
+
+                    Entitlement-FREE, unlike its neighbour to the right: Clone
+                    creates a new namespace, which the server permits any caller.
+                    What CAN disable it is the shared panel holding unsaved
+                    edits, and that is the same on every row — one panel, one
+                    buffer. The reason travels as a native `title`, exactly as
+                    delete's does, and says why rather than repeating delete's
+                    entitlement wording.
+                  -->
+                  <button
+                    pButton
+                    type="button"
+                    severity="secondary"
+                    [rounded]="true"
+                    icon="pi pi-copy"
+                    [attr.aria-label]="'Clone namespace ' + row.namespace"
+                    [disabled]="!canCloneRow"
+                    [attr.title]="cloneDisabledReason"
+                    (click)="onCloneRowClick(row); $event.stopPropagation()"
+                    [attr.data-test]="'ns-clone-' + row.namespace"
+                  ></button>
+                  <!--
+                    Disabled, never hidden, and carrying the reason as a native
+                    `title` — a disabled button fires no mouse events, so
+                    `pTooltip` would never show it.
+
+                    `title` means ONE thing here: the denial reason, absent when
+                    there is none. The accessible name comes from `aria-label`
+                    instead, so an entitled row's button carries no `title` at all
+                    — which is what the authorization specs assert.
+
+                    Not red. This app carries destructive intent in the
+                    confirmation dialog (the Proceed button below keeps its
+                    treatment), exactly as Home does with Delete Team.
+                  -->
+                  <button
+                    pButton
+                    type="button"
+                    severity="secondary"
+                    [rounded]="true"
+                    icon="pi pi-times"
+                    [attr.aria-label]="'Delete namespace ' + row.namespace"
+                    [disabled]="!canModify(row)"
+                    [attr.title]="deleteDisabledReason(row)"
+                    (click)="onDeleteClick(row); $event.stopPropagation()"
+                    [attr.data-test]="'ns-delete-' + row.namespace"
+                  ></button>
+                </div>
+              </td>
+            </tr>
+          </ng-template>
+        </p-table>
+      </ng-container>
+    </ng-template>
+  </ng-container>
+</div>
+
+<!--
+  Delete confirmation. Follows the secondary-modal contract (ADR-018):
+  `[modal]="true"`, `[draggable]="false"`, `[closeOnEscape]="false"`. PrimeNG
+  attaches `closeOnEscape` as a DOCUMENT-level listener per dialog, so leaving
+  it on would make one Escape close this dialog AND the config host below in
+  turn.
+
+  36-3 gave this dialog its own `(keydown.escape)` binding; Story 36-4 REMOVED
+  it. Escape is now owned entirely by the component's single document-level
+  `onEscape`, which cancels this dialog as its second branch. Two handlers
+  would mean two actions for one keystroke — the exact failure the contract
+  exists to prevent.
+-->
+<p-dialog
+  [visible]="confirmDialogVisible"
+  (visibleChange)="onConfirmVisibleChange($event)"
+  (onShow)="onConfirmDialogShow()"
+  [modal]="true"
+  [draggable]="false"
+  [closeOnEscape]="false"
+  [style]="{ width: '30rem' }"
+  header="Delete namespace"
+  data-test="delete-confirm-dialog"
+>
+  <div class="admin-catalog__confirm">
+    <p class="admin-catalog__confirm-message" data-test="delete-confirm-message">
+      Delete the namespace
+      <strong data-test="delete-confirm-namespace">{{
+        pendingDelete?.namespace
+      }}</strong>
+      and all its entries? This cannot be undone.
+    </p>
+    <div class="admin-catalog__confirm-actions">
+      <button
+        pButton
+        type="button"
+        size="small"
+        severity="secondary"
+        label="Cancel"
+        (click)="onDeleteCancel()"
+        data-test="delete-cancel-btn"
+      ></button>
+      <button
+        #confirmProceedBtn
+        pButton
+        type="button"
+        size="small"
+        class="admin-catalog__danger"
+        label="Proceed"
+        [disabled]="deleting"
+        (click)="onDeleteProceed()"
+        data-test="delete-proceed-btn"
+      ></button>
+    </div>
+  </div>
+</p-dialog>
+
+<!--
+  The namespace-configuration host (Story 36-4). Declared AFTER the delete
+  confirmation so `By.directive(Dialog)` in 36-3's pinning spec keeps finding
+  the confirm dialog first.
+
+  `@defer (when panelVisible)` keeps the panel and its Monaco chunk out of the
+  catalog pane's bundle until the first open. It resolves ONCE — the panel
+  instance then survives every later close, which is why switching rows only
+  re-binds `[namespace]` (the panel's own `ngOnChanges` reloads it) and why an
+  abandoned dirty buffer must be cleared by `confirmDiscard()` rather than by
+  destruction.
+
+  `[(visible)]` is split into `[visible]` + `(visibleChange)` so the dirty-close
+  guard can intercept a dismissal; `[closable]` / `[dismissableMask]` lock the X
+  and mask channels together during an in-flight WRITE only — a Validate or a
+  load leaves both live.
+
+  `[closeOnEscape]="false"`, like every dialog this pane owns. Escape belongs to
+  `onEscape`; see its docstring for why that has to be a single document-level
+  handler.
+-->
+<p-dialog
+  [visible]="panelVisible"
+  (visibleChange)="onPanelVisibleChange($event)"
+  [modal]="true"
+  [style]="{ width: '90vw', height: '90vh' }"
+  [closable]="!isWriteInFlight"
+  [closeOnEscape]="false"
+  [dismissableMask]="!isWriteInFlight"
+  data-test="namespace-config-dialog"
+>
+  <ng-template pTemplate="header">
+    <span class="p-dialog-title">
+      {{ panelLabel }}
+      <!--
+        Present ONLY while the panel is dirty — absent from the DOM otherwise,
+        so its absence is a fact a spec can assert rather than a style.
+      -->
+      <span
+        *ngIf="panel?.hasUnsavedChanges() === true"
+        class="admin-catalog__dirty-indicator"
+        aria-label="Unsaved changes"
+        data-test="dirty-indicator-dialog"
+        >●</span
+      >
+    </span>
+  </ng-template>
+  @defer (when panelVisible) {
+    <app-namespace-panel
+      [namespace]="panelNamespace"
+      [existingNamespaces]="existingNamespaces"
+      [showAll]="showAll"
+      (closed)="onPanelClosed()"
+      (saved)="onPanelSaved()"
+    />
+  }
+</p-dialog>

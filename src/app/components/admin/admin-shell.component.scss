@@ -1,0 +1,94 @@
+// Story 36-1 — admin area layout: a section rail beside the pane outlet.
+// Minimal chrome; each pane owns its own styles.
+
+.admin-shell {
+  display: flex;
+  align-items: stretch;
+  min-height: calc(100vh - 4rem);
+  box-sizing: border-box;
+}
+
+.admin-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 0 0 12rem;
+  padding: 1.5rem 0.75rem;
+  border-right: 1px solid var(--surface-border, #e5e7eb);
+  box-sizing: border-box;
+}
+
+// Story 36-9 — names the area the rail belongs to.
+.admin-rail-eyebrow {
+  padding: 0 0.75rem 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-color-secondary, #6b7280);
+}
+
+.admin-rail-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  color: inherit;
+  text-decoration: none;
+  font-size: 0.9rem;
+
+  &:hover {
+    background: var(--surface-hover, #f3f4f6);
+  }
+
+  // `routerLinkActive` marks the pane currently mounted in the outlet.
+  //
+  // Story 36-9: deliberately NOT the same declaration as `:hover` above. When
+  // both painted `--surface-hover`, the pointer made every item look active and
+  // the active one indistinguishable. The accent and the inset rule are what
+  // separate them; all three values come from theme tokens, so the treatment
+  // follows the preset in light and dark.
+  &.active {
+    background: var(--surface-100, #f3f4f6);
+    color: var(--primary-color, #2563eb);
+    font-weight: 600;
+    box-shadow: inset 3px 0 0 0 var(--primary-color, #2563eb);
+  }
+}
+
+// Trailing and right-aligned: the label owns the row, the number trails it.
+.admin-rail-count {
+  margin-left: auto;
+}
+
+// Story 36-11 — the admin panes sit on the SAME card Home's table sits on.
+//
+// Declared here and nowhere else: `.admin-content` is the only element between
+// the shell's layout and the `router-outlet`, so one declaration covers
+// Catalog, API Keys, the namespace deep link and every pane added after this.
+// Per-pane copies would be two shades on the day they ship and a third pane
+// that forgot, later — so neither pane's stylesheet carries a background.
+//
+// The tint, radius and padding are `.main-container` in `home.component.scss`,
+// taken verbatim. The literal is repeated rather than tokenised because the
+// app's Aura preset (`app.theme.ts`) customises only the `primary` ramp and the
+// datatable header cell and defines NO token equal to this colour — a
+// `--surface-*` substitution here would ship a different colour under a token's
+// name and give the app two card shades. Hoisting it to a shared custom
+// property read by both files is the real fix and wants its own story; this
+// duplication is the interim, not the destination.
+//
+// Home declares no border, so this gets none. The padding is Home's `1rem` and
+// the breathing room is `margin` — outside the painted box, because a card with
+// a 1rem inset and a card with a 1.5rem/2rem inset read as two components. The
+// shell is `align-items: stretch`, which sizes a flex item's OUTER box, so the
+// margin shortens the card instead of overflowing the shell's `min-height`.
+.admin-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  background-color: #f2f7f9;
+  border-radius: 6px;
+  padding: 1rem;
+  margin: 1rem;
+  box-sizing: border-box;
+}

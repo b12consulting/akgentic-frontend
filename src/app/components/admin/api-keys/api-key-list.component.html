@@ -1,0 +1,299 @@
+<div data-test="admin-api-keys-pane" class="admin-pane admin-api-keys">
+  <div class="admin-api-keys__toolbar">
+    <h2 class="admin-api-keys__title">API Keys</h2>
+
+    <!--
+      Present only where the route has demonstrably answered — `rows` and
+      `empty`. Absent from the DOM (not disabled) in `unavailable` and `error`:
+      offering to create a key against a route that just 404'd, or that failed
+      for an unknown reason, invites a second failure with no better
+      information. That presence rule is unchanged by Story 36-6.
+
+      36-5 shipped it disabled with a reason; this story enables it and attaches
+      the dialog. It is disabled again only while a write is in flight, off the
+      same single `phase` writer as Rotate, Revoke and Proceed.
+    -->
+    <button
+      *ngIf="state === 'rows' || state === 'empty'"
+      pButton
+      type="button"
+      size="small"
+      label="Create key"
+      icon="pi pi-plus"
+      [disabled]="isWriteInFlight"
+      (click)="onCreateClick()"
+      data-test="api-key-create-btn"
+    ></button>
+  </div>
+
+  <div
+    *ngIf="state === 'loading'"
+    class="admin-api-keys__loading"
+    data-test="api-keys-loading"
+  >
+    <span class="pi pi-spinner pi-spin"></span> Loading API keys…
+  </div>
+
+  <!--
+    THE DISTINCTION THIS PANE EXISTS FOR. Three separate branches, never one:
+    a route that is not mounted here, a deployment that genuinely has no keys,
+    and a request that failed. Collapsing any pair of them makes the pane state
+    something the server never said.
+  -->
+  <div
+    *ngIf="state === 'unavailable'"
+    class="admin-api-keys__unavailable"
+    data-test="api-keys-unavailable"
+  >
+    API keys are not available on this deployment.
+  </div>
+
+  <!--
+    A failure, with the server's own message and a retry. Deliberately NOT the
+    unavailable text: hiding a 500 behind "not available on this deployment"
+    would turn an outage into a shrug.
+  -->
+  <div
+    *ngIf="state === 'error'"
+    class="admin-api-keys__failed"
+    data-test="api-keys-load-failed"
+  >
+    <p class="admin-api-keys__failed-message" data-test="api-keys-error-message">
+      {{ errorMessage }}
+    </p>
+    <button
+      pButton
+      type="button"
+      size="small"
+      severity="secondary"
+      label="Retry"
+      icon="pi pi-refresh"
+      (click)="loadKeys()"
+      data-test="api-keys-retry-btn"
+    ></button>
+  </div>
+
+  <div
+    *ngIf="state === 'empty'"
+    class="admin-api-keys__empty"
+    data-test="api-keys-empty"
+  >
+    No API keys yet
+  </div>
+
+  <p-table
+    *ngIf="state === 'rows'"
+    [value]="keys"
+    [tableStyle]="{ 'min-width': '55rem' }"
+    data-test="api-keys-table"
+  >
+    <ng-template #header>
+      <tr>
+        <th>Key</th>
+        <th>Owner</th>
+        <th>Roles</th>
+        <th>Created</th>
+        <th>Expiry</th>
+        <th>Actions</th>
+      </tr>
+    </ng-template>
+
+    <ng-template #body let-key>
+      <tr [attr.data-test]="'api-key-row-' + key.key_id">
+        <td class="admin-api-keys__key-id" [attr.data-test]="'api-key-id-' + key.key_id">
+          {{ key.key_id }}
+        </td>
+
+        <!--
+          `owner_email`, falling back to `owner_id`. A machine identity may
+          carry no email, and a blank owner cell is not an answer.
+        -->
+        <td [attr.data-test]="'api-key-owner-' + key.key_id">
+          {{ ownerLabel(key) }}
+        </td>
+
+        <!-- An empty roles array renders `—`, never an empty cell. -->
+        <td [attr.data-test]="'api-key-roles-' + key.key_id">
+          {{ rolesLabel(key) }}
+        </td>
+
+        <td [attr.data-test]="'api-key-created-' + key.key_id">
+          {{ key.created_at | date: 'medium' }}
+        </td>
+
+        <!--
+          `null` renders the WORD "never" — an empty cell would read as missing
+          data when the truth is a key with no expiry. A past expiry keeps its
+          date and gains the marker beside it.
+        -->
+        <td [attr.data-test]="'api-key-expiry-' + key.key_id">
+          <span *ngIf="key.expiration === null; else expiryDate">{{
+            neverExpiresLabel
+          }}</span>
+          <ng-template #expiryDate>
+            {{ key.expiration | date: 'medium' }}
+            <p-tag
+              *ngIf="isExpired(key)"
+              severity="danger"
+              value="expired"
+              [attr.data-test]="'api-key-expired-' + key.key_id"
+            ></p-tag>
+          </ng-template>
+        </td>
+
+        <!--
+          Per-row actions. They exist only on rendered rows, so they are absent
+          from `unavailable` and `error` by construction — there is nothing to
+          hide, because there is no row. Both disable off the pane's single
+          write phase, so a second click during a request is refused by the
+          attribute AND by the TypeScript guard behind it.
+
+          The flex layout sits on the WRAPPER, never on the <td>: a
+          `display: flex` cell is no longer a `table-cell`, so it falls out of
+          the column grid and the row silently loses a column.
+        -->
+        <td>
+          <div class="admin-api-keys__actions">
+            <button
+              pButton
+              type="button"
+              size="small"
+              severity="secondary"
+              label="Rotate"
+              icon="pi pi-refresh"
+              [disabled]="isWriteInFlight"
+              (click)="onRotate(key)"
+              [attr.data-test]="'api-key-rotate-btn-' + key.key_id"
+            ></button>
+            <button
+              pButton
+              type="button"
+              size="small"
+              class="admin-api-keys__danger"
+              label="Revoke"
+              icon="pi pi-trash"
+              [disabled]="isWriteInFlight"
+              (click)="onRevokeClick(key)"
+              [attr.data-test]="'api-key-revoke-btn-' + key.key_id"
+            ></button>
+          </div>
+        </td>
+      </tr>
+    </ng-template>
+  </p-table>
+</div>
+
+<!--
+  THE THREE DIALOGS. Every one of them sets `[closeOnEscape]="false"`,
+  `[modal]="true"` and `[draggable]="false"` (ADR-018). PrimeNG attaches
+  `closeOnEscape` as a DOCUMENT-level listener per dialog, so leaving it on
+  anywhere would make one Escape act on more than one layer — the component's
+  single `onEscape` is the only handler, and it decides.
+-->
+
+<!-- Create. `*ngIf` inside keeps a closed dialog from holding a live form. -->
+<p-dialog
+  [visible]="createDialogVisible"
+  (visibleChange)="onCreateVisibleChange($event)"
+  [modal]="true"
+  [draggable]="false"
+  [closeOnEscape]="false"
+  [closable]="!isWriteInFlight"
+  [style]="{ width: '32rem' }"
+  header="Create API key"
+  data-test="api-key-create-dialog"
+>
+  <app-api-key-create-dialog
+    *ngIf="createDialogVisible"
+    [submitting]="phase === 'creating'"
+    (submitted)="onCreateSubmit($event)"
+    (cancelled)="onCreateVisibleChange(false)"
+  ></app-api-key-create-dialog>
+</p-dialog>
+
+<!--
+  The one-time reveal, mounted by BOTH create and rotate — the server answers
+  both with the same DTO, and two components rendering a secret drift.
+
+  `*ngIf` on the plaintext field itself: clearing the field DESTROYS this
+  subtree rather than hiding it, so no detached node keeps the value alive. The
+  X and the mask route through `onRevealVisibleChange`, which calls the same
+  `dismissReveal()` as Done and as Escape — there is no fourth way to close it.
+
+  `[dismissableMask]="true"` is set EXPLICITLY: PrimeNG's default is `false`, so
+  without it the mask is not a dismissal channel at all and the sentence above
+  would be describing something that does not happen. It is safe precisely
+  because the channel it opens ends in `dismissReveal()` like every other one.
+-->
+<p-dialog
+  [visible]="revealPlaintext !== null"
+  (visibleChange)="onRevealVisibleChange($event)"
+  [modal]="true"
+  [draggable]="false"
+  [closeOnEscape]="false"
+  [dismissableMask]="true"
+  [style]="{ width: '34rem' }"
+  header="Your new API key"
+  data-test="api-key-reveal-dialog"
+>
+  <app-api-key-reveal
+    *ngIf="revealPlaintext !== null"
+    [plaintext]="revealPlaintext"
+    [keyId]="revealKeyId"
+    (dismissed)="dismissReveal()"
+  ></app-api-key-reveal>
+</p-dialog>
+
+<!--
+  Revoke confirmation. It NAMES the key, in its own asserted element.
+
+  `(onShow)` puts focus on Proceed the moment the dialog mounts, as the delete
+  confirmation next door does: without it a keyboard operator is left focused
+  behind the modal, with nothing to Tab from and no way to answer the question
+  the dialog just asked.
+-->
+<p-dialog
+  [visible]="pendingRevoke !== null"
+  (visibleChange)="onRevokeVisibleChange($event)"
+  (onShow)="onRevokeDialogShow()"
+  [modal]="true"
+  [draggable]="false"
+  [closeOnEscape]="false"
+  [closable]="!isWriteInFlight"
+  [style]="{ width: '30rem' }"
+  header="Revoke API key"
+  data-test="api-key-revoke-confirm-dialog"
+>
+  <div class="admin-api-keys__confirm">
+    <p class="admin-api-keys__confirm-message">
+      Revoke the key
+      <strong data-test="api-key-revoke-confirm-key-id">{{
+        pendingRevoke?.key_id
+      }}</strong>
+      ? Anything using it stops working immediately, and this cannot be undone.
+    </p>
+    <div class="admin-api-keys__confirm-actions">
+      <button
+        pButton
+        type="button"
+        size="small"
+        severity="secondary"
+        label="Cancel"
+        [disabled]="isWriteInFlight"
+        (click)="onRevokeCancel()"
+        data-test="api-key-revoke-cancel-btn"
+      ></button>
+      <button
+        #revokeProceedBtn
+        pButton
+        type="button"
+        size="small"
+        class="admin-api-keys__danger"
+        label="Proceed"
+        [disabled]="isWriteInFlight"
+        (click)="onRevokeProceed()"
+        data-test="api-key-revoke-proceed-btn"
+      ></button>
+    </div>
+  </div>
+</p-dialog>

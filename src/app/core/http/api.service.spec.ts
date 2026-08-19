@@ -1,8 +1,14 @@
 import { TestBed } from '@angular/core/testing';
 import { ApiService } from './api.service';
-import { FetchService, NetworkError } from './fetch.service';
+import { FetchService, HttpError, NetworkError } from './fetch.service';
 import { AuthService } from '../auth/auth.service';
 import { Router } from '@angular/router';
+import {
+  ApiKeyRecord,
+  CreateApiKeyRequest,
+  CreateApiKeyResponse,
+} from '../../protocol/api-key.interface';
+import { NamespaceSummary } from '../../protocol/catalog.interface';
 
 describe('ApiService', () => {
   let service: ApiService;
@@ -44,8 +50,26 @@ describe('ApiService', () => {
 
   describe('getNamespaces (Story 1.9)', () => {
     it('hits GET /catalog/namespaces and returns the array', async () => {
-      const payload = [
-        { namespace: 'agent-team-v1', name: 'Agent Team', description: 'Default' },
+      // The wire shape as the server sends it since Story 36-8: the original
+      // six fields plus `owner` and the six-key `counts` map.
+      const payload: NamespaceSummary[] = [
+        {
+          namespace: 'agent-team-v1',
+          name: 'Agent Team',
+          description: 'Default',
+          team: true,
+          shareable: false,
+          public: false,
+          owner: 'u-acme',
+          counts: {
+            team: { total: 1 },
+            agent: { total: 3 },
+            tool: { total: 0 },
+            model: { total: 0 },
+            prompt: { total: 0 },
+            meta: { total: 1 },
+          },
+        },
       ];
       fetchServiceSpy.fetch.and.returnValue(Promise.resolve(payload));
 
@@ -80,6 +104,188 @@ describe('ApiService', () => {
       const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
       expect(callArgs.url).toMatch(/\/admin\/catalog\/namespaces$/);
       expect(callArgs.url).not.toContain('?all');
+    });
+  });
+
+  describe('getApiKeys (Story 36-5 AC3, AC4)', () => {
+    const record: ApiKeyRecord = {
+      key_id: 'ak-1',
+      owner_id: 'u-acme',
+      owner_email: 'operator@acme.test',
+      roles: ['admin'],
+      expiration: null,
+      created_at: '2026-01-05T09:00:00Z',
+    };
+
+    it('GETs exactly /auth/apikeys — no trailing slash, no query string', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve([record]));
+
+      const result = await service.getApiKeys();
+
+      expect(fetchServiceSpy.fetch).toHaveBeenCalledTimes(1);
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.url).toMatch(/\/auth\/apikeys$/);
+      expect(callArgs.url).not.toContain('?');
+      expect(result).toEqual([record]);
+    });
+
+    it('opts out of the generic error toast — the pane owns its failure branches', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve([]));
+
+      await service.getApiKeys();
+
+      expect(fetchServiceSpy.fetch.calls.first().args[0].notifyOnError).toBeFalse();
+    });
+
+    it('coalesces an empty/204 body to []', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve(undefined));
+
+      await expectAsync(service.getApiKeys()).toBeResolvedTo([]);
+    });
+
+    it('REJECTS on a 404 carrying the status — never flattened to []', async () => {
+      // The distinction the pane is built on: a missing route must arrive as a
+      // rejection with a readable status, not as "you have no keys".
+      const failure = new HttpError('Request failed: Not Found', 404, {
+        detail: 'Not Found',
+      });
+      fetchServiceSpy.fetch.and.returnValue(Promise.reject(failure));
+
+      let caught: unknown = null;
+      try {
+        await service.getApiKeys();
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught instanceof HttpError).toBeTrue();
+      expect((caught as HttpError).status).toBe(404);
+    });
+  });
+
+  describe('createApiKey / rotateApiKey / revokeApiKey (Story 36-6 AC 2, 3, 4)', () => {
+    const created: CreateApiKeyResponse = {
+      key_id: 'ak-acme-9',
+      owner_id: 'u-acme',
+      owner_email: 'operator@acme.test',
+      roles: ['admin'],
+      expiration: null,
+      created_at: '2026-08-16T09:00:00Z',
+      plaintext_key: 'ak_akacme9_SENTINELPLAINTEXTVALUE',
+    };
+
+    it('POSTs exactly /auth/apikeys with the JSON body the server expects', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve(created));
+      const body: CreateApiKeyRequest = {
+        owner_id: 'u-acme',
+        owner_email: 'operator@acme.test',
+        roles: ['admin'],
+        expiration: null,
+      };
+
+      const result = await service.createApiKey(body);
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.url).toMatch(/\/auth\/apikeys$/);
+      expect(callArgs.url).not.toContain('?');
+      expect(callArgs.options?.method).toBe('POST');
+      expect(callArgs.options?.headers).toEqual({
+        'Content-Type': 'application/json',
+      });
+      expect(JSON.parse(callArgs.options?.body as string)).toEqual(body);
+      expect(result).toEqual(created);
+    });
+
+    it('keeps the default error toast on create — the caller must not add a second', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve(created));
+
+      await service.createApiKey({
+        owner_id: 'u-acme',
+        owner_email: '',
+        roles: ['admin'],
+      });
+
+      // `undefined` IS the default (`true`) — an ordinary failure gets exactly
+      // one report, and it is FetchService's (ADR-026).
+      expect(
+        fetchServiceSpy.fetch.calls.first().args[0].notifyOnError,
+      ).toBeUndefined();
+    });
+
+    it('POSTs /auth/apikeys/{key_id}/rotate with NO body', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve(created));
+
+      const result = await service.rotateApiKey('ak-acme-1');
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.url).toMatch(/\/auth\/apikeys\/ak-acme-1\/rotate$/);
+      expect(callArgs.options?.method).toBe('POST');
+      // The server takes `key_id` from the path only; a body would be a second
+      // contract with nothing to say.
+      expect(callArgs.options?.body).toBeUndefined();
+      expect(
+        fetchServiceSpy.fetch.calls.first().args[0].notifyOnError,
+      ).toBeUndefined();
+      expect(result).toEqual(created);
+    });
+
+    it('never puts a secret in a URL — only the non-secret key_id reaches a path', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve(created));
+
+      await service.createApiKey({
+        owner_id: 'u-acme',
+        owner_email: 'operator@acme.test',
+        roles: ['admin'],
+      });
+      await service.rotateApiKey('ak-acme-1');
+      await service.revokeApiKey('ak-acme-1');
+
+      for (const call of fetchServiceSpy.fetch.calls.all()) {
+        expect(call.args[0].url).not.toContain(created.plaintext_key);
+        expect(call.args[0].url).not.toContain('plaintext');
+      }
+    });
+
+    it('DELETEs /auth/apikeys/{key_id} and resolves on a 204 (empty body)', async () => {
+      // `FetchService` returns `undefined` for a 204; revoke resolves to void.
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve(undefined));
+
+      await expectAsync(service.revokeApiKey('ak-acme-1')).toBeResolvedTo(
+        undefined,
+      );
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.url).toMatch(/\/auth\/apikeys\/ak-acme-1$/);
+      expect(callArgs.url).not.toContain('?');
+      expect(callArgs.options?.method).toBe('DELETE');
+    });
+
+    it('opts revoke out of the generic toast — a 404 there is success, not failure', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve(undefined));
+
+      await service.revokeApiKey('ak-acme-1');
+
+      expect(
+        fetchServiceSpy.fetch.calls.first().args[0].notifyOnError,
+      ).toBeFalse();
+    });
+
+    it('revoke REJECTS with the HttpError carrying 404 — the caller decides it is success', async () => {
+      // The service does not swallow it: "already gone" is a decision about
+      // meaning, and it belongs to the pane, not to the transport.
+      fetchServiceSpy.fetch.and.returnValue(
+        Promise.reject(new HttpError('Request failed: Not Found', 404, null)),
+      );
+
+      let caught: unknown = null;
+      try {
+        await service.revokeApiKey('ak-gone');
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught instanceof HttpError).toBeTrue();
+      expect((caught as HttpError).status).toBe(404);
     });
   });
 

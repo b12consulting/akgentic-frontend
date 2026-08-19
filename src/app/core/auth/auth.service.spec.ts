@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { firstValueFrom } from 'rxjs';
 import { AuthService } from './auth.service';
 import { ConfigService } from '../config/config.service';
+import { toArray, take } from 'rxjs/operators';
 
 /**
  * Specs for {@link AuthService.loginWithApiKey} (Stories 1.8, 1.9, 30.1).
@@ -105,6 +106,57 @@ describe('AuthService', () => {
       // No checkAuth() follow-up — only the failed login call was issued.
       expect(fetchSpy).toHaveBeenCalledTimes(1);
       expect(service.currentUserValue.user_id).toBe('anonymous');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Story 36-1 (AC #1) — `isAdmin$`, the app's single admin predicate.
+  //
+  // Driven through the real `checkAuth()` path (stubbed `fetch`) rather than by
+  // poking the subject, because the property under test is precisely that the
+  // predicate tracks a LATE `/auth/me` resolution.
+  // -------------------------------------------------------------------------
+  describe('isAdmin$ (Story 36-1)', () => {
+    /** Resolve `/auth/me` with `body` and wait for the emission to land. */
+    async function resolveAuthMe(body: unknown): Promise<void> {
+      fetchSpy.and.returnValue(Promise.resolve(makeResponse(true, body)));
+      await firstValueFrom(service.checkAuth());
+    }
+
+    it('is false for the anonymous seed (no roles) before any /auth/me lands', async () => {
+      expect(await firstValueFrom(service.isAdmin$)).toBeFalse();
+    });
+
+    it('is true once /auth/me resolves a user whose roles include admin', async () => {
+      await resolveAuthMe({ user_id: 'u1', name: 'Op', roles: ['admin'] });
+
+      expect(await firstValueFrom(service.isAdmin$)).toBeTrue();
+    });
+
+    it('is false for a user whose roles do not include admin', async () => {
+      await resolveAuthMe({ user_id: 'u1', name: 'Op', roles: ['user'] });
+
+      expect(await firstValueFrom(service.isAdmin$)).toBeFalse();
+    });
+
+    it('is false for a null user', async () => {
+      // `currentUser$` is typed `any` and consumers do push `null` through it
+      // (see app.component.spec). Pinned here so the optional chain in the
+      // predicate is not quietly dropped — a bare `u.roles` would throw.
+      (service as any).currentUserSubject.next(null);
+
+      expect(await firstValueFrom(service.isAdmin$)).toBeFalse();
+    });
+
+    it('RE-EMITS on every currentUser$ emission — a late admin flips it to true', async () => {
+      // The spec that reddens if `isAdmin$` is ever converted to a one-shot
+      // `currentUserValue` read: the subscription is taken BEFORE the admin
+      // user resolves, exactly as the menubar takes it before /auth/me lands.
+      const emissions = firstValueFrom(service.isAdmin$.pipe(take(2), toArray()));
+
+      await resolveAuthMe({ user_id: 'u1', name: 'Op', roles: ['admin'] });
+
+      expect(await emissions).toEqual([false, true]);
     });
   });
 

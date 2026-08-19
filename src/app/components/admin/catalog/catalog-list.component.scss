@@ -1,0 +1,199 @@
+// Story 36-3 — admin catalog pane. Minimal chrome; the table itself is
+// PrimeNG's, styled by the app's Aura preset.
+
+.admin-catalog__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.admin-catalog__heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-right: auto;
+}
+
+.admin-catalog__title {
+  margin: 0;
+}
+
+// Story 36-9 — what the list contains, beside the heading rather than above it.
+//
+// Muted, NOT shrunk. The admin panes read at the app's default type size, the
+// same as the Home table; a pane-local scale made the whole area look like a
+// different product. Colour is the only thing that makes this secondary.
+.admin-catalog__description {
+  color: var(--text-color-secondary, #6b7280);
+}
+
+.admin-catalog__filter {
+  width: 16rem;
+  max-width: 100%;
+}
+
+.admin-catalog__show-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.admin-catalog__loading,
+.admin-catalog__failed,
+.admin-catalog__empty {
+  padding: 1rem 0;
+  color: var(--text-color-secondary, #6b7280);
+}
+
+// Story 36-10 — the no-match state carries the query and its way out on one
+// line. Flex is safe HERE and nowhere near a `<td>`: this is a plain <div>, not
+// a table cell (see the note on the three flex wrappers below).
+.admin-catalog__no-match {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+// Story 36-9 inverted the cell: the IDENTIFIER leads, in the monospace face
+// used for keys across the admin area (the API-keys pane next door does the
+// same for `key_id`), and the display name trails it, muted.
+//
+// The two sizes MATCH Home's `.team-name` / `.team-description` exactly — 1rem
+// over 0.875rem. They are the same shape of cell (a primary key with a
+// secondary line beneath it), so inventing a smaller scale here made the admin
+// table read as a different application from the one behind it.
+.admin-catalog__ns-id {
+  font-family: var(--font-family-mono, monospace);
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.admin-catalog__ns-name {
+  font-size: 0.875rem;
+  color: var(--text-color-secondary, #6b7280);
+}
+
+// THE THREE FLEX WRAPPERS. Each of these is a <div> INSIDE its <td>, never the
+// <td> itself. `display: flex` on a table cell removes `table-cell`, so the
+// browser drops it from the column grid and wraps the surviving cells in
+// anonymous table boxes — the header keeps rendering five columns while the row
+// renders two, with the three flex cells stacked outside the grid. The DOM tree
+// is unchanged by any of that, which is why 1760 green specs never saw it.
+.admin-catalog__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+// Story 36-14 — a wrapper that exists for the TEST HOOK, not for layout: it
+// scopes `ns-visibility-{ns}` to the three visibility chips so the `read-only`
+// tag beside them is not swept up by the chip assertions.
+//
+// `display: contents` because it must be invisible to the layout: the three
+// chips stay direct flex children of `.admin-catalog__chips` above and keep
+// exactly the gap and wrapping they had before the wrapper existed. Giving it a
+// flex box of its own would nest a second flex context here and change the
+// wrapping behaviour of a cell nobody asked to change.
+.admin-catalog__visibility-chips {
+  display: contents;
+}
+
+.admin-catalog__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.admin-catalog__count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.25rem;
+}
+
+.admin-catalog__count-kind {
+  color: var(--text-color-secondary, #6b7280);
+}
+
+.admin-catalog__count-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+// A kind this namespace holds none of: DIMMED and present, never hidden.
+// Absence would read as "unknown", which is exactly what a zero is not.
+.admin-catalog__count--zero {
+  opacity: 0.45;
+}
+
+// The `Σ` over the shown kinds, set apart from them by a rule rather than by a
+// colour, so it reads as a total and not as a sixth kind.
+.admin-catalog__count--total {
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--surface-border, #e5e7eb);
+}
+
+.admin-catalog__actions {
+  display: flex;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.admin-catalog__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.admin-catalog__confirm-message {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.admin-catalog__confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding-top: 1rem;
+}
+
+// Story 36-4 — dirty marker in the config dialog's header. `::ng-deep` for the
+// same reason the danger button needs it: PrimeNG renders the dialog header
+// outside this component's view-encapsulated tree. The `●` is decorative; the
+// aria-label carries the meaning, so contrast here is informational.
+:host ::ng-deep .admin-catalog__dirty-indicator {
+  color: #f59e0b;
+  font-weight: 700;
+  margin-left: 0.4rem;
+  font-size: 1rem;
+  vertical-align: middle;
+}
+
+// Dark-red destructive style for the row Delete and the confirm's Proceed.
+// `::ng-deep` because PrimeNG's button tokens otherwise win on specificity,
+// and because the dialog's button is teleported out of this component's DOM.
+:host ::ng-deep {
+  .admin-catalog__danger {
+    &,
+    &.p-button {
+      background: #991b1b !important;
+      border-color: #991b1b !important;
+      color: #ffffff !important;
+    }
+
+    &:enabled:hover,
+    &.p-button:enabled:hover {
+      background: #7f1d1d !important;
+      border-color: #7f1d1d !important;
+    }
+
+    &:disabled,
+    &.p-button:disabled {
+      background: var(--surface-200, #e5e7eb) !important;
+      border-color: var(--surface-300, #d1d5db) !important;
+      color: var(--text-color-secondary, #6b7280) !important;
+    }
+  }
+}

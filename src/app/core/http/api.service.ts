@@ -15,6 +15,11 @@ import {
   toTeamContext,
 } from '../context/team.interface';
 import {
+  ApiKeyRecord,
+  CreateApiKeyRequest,
+  CreateApiKeyResponse,
+} from '../../protocol/api-key.interface';
+import {
   Entry,
   NamespaceSummary,
   NamespaceValidationReport,
@@ -258,9 +263,13 @@ export class ApiService {
 
   /**
    * List catalog namespaces (flat summary) — powers the home-screen team
-   * creation dropdown. Consumes catalog Story 16.6's `GET /catalog/namespaces`
-   * endpoint, which returns `NamespaceSummary[]` directly (always a list,
-   * even when empty).
+   * creation dropdown AND the admin catalog pane. Consumes catalog Story
+   * 16.6's `GET /catalog/namespaces` endpoint, which returns
+   * `NamespaceSummary[]` directly (always a list, even when empty).
+   *
+   * Each summary now carries `owner` and the six-kind `counts` map, so the
+   * admin pane paints from THIS call alone — there is no per-kind fan-out to
+   * compose them from, and no client-side derivation of either.
    *
    * The optional `all` flag appends `?all=true`, the admin-only "see all"
    * lever: it surfaces every tenant's namespaces (not just owner+public).
@@ -275,6 +284,112 @@ export class ApiService {
       ? `${this.apiUrl}/admin/catalog/namespaces?all=true`
       : `${this.apiUrl}/admin/catalog/namespaces`;
     return await this.fetchService.fetch({ url });
+  }
+
+  /**
+   * List the API keys this caller may see — `GET /auth/apikeys`.
+   *
+   * ONE request, and no capability probing. There is no `HEAD`, no `OPTIONS`,
+   * no feature-flag endpoint and no second call of any kind: the response to
+   * this list call IS the signal for whether the deployment offers API keys at
+   * all. A probe would be a second contract to keep in sync with the first,
+   * and would still have to be believed over the actual answer.
+   *
+   * No filter parameters are plumbed. The route accepts them (`owner_id`,
+   * `role`, `expired`, …) but this pane has no consumer for one, and an unused
+   * parameter is a second contract for the same reason.
+   *
+   * `notifyOnError: false` — THE CALLER OWNS EVERY FAILURE BRANCH of this one
+   * call. A 404/501 here does not mean something went wrong; it means the
+   * route is not mounted on this deployment, which the pane states in place.
+   * The generic "Request failed: Not Found" toast would contradict that
+   * sentence while it is on screen. Everything that IS a failure (500, 401,
+   * 403) still rejects, and `ApiKeyListComponent` raises its own toast for it.
+   *
+   * Empty/204 bodies coalesce to `[]`; a non-2xx REJECTS and is never
+   * flattened into an empty list (ADR-026) — "you have no keys" and "we could
+   * not ask" are the two facts this whole pane exists to keep apart.
+   */
+  async getApiKeys(): Promise<ApiKeyRecord[]> {
+    const response: ApiKeyRecord[] = await this.fetchService.fetch({
+      url: `${this.apiUrl}/auth/apikeys`,
+      notifyOnError: false,
+    });
+    return response ?? [];
+  }
+
+  /**
+   * Mint a new API key — `POST /auth/apikeys`.
+   *
+   * THE RESPONSE CARRIES THE PLAINTEXT KEY, once and only once. Nothing is
+   * cached here and nothing is logged: the value is returned to the caller and
+   * this service keeps no reference to it. The caller shows it, offers a copy,
+   * and drops it.
+   *
+   * The key never travels in a URL — the body is the only place it appears in
+   * either direction, so it stays out of access logs, browser history and
+   * `Referer` headers. `key_id` (a non-secret identifier) is what the sibling
+   * routes below put in a path.
+   *
+   * `notifyOnError` keeps its default `true`: a failed create is an ordinary
+   * failure, `FetchService` raises the server's message once, and the pane must
+   * NOT raise a second toast over it (ADR-026).
+   */
+  async createApiKey(body: CreateApiKeyRequest): Promise<CreateApiKeyResponse> {
+    return await this.fetchService.fetch({
+      url: `${this.apiUrl}/auth/apikeys`,
+      options: {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+    });
+  }
+
+  /**
+   * Rotate a key — `POST /auth/apikeys/{key_id}/rotate`.
+   *
+   * SAME DTO AS CREATE, deliberately: the server answers with
+   * `CreateApiKeyResponse` on both routes, so one reveal component serves both
+   * flows. Two components rendering a secret drift in exactly the way that
+   * matters.
+   *
+   * NO REQUEST BODY. The server takes `key_id` from the path only, so sending
+   * one would be a second contract with nothing to say.
+   *
+   * The returned `key_id` MAY DIFFER from the one passed in: the id-stability
+   * policy belongs to the store (an in-place store keeps the id and swaps the
+   * secret; a re-mint store issues a new id). Callers must locate the row by
+   * the id they SENT and rebuild it from the id they RECEIVED.
+   *
+   * `notifyOnError` stays `true`, as for create.
+   */
+  async rotateApiKey(keyId: string): Promise<CreateApiKeyResponse> {
+    return await this.fetchService.fetch({
+      url: `${this.apiUrl}/auth/apikeys/${keyId}/rotate`,
+      options: { method: 'POST' },
+    });
+  }
+
+  /**
+   * Revoke a key — `DELETE /auth/apikeys/{key_id}`, resolving on the 204.
+   *
+   * `notifyOnError: false` — THE CALLER OWNS EVERY FAILURE BRANCH of this one
+   * call, exactly as for `getApiKeys` above. The operation is documented
+   * idempotent server-side ("missing key is fine"), so a 404 means the key is
+   * already gone: a SUCCESS, on which the row disappears. `FetchService`'s
+   * generic red "Request failed: Not Found" would otherwise be painted over a
+   * row that had just correctly vanished.
+   *
+   * Everything that IS a failure (500, 403, …) still rejects, and the caller
+   * raises its own single toast for it.
+   */
+  async revokeApiKey(keyId: string): Promise<void> {
+    await this.fetchService.fetch({
+      url: `${this.apiUrl}/auth/apikeys/${keyId}`,
+      options: { method: 'DELETE' },
+      notifyOnError: false,
+    });
   }
 
   /**

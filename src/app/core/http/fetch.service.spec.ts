@@ -326,6 +326,84 @@ describe('FetchService', () => {
     });
   });
 
+  // --- Story 36-5 — notifyOnError, the one-call toast opt-out ---------------
+
+  describe('notifyOnError (Story 36-5)', () => {
+    /** A 404, the response the API-keys pane has to explain rather than shout. */
+    function notFound(): Response {
+      return makeResponse({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        jsonValue: { detail: 'Not Found' },
+        textValue: JSON.stringify({ detail: 'Not Found' }),
+      });
+    }
+
+    it('suppresses the toast but throws the same HttpError when notifyOnError is false', async () => {
+      globalThis.fetch = jasmine.createSpy('fetch').and.resolveTo(notFound());
+
+      let caught: unknown = null;
+      try {
+        await service.fetch({
+          url: 'https://x/auth/apikeys',
+          notifyOnError: false,
+        });
+      } catch (err) {
+        caught = err;
+      }
+
+      // The throw is UNCHANGED — only the toast is gone. A caller opting out
+      // still gets the status it needs to branch on.
+      expect(caught instanceof HttpError).toBeTrue();
+      expect((caught as HttpError).status).toBe(404);
+      expect((caught as HttpError).body).toEqual({ detail: 'Not Found' });
+      expect((caught as Error).message).toContain('Request failed');
+      expect(messageServiceSpy.add).toHaveBeenCalledTimes(0);
+    });
+
+    it('still toasts on the same response when the flag is omitted (every existing caller unaffected)', async () => {
+      globalThis.fetch = jasmine.createSpy('fetch').and.resolveTo(notFound());
+
+      let caught: unknown = null;
+      try {
+        await service.fetch({ url: 'https://x/auth/apikeys' });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught instanceof HttpError).toBeTrue();
+      expect((caught as HttpError).status).toBe(404);
+      expect(messageServiceSpy.add).toHaveBeenCalledTimes(1);
+      expect(messageServiceSpy.add.calls.first().args[0].severity).toBe('error');
+    });
+
+    it('does NOT cover the transport branch — a NetworkError still toasts even with notifyOnError false', async () => {
+      // The seam this option creates. `ApiKeyListComponent` stays silent on a
+      // NetworkError precisely because FetchService is still reporting it; if
+      // a later "make it consistent" change widened the flag to cover this
+      // branch, an unreachable server would be reported by nobody and no other
+      // spec in the tree would notice. This one would.
+      globalThis.fetch = jasmine
+        .createSpy('fetch')
+        .and.rejectWith(new TypeError('Failed to fetch'));
+
+      let caught: unknown = null;
+      try {
+        await service.fetch({
+          url: 'https://x/auth/apikeys',
+          notifyOnError: false,
+        });
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught instanceof NetworkError).toBeTrue();
+      expect(messageServiceSpy.add).toHaveBeenCalledTimes(1);
+      expect(messageServiceSpy.add.calls.first().args[0].severity).toBe('error');
+    });
+  });
+
   // --- Story 33-5 (ADR-026) — NetworkError thrown on a transport failure ---
 
   describe('NetworkError on a transport failure (Story 33-5)', () => {

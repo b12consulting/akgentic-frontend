@@ -20,6 +20,9 @@ import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 
 import {
+  ENTRY_KINDS,
+  EntryKind,
+  NamespaceKindCount,
   NamespaceSummary,
   NamespaceValidationReport,
 } from '../../../protocol/catalog.interface';
@@ -69,7 +72,25 @@ function makeHttpError(status: number, body: unknown = ''): HttpError {
 }
 
 function summary(ns: string): NamespaceSummary {
-  return { namespace: ns, name: ns, description: '' };
+  return {
+    namespace: ns,
+    name: ns,
+    description: '',
+    team: true,
+    shareable: false,
+    public: false,
+    owner: null,
+    counts: zeroCounts(),
+  };
+}
+
+/** The six-key tally the server always sends. This route ignores it. */
+function zeroCounts(): Record<EntryKind, NamespaceKindCount> {
+  const counts = {} as Record<EntryKind, NamespaceKindCount>;
+  for (const kind of ENTRY_KINDS) {
+    counts[kind] = { total: 0 };
+  }
+  return counts;
 }
 
 function cleanReport(namespace = 'foo'): NamespaceValidationReport {

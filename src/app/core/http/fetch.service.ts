@@ -134,6 +134,23 @@ export class FetchService {
    *
    * @param responseType `'json'` (default) returns `response.json()`;
    *   `'text'` returns `response.text()` as a string.
+   * @param notifyOnError `true` (default) keeps the long-standing behaviour:
+   *   a non-OK response raises an error toast here, before throwing. Passing
+   *   `false` suppresses ONLY that toast — the call still logs, still builds
+   *   the same message, and still throws the same `HttpError` with the same
+   *   `status` and `body`.
+   *
+   *   OPTING OUT MAKES THE CALLER RESPONSIBLE FOR REPORTING. It deliberately
+   *   breaks the contract above ("a `FetchFailure` means the user has already
+   *   been told") for that one call, so the caller must handle every failure
+   *   branch itself: stay silent where silence is the right answer, and raise
+   *   its own toast where it is not. `getApiKeys` opts out because a 404 there
+   *   means "this deployment does not offer API keys" — a fact the pane states
+   *   in place, and which a red "Request failed: Not Found" alongside it would
+   *   contradict. It then toasts the failures that ARE failures.
+   *
+   *   The `NetworkError` branch is NOT covered by this flag and always toasts:
+   *   an unreachable server is never a statement about a feature.
    */
   async fetch({
     url,
@@ -141,12 +158,14 @@ export class FetchService {
     successMessage,
     errorMessage,
     responseType = 'json',
+    notifyOnError = true,
   }: {
     url: string;
     options?: RequestInit;
     successMessage?: string;
     errorMessage?: string;
     responseType?: FetchResponseType;
+    notifyOnError?: boolean;
   }): Promise<any> {
     options = this.config.hideLogin
       ? options
@@ -186,7 +205,12 @@ export class FetchService {
         errorMessage ||
         `Request failed: ${response.statusText}\n\n${errorDetail}`;
 
-      this.showNotification(resolvedErrorMessage, 'error');
+      // The ONLY thing `notifyOnError: false` changes. Everything around it —
+      // the log, the message, the throw — is identical, so a caller that opts
+      // out loses the toast and nothing else.
+      if (notifyOnError) {
+        this.showNotification(resolvedErrorMessage, 'error');
+      }
 
       // Throw an HttpError carrying the status + parsed body so callers that
       // need to branch (e.g. 422 vs 5xx) can inspect `.status` / `.body`.

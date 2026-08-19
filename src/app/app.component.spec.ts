@@ -7,7 +7,8 @@ import { RouterTestingModule } from '@angular/router/testing';
 import { MessageService } from 'primeng/api';
 import { MenubarModule } from 'primeng/menubar';
 import { TagModule } from 'primeng/tag';
-import { BehaviorSubject, of } from 'rxjs';
+import { BehaviorSubject, Observable, of } from 'rxjs';
+import { map } from 'rxjs/operators';
 
 import { AppComponent } from './app.component';
 import { isRunning, TeamContext } from './core/context/team.interface';
@@ -32,6 +33,29 @@ function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
   };
 }
 
+/**
+ * A minimal `AuthService` double for the toast suites below, which care about
+ * `<p-toast>` and not about roles. `isAdmin$` is DERIVED from `currentUser$`
+ * (Story 36-1): a double that omits it makes the menubar's `combineLatest`
+ * throw rather than skip the source.
+ */
+function authStubFor(name: string): {
+  currentUser$: BehaviorSubject<any>;
+  isAdmin$: Observable<boolean>;
+  checkAuth: jasmine.Spy;
+  logout: jasmine.Spy;
+} {
+  const currentUser$ = new BehaviorSubject<any>({ name, user_id: 'u-1' });
+  return {
+    currentUser$,
+    isAdmin$: currentUser$.pipe(
+      map((u) => u?.roles?.includes('admin') === true),
+    ),
+    checkAuth: jasmine.createSpy('checkAuth').and.returnValue(of(true)),
+    logout: jasmine.createSpy('logout'),
+  };
+}
+
 interface ContextStub {
   currentProcessId$: BehaviorSubject<string>;
   currentTeam$: BehaviorSubject<TeamContext | null>;
@@ -45,7 +69,12 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
   let component: AppComponent;
   let contextStub: ContextStub;
   let viewStub: { isRightColumnCollapsed$: BehaviorSubject<boolean>; toggleRightColumn: jasmine.Spy };
-  let authStub: { currentUser$: BehaviorSubject<any>; checkAuth: jasmine.Spy; logout: jasmine.Spy };
+  let authStub: {
+    currentUser$: BehaviorSubject<any>;
+    isAdmin$: Observable<boolean>;
+    checkAuth: jasmine.Spy;
+    logout: jasmine.Spy;
+  };
   let configStub: { logo: string; hideLogin: boolean; favicon: string; hideHome: boolean };
   let apiStub: { getTeam: jasmine.Spy; getTeams: jasmine.Spy };
 
@@ -63,8 +92,19 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
       toggleRightColumn: jasmine.createSpy('toggleRightColumn'),
     };
 
+    const currentUser$ = new BehaviorSubject<any>({
+      name: 'Alice',
+      user_id: 'u-1',
+    });
     authStub = {
-      currentUser$: new BehaviorSubject<any>({ name: 'Alice', user_id: 'u-1' }),
+      currentUser$,
+      // Story 36-1: DERIVED from this stub's own `currentUser$`, so a test
+      // pushes one user and both the username dropdown and the role-labelled
+      // admin entry follow — and so the teardown assertions below (which count
+      // observers on `currentUser$`) still cover the menubar's fourth source.
+      isAdmin$: currentUser$.pipe(
+        map((u) => u?.roles?.includes('admin') === true),
+      ),
       checkAuth: jasmine.createSpy('checkAuth').and.returnValue(of(true)),
       logout: jasmine.createSpy('logout'),
     };
@@ -343,6 +383,160 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
     expect(contextStub.getCurrentTeam).not.toHaveBeenCalled();
     expect(apiStub.getTeam).not.toHaveBeenCalled();
   });
+
+  // --- Story 36-1 — the role-labelled admin/catalog menubar entry ---------
+  //
+  // Asserted on `component.items`, never on the DOM: this suite's
+  // `.overrideComponent(...)` stub set makes `<p-menubar>` an inert unknown
+  // element, under which every DOM assertion about menu items would pass
+  // vacuously. The username-dropdown specs above establish the pattern.
+
+  /** The one entry pointing at the admin area, whatever it is labelled. */
+  function adminEntry() {
+    return component.items?.find(
+      (i) => (i as any).route?.[0] === '/admin/catalog',
+    );
+  }
+
+  async function emitUser(user: any): Promise<void> {
+    authStub.currentUser$.next(user);
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  it('(36-1 AC3) an admin gets one entry labelled "Admin" targeting /admin/catalog', async () => {
+    await emitUser({ name: 'Alice', user_id: 'u-1', roles: ['admin'] });
+
+    const entry = adminEntry();
+    expect(entry).toBeDefined();
+    expect(entry!.label).toBe('Admin');
+    expect(entry!.icon).toBe('pi pi-cog');
+    expect((entry as any).route).toEqual(['/admin/catalog']);
+  });
+
+  it('(36-1 AC3) a non-admin gets the SAME target labelled "Catalog"', async () => {
+    await emitUser({ name: 'Bob', user_id: 'u-2', roles: ['user'] });
+
+    const entry = adminEntry();
+    expect(entry).toBeDefined();
+    expect(entry!.label).toBe('Catalog');
+    expect(entry!.icon).toBe('pi pi-list');
+    expect((entry as any).route).toEqual(['/admin/catalog']);
+  });
+
+  it('(36-1 AC3) the anonymous user gets the "Catalog" label too', async () => {
+    await emitUser({ user_id: 'anonymous', name: 'Anonymous' });
+
+    const entry = adminEntry();
+    expect(entry).toBeDefined();
+    expect(entry!.label).toBe('Catalog');
+    expect(entry!.icon).toBe('pi pi-list');
+  });
+
+  it('(36-1 AC3) exactly ONE entry targets the admin area, never two', async () => {
+    await emitUser({ name: 'Alice', user_id: 'u-1', roles: ['admin'] });
+
+    const targeting = (component.items ?? []).filter(
+      (i) => (i as any).route?.[0] === '/admin/catalog',
+    );
+    expect(targeting.length).toBe(1);
+  });
+
+  it('(36-1 AC4) a LATE admin resolution relabels the entry without remounting', async () => {
+    // The spec that reddens if `isAdmin$` is ever read once via
+    // `currentUserValue`: /auth/me resolves after first render, so the entry is
+    // built as `Catalog` and must flip when the admin user finally lands.
+    await emitUser({ user_id: 'anonymous', name: 'Anonymous' });
+    expect(adminEntry()!.label).toBe('Catalog');
+
+    const componentBefore = component;
+    await emitUser({ name: 'Alice', user_id: 'u-1', roles: ['admin'] });
+
+    expect(component).toBe(componentBefore); // same instance — no remount
+    expect(adminEntry()!.label).toBe('Admin');
+    expect(adminEntry()!.icon).toBe('pi pi-cog');
+  });
+
+  it('(36-1 AC5) hideHome drops BOTH the Home entry and the admin entry — admin', async () => {
+    configStub.hideHome = true;
+    await emitUser({ name: 'Alice', user_id: 'u-1', roles: ['admin'] });
+
+    expect(component.items?.some((i) => i.label === 'Home')).toBeFalse();
+    expect(adminEntry()).toBeUndefined();
+  });
+
+  it('(36-1 AC5) hideHome drops BOTH entries — non-admin', async () => {
+    configStub.hideHome = true;
+    await emitUser({ name: 'Bob', user_id: 'u-2', roles: ['user'] });
+
+    expect(component.items?.some((i) => i.label === 'Home')).toBeFalse();
+    expect(adminEntry()).toBeUndefined();
+  });
+
+  it('(36-1 AC5) with hideHome false both entries are present', async () => {
+    configStub.hideHome = false;
+    await emitUser({ name: 'Alice', user_id: 'u-1', roles: ['admin'] });
+
+    expect(component.items?.some((i) => i.label === 'Home')).toBeTrue();
+    expect(adminEntry()).toBeDefined();
+  });
+
+  // --- Story 36-9 — the `admin` tag on the menubar user chip ---------------
+  //
+  // Asserted on the DOM, unlike the entries above: the claim is that a tag is
+  // RENDERED inside the username entry, which `component.items` cannot show.
+  // `MenubarModule` and `TagModule` are both in this suite's override set, so
+  // the menubar really renders and an absent tag really is absent.
+
+  function adminTag(): HTMLElement | null {
+    return fixture.nativeElement.querySelector(
+      '[data-test="menubar-admin-tag"]',
+    );
+  }
+
+  it('(36-9 AC6) an admin gets an "admin" tag on the username entry', async () => {
+    await emitUser({ name: 'Alice', user_id: 'u-1', roles: ['admin'] });
+
+    const tag = adminTag();
+    expect(tag).not.toBeNull();
+    expect(tag!.textContent!.trim()).toBe('admin');
+    // Inside the username entry, not floating somewhere else on the bar.
+    expect(tag!.closest('.username-menu')).not.toBeNull();
+  });
+
+  it('(36-9 AC6) a non-admin gets NO tag element at all', async () => {
+    await emitUser({ name: 'Bob', user_id: 'u-2', roles: ['user'] });
+
+    expect(adminTag()).toBeNull();
+  });
+
+  it('(36-9 AC6) the anonymous user gets no tag either', async () => {
+    await emitUser({ user_id: 'anonymous', name: 'Anonymous' });
+
+    expect(adminTag()).toBeNull();
+  });
+
+  it('(36-9 AC6) exactly ONE tag renders, not one per menubar entry', async () => {
+    // The `#item` template renders for every entry, so a predicate that only
+    // tested `isAdmin` would stamp the tag onto Home, Clear and Admin as well.
+    await emitUser({ name: 'Alice', user_id: 'u-1', roles: ['admin'] });
+
+    expect(
+      fixture.nativeElement.querySelectorAll('[data-test="menubar-admin-tag"]')
+        .length,
+    ).toBe(1);
+  });
+
+  it('(36-9 AC6) a LATE admin resolution makes the tag appear without a remount', async () => {
+    await emitUser({ user_id: 'anonymous', name: 'Anonymous' });
+    expect(adminTag()).toBeNull();
+
+    const componentBefore = component;
+    await emitUser({ name: 'Alice', user_id: 'u-1', roles: ['admin'] });
+
+    expect(component).toBe(componentBefore);
+    expect(adminTag()).not.toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -399,17 +593,7 @@ describe('AppComponent — notification toast rendering (Story 31-3)', () => {
             toggleRightColumn: jasmine.createSpy('toggleRightColumn'),
           },
         },
-        {
-          provide: AuthService,
-          useValue: {
-            currentUser$: new BehaviorSubject<any>({
-              name: 'Alice',
-              user_id: 'u-1',
-            }),
-            checkAuth: jasmine.createSpy('checkAuth').and.returnValue(of(true)),
-            logout: jasmine.createSpy('logout'),
-          },
-        },
+        { provide: AuthService, useValue: authStubFor('Alice') },
         {
           provide: ConfigService,
           useValue: {
@@ -727,17 +911,7 @@ describe('AppComponent — single-toast removal (Story 31-5)', () => {
             toggleRightColumn: jasmine.createSpy('toggleRightColumn'),
           },
         },
-        {
-          provide: AuthService,
-          useValue: {
-            currentUser$: new BehaviorSubject<any>({
-              name: 'Alice',
-              user_id: 'u-1',
-            }),
-            checkAuth: jasmine.createSpy('checkAuth').and.returnValue(of(true)),
-            logout: jasmine.createSpy('logout'),
-          },
-        },
+        { provide: AuthService, useValue: authStubFor('Alice') },
         {
           provide: ConfigService,
           useValue: {

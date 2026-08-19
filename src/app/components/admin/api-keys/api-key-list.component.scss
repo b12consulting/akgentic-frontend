@@ -1,0 +1,99 @@
+// Story 36-5 — admin API-keys pane. Minimal chrome; the table itself is
+// PrimeNG's, styled by the app's Aura preset. Shape mirrors the catalog pane
+// next door so the two read as one area.
+
+.admin-api-keys__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.admin-api-keys__title {
+  margin: 0;
+  margin-right: auto;
+}
+
+.admin-api-keys__loading,
+.admin-api-keys__unavailable,
+.admin-api-keys__failed,
+.admin-api-keys__empty {
+  padding: 1rem 0;
+  color: var(--text-color-secondary, #6b7280);
+}
+
+.admin-api-keys__failed {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.admin-api-keys__failed-message {
+  margin: 0;
+  line-height: 1.4;
+  white-space: pre-line;
+}
+
+// Monospace because it is a key. NOT shrunk: the admin panes read at the app's
+// default type size, the same as the Home table.
+.admin-api-keys__key-id {
+  font-family: var(--font-family-mono, monospace);
+}
+
+// Story 36-6 — per-row actions and the revoke confirmation, shaped like the
+// catalog pane's next door so the admin area reads as one thing.
+
+// A <div> INSIDE the actions <td>, never the <td> itself: `display: flex` on a
+// table cell drops it out of the column grid entirely (see the catalog pane's
+// stylesheet for the full account).
+.admin-api-keys__actions {
+  display: flex;
+  gap: 0.5rem;
+  white-space: nowrap;
+}
+
+.admin-api-keys__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.admin-api-keys__confirm-message {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.admin-api-keys__confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding-top: 1rem;
+}
+
+// Dark-red destructive style for the row Revoke and the confirm's Proceed.
+// `::ng-deep` because PrimeNG's button tokens otherwise win on specificity,
+// and because the dialog's button is teleported out of this component's DOM.
+:host ::ng-deep {
+  .admin-api-keys__danger {
+    &,
+    &.p-button {
+      background: #991b1b !important;
+      border-color: #991b1b !important;
+      color: #ffffff !important;
+    }
+
+    &:enabled:hover,
+    &.p-button:enabled:hover {
+      background: #7f1d1d !important;
+      border-color: #7f1d1d !important;
+    }
+
+    &:disabled,
+    &.p-button:disabled {
+      background: var(--surface-200, #e5e7eb) !important;
+      border-color: var(--surface-300, #d1d5db) !important;
+      color: var(--text-color-secondary, #6b7280) !important;
+    }
+  }
+}

@@ -44,6 +44,27 @@
         <a [routerLink]="item.route" class="p-menubar-item-link">
           <span [class]="item.icon"></span>
           <span class="mr-2">{{ item.label }}</span>
+          <!--
+            Story 36-9 — the caller's role, stated once, on the entry that names
+            them. `username-menu` is the marker the username entry already
+            carries, so no second one is invented for this.
+
+            Its truth is `AuthService.isAdmin$` through the `async` pipe — THE
+            one `isAdmin` predicate (ADR-028). A second definition here would be
+            a second answer to "is this caller an admin", and the two would
+            eventually disagree. The pipe is also what makes the tag appear when
+            a late `/auth/me` resolves, without a remount.
+          -->
+          <p-tag
+            *ngIf="
+              item.styleClass === 'username-menu' &&
+              (authService.isAdmin$ | async)
+            "
+            value="admin"
+            severity="secondary"
+            data-test="menubar-admin-tag"
+            [style]="{ 'margin-left': '8px' }"
+          ></p-tag>
         </a>
       </ng-container>
     </ng-template>

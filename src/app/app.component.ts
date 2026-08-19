@@ -78,9 +78,10 @@ export class AppComponent {
       this.contextService.currentProcessId$.asObservable(),
       this.authService.currentUser$,
       this.viewService.isRightColumnCollapsed$,
+      this.authService.isAdmin$,
     ])
       .pipe(takeUntil(destroyed))
-      .subscribe(([processId, currentUser, isRightColumnCollapsed]) => {
+      .subscribe(([processId, currentUser, isRightColumnCollapsed, isAdmin]) => {
         this.items = [
           {
             icon: 'pi pi-home',
@@ -108,6 +109,7 @@ export class AppComponent {
             },
             visible: processId !== '',
           },
+          ...this.adminMenuItems(isAdmin),
           // Username dropdown menu at end (only when authenticated)
           ...(currentUser && currentUser.name
             ? [
@@ -131,6 +133,34 @@ export class AppComponent {
           this.configService.hideHome ? item.label != 'Home' : true,
         );
       });
+  }
+
+  /**
+   * The admin area's single menubar entry (Story 36-1).
+   *
+   * ONE entry, ONE target — the label and icon are the only things the caller's
+   * role changes. An admin lands on the same `/admin/catalog` route as everyone
+   * else; the panes beyond it are what differ, and `adminGuard` handles that.
+   *
+   * `route` (not PrimeNG's own `routerLink`) is what carries the target: the
+   * `#item` template in `app.component.html` overrides PrimeNG's rendering and
+   * binds `[routerLink]="item.route"`, so an entry using `routerLink` renders
+   * an inert link.
+   *
+   * The `hideHome` suppression is applied HERE, by not producing the entry at
+   * all, rather than in the `.filter(...)` below: that filter matches the
+   * literal label `'Home'`, which an entry labelled `Admin`/`Catalog` sails
+   * straight through. A deployment that hides the home page hides this too.
+   */
+  private adminMenuItems(isAdmin: boolean): MenuItem[] {
+    if (this.configService.hideHome) return [];
+    return [
+      {
+        icon: isAdmin ? 'pi pi-cog' : 'pi pi-list',
+        label: isAdmin ? 'Admin' : 'Catalog',
+        route: ['/admin/catalog'],
+      },
+    ];
   }
 
   // Clear the current process and create a new one of the same type
