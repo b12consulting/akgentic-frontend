@@ -483,8 +483,10 @@ export class WorkspaceExplorerComponent {
    * the re-resolved entry then puts THIS file's name and size tag above another
    * file's body — the same mismatch the body half guards against, arriving
    * through the other half of the refresh. The comparison is by PATH, never by
-   * `FileNode` identity: the body half may already have replaced the instance
-   * for this very path.
+   * `FileNode` identity: `refreshDirectory` re-converts the listing into new
+   * `TreeNode`s, so re-selecting the very same file mid-cycle hands
+   * `onNodeSelect` a fresh `FileNode` instance for an unchanged path, and an
+   * identity test would discard the metadata that selection still wants.
    */
   private async refreshFileMetadata(file: FileNode): Promise<void> {
     try {
