@@ -115,9 +115,10 @@ export class WorkspaceExplorerComponent {
 
   /**
    * True while a per-file refresh is in flight — the ONLY state this feature
-   * adds. It drives the toolbar control's disabled binding so a second
-   * activation cannot race the first (ADR-030 §D3). It is deliberately not a
-   * cache, a "last refreshed at" stamp, or a dirty flag: the panel keeps
+   * adds. It drives the toolbar control's disabled binding AND the guard at the
+   * top of `refreshSelectedFile`, so a second activation cannot race the first
+   * (ADR-030 §D3) whichever entry point it arrives through. It is deliberately
+   * not a cache, a "last refreshed at" stamp, or a dirty flag: the panel keeps
    * holding exactly one file's bytes, read on demand.
    */
   refreshingFile = signal(false);
@@ -379,6 +380,13 @@ export class WorkspaceExplorerComponent {
     const file = this.selectedFile();
     if (!file) return;
 
+    // Enforce in code the gate the toolbar control applies in the template: the
+    // workspace-scoped refresh reaches this method too and its button is NOT
+    // bound to these signals. Two reads of the same file settle in arbitrary
+    // order, so the loser repaints the pane with the OLDER bytes, and the first
+    // `finally` would release the button while the second read is still live.
+    if (this.refreshingFile() || this.loadingContent()) return;
+
     this.refreshingFile.set(true);
     try {
       await this.loadFileContent(file.path, true);
@@ -404,9 +412,10 @@ export class WorkspaceExplorerComponent {
       if (entry) {
         this.selectedFile.set(entry);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error refreshing file metadata', error);
-      this.errorMessage.set(error?.message || 'Failed to refresh file metadata');
+      const message = error instanceof Error ? error.message : '';
+      this.errorMessage.set(message || 'Failed to refresh file metadata');
     }
   }
 

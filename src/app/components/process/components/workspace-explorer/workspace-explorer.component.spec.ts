@@ -805,6 +805,60 @@ describe('WorkspaceExplorerComponent', () => {
       );
       expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
     });
+
+    // The toolbar control's [disabled] binding is the only thing stopping a
+    // second per-file read — and the NAVIGATOR's refresh reaches this method
+    // without being bound to it. So the gate is enforced in the method too:
+    // two reads of one file settle in arbitrary order, and the loser repaints
+    // the pane with the older bytes.
+
+    it('scenario 63 — a second activation while a refresh is in flight is ignored', async () => {
+      component.selectedFile.set(openFile(10));
+      component.fileContent.set('old body');
+      workspaceServiceSpy.getWorkspaceTree.calls.reset();
+      workspaceServiceSpy.getFileContent.calls.reset();
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+
+      const body = deferred<FileContent>();
+      workspaceServiceSpy.getFileContent.and.returnValue(body.promise);
+
+      const first = component.refreshSelectedFile();
+      // The path the navigator's control takes: not gated on refreshingFile.
+      await component.refreshSelectedFile();
+
+      expect(workspaceServiceSpy.getFileContent.calls.count()).toBe(1);
+      // The in-flight flag is still held by the FIRST cycle, so the button
+      // stays disabled rather than being released by the ignored activation.
+      expect(component.refreshingFile()).toBe(true);
+
+      body.resolve({ content: 'new body', type: 'text' });
+      await first;
+
+      expect(component.refreshingFile()).toBe(false);
+      expect(component.fileContent()).toBe('new body');
+      expect(workspaceServiceSpy.getFileContent.calls.count()).toBe(1);
+    });
+
+    it('scenario 64 — the navigator refresh skips the file half while an initial load is in flight', async () => {
+      component.selectedFile.set(openFile(10));
+      workspaceServiceSpy.getWorkspaceTree.calls.reset();
+      workspaceServiceSpy.getFileContent.calls.reset();
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+
+      // A selection load is still fetching this file's current bytes.
+      component.loadingContent.set(true);
+
+      component.refresh();
+      await flushMicrotasks();
+
+      // The tree half runs as always; the file half does not race the load
+      // that is already reading the file (the gate the button applies).
+      expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith(
+        'proc',
+        ''
+      );
+      expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+    });
   });
 
   // --- nothing polls (Epic 38) ---------------------------------------
