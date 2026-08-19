@@ -333,12 +333,40 @@ describe('workspaceInvalidationReduce — correlation (FR7)', () => {
       __model__: EVENT_MODEL,
     } as unknown as AkgenticMessage;
 
+    // No `__model__` at all: every guard below reads it, so the fold must skip
+    // the frame before any of them runs. Drop the `!m.__model__` line in the
+    // fold and this frame makes `isStartMessage` throw.
+    const noModelAtAll = {
+      id: 'weird-2',
+      parent_id: null,
+      team_id: TEAM_ID,
+      timestamp: new Date().toISOString(),
+      sender: baseSender('A'),
+      display_type: 'other',
+      content: null,
+    } as unknown as AkgenticMessage;
+
+    // No `sender`: typed as required, but it arrives off the wire. Reading
+    // `m.sender.agent_id` unguarded throws here and freezes the projection for
+    // the rest of the session.
+    const noSender = {
+      id: 'weird-3',
+      parent_id: null,
+      team_id: TEAM_ID,
+      timestamp: new Date().toISOString(),
+      display_type: 'other',
+      content: null,
+      __model__: 'akgentic.core.messages.orchestrator.StopMessage',
+    } as unknown as AkgenticMessage;
+
     const log: AkgenticMessage[] = [
       makeStartMessage('A', [workspaceTool('ws-1')]),
       makeToolCall('A', 'workspace_write', '{', 'bad-json'),
       makeToolReturn('A', 'workspace_write', 'bad-json', true),
       makeEventMessage('A', null),
       noEventAtAll,
+      noModelAtAll,
+      noSender,
       makeEventMessage('A', { __model__: 'akgentic.llm.event.LlmMessageEvent' }),
       // A call+return pair still resolves after all of the above.
       makeToolCall('A', 'workspace_write', JSON.stringify({ path: 'ok.md' }), 'c9'),
@@ -521,6 +549,26 @@ describe('workspaceInvalidationReduce — attribution (FR6)', () => {
       ]),
     );
     expect(result[0].files).not.toBe(result[1].files);
+    expect(result[0].directories).not.toBe(result[1].directories);
+    expect(result[0].deletions).not.toBe(result[1].deletions);
+  });
+
+  it('(AC17) a two-workspace delete does not share its `deletions` array', () => {
+    // `deletions` is the only list a write never populates, so the spec above
+    // would keep passing if it alone were hoisted out of the per-workspace
+    // build. A consumer that splices a handled deletion off one instruction
+    // must not empty the other workspace's.
+    const result = workspaceInvalidationReduce(
+      mutationLog('workspace_delete', JSON.stringify({ path: 'a/b.md' }), [
+        workspaceTool('ws-a'),
+        workspaceTool('ws-b'),
+      ]),
+    );
+    expect(result.length).toBe(2);
+    for (const instruction of result) {
+      expect(instruction.deletions).toEqual(['a/b.md']);
+    }
+    expect(result[0].deletions).not.toBe(result[1].deletions);
     expect(result[0].directories).not.toBe(result[1].directories);
   });
 

@@ -54,8 +54,9 @@ export function isMutatingWorkspaceTool(
 /**
  * One instruction: what to re-read, and in which workspace (ADR-031 §D1/§D3).
  *
- * `directories` and `files` are deduplicated and in first-seen order; both are
- * empty when `wholeTree` is `true`.
+ * `directories` and `files` are deduplicated and in first-seen order; all three
+ * lists — `deletions` included — are empty when `wholeTree` is `true`, so a
+ * consumer never has to reconcile a whole-tree refresh against named targets.
  *
  * `deletions` is its OWN field rather than a flag on `files` because the two
  * carry opposite instructions: `files` means "changed, may need re-reading", and
@@ -227,10 +228,14 @@ function resolveReturn(
  * `reset()` re-emits `[]`, a fold over `[]` starts with an empty in-flight map,
  * and no per-store reset code exists anywhere.
  *
- * Nothing it touches can throw: the envelope is guarded before `event` is read,
- * the inner guards accept `null`/`undefined`, and the argument parser returns
- * `null` rather than raising. A fold that throws on one bad frame stops folding
- * for the rest of the session.
+ * No field this fold reads itself can throw: `__model__` and `sender` are both
+ * reached defensively (`messageListFold` guards `sender` the same way), the
+ * inner guards accept `null`/`undefined`, and the argument parser returns `null`
+ * rather than raising. A fold that throws on one bad frame stops folding for the
+ * rest of the session. The one frame that could still raise is a `StartMessage`
+ * carrying no `config` at all, which `startContribution` dereferences — shared
+ * with `workspaceRegistryReduce`, and recorded as a deferred finding on Epic 39
+ * rather than hardened here.
  *
  * Exported at module scope so specs assert it directly without a `TestBed`, the
  * same way `workspaceRegistryReduce` is exercised.
@@ -244,12 +249,16 @@ export function workspaceInvalidationReduce(
 
   for (const m of log) {
     if (!m.__model__) continue;
+    // `sender` is typed as required but arrives off the wire: reached the same
+    // defensive way `messageListFold` reaches `sender?.role`. A frame without
+    // one keys the empty agent id, which no well-formed frame ever claims.
+    const agentId = m.sender?.agent_id ?? '';
     if (isStartMessage(m)) {
-      contributions.set(m.sender.agent_id, startContribution(m));
+      contributions.set(agentId, startContribution(m));
       continue;
     }
     if (isStopMessage(m)) {
-      contributions.delete(m.sender.agent_id);
+      contributions.delete(agentId);
       continue;
     }
     if (!isEventMessage(m)) continue;
@@ -259,7 +268,7 @@ export function workspaceInvalidationReduce(
     // `any` from propagating into this module.
     const inner: { __model__?: string } | null | undefined = m.event;
     if (isToolCallEvent(inner)) {
-      recordCall(inFlight, inner, contributions.get(m.sender.agent_id));
+      recordCall(inFlight, inner, contributions.get(agentId));
     } else if (isToolReturnEvent(inner)) {
       instructions.push(
         ...resolveReturn(inFlight, inner.tool_call_id, inner.success),
