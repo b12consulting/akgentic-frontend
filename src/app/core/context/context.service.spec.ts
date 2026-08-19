@@ -1373,3 +1373,200 @@ describe('ContextService.markStopped (Story 37-2)', () => {
     expect(next[1].config_name).toBe(teamB.config_name);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Story 37-3 — setTeamDescription: the THIRD caller of the `_upsertTeam` seam,
+// after getCurrentTeam/refreshOneTeam and 37-2's markStopped (AC2-AC5)
+//
+// Same discipline as the markStopped block above: the method is driven through
+// the PUBLIC surface only, teams are seeded through `getTeams()` and read back
+// through `teams$` / `currentTeam$`, and `apiSpy` is asserted to stay untouched
+// — persisting the description is the caller's job, this is the local cache.
+//
+// Reference inequality is the assertion that matters throughout. A
+// description-value-only assertion passes green against an in-place mutation,
+// which is precisely the defect this story removes.
+// ---------------------------------------------------------------------------
+
+describe('ContextService.setTeamDescription (Story 37-3)', () => {
+  let service: ContextService;
+  let apiSpy: jasmine.SpyObj<ApiService>;
+  let routerSpy: jasmine.SpyObj<Router>;
+
+  beforeEach(() => {
+    apiSpy = jasmine.createSpyObj('ApiService', [
+      'getTeams',
+      'getTeamsPage',
+      'getTeam',
+      'createTeam',
+      'deleteTeam',
+      'stopTeam',
+      'restoreTeam',
+    ]);
+    routerSpy = jasmine.createSpyObj('Router', ['navigate']);
+    routerSpy.navigate.and.returnValue(Promise.resolve(true));
+
+    TestBed.configureTestingModule({
+      providers: [
+        ContextService,
+        { provide: ApiService, useValue: apiSpy },
+        { provide: Router, useValue: routerSpy },
+      ],
+    });
+
+    service = TestBed.inject(ContextService);
+  });
+
+  async function seed(teams: TeamContext[]): Promise<void> {
+    apiSpy.getTeams.and.returnValue(Promise.resolve(teams));
+    await service.getTeams();
+  }
+
+  // --- AC2 ---------------------------------------------------------------
+
+  it('(AC2) currentTeam$ emits a DIFFERENT object reference carrying the new description', async () => {
+    const team = makeTeam('team-A', 'running');
+    await seed([team]);
+    service.currentProcessId$.next('team-A');
+
+    const emissions: (TeamContext | null)[] = [];
+    const sub = service.currentTeam$.subscribe((t) => emissions.push(t));
+    const before = emissions[emissions.length - 1];
+    expect(before).toBe(team);
+
+    service.setTeamDescription('team-A', 'a new description');
+
+    const after = emissions[emissions.length - 1];
+    // BOTH assertions, and the reference one is the load-bearing half:
+    // `currentTeam$` ends in `distinctUntilChanged()` with default reference
+    // equality, so an in-place `team.description = ...` would leave the value
+    // assertion green while nothing re-emitted and no OnPush view repainted.
+    expect(after).not.toBe(before);
+    expect(after!.description).toBe('a new description');
+
+    sub.unsubscribe();
+  });
+
+  it('(AC2) teams$ emits a new array whose edited row is a new object', async () => {
+    await seed([makeTeam('team-A', 'running')]);
+
+    const emissions: TeamContext[][] = [];
+    const sub = service.teams$.subscribe((v) => emissions.push(v));
+    expect(emissions.length).toBe(1);
+
+    service.setTeamDescription('team-A', 'renamed');
+
+    expect(emissions.length).toBe(2);
+    expect(emissions[1]).not.toBe(emissions[0]);
+    expect(emissions[1][0]).not.toBe(emissions[0][0]);
+    expect(emissions[1][0].description).toBe('renamed');
+
+    sub.unsubscribe();
+  });
+
+  it('(AC2) a null description clears the field through the same path', async () => {
+    const team = { ...makeTeam('team-A', 'running'), description: 'old' };
+    await seed([team]);
+
+    service.setTeamDescription('team-A', null);
+
+    const next = await firstValueFrom(service.teams$);
+    expect(next[0]).not.toBe(team);
+    expect(next[0].description).toBeNull();
+  });
+
+  it('(AC2) issues no HTTP call', async () => {
+    await seed([makeTeam('team-A', 'running')]);
+    apiSpy.getTeam.calls.reset();
+
+    service.setTeamDescription('team-A', 'local only');
+
+    expect(apiSpy.getTeam).not.toHaveBeenCalled();
+    expect(apiSpy.getTeams).toHaveBeenCalledTimes(1); // the seed only
+  });
+
+  // --- AC3 ---------------------------------------------------------------
+
+  it('(AC3) leaves the source object untouched — a copy, not a mutation', async () => {
+    const team = { ...makeTeam('team-A', 'running'), description: 'original' };
+    await seed([team]);
+
+    service.setTeamDescription('team-A', 'replacement');
+
+    // The instance that sat in the cache before the call still reports its old
+    // value. This is what separates copy-and-override from a mutation that
+    // happens to also re-emit.
+    expect(team.description).toBe('original');
+
+    const next = await firstValueFrom(service.teams$);
+    expect(next[0].description).toBe('replacement');
+  });
+
+  it('(AC3) every other field survives the copy', async () => {
+    const team = makeTeam('team-A', 'running', 'Alpha');
+    await seed([team]);
+
+    service.setTeamDescription('team-A', 'described');
+
+    const next = await firstValueFrom(service.teams$);
+    expect(next[0].team_id).toBe('team-A');
+    expect(next[0].status).toBe('running');
+    expect(next[0].name).toBe(team.name);
+    expect(next[0].created_at).toBe(team.created_at);
+    expect(next[0].config_name).toBe(team.config_name);
+  });
+
+  // --- AC4 ---------------------------------------------------------------
+
+  it('(AC4) untouched rows keep reference identity; only the array is new', async () => {
+    const teamA = makeTeam('team-A', 'running');
+    const teamB = makeTeam('team-B', 'running');
+    const teamC = makeTeam('team-C', 'stopped');
+    await seed([teamA, teamB, teamC]);
+
+    const prev = await firstValueFrom(service.teams$);
+
+    service.setTeamDescription('team-B', 'only B changes');
+
+    const next = await firstValueFrom(service.teams$);
+
+    expect(next).not.toBe(prev);
+    expect(next.length).toBe(3);
+    expect(next[0]).toBe(teamA);
+    expect(next[2]).toBe(teamC);
+    expect(next[1]).not.toBe(teamB);
+    expect(next[1].description).toBe('only B changes');
+    // Order is preserved.
+    expect(next[1].team_id).toBe('team-B');
+  });
+
+  // --- AC5 ---------------------------------------------------------------
+
+  it('(AC5) an unknown team id creates NO phantom row and emits nothing', async () => {
+    await seed([makeTeam('team-A', 'running')]);
+
+    const emissions: TeamContext[][] = [];
+    const sub = service.teams$.subscribe((v) => emissions.push(v));
+
+    service.setTeamDescription('team-does-not-exist', 'nowhere');
+
+    // The guard must run BEFORE `_upsertTeam`, which APPENDS on an absent id —
+    // that append is the phantom.
+    expect(emissions.length).toBe(1);
+    expect(emissions[0].length).toBe(1);
+    expect(emissions[0][0].team_id).toBe('team-A');
+
+    sub.unsubscribe();
+  });
+
+  it('(AC5) an unknown team id on an EMPTY cache is a silent no-op', () => {
+    const emissions: TeamContext[][] = [];
+    const sub = service.teams$.subscribe((v) => emissions.push(v));
+
+    service.setTeamDescription('team-A', 'nowhere');
+
+    expect(emissions.length).toBe(1);
+    expect(emissions[0]).toEqual([]);
+    sub.unsubscribe();
+  });
+});

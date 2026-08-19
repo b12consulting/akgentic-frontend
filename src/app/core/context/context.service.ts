@@ -198,6 +198,42 @@ export class ContextService {
     this._upsertTeam({ ...team, status: 'stopped' });
   }
 
+  /**
+   * Story 37-3: record a team's edited description, without asking the server.
+   *
+   * The THIRD caller of the `_upsertTeam` seam, after `getCurrentTeam` /
+   * `refreshOneTeam` and `markStopped`. It exists because the Home page used to
+   * reach into this cache and write `team.description = …` from outside the
+   * service that owns it — a write that "succeeded" while the screen stayed
+   * stale.
+   *
+   * COPY-AND-OVERRIDE, never `team.description = …`, for the same reason
+   * `markStopped` copies: `currentTeam$` ends in a `distinctUntilChanged()` with
+   * default reference equality, so an in-place write re-emits nothing and no
+   * OnPush consumer repaints. The cached value would even be CORRECT while the
+   * view showed the old text. The new object reference IS the notification.
+   *
+   * Guarded on the unknown id BEFORE the write, because `_upsertTeam` APPENDS
+   * when the id is absent — an unguarded call would materialise a phantom team
+   * row out of an edit for a team this tab has never listed.
+   *
+   * One guard only, and deliberately not `markStopped`'s pair: that method also
+   * short-circuits an already-stopped team because a replayed stop event
+   * arrives repeatedly and idempotence is what makes a cold load a no-op. A
+   * description save is an explicit one-shot user action with no re-entry to
+   * suppress, so a "description unchanged" guard would be behaviour nobody
+   * asked for. Revisit if a future caller ever drives this from a stream.
+   *
+   * A sibling of `markStopped`, NOT a widening of it. Resist generalising the
+   * two into a `patchTeam(id, partial)`: a general patch invites callers to
+   * write fields they have not actually observed.
+   */
+  setTeamDescription(teamId: string, description: string | null): void {
+    const team = this._context$.value.find((t) => t.team_id === teamId);
+    if (!team) return;
+    this._upsertTeam({ ...team, description });
+  }
+
   async stopTeamAndAwait(
     teamId: string,
     timeoutMs: number = TEAM_STATE_TIMEOUT_MS,

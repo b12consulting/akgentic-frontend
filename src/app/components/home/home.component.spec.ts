@@ -76,6 +76,7 @@ describe('HomeComponent', () => {
         'deleteTeam',
         'createTeamAndNavigate',
         'stopTeamAndAwait',
+        'setTeamDescription',
       ],
     ) as jasmine.SpyObj<ContextService> & {
       teams$: BehaviorSubject<TeamContext[]>;
@@ -108,6 +109,10 @@ describe('HomeComponent', () => {
     contextSpy.deleteTeam.and.returnValue(Promise.resolve());
     contextSpy.createTeamAndNavigate.and.returnValue(Promise.resolve());
     contextSpy.stopTeamAndAwait.and.returnValue(Promise.resolve());
+    // Stubbed deliberately: with the real write path replaced by a no-op, an
+    // unchanged team object in teams$ after saveDescription proves the
+    // COMPONENT is no longer writing the cache itself (Story 37-3 AC6).
+    contextSpy.setTeamDescription.and.stub();
 
     // Anonymous by default (no `roles`), so isAdmin$ resolves
     // false and the toggle is hidden unless a test pushes an admin user.
@@ -1186,6 +1191,79 @@ describe('HomeComponent', () => {
     component.startEditDescription('row-1', 'again');
     component.cancelEditDescription();
     expect(component.editingDescriptionFor).toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // Story 37-3 AC6 — saveDescription delegates instead of mutating the cache.
+  //
+  // This bed injects a ContextService SPY, so it can prove exactly one thing
+  // about the write, and it is the right thing: with `setTeamDescription`
+  // stubbed to a no-op, NOTHING writes the cache. A team object that still
+  // reports its old description afterwards therefore proves the component
+  // itself did not write it. The new-object / reference-inequality half lives
+  // in context.service.spec.ts, where the real `_upsertTeam` runs.
+  // -------------------------------------------------------------------------
+
+  describe('saveDescription delegation (Story 37-3 AC6)', () => {
+    it('delegates the trimmed description to ContextService', async () => {
+      const team = makeTeam({ team_id: 'row-1', description: 'before' });
+      teams$.next([team]);
+
+      component.startEditDescription('row-1', '  spaced out  ');
+      await component.saveDescription('row-1');
+
+      expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith(
+        'row-1',
+        'spaced out',
+      );
+    });
+
+    it('does not write the cached team itself', async () => {
+      const team = makeTeam({ team_id: 'row-1', description: 'before' });
+      teams$.next([team]);
+
+      component.startEditDescription('row-1', 'after');
+      await component.saveDescription('row-1');
+
+      // `setTeamDescription` is a stub here, so the only way this object could
+      // have changed is the component mutating it — which is the defect.
+      expect(team.description).toBe('before');
+      expect(teams$.value[0].description).toBe('before');
+    });
+
+    it('sends null for an empty draft rather than an empty string', async () => {
+      teams$.next([makeTeam({ team_id: 'row-1', description: 'before' })]);
+
+      component.startEditDescription('row-1', '   ');
+      await component.saveDescription('row-1');
+
+      expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith('row-1', null);
+    });
+
+    it('still calls the API and clears the editing row on success', async () => {
+      teams$.next([makeTeam({ team_id: 'row-1' })]);
+
+      component.startEditDescription('row-1', 'fresh');
+      await component.saveDescription('row-1');
+
+      expect(apiSpy.updateTeamDescription).toHaveBeenCalledWith('row-1', 'fresh');
+      expect(component.editingDescriptionFor).toBeNull();
+    });
+
+    it('swallows an API failure, leaving the editing row open and the cache alone', async () => {
+      apiSpy.updateTeamDescription.and.returnValue(
+        Promise.reject(new Error('boom')),
+      );
+      teams$.next([makeTeam({ team_id: 'row-1' })]);
+
+      component.startEditDescription('row-1', 'fresh');
+      await component.saveDescription('row-1');
+
+      // The API call is awaited BEFORE the delegation, so a rejection means the
+      // cache is never touched and the row stays in edit mode.
+      expect(contextSpy.setTeamDescription).not.toHaveBeenCalled();
+      expect(component.editingDescriptionFor).toBe('row-1');
+    });
   });
 
   describe('hideHome reactive read (28.2 AC3)', () => {
