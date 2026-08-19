@@ -20,6 +20,7 @@ import {
 import { ProcessStores } from './process-stores';
 import { ReplaySeeder } from './replay-seeder';
 import { TeamSocket, TeamSocketStatus } from './team-socket';
+import { TeamStatusReactor } from './team-status-reactor';
 import { MessageService } from 'primeng/api';
 
 /**
@@ -54,6 +55,10 @@ import { MessageService } from 'primeng/api';
  *     and `ConnectionToast` stay on the raw socket, and correctly so: they are
  *     transport concerns, which is why this folder now has reactors on both
  *     streams. Do not "unify" the two.
+ *   - `TeamStatusReactor` (`team-status-reactor.ts`) — Story 37-2. The second
+ *     log-side reactor, and it shares the wiring position for the same reason:
+ *     a stopped team's `TeamStoppingEvent` only ever arrives in step (c)'s REST
+ *     replay.
  *
  * `messageService.clear()` stays here rather than moving into either toast unit:
  * it empties the whole keyless `<p-toast>` container, both families at once, so
@@ -107,6 +112,16 @@ export class IngestionService {
   /** Epic 34 (ADR-025 §0-§1): the notification-toast reactor. */
   private readonly notificationToasts: NotificationToasts =
     inject(NotificationToasts);
+
+  /**
+   * Story 37-2: the team-stopping reactor. Reads the same log delta as
+   * `NotificationToasts` and for the same transport reason — a stopped team's
+   * history arrives over REST, not over the socket — and patches
+   * `ContextService` so a team stopped by another tab, the idle timer, an
+   * operator or a worker crash stops being shown as live.
+   */
+  private readonly teamStatusReactor: TeamStatusReactor =
+    inject(TeamStatusReactor);
 
   /**
    * Story 4-10 (AC7) / Epic 18 (ADR-015 §2): the loading-spinner state, read by
@@ -230,6 +245,14 @@ export class IngestionService {
       this.log.closedNotificationIds$,
     );
 
+    // Story 37-2: the team-stopping reactor, wired HERE for exactly the reason
+    // above it. The cold load of an already-stopped team is the case that needs
+    // it: that team's `TeamStoppingEvent` arrives in step (c)'s REST replay and
+    // nowhere else, so a `start()` sequenced below the replay block observes an
+    // empty stream, the stopped team keeps reporting itself running, and every
+    // live-path spec stays green.
+    this.teamStatusReactor.start(this.log.appended$.pipe(concatAll()));
+
     // --- (c) seed the replay (stopped teams only) --------------------
     if (!running) {
       // Story 25-1 (ADR-020 §2, !running gate): a stopped team's durable event
@@ -329,6 +352,7 @@ export class IngestionService {
     this.cycle = null;
     this.loading.stop();
     this.notificationToasts.stop();
+    this.teamStatusReactor.stop();
   }
 
   ngOnDestroy(): void {

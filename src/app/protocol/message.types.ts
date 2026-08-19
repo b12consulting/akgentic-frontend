@@ -344,6 +344,26 @@ export interface ClosedNotification {
   message_id: string;
 }
 
+/**
+ * Inner event payload announcing that the orchestrator has begun tearing the
+ * team down, mirroring the akgentic-core `TeamStoppingEvent` frozen dataclass
+ * (core ADR-018 §1). Carried by `EventMessage.event` like every other domain
+ * event and discriminated by the inner `__model__`.
+ *
+ * It carries NO fields beyond the wire tag, and that is the upstream design
+ * rather than an omission here: the envelope already supplies everything a
+ * consumer needs — `team_id`, `timestamp` and `sender`. Do not invent a
+ * `reason` or a `cause`; a defaulted field may be added upstream later, and
+ * until one exists anything read off this payload is fiction.
+ *
+ * Read-only on this side, so — unlike `ClosedNotification`, which the frontend
+ * also WRITES — it gets no exported wire-tag constant. See
+ * `CLOSED_NOTIFICATION_MODEL` for why that constant is the exception.
+ */
+export interface TeamStoppingEvent {
+  __model__: string; // contains 'TeamStoppingEvent'
+}
+
 // Union type for all possible messages
 export type AkgenticMessage =
   | SentMessage
@@ -553,6 +573,27 @@ export function isClosedNotification(
   event: { __model__?: string } | null | undefined,
 ): event is ClosedNotification {
   return !!event?.__model__?.includes('ClosedNotification');
+}
+
+/**
+ * Inner-event check (Story 37-2): true when the inner event carried by an
+ * `EventMessage` is a `TeamStoppingEvent`. Matches on the inner `__model__`, the
+ * same discrimination used for `ClosedNotification` / `LlmUsageEvent`.
+ *
+ * The argument is `EventMessage.event`, NEVER the envelope. Applied to the
+ * envelope this never matches — `'EventMessage'` does not contain
+ * `'TeamStoppingEvent'` — and the caller is then silently dead with every other
+ * spec still green.
+ *
+ * No substring collision in either direction with any tag on the wire:
+ * `'TeamStoppingEvent'` contains neither `'StopMessage'` nor `'EventMessage'`
+ * (it contains `'Event'`, which is not the same string), and no existing tag
+ * contains it.
+ */
+export function isTeamStoppingEvent(
+  event: { __model__?: string } | null | undefined,
+): event is TeamStoppingEvent {
+  return !!event?.__model__?.includes('TeamStoppingEvent');
 }
 
 /**

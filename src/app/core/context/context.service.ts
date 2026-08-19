@@ -152,9 +152,13 @@ export class ContextService {
   }
 
   /** Upsert a team into `_context$`: replace if already cached (preserves
-   *  reference identity of other slots); append if not yet cached. Single
-   *  write path shared by `getCurrentTeam` and `refreshOneTeam` so the two
-   *  cannot diverge in a future change. Issue #104 regression fix. */
+   *  reference identity of other slots); append if not yet cached. The single
+   *  write path, so its callers cannot diverge in a future change: the two
+   *  PULL callers `getCurrentTeam` / `refreshOneTeam` (issue #104 regression
+   *  fix) and the two PUSH callers `markStopped` / `setTeamDescription`
+   *  (Epic 37). Two properties every caller depends on — it hands `next()` a
+   *  fresh array and never mutates a member, and it APPENDS when the id is
+   *  absent, which is why both push callers look the team up first. */
   private _upsertTeam(team: TeamContext): void {
     const prev = this._context$.value;
     const exists = prev.some((t) => t.team_id === team.team_id);
@@ -162,6 +166,76 @@ export class ContextService {
       ? prev.map((t) => (t.team_id === team.team_id ? team : t))
       : [...prev, team];
     this._context$.next(next);
+  }
+
+  /**
+   * Story 37-2: record that a team has stopped, without asking the server.
+   *
+   * The SECOND caller of the `_upsertTeam` seam that the comment on `_context$`
+   * has anticipated since this service was written — a push, not a fetch. It
+   * exists for the REMOTE stop: the idle timer, another tab, an operator, a
+   * worker crash. `stopTeamAndAwait` already covers the local one by polling,
+   * but when this tab did not issue the stop, nothing writes `_context$` at all
+   * and `currentTeam$` reports a live session that has ceased to exist.
+   *
+   * COPY-AND-OVERRIDE, never `team.status = 'stopped'`. `currentTeam$` ends in a
+   * `distinctUntilChanged()` with default reference equality, so an in-place
+   * mutation re-emits nothing and no OnPush consumer repaints — the write would
+   * appear to work, the cached value would even be correct, and the screen would
+   * still show a running team. The new object reference IS the notification.
+   *
+   * Guarded BEFORE the write, and both halves of the guard are load-bearing:
+   *   - unknown id — `_upsertTeam` APPENDS when the id is absent, so an
+   *     unguarded call would materialise a phantom team row out of an event for
+   *     a team this tab has never listed;
+   *   - already not running — a re-entry writes nothing and emits nothing, which
+   *     is what makes a stopped-team cold load (whose REST replay carries the
+   *     stop event) a no-op rather than a redundant write.
+   *
+   * The literal `'stopped'` and not an enum: `TeamContext.status` is a plain
+   * string here and `isRunning` compares against `'running'`. Widening that to
+   * an enum is its own change with its own blast radius.
+   */
+  markStopped(teamId: string): void {
+    const team = this._context$.value.find((t) => t.team_id === teamId);
+    if (!team || !isRunning(team)) return;
+    this._upsertTeam({ ...team, status: 'stopped' });
+  }
+
+  /**
+   * Story 37-3: record a team's edited description, without asking the server.
+   *
+   * The THIRD caller of the `_upsertTeam` seam, after `getCurrentTeam` /
+   * `refreshOneTeam` and `markStopped`. It exists because the Home page used to
+   * reach into this cache and write `team.description = …` from outside the
+   * service that owns it — a write that "succeeded" while the screen stayed
+   * stale.
+   *
+   * COPY-AND-OVERRIDE, never `team.description = …`, for the same reason
+   * `markStopped` copies: `currentTeam$` ends in a `distinctUntilChanged()` with
+   * default reference equality, so an in-place write re-emits nothing and no
+   * OnPush consumer repaints. The cached value would even be CORRECT while the
+   * view showed the old text. The new object reference IS the notification.
+   *
+   * Guarded on the unknown id BEFORE the write, because `_upsertTeam` APPENDS
+   * when the id is absent — an unguarded call would materialise a phantom team
+   * row out of an edit for a team this tab has never listed.
+   *
+   * One guard only, and deliberately not `markStopped`'s pair: that method also
+   * short-circuits an already-stopped team because a replayed stop event
+   * arrives repeatedly and idempotence is what makes a cold load a no-op. A
+   * description save is an explicit one-shot user action with no re-entry to
+   * suppress, so a "description unchanged" guard would be behaviour nobody
+   * asked for. Revisit if a future caller ever drives this from a stream.
+   *
+   * A sibling of `markStopped`, NOT a widening of it. Resist generalising the
+   * two into a `patchTeam(id, partial)`: a general patch invites callers to
+   * write fields they have not actually observed.
+   */
+  setTeamDescription(teamId: string, description: string | null): void {
+    const team = this._context$.value.find((t) => t.team_id === teamId);
+    if (!team) return;
+    this._upsertTeam({ ...team, description });
   }
 
   async stopTeamAndAwait(

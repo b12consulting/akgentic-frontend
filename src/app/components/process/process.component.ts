@@ -17,6 +17,7 @@ import { ProcessStores } from './event/process-stores';
 import { ReplaySeeder } from './event/replay-seeder';
 import { SystemPromptSelector } from './selectors/system-prompt.selector';
 import { TeamSocket } from './event/team-socket';
+import { TeamStatusReactor } from './event/team-status-reactor';
 import { TokenUsageSelector } from './selectors/token-usage.selector';
 import { ToolPresenceService } from './selectors/tool-presence.selector';
 import { WorkspaceRegistryService } from './selectors/workspace-registry.selector';
@@ -118,6 +119,13 @@ interface VisualizationOption {
     // dismissal state, and a root instance would carry one team's closed ids into
     // the next, silently suppressing toasts that should have been raised.
     NotificationToasts,
+    // Story 37-2: the team-stopping reactor, provided BEFORE IngestionService,
+    // which injects it and drives its start/stop. Never `providedIn: 'root'` —
+    // it belongs to the process view's log lifecycle like every other unit in
+    // that folder, and a root instance would keep reading a destroyed team's
+    // log. It writes to the root-scoped `ContextService`, which is the point:
+    // that service outlives this view and owns team status.
+    TeamStatusReactor,
     // Epic 34 (ADR-025 §1): the WS transport source, provided BEFORE
     // IngestionService (which injects it and opens it LAST in `init()`). Never
     // `providedIn: 'root'` — a root instance would share ONE socket across every

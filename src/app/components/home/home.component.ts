@@ -13,7 +13,7 @@ import { BehaviorSubject, firstValueFrom, Observable } from 'rxjs';
 import { filter, map, take } from 'rxjs/operators';
 
 import { ApiService } from '../../core/http/api.service';
-import { TeamContext, isRunning } from '../../core/context/team.interface';
+import { isRunning } from '../../core/context/team.interface';
 import { NamespaceSummary } from '../../protocol/catalog.interface';
 
 import { CommonModule } from '@angular/common';
@@ -323,12 +323,10 @@ export class HomeComponent {
       );
       await this.apiService.updateTeamDescription(teamId, trimmed);
 
-      // Update local context optimistically (read current list from teams$).
-      const teams = await firstValueFrom(this.contextService.teams$);
-      const team = teams.find((ctx: TeamContext) => ctx.team_id === teamId);
-      if (team) {
-        team.description = trimmed;
-      }
+      // Update local context optimistically. The service owns its cache and
+      // writes a NEW team object through its single write path — an in-place
+      // write here re-emitted nothing and left the screen stale (story 37-3).
+      this.contextService.setTeamDescription(teamId, trimmed);
 
       this.editingDescriptionFor = null;
     } catch (error) {
