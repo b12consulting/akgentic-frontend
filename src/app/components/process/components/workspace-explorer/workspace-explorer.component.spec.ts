@@ -10,9 +10,13 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { TreeNode } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { ToolbarModule } from 'primeng/toolbar';
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, Subject } from 'rxjs';
 
 import { ContextService } from '../../../../core/context/context.service';
+import {
+  WorkspaceInvalidation,
+  WorkspaceInvalidationService,
+} from '../../selectors/workspace-invalidation.selector';
 import {
   FileContent,
   FileNode,
@@ -24,6 +28,34 @@ import { WorkspaceExplorerComponent } from './workspace-explorer.component';
 // --------------------------------------------------------------------
 // Fixture helpers
 // --------------------------------------------------------------------
+
+/**
+ * The seam every routing spec drives: a bare Subject standing in for the
+ * projection. These specs test the explorer's ROUTING, never the fold — the
+ * fold is `workspace-invalidation.selector.spec.ts`'s subject and must not be
+ * re-tested through a component.
+ *
+ * Every TestBed in this file provides one, because the explorer now injects the
+ * service unconditionally and a missing provider is a NullInjectorError rather
+ * than an inert dependency.
+ */
+class FakeWorkspaceInvalidationService {
+  readonly invalidations$ = new Subject<WorkspaceInvalidation>();
+}
+
+/** One instruction, with every unnamed target empty. */
+function invalidation(
+  overrides: Partial<WorkspaceInvalidation> = {},
+): WorkspaceInvalidation {
+  return {
+    workspaceId: 'proc',
+    wholeTree: false,
+    directories: [],
+    files: [],
+    deletions: [],
+    ...overrides,
+  };
+}
 
 function makeTeam(): any {
   return {
@@ -109,6 +141,7 @@ describe('WorkspaceExplorerComponent', () => {
   let component: WorkspaceExplorerComponent;
   let fixture: ComponentFixture<WorkspaceExplorerComponent>;
   let workspaceServiceSpy: jasmine.SpyObj<WorkspaceService>;
+  let invalidationStub: FakeWorkspaceInvalidationService;
   let contextServiceStub: {
     currentProcessId$: BehaviorSubject<string>;
     currentTeamRunning$: BehaviorSubject<boolean>;
@@ -122,6 +155,7 @@ describe('WorkspaceExplorerComponent', () => {
       'getDownloadUrl',
       'uploadFiles',
     ]);
+    invalidationStub = new FakeWorkspaceInvalidationService();
     contextServiceStub = {
       currentProcessId$: new BehaviorSubject<string>('proc'),
       currentTeamRunning$: new BehaviorSubject<boolean>(true),
@@ -135,6 +169,10 @@ describe('WorkspaceExplorerComponent', () => {
       providers: [
         { provide: WorkspaceService, useValue: workspaceServiceSpy },
         { provide: ContextService, useValue: contextServiceStub },
+        {
+          provide: WorkspaceInvalidationService,
+          useValue: invalidationStub,
+        },
       ],
     })
       .overrideComponent(WorkspaceExplorerComponent, {
@@ -336,6 +374,17 @@ describe('WorkspaceExplorerComponent', () => {
     });
 
     it('scenario 19 — text result writes fileContent, clears loadingContent and isBinaryFile', async () => {
+      // The pane is showing the file being read. Previously this scenario drove
+      // the loader with no selection at all — a state no production caller can
+      // produce, and one whose result is now applied to nothing (scenario 70).
+      component.selectedFile.set(
+        fileNode({
+          name: 'readme.txt',
+          path: 'docs/readme.txt',
+          type: 'file',
+          extension: '.txt',
+        })
+      );
       workspaceServiceSpy.getFileContent.and.resolveTo({
         content: 'hello world',
         type: 'text',
@@ -373,6 +422,16 @@ describe('WorkspaceExplorerComponent', () => {
     });
 
     it('scenario 21 — binary result flags isBinaryFile and shows the binary message', async () => {
+      // Same correction as scenario 19: the pane must be showing the file whose
+      // bytes are read, because a result for any other path is now discarded.
+      component.selectedFile.set(
+        fileNode({
+          name: 'image.png',
+          path: 'docs/image.png',
+          type: 'file',
+          extension: '.png',
+        })
+      );
       workspaceServiceSpy.getFileContent.and.resolveTo({
         content: null,
         type: 'binary',
@@ -858,6 +917,260 @@ describe('WorkspaceExplorerComponent', () => {
         ''
       );
       expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+    });
+  });
+
+  // --- superseded reads (Epic 39, FR8) -------------------------------
+  //
+  // Two body reads are trivially concurrent: `onNodeSelect` sets `selectedFile`
+  // and issues a read without awaiting or cancelling one already in flight. If
+  // the OLDER read resolves LAST it still wins every write it is allowed to
+  // make, and the pane renders one file's bytes under another file's name and
+  // size tag. The tree closed the same race declaratively with `switchMap`; the
+  // body read never had an equivalent. These scenarios pin that equivalent —
+  // the body, both renderer flags, the error banner, the spinner, and the
+  // metadata twin in `refreshFileMetadata`.
+  //
+  // The reads are overlapped through the REAL entry point wherever the defect
+  // is the subject, because `onNodeSelect`'s `selectedFile` write order is part
+  // of what makes the race reachable.
+
+  describe('superseded reads', () => {
+    function fileA(): FileNode {
+      return fileNode({
+        name: 'a.txt',
+        path: 'docs/a.txt',
+        type: 'file',
+        size: 10,
+        extension: '.txt',
+      });
+    }
+
+    function fileB(): FileNode {
+      return fileNode({
+        name: 'b.txt',
+        path: 'docs/b.txt',
+        type: 'file',
+        size: 20,
+        extension: '.txt',
+      });
+    }
+
+    beforeEach(() => {
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+      fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+      component = fixture.componentInstance;
+      component.processId = 'proc';
+    });
+
+    it('scenario 65 — the older read resolving LAST does not replace the newer file body', async () => {
+      const a = deferred<FileContent>();
+      const b = deferred<FileContent>();
+      workspaceServiceSpy.getFileContent.and.returnValues(a.promise, b.promise);
+
+      const first = component.onNodeSelect({ node: { data: fileA() } });
+      const second = component.onNodeSelect({ node: { data: fileB() } });
+
+      b.resolve({ content: 'B body', type: 'text' });
+      await second;
+      // A loses the race and resolves into a pane that has moved on.
+      a.resolve({ content: 'A body', type: 'text' });
+      await first;
+
+      expect(component.fileContent()).toBe('B body');
+      expect(component.selectedFile()!.path).toBe('docs/b.txt');
+    });
+
+    it('scenario 66 — a stale binary result flips neither the renderer flag nor the body', async () => {
+      const a = deferred<FileContent>();
+      const b = deferred<FileContent>();
+      workspaceServiceSpy.getFileContent.and.returnValues(a.promise, b.promise);
+
+      const png = fileNode({
+        name: 'img.png',
+        path: 'docs/img.png',
+        type: 'file',
+        size: 99,
+        extension: '.png',
+      });
+      const first = component.onNodeSelect({ node: { data: png } });
+      const second = component.onNodeSelect({ node: { data: fileB() } });
+
+      b.resolve({ content: 'B body', type: 'text' });
+      await second;
+      a.resolve({
+        content: null,
+        type: 'binary',
+        message: 'Binary file cannot be displayed',
+      });
+      await first;
+
+      // The binary placeholder never reaches the pane.
+      expect(component.isBinaryFile()).toBe(false);
+      expect(component.fileContent()).toBe('B body');
+    });
+
+    it('scenario 67 — a stale .md result does not switch the renderer under an open .txt file', async () => {
+      const a = deferred<FileContent>();
+      const b = deferred<FileContent>();
+      workspaceServiceSpy.getFileContent.and.returnValues(a.promise, b.promise);
+
+      const md = fileNode({
+        name: 'a.md',
+        path: 'docs/a.md',
+        type: 'file',
+        size: 10,
+        extension: '.md',
+      });
+      const first = component.onNodeSelect({ node: { data: md } });
+      const second = component.onNodeSelect({ node: { data: fileB() } });
+
+      b.resolve({ content: 'B body', type: 'text' });
+      await second;
+      a.resolve({ content: '# Title', type: 'text' });
+      await first;
+
+      // Guards the half-finished fix: an implementation that guards the body
+      // write but leaves the flag writes outside the guard passes scenario 65
+      // and fails here.
+      expect(component.isMarkdownFile()).toBe(false);
+      expect(component.fileContent()).toBe('B body');
+    });
+
+    it('scenario 68 — markdown-ness comes from the requested path, not from FileNode.extension', async () => {
+      // `extension` deliberately absent: the flag must not depend on a listing
+      // field the backend may omit, nor on what `selectedFile` holds when the
+      // response lands.
+      component.selectedFile.set(
+        fileNode({ name: 'a.md', path: 'docs/a.md', type: 'file', size: 10 })
+      );
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: '# Title',
+        type: 'text',
+      });
+
+      await component.loadFileContent('docs/a.md');
+
+      expect(component.isMarkdownFile()).toBe(true);
+      expect(component.fileContent()).toBe('# Title');
+
+      // Case-insensitive, like the extension comparison it replaces.
+      component.selectedFile.set(
+        fileNode({ name: 'B.MD', path: 'docs/B.MD', type: 'file', size: 4 })
+      );
+      await component.loadFileContent('docs/B.MD');
+
+      expect(component.isMarkdownFile()).toBe(true);
+    });
+
+    it('scenario 69 — a superseded metadata refresh does not write a stale FileNode into selectedFile', async () => {
+      component.selectedFile.set(fileA());
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: 'A body',
+        type: 'text',
+      });
+      const listing = deferred<FileNode[]>();
+      workspaceServiceSpy.getWorkspaceTree.and.returnValue(listing.promise);
+
+      const cycle = component.refreshSelectedFile();
+      // The body half has settled; the directory listing is still in flight.
+      await flushMicrotasks();
+      component.selectedFile.set(fileB());
+
+      listing.resolve([
+        fileNode({
+          name: 'a.txt',
+          path: 'docs/a.txt',
+          type: 'file',
+          size: 2048,
+          extension: '.txt',
+        }),
+      ]);
+      await cycle;
+
+      // File A's name and size tag must not land above file B's body.
+      expect(component.selectedFile()!.path).toBe('docs/b.txt');
+      expect(component.selectedFile()!.size).toBe(20);
+    });
+
+    it('scenario 70 — with no file selected a resolved read is applied to nothing', async () => {
+      component.selectedFile.set(null);
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: 'orphan body',
+        type: 'text',
+      });
+
+      // The stated semantics: no selection means no pane to write into. Both
+      // production entry points establish or require `selectedFile` first, so
+      // this state is reachable only by driving the loader directly.
+      await expectAsync(component.loadFileContent('docs/x.txt')).toBeResolved();
+
+      expect(component.fileContent()).toBeNull();
+      expect(component.isBinaryFile()).toBe(false);
+      expect(component.isMarkdownFile()).toBe(false);
+      expect(component.loadingContent()).toBe(false);
+    });
+
+    it('scenario 71 — a superseded read that FAILS does not banner over the file now on screen', async () => {
+      const a = deferred<FileContent>();
+      const b = deferred<FileContent>();
+      workspaceServiceSpy.getFileContent.and.returnValues(a.promise, b.promise);
+
+      const first = component.onNodeSelect({ node: { data: fileA() } });
+      const second = component.onNodeSelect({ node: { data: fileB() } });
+
+      b.resolve({ content: 'B body', type: 'text' });
+      await second;
+      a.reject(new Error('A read failed'));
+      await first;
+
+      expect(component.errorMessage()).toBeNull();
+      expect(component.fileContent()).toBe('B body');
+    });
+
+    it('scenario 72 — a superseded read does not lower the spinner a newer read is still holding', async () => {
+      const a = deferred<FileContent>();
+      const b = deferred<FileContent>();
+      workspaceServiceSpy.getFileContent.and.returnValues(a.promise, b.promise);
+
+      const first = component.onNodeSelect({ node: { data: fileA() } });
+      const second = component.onNodeSelect({ node: { data: fileB() } });
+
+      a.resolve({ content: 'A body', type: 'text' });
+      await first;
+
+      // B is still fetching, so the pane is blank and the spinner belongs to it.
+      expect(component.loadingContent()).toBe(true);
+      expect(component.fileContent()).toBeNull();
+
+      b.resolve({ content: 'B body', type: 'text' });
+      await second;
+
+      expect(component.loadingContent()).toBe(false);
+      expect(component.fileContent()).toBe('B body');
+    });
+
+    it('scenario 73 — selecting a directory mid-read leaves the folder pane alone and still releases the spinner', async () => {
+      const a = deferred<FileContent>();
+      workspaceServiceSpy.getFileContent.and.returnValue(a.promise);
+
+      const first = component.onNodeSelect({ node: { data: fileA() } });
+      await component.onNodeSelect({
+        node: {
+          data: fileNode({ name: 'docs', path: 'docs', type: 'directory' }),
+        },
+      });
+
+      a.resolve({ content: 'A body', type: 'text' });
+      await first;
+
+      expect(component.selectedFile()).toBeNull();
+      // The late body does not repaint a pane that is showing a folder...
+      expect(component.fileContent()).toBeNull();
+      // ...and the spinner still comes down: the directory branch issues no
+      // read, so the read in flight is still the one that owns it. A release
+      // gated on the path would strand it raised for ever here.
+      expect(component.loadingContent()).toBe(false);
     });
   });
 
@@ -1372,6 +1685,10 @@ describe('WorkspaceExplorerComponent — NFR3 OnPush regression gate', () => {
       providers: [
         { provide: WorkspaceService, useValue: workspaceServiceSpy },
         { provide: ContextService, useValue: contextServiceStub },
+        {
+          provide: WorkspaceInvalidationService,
+          useValue: new FakeWorkspaceInvalidationService(),
+        },
       ],
     })
       .overrideComponent(WorkspaceExplorerComponent, {
@@ -1635,6 +1952,10 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
       providers: [
         { provide: WorkspaceService, useValue: workspaceServiceSpy },
         { provide: ContextService, useValue: contextServiceStub },
+        {
+          provide: WorkspaceInvalidationService,
+          useValue: new FakeWorkspaceInvalidationService(),
+        },
       ],
     })
       .overrideComponent(WorkspaceExplorerComponent, {
@@ -1897,6 +2218,10 @@ describe('WorkspaceExplorerComponent — per-file refresh control (Epic 38)', ()
               .and.callFake(async () => makeTeam()),
           },
         },
+        {
+          provide: WorkspaceInvalidationService,
+          useValue: new FakeWorkspaceInvalidationService(),
+        },
       ],
     })
       .overrideComponent(WorkspaceExplorerComponent, {
@@ -2013,5 +2338,988 @@ describe('WorkspaceExplorerComponent — per-file refresh control (Epic 38)', ()
     component.loadingContent.set(false);
     fixture.detectChanges();
     expect(refreshDisabled()).toBe(false);
+  });
+});
+
+// --------------------------------------------------------------------
+// Workspace invalidation routing (Epic 39, FR9/FR10/NFR4).
+//
+// The panel used to ignore the message log it was already receiving: a tool
+// that wrote a file left the tree and the pane stale until the user pressed
+// Refresh. These scenarios cover the subscription, the workspace filter, the
+// coalescing and the routing — never the fold, which is
+// `workspace-invalidation.selector.spec.ts`'s subject. The seam is the stub's
+// Subject: instructions are pushed into it directly, so nothing here depends on
+// frames, batching or the projection's internals.
+//
+// The widened override is reused (`ButtonModule` + `ToolbarModule`) because two
+// scenarios go through the rendered view: the deletion notice and the manual
+// controls. `p-tree`, `p-tag`, the spinner and the upload modal stay stubbed by
+// CUSTOM_ELEMENTS_SCHEMA, and the open file is deliberately a `.txt` — a `.md`
+// would render through `<markdown>`, which has no dash and is therefore not
+// resolvable under this override (the constraint scenario 27 documents).
+// --------------------------------------------------------------------
+
+describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39)', () => {
+  const TEAM_ID = 'proc';
+  const OPEN_PATH = 'docs/a.txt';
+  const FILE_REFRESH = 'p-button[pTooltip="Refresh this file"]';
+  const WORKSPACE_REFRESH = 'p-button[pTooltip="Refresh workspace"]';
+  const SIZE_TAG = 'p-tag[severity="secondary"]';
+
+  let component: WorkspaceExplorerComponent;
+  let fixture: ComponentFixture<WorkspaceExplorerComponent>;
+  let workspaceServiceSpy: jasmine.SpyObj<WorkspaceService>;
+  let invalidations: FakeWorkspaceInvalidationService;
+
+  function openFile(size = 10): FileNode {
+    return fileNode({
+      name: 'a.txt',
+      path: OPEN_PATH,
+      type: 'file',
+      size,
+      extension: '.txt',
+    });
+  }
+
+  /** Root wrapper → `docs` (materialized) → `a.txt`. */
+  function materializedTree(): TreeNode {
+    const aTxt: TreeNode = { label: 'a.txt', data: openFile(10), leaf: true };
+    const docs: TreeNode = {
+      label: 'docs',
+      data: fileNode({ name: 'docs', path: 'docs', type: 'directory' }),
+      leaf: false,
+      children: [aTxt],
+    };
+    return {
+      label: 'Root Folder',
+      data: fileNode({ name: 'Root Folder', path: '', type: 'directory' }),
+      children: [docs],
+      expanded: true,
+    };
+  }
+
+  beforeEach(async () => {
+    workspaceServiceSpy = jasmine.createSpyObj('WorkspaceService', [
+      'getWorkspaceTree',
+      'getFileContent',
+      'getDownloadUrl',
+      'uploadFiles',
+    ]);
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: 'body',
+      type: 'text',
+    });
+    invalidations = new FakeWorkspaceInvalidationService();
+
+    await TestBed.configureTestingModule({
+      imports: [WorkspaceExplorerComponent, NoopAnimationsModule],
+      providers: [
+        { provide: WorkspaceService, useValue: workspaceServiceSpy },
+        {
+          provide: ContextService,
+          useValue: {
+            currentProcessId$: new BehaviorSubject<string>(TEAM_ID),
+            currentTeamRunning$: new BehaviorSubject<boolean>(true),
+            getCurrentTeam: jasmine
+              .createSpy('getCurrentTeam')
+              .and.callFake(async () => makeTeam()),
+          },
+        },
+        { provide: WorkspaceInvalidationService, useValue: invalidations },
+      ],
+    })
+      .overrideComponent(WorkspaceExplorerComponent, {
+        set: {
+          imports: [CommonModule, ButtonModule, ToolbarModule],
+          schemas: [CUSTOM_ELEMENTS_SCHEMA],
+        },
+      })
+      .compileComponents();
+
+    fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+    component = fixture.componentInstance;
+    await flushRootLoad(fixture);
+    workspaceServiceSpy.getWorkspaceTree.calls.reset();
+    workspaceServiceSpy.getFileContent.calls.reset();
+  });
+
+  /**
+   * Push instructions as ONE synchronous delta — which is exactly how the
+   * projection emits a burst — then let the coalescer's microtask flush and the
+   * fetches it issues settle.
+   */
+  async function deliver(...batch: WorkspaceInvalidation[]): Promise<void> {
+    for (const instruction of batch) {
+      invalidations.invalidations$.next(instruction);
+    }
+    await flushMicrotasks();
+    await flushMicrotasks();
+  }
+
+  /** Open a file in the pane through the real selection path, and settle it. */
+  async function openInPane(size = 10): Promise<void> {
+    await component.onNodeSelect({ node: { data: openFile(size) } });
+    fixture.detectChanges();
+    workspaceServiceSpy.getWorkspaceTree.calls.reset();
+    workspaceServiceSpy.getFileContent.calls.reset();
+  }
+
+  /** The `path` argument of every listing issued, in call order. */
+  function listedPaths(): string[] {
+    return workspaceServiceSpy.getWorkspaceTree.calls
+      .allArgs()
+      .map((args) => args[1] as string);
+  }
+
+  // --- addressing the right workspace (AC2, AC3) ---------------------
+
+  it('scenario 74 — an instruction for another workspace changes nothing (workspaceId SET)', async () => {
+    fixture.componentRef.setInput('workspaceId', 'ws-b');
+    await flushRootLoad(fixture);
+    workspaceServiceSpy.getWorkspaceTree.calls.reset();
+    workspaceServiceSpy.getFileContent.calls.reset();
+
+    await deliver(
+      invalidation({
+        workspaceId: 'ws-a',
+        directories: ['docs'],
+        files: ['docs/a.txt'],
+      }),
+    );
+
+    expect(workspaceServiceSpy.getWorkspaceTree).not.toHaveBeenCalled();
+    expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+    expect(component.deletedNotice()).toBeNull();
+  });
+
+  it('scenario 75 — with workspaceId UNSET only the team id addresses this explorer', async () => {
+    // The default tab passes `undefined` for the input, and the registry keys
+    // the default descriptor on the TEAM id. A naive
+    // `instruction.workspaceId === this.workspaceId()` is `'proc' === undefined`
+    // here and drops every instruction this explorer exists to act on.
+    await deliver(invalidation({ workspaceId: 'ws-a', directories: ['docs'] }));
+
+    expect(workspaceServiceSpy.getWorkspaceTree).not.toHaveBeenCalled();
+
+    await deliver(invalidation({ workspaceId: TEAM_ID, directories: ['docs'] }));
+
+    expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith(
+      'proc',
+      'docs',
+    );
+  });
+
+  it('scenario 76 — the addressed id is resolved per instruction, never captured at construction', async () => {
+    // `workspace-tabs` sets this input AFTER construction, as here. An
+    // implementation that read the signal once in the constructor saw
+    // `undefined` for this tab and would act on the TEAM id's instructions
+    // instead of its own — both halves of that are asserted.
+    fixture.componentRef.setInput('workspaceId', 'ws-b');
+    await flushRootLoad(fixture);
+    workspaceServiceSpy.getWorkspaceTree.calls.reset();
+
+    await deliver(invalidation({ workspaceId: 'ws-b', directories: ['docs'] }));
+
+    expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith(
+      'proc',
+      'docs',
+      'ws-b',
+    );
+
+    workspaceServiceSpy.getWorkspaceTree.calls.reset();
+    await deliver(invalidation({ workspaceId: TEAM_ID, directories: ['docs'] }));
+
+    expect(workspaceServiceSpy.getWorkspaceTree).not.toHaveBeenCalled();
+  });
+
+  // --- routing a directory invalidation (AC4, AC5) -------------------
+
+  it('scenario 77 — a directory instruction re-lists that directory only, and splices the result', async () => {
+    component.treeNodes.set([materializedTree()]);
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+
+    await deliver(invalidation({ directories: ['docs'] }));
+
+    // One listing, for `docs` — the root tree load was NOT re-run.
+    expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith(
+      'proc',
+      'docs',
+    );
+    expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+
+    // ...and it went in through the existing splice.
+    const docsNode = component.treeNodes()[0].children![0];
+    expect(docsNode.children!.length).toBe(1);
+    expect((docsNode.children![0].data as FileNode).size).toBe(2048);
+  });
+
+  // --- routing the open file: the refresh path, not the selection path -----
+
+  it('scenario 78 — the open file is re-read through the REFRESH path: the pane is never blanked', async () => {
+    await openInPane();
+    expect(component.fileContent()).toBe('body');
+
+    const body = deferred<FileContent>();
+    workspaceServiceSpy.getFileContent.and.returnValue(body.promise);
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+
+    await deliver(
+      invalidation({ directories: ['docs'], files: [OPEN_PATH] }),
+    );
+
+    // IN FLIGHT — the assertion that matters. An implementation routing through
+    // the selection path (`loadFileContent(path)` without the refresh flag) has
+    // already nulled the body and raised the spinner by this point, and would
+    // still satisfy an outcome-only assertion once the read resolves.
+    expect(workspaceServiceSpy.getFileContent.calls.count()).toBe(1);
+    expect(component.fileContent()).toBe('body');
+    expect(component.loadingContent()).toBe(false);
+
+    body.resolve({ content: 'new body', type: 'text' });
+    await flushMicrotasks();
+
+    expect(component.fileContent()).toBe('new body');
+    expect(component.loadingContent()).toBe(false);
+  });
+
+  it('scenario 79 — the same action refreshes the metadata, and lists the parent directory exactly ONCE', async () => {
+    await openInPane(10);
+    fixture.detectChanges();
+    const sizeTag = (): { value?: string } =>
+      fixture.nativeElement.querySelector(SIZE_TAG) as unknown as {
+        value?: string;
+      };
+    expect(sizeTag().value).toBe('10 B');
+
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: 'new body',
+      type: 'text',
+    });
+
+    // A `workspace_edit` on the open file names BOTH its directory and itself.
+    // `refreshSelectedFile()` already re-lists the parent, so routing both
+    // naively issues two listings of `docs`.
+    await deliver(
+      invalidation({ directories: ['docs'], files: [OPEN_PATH] }),
+    );
+    fixture.detectChanges();
+
+    expect(listedPaths()).toEqual(['docs']);
+    expect(component.selectedFile()!.size).toBe(2048);
+    expect(sizeTag().value).toBe('2 KB');
+  });
+
+  it('scenario 80 — a change to a file that is NOT the open one issues no body read', async () => {
+    await openInPane();
+
+    await deliver(
+      invalidation({ directories: ['docs'], files: ['docs/z.txt'] }),
+    );
+
+    // Directory granularity is the contract: the tree entry is how a non-open
+    // file's change becomes visible.
+    expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+    expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith(
+      'proc',
+      'docs',
+    );
+  });
+
+  // --- a deleted open file (AC10-AC14) -------------------------------
+
+  it('scenario 81 — a deleted open file clears the pane and the selection, and is NEVER re-read', async () => {
+    await openInPane();
+    // Prove both renderer flags are cleared rather than merely already false.
+    component.isBinaryFile.set(true);
+    component.isMarkdownFile.set(true);
+
+    await deliver(
+      invalidation({ directories: ['docs'], deletions: [OPEN_PATH] }),
+    );
+    fixture.detectChanges();
+
+    // Re-reading a deleted path 404s — which is why `deletions` is its own field.
+    expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+    expect(component.selectedFile()).toBeNull();
+    expect(component.fileContent()).toBeNull();
+    expect(component.isBinaryFile()).toBe(false);
+    expect(component.isMarkdownFile()).toBe(false);
+    expect(component.deletedNotice()).toBe(OPEN_PATH);
+
+    // The parent directory is re-listed in the same batch, so the tree entry
+    // disappears with the pane.
+    expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith(
+      'proc',
+      'docs',
+    );
+
+    // ...and the notice reaches the preview pane, naming the file.
+    const notice = fixture.nativeElement.querySelector(
+      '.deleted-notice',
+    ) as HTMLElement | null;
+    expect(notice).withContext('deletion notice block').not.toBeNull();
+    expect(notice!.textContent).toContain(OPEN_PATH);
+  });
+
+  it('scenario 82 — the deletion notice leaves errorMessage null and the navigator tree rendered', async () => {
+    component.treeNodes.set([materializedTree()]);
+    await openInPane();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('p-tree'))
+      .withContext('navigator tree before the deletion')
+      .not.toBeNull();
+
+    await deliver(
+      invalidation({ directories: ['docs'], deletions: [OPEN_PATH] }),
+    );
+    fixture.detectChanges();
+
+    // `errorMessage` gates the tree
+    // (`*ngIf="!loading() && !errorMessage() && treeNodes().length > 0"`), so
+    // reporting the deletion there would blank the navigator the user needs in
+    // order to select something else. Asserted through the rendered view, not
+    // only through the signal.
+    expect(component.errorMessage()).toBeNull();
+    expect(fixture.nativeElement.querySelector('p-tree'))
+      .withContext('navigator tree after the deletion')
+      .not.toBeNull();
+  });
+
+  it('scenario 83 — the next selection clears the notice, in both branches', async () => {
+    component.deletedNotice.set(OPEN_PATH);
+    await component.onNodeSelect({
+      node: {
+        data: fileNode({
+          name: 'b.txt',
+          path: 'docs/b.txt',
+          type: 'file',
+          extension: '.txt',
+        }),
+      },
+    });
+    expect(component.deletedNotice()).toBeNull();
+
+    component.deletedNotice.set(OPEN_PATH);
+    await component.onNodeSelect({
+      node: {
+        data: fileNode({ name: 'docs', path: 'docs', type: 'directory' }),
+      },
+    });
+    expect(component.deletedNotice()).toBeNull();
+  });
+
+  it('scenario 84 — within one batch a deletion of the open file beats a change to it', async () => {
+    await openInPane();
+
+    // The residual this ordering accepts: a delete-then-recreate inside one
+    // 16 ms batch settles as "deleted", and the next batch or either Refresh
+    // control recovers it.
+    await deliver(
+      invalidation({ directories: ['docs'], files: [OPEN_PATH] }),
+      invalidation({ directories: ['docs'], deletions: [OPEN_PATH] }),
+    );
+
+    expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+    expect(component.selectedFile()).toBeNull();
+    expect(component.deletedNotice()).toBe(OPEN_PATH);
+  });
+
+  // --- whole-tree invalidation (AC15) --------------------------------
+
+  it('scenario 85 — wholeTree re-runs the root load and re-reads the open file, reconciling no named target', async () => {
+    await openInPane();
+
+    // `directories` is empty by construction on a whole-tree instruction; it is
+    // populated here on purpose, to pin that a whole-tree refresh is never
+    // reconciled against named targets.
+    await deliver(
+      invalidation({ wholeTree: true, directories: ['other'], files: ['other/x'] }),
+    );
+
+    const listed = listedPaths();
+    expect(listed).withContext('root tree reload').toContain('');
+    expect(listed).withContext("the open file's metadata half").toContain('docs');
+    expect(listed).not.toContain('other');
+    expect(workspaceServiceSpy.getFileContent).toHaveBeenCalledOnceWith(
+      'proc',
+      OPEN_PATH,
+      undefined,
+    );
+  });
+
+  // --- bounded request volume (AC16, AC17, AC18) ---------------------
+
+  it('scenario 86 — ten mutations into one directory produce exactly ONE listing', async () => {
+    // The projection emits one instruction per completed call and pushes the
+    // whole delta out synchronously, so batching hands this to nobody: routing
+    // each instruction as it arrives issues ten listings of `docs`.
+    const burst = Array.from({ length: 10 }, (_, i) =>
+      invalidation({ directories: ['docs'], files: [`docs/f${i}.txt`] }),
+    );
+
+    await deliver(...burst);
+
+    expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith(
+      'proc',
+      'docs',
+    );
+  });
+
+  it('scenario 87 — ten mutations across three directories produce THREE listings, not one and not ten', async () => {
+    const dirs = ['docs', 'src', 'assets'];
+    const burst = Array.from({ length: 10 }, (_, i) =>
+      invalidation({
+        directories: [dirs[i % 3]],
+        files: [`${dirs[i % 3]}/f${i}.txt`],
+      }),
+    );
+
+    await deliver(...burst);
+
+    // Coalescing unions the targets; it does not collapse them.
+    expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(3);
+    expect(listedPaths().slice().sort()).toEqual(['assets', 'docs', 'src']);
+  });
+
+  it('scenario 88 — the batch flushes on a MICROTASK, and no interval is created', async () => {
+    const intervalSpy = spyOn(window, 'setInterval').and.callThrough();
+
+    invalidations.invalidations$.next(invalidation({ directories: ['docs'] }));
+    // One microtask turn — not a timer tick. A `setTimeout` / `bufferTime`
+    // debounce has not fired by this point.
+    await Promise.resolve();
+
+    expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith(
+      'proc',
+      'docs',
+    );
+    expect(intervalSpy).not.toHaveBeenCalled();
+  });
+
+  // --- the manual controls stay (AC19) -------------------------------
+
+  it('scenario 89 — both manual Refresh controls are still rendered and still work', async () => {
+    // `SandboxTool.exec_command` mutates the workspace with only `cmd`/`cwd` in
+    // its arguments and is permanently invisible to this mechanism, so these two
+    // controls are a sandbox-using team's only coverage. This is the guard
+    // against a later tidy-up that deletes them as now-redundant.
+    await openInPane(10);
+    fixture.detectChanges();
+
+    const workspaceRefresh = fixture.debugElement.query(
+      By.css(WORKSPACE_REFRESH),
+    );
+    expect(workspaceRefresh).withContext('navigator refresh').not.toBeNull();
+    expect(
+      (workspaceRefresh.nativeElement as HTMLElement).getAttribute('icon'),
+    ).toBe('pi pi-refresh');
+
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+    workspaceRefresh.triggerEventHandler('onClick', {});
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    // Unchanged behaviour: root tree reload AND the open-file re-read.
+    expect(listedPaths()).toContain('');
+    expect(listedPaths()).toContain('docs');
+    expect(workspaceServiceSpy.getFileContent).toHaveBeenCalledOnceWith(
+      'proc',
+      OPEN_PATH,
+      undefined,
+    );
+
+    workspaceServiceSpy.getWorkspaceTree.calls.reset();
+    workspaceServiceSpy.getFileContent.calls.reset();
+    fixture.detectChanges();
+
+    const fileRefresh = fixture.debugElement.query(By.css(FILE_REFRESH));
+    expect(fileRefresh).withContext('per-file refresh').not.toBeNull();
+    expect((fileRefresh.nativeElement as HTMLElement).getAttribute('label')).toBe(
+      'Refresh',
+    );
+    expect(
+      (fileRefresh.nativeElement as HTMLElement).querySelector('button')!
+        .disabled,
+    ).toBe(false);
+
+    fileRefresh.triggerEventHandler('onClick', {});
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(workspaceServiceSpy.getFileContent).toHaveBeenCalledOnceWith(
+      'proc',
+      OPEN_PATH,
+      undefined,
+    );
+    expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith(
+      'proc',
+      'docs',
+    );
+  });
+
+  // --- lifecycle (AC21, AC22) ----------------------------------------
+
+  it('scenario 90 — the subscription is torn down on destroy', async () => {
+    await openInPane();
+    expect(invalidations.invalidations$.observed).toBe(true);
+
+    fixture.destroy();
+
+    expect(invalidations.invalidations$.observed).toBe(false);
+    expect(invalidations.invalidations$.observers.length).toBe(0);
+
+    await deliver(
+      invalidation({ directories: ['docs'], deletions: [OPEN_PATH] }),
+    );
+
+    expect(workspaceServiceSpy.getWorkspaceTree).not.toHaveBeenCalled();
+    expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+    expect(component.deletedNotice()).toBeNull();
+    expect(component.selectedFile()).not.toBeNull();
+  });
+
+  it('scenario 91 — a second explorer takes its OWN subscription to the shared stream', async () => {
+    // Two workspace tabs mean two subscriptions to one non-`shareReplay`ed
+    // instance: each baselines independently and neither replays the other's
+    // history.
+    const second = TestBed.createComponent(WorkspaceExplorerComponent);
+    await flushRootLoad(second);
+    workspaceServiceSpy.getWorkspaceTree.calls.reset();
+
+    expect(invalidations.invalidations$.observers.length).toBe(2);
+
+    await deliver(invalidation({ directories: ['docs'] }));
+
+    expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(2);
+    expect(listedPaths()).toEqual(['docs', 'docs']);
+
+    second.destroy();
+  });
+
+  // --- the refresh the guard declines (review 39-4) -------------------
+
+  it('scenario 92 — a declined per-file refresh still leaves the parent directory listed', async () => {
+    // The per-file refresh declines while a read of the same file is already in
+    // flight (ADR-030 §D3). The parent directory is dropped from the directory
+    // pass ONLY because that refresh re-lists it — so dropping it for a refresh
+    // that never runs issues nothing at all for a batch that named both, and
+    // the tree entry stays stale with nothing scheduled to correct it. This
+    // window is user-invisible before this story and routine after it, because
+    // reads now fire from the event stream with no gesture behind them.
+    const body = deferred<FileContent>();
+    workspaceServiceSpy.getFileContent.and.returnValue(body.promise);
+    void component.onNodeSelect({ node: { data: openFile(10) } });
+    expect(component.loadingContent())
+      .withContext('selection read in flight')
+      .toBe(true);
+    workspaceServiceSpy.getWorkspaceTree.calls.reset();
+    workspaceServiceSpy.getFileContent.calls.reset();
+
+    await deliver(invalidation({ directories: ['docs'], files: [OPEN_PATH] }));
+
+    expect(workspaceServiceSpy.getFileContent)
+      .withContext('no second body read races the one in flight')
+      .not.toHaveBeenCalled();
+    expect(listedPaths()).toEqual(['docs']);
+
+    body.resolve({ content: 'body', type: 'text' });
+    await flushMicrotasks();
+  });
+
+  it('scenario 93 — a background listing that FAILS does not banner, and leaves the tree rendered', async () => {
+    component.treeNodes.set([materializedTree()]);
+    fixture.detectChanges();
+    workspaceServiceSpy.getWorkspaceTree.and.rejectWith(new Error('boom'));
+
+    await deliver(invalidation({ directories: ['docs'] }));
+    fixture.detectChanges();
+
+    // No user gesture is behind this fetch, and `errorMessage` gates the
+    // navigator's tree — bannering here would blank the file tree over a
+    // background listing, the same panel-wide outage the deletion path refuses.
+    // The manual Refresh controls remain the loud path.
+    expect(component.errorMessage()).toBeNull();
+    expect(fixture.nativeElement.querySelector('p-tree'))
+      .withContext('navigator tree after a failed background listing')
+      .not.toBeNull();
+  });
+});
+
+// --------------------------------------------------------------------
+// Gesture-less reads log instead of bannering (Epic 40, FR1-FR3).
+//
+// `errorMessage` gates the navigator's `p-tree` AND its empty state, so ANY
+// write to it removes the file tree. That was tolerable while every read
+// followed a user gesture. Epic 39 made reads fire from the event stream, and a
+// background 404 or transient 500 now blanks the whole navigator with nothing
+// behind it — and `selectedFile` is never cleared, so `Refresh workspace`
+// re-enters the identical cycle and the panel stays broken until the user
+// switches tab or team.
+//
+// The rule is one rule on every route the event stream can reach: the body
+// read, the directory listing and the whole-tree root load. Both halves of it
+// matter — a gesture-less read must not WRITE the banner, and must not CLEAR it
+// either, because the tree is rendered from `treeNodes` regardless of whether
+// that tree was ever re-validated.
+//
+// The three GESTURE paths are pinned just as hard: the cheap version of this
+// fix (never write `errorMessage` from `loadFileContent` at all) satisfies
+// every background scenario below while deleting the error reporting a user who
+// selects an unreadable file depends on.
+// --------------------------------------------------------------------
+
+describe('WorkspaceExplorerComponent — gesture-less reads log instead of bannering (Epic 40)', () => {
+  const TEAM_ID = 'proc';
+  const OPEN_PATH = 'docs/a.txt';
+  const FILE_REFRESH = 'p-button[pTooltip="Refresh this file"]';
+  const WORKSPACE_REFRESH = 'p-button[pTooltip="Refresh workspace"]';
+
+  let component: WorkspaceExplorerComponent;
+  let fixture: ComponentFixture<WorkspaceExplorerComponent>;
+  let workspaceServiceSpy: jasmine.SpyObj<WorkspaceService>;
+  let invalidations: FakeWorkspaceInvalidationService;
+
+  function openFile(size = 10): FileNode {
+    return fileNode({
+      name: 'a.txt',
+      path: OPEN_PATH,
+      type: 'file',
+      size,
+      extension: '.txt',
+    });
+  }
+
+  /** Root wrapper → `docs` (materialized) → `a.txt`. */
+  function materializedTree(): TreeNode {
+    const aTxt: TreeNode = { label: 'a.txt', data: openFile(10), leaf: true };
+    const docs: TreeNode = {
+      label: 'docs',
+      data: fileNode({ name: 'docs', path: 'docs', type: 'directory' }),
+      leaf: false,
+      children: [aTxt],
+    };
+    return {
+      label: 'Root Folder',
+      data: fileNode({ name: 'Root Folder', path: '', type: 'directory' }),
+      children: [docs],
+      expanded: true,
+    };
+  }
+
+  beforeEach(async () => {
+    workspaceServiceSpy = jasmine.createSpyObj('WorkspaceService', [
+      'getWorkspaceTree',
+      'getFileContent',
+      'getDownloadUrl',
+      'uploadFiles',
+    ]);
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: 'body',
+      type: 'text',
+    });
+    invalidations = new FakeWorkspaceInvalidationService();
+
+    await TestBed.configureTestingModule({
+      imports: [WorkspaceExplorerComponent, NoopAnimationsModule],
+      providers: [
+        { provide: WorkspaceService, useValue: workspaceServiceSpy },
+        {
+          provide: ContextService,
+          useValue: {
+            currentProcessId$: new BehaviorSubject<string>(TEAM_ID),
+            currentTeamRunning$: new BehaviorSubject<boolean>(true),
+            getCurrentTeam: jasmine
+              .createSpy('getCurrentTeam')
+              .and.callFake(async () => makeTeam()),
+          },
+        },
+        { provide: WorkspaceInvalidationService, useValue: invalidations },
+      ],
+    })
+      .overrideComponent(WorkspaceExplorerComponent, {
+        set: {
+          imports: [CommonModule, ButtonModule, ToolbarModule],
+          schemas: [CUSTOM_ELEMENTS_SCHEMA],
+        },
+      })
+      .compileComponents();
+
+    fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+    component = fixture.componentInstance;
+    await flushRootLoad(fixture);
+    workspaceServiceSpy.getWorkspaceTree.calls.reset();
+    workspaceServiceSpy.getFileContent.calls.reset();
+  });
+
+  /** Push instructions as ONE synchronous delta, then settle the fetches. */
+  async function deliver(...batch: WorkspaceInvalidation[]): Promise<void> {
+    for (const instruction of batch) {
+      invalidations.invalidations$.next(instruction);
+    }
+    await flushMicrotasks();
+    await flushMicrotasks();
+  }
+
+  /** Open a file in the pane through the real selection path, and settle it. */
+  async function openInPane(size = 10): Promise<void> {
+    await component.onNodeSelect({ node: { data: openFile(size) } });
+    fixture.detectChanges();
+    workspaceServiceSpy.getWorkspaceTree.calls.reset();
+    workspaceServiceSpy.getFileContent.calls.reset();
+  }
+
+  /** Settle a control activation: two macrotask turns drain both halves. */
+  async function settle(): Promise<void> {
+    await flushMicrotasks();
+    await flushMicrotasks();
+  }
+
+  function tree(): HTMLElement | null {
+    return fixture.nativeElement.querySelector('p-tree') as HTMLElement | null;
+  }
+
+  // --- FR1: a gesture-less read logs, on every route -----------------
+
+  it('scenario 94 — a background BODY re-read that fails logs, and blanks nothing', async () => {
+    component.treeNodes.set([materializedTree()]);
+    await openInPane();
+    fixture.detectChanges();
+    expect(component.fileContent()).toBe('body');
+    expect(tree()).withContext('navigator tree before the failure').not.toBeNull();
+
+    const consoleError = spyOn(console, 'error');
+    workspaceServiceSpy.getFileContent.and.rejectWith(new Error('boom'));
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+
+    await deliver(invalidation({ directories: ['docs'], files: [OPEN_PATH] }));
+    fixture.detectChanges();
+
+    // The banner gates the tree, so writing it here is a panel-wide outage over
+    // a read nobody asked for. Intermediate state is asserted too: a spec that
+    // only checked `errorMessage()` would pass on a component that blanked the
+    // pane and raised a spinner instead.
+    expect(component.errorMessage()).toBeNull();
+    expect(tree()).withContext('navigator tree after the failure').not.toBeNull();
+    expect(component.fileContent())
+      .withContext('the pane keeps its last good bytes')
+      .toBe('body');
+    expect(component.loadingContent()).toBe(false);
+    expect(consoleError).toHaveBeenCalled();
+  });
+
+  it('scenario 95 — a background WHOLE-TREE root load that fails logs, and leaves the tree rendered', async () => {
+    component.treeNodes.set([materializedTree()]);
+    fixture.detectChanges();
+
+    const consoleError = spyOn(console, 'error');
+    workspaceServiceSpy.getWorkspaceTree.and.rejectWith(new Error('boom'));
+
+    await deliver(invalidation({ wholeTree: true }));
+    fixture.detectChanges();
+
+    // Fixing the body read and leaving the root load bannering repeats the
+    // original mistake one level up: this route reaches the SAME signal.
+    expect(component.errorMessage()).toBeNull();
+    expect(component.treeNodes().length)
+      .withContext('the previously loaded tree survives')
+      .toBe(1);
+    expect(tree()).withContext('navigator tree after a failed background root load').not.toBeNull();
+    expect(consoleError).toHaveBeenCalled();
+  });
+
+  it('scenario 96 — a background METADATA listing that fails logs, and does not banner', async () => {
+    await openInPane();
+
+    const consoleError = spyOn(console, 'error');
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: 'new body',
+      type: 'text',
+    });
+    workspaceServiceSpy.getWorkspaceTree.and.rejectWith(new Error('listing boom'));
+
+    // No `directories` — this isolates the listing the per-file refresh issues
+    // itself, which is a different writer from `routeInvalidation`'s own
+    // directory pass (the one that already complied).
+    await deliver(invalidation({ files: [OPEN_PATH] }));
+    fixture.detectChanges();
+
+    expect(component.errorMessage()).toBeNull();
+    expect(component.fileContent())
+      .withContext('the body half still landed')
+      .toBe('new body');
+    expect(consoleError).toHaveBeenCalled();
+  });
+
+  // --- FR2: a gesture-less read does not clear the banner either ------
+
+  it('scenario 97 — a background body re-read does not clear a genuine root-load banner', async () => {
+    component.treeNodes.set([materializedTree()]);
+    await openInPane();
+    component.errorMessage.set('Failed to load workspace');
+    fixture.detectChanges();
+    expect(tree()).withContext('navigator hidden by the genuine banner').toBeNull();
+
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: 'new body',
+      type: 'text',
+    });
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+
+    await deliver(invalidation({ files: [OPEN_PATH] }));
+    fixture.detectChanges();
+
+    // The entry-side clear is a tree-scoped write in the other direction:
+    // erasing it makes the navigator reappear rendering a stale tree with the
+    // failure silently gone.
+    expect(component.errorMessage()).toBe('Failed to load workspace');
+    expect(tree()).withContext('navigator still hidden').toBeNull();
+  });
+
+  it('scenario 98 — a background root load does not clear the banner on entry either', async () => {
+    component.treeNodes.set([materializedTree()]);
+    component.errorMessage.set('Failed to load workspace');
+
+    const pending = deferred<FileNode[]>();
+    workspaceServiceSpy.getWorkspaceTree.and.returnValue(pending.promise);
+
+    invalidations.invalidations$.next(invalidation({ wholeTree: true }));
+    await flushMicrotasks();
+
+    // IN FLIGHT — the assertion that matters. The entry clear runs at
+    // subscribe time, so an unconditional `errorMessage.set(null)` has already
+    // erased the banner by this point and an outcome-only assertion after the
+    // load settles would never see it.
+    expect(component.errorMessage()).toBe('Failed to load workspace');
+
+    pending.resolve([]);
+    await settle();
+
+    // ...and no "clear on success" rule is invented here either: neither the
+    // epic nor the ADR states one.
+    expect(component.errorMessage()).toBe('Failed to load workspace');
+  });
+
+  // --- the stuck cycle: an outage rather than a glitch ----------------
+
+  it('scenario 99 — after a background failure the panel is usable and Refresh workspace repaints it', async () => {
+    component.treeNodes.set([materializedTree()]);
+    await openInPane();
+    fixture.detectChanges();
+
+    spyOn(console, 'error');
+    workspaceServiceSpy.getFileContent.and.rejectWith(new Error('boom'));
+    workspaceServiceSpy.getWorkspaceTree.and.rejectWith(new Error('boom'));
+
+    await deliver(invalidation({ directories: ['docs'], files: [OPEN_PATH] }));
+    fixture.detectChanges();
+
+    expect(component.errorMessage()).toBeNull();
+    expect(tree()).withContext('navigator survives the background failure').not.toBeNull();
+
+    // The escape route the outage removed: with the banner up the tree is gone,
+    // and `selectedFile` is never cleared, so this control re-enters the
+    // identical failing cycle and the panel stays broken from the inside.
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(4096)]);
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: 'recovered',
+      type: 'text',
+    });
+
+    const workspaceRefresh = fixture.debugElement.query(By.css(WORKSPACE_REFRESH));
+    expect(workspaceRefresh).withContext('navigator refresh').not.toBeNull();
+    workspaceRefresh.triggerEventHandler('onClick', {});
+    await settle();
+    fixture.detectChanges();
+
+    expect(component.errorMessage()).toBeNull();
+    expect(component.fileContent()).toBe('recovered');
+    expect(component.treeNodes().length).toBe(1);
+    expect(tree()).withContext('navigator repainted by the manual refresh').not.toBeNull();
+  });
+
+  // --- FR3: a user gesture still reports its failure ------------------
+
+  it('scenario 100 — a file the USER selects that fails to read still banners', async () => {
+    spyOn(console, 'error');
+    workspaceServiceSpy.getFileContent.and.rejectWith(new Error('403 Forbidden'));
+
+    await component.onNodeSelect({ node: { data: openFile(10) } });
+    fixture.detectChanges();
+
+    // Selecting an unreadable file is the case the cheap fix silently deletes.
+    expect(component.errorMessage()).toBe('403 Forbidden');
+    expect(component.loadingContent()).toBe(false);
+  });
+
+  it('scenario 101 — the toolbar Refresh this file still banners when the BODY read fails', async () => {
+    await openInPane();
+    fixture.detectChanges();
+
+    spyOn(console, 'error');
+    workspaceServiceSpy.getFileContent.and.rejectWith(new Error('read failed'));
+
+    const fileRefresh = fixture.debugElement.query(By.css(FILE_REFRESH));
+    expect(fileRefresh).withContext('per-file refresh').not.toBeNull();
+    fileRefresh.triggerEventHandler('onClick', {});
+    await settle();
+
+    // `loadFileContent(path, true)` reaches this loader with `refresh` SET, the
+    // same as the invalidation route — which is why `refresh === true` cannot
+    // be the gesture test.
+    expect(component.errorMessage()).toBe('read failed');
+  });
+
+  it('scenario 102 — the toolbar Refresh this file still banners when the METADATA half fails', async () => {
+    await openInPane();
+    fixture.detectChanges();
+
+    spyOn(console, 'error');
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: 'new body',
+      type: 'text',
+    });
+    workspaceServiceSpy.getWorkspaceTree.and.rejectWith(new Error('listing failed'));
+
+    const fileRefresh = fixture.debugElement.query(By.css(FILE_REFRESH));
+    fileRefresh.triggerEventHandler('onClick', {});
+    await settle();
+
+    expect(component.errorMessage()).toBe('listing failed');
+  });
+
+  it('scenario 103 — the navigator Refresh workspace still banners when the ROOT load fails', async () => {
+    component.treeNodes.set([materializedTree()]);
+    fixture.detectChanges();
+
+    spyOn(console, 'error');
+    workspaceServiceSpy.getWorkspaceTree.and.rejectWith(new Error('root failed'));
+
+    const workspaceRefresh = fixture.debugElement.query(By.css(WORKSPACE_REFRESH));
+    workspaceRefresh.triggerEventHandler('onClick', {});
+    await settle();
+    fixture.detectChanges();
+
+    expect(component.errorMessage()).toBe('root failed');
+  });
+
+  it('scenario 104 — the navigator Refresh workspace still banners when the DELEGATED body read fails', async () => {
+    await openInPane();
+    fixture.detectChanges();
+
+    spyOn(console, 'error');
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+    workspaceServiceSpy.getFileContent.and.rejectWith(new Error('body failed'));
+
+    const workspaceRefresh = fixture.debugElement.query(By.css(WORKSPACE_REFRESH));
+    workspaceRefresh.triggerEventHandler('onClick', {});
+    await settle();
+
+    // `refresh()` carries its origin to BOTH halves; the per-file half it
+    // delegates to is a gesture too.
+    expect(component.errorMessage()).toBe('body failed');
   });
 });

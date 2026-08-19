@@ -61,8 +61,15 @@ type Contributions = Map<string, Set<string>>;
  * default `WorkspaceTool` (no `workspace_id`) therefore resolved to `undefined`
  * and never merged into the team-default descriptor — using the message-level
  * `team_id` (which IS on the wire and equals the default descriptor's key) fixes
- * that, so default-workspace members show up. */
-function startContribution(msg: StartMessage): Set<string> {
+ * that, so default-workspace members show up.
+ *
+ * Exported (Story 39-2) so `workspace-invalidation.selector.ts` attributes a
+ * mutation to the same workspaces the *Accessible by* chips render, instead of
+ * re-encoding `workspace_id ?? team_id` a second time and drifting from the
+ * backend. It is the RULE that is shared; the invalidation fold deliberately
+ * does not call `workspaceRegistryReduce`, whose `agentIds` reflect only
+ * currently-active contributors. */
+export function startContribution(msg: StartMessage): Set<string> {
   const teamId = msg.team_id;
   const ids = new Set<string>();
   for (const tool of msg.config.tools ?? []) {
