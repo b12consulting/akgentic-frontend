@@ -121,6 +121,16 @@
           />
           <p-button
             *ngIf="selectedFile()"
+            icon="pi pi-refresh"
+            [text]="true"
+            [rounded]="true"
+            severity="secondary"
+            [disabled]="refreshingFile() || loadingContent()"
+            (onClick)="refreshSelectedFile()"
+            pTooltip="Refresh this file"
+          />
+          <p-button
+            *ngIf="selectedFile()"
             label="Download"
             icon="pi pi-download"
             [text]="true"

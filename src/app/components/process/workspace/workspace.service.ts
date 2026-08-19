@@ -110,9 +110,14 @@ export class WorkspaceService {
       `${this.apiUrl}/workspace/${processId}/file?path=${encodeURIComponent(filePath)}`,
       workspaceId
     );
+    // `cache: 'no-store'` on EVERY call, not just a refresh (ADR-030 §D4): the
+    // backend response carries Content-Disposition and neither Cache-Control,
+    // ETag nor Last-Modified, so a body with no freshness lifetime and no
+    // validator is not reliably re-fetched. Gating this on a call site would
+    // leave the ordinary read serving whatever the HTTP cache happens to hold.
     const options: RequestInit = this.config.hideLogin
-      ? {}
-      : { credentials: 'include' };
+      ? { cache: 'no-store' }
+      : { credentials: 'include', cache: 'no-store' };
     const response = await fetch(url, options);
 
     if (!response.ok) {
