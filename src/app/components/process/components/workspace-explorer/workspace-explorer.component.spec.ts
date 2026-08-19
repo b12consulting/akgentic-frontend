@@ -2898,4 +2898,52 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
 
     second.destroy();
   });
+
+  // --- the refresh the guard declines (review 39-4) -------------------
+
+  it('scenario 92 — a declined per-file refresh still leaves the parent directory listed', async () => {
+    // The per-file refresh declines while a read of the same file is already in
+    // flight (ADR-030 §D3). The parent directory is dropped from the directory
+    // pass ONLY because that refresh re-lists it — so dropping it for a refresh
+    // that never runs issues nothing at all for a batch that named both, and
+    // the tree entry stays stale with nothing scheduled to correct it. This
+    // window is user-invisible before this story and routine after it, because
+    // reads now fire from the event stream with no gesture behind them.
+    const body = deferred<FileContent>();
+    workspaceServiceSpy.getFileContent.and.returnValue(body.promise);
+    void component.onNodeSelect({ node: { data: openFile(10) } });
+    expect(component.loadingContent())
+      .withContext('selection read in flight')
+      .toBe(true);
+    workspaceServiceSpy.getWorkspaceTree.calls.reset();
+    workspaceServiceSpy.getFileContent.calls.reset();
+
+    await deliver(invalidation({ directories: ['docs'], files: [OPEN_PATH] }));
+
+    expect(workspaceServiceSpy.getFileContent)
+      .withContext('no second body read races the one in flight')
+      .not.toHaveBeenCalled();
+    expect(listedPaths()).toEqual(['docs']);
+
+    body.resolve({ content: 'body', type: 'text' });
+    await flushMicrotasks();
+  });
+
+  it('scenario 93 — a background listing that FAILS does not banner, and leaves the tree rendered', async () => {
+    component.treeNodes.set([materializedTree()]);
+    fixture.detectChanges();
+    workspaceServiceSpy.getWorkspaceTree.and.rejectWith(new Error('boom'));
+
+    await deliver(invalidation({ directories: ['docs'] }));
+    fixture.detectChanges();
+
+    // No user gesture is behind this fetch, and `errorMessage` gates the
+    // navigator's tree — bannering here would blank the file tree over a
+    // background listing, the same panel-wide outage the deletion path refuses.
+    // The manual Refresh controls remain the loud path.
+    expect(component.errorMessage()).toBeNull();
+    expect(fixture.nativeElement.querySelector('p-tree'))
+      .withContext('navigator tree after a failed background listing')
+      .not.toBeNull();
+  });
 });

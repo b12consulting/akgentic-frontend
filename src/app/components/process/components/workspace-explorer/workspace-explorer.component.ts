@@ -310,7 +310,9 @@ export class WorkspaceExplorerComponent {
    * open-file refresh runs: `refreshSelectedFile` → `refreshFileMetadata` →
    * `refreshDirectory(parent)` already re-lists it, and a `workspace_edit` on
    * the open file names both, so routing both naively lists the directory
-   * twice.
+   * twice. It is dropped ONLY when that refresh will actually run — the
+   * in-flight guard can decline it, and dropping the parent for a refresh that
+   * never happens loses the listing as well as the re-read.
    */
   private routeInvalidation(batch: WorkspaceInvalidation): void {
     if (batch.wholeTree) {
@@ -325,7 +327,11 @@ export class WorkspaceExplorerComponent {
       // delete-then-recreate inside a single 16 ms batch settles as "deleted",
       // and the next batch — or either Refresh control — recovers it.
       this.discardDeletedFile(open);
-    } else if (open !== null && batch.files.includes(open.path)) {
+    } else if (
+      open !== null &&
+      batch.files.includes(open.path) &&
+      this.canRefreshSelectedFile()
+    ) {
       directories.delete(this.getParentPath(open.path));
       void this.refreshSelectedFile();
     }
@@ -338,6 +344,24 @@ export class WorkspaceExplorerComponent {
         console.error('Error refreshing directory', error);
       });
     }
+  }
+
+  /**
+   * Whether a per-file refresh would run right now, rather than be declined by
+   * the in-flight guard (ADR-030 §D3).
+   *
+   * One predicate, two readers, on purpose. `refreshSelectedFile` asks it to
+   * enforce the gate; the invalidation routing asks it BEFORE dropping the open
+   * file's parent from the directory pass, because that exclusion is only
+   * correct if the refresh it defers to actually happens. A declined refresh
+   * with the parent already dropped issues nothing at all for a batch that
+   * named both — the tree entry then stays stale with nothing scheduled to
+   * correct it. Falling through to the directory pass instead re-lists the
+   * parent; the body the in-flight read is about to deliver may still be
+   * pre-mutation, and the next batch or either Refresh control recovers it.
+   */
+  private canRefreshSelectedFile(): boolean {
+    return !this.refreshingFile() && !this.loadingContent();
   }
 
   /**
@@ -660,7 +684,7 @@ export class WorkspaceExplorerComponent {
     // bound to these signals. Two reads of the same file settle in arbitrary
     // order, so the loser repaints the pane with the OLDER bytes, and the first
     // `finally` would release the button while the second read is still live.
-    if (this.refreshingFile() || this.loadingContent()) return;
+    if (!this.canRefreshSelectedFile()) return;
 
     this.refreshingFile.set(true);
     try {
