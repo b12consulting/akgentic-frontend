@@ -771,13 +771,23 @@ describe('parseToolCallArguments — malformed input never throws (AC #7, #8)', 
     }
   });
 
-  it('does not raise for any of them', () => {
-    for (const args of malformed) {
-      expect(() =>
-        parseToolCallArguments(makeToolCall('workspace_write', args)),
-      )
-        .withContext(JSON.stringify(args))
-        .not.toThrow();
+  it('does not raise for any of them, under any tool name', () => {
+    const toolNames = [
+      'workspace_write',
+      'workspace_delete',
+      'workspace_edit',
+      'workspace_mkdir',
+      'workspace_multi_edit',
+      'workspace_patch',
+      'workspace_read',
+      'totally_unknown_tool',
+    ];
+    for (const toolName of toolNames) {
+      for (const args of malformed) {
+        expect(() => parseToolCallArguments(makeToolCall(toolName, args)))
+          .withContext(toolName + ' / ' + JSON.stringify(args))
+          .not.toThrow();
+      }
     }
   });
 
@@ -829,6 +839,38 @@ describe('parseToolCallArguments — workspace_write (AC #6, #9, #12)', () => {
         .withContext(body)
         .toBeNull();
     }
+  });
+
+  // The empty path is the mirror image of the empty content above, and it goes
+  // the other way: an empty content is a real write, an empty path names
+  // nothing. Accepting it yields a member that looks valid while the directory
+  // derivation built on it resolves to the workspace root — a refresh of the
+  // wrong listing rather than no refresh at all.
+  it('returns null for an empty path', () => {
+    expect(
+      parseToolCallArguments(
+        makeToolCall('workspace_write', '{"path":"","content":"hello"}'),
+      ),
+    ).toBeNull();
+  });
+
+  // The declared-but-not-validated fields are exactly that: a wrongly-typed one
+  // is dropped, never allowed to veto the mutation and never copied through
+  // with the wrong type.
+  it('drops a wrongly-typed optional field instead of rejecting the call', () => {
+    expect(
+      parseToolCallArguments(
+        makeToolCall('workspace_write', '{"path":"a.md","content":42}'),
+      ),
+    ).toEqual({ tool_name: 'workspace_write', path: 'a.md' });
+    expect(
+      parseToolCallArguments(
+        makeToolCall(
+          'workspace_edit',
+          '{"path":"a.md","old_string":7,"replace_all":"yes"}',
+        ),
+      ),
+    ).toEqual({ tool_name: 'workspace_edit', path: 'a.md' });
   });
 
   // AC #12 — an upstream field addition must not turn a valid mutation into
@@ -930,8 +972,10 @@ describe('parseToolCallArguments — workspace_multi_edit (AC #6, #9)', () => {
     for (const body of [
       '{"edits":[{"path":"a.md"},{"old_string":"x"}]}',
       '{"edits":[{"path":"a.md"},{"path":42}]}',
+      '{"edits":[{"path":"a.md"},{"path":""}]}',
       '{"edits":[{"path":"a.md"},null]}',
       '{"edits":[{"path":"a.md"},"b.md"]}',
+      '{"edits":[{"path":"a.md"},["b.md"]]}',
     ]) {
       expect(parseToolCallArguments(makeToolCall('workspace_multi_edit', body)))
         .withContext(body)

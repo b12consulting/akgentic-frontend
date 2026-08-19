@@ -801,10 +801,19 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** The `path` field when present AND a string; `null` otherwise. */
+/**
+ * The `path` field when present, a string, AND non-empty; `null` otherwise.
+ *
+ * The empty string is rejected on purpose, and it is not the same call as the
+ * one made for `content`: an empty `content` is a real mutation (a write of an
+ * empty file), whereas an empty `path` names nothing a consumer can act on. Let
+ * it through and the parsed member looks valid while the directory derivation
+ * built on it resolves to the workspace root — a refresh of the wrong listing,
+ * which is precisely the guess this helper exists to refuse.
+ */
 function readPath(body: Record<string, unknown>): string | null {
   const path = body['path'];
-  return typeof path === 'string' ? path : null;
+  return typeof path === 'string' && path !== '' ? path : null;
 }
 
 function readOptionalString(
