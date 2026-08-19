@@ -152,9 +152,13 @@ export class ContextService {
   }
 
   /** Upsert a team into `_context$`: replace if already cached (preserves
-   *  reference identity of other slots); append if not yet cached. Single
-   *  write path shared by `getCurrentTeam` and `refreshOneTeam` so the two
-   *  cannot diverge in a future change. Issue #104 regression fix. */
+   *  reference identity of other slots); append if not yet cached. The single
+   *  write path, so its callers cannot diverge in a future change: the two
+   *  PULL callers `getCurrentTeam` / `refreshOneTeam` (issue #104 regression
+   *  fix) and the two PUSH callers `markStopped` / `setTeamDescription`
+   *  (Epic 37). Two properties every caller depends on — it hands `next()` a
+   *  fresh array and never mutates a member, and it APPENDS when the id is
+   *  absent, which is why both push callers look the team up first. */
   private _upsertTeam(team: TeamContext): void {
     const prev = this._context$.value;
     const exists = prev.some((t) => t.team_id === team.team_id);
