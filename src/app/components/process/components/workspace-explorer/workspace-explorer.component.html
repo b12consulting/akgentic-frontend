@@ -156,8 +156,39 @@
           <p>{{ errorMessage() }}</p>
         </div>
 
+        <!--
+          A workspace tool deleted the file this pane was showing. Its own
+          block and its own signal: routed through `errorMessage` instead, this
+          would blank the navigator's whole file tree (which is gated on
+          `!errorMessage()`) over one deleted file.
+        -->
         <div
-          *ngIf="!selectedFile() && !selectedFolder() && !loadingContent()"
+          *ngIf="deletedNotice() && !loadingContent()"
+          class="empty-section deleted-notice"
+        >
+          <div class="empty-section-box">
+            <i class="pi pi-trash file-placeholder-icon"></i>
+            <div class="file-placeholder-title">File deleted</div>
+            <div class="file-placeholder-desc">
+              {{ deletedNotice() }} was deleted from this workspace. Select
+              another file from the tree to continue.
+            </div>
+          </div>
+        </div>
+
+        <!--
+          The notice above replaces this placeholder rather than sitting beside
+          it: clearing the selection is what raises the notice, so both
+          conditions are true at once and "Select a file to view its content"
+          next to "that file was deleted" reads as two panes disagreeing.
+        -->
+        <div
+          *ngIf="
+            !selectedFile() &&
+            !selectedFolder() &&
+            !deletedNotice() &&
+            !loadingContent()
+          "
           class="empty-section file-placeholder"
         >
           <div class="empty-section-box">

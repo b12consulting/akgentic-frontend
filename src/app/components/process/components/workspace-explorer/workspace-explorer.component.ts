@@ -32,6 +32,10 @@ import {
   FileContent,
 } from '../../workspace/workspace.service';
 import { ContextService } from '../../../../core/context/context.service';
+import {
+  WorkspaceInvalidation,
+  WorkspaceInvalidationService,
+} from '../../selectors/workspace-invalidation.selector';
 import { UploadModalComponent } from './upload-modal/upload-modal.component';
 
 /**
@@ -43,6 +47,15 @@ import { UploadModalComponent } from './upload-modal/upload-modal.component';
 interface RootLoadResult {
   nodes: TreeNode[] | null;
   error: string | null;
+}
+
+/**
+ * First-seen-order union of two target lists — the same dedup rule the
+ * projection applies within a single instruction, applied again ACROSS the
+ * instructions of one batch.
+ */
+function unionTargets(current: string[], next: string[]): string[] {
+  return [...new Set([...current, ...next])];
 }
 
 @Component({
@@ -87,6 +100,14 @@ export class WorkspaceExplorerComponent {
   contextService = inject(ContextService);
   private destroyRef = inject(DestroyRef);
 
+  /**
+   * The projection that turns completed workspace tool calls into re-read
+   * instructions (Epic 39 / ADR-031). Component-scoped, provided on
+   * `ProcessComponent` next to `WorkspaceRegistryService`: it folds the
+   * team-scoped message log, so it shares that log's lifetime.
+   */
+  private invalidations = inject(WorkspaceInvalidationService);
+
   processId: string = '';
 
   /**
@@ -114,6 +135,19 @@ export class WorkspaceExplorerComponent {
   errorMessage = signal<string | null>(null);
 
   /**
+   * Path of the open file that a workspace tool has just deleted, or `null`.
+   * Drives its own block in the preview pane.
+   *
+   * It is deliberately NOT `errorMessage`. The navigator gates its whole file
+   * tree on `!errorMessage()`, so reporting a deleted file there would blank
+   * the tree the user needs in order to select something else — a per-file
+   * event turned into a panel-wide outage. `errorMessage` is already shared by
+   * the root load, the lazy expand, the body read and the metadata refresh; a
+   * fifth writer with a narrower meaning belongs in a signal of its own.
+   */
+  deletedNotice = signal<string | null>(null);
+
+  /**
    * True while a per-file refresh is in flight — the ONLY state this feature
    * adds. It drives the toolbar control's disabled binding AND the guard at the
    * top of `refreshSelectedFile`, so a second activation cannot race the first
@@ -138,6 +172,19 @@ export class WorkspaceExplorerComponent {
   private readToken = 0;
   private loadingOwner = 0;
 
+  /**
+   * The union of every instruction accepted since the last flush, or `null`
+   * when no batch is pending — which doubles as "no flush is scheduled".
+   *
+   * `LogFeeder` batches frames at 16 ms, so ten `workspace_write` returns
+   * arrive in ONE `log$` emission — but the projection pushes its delta out
+   * synchronously, one instruction per completed call. Routing each as it
+   * arrives would issue ten listings of the same directory (NFR4). Directory
+   * granularity dedupes only WITHIN one `workspace_multi_edit`; the coalescing
+   * across separate calls is this component's.
+   */
+  private pendingBatch: WorkspaceInvalidation | null = null;
+
   // Plain fields: not template-bound through *ngIf/[value] in a way that the
   // OnPush stall affects (sidebar/upload-modal toggles are driven by user
   // events that already mark the view), so they stay as ordinary fields.
@@ -161,6 +208,157 @@ export class WorkspaceExplorerComponent {
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe((result) => this.applyRootLoad(result));
+
+    // The panel stops being the one view that ignores the log it already
+    // receives (Epic 39 / ADR-031): every completed mutating workspace tool
+    // call becomes a re-read here. `takeUntilDestroyed` in the constructor's
+    // injection context, the same shape the root-tree stream above uses.
+    this.invalidations.invalidations$
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((instruction) => this.acceptInvalidation(instruction));
+  }
+
+  /**
+   * The workspace this explorer addresses, resolved AT INSTRUCTION TIME.
+   *
+   * `workspaceId` is an OPTIONAL input (ADR-019): unset means the team default
+   * tab. The registry keys the default descriptor on `msg.team_id`, so an
+   * instruction for it carries the team id — which is exactly what `processId`
+   * holds, and what every `WorkspaceService` call already passes first. Hence
+   * the fallback. Comparing `instruction.workspaceId` against the raw input
+   * instead is `undefined === 'team-1'` on the default tab, and silently drops
+   * every instruction it should act on.
+   *
+   * Never captured at construction: signal inputs are populated AFTER the
+   * constructor runs, so a captured value is `undefined` for every named tab —
+   * which would then match the DEFAULT workspace's instructions instead of its
+   * own. An unresolved context leaves `processId` at `''`, which no well-formed
+   * instruction carries, so nothing routes until it resolves; that is intended,
+   * and no retry or queue is added for it.
+   */
+  private addressedWorkspace(): string {
+    return this.workspaceId() ?? this.processId;
+  }
+
+  /**
+   * Filter one instruction by workspace, fold it into the pending batch, and
+   * schedule the flush.
+   *
+   * A microtask is exact here rather than merely cheap: the projection emits
+   * the whole delta synchronously, so the microtask that follows it sees every
+   * instruction of the burst and adds no observable latency. A `setTimeout` /
+   * `bufferTime` debounce would work too but reintroduces a timer, and
+   * "nothing polls in this panel" is a property worth keeping literally true.
+   */
+  private acceptInvalidation(instruction: WorkspaceInvalidation): void {
+    if (instruction.workspaceId !== this.addressedWorkspace()) return;
+
+    const alreadyScheduled = this.pendingBatch !== null;
+    this.pendingBatch = this.mergeInvalidation(this.pendingBatch, instruction);
+    if (!alreadyScheduled) {
+      queueMicrotask(() => this.flushInvalidations());
+    }
+  }
+
+  /**
+   * Union one instruction into the pending batch: `wholeTree` is a logical OR,
+   * the three target lists are first-seen-order unions. Fresh arrays every
+   * time — the incoming instruction's own arrays are never mutated, because one
+   * agent mutation mapping to two workspaces yields two instructions that must
+   * stay independent.
+   */
+  private mergeInvalidation(
+    batch: WorkspaceInvalidation | null,
+    next: WorkspaceInvalidation,
+  ): WorkspaceInvalidation {
+    if (batch === null) {
+      return {
+        workspaceId: next.workspaceId,
+        wholeTree: next.wholeTree,
+        directories: [...next.directories],
+        files: [...next.files],
+        deletions: [...next.deletions],
+      };
+    }
+    return {
+      workspaceId: batch.workspaceId,
+      wholeTree: batch.wholeTree || next.wholeTree,
+      directories: unionTargets(batch.directories, next.directories),
+      files: unionTargets(batch.files, next.files),
+      deletions: unionTargets(batch.deletions, next.deletions),
+    };
+  }
+
+  /** Consume the pending batch (clearing the "flush scheduled" state) and route it. */
+  private flushInvalidations(): void {
+    const batch = this.pendingBatch;
+    this.pendingBatch = null;
+    if (batch === null) return;
+    this.routeInvalidation(batch);
+  }
+
+  /**
+   * Turn one coalesced batch into re-reads, through the paths that already
+   * exist — `refresh()`, `refreshSelectedFile()`, `refreshDirectory()`. No new
+   * fetch path, no cache, no second splice.
+   *
+   * A whole-tree instruction subsumes every named target and carries all three
+   * lists empty by construction, so it returns early rather than reconciling
+   * anything.
+   *
+   * The open file's parent is dropped from the directory pass whenever the
+   * open-file refresh runs: `refreshSelectedFile` → `refreshFileMetadata` →
+   * `refreshDirectory(parent)` already re-lists it, and a `workspace_edit` on
+   * the open file names both, so routing both naively lists the directory
+   * twice.
+   */
+  private routeInvalidation(batch: WorkspaceInvalidation): void {
+    if (batch.wholeTree) {
+      this.refresh();
+      return;
+    }
+
+    const directories = new Set(batch.directories);
+    const open = this.selectedFile();
+    if (open !== null && batch.deletions.includes(open.path)) {
+      // Deletion wins over a change to the same path within one batch: a
+      // delete-then-recreate inside a single 16 ms batch settles as "deleted",
+      // and the next batch — or either Refresh control — recovers it.
+      this.discardDeletedFile(open);
+    } else if (open !== null && batch.files.includes(open.path)) {
+      directories.delete(this.getParentPath(open.path));
+      void this.refreshSelectedFile();
+    }
+
+    for (const path of directories) {
+      // A background listing that fails must not banner: `errorMessage` gates
+      // the navigator's tree, and no user gesture is behind this fetch. The
+      // manual Refresh controls remain the loud path.
+      void this.refreshDirectory(path).catch((error: unknown) => {
+        console.error('Error refreshing directory', error);
+      });
+    }
+  }
+
+  /**
+   * The open file has been deleted under the pane. Clear the pane AND the
+   * selection, and raise the notice naming it.
+   *
+   * No read is issued for the path — `deletions` is a separate field from
+   * `files` exactly because re-reading a deleted path 404s, and a 404 here
+   * would additionally blank the navigator through `errorMessage`. Leaving the
+   * pane rendering a file that no longer exists is the other half of the same
+   * refusal.
+   *
+   * The tree entry goes with it: the instruction carries the file's parent in
+   * `directories`, and the directory pass re-lists it in this same batch.
+   */
+  private discardDeletedFile(file: FileNode): void {
+    this.selectedFile.set(null);
+    this.fileContent.set(null);
+    this.isBinaryFile.set(false);
+    this.isMarkdownFile.set(false);
+    this.deletedNotice.set(file.path);
   }
 
   /**
@@ -309,6 +507,10 @@ export class WorkspaceExplorerComponent {
 
   async onNodeSelect(event: any) {
     const node: FileNode = event.node.data;
+
+    // Any selection re-populates the pane, so a deletion notice from a previous
+    // file has nothing left to describe. Cleared once, ahead of both branches.
+    this.deletedNotice.set(null);
 
     if (node.type === 'file') {
       this.selectedFile.set(node);

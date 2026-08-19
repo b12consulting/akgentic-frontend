@@ -20,6 +20,7 @@ import { TeamSocket } from './event/team-socket';
 import { TeamStatusReactor } from './event/team-status-reactor';
 import { TokenUsageSelector } from './selectors/token-usage.selector';
 import { ToolPresenceService } from './selectors/tool-presence.selector';
+import { WorkspaceInvalidationService } from './selectors/workspace-invalidation.selector';
 import { WorkspaceRegistryService } from './selectors/workspace-registry.selector';
 import { AgentsByIdService } from './selectors/agents-by-id.selector';
 
@@ -72,6 +73,13 @@ interface VisualizationOption {
     // `providedIn: 'root'` — it shares the team-scoped log lifecycle, so a team
     // switch destroys it and never leaks workspaces across teams.
     WorkspaceRegistryService,
+    // Epic 39 (ADR-031): component-scoped projection that folds the message log
+    // into workspace re-read instructions, one per completed mutating workspace
+    // tool call. Provided AFTER MessageLogService (which it injects) and next to
+    // the registry it shares a lifecycle with. Never `providedIn: 'root'` — its
+    // delta baseline is per-team, and a root instance would carry one team's
+    // cursor into the next and burst on its replay.
+    WorkspaceInvalidationService,
     // Epic 23 (ADR-020): component-scoped identity map that folds the message
     // log into `agent_id -> { name, role }`, combined in WorkspaceTabsComponent
     // with the workspace registry to render each workspace's member chips.

@@ -4,7 +4,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { Tabs } from 'primeng/tabs';
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, Subject } from 'rxjs';
 
 import { ContextService } from '../../../../core/context/context.service';
 import { WorkspaceService } from '../../workspace/workspace.service';
@@ -12,6 +12,10 @@ import {
   AgentsById,
   AgentsByIdService,
 } from '../../selectors/agents-by-id.selector';
+import {
+  WorkspaceInvalidation,
+  WorkspaceInvalidationService,
+} from '../../selectors/workspace-invalidation.selector';
 import {
   WorkspaceDescriptor,
   WorkspaceRegistryService,
@@ -58,6 +62,17 @@ class FakeAgentsByIdService {
   readonly agentsById$ = new BehaviorSubject<AgentsById>({});
 }
 
+/**
+ * Fake invalidation projection. This TestBed stands up the REAL explorer, which
+ * now injects the service in its constructor (Epic 39), so the provider is
+ * required even though nothing here pushes an instruction. Each explorer takes
+ * its OWN subscription to this one Subject — the tabs specs are where two
+ * explorers exist at once.
+ */
+class FakeWorkspaceInvalidationService {
+  readonly invalidations$ = new Subject<WorkspaceInvalidation>();
+}
+
 describe('WorkspaceTabsComponent', () => {
   let fixture: ComponentFixture<WorkspaceTabsComponent>;
   let registry: FakeWorkspaceRegistryService;
@@ -84,6 +99,10 @@ describe('WorkspaceTabsComponent', () => {
       providers: [
         { provide: ContextService, useValue: contextStub },
         { provide: WorkspaceService, useValue: workspaceStub },
+        {
+          provide: WorkspaceInvalidationService,
+          useValue: new FakeWorkspaceInvalidationService(),
+        },
       ],
     })
       // Drive `workspaces$` / `agentsById$` directly via the component-scoped
