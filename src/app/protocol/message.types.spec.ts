@@ -4,6 +4,7 @@ import {
   CLOSED_NOTIFICATION_MODEL,
   EVENT_MESSAGE_MODEL,
   isClosedNotification,
+  isCommandsAnnouncedEvent,
   isErrorMessage,
   isEventMessage,
   isLlmContextClearedEvent,
@@ -13,11 +14,16 @@ import {
   isLlmUsageEvent,
   isNotificationMessage,
   isTeamStoppingEvent,
+  isToolCallEvent,
+  isToolReturnEvent,
   isWarningMessage,
   isWelcomeAnnouncement,
   isWelcomeMessage,
   notificationSeverity,
+  parseToolCallArguments,
   SentMessage,
+  ToolCallEvent,
+  ToolReturnEvent,
   WelcomeMessage,
 } from './message.types';
 
@@ -581,5 +587,417 @@ describe('notificationSeverity (Story 31-6, AC #6)', () => {
     expect(isNotificationMessage(bare)).toBe(true);
     expect(isNotificationMessage(error)).toBe(false);
     expect(isNotificationMessage(warning)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 39-1 — the two tool-event types, their guards, and the arguments parse.
+//
+// Both tags are written INLINE for the same reason the `TeamStoppingEvent` block
+// above does it: these payloads are read-only, so neither gets an exported
+// wire-tag constant (only the one envelope the frontend CONSTRUCTS needs a
+// byte-exact literal).
+// ---------------------------------------------------------------------------
+
+const TOOL_CALL_MODEL = 'akgentic.llm.event.ToolCallEvent';
+const TOOL_RETURN_MODEL = 'akgentic.llm.event.ToolReturnEvent';
+
+/** Every OTHER inner-event tag already on the wire — the negative sweep. */
+const OTHER_INNER_EVENT_MODELS = [
+  CLOSED_NOTIFICATION_MODEL,
+  TEAM_STOPPING_MODEL,
+  'akgentic.llm.event.LlmUsageEvent',
+  'akgentic.llm.event.LlmSystemPromptEvent',
+  'akgentic.llm.event.LlmContextCompactedEvent',
+  'akgentic.llm.event.LlmContextClearedEvent',
+  'akgentic.llm.event.LlmMessageEvent',
+  'akgentic.tool.command.CommandsAnnouncedEvent',
+];
+
+/** Every pre-existing inner-event guard, for the inverse-direction sweep. */
+const EXISTING_INNER_EVENT_GUARDS = [
+  isClosedNotification,
+  isTeamStoppingEvent,
+  isLlmUsageEvent,
+  isLlmSystemPromptEvent,
+  isLlmContextCompactedEvent,
+  isLlmContextClearedEvent,
+  isLlmMessageEvent,
+  isCommandsAnnouncedEvent,
+] as const;
+
+function makeToolCall(toolName: string, argsJson: string): ToolCallEvent {
+  return {
+    __model__: TOOL_CALL_MODEL,
+    run_id: 'run-1',
+    tool_name: toolName,
+    tool_call_id: 'call-1',
+    arguments: argsJson,
+  };
+}
+
+describe('isToolCallEvent (Story 39-1, AC #3, #4, #5)', () => {
+  it('returns true for a ToolCallEvent inner event', () => {
+    expect(isToolCallEvent({ __model__: TOOL_CALL_MODEL })).toBe(true);
+  });
+
+  it('returns false for null, undefined and a __model__-less object', () => {
+    expect(isToolCallEvent(null)).toBe(false);
+    expect(isToolCallEvent(undefined)).toBe(false);
+    expect(isToolCallEvent({})).toBe(false);
+  });
+
+  // The trap the guard exists to avoid: it takes the INNER payload, never the
+  // envelope. A guard keyed on the envelope fires for EVERY EventMessage, and
+  // the fold built on it would invalidate the workspace on every LLM message —
+  // with every other spec in this file still green.
+  it('returns false for the EventMessage envelope tag', () => {
+    expect(isToolCallEvent({ __model__: EVENT_MESSAGE_MODEL })).toBe(false);
+  });
+
+  it('returns false for every other inner event on the wire', () => {
+    for (const model of [...OTHER_INNER_EVENT_MODELS, TOOL_RETURN_MODEL]) {
+      expect(isToolCallEvent({ __model__: model }))
+        .withContext(model)
+        .toBe(false);
+    }
+  });
+
+  it('narrows to the payload so the call fields are readable', () => {
+    const event: { __model__?: string } = makeToolCall(
+      'workspace_write',
+      '{"path":"a.md"}',
+    );
+    expect(isToolCallEvent(event) && event.tool_name).toBe('workspace_write');
+    expect(isToolCallEvent(event) && event.tool_call_id).toBe('call-1');
+    expect(isToolCallEvent(event) && event.run_id).toBe('run-1');
+    // `arguments` stays a STRING on the wire — not an object, not `any`.
+    expect(isToolCallEvent(event) && typeof event.arguments).toBe('string');
+  });
+});
+
+describe('isToolReturnEvent (Story 39-1, AC #3, #4, #5)', () => {
+  it('returns true for a ToolReturnEvent inner event', () => {
+    expect(isToolReturnEvent({ __model__: TOOL_RETURN_MODEL })).toBe(true);
+  });
+
+  it('returns false for null, undefined and a __model__-less object', () => {
+    expect(isToolReturnEvent(null)).toBe(false);
+    expect(isToolReturnEvent(undefined)).toBe(false);
+    expect(isToolReturnEvent({})).toBe(false);
+  });
+
+  it('returns false for the EventMessage envelope tag', () => {
+    expect(isToolReturnEvent({ __model__: EVENT_MESSAGE_MODEL })).toBe(false);
+  });
+
+  it('returns false for every other inner event on the wire', () => {
+    for (const model of [...OTHER_INNER_EVENT_MODELS, TOOL_CALL_MODEL]) {
+      expect(isToolReturnEvent({ __model__: model }))
+        .withContext(model)
+        .toBe(false);
+    }
+  });
+
+  // AC #2 — the return event carries NO path and NO arguments. The object
+  // literal below is typed `ToolReturnEvent`, so excess-property checking makes
+  // adding either one a compile error; the runtime key check states the same
+  // fact for a reader, and pins that the verdict rides `success`.
+  it('carries exactly the five wire fields — no arguments, no path', () => {
+    const event: ToolReturnEvent = {
+      __model__: TOOL_RETURN_MODEL,
+      run_id: 'run-1',
+      tool_name: 'workspace_write',
+      tool_call_id: 'call-1',
+      success: true,
+    };
+    expect(Object.keys(event).sort()).toEqual([
+      '__model__',
+      'run_id',
+      'success',
+      'tool_call_id',
+      'tool_name',
+    ]);
+  });
+});
+
+describe('tool-event guards vs every pre-existing inner-event guard (AC #5)', () => {
+  it('no pre-existing guard fires for either new tag', () => {
+    for (const model of [TOOL_CALL_MODEL, TOOL_RETURN_MODEL]) {
+      for (const guard of EXISTING_INNER_EVENT_GUARDS) {
+        expect(guard({ __model__: model }))
+          .withContext(model + ' / ' + guard.name)
+          .toBe(false);
+      }
+    }
+  });
+
+  it('neither new guard fires for any pre-existing inner event', () => {
+    for (const model of OTHER_INNER_EVENT_MODELS) {
+      expect(isToolCallEvent({ __model__: model }))
+        .withContext(model)
+        .toBe(false);
+      expect(isToolReturnEvent({ __model__: model }))
+        .withContext(model)
+        .toBe(false);
+    }
+  });
+
+  it('the two new guards are mutually exclusive in both directions', () => {
+    expect(isToolCallEvent({ __model__: TOOL_RETURN_MODEL })).toBe(false);
+    expect(isToolReturnEvent({ __model__: TOOL_CALL_MODEL })).toBe(false);
+    expect(isToolCallEvent({ __model__: TOOL_CALL_MODEL })).toBe(true);
+    expect(isToolReturnEvent({ __model__: TOOL_RETURN_MODEL })).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseToolCallArguments (AC #6 — #12)
+//
+// The helper is called from inside a fold over `log$`, so the binding property
+// is that it NEVER throws: one throw on one bad frame stops the fold for the
+// rest of the session, with nothing visible anywhere. Every malformed input
+// below therefore asserts `null` AND `not.toThrow()`.
+// ---------------------------------------------------------------------------
+
+describe('parseToolCallArguments — malformed input never throws (AC #7, #8)', () => {
+  const malformed = ['{', '', 'not json', '[1,2,3]', 'null'];
+
+  it('returns null for malformed JSON and non-object roots', () => {
+    for (const args of malformed) {
+      expect(parseToolCallArguments(makeToolCall('workspace_write', args)))
+        .withContext(JSON.stringify(args))
+        .toBeNull();
+    }
+  });
+
+  it('does not raise for any of them', () => {
+    for (const args of malformed) {
+      expect(() =>
+        parseToolCallArguments(makeToolCall('workspace_write', args)),
+      )
+        .withContext(JSON.stringify(args))
+        .not.toThrow();
+    }
+  });
+
+  it('returns null for a JSON string or number root', () => {
+    expect(
+      parseToolCallArguments(makeToolCall('workspace_write', '"a.md"')),
+    ).toBeNull();
+    expect(
+      parseToolCallArguments(makeToolCall('workspace_write', '42')),
+    ).toBeNull();
+  });
+});
+
+describe('parseToolCallArguments — workspace_write (AC #6, #9, #12)', () => {
+  it('parses a well-formed call', () => {
+    const parsed = parseToolCallArguments(
+      makeToolCall('workspace_write', '{"path":"docs/a.md","content":"hello"}'),
+    );
+    expect(parsed).toEqual({
+      tool_name: 'workspace_write',
+      path: 'docs/a.md',
+      content: 'hello',
+    });
+  });
+
+  // `content` is declared but NOT validated: requiring it would make a write of
+  // an EMPTY file yield null and silently drop a real mutation.
+  it('parses a write with empty or absent content', () => {
+    expect(
+      parseToolCallArguments(
+        makeToolCall('workspace_write', '{"path":"a.md","content":""}'),
+      ),
+    ).not.toBeNull();
+    expect(
+      parseToolCallArguments(makeToolCall('workspace_write', '{"path":"a.md"}')),
+    ).not.toBeNull();
+  });
+
+  it('returns null when path is missing or not a string', () => {
+    for (const body of [
+      '{}',
+      '{"content":"hello"}',
+      '{"path":42}',
+      '{"path":null}',
+      '{"path":{"nested":"a.md"}}',
+      '{"path":["a.md"]}',
+    ]) {
+      expect(parseToolCallArguments(makeToolCall('workspace_write', body)))
+        .withContext(body)
+        .toBeNull();
+    }
+  });
+
+  // AC #12 — an upstream field addition must not turn a valid mutation into
+  // null. The path is returned exactly as the wire carried it (no derivation,
+  // no normalisation — that is story 39-2's job).
+  it('still parses when unknown keys ride along', () => {
+    const parsed = parseToolCallArguments(
+      makeToolCall(
+        'workspace_write',
+        '{"path":"a.md","workspace_id":"w-1","future_field":42}',
+      ),
+    );
+    expect(parsed?.tool_name).toBe('workspace_write');
+    expect(parsed && 'path' in parsed && parsed.path).toBe('a.md');
+  });
+});
+
+describe('parseToolCallArguments — the other single-path tools (AC #6, #9)', () => {
+  for (const toolName of ['workspace_delete', 'workspace_mkdir'] as const) {
+    it('parses a well-formed ' + toolName, () => {
+      const parsed = parseToolCallArguments(
+        makeToolCall(toolName, '{"path":"docs/notes"}'),
+      );
+      expect(parsed?.tool_name).toBe(toolName);
+      expect(parsed && 'path' in parsed && parsed.path).toBe('docs/notes');
+    });
+
+    it('returns null for a ' + toolName + ' with no usable path', () => {
+      expect(parseToolCallArguments(makeToolCall(toolName, '{}'))).toBeNull();
+      expect(
+        parseToolCallArguments(makeToolCall(toolName, '{"path":7}')),
+      ).toBeNull();
+    });
+  }
+
+  it('parses a workspace_edit with its content fields', () => {
+    const parsed = parseToolCallArguments(
+      makeToolCall(
+        'workspace_edit',
+        '{"path":"a.md","old_string":"x","new_string":"y","replace_all":true}',
+      ),
+    );
+    expect(parsed).toEqual({
+      tool_name: 'workspace_edit',
+      path: 'a.md',
+      old_string: 'x',
+      new_string: 'y',
+      replace_all: true,
+    });
+  });
+
+  it('parses a workspace_edit that carries only the path', () => {
+    expect(
+      parseToolCallArguments(makeToolCall('workspace_edit', '{"path":"a.md"}')),
+    ).not.toBeNull();
+  });
+
+  it('returns null for a workspace_edit with no usable path', () => {
+    expect(
+      parseToolCallArguments(
+        makeToolCall('workspace_edit', '{"old_string":"x","new_string":"y"}'),
+      ),
+    ).toBeNull();
+  });
+});
+
+describe('parseToolCallArguments — workspace_multi_edit (AC #6, #9)', () => {
+  it('parses N edits and keeps every path', () => {
+    const parsed = parseToolCallArguments(
+      makeToolCall(
+        'workspace_multi_edit',
+        '{"edits":[{"path":"a.md","old_string":"x","new_string":"y"},{"path":"b/c.md","replace_all":true}]}',
+      ),
+    );
+    expect(parsed?.tool_name).toBe('workspace_multi_edit');
+    const edits =
+      parsed && parsed.tool_name === 'workspace_multi_edit' ? parsed.edits : [];
+    expect(edits.map((e) => e.path)).toEqual(['a.md', 'b/c.md']);
+    expect(edits[0].old_string).toBe('x');
+    expect(edits[1].replace_all).toBe(true);
+  });
+
+  it('returns null when edits is missing, not an array, or empty', () => {
+    for (const body of [
+      '{}',
+      '{"edits":"a.md"}',
+      '{"edits":{"path":"a.md"}}',
+      '{"edits":[]}',
+    ]) {
+      expect(parseToolCallArguments(makeToolCall('workspace_multi_edit', body)))
+        .withContext(body)
+        .toBeNull();
+    }
+  });
+
+  // Partial acceptance is the failure this rules out: one bad element must not
+  // yield a half-populated edit list that the fold then treats as complete.
+  it('returns null when ANY element has no usable path', () => {
+    for (const body of [
+      '{"edits":[{"path":"a.md"},{"old_string":"x"}]}',
+      '{"edits":[{"path":"a.md"},{"path":42}]}',
+      '{"edits":[{"path":"a.md"},null]}',
+      '{"edits":[{"path":"a.md"},"b.md"]}',
+    ]) {
+      expect(parseToolCallArguments(makeToolCall('workspace_multi_edit', body)))
+        .withContext(body)
+        .toBeNull();
+    }
+  });
+
+  it('still parses when unknown keys ride along on an edit', () => {
+    expect(
+      parseToolCallArguments(
+        makeToolCall(
+          'workspace_multi_edit',
+          '{"edits":[{"path":"a.md","future_field":1}],"future_top":2}',
+        ),
+      ),
+    ).not.toBeNull();
+  });
+});
+
+describe('parseToolCallArguments — workspace_patch (AC #11)', () => {
+  it('parses any well-formed object body', () => {
+    expect(
+      parseToolCallArguments(
+        makeToolCall('workspace_patch', '{"patch_text":"--- a/x.md\\n+++ b/x.md"}'),
+      ),
+    ).toEqual({
+      tool_name: 'workspace_patch',
+      patch_text: '--- a/x.md\n+++ b/x.md',
+    });
+  });
+
+  it('parses an empty body — this tool has no path argument at all', () => {
+    expect(
+      parseToolCallArguments(makeToolCall('workspace_patch', '{}')),
+    ).toEqual({ tool_name: 'workspace_patch' });
+  });
+
+  // The diff text is NOT scraped for paths (a second implementation of a
+  // backend format, free to drift). 39-2 reloads the whole tree instead.
+  it('does not mine a path out of the diff text', () => {
+    const parsed = parseToolCallArguments(
+      makeToolCall('workspace_patch', '{"patch_text":"--- a/x.md\\n+++ b/x.md"}'),
+    );
+    expect(parsed && 'path' in parsed).toBe(false);
+  });
+
+  it('still returns null for a malformed body', () => {
+    expect(
+      parseToolCallArguments(makeToolCall('workspace_patch', 'not json')),
+    ).toBeNull();
+  });
+});
+
+describe('parseToolCallArguments — unrecognised tool names (AC #10)', () => {
+  it('returns null for the read tools and for a name it has never heard of', () => {
+    for (const toolName of [
+      'workspace_read',
+      'workspace_view',
+      'workspace_ls',
+      'sandbox_exec_command',
+      'totally_unknown_tool',
+      '',
+    ]) {
+      expect(parseToolCallArguments(makeToolCall(toolName, '{"path":"a.md"}')))
+        .withContext(toolName)
+        .toBeNull();
+    }
   });
 });

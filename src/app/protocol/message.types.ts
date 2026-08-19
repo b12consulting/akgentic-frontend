@@ -364,6 +364,129 @@ export interface TeamStoppingEvent {
   __model__: string; // contains 'TeamStoppingEvent'
 }
 
+/**
+ * Inner event payload announcing that the model asked for one tool call,
+ * mirroring the akgentic-llm `ToolCallEvent` frozen dataclass (ADR-031
+ * §Context). Carried by `EventMessage.event` like every other domain event and
+ * discriminated by the inner `__model__`.
+ *
+ * This is the half of the pair that carries WHAT was touched. `arguments` is the
+ * call's argument object serialised as a JSON **string** — always, on every
+ * frame, by design upstream — so it is typed `string` here and not as an object.
+ * Read it with `parseToolCallArguments`, which yields `null` rather than
+ * throwing on a payload it cannot make sense of.
+ *
+ * `arguments` is a reserved identifier in strict-mode modules: read it as a
+ * property (`event.arguments`) or rename it on destructure
+ * (`const { arguments: argsJson } = event`) — a bare `const { arguments }` is a
+ * syntax error.
+ *
+ * Read-only on this side, so — like `TeamStoppingEvent` — it gets no exported
+ * wire-tag constant. See `CLOSED_NOTIFICATION_MODEL` for why that is the
+ * exception rather than the rule.
+ */
+export interface ToolCallEvent {
+  __model__: string; // contains 'ToolCallEvent'
+  run_id: string;
+  tool_name: string;
+  tool_call_id: string;
+  /** The call's arguments, as a JSON string. Parse with
+   *  `parseToolCallArguments`; never `JSON.parse` it inline. */
+  arguments: string;
+}
+
+/**
+ * Inner event payload announcing the verdict of one tool call, mirroring the
+ * akgentic-llm `ToolReturnEvent` frozen dataclass (ADR-031 §Context). Same
+ * `EventMessage` passthrough and inner-`__model__` discrimination as its
+ * `ToolCallEvent` sibling.
+ *
+ * It carries NO `arguments` and NO path, and that is upstream's design rather
+ * than an omission here: what was touched lives on the CALL, and the only thing
+ * tying the two together is `tool_call_id`. A consumer that wants "a mutation
+ * succeeded, at this path" must therefore hold the call until the matching
+ * return arrives — do not invent a path field on this payload.
+ *
+ * `success: false` is a retry prompt, not a mutation.
+ */
+export interface ToolReturnEvent {
+  __model__: string; // contains 'ToolReturnEvent'
+  run_id: string;
+  tool_name: string;
+  tool_call_id: string;
+  success: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Per-tool argument shapes for the six mutating workspace tools (ADR-031 §D6).
+//
+// Each interface carries its `tool_name` as a string literal so the union below
+// is discriminated at the consumer. Only the fields an invalidation actually
+// consumes — `path`, and `edits[i].path` for the multi-edit — are validated by
+// `parseToolCallArguments`; `content`, `old_string`, `new_string`,
+// `replace_all` and `patch_text` are declared as documentation of the wire
+// shape and are copied through when present. A field nobody reads must not be
+// able to veto a real mutation: requiring `content` would turn a write of an
+// EMPTY file into `null` and silently drop it.
+// ---------------------------------------------------------------------------
+
+export interface WorkspaceWriteArguments {
+  tool_name: 'workspace_write';
+  path: string;
+  content?: string;
+}
+
+export interface WorkspaceDeleteArguments {
+  tool_name: 'workspace_delete';
+  path: string;
+}
+
+export interface WorkspaceEditArguments {
+  tool_name: 'workspace_edit';
+  path: string;
+  old_string?: string;
+  new_string?: string;
+  replace_all?: boolean;
+}
+
+export interface WorkspaceMkdirArguments {
+  tool_name: 'workspace_mkdir';
+  path: string;
+}
+
+/** One element of `workspace_multi_edit`'s `edits` — N paths in one call. */
+export interface WorkspaceEditOperation {
+  path: string;
+  old_string?: string;
+  new_string?: string;
+  replace_all?: boolean;
+}
+
+export interface WorkspaceMultiEditArguments {
+  tool_name: 'workspace_multi_edit';
+  edits: WorkspaceEditOperation[];
+}
+
+/**
+ * `workspace_patch` has NO path argument at all: its paths exist only inside the
+ * unified-diff text. That text is deliberately not parsed, scraped or inspected
+ * here — a second implementation of a backend format, free to drift, is a worse
+ * artefact than a coarse refresh (ADR-031 §D3).
+ */
+export interface WorkspacePatchArguments {
+  tool_name: 'workspace_patch';
+  patch_text?: string;
+}
+
+/** The six mutating-tool argument shapes, discriminated by `tool_name`. */
+export type WorkspaceToolArguments =
+  | WorkspaceWriteArguments
+  | WorkspaceDeleteArguments
+  | WorkspaceEditArguments
+  | WorkspaceMkdirArguments
+  | WorkspaceMultiEditArguments
+  | WorkspacePatchArguments;
+
 // Union type for all possible messages
 export type AkgenticMessage =
   | SentMessage
@@ -623,4 +746,210 @@ export function isWelcomeAnnouncement(msg: BaseMessage): boolean {
   return (
     !!inner && isWelcomeMessage(inner) && inner.display_type === 'other'
   );
+}
+
+/**
+ * Inner-event check (ADR-031 §D6): true when the inner event carried by an
+ * `EventMessage` is a `ToolCallEvent`. Matches on the inner `__model__`, the
+ * same discrimination used for `TeamStoppingEvent` / `ClosedNotification`.
+ *
+ * The argument is `EventMessage.event`, NEVER the envelope. Applied to the
+ * envelope this never matches — `'EventMessage'` does not contain
+ * `'ToolCallEvent'` — and the caller is then silently dead with every other spec
+ * still green. The mirror failure is worse: a guard that DID fire on the
+ * envelope would fire for every `EventMessage` on the log, and the workspace
+ * fold built on it would invalidate on every LLM message.
+ *
+ * No substring collision in either direction with any tag on the wire:
+ * `'ToolCallEvent'` neither contains nor is contained by `'ToolReturnEvent'`,
+ * `'ToolStateEvent'`, `'LlmMessageEvent'` or `'EventMessage'` (all of them share
+ * the trailing `'Event'`, which is not the same string).
+ */
+export function isToolCallEvent(
+  event: { __model__?: string } | null | undefined,
+): event is ToolCallEvent {
+  return !!event?.__model__?.includes('ToolCallEvent');
+}
+
+/**
+ * Inner-event check (ADR-031 §D6): true when the inner event carried by an
+ * `EventMessage` is a `ToolReturnEvent`. Same inner-vs-envelope rule as
+ * `isToolCallEvent` above — the argument is `EventMessage.event`, never the
+ * envelope — and the same absence of substring collision in either direction:
+ * `'ToolReturnEvent'` neither contains nor is contained by `'ToolCallEvent'`,
+ * `'ToolStateEvent'`, `'LlmMessageEvent'` or `'EventMessage'`.
+ *
+ * A return narrowed by this guard tells you a call FINISHED; it does not tell
+ * you what it touched. That is on the call, joined by `tool_call_id`.
+ */
+export function isToolReturnEvent(
+  event: { __model__?: string } | null | undefined,
+): event is ToolReturnEvent {
+  return !!event?.__model__?.includes('ToolReturnEvent');
+}
+
+// ---------------------------------------------------------------------------
+// parseToolCallArguments and its structural narrowing helpers (ADR-031 §D6).
+//
+// `JSON.parse`'s result is taken as `unknown` and narrowed by explicit
+// predicates — no `any` reaches any signature or body here, which is the whole
+// point of typing these two events at last.
+// ---------------------------------------------------------------------------
+
+/** True for a JSON value that is a plain object — not an array, not `null`. */
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** The `path` field when present AND a string; `null` otherwise. */
+function readPath(body: Record<string, unknown>): string | null {
+  const path = body['path'];
+  return typeof path === 'string' ? path : null;
+}
+
+function readOptionalString(
+  body: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  const value = body[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function readOptionalBoolean(
+  body: Record<string, unknown>,
+  key: string,
+): boolean | undefined {
+  const value = body[key];
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+/**
+ * The three edit-content fields shared by `workspace_edit` and every element of
+ * `workspace_multi_edit`. None of them is validated — a wrongly-typed one is
+ * simply omitted rather than vetoing the mutation — and an absent one produces
+ * no key at all, so a parsed member never carries `undefined` values.
+ */
+function readEditContentFields(
+  body: Record<string, unknown>,
+): Omit<WorkspaceEditOperation, 'path'> {
+  const oldString = readOptionalString(body, 'old_string');
+  const newString = readOptionalString(body, 'new_string');
+  const replaceAll = readOptionalBoolean(body, 'replace_all');
+  return {
+    ...(oldString !== undefined ? { old_string: oldString } : {}),
+    ...(newString !== undefined ? { new_string: newString } : {}),
+    ...(replaceAll !== undefined ? { replace_all: replaceAll } : {}),
+  };
+}
+
+/**
+ * The `edits` list, or `null` when it is missing, is not an array, is empty, or
+ * holds a single element without a usable `path`. All-or-nothing on purpose: a
+ * partially-populated list would be indistinguishable from a complete one at the
+ * consumer, which would then invalidate some of what changed and none of the
+ * rest.
+ */
+function readEdits(
+  body: Record<string, unknown>,
+): WorkspaceEditOperation[] | null {
+  const raw = body['edits'];
+  if (!Array.isArray(raw)) return null;
+  // `Array.isArray` narrows `unknown` to `any[]`; re-binding as `unknown[]`
+  // keeps every element opaque until a predicate has looked at it.
+  const elements: unknown[] = raw;
+  if (elements.length === 0) return null;
+
+  const edits: WorkspaceEditOperation[] = [];
+  for (const element of elements) {
+    if (!isJsonObject(element)) return null;
+    const path = readPath(element);
+    if (path === null) return null;
+    edits.push({ path, ...readEditContentFields(element) });
+  }
+  return edits;
+}
+
+/** The four tools whose whole path argument is a single top-level `path`. */
+function parseSinglePathArguments(
+  toolName:
+    | 'workspace_write'
+    | 'workspace_delete'
+    | 'workspace_edit'
+    | 'workspace_mkdir',
+  body: Record<string, unknown>,
+): WorkspaceToolArguments | null {
+  const path = readPath(body);
+  if (path === null) return null;
+
+  switch (toolName) {
+    case 'workspace_write': {
+      const content = readOptionalString(body, 'content');
+      return {
+        tool_name: 'workspace_write',
+        path,
+        ...(content !== undefined ? { content } : {}),
+      };
+    }
+    case 'workspace_delete':
+      return { tool_name: 'workspace_delete', path };
+    case 'workspace_mkdir':
+      return { tool_name: 'workspace_mkdir', path };
+    case 'workspace_edit':
+      return { tool_name: 'workspace_edit', path, ...readEditContentFields(body) };
+  }
+}
+
+/**
+ * Parse a tool call's `arguments` JSON string into the typed shape for its
+ * `tool_name`, or `null` (ADR-031 §D6).
+ *
+ * **It never throws, for any input.** That is a requirement, not defensive
+ * style: this runs inside a fold over `log$`, and a fold that throws on one bad
+ * frame stops folding for the rest of the session — the log keeps growing, the
+ * projection is frozen, and nothing surfaces anywhere.
+ *
+ * It returns `null` — never a partially-populated object — for malformed JSON, a
+ * JSON root that is not an object, a `tool_name` it does not know (the read
+ * tools included: they write `.`-prefixed sidecar caches, so admitting them
+ * would refetch the tree on every file an agent reads), and a body that does not
+ * carry the fields that tool's invalidation consumes. Extra unknown keys are
+ * ignored rather than rejected, so a field added upstream cannot turn a valid
+ * mutation into `null`.
+ *
+ * The path is returned exactly as the wire carried it: no parent derivation, no
+ * normalisation, no joining.
+ */
+export function parseToolCallArguments(
+  event: ToolCallEvent,
+): WorkspaceToolArguments | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(event.arguments) as unknown;
+  } catch {
+    return null;
+  }
+  if (!isJsonObject(parsed)) return null;
+
+  switch (event.tool_name) {
+    case 'workspace_write':
+    case 'workspace_delete':
+    case 'workspace_edit':
+    case 'workspace_mkdir':
+      return parseSinglePathArguments(event.tool_name, parsed);
+    case 'workspace_multi_edit': {
+      const edits = readEdits(parsed);
+      return edits === null
+        ? null
+        : { tool_name: 'workspace_multi_edit', edits };
+    }
+    case 'workspace_patch': {
+      const patchText = readOptionalString(parsed, 'patch_text');
+      return {
+        tool_name: 'workspace_patch',
+        ...(patchText !== undefined ? { patch_text: patchText } : {}),
+      };
+    }
+    default:
+      return null;
+  }
 }
