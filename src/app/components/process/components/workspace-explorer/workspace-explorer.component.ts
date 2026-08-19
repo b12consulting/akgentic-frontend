@@ -113,6 +113,16 @@ export class WorkspaceExplorerComponent {
   isMarkdownFile = signal(false);
   errorMessage = signal<string | null>(null);
 
+  /**
+   * True while a per-file refresh is in flight — the ONLY state this feature
+   * adds. It drives the toolbar control's disabled binding AND the guard at the
+   * top of `refreshSelectedFile`, so a second activation cannot race the first
+   * (ADR-030 §D3) whichever entry point it arrives through. It is deliberately
+   * not a cache, a "last refreshed at" stamp, or a dirty flag: the panel keeps
+   * holding exactly one file's bytes, read on demand.
+   */
+  refreshingFile = signal(false);
+
   // Plain fields: not template-bound through *ngIf/[value] in a way that the
   // OnPush stall affects (sidebar/upload-modal toggles are driven by user
   // events that already mark the view), so they stay as ordinary fields.
@@ -298,11 +308,31 @@ export class WorkspaceExplorerComponent {
     }
   }
 
-  async loadFileContent(path: string) {
-    this.loadingContent.set(true);
-    this.fileContent.set(null);
-    this.isBinaryFile.set(false);
-    this.isMarkdownFile.set(false);
+  /**
+   * Read a file's body into the pane. ONE loader, two entry conditions:
+   *
+   * - **selection** (`refresh === false`, the default): the pane is showing a
+   *   different file — or nothing — so it blanks, raises the spinner and
+   *   repaints from scratch. Byte-for-byte the behaviour that shipped before
+   *   the refresh control existed.
+   * - **refresh** (`refresh === true`): the pane is already showing THIS file,
+   *   so it is left rendered while the new bytes are fetched. `fileContent` is
+   *   never nulled and `loadingContent` is never raised — that, and nothing
+   *   else, is what preserves the reader's scroll position (ADR-030 §D2). The
+   *   binary/markdown flags are written from the RESULT rather than reset up
+   *   front, because resetting them mid-flight flips the template blocks and
+   *   flickers the pane.
+   *
+   * `errorMessage` is cleared on entry in both modes, so a refresh that
+   * succeeds after a failure clears the stale banner.
+   */
+  async loadFileContent(path: string, refresh: boolean = false) {
+    if (!refresh) {
+      this.loadingContent.set(true);
+      this.fileContent.set(null);
+      this.isBinaryFile.set(false);
+      this.isMarkdownFile.set(false);
+    }
     this.errorMessage.set(null);
 
     try {
@@ -311,22 +341,81 @@ export class WorkspaceExplorerComponent {
         path,
         this.workspaceId()
       );
-
-      if (result.type === 'binary') {
-        this.isBinaryFile.set(true);
-        this.fileContent.set(result.message || 'Binary file cannot be displayed');
-      } else {
-        this.fileContent.set(result.content);
-        // Check if file is markdown
-        if (this.selectedFile()?.extension?.toLowerCase() === '.md') {
-          this.isMarkdownFile.set(true);
-        }
-      }
+      this.applyFileContent(result);
     } catch (error: any) {
       console.error('Error loading file content', error);
       this.errorMessage.set(error?.message || 'Failed to load file content');
     } finally {
-      this.loadingContent.set(false);
+      if (!refresh) {
+        this.loadingContent.set(false);
+      }
+    }
+  }
+
+  /** Write one `getFileContent` result into the pane's signals. */
+  private applyFileContent(result: FileContent): void {
+    if (result.type === 'binary') {
+      this.isBinaryFile.set(true);
+      this.isMarkdownFile.set(false);
+      this.fileContent.set(result.message || 'Binary file cannot be displayed');
+      return;
+    }
+    this.isBinaryFile.set(false);
+    this.fileContent.set(result.content);
+    this.isMarkdownFile.set(
+      this.selectedFile()?.extension?.toLowerCase() === '.md'
+    );
+  }
+
+  /**
+   * Re-read the open file: its body AND the metadata the chrome renders. Both
+   * halves run on every activation — a refreshed body under a stale size tag is
+   * worse than the staleness it fixes (ADR-030 §A4), so neither half returning
+   * early is acceptable.
+   *
+   * The body is read FIRST so its `errorMessage` reset cannot wipe a listing
+   * failure reported by the metadata half.
+   */
+  async refreshSelectedFile(): Promise<void> {
+    const file = this.selectedFile();
+    if (!file) return;
+
+    // Enforce in code the gate the toolbar control applies in the template: the
+    // workspace-scoped refresh reaches this method too and its button is NOT
+    // bound to these signals. Two reads of the same file settle in arbitrary
+    // order, so the loser repaints the pane with the OLDER bytes, and the first
+    // `finally` would release the button while the second read is still live.
+    if (this.refreshingFile() || this.loadingContent()) return;
+
+    this.refreshingFile.set(true);
+    try {
+      await this.loadFileContent(file.path, true);
+      await this.refreshFileMetadata(file);
+    } finally {
+      this.refreshingFile.set(false);
+    }
+  }
+
+  /**
+   * Re-fetch the open file's parent listing through the existing
+   * `refreshDirectory` (which already splices fresh children into the
+   * materialized tree and tolerates a target that was never expanded), then
+   * re-resolve the open file's own entry by path. A path absent from the fresh
+   * listing leaves `selectedFile` as it is — the failed body read is what tells
+   * the user the file has gone. A rejection here is reported and swallowed so
+   * it cannot cancel the other half.
+   */
+  private async refreshFileMetadata(file: FileNode): Promise<void> {
+    try {
+      const fresh = await this.refreshDirectory(this.getParentPath(file.path));
+      const entry = fresh.find((node) => node.path === file.path);
+      if (entry) {
+        this.selectedFile.set(entry);
+      }
+    } catch (error: unknown) {
+      console.error('Error refreshing file metadata', error);
+      const message = error instanceof Error ? error.message : '';
+      this.errorMessage.set(message || 'Failed to refresh file metadata');
     }
   }
 
@@ -358,6 +447,13 @@ export class WorkspaceExplorerComponent {
     this.loadRootTree$(this.workspaceId())
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((result) => this.applyRootLoad(result));
+
+    // The workspace-scoped control also re-reads whatever file is open, through
+    // the same per-file path — refreshing the tree while leaving the pane on
+    // stale bytes is the surprise this closes.
+    if (this.selectedFile()) {
+      void this.refreshSelectedFile();
+    }
   }
 
   toggleSidebar() {
@@ -437,28 +533,28 @@ export class WorkspaceExplorerComponent {
    * the tree at that path. For the root ('') this replaces the synthetic
    * Root Folder wrapper's children (the wrapper itself stays). For subdirs
    * we walk the tree to locate the matching TreeNode; if not found (e.g.
-   * user uploaded to a dir that hasn't been expanded yet), silently return —
-   * the next manual expand will lazy-fetch the fresh listing anyway.
+   * user uploaded to a dir that hasn't been expanded yet), the splice is
+   * skipped — the next manual expand will lazy-fetch the fresh listing anyway.
+   *
+   * Returns the fresh listing so a caller that needs a single entry out of it
+   * (the per-file refresh, re-resolving the open file's metadata) can read it
+   * without issuing a second request or duplicating the splice.
    */
-  private async refreshDirectory(path: string): Promise<void> {
+  private async refreshDirectory(path: string): Promise<FileNode[]> {
     const fresh = await this.fetchTree(path);
     const freshNodes = this.convertToTreeNodes(fresh);
 
-    if (path === '') {
-      const current = this.treeNodes();
-      if (current.length > 0) {
-        current[0].children = freshNodes;
-        this.treeNodes.set([...current]);
-      }
-      return;
-    }
-
     const current = this.treeNodes();
-    const target = this.findTreeNodeByPath(current, path);
+    const target =
+      path === ''
+        ? current[0] ?? null
+        : this.findTreeNodeByPath(current, path);
+
     if (target) {
       target.children = freshNodes;
       this.treeNodes.set([...current]);
     }
+    return fresh;
   }
 
   /**

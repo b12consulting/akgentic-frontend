@@ -5,6 +5,7 @@ import {
   CUSTOM_ELEMENTS_SCHEMA,
 } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { TreeNode } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
@@ -12,7 +13,11 @@ import { ToolbarModule } from 'primeng/toolbar';
 import { BehaviorSubject } from 'rxjs';
 
 import { ContextService } from '../../../../core/context/context.service';
-import { FileNode, WorkspaceService } from '../../workspace/workspace.service';
+import {
+  FileContent,
+  FileNode,
+  WorkspaceService,
+} from '../../workspace/workspace.service';
 import { UploadModalComponent } from './upload-modal/upload-modal.component';
 import { WorkspaceExplorerComponent } from './workspace-explorer.component';
 
@@ -76,6 +81,28 @@ async function flushRootLoad(
   fixture.detectChanges();
   await fixture.whenStable();
   fixture.detectChanges();
+}
+
+/** Drain the microtask queue so fire-and-forget async work settles. */
+function flushMicrotasks(): Promise<void> {
+  return new Promise<void>((resolve) => setTimeout(resolve, 0));
+}
+
+/** A promise whose settlement the spec controls, to observe an in-flight window. */
+interface Deferred<T> {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason: unknown) => void;
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
 }
 
 describe('WorkspaceExplorerComponent', () => {
@@ -430,6 +457,442 @@ describe('WorkspaceExplorerComponent', () => {
       expect(component.isMarkdownFile()).toBe(false);
       // Selecting a directory loads no content.
       expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+    });
+  });
+
+  // --- refreshSelectedFile (Epic 38) ---------------------------------
+  //
+  // The panel used to render a file once, at selection time, and never read it
+  // again. These specs cover the per-file refresh: body AND metadata, without
+  // blanking the pane. The "without blanking" half is the one that silently
+  // regresses, so it is asserted DURING the in-flight window (scenario 48) —
+  // a spec that only checks the final content passes against an implementation
+  // that blanks and repaints, which is the bug being fixed.
+
+  describe('refreshSelectedFile', () => {
+    const OPEN_FILE_PATH = 'docs/a.md';
+
+    function openFile(size = 10): FileNode {
+      return fileNode({
+        name: 'a.md',
+        path: OPEN_FILE_PATH,
+        type: 'file',
+        size,
+        extension: '.md',
+      });
+    }
+
+    /** Root wrapper → `docs` (materialized) → `a.md`. */
+    function materializedTree(): TreeNode {
+      const aMd: TreeNode = {
+        label: 'a.md',
+        data: openFile(10),
+        leaf: true,
+      };
+      const docs: TreeNode = {
+        label: 'docs',
+        data: fileNode({ name: 'docs', path: 'docs', type: 'directory' }),
+        leaf: false,
+        children: [aMd],
+      };
+      return {
+        label: 'Root Folder',
+        data: fileNode({ name: 'Root Folder', path: '', type: 'directory' }),
+        children: [docs],
+        expanded: true,
+      };
+    }
+
+    beforeEach(() => {
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: 'first',
+        type: 'text',
+      });
+      fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+      component = fixture.componentInstance;
+      component.processId = 'proc';
+    });
+
+    it('scenario 45 — activating refresh re-reads the body and renders the new content', async () => {
+      component.selectedFile.set(openFile());
+      await component.loadFileContent(OPEN_FILE_PATH);
+      expect(component.fileContent()).toBe('first');
+
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: 'first + appended',
+        type: 'text',
+      });
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+
+      await component.refreshSelectedFile();
+
+      expect(component.fileContent()).toBe('first + appended');
+    });
+
+    it('scenario 46 — the same activation re-resolves the file entry and splices the fresh listing', async () => {
+      component.treeNodes.set([materializedTree()]);
+      component.selectedFile.set(openFile(10));
+      component.fileContent.set('first');
+
+      workspaceServiceSpy.getWorkspaceTree.calls.reset();
+      workspaceServiceSpy.getFileContent.calls.reset();
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: 'first + appended',
+        type: 'text',
+      });
+
+      await component.refreshSelectedFile();
+
+      // BOTH halves ran on the one activation.
+      expect(workspaceServiceSpy.getFileContent.calls.count()).toBe(1);
+      expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith(
+        'proc',
+        'docs'
+      );
+
+      // The metadata the toolbar tag reads moved with the body.
+      expect(component.selectedFile()!.size).toBe(2048);
+      // ...and so did the tree entry behind it.
+      const docsNode = component.treeNodes()[0].children![0];
+      expect(docsNode.children!.length).toBe(1);
+      expect((docsNode.children![0].data as FileNode).size).toBe(2048);
+    });
+
+    it('scenario 47 — a file in a never-expanded directory refreshes without throwing or corrupting the tree', async () => {
+      // Only the synthetic root is materialized; `docs` was never expanded.
+      const bareRoot: TreeNode = {
+        label: 'Root Folder',
+        data: fileNode({ name: 'Root Folder', path: '', type: 'directory' }),
+        children: [],
+        expanded: true,
+      };
+      component.treeNodes.set([bareRoot]);
+      component.selectedFile.set(openFile(10));
+
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: 'body',
+        type: 'text',
+      });
+
+      await expectAsync(component.refreshSelectedFile()).toBeResolved();
+
+      // The unmaterialized target is left alone; the open file still refreshed.
+      expect(component.treeNodes()[0].children).toEqual([]);
+      expect(component.selectedFile()!.size).toBe(2048);
+      expect(component.fileContent()).toBe('body');
+    });
+
+    it('scenario 48 — the pane is never blanked: fileContent stays non-null and loadingContent stays down across the whole cycle', async () => {
+      component.selectedFile.set(openFile(10));
+      component.fileContent.set('old body');
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+
+      const body = deferred<FileContent>();
+      workspaceServiceSpy.getFileContent.and.returnValue(body.promise);
+
+      const observed: { content: string | null; loading: boolean }[] = [];
+      const observe = (): void => {
+        observed.push({
+          content: component.fileContent(),
+          loading: component.loadingContent(),
+        });
+      };
+
+      observe();
+      const cycle = component.refreshSelectedFile();
+      // Synchronous entry: a blanking implementation has already nulled the
+      // pane and raised the spinner by this point.
+      observe();
+      await Promise.resolve();
+      observe();
+      await Promise.resolve();
+      observe();
+
+      body.resolve({ content: 'new body', type: 'text' });
+      await cycle;
+      observe();
+
+      expect(observed.map((o) => o.content)).not.toContain(null);
+      expect(observed.map((o) => o.loading)).not.toContain(true);
+      expect(component.fileContent()).toBe('new body');
+      expect(component.refreshingFile()).toBe(false);
+    });
+
+    it('scenario 49 — the selection path still blanks, still raises loadingContent and still issues exactly one request', async () => {
+      component.fileContent.set('stale body');
+      workspaceServiceSpy.getWorkspaceTree.calls.reset();
+      workspaceServiceSpy.getFileContent.calls.reset();
+
+      const body = deferred<FileContent>();
+      workspaceServiceSpy.getFileContent.and.returnValue(body.promise);
+
+      const selection = component.onNodeSelect({ node: { data: openFile() } });
+
+      expect(component.fileContent()).toBeNull();
+      expect(component.loadingContent()).toBe(true);
+
+      body.resolve({ content: 'body', type: 'text' });
+      await selection;
+
+      expect(component.loadingContent()).toBe(false);
+      expect(component.fileContent()).toBe('body');
+      // One body read, and NO directory listing — selection is not a refresh.
+      expect(workspaceServiceSpy.getFileContent.calls.count()).toBe(1);
+      expect(workspaceServiceSpy.getWorkspaceTree).not.toHaveBeenCalled();
+    });
+
+    it('scenario 50 — a failed body read keeps the stale body and reports the error', async () => {
+      const original = openFile(10);
+      component.selectedFile.set(original);
+      component.fileContent.set('old body');
+
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+      workspaceServiceSpy.getFileContent.and.rejectWith(new Error('read failed'));
+
+      await component.refreshSelectedFile();
+
+      expect(component.errorMessage()).toBe('read failed');
+      expect(component.fileContent()).toBe('old body');
+      expect(component.loadingContent()).toBe(false);
+      expect(component.refreshingFile()).toBe(false);
+    });
+
+    it('scenario 51 — a failed listing leaves selectedFile alone, still refreshes the body, and releases the button', async () => {
+      const original = openFile(10);
+      component.selectedFile.set(original);
+      component.fileContent.set('old body');
+
+      workspaceServiceSpy.getWorkspaceTree.and.rejectWith(
+        new Error('listing failed')
+      );
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: 'new body',
+        type: 'text',
+      });
+
+      await component.refreshSelectedFile();
+
+      expect(component.errorMessage()).toBe('listing failed');
+      expect(component.selectedFile()).toEqual(original);
+      expect(component.fileContent()).toBe('new body');
+      expect(component.refreshingFile()).toBe(false);
+    });
+
+    it('scenario 52 — a vanished file leaves selectedFile as it is', async () => {
+      const original = openFile(10);
+      component.selectedFile.set(original);
+      // Fresh listing no longer carries the open file's path.
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
+        fileNode({ name: 'b.md', path: 'docs/b.md', type: 'file', size: 5 }),
+      ]);
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: 'body',
+        type: 'text',
+      });
+
+      await component.refreshSelectedFile();
+
+      expect(component.selectedFile()).toEqual(original);
+    });
+
+    it('scenario 53 — with no file open the refresh is a no-op', async () => {
+      component.selectedFile.set(null);
+      workspaceServiceSpy.getWorkspaceTree.calls.reset();
+      workspaceServiceSpy.getFileContent.calls.reset();
+
+      await component.refreshSelectedFile();
+
+      expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+      expect(workspaceServiceSpy.getWorkspaceTree).not.toHaveBeenCalled();
+    });
+
+    it('scenario 54 — a set workspaceId is threaded through BOTH the body read and the listing', async () => {
+      fixture.componentRef.setInput('workspaceId', 'ws-1');
+      await flushRootLoad(fixture);
+
+      component.selectedFile.set(openFile(10));
+      workspaceServiceSpy.getWorkspaceTree.calls.reset();
+      workspaceServiceSpy.getFileContent.calls.reset();
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: 'body',
+        type: 'text',
+      });
+
+      await component.refreshSelectedFile();
+
+      expect(workspaceServiceSpy.getFileContent).toHaveBeenCalledOnceWith(
+        'proc',
+        OPEN_FILE_PATH,
+        'ws-1'
+      );
+      expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith(
+        'proc',
+        'docs',
+        'ws-1'
+      );
+    });
+
+    it('scenario 55 — an unset workspaceId omits the id on both calls', async () => {
+      component.selectedFile.set(openFile(10));
+      workspaceServiceSpy.getWorkspaceTree.calls.reset();
+      workspaceServiceSpy.getFileContent.calls.reset();
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: 'body',
+        type: 'text',
+      });
+
+      await component.refreshSelectedFile();
+
+      expect(workspaceServiceSpy.getFileContent).toHaveBeenCalledOnceWith(
+        'proc',
+        OPEN_FILE_PATH,
+        undefined
+      );
+      // The unset path keeps today's 2-arg listing shape.
+      expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith(
+        'proc',
+        'docs'
+      );
+    });
+
+    it('scenario 56 — the navigator refresh re-runs the root load AND re-reads the open file', async () => {
+      component.selectedFile.set(openFile(10));
+      workspaceServiceSpy.getWorkspaceTree.calls.reset();
+      workspaceServiceSpy.getFileContent.calls.reset();
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: 'body',
+        type: 'text',
+      });
+
+      component.refresh();
+      await flushMicrotasks();
+
+      // Root tree half.
+      expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledWith(
+        'proc',
+        ''
+      );
+      // Open-file half, through the same per-file path.
+      expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledWith(
+        'proc',
+        'docs'
+      );
+      expect(workspaceServiceSpy.getFileContent).toHaveBeenCalledOnceWith(
+        'proc',
+        OPEN_FILE_PATH,
+        undefined
+      );
+      expect(component.selectedFile()!.size).toBe(2048);
+    });
+
+    it('scenario 57 — with no file open the navigator refresh is tree-only', async () => {
+      component.selectedFile.set(null);
+      workspaceServiceSpy.getWorkspaceTree.calls.reset();
+      workspaceServiceSpy.getFileContent.calls.reset();
+
+      component.refresh();
+      await flushMicrotasks();
+
+      expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith(
+        'proc',
+        ''
+      );
+      expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+    });
+
+    // The toolbar control's [disabled] binding is the only thing stopping a
+    // second per-file read — and the NAVIGATOR's refresh reaches this method
+    // without being bound to it. So the gate is enforced in the method too:
+    // two reads of one file settle in arbitrary order, and the loser repaints
+    // the pane with the older bytes.
+
+    it('scenario 63 — a second activation while a refresh is in flight is ignored', async () => {
+      component.selectedFile.set(openFile(10));
+      component.fileContent.set('old body');
+      workspaceServiceSpy.getWorkspaceTree.calls.reset();
+      workspaceServiceSpy.getFileContent.calls.reset();
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+
+      const body = deferred<FileContent>();
+      workspaceServiceSpy.getFileContent.and.returnValue(body.promise);
+
+      const first = component.refreshSelectedFile();
+      // The path the navigator's control takes: not gated on refreshingFile.
+      await component.refreshSelectedFile();
+
+      expect(workspaceServiceSpy.getFileContent.calls.count()).toBe(1);
+      // The in-flight flag is still held by the FIRST cycle, so the button
+      // stays disabled rather than being released by the ignored activation.
+      expect(component.refreshingFile()).toBe(true);
+
+      body.resolve({ content: 'new body', type: 'text' });
+      await first;
+
+      expect(component.refreshingFile()).toBe(false);
+      expect(component.fileContent()).toBe('new body');
+      expect(workspaceServiceSpy.getFileContent.calls.count()).toBe(1);
+    });
+
+    it('scenario 64 — the navigator refresh skips the file half while an initial load is in flight', async () => {
+      component.selectedFile.set(openFile(10));
+      workspaceServiceSpy.getWorkspaceTree.calls.reset();
+      workspaceServiceSpy.getFileContent.calls.reset();
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+
+      // A selection load is still fetching this file's current bytes.
+      component.loadingContent.set(true);
+
+      component.refresh();
+      await flushMicrotasks();
+
+      // The tree half runs as always; the file half does not race the load
+      // that is already reading the file (the gate the button applies).
+      expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith(
+        'proc',
+        ''
+      );
+      expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+    });
+  });
+
+  // --- nothing polls (Epic 38) ---------------------------------------
+  //
+  // `window.setTimeout` is used by zone.js and Angular internals, so spying on
+  // it proves nothing. `setInterval` is the one a polling implementation would
+  // reach for, and nothing on this path uses it.
+
+  describe('no polling', () => {
+    it('scenario 58 — construction and a full refresh cycle create no interval', async () => {
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: 'body',
+        type: 'text',
+      });
+      const intervalSpy = spyOn(window, 'setInterval').and.callThrough();
+
+      fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+      component = fixture.componentInstance;
+      component.processId = 'proc';
+      await flushRootLoad(fixture);
+
+      component.selectedFile.set(
+        fileNode({
+          name: 'a.md',
+          path: 'docs/a.md',
+          type: 'file',
+          size: 10,
+          extension: '.md',
+        })
+      );
+      await component.refreshSelectedFile();
+
+      expect(intervalSpy).not.toHaveBeenCalled();
     });
   });
 
@@ -1367,5 +1830,188 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
     expect(tooltipOf('Upload Files')).toBe('');
     clearSelection();
     expect(tooltipOf('Upload to Root')).toBe('');
+  });
+});
+
+// --------------------------------------------------------------------
+// The per-file refresh control (Epic 38).
+//
+// Reuses the widened override documented above — `ButtonModule` so `[disabled]`
+// reaches a real inner <button>, `ToolbarModule` so the `end`/`start` templates
+// are instantiated at all. `TooltipModule` stays out, so the STATIC
+// `pTooltip="..."` attribute survives in the DOM and is what these specs query
+// by (the same idiom as the `label` attribute above). `p-tag` remains stubbed by
+// CUSTOM_ELEMENTS_SCHEMA, so its `[value]` binding lands on the element object —
+// reading it back asserts what the TEMPLATE computed, not what a signal holds.
+// --------------------------------------------------------------------
+
+describe('WorkspaceExplorerComponent — per-file refresh control (Epic 38)', () => {
+  const FILE_REFRESH = 'p-button[pTooltip="Refresh this file"]';
+  const WORKSPACE_REFRESH = 'p-button[pTooltip="Refresh workspace"]';
+  const SIZE_TAG = 'p-tag[severity="secondary"]';
+
+  let component: WorkspaceExplorerComponent;
+  let fixture: ComponentFixture<WorkspaceExplorerComponent>;
+  let workspaceServiceSpy: jasmine.SpyObj<WorkspaceService>;
+
+  /**
+   * A PLAIN-TEXT file, deliberately: a `.md` file would render the pane through
+   * `<markdown>`, which is not resolvable under this override (no dash in the
+   * tag ⇒ CUSTOM_ELEMENTS_SCHEMA does not cover it) — the same constraint
+   * scenario 27 documents. Nothing here depends on markdown rendering.
+   */
+  function openFile(size: number): FileNode {
+    return fileNode({
+      name: 'a.txt',
+      path: 'docs/a.txt',
+      type: 'file',
+      size,
+      extension: '.txt',
+    });
+  }
+
+  beforeEach(async () => {
+    workspaceServiceSpy = jasmine.createSpyObj('WorkspaceService', [
+      'getWorkspaceTree',
+      'getFileContent',
+      'getDownloadUrl',
+      'uploadFiles',
+    ]);
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: 'body',
+      type: 'text',
+    });
+
+    await TestBed.configureTestingModule({
+      imports: [WorkspaceExplorerComponent, NoopAnimationsModule],
+      providers: [
+        { provide: WorkspaceService, useValue: workspaceServiceSpy },
+        {
+          provide: ContextService,
+          useValue: {
+            currentProcessId$: new BehaviorSubject<string>('proc'),
+            currentTeamRunning$: new BehaviorSubject<boolean>(true),
+            getCurrentTeam: jasmine
+              .createSpy('getCurrentTeam')
+              .and.callFake(async () => makeTeam()),
+          },
+        },
+      ],
+    })
+      .overrideComponent(WorkspaceExplorerComponent, {
+        set: {
+          imports: [CommonModule, ButtonModule, ToolbarModule],
+          schemas: [CUSTOM_ELEMENTS_SCHEMA],
+        },
+      })
+      .compileComponents();
+
+    fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+    component = fixture.componentInstance;
+    component.processId = 'proc';
+    await flushRootLoad(fixture);
+  });
+
+  function refreshControl(): HTMLElement | null {
+    return fixture.nativeElement.querySelector(FILE_REFRESH);
+  }
+
+  /** PrimeNG propagates the [disabled] input onto the inner <button>. */
+  function refreshDisabled(): boolean {
+    const btn = refreshControl()!.querySelector('button');
+    expect(btn).withContext('inner <button> of the refresh control').not.toBeNull();
+    return (btn as HTMLButtonElement).disabled;
+  }
+
+  async function selectOpenFile(size = 10): Promise<void> {
+    component.selectedFile.set(openFile(size));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  it('scenario 59 — the control renders only with a file open, in the preview toolbar, before Download', async () => {
+    // No file open ⇒ neither the refresh nor the download control is rendered.
+    expect(refreshControl()).toBeNull();
+
+    await selectOpenFile();
+
+    const refresh = refreshControl();
+    expect(refresh).withContext('per-file refresh control').not.toBeNull();
+    expect(refresh!.getAttribute('icon')).toBe('pi pi-refresh');
+    expect(refresh!.getAttribute('severity')).toBe('secondary');
+    // Labelled, like every other control in this toolbar. The icon-only
+    // register belongs to the navigator header, not here.
+    expect(refresh!.getAttribute('label')).toBe('Refresh');
+
+    const button = fixture.debugElement.query(By.css(FILE_REFRESH))
+      .componentInstance as { text: boolean; rounded: boolean };
+    expect(button.text).toBe(true);
+    expect(button.rounded).toBe(true);
+
+    // Immediately before Download, and inside the same toolbar container.
+    const download = fixture.nativeElement.querySelector(
+      'p-button[label="Download"]'
+    ) as HTMLElement;
+    expect(download).withContext('download control').not.toBeNull();
+    expect(refresh!.parentElement).toBe(download.parentElement);
+    expect(refresh!.nextElementSibling).toBe(download);
+
+    // The navigator's workspace-scoped control keeps its own tooltip.
+    expect(
+      fixture.nativeElement.querySelector(WORKSPACE_REFRESH)
+    ).withContext('navigator refresh control').not.toBeNull();
+  });
+
+  it('scenario 60 — the rendered size tag carries the fresh size after a refresh', async () => {
+    await selectOpenFile(10);
+
+    const sizeTag = (): { value?: string } =>
+      fixture.nativeElement.querySelector(SIZE_TAG) as unknown as {
+        value?: string;
+      };
+    expect(sizeTag().value).toBe('10 B');
+
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: 'body + appended',
+      type: 'text',
+    });
+
+    await component.refreshSelectedFile();
+    fixture.detectChanges();
+
+    expect(sizeTag().value).toBe('2 KB');
+  });
+
+  it('scenario 61 — the control is disabled while a refresh is in flight', async () => {
+    await selectOpenFile();
+    expect(refreshDisabled()).toBe(false);
+
+    const body = deferred<FileContent>();
+    workspaceServiceSpy.getFileContent.and.returnValue(body.promise);
+
+    const cycle = component.refreshSelectedFile();
+    fixture.detectChanges();
+    expect(refreshDisabled()).toBe(true);
+
+    body.resolve({ content: 'body', type: 'text' });
+    await cycle;
+    fixture.detectChanges();
+
+    expect(refreshDisabled()).toBe(false);
+  });
+
+  it('scenario 62 — the control is disabled while an initial load is in flight', async () => {
+    await selectOpenFile();
+
+    component.loadingContent.set(true);
+    fixture.detectChanges();
+    expect(refreshDisabled()).toBe(true);
+
+    component.loadingContent.set(false);
+    fixture.detectChanges();
+    expect(refreshDisabled()).toBe(false);
   });
 });

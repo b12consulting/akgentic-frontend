@@ -198,6 +198,37 @@ describe('WorkspaceService', () => {
   });
 
   describe('getFileContent', () => {
+    /**
+     * Rebuild the injector with an explicit `hideLogin`. The suite-wide provider
+     * reads it off `environment`, so a spec that must exercise BOTH branches has
+     * to replace the provider rather than mutate it.
+     */
+    function serviceWithHideLogin(hideLogin: boolean): WorkspaceService {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [
+          WorkspaceService,
+          { provide: FetchService, useValue: fetchServiceSpy },
+          {
+            provide: ConfigService,
+            useValue: { api: environment.api, hideLogin },
+          },
+        ],
+      });
+      return TestBed.inject(WorkspaceService);
+    }
+
+    function stubOkFetch(): jasmine.Spy {
+      return spyOn(window, 'fetch').and.returnValue(
+        Promise.resolve(
+          mockFetchResponse({
+            ok: true,
+            arrayBuffer: () => Promise.resolve(new ArrayBuffer(0)),
+          })
+        )
+      );
+    }
+
     it('decodes UTF-8 text successfully', async () => {
       const buffer = encodeUtf8('hello world');
       spyOn(window, 'fetch').and.returnValue(
@@ -287,6 +318,33 @@ describe('WorkspaceService', () => {
       expect(fetchSpy.calls.first().args[0]).toBe(
         `${environment.api}/workspace/p1/file?path=sub%2Fa.md&workspace_id=ws%20id`
       );
+    });
+
+    // The response carries `Content-Disposition` and neither `Cache-Control`,
+    // `ETag` nor `Last-Modified`, so a body with no freshness lifetime and no
+    // validator is not reliably re-fetched. `cache: 'no-store'` is therefore
+    // unconditional — gating it on a "refresh" call site leaves the ordinary
+    // read serving whatever the HTTP cache happens to hold.
+
+    it('passes cache: no-store with no credentials when hideLogin is true', async () => {
+      const noLogin = serviceWithHideLogin(true);
+      const fetchSpy = stubOkFetch();
+
+      await noLogin.getFileContent('p1', 'a.md');
+
+      expect(fetchSpy.calls.first().args[1]).toEqual({ cache: 'no-store' });
+    });
+
+    it('passes cache: no-store alongside credentials when hideLogin is false', async () => {
+      const withLogin = serviceWithHideLogin(false);
+      const fetchSpy = stubOkFetch();
+
+      await withLogin.getFileContent('p1', 'a.md');
+
+      expect(fetchSpy.calls.first().args[1]).toEqual({
+        credentials: 'include',
+        cache: 'no-store',
+      });
     });
   });
 
