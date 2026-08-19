@@ -336,6 +336,17 @@ describe('WorkspaceExplorerComponent', () => {
     });
 
     it('scenario 19 — text result writes fileContent, clears loadingContent and isBinaryFile', async () => {
+      // The pane is showing the file being read. Previously this scenario drove
+      // the loader with no selection at all — a state no production caller can
+      // produce, and one whose result is now applied to nothing (scenario 70).
+      component.selectedFile.set(
+        fileNode({
+          name: 'readme.txt',
+          path: 'docs/readme.txt',
+          type: 'file',
+          extension: '.txt',
+        })
+      );
       workspaceServiceSpy.getFileContent.and.resolveTo({
         content: 'hello world',
         type: 'text',
@@ -373,6 +384,16 @@ describe('WorkspaceExplorerComponent', () => {
     });
 
     it('scenario 21 — binary result flags isBinaryFile and shows the binary message', async () => {
+      // Same correction as scenario 19: the pane must be showing the file whose
+      // bytes are read, because a result for any other path is now discarded.
+      component.selectedFile.set(
+        fileNode({
+          name: 'image.png',
+          path: 'docs/image.png',
+          type: 'file',
+          extension: '.png',
+        })
+      );
       workspaceServiceSpy.getFileContent.and.resolveTo({
         content: null,
         type: 'binary',
@@ -858,6 +879,260 @@ describe('WorkspaceExplorerComponent', () => {
         ''
       );
       expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+    });
+  });
+
+  // --- superseded reads (Epic 39, FR8) -------------------------------
+  //
+  // Two body reads are trivially concurrent: `onNodeSelect` sets `selectedFile`
+  // and issues a read without awaiting or cancelling one already in flight. If
+  // the OLDER read resolves LAST it still wins every write it is allowed to
+  // make, and the pane renders one file's bytes under another file's name and
+  // size tag. The tree closed the same race declaratively with `switchMap`; the
+  // body read never had an equivalent. These scenarios pin that equivalent —
+  // the body, both renderer flags, the error banner, the spinner, and the
+  // metadata twin in `refreshFileMetadata`.
+  //
+  // The reads are overlapped through the REAL entry point wherever the defect
+  // is the subject, because `onNodeSelect`'s `selectedFile` write order is part
+  // of what makes the race reachable.
+
+  describe('superseded reads', () => {
+    function fileA(): FileNode {
+      return fileNode({
+        name: 'a.txt',
+        path: 'docs/a.txt',
+        type: 'file',
+        size: 10,
+        extension: '.txt',
+      });
+    }
+
+    function fileB(): FileNode {
+      return fileNode({
+        name: 'b.txt',
+        path: 'docs/b.txt',
+        type: 'file',
+        size: 20,
+        extension: '.txt',
+      });
+    }
+
+    beforeEach(() => {
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+      fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+      component = fixture.componentInstance;
+      component.processId = 'proc';
+    });
+
+    it('scenario 65 — the older read resolving LAST does not replace the newer file body', async () => {
+      const a = deferred<FileContent>();
+      const b = deferred<FileContent>();
+      workspaceServiceSpy.getFileContent.and.returnValues(a.promise, b.promise);
+
+      const first = component.onNodeSelect({ node: { data: fileA() } });
+      const second = component.onNodeSelect({ node: { data: fileB() } });
+
+      b.resolve({ content: 'B body', type: 'text' });
+      await second;
+      // A loses the race and resolves into a pane that has moved on.
+      a.resolve({ content: 'A body', type: 'text' });
+      await first;
+
+      expect(component.fileContent()).toBe('B body');
+      expect(component.selectedFile()!.path).toBe('docs/b.txt');
+    });
+
+    it('scenario 66 — a stale binary result flips neither the renderer flag nor the body', async () => {
+      const a = deferred<FileContent>();
+      const b = deferred<FileContent>();
+      workspaceServiceSpy.getFileContent.and.returnValues(a.promise, b.promise);
+
+      const png = fileNode({
+        name: 'img.png',
+        path: 'docs/img.png',
+        type: 'file',
+        size: 99,
+        extension: '.png',
+      });
+      const first = component.onNodeSelect({ node: { data: png } });
+      const second = component.onNodeSelect({ node: { data: fileB() } });
+
+      b.resolve({ content: 'B body', type: 'text' });
+      await second;
+      a.resolve({
+        content: null,
+        type: 'binary',
+        message: 'Binary file cannot be displayed',
+      });
+      await first;
+
+      // The binary placeholder never reaches the pane.
+      expect(component.isBinaryFile()).toBe(false);
+      expect(component.fileContent()).toBe('B body');
+    });
+
+    it('scenario 67 — a stale .md result does not switch the renderer under an open .txt file', async () => {
+      const a = deferred<FileContent>();
+      const b = deferred<FileContent>();
+      workspaceServiceSpy.getFileContent.and.returnValues(a.promise, b.promise);
+
+      const md = fileNode({
+        name: 'a.md',
+        path: 'docs/a.md',
+        type: 'file',
+        size: 10,
+        extension: '.md',
+      });
+      const first = component.onNodeSelect({ node: { data: md } });
+      const second = component.onNodeSelect({ node: { data: fileB() } });
+
+      b.resolve({ content: 'B body', type: 'text' });
+      await second;
+      a.resolve({ content: '# Title', type: 'text' });
+      await first;
+
+      // Guards the half-finished fix: an implementation that guards the body
+      // write but leaves the flag writes outside the guard passes scenario 65
+      // and fails here.
+      expect(component.isMarkdownFile()).toBe(false);
+      expect(component.fileContent()).toBe('B body');
+    });
+
+    it('scenario 68 — markdown-ness comes from the requested path, not from FileNode.extension', async () => {
+      // `extension` deliberately absent: the flag must not depend on a listing
+      // field the backend may omit, nor on what `selectedFile` holds when the
+      // response lands.
+      component.selectedFile.set(
+        fileNode({ name: 'a.md', path: 'docs/a.md', type: 'file', size: 10 })
+      );
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: '# Title',
+        type: 'text',
+      });
+
+      await component.loadFileContent('docs/a.md');
+
+      expect(component.isMarkdownFile()).toBe(true);
+      expect(component.fileContent()).toBe('# Title');
+
+      // Case-insensitive, like the extension comparison it replaces.
+      component.selectedFile.set(
+        fileNode({ name: 'B.MD', path: 'docs/B.MD', type: 'file', size: 4 })
+      );
+      await component.loadFileContent('docs/B.MD');
+
+      expect(component.isMarkdownFile()).toBe(true);
+    });
+
+    it('scenario 69 — a superseded metadata refresh does not write a stale FileNode into selectedFile', async () => {
+      component.selectedFile.set(fileA());
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: 'A body',
+        type: 'text',
+      });
+      const listing = deferred<FileNode[]>();
+      workspaceServiceSpy.getWorkspaceTree.and.returnValue(listing.promise);
+
+      const cycle = component.refreshSelectedFile();
+      // The body half has settled; the directory listing is still in flight.
+      await flushMicrotasks();
+      component.selectedFile.set(fileB());
+
+      listing.resolve([
+        fileNode({
+          name: 'a.txt',
+          path: 'docs/a.txt',
+          type: 'file',
+          size: 2048,
+          extension: '.txt',
+        }),
+      ]);
+      await cycle;
+
+      // File A's name and size tag must not land above file B's body.
+      expect(component.selectedFile()!.path).toBe('docs/b.txt');
+      expect(component.selectedFile()!.size).toBe(20);
+    });
+
+    it('scenario 70 — with no file selected a resolved read is applied to nothing', async () => {
+      component.selectedFile.set(null);
+      workspaceServiceSpy.getFileContent.and.resolveTo({
+        content: 'orphan body',
+        type: 'text',
+      });
+
+      // The stated semantics: no selection means no pane to write into. Both
+      // production entry points establish or require `selectedFile` first, so
+      // this state is reachable only by driving the loader directly.
+      await expectAsync(component.loadFileContent('docs/x.txt')).toBeResolved();
+
+      expect(component.fileContent()).toBeNull();
+      expect(component.isBinaryFile()).toBe(false);
+      expect(component.isMarkdownFile()).toBe(false);
+      expect(component.loadingContent()).toBe(false);
+    });
+
+    it('scenario 71 — a superseded read that FAILS does not banner over the file now on screen', async () => {
+      const a = deferred<FileContent>();
+      const b = deferred<FileContent>();
+      workspaceServiceSpy.getFileContent.and.returnValues(a.promise, b.promise);
+
+      const first = component.onNodeSelect({ node: { data: fileA() } });
+      const second = component.onNodeSelect({ node: { data: fileB() } });
+
+      b.resolve({ content: 'B body', type: 'text' });
+      await second;
+      a.reject(new Error('A read failed'));
+      await first;
+
+      expect(component.errorMessage()).toBeNull();
+      expect(component.fileContent()).toBe('B body');
+    });
+
+    it('scenario 72 — a superseded read does not lower the spinner a newer read is still holding', async () => {
+      const a = deferred<FileContent>();
+      const b = deferred<FileContent>();
+      workspaceServiceSpy.getFileContent.and.returnValues(a.promise, b.promise);
+
+      const first = component.onNodeSelect({ node: { data: fileA() } });
+      const second = component.onNodeSelect({ node: { data: fileB() } });
+
+      a.resolve({ content: 'A body', type: 'text' });
+      await first;
+
+      // B is still fetching, so the pane is blank and the spinner belongs to it.
+      expect(component.loadingContent()).toBe(true);
+      expect(component.fileContent()).toBeNull();
+
+      b.resolve({ content: 'B body', type: 'text' });
+      await second;
+
+      expect(component.loadingContent()).toBe(false);
+      expect(component.fileContent()).toBe('B body');
+    });
+
+    it('scenario 73 — selecting a directory mid-read leaves the folder pane alone and still releases the spinner', async () => {
+      const a = deferred<FileContent>();
+      workspaceServiceSpy.getFileContent.and.returnValue(a.promise);
+
+      const first = component.onNodeSelect({ node: { data: fileA() } });
+      await component.onNodeSelect({
+        node: {
+          data: fileNode({ name: 'docs', path: 'docs', type: 'directory' }),
+        },
+      });
+
+      a.resolve({ content: 'A body', type: 'text' });
+      await first;
+
+      expect(component.selectedFile()).toBeNull();
+      // The late body does not repaint a pane that is showing a folder...
+      expect(component.fileContent()).toBeNull();
+      // ...and the spinner still comes down: the directory branch issues no
+      // read, so the read in flight is still the one that owns it. A release
+      // gated on the path would strand it raised for ever here.
+      expect(component.loadingContent()).toBe(false);
     });
   });
 

@@ -123,6 +123,21 @@ export class WorkspaceExplorerComponent {
    */
   refreshingFile = signal(false);
 
+  /**
+   * Monotonic id stamped on every body read so a response can be matched back to
+   * the request that issued it. `readToken` is the id of the most recently
+   * ISSUED read; `loadingOwner` is the id of the read that raised the spinner.
+   *
+   * Nothing else correlates the two: `loadFileContent` is a bare `await`, and
+   * `onNodeSelect` issues a read without awaiting or cancelling one already in
+   * flight, so select A then B and A's late response still wins every write it
+   * is allowed to make. These two counters are what make "superseded" a thing
+   * the method can ask about — see `applyFileContent` for the pane's own,
+   * stricter, path-based rule.
+   */
+  private readToken = 0;
+  private loadingOwner = 0;
+
   // Plain fields: not template-bound through *ngIf/[value] in a way that the
   // OnPush stall affects (sidebar/upload-modal toggles are driven by user
   // events that already mark the view), so they stay as ordinary fields.
@@ -325,9 +340,17 @@ export class WorkspaceExplorerComponent {
    *
    * `errorMessage` is cleared on entry in both modes, so a refresh that
    * succeeds after a failure clears the stale banner.
+   *
+   * A read that a NEWER read has already superseded writes nothing on the way
+   * out either: not the body (see `applyFileContent`), not the error banner and
+   * not the spinner. All three are the same race, and all three become routine
+   * rather than rare once reads start firing from the event stream with no user
+   * gesture behind them.
    */
   async loadFileContent(path: string, refresh: boolean = false) {
+    const token = ++this.readToken;
     if (!refresh) {
+      this.loadingOwner = token;
       this.loadingContent.set(true);
       this.fileContent.set(null);
       this.isBinaryFile.set(false);
@@ -341,19 +364,61 @@ export class WorkspaceExplorerComponent {
         path,
         this.workspaceId()
       );
-      this.applyFileContent(result);
+      this.applyFileContent(result, path);
     } catch (error: any) {
       console.error('Error loading file content', error);
-      this.errorMessage.set(error?.message || 'Failed to load file content');
+      // A superseded read's failure must not banner over a file the user is
+      // now reading successfully. Supersession — not the pane's path rule — is
+      // the test here, because `errorMessage` is shared with the tree loads and
+      // a read issued against no selection at all is still this banner's to set.
+      if (token === this.readToken) {
+        this.errorMessage.set(error?.message || 'Failed to load file content');
+      }
     } finally {
-      if (!refresh) {
+      // Only the read that raised the spinner may lower it: a superseded read
+      // clearing it strands a blank pane with no spinner while the newer read
+      // is still fetching. Selecting a DIRECTORY issues no read, so it never
+      // takes ownership and the in-flight read still releases the spinner it
+      // raised — the reason this is an ownership test and not a path test.
+      if (this.loadingOwner === token) {
         this.loadingContent.set(false);
       }
     }
   }
 
-  /** Write one `getFileContent` result into the pane's signals. */
-  private applyFileContent(result: FileContent): void {
+  /**
+   * Write one `getFileContent` result into the pane's signals — but ONLY while
+   * the result still belongs to the file the pane is showing.
+   *
+   * `requestedPath` is the path the read was ISSUED for; `selectedFile()` is
+   * read at RESOLUTION time. They differ exactly when the response has been
+   * superseded, and then NOTHING is written: not `fileContent`, not
+   * `isBinaryFile`, not `isMarkdownFile`. Otherwise a slow read of file A that
+   * loses the race still wins the write, and the pane renders A's bytes under
+   * B's name and size tag — chrome disagreeing with the pane it labels, which
+   * reads as authoritative because it looks deliberate (ADR-030 §A4).
+   *
+   * The tree closed this same race declaratively: its load is
+   * `toObservable(workspaceId) → switchMap`, and `switchMap` drops a superseded
+   * response before it can be applied (ADR-021 §Decision 2). The body read never
+   * received the equivalent. This is that equivalent, written as a path
+   * comparison rather than an operator because the read is a bare `await` inside
+   * an `async` method.
+   *
+   * Two details that are easy to get wrong:
+   *
+   * - **No selection means no application.** With `selectedFile()` null there is
+   *   no pane to write into — including the case where the user selected a
+   *   *directory* while a file read was in flight. Both production entry points
+   *   establish or require `selectedFile` before issuing a read, so a read with
+   *   no selection is reachable only by driving this loader directly.
+   * - **Compare paths, never `FileNode` identity.** A refresh replaces
+   *   `selectedFile` with a fresh instance carrying the same path; an identity
+   *   comparison would discard every refresh result.
+   */
+  private applyFileContent(result: FileContent, requestedPath: string): void {
+    if (requestedPath !== this.selectedFile()?.path) return;
+
     if (result.type === 'binary') {
       this.isBinaryFile.set(true);
       this.isMarkdownFile.set(false);
@@ -362,9 +427,17 @@ export class WorkspaceExplorerComponent {
     }
     this.isBinaryFile.set(false);
     this.fileContent.set(result.content);
-    this.isMarkdownFile.set(
-      this.selectedFile()?.extension?.toLowerCase() === '.md'
-    );
+    this.isMarkdownFile.set(this.isMarkdownPath(requestedPath));
+  }
+
+  /**
+   * Markdown-ness of the path a read was issued for. The renderer has to follow
+   * the bytes it is rendering, so this is decided by the request rather than by
+   * whatever `selectedFile()` holds when the response lands — and by the path
+   * rather than by `FileNode.extension`, which the listing may omit.
+   */
+  private isMarkdownPath(path: string): boolean {
+    return path.toLowerCase().endsWith('.md');
   }
 
   /**
@@ -404,12 +477,20 @@ export class WorkspaceExplorerComponent {
    * listing leaves `selectedFile` as it is — the failed body read is what tells
    * the user the file has gone. A rejection here is reported and swallowed so
    * it cannot cancel the other half.
+   *
+   * The write is gated on the pane still showing the file this refresh was
+   * issued for: the listing can land after the user has moved on, and writing
+   * the re-resolved entry then puts THIS file's name and size tag above another
+   * file's body — the same mismatch the body half guards against, arriving
+   * through the other half of the refresh. The comparison is by PATH, never by
+   * `FileNode` identity: the body half may already have replaced the instance
+   * for this very path.
    */
   private async refreshFileMetadata(file: FileNode): Promise<void> {
     try {
       const fresh = await this.refreshDirectory(this.getParentPath(file.path));
       const entry = fresh.find((node) => node.path === file.path);
-      if (entry) {
+      if (entry && this.selectedFile()?.path === file.path) {
         this.selectedFile.set(entry);
       }
     } catch (error: unknown) {
