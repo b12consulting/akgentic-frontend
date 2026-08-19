@@ -420,14 +420,23 @@ export interface ToolReturnEvent {
 // ---------------------------------------------------------------------------
 // Per-tool argument shapes for the six mutating workspace tools (ADR-031 §D6).
 //
-// Each interface carries its `tool_name` as a string literal so the union below
-// is discriminated at the consumer. Only the fields an invalidation actually
-// consumes — `path`, and `edits[i].path` for the multi-edit — are validated by
-// `parseToolCallArguments`; `content`, `old_string`, `new_string`,
-// `replace_all` and `patch_text` are declared as documentation of the wire
-// shape and are copied through when present. A field nobody reads must not be
-// able to veto a real mutation: requiring `content` would turn a write of an
-// EMPTY file into `null` and silently drop it.
+// These model `parseToolCallArguments`'s OUTPUT, not the wire payload. The
+// output is the payload PLUS a `tool_name` discriminant lifted from the event
+// envelope: the parser reads `event.tool_name` and writes it into the object it
+// returns — the JSON body in `event.arguments` never carries it, and no parse
+// of that body could produce it. Each interface declares it as a string literal
+// so the union below is discriminated at the consumer.
+//
+// That is why `WorkspaceEditOperation` correctly has none: it is an element of
+// `workspace_multi_edit`'s `edits` array, read straight out of the payload,
+// and no envelope field is lifted onto it.
+//
+// Only the fields an invalidation actually consumes — `path`, and
+// `edits[i].path` for the multi-edit — are validated; `content`, `old_string`,
+// `new_string`, `replace_all` and `patch_text` are declared as documentation of
+// the wire shape and are copied through when present. A field nobody reads must
+// not be able to veto a real mutation: requiring `content` would turn a write
+// of an EMPTY file into `null` and silently drop it.
 // ---------------------------------------------------------------------------
 
 export interface WorkspaceWriteArguments {

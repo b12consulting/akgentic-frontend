@@ -47,6 +47,15 @@ import { UploadModalComponent } from './upload-modal/upload-modal.component';
 interface RootLoadResult {
   nodes: TreeNode[] | null;
   error: string | null;
+  /**
+   * True when NO user gesture is behind the load that produced this result.
+   *
+   * It rides on the result rather than on a component field because the write
+   * it governs happens in `applyRootLoad`, asynchronously and possibly after a
+   * second load from a different origin has started — a shared "current mode"
+   * field attributes the wrong origin to whichever load settles second.
+   */
+  background: boolean;
 }
 
 /**
@@ -315,8 +324,12 @@ export class WorkspaceExplorerComponent {
    * never happens loses the listing as well as the re-read.
    */
   private routeInvalidation(batch: WorkspaceInvalidation): void {
+    // The two gesture-less call sites of the whole component. Everything they
+    // reach — the root load, the body read, the metadata listing — logs its
+    // failure instead of bannering it, because `errorMessage` gates the
+    // navigator's file tree and nobody asked for these reads (ADR-031 §D9).
     if (batch.wholeTree) {
-      this.refresh();
+      this.refresh(true);
       return;
     }
 
@@ -333,7 +346,7 @@ export class WorkspaceExplorerComponent {
       this.canRefreshSelectedFile()
     ) {
       directories.delete(this.getParentPath(open.path));
-      void this.refreshSelectedFile();
+      void this.refreshSelectedFile(true);
     }
 
     for (const path of directories) {
@@ -391,21 +404,33 @@ export class WorkspaceExplorerComponent {
    * success, and maps a rejection to an error message. Returns an empty
    * (no-op) load when `processId` is not yet resolved.
    */
-  private loadRootTree$(ws?: string) {
+  private loadRootTree$(ws?: string, background: boolean = false) {
     if (!this.processId) {
-      return of<RootLoadResult>({ nodes: null, error: null });
+      return of<RootLoadResult>({ nodes: null, error: null, background });
     }
 
     this.loading.set(true);
-    this.errorMessage.set(null);
+    // Clearing the banner is as tree-scoped a write as setting it: the
+    // navigator is gated on `!errorMessage()`, so erasing a genuine root-load
+    // failure from a read the user never asked for makes the tree reappear
+    // rendering whatever `treeNodes` still holds, with the failure silently
+    // gone (ADR-031 §D9).
+    if (!background) {
+      this.errorMessage.set(null);
+    }
 
     return from(this.fetchTree('', ws)).pipe(
-      map((tree): RootLoadResult => ({ nodes: this.wrapRootTree(tree), error: null })),
+      map((tree): RootLoadResult => ({
+        nodes: this.wrapRootTree(tree),
+        error: null,
+        background,
+      })),
       catchError((error: any) => {
         console.error('Error loading workspace', error);
         return of<RootLoadResult>({
           nodes: null,
           error: error?.message || 'Failed to load workspace',
+          background,
         });
       }),
       tap(() => this.loading.set(false)),
@@ -415,6 +440,15 @@ export class WorkspaceExplorerComponent {
   /** Apply the latest (switchMap-guarded) root-load result to the signals. */
   private applyRootLoad(result: RootLoadResult): void {
     if (result.error !== null) {
+      if (result.background) {
+        // A read with no user gesture behind it is logged, never bannered
+        // (ADR-031 §D9). `errorMessage` gates the navigator's whole file tree,
+        // so bannering a load the event stream issued blanks the panel with
+        // nothing behind it — and the selection survives, so the manual
+        // Refresh re-enters the identical failure and the panel stays stuck.
+        console.error('Background workspace load failed', result.error);
+        return;
+      }
       this.errorMessage.set(result.error);
       return;
     }
@@ -564,16 +598,30 @@ export class WorkspaceExplorerComponent {
    *   front, because resetting them mid-flight flips the template blocks and
    *   flickers the pane.
    *
-   * `errorMessage` is cleared on entry in both modes, so a refresh that
-   * succeeds after a failure clears the stale banner.
+   * Orthogonal to both is `background`: was there a USER behind this read?
+   * `refresh === true` cannot answer that — the toolbar *Refresh this file*,
+   * the navigator *Refresh workspace* and the invalidation route all reach this
+   * loader with it set, and the first two must keep reporting their failures.
+   * On the gesture path `errorMessage` is cleared on entry (so a refresh that
+   * succeeds after a failure clears the stale banner) and written on failure.
+   * On the gesture-LESS path neither happens: the banner gates the navigator's
+   * whole file tree, so a background 404 that writes it removes the tree, and
+   * one that clears it makes the tree reappear with a genuine failure erased
+   * (ADR-031 §D9). The failure is logged instead.
    *
    * A read that a NEWER read has already superseded writes nothing on the way
    * out either: not the body (see `applyFileContent`), not the error banner and
    * not the spinner. All three are the same race, and all three become routine
    * rather than rare once reads start firing from the event stream with no user
-   * gesture behind them.
+   * gesture behind them. Supersession and gesture are different questions and
+   * both are asked: an event-driven re-read is typically the ONLY read in
+   * flight, so the supersession test passes and would write the banner anyway.
    */
-  async loadFileContent(path: string, refresh: boolean = false) {
+  async loadFileContent(
+    path: string,
+    refresh: boolean = false,
+    background: boolean = false,
+  ) {
     const token = ++this.readToken;
     if (!refresh) {
       this.loadingOwner = token;
@@ -582,7 +630,9 @@ export class WorkspaceExplorerComponent {
       this.isBinaryFile.set(false);
       this.isMarkdownFile.set(false);
     }
-    this.errorMessage.set(null);
+    if (!background) {
+      this.errorMessage.set(null);
+    }
 
     try {
       const result: FileContent = await this.workspaceService.getFileContent(
@@ -593,11 +643,14 @@ export class WorkspaceExplorerComponent {
       this.applyFileContent(result, path);
     } catch (error: any) {
       console.error('Error loading file content', error);
+      // Two independent reasons not to banner, and neither implies the other.
       // A superseded read's failure must not banner over a file the user is
       // now reading successfully. Supersession — not the pane's path rule — is
-      // the test here, because `errorMessage` is shared with the tree loads and
+      // that test, because `errorMessage` is shared with the tree loads and
       // a read issued against no selection at all is still this banner's to set.
-      if (token === this.readToken) {
+      // A gesture-less read must not banner either, superseded or not: nobody
+      // asked for it and the banner costs the whole navigator.
+      if (!background && token === this.readToken) {
         this.errorMessage.set(error?.message || 'Failed to load file content');
       }
     } finally {
@@ -674,8 +727,13 @@ export class WorkspaceExplorerComponent {
    *
    * The body is read FIRST so its `errorMessage` reset cannot wipe a listing
    * failure reported by the metadata half.
+   *
+   * `background` travels to BOTH halves. It defaults to the gesture value, so
+   * the two template call sites — which invoke this with no argument — keep
+   * reporting their failures, and a caller that forgets the parameter fails
+   * towards *an error is shown* rather than towards *an error disappears*.
    */
-  async refreshSelectedFile(): Promise<void> {
+  async refreshSelectedFile(background: boolean = false): Promise<void> {
     const file = this.selectedFile();
     if (!file) return;
 
@@ -688,8 +746,8 @@ export class WorkspaceExplorerComponent {
 
     this.refreshingFile.set(true);
     try {
-      await this.loadFileContent(file.path, true);
-      await this.refreshFileMetadata(file);
+      await this.loadFileContent(file.path, true, background);
+      await this.refreshFileMetadata(file, background);
     } finally {
       this.refreshingFile.set(false);
     }
@@ -714,7 +772,10 @@ export class WorkspaceExplorerComponent {
    * `onNodeSelect` a fresh `FileNode` instance for an unchanged path, and an
    * identity test would discard the metadata that selection still wants.
    */
-  private async refreshFileMetadata(file: FileNode): Promise<void> {
+  private async refreshFileMetadata(
+    file: FileNode,
+    background: boolean = false,
+  ): Promise<void> {
     try {
       const fresh = await this.refreshDirectory(this.getParentPath(file.path));
       const entry = fresh.find((node) => node.path === file.path);
@@ -723,6 +784,10 @@ export class WorkspaceExplorerComponent {
       }
     } catch (error: unknown) {
       console.error('Error refreshing file metadata', error);
+      // Gesture-less, so log-only — the same rule the invalidation route's own
+      // directory pass already follows, now applied to the listing this half
+      // issues (ADR-031 §D9). A failed listing is not worth the file tree.
+      if (background) return;
       const message = error instanceof Error ? error.message : '';
       this.errorMessage.set(message || 'Failed to refresh file metadata');
     }
@@ -750,10 +815,15 @@ export class WorkspaceExplorerComponent {
     return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
   }
 
-  refresh() {
+  /**
+   * Re-read the whole workspace. `background` defaults to the gesture value so
+   * the navigator's `(onClick)="refresh()"` keeps bannering a failed root load;
+   * the invalidation route is the only caller that passes `true`.
+   */
+  refresh(background: boolean = false) {
     // Re-run the root load for the current workspaceId via the declarative
     // stream (the only owner of the loading/treeNodes lifecycle now).
-    this.loadRootTree$(this.workspaceId())
+    this.loadRootTree$(this.workspaceId(), background)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((result) => this.applyRootLoad(result));
 
@@ -761,7 +831,7 @@ export class WorkspaceExplorerComponent {
     // the same per-file path — refreshing the tree while leaving the pane on
     // stale bytes is the surprise this closes.
     if (this.selectedFile()) {
-      void this.refreshSelectedFile();
+      void this.refreshSelectedFile(background);
     }
   }
 

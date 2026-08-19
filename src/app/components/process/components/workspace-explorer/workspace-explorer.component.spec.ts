@@ -2947,3 +2947,379 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
       .not.toBeNull();
   });
 });
+
+// --------------------------------------------------------------------
+// Gesture-less reads log instead of bannering (Epic 40, FR1-FR3).
+//
+// `errorMessage` gates the navigator's `p-tree` AND its empty state, so ANY
+// write to it removes the file tree. That was tolerable while every read
+// followed a user gesture. Epic 39 made reads fire from the event stream, and a
+// background 404 or transient 500 now blanks the whole navigator with nothing
+// behind it — and `selectedFile` is never cleared, so `Refresh workspace`
+// re-enters the identical cycle and the panel stays broken until the user
+// switches tab or team.
+//
+// The rule is one rule on every route the event stream can reach: the body
+// read, the directory listing and the whole-tree root load. Both halves of it
+// matter — a gesture-less read must not WRITE the banner, and must not CLEAR it
+// either, because the tree is rendered from `treeNodes` regardless of whether
+// that tree was ever re-validated.
+//
+// The three GESTURE paths are pinned just as hard: the cheap version of this
+// fix (never write `errorMessage` from `loadFileContent` at all) satisfies
+// every background scenario below while deleting the error reporting a user who
+// selects an unreadable file depends on.
+// --------------------------------------------------------------------
+
+describe('WorkspaceExplorerComponent — gesture-less reads log instead of bannering (Epic 40)', () => {
+  const TEAM_ID = 'proc';
+  const OPEN_PATH = 'docs/a.txt';
+  const FILE_REFRESH = 'p-button[pTooltip="Refresh this file"]';
+  const WORKSPACE_REFRESH = 'p-button[pTooltip="Refresh workspace"]';
+
+  let component: WorkspaceExplorerComponent;
+  let fixture: ComponentFixture<WorkspaceExplorerComponent>;
+  let workspaceServiceSpy: jasmine.SpyObj<WorkspaceService>;
+  let invalidations: FakeWorkspaceInvalidationService;
+
+  function openFile(size = 10): FileNode {
+    return fileNode({
+      name: 'a.txt',
+      path: OPEN_PATH,
+      type: 'file',
+      size,
+      extension: '.txt',
+    });
+  }
+
+  /** Root wrapper → `docs` (materialized) → `a.txt`. */
+  function materializedTree(): TreeNode {
+    const aTxt: TreeNode = { label: 'a.txt', data: openFile(10), leaf: true };
+    const docs: TreeNode = {
+      label: 'docs',
+      data: fileNode({ name: 'docs', path: 'docs', type: 'directory' }),
+      leaf: false,
+      children: [aTxt],
+    };
+    return {
+      label: 'Root Folder',
+      data: fileNode({ name: 'Root Folder', path: '', type: 'directory' }),
+      children: [docs],
+      expanded: true,
+    };
+  }
+
+  beforeEach(async () => {
+    workspaceServiceSpy = jasmine.createSpyObj('WorkspaceService', [
+      'getWorkspaceTree',
+      'getFileContent',
+      'getDownloadUrl',
+      'uploadFiles',
+    ]);
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: 'body',
+      type: 'text',
+    });
+    invalidations = new FakeWorkspaceInvalidationService();
+
+    await TestBed.configureTestingModule({
+      imports: [WorkspaceExplorerComponent, NoopAnimationsModule],
+      providers: [
+        { provide: WorkspaceService, useValue: workspaceServiceSpy },
+        {
+          provide: ContextService,
+          useValue: {
+            currentProcessId$: new BehaviorSubject<string>(TEAM_ID),
+            currentTeamRunning$: new BehaviorSubject<boolean>(true),
+            getCurrentTeam: jasmine
+              .createSpy('getCurrentTeam')
+              .and.callFake(async () => makeTeam()),
+          },
+        },
+        { provide: WorkspaceInvalidationService, useValue: invalidations },
+      ],
+    })
+      .overrideComponent(WorkspaceExplorerComponent, {
+        set: {
+          imports: [CommonModule, ButtonModule, ToolbarModule],
+          schemas: [CUSTOM_ELEMENTS_SCHEMA],
+        },
+      })
+      .compileComponents();
+
+    fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+    component = fixture.componentInstance;
+    await flushRootLoad(fixture);
+    workspaceServiceSpy.getWorkspaceTree.calls.reset();
+    workspaceServiceSpy.getFileContent.calls.reset();
+  });
+
+  /** Push instructions as ONE synchronous delta, then settle the fetches. */
+  async function deliver(...batch: WorkspaceInvalidation[]): Promise<void> {
+    for (const instruction of batch) {
+      invalidations.invalidations$.next(instruction);
+    }
+    await flushMicrotasks();
+    await flushMicrotasks();
+  }
+
+  /** Open a file in the pane through the real selection path, and settle it. */
+  async function openInPane(size = 10): Promise<void> {
+    await component.onNodeSelect({ node: { data: openFile(size) } });
+    fixture.detectChanges();
+    workspaceServiceSpy.getWorkspaceTree.calls.reset();
+    workspaceServiceSpy.getFileContent.calls.reset();
+  }
+
+  /** Settle a control activation: two macrotask turns drain both halves. */
+  async function settle(): Promise<void> {
+    await flushMicrotasks();
+    await flushMicrotasks();
+  }
+
+  function tree(): HTMLElement | null {
+    return fixture.nativeElement.querySelector('p-tree') as HTMLElement | null;
+  }
+
+  // --- FR1: a gesture-less read logs, on every route -----------------
+
+  it('scenario 94 — a background BODY re-read that fails logs, and blanks nothing', async () => {
+    component.treeNodes.set([materializedTree()]);
+    await openInPane();
+    fixture.detectChanges();
+    expect(component.fileContent()).toBe('body');
+    expect(tree()).withContext('navigator tree before the failure').not.toBeNull();
+
+    const consoleError = spyOn(console, 'error');
+    workspaceServiceSpy.getFileContent.and.rejectWith(new Error('boom'));
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+
+    await deliver(invalidation({ directories: ['docs'], files: [OPEN_PATH] }));
+    fixture.detectChanges();
+
+    // The banner gates the tree, so writing it here is a panel-wide outage over
+    // a read nobody asked for. Intermediate state is asserted too: a spec that
+    // only checked `errorMessage()` would pass on a component that blanked the
+    // pane and raised a spinner instead.
+    expect(component.errorMessage()).toBeNull();
+    expect(tree()).withContext('navigator tree after the failure').not.toBeNull();
+    expect(component.fileContent())
+      .withContext('the pane keeps its last good bytes')
+      .toBe('body');
+    expect(component.loadingContent()).toBe(false);
+    expect(consoleError).toHaveBeenCalled();
+  });
+
+  it('scenario 95 — a background WHOLE-TREE root load that fails logs, and leaves the tree rendered', async () => {
+    component.treeNodes.set([materializedTree()]);
+    fixture.detectChanges();
+
+    const consoleError = spyOn(console, 'error');
+    workspaceServiceSpy.getWorkspaceTree.and.rejectWith(new Error('boom'));
+
+    await deliver(invalidation({ wholeTree: true }));
+    fixture.detectChanges();
+
+    // Fixing the body read and leaving the root load bannering repeats the
+    // original mistake one level up: this route reaches the SAME signal.
+    expect(component.errorMessage()).toBeNull();
+    expect(component.treeNodes().length)
+      .withContext('the previously loaded tree survives')
+      .toBe(1);
+    expect(tree()).withContext('navigator tree after a failed background root load').not.toBeNull();
+    expect(consoleError).toHaveBeenCalled();
+  });
+
+  it('scenario 96 — a background METADATA listing that fails logs, and does not banner', async () => {
+    await openInPane();
+
+    const consoleError = spyOn(console, 'error');
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: 'new body',
+      type: 'text',
+    });
+    workspaceServiceSpy.getWorkspaceTree.and.rejectWith(new Error('listing boom'));
+
+    // No `directories` — this isolates the listing the per-file refresh issues
+    // itself, which is a different writer from `routeInvalidation`'s own
+    // directory pass (the one that already complied).
+    await deliver(invalidation({ files: [OPEN_PATH] }));
+    fixture.detectChanges();
+
+    expect(component.errorMessage()).toBeNull();
+    expect(component.fileContent())
+      .withContext('the body half still landed')
+      .toBe('new body');
+    expect(consoleError).toHaveBeenCalled();
+  });
+
+  // --- FR2: a gesture-less read does not clear the banner either ------
+
+  it('scenario 97 — a background body re-read does not clear a genuine root-load banner', async () => {
+    component.treeNodes.set([materializedTree()]);
+    await openInPane();
+    component.errorMessage.set('Failed to load workspace');
+    fixture.detectChanges();
+    expect(tree()).withContext('navigator hidden by the genuine banner').toBeNull();
+
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: 'new body',
+      type: 'text',
+    });
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+
+    await deliver(invalidation({ files: [OPEN_PATH] }));
+    fixture.detectChanges();
+
+    // The entry-side clear is a tree-scoped write in the other direction:
+    // erasing it makes the navigator reappear rendering a stale tree with the
+    // failure silently gone.
+    expect(component.errorMessage()).toBe('Failed to load workspace');
+    expect(tree()).withContext('navigator still hidden').toBeNull();
+  });
+
+  it('scenario 98 — a background root load does not clear the banner on entry either', async () => {
+    component.treeNodes.set([materializedTree()]);
+    component.errorMessage.set('Failed to load workspace');
+
+    const pending = deferred<FileNode[]>();
+    workspaceServiceSpy.getWorkspaceTree.and.returnValue(pending.promise);
+
+    invalidations.invalidations$.next(invalidation({ wholeTree: true }));
+    await flushMicrotasks();
+
+    // IN FLIGHT — the assertion that matters. The entry clear runs at
+    // subscribe time, so an unconditional `errorMessage.set(null)` has already
+    // erased the banner by this point and an outcome-only assertion after the
+    // load settles would never see it.
+    expect(component.errorMessage()).toBe('Failed to load workspace');
+
+    pending.resolve([]);
+    await settle();
+
+    // ...and no "clear on success" rule is invented here either: neither the
+    // epic nor the ADR states one.
+    expect(component.errorMessage()).toBe('Failed to load workspace');
+  });
+
+  // --- the stuck cycle: an outage rather than a glitch ----------------
+
+  it('scenario 99 — after a background failure the panel is usable and Refresh workspace repaints it', async () => {
+    component.treeNodes.set([materializedTree()]);
+    await openInPane();
+    fixture.detectChanges();
+
+    spyOn(console, 'error');
+    workspaceServiceSpy.getFileContent.and.rejectWith(new Error('boom'));
+    workspaceServiceSpy.getWorkspaceTree.and.rejectWith(new Error('boom'));
+
+    await deliver(invalidation({ directories: ['docs'], files: [OPEN_PATH] }));
+    fixture.detectChanges();
+
+    expect(component.errorMessage()).toBeNull();
+    expect(tree()).withContext('navigator survives the background failure').not.toBeNull();
+
+    // The escape route the outage removed: with the banner up the tree is gone,
+    // and `selectedFile` is never cleared, so this control re-enters the
+    // identical failing cycle and the panel stays broken from the inside.
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(4096)]);
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: 'recovered',
+      type: 'text',
+    });
+
+    const workspaceRefresh = fixture.debugElement.query(By.css(WORKSPACE_REFRESH));
+    expect(workspaceRefresh).withContext('navigator refresh').not.toBeNull();
+    workspaceRefresh.triggerEventHandler('onClick', {});
+    await settle();
+    fixture.detectChanges();
+
+    expect(component.errorMessage()).toBeNull();
+    expect(component.fileContent()).toBe('recovered');
+    expect(component.treeNodes().length).toBe(1);
+    expect(tree()).withContext('navigator repainted by the manual refresh').not.toBeNull();
+  });
+
+  // --- FR3: a user gesture still reports its failure ------------------
+
+  it('scenario 100 — a file the USER selects that fails to read still banners', async () => {
+    spyOn(console, 'error');
+    workspaceServiceSpy.getFileContent.and.rejectWith(new Error('403 Forbidden'));
+
+    await component.onNodeSelect({ node: { data: openFile(10) } });
+    fixture.detectChanges();
+
+    // Selecting an unreadable file is the case the cheap fix silently deletes.
+    expect(component.errorMessage()).toBe('403 Forbidden');
+    expect(component.loadingContent()).toBe(false);
+  });
+
+  it('scenario 101 — the toolbar Refresh this file still banners when the BODY read fails', async () => {
+    await openInPane();
+    fixture.detectChanges();
+
+    spyOn(console, 'error');
+    workspaceServiceSpy.getFileContent.and.rejectWith(new Error('read failed'));
+
+    const fileRefresh = fixture.debugElement.query(By.css(FILE_REFRESH));
+    expect(fileRefresh).withContext('per-file refresh').not.toBeNull();
+    fileRefresh.triggerEventHandler('onClick', {});
+    await settle();
+
+    // `loadFileContent(path, true)` reaches this loader with `refresh` SET, the
+    // same as the invalidation route — which is why `refresh === true` cannot
+    // be the gesture test.
+    expect(component.errorMessage()).toBe('read failed');
+  });
+
+  it('scenario 102 — the toolbar Refresh this file still banners when the METADATA half fails', async () => {
+    await openInPane();
+    fixture.detectChanges();
+
+    spyOn(console, 'error');
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: 'new body',
+      type: 'text',
+    });
+    workspaceServiceSpy.getWorkspaceTree.and.rejectWith(new Error('listing failed'));
+
+    const fileRefresh = fixture.debugElement.query(By.css(FILE_REFRESH));
+    fileRefresh.triggerEventHandler('onClick', {});
+    await settle();
+
+    expect(component.errorMessage()).toBe('listing failed');
+  });
+
+  it('scenario 103 — the navigator Refresh workspace still banners when the ROOT load fails', async () => {
+    component.treeNodes.set([materializedTree()]);
+    fixture.detectChanges();
+
+    spyOn(console, 'error');
+    workspaceServiceSpy.getWorkspaceTree.and.rejectWith(new Error('root failed'));
+
+    const workspaceRefresh = fixture.debugElement.query(By.css(WORKSPACE_REFRESH));
+    workspaceRefresh.triggerEventHandler('onClick', {});
+    await settle();
+    fixture.detectChanges();
+
+    expect(component.errorMessage()).toBe('root failed');
+  });
+
+  it('scenario 104 — the navigator Refresh workspace still banners when the DELEGATED body read fails', async () => {
+    await openInPane();
+    fixture.detectChanges();
+
+    spyOn(console, 'error');
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+    workspaceServiceSpy.getFileContent.and.rejectWith(new Error('body failed'));
+
+    const workspaceRefresh = fixture.debugElement.query(By.css(WORKSPACE_REFRESH));
+    workspaceRefresh.triggerEventHandler('onClick', {});
+    await settle();
+
+    // `refresh()` carries its origin to BOTH halves; the per-file half it
+    // delegates to is a gesture too.
+    expect(component.errorMessage()).toBe('body failed');
+  });
+});
