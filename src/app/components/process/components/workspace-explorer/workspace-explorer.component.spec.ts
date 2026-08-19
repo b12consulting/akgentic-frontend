@@ -1941,6 +1941,9 @@ describe('WorkspaceExplorerComponent — per-file refresh control (Epic 38)', ()
     expect(refresh).withContext('per-file refresh control').not.toBeNull();
     expect(refresh!.getAttribute('icon')).toBe('pi pi-refresh');
     expect(refresh!.getAttribute('severity')).toBe('secondary');
+    // Labelled, like every other control in this toolbar. The icon-only
+    // register belongs to the navigator header, not here.
+    expect(refresh!.getAttribute('label')).toBe('Refresh');
 
     const button = fixture.debugElement.query(By.css(FILE_REFRESH))
       .componentInstance as { text: boolean; rounded: boolean };
