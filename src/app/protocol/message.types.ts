@@ -922,9 +922,13 @@ function parseSinglePathArguments(
  * `tool_name`, or `null` (ADR-031 §D6).
  *
  * **It never throws, for any input.** That is a requirement, not defensive
- * style: this runs inside a fold over `log$`, and a fold that throws on one bad
- * frame stops folding for the rest of the session — the log keeps growing, the
- * projection is frozen, and nothing surfaces anywhere.
+ * style, and it got STRONGER when its caller stopped folding the log (Epic 42 /
+ * ADR-031 §D11): `workspace-invalidation.selector.ts` now calls this from a live
+ * subscription on `MessageLogService.appended$`. A throw out of a subscriber
+ * tears that subscription down for good and nothing re-subscribes — the log
+ * keeps growing, the workspace panel stops refreshing for the rest of the
+ * session, and nothing surfaces anywhere. Under the old fold a bad frame merely
+ * spoiled one emission's derivation.
  *
  * It returns `null` — never a partially-populated object — for malformed JSON, a
  * JSON root that is not an object, a `tool_name` it does not know (the read

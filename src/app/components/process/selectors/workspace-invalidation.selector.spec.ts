@@ -626,8 +626,8 @@ describe('WorkspaceInvalidationService — attribution (FR6)', () => {
 
   it('(AC16) attribution is resolved at CALL time, not at return time', () => {
     // A StopMessage between the call and its return must NOT retroactively
-    // erase the instruction — prefix stability is what the service delta rests
-    // on.
+    // erase the instruction — the workspace ids are captured at call time and
+    // held with the in-flight entry, so nothing later can rewrite them.
     const result = collectFromLog([
       makeStartMessage('A', [workspaceTool('ws-1')]),
       makeToolCall('A', 'workspace_write', writeArgs, 'call-1'),
@@ -653,7 +653,7 @@ describe('WorkspaceInvalidationService — attribution (FR6)', () => {
 // Tier and lifecycle (FR3 / NFR1) — the service and its delta stream
 // ---------------------------------------------------------------------
 
-describe('WorkspaceInvalidationService (projection over MessageLogService.log$)', () => {
+describe('WorkspaceInvalidationService (reads MessageLogService.appended$; log$ for reset only)', () => {
   let log: MessageLogService;
   let service: WorkspaceInvalidationService;
 
@@ -764,7 +764,7 @@ describe('WorkspaceInvalidationService (projection over MessageLogService.log$)'
     expect(seen).toEqual([]);
   });
 
-  it('(AC21) reset() rebases the cursor: a full mutation after it still fires once', () => {
+  it('(AC21) reset() clears the state: a full mutation after it still fires once', () => {
     log.append(makeStartMessage('A', [workspaceTool('ws-1')]));
     const seen = collect();
     log.append(makeToolCall('A', 'workspace_write', writeArgs, 'call-1'));
@@ -798,7 +798,7 @@ describe('WorkspaceInvalidationService (projection over MessageLogService.log$)'
     expect(late).toEqual([]);
   });
 
-  it('(AC20) two independent subscribers each rebase on their own baseline', () => {
+  it('(AC20) two independent subscribers each hold their own state and seed', () => {
     log.append(makeStartMessage('A', [workspaceTool('ws-1')]));
     const early = collect();
     log.append(makeToolCall('A', 'workspace_write', writeArgs, 'call-1'));
