@@ -13,7 +13,6 @@ import {
   isMutatingWorkspaceTool,
   MUTATING_WORKSPACE_TOOLS,
   WorkspaceInvalidation,
-  workspaceInvalidationReduce,
   WorkspaceInvalidationService,
 } from './workspace-invalidation.selector';
 
@@ -150,6 +149,36 @@ function makeToolReturn(
   });
 }
 
+/**
+ * Feed a message array through a FRESH `MessageLogService` +
+ * `WorkspaceInvalidationService` pair and return the instructions the stream
+ * emitted, in order.
+ *
+ * `result` therefore holds exactly what the whole-log fold used to return: the
+ * subscription is opened against an EMPTY log, so nothing is skipped, and
+ * `appendAll` delivers the array in one ordered batch.
+ *
+ * Fresh instances per INVOCATION, not per `it`: several specs below drive two
+ * message arrays inside one test, and the fixture ids are not unique
+ * (`makeStartMessage('A')` is always `start-A`), so reusing one log would have
+ * `appendAll`'s id-dedup silently drop the second `StartMessage` and break
+ * attribution.
+ */
+function collectFromLog(messages: AkgenticMessage[]): WorkspaceInvalidation[] {
+  TestBed.resetTestingModule();
+  TestBed.configureTestingModule({
+    providers: [MessageLogService, WorkspaceInvalidationService],
+  });
+  const log = TestBed.inject(MessageLogService);
+  const service = TestBed.inject(WorkspaceInvalidationService);
+
+  const seen: WorkspaceInvalidation[] = [];
+  const sub = service.invalidations$.subscribe((i) => seen.push(i));
+  log.appendAll(messages);
+  sub.unsubscribe();
+  return seen;
+}
+
 /** An agent bound to exactly one named workspace, plus a completed mutation. */
 function mutationLog(
   toolName: string,
@@ -195,7 +224,7 @@ describe('MUTATING_WORKSPACE_TOOLS', () => {
   });
 });
 
-describe('workspaceInvalidationReduce — the mutating set (FR4)', () => {
+describe('WorkspaceInvalidationService — the mutating set (FR4)', () => {
   // Asserted individually rather than in one loop-with-a-single-expect, so a
   // per-tool failure names the tool that broke it.
   //
@@ -210,7 +239,7 @@ describe('workspaceInvalidationReduce — the mutating set (FR4)', () => {
   // gate must preserve.
   for (const readTool of READ_WORKSPACE_TOOLS) {
     it(`(AC2) ${readTool} + success return → no instruction`, () => {
-      const result = workspaceInvalidationReduce(
+      const result = collectFromLog(
         mutationLog(readTool, JSON.stringify({ path: 'a/b/c.md' })),
       );
       expect(result).toEqual([]);
@@ -219,12 +248,12 @@ describe('workspaceInvalidationReduce — the mutating set (FR4)', () => {
 
   it('(AC3) a tool the constant has never heard of → no instruction', () => {
     expect(
-      workspaceInvalidationReduce(
+      collectFromLog(
         mutationLog('sandbox_exec_command', JSON.stringify({ path: 'a/b.md' })),
       ),
     ).toEqual([]);
     expect(
-      workspaceInvalidationReduce(
+      collectFromLog(
         mutationLog('tavily_search', JSON.stringify({ query: 'x' })),
       ),
     ).toEqual([]);
@@ -235,11 +264,11 @@ describe('workspaceInvalidationReduce — the mutating set (FR4)', () => {
 // Call → return correlation (FR7)
 // ---------------------------------------------------------------------
 
-describe('workspaceInvalidationReduce — correlation (FR7)', () => {
+describe('WorkspaceInvalidationService — correlation (FR7)', () => {
   const editArgs = JSON.stringify({ path: 'a/b/c.md', old_string: 'x' });
 
   it('(AC4) a workspace_edit call + matching success return → one instruction', () => {
-    const result = workspaceInvalidationReduce(
+    const result = collectFromLog(
       mutationLog('workspace_edit', editArgs),
     );
     expect(result.length).toBe(1);
@@ -250,7 +279,7 @@ describe('workspaceInvalidationReduce — correlation (FR7)', () => {
   });
 
   it('(AC5) a success:false return produces no instruction', () => {
-    const result = workspaceInvalidationReduce([
+    const result = collectFromLog([
       makeStartMessage('A', [workspaceTool('ws-1')]),
       makeToolCall('A', 'workspace_edit', editArgs, 'call-1'),
       makeToolReturn('A', 'workspace_edit', 'call-1', false),
@@ -261,7 +290,7 @@ describe('workspaceInvalidationReduce — correlation (FR7)', () => {
   it('(AC6) a return matching no recorded call is a no-op and does not throw', () => {
     let result: WorkspaceInvalidation[] = [];
     expect(() => {
-      result = workspaceInvalidationReduce([
+      result = collectFromLog([
         makeStartMessage('A', [workspaceTool('ws-1')]),
         makeToolReturn('A', 'workspace_edit', 'never-called', true),
       ]);
@@ -270,7 +299,7 @@ describe('workspaceInvalidationReduce — correlation (FR7)', () => {
   });
 
   it('(AC7) the same tool_call_id returning twice fires exactly once', () => {
-    const result = workspaceInvalidationReduce([
+    const result = collectFromLog([
       makeStartMessage('A', [workspaceTool('ws-1')]),
       makeToolCall('A', 'workspace_edit', editArgs, 'call-1'),
       makeToolReturn('A', 'workspace_edit', 'call-1', true),
@@ -280,7 +309,7 @@ describe('workspaceInvalidationReduce — correlation (FR7)', () => {
   });
 
   it('(AC8) a false return consumes the entry: a later true return fires nothing', () => {
-    const result = workspaceInvalidationReduce([
+    const result = collectFromLog([
       makeStartMessage('A', [workspaceTool('ws-1')]),
       makeToolCall('A', 'workspace_edit', editArgs, 'call-1'),
       makeToolReturn('A', 'workspace_edit', 'call-1', false),
@@ -290,7 +319,7 @@ describe('workspaceInvalidationReduce — correlation (FR7)', () => {
   });
 
   it('(AC9) a call with no return never fires on its own', () => {
-    const result = workspaceInvalidationReduce([
+    const result = collectFromLog([
       makeStartMessage('A', [workspaceTool('ws-1')]),
       makeToolCall('A', 'workspace_edit', editArgs, 'call-1'),
     ]);
@@ -298,21 +327,21 @@ describe('workspaceInvalidationReduce — correlation (FR7)', () => {
   });
 
   it('(AC10) malformed-JSON arguments are not recorded, so the return fires nothing', () => {
-    const result = workspaceInvalidationReduce(
+    const result = collectFromLog(
       mutationLog('workspace_write', '{not json'),
     );
     expect(result).toEqual([]);
   });
 
   it('(AC10) a body missing `path` is not recorded', () => {
-    const result = workspaceInvalidationReduce(
+    const result = collectFromLog(
       mutationLog('workspace_write', JSON.stringify({ content: 'hello' })),
     );
     expect(result).toEqual([]);
   });
 
   it('(AC10) a multi-edit whose edits[i] lacks a path is not recorded', () => {
-    const result = workspaceInvalidationReduce(
+    const result = collectFromLog(
       mutationLog(
         'workspace_multi_edit',
         JSON.stringify({ edits: [{ path: 'a/b.md' }, { old_string: 'x' }] }),
@@ -375,7 +404,7 @@ describe('workspaceInvalidationReduce — correlation (FR7)', () => {
 
     let result: WorkspaceInvalidation[] = [];
     expect(() => {
-      result = workspaceInvalidationReduce(log);
+      result = collectFromLog(log);
     }).not.toThrow();
     expect(result.length).toBe(1);
     expect(result[0].files).toEqual(['ok.md']);
@@ -385,7 +414,7 @@ describe('workspaceInvalidationReduce — correlation (FR7)', () => {
     // The envelope tag contains neither 'ToolCallEvent' nor 'ToolReturnEvent':
     // a guard applied to the envelope would fire for every EventMessage on the
     // log and invalidate the workspace on every LLM message.
-    const result = workspaceInvalidationReduce([
+    const result = collectFromLog([
       makeStartMessage('A', [workspaceTool('ws-1')]),
       makeEventMessage('A', { __model__: 'akgentic.llm.event.ToolStateEvent' }),
       makeEventMessage('A', { __model__: EVENT_MODEL }),
@@ -398,12 +427,12 @@ describe('workspaceInvalidationReduce — correlation (FR7)', () => {
 // Granularity (FR5)
 // ---------------------------------------------------------------------
 
-describe('workspaceInvalidationReduce — granularity (FR5)', () => {
+describe('WorkspaceInvalidationService — granularity (FR5)', () => {
   function onlyInstruction(
     toolName: string,
     args: unknown,
   ): WorkspaceInvalidation {
-    const result = workspaceInvalidationReduce(
+    const result = collectFromLog(
       mutationLog(toolName, JSON.stringify(args)),
     );
     expect(result.length).toBe(1);
@@ -512,11 +541,11 @@ describe('workspaceInvalidationReduce — granularity (FR5)', () => {
 // Attribution (FR6)
 // ---------------------------------------------------------------------
 
-describe('workspaceInvalidationReduce — attribution (FR6)', () => {
+describe('WorkspaceInvalidationService — attribution (FR6)', () => {
   const writeArgs = JSON.stringify({ path: 'a/b.md' });
 
   it('(AC16) the workspace comes from the CALL envelope sender', () => {
-    const result = workspaceInvalidationReduce([
+    const result = collectFromLog([
       makeStartMessage('A', [workspaceTool('ws-a')]),
       makeStartMessage('B', [workspaceTool('ws-b')]),
       makeToolCall('B', 'workspace_write', writeArgs, 'call-1'),
@@ -527,7 +556,7 @@ describe('workspaceInvalidationReduce — attribution (FR6)', () => {
   });
 
   it('(AC17) an agent contributing to two workspaces yields two instructions', () => {
-    const result = workspaceInvalidationReduce(
+    const result = collectFromLog(
       mutationLog('workspace_write', writeArgs, [
         workspaceTool('ws-a'),
         workspaceTool('ws-b'),
@@ -542,7 +571,7 @@ describe('workspaceInvalidationReduce — attribution (FR6)', () => {
   });
 
   it('(AC17) the two instructions do not share array references', () => {
-    const result = workspaceInvalidationReduce(
+    const result = collectFromLog(
       mutationLog('workspace_write', writeArgs, [
         workspaceTool('ws-a'),
         workspaceTool('ws-b'),
@@ -558,7 +587,7 @@ describe('workspaceInvalidationReduce — attribution (FR6)', () => {
     // would keep passing if it alone were hoisted out of the per-workspace
     // build. A consumer that splices a handled deletion off one instruction
     // must not empty the other workspace's.
-    const result = workspaceInvalidationReduce(
+    const result = collectFromLog(
       mutationLog('workspace_delete', JSON.stringify({ path: 'a/b.md' }), [
         workspaceTool('ws-a'),
         workspaceTool('ws-b'),
@@ -573,14 +602,14 @@ describe('workspaceInvalidationReduce — attribution (FR6)', () => {
   });
 
   it('(AC18) an agent with no WorkspaceTool yields no instruction and no phantom id', () => {
-    const result = workspaceInvalidationReduce(
+    const result = collectFromLog(
       mutationLog('workspace_write', writeArgs, []),
     );
     expect(result).toEqual([]);
   });
 
   it('(AC18) an agent with no StartMessage at all yields no instruction', () => {
-    const result = workspaceInvalidationReduce([
+    const result = collectFromLog([
       makeToolCall('ghost', 'workspace_write', writeArgs, 'call-1'),
       makeToolReturn('ghost', 'workspace_write', 'call-1', true),
     ]);
@@ -588,7 +617,7 @@ describe('workspaceInvalidationReduce — attribution (FR6)', () => {
   });
 
   it('(AC19) a WorkspaceTool with no workspace_id attributes to the team default', () => {
-    const result = workspaceInvalidationReduce(
+    const result = collectFromLog(
       mutationLog('workspace_write', writeArgs, [workspaceTool(null)]),
     );
     expect(result.length).toBe(1);
@@ -597,9 +626,9 @@ describe('workspaceInvalidationReduce — attribution (FR6)', () => {
 
   it('(AC16) attribution is resolved at CALL time, not at return time', () => {
     // A StopMessage between the call and its return must NOT retroactively
-    // erase the instruction — prefix stability is what the service delta rests
-    // on.
-    const result = workspaceInvalidationReduce([
+    // erase the instruction — the workspace ids are captured at call time and
+    // held with the in-flight entry, so nothing later can rewrite them.
+    const result = collectFromLog([
       makeStartMessage('A', [workspaceTool('ws-1')]),
       makeToolCall('A', 'workspace_write', writeArgs, 'call-1'),
       makeStopMessage('A'),
@@ -610,7 +639,7 @@ describe('workspaceInvalidationReduce — attribution (FR6)', () => {
   });
 
   it('(AC16) a call placed after the agent stopped attributes to nothing', () => {
-    const result = workspaceInvalidationReduce([
+    const result = collectFromLog([
       makeStartMessage('A', [workspaceTool('ws-1')]),
       makeStopMessage('A'),
       makeToolCall('A', 'workspace_write', writeArgs, 'call-1'),
@@ -624,7 +653,7 @@ describe('workspaceInvalidationReduce — attribution (FR6)', () => {
 // Tier and lifecycle (FR3 / NFR1) — the service and its delta stream
 // ---------------------------------------------------------------------
 
-describe('WorkspaceInvalidationService (projection over MessageLogService.log$)', () => {
+describe('WorkspaceInvalidationService (reads MessageLogService.appended$; log$ for reset only)', () => {
   let log: MessageLogService;
   let service: WorkspaceInvalidationService;
 
@@ -735,7 +764,7 @@ describe('WorkspaceInvalidationService (projection over MessageLogService.log$)'
     expect(seen).toEqual([]);
   });
 
-  it('(AC21) reset() rebases the cursor: a full mutation after it still fires once', () => {
+  it('(AC21) reset() clears the state: a full mutation after it still fires once', () => {
     log.append(makeStartMessage('A', [workspaceTool('ws-1')]));
     const seen = collect();
     log.append(makeToolCall('A', 'workspace_write', writeArgs, 'call-1'));
@@ -769,7 +798,7 @@ describe('WorkspaceInvalidationService (projection over MessageLogService.log$)'
     expect(late).toEqual([]);
   });
 
-  it('(AC20) two independent subscribers each rebase on their own baseline', () => {
+  it('(AC20) two independent subscribers each hold their own state and seed', () => {
     log.append(makeStartMessage('A', [workspaceTool('ws-1')]));
     const early = collect();
     log.append(makeToolCall('A', 'workspace_write', writeArgs, 'call-1'));
@@ -789,5 +818,189 @@ describe('WorkspaceInvalidationService (projection over MessageLogService.log$)'
     expect(early.length).toBe(2);
     expect(late.length).toBe(1);
     expect(late[0].files).toEqual(['shared.md']);
+  });
+});
+
+// ---------------------------------------------------------------------
+// Incremental reading (Epic 42) — a message is processed once, the batch
+// arrives synchronously, a team switch empties what is held, and the
+// stopped-team replay announces nothing.
+// ---------------------------------------------------------------------
+
+describe('WorkspaceInvalidationService — incremental reading (Epic 42)', () => {
+  let log: MessageLogService;
+  let service: WorkspaceInvalidationService;
+
+  const writeArgs = JSON.stringify({ path: 'a/b.md' });
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [MessageLogService, WorkspaceInvalidationService],
+    });
+    log = TestBed.inject(MessageLogService);
+    service = TestBed.inject(WorkspaceInvalidationService);
+  });
+
+  function collect(): WorkspaceInvalidation[] {
+    const seen: WorkspaceInvalidation[] = [];
+    service.invalidations$.subscribe((i) => seen.push(i));
+    return seen;
+  }
+
+  /**
+   * A `workspace_write` call whose `arguments` string counts its own reads.
+   *
+   * `parseToolCallArguments` reads `event.arguments` exactly ONCE per parse, and
+   * it is the only reader in the unit, so the counter is an exact count of how
+   * many times this call was processed. A timer would measure the machine and a
+   * spy on the module import would measure the wiring; this measures the thing.
+   */
+  function countingToolCall(
+    callId: string,
+    argsJson: string,
+  ): { message: EventMessage; reads: () => number } {
+    let reads = 0;
+    const payload = {
+      __model__: TOOL_CALL_MODEL,
+      run_id: 'run-1',
+      tool_name: 'workspace_write',
+      tool_call_id: callId,
+      get arguments(): string {
+        reads += 1;
+        return argsJson;
+      },
+    };
+    return { message: makeEventMessage('A', payload), reads: () => reads };
+  }
+
+  it('(AC25) a completed call is processed once, not once per subsequent append', () => {
+    const counted = countingToolCall(
+      'counted-1',
+      JSON.stringify({ path: 'a/b.md', content: 'a whole file body' }),
+    );
+
+    log.append(makeStartMessage('A', [workspaceTool('ws-1')]));
+    const seen = collect();
+    log.append(counted.message);
+    log.append(makeToolReturn('A', 'workspace_write', 'counted-1', true));
+    expect(seen.length).toBe(1);
+
+    // Ten further appends, none of which mention the completed call.
+    for (let i = 0; i < 10; i += 1) {
+      log.append(
+        makeToolCall(
+          'A',
+          'workspace_read',
+          JSON.stringify({ path: 'r.md' }),
+          'read-' + i,
+        ),
+      );
+    }
+
+    expect(seen.length).toBe(1);
+    expect(counted.reads()).toBe(1);
+  });
+
+  it('(AC26) one appendAll batch carrying two completed mutations emits both synchronously, in log order', () => {
+    // The explorer coalesces its listings on a microtask and relies on the whole
+    // burst having arrived by the time that microtask runs. An asynchronous
+    // scheduler here turns one coalesced listing per directory back into one
+    // listing per event — and every other spec in this file would still pass.
+    log.append(makeStartMessage('A', [workspaceTool('ws-1')]));
+    const seen = collect();
+
+    log.appendAll([
+      makeToolCall(
+        'A',
+        'workspace_write',
+        JSON.stringify({ path: 'one.md' }),
+        'b-1',
+      ),
+      makeToolReturn('A', 'workspace_write', 'b-1', true),
+      makeToolCall(
+        'A',
+        'workspace_write',
+        JSON.stringify({ path: 'two.md' }),
+        'b-2',
+      ),
+      makeToolReturn('A', 'workspace_write', 'b-2', true),
+    ]);
+
+    // Read immediately after the synchronous `appendAll` returns — no `await`,
+    // no `fakeAsync`, no `tick()`.
+    expect(seen.length).toBe(2);
+    expect(seen.map((i) => i.files[0])).toEqual(['one.md', 'two.md']);
+  });
+
+  it('(AC27) reset() also drops the agent→workspace attribution, so nothing leaks across a team switch', () => {
+    // `IngestionService.init()` runs several times per component lifetime (team
+    // switch) and this service is scoped to the `ProcessComponent`, which
+    // survives it. A whole-log fold got both maps emptied for free by folding an
+    // empty array; a subscriber that only reads what was just appended has to do
+    // it explicitly. A surviving contribution would attribute the NEXT team's
+    // mutation to the PREVIOUS team's workspace.
+    log.append(makeStartMessage('A', [workspaceTool('ws-old')]));
+    const seen = collect();
+
+    log.reset();
+    log.append(makeToolCall('A', 'workspace_write', writeArgs, 'after-switch'));
+    log.append(makeToolReturn('A', 'workspace_write', 'after-switch', true));
+
+    expect(seen).toEqual([]);
+  });
+
+  it('(AC28) a stopped team\'s REST replay announces nothing, because it lands before any consumer subscribes', () => {
+    // WHY this spec exists, and why it is not a rule in this file: the property
+    // is INHERITED from a file this unit does not own. `IngestionService.init()`
+    // is four ordered steps — (a) dispose the prior cycle, (b) `log.reset()`,
+    // (c) seed the replay for a STOPPED team via `appendAll`, (d) wire the
+    // consumers, then open the socket. The replay lands at (c), before any
+    // consumer exists, and `appended$` is a plain `Subject` with no replay
+    // buffer, so a subscriber wired at or after (d) never receives it as a
+    // batch. What it does instead is absorb the log at subscribe time and
+    // announce nothing — which is why the live mutation below still attributes
+    // to `ws-1` rather than to no workspace at all.
+    //
+    // What this spec pins is THIS unit's half of the property: a subscriber
+    // arriving after a batch registers it silently. It cannot pin the other
+    // half. Move the consumer wiring above the replay seed in
+    // `ingestion.service.ts` and opening the panel on a stopped team bursts one
+    // listing per historical mutation again — silently, with every spec in this
+    // file still green, THIS ONE INCLUDED, because it drives the correct order
+    // itself. No spec anywhere pins that ordering; the gap is recorded on epic
+    // 42.
+    log.reset(); // (b)
+    log.appendAll([
+      // (c) the REST replay
+      makeStartMessage('A', [workspaceTool('ws-1')]),
+      makeToolCall('A', 'workspace_write', writeArgs, 'replay-1'),
+      makeToolReturn('A', 'workspace_write', 'replay-1', true),
+      makeToolCall(
+        'A',
+        'workspace_write',
+        JSON.stringify({ path: 'c/d.md' }),
+        'replay-2',
+      ),
+      makeToolReturn('A', 'workspace_write', 'replay-2', true),
+    ]);
+    const seen = collect(); // (d) the consumer subscribes
+
+    expect(seen).toEqual([]);
+
+    // And it does not pass by the stream being dead: a live mutation after the
+    // replay still fires exactly once, attributed to the replayed StartMessage.
+    log.append(
+      makeToolCall(
+        'A',
+        'workspace_write',
+        JSON.stringify({ path: 'live.md' }),
+        'live-1',
+      ),
+    );
+    log.append(makeToolReturn('A', 'workspace_write', 'live-1', true));
+
+    expect(seen.length).toBe(1);
+    expect(seen[0].workspaceId).toBe('ws-1');
+    expect(seen[0].files).toEqual(['live.md']);
   });
 });

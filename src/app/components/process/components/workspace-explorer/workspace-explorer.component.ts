@@ -59,9 +59,9 @@ interface RootLoadResult {
 }
 
 /**
- * First-seen-order union of two target lists — the same dedup rule the
- * projection applies within a single instruction, applied again ACROSS the
- * instructions of one batch.
+ * First-seen-order union of two target lists — the same dedup rule
+ * `WorkspaceInvalidationService` applies within a single instruction, applied
+ * again ACROSS the instructions of one batch.
  */
 function unionTargets(current: string[], next: string[]): string[] {
   return [...new Set([...current, ...next])];
@@ -110,10 +110,13 @@ export class WorkspaceExplorerComponent {
   private destroyRef = inject(DestroyRef);
 
   /**
-   * The projection that turns completed workspace tool calls into re-read
-   * instructions (Epic 39 / ADR-031). Component-scoped, provided on
-   * `ProcessComponent` next to `WorkspaceRegistryService`: it folds the
-   * team-scoped message log, so it shares that log's lifetime.
+   * The unit that turns completed workspace tool calls into re-read
+   * instructions (Epic 39 / ADR-031; Epic 42 / §D11). Component-scoped,
+   * provided on `ProcessComponent` next to `WorkspaceRegistryService`: it reads
+   * the team-scoped message log, so it shares that log's lifetime. It does NOT
+   * fold that log — it subscribes to `appended$` and holds its in-flight calls
+   * — but the scoping rule is unchanged, and a root-scoped instance would
+   * outlive the team switch that empties its state.
    */
   private invalidations = inject(WorkspaceInvalidationService);
 
@@ -186,11 +189,12 @@ export class WorkspaceExplorerComponent {
    * when no batch is pending — which doubles as "no flush is scheduled".
    *
    * `LogFeeder` batches frames at 16 ms, so ten `workspace_write` returns
-   * arrive in ONE `log$` emission — but the projection pushes its delta out
-   * synchronously, one instruction per completed call. Routing each as it
-   * arrives would issue ten listings of the same directory (NFR4). Directory
-   * granularity dedupes only WITHIN one `workspace_multi_edit`; the coalescing
-   * across separate calls is this component's.
+   * arrive in ONE append — and `WorkspaceInvalidationService` pushes out every
+   * instruction that append completes SYNCHRONOUSLY, in log order, one per
+   * completed call. Routing each as it arrives would issue ten listings of the
+   * same directory (NFR4). Directory granularity dedupes only WITHIN one
+   * `workspace_multi_edit`; the coalescing across separate calls is this
+   * component's.
    */
   private pendingBatch: WorkspaceInvalidation | null = null;
 
@@ -253,11 +257,15 @@ export class WorkspaceExplorerComponent {
    * Filter one instruction by workspace, fold it into the pending batch, and
    * schedule the flush.
    *
-   * A microtask is exact here rather than merely cheap: the projection emits
-   * the whole delta synchronously, so the microtask that follows it sees every
-   * instruction of the burst and adds no observable latency. A `setTimeout` /
-   * `bufferTime` debounce would work too but reintroduces a timer, and
-   * "nothing polls in this panel" is a property worth keeping literally true.
+   * A microtask is exact here rather than merely cheap: the invalidation unit
+   * emits one append's whole burst synchronously, so the microtask that follows
+   * it sees every instruction of that burst and adds no observable latency.
+   * That synchronicity is a DEPENDENCY, not an observation — an asynchronous
+   * scheduler over there turns one coalesced listing per directory back into
+   * one listing per event with every spec here still green — and it is pinned
+   * on that side by `(AC26)`. A `setTimeout` / `bufferTime` debounce would work
+   * too but reintroduces a timer, and "nothing polls in this panel" is a
+   * property worth keeping literally true.
    */
   private acceptInvalidation(instruction: WorkspaceInvalidation): void {
     if (instruction.workspaceId !== this.addressedWorkspace()) return;

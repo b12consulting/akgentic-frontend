@@ -66,9 +66,11 @@ type Contributions = Map<string, Set<string>>;
  * Exported (Story 39-2) so `workspace-invalidation.selector.ts` attributes a
  * mutation to the same workspaces the *Accessible by* chips render, instead of
  * re-encoding `workspace_id ?? team_id` a second time and drifting from the
- * backend. It is the RULE that is shared; the invalidation fold deliberately
+ * backend. It is the RULE that is shared; the invalidation unit deliberately
  * does not call `workspaceRegistryReduce`, whose `agentIds` reflect only
- * currently-active contributors. */
+ * currently-active contributors. (That unit no longer folds the log at all —
+ * it calls this per `StartMessage` as the message arrives, Epic 42 / ADR-031
+ * §D11 — which changes nothing about why the two are kept apart.) */
 export function startContribution(msg: StartMessage): Set<string> {
   const teamId = msg.team_id;
   const ids = new Set<string>();
