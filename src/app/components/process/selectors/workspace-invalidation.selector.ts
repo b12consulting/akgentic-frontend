@@ -1,5 +1,13 @@
 import { inject, Injectable } from '@angular/core';
-import { concatMap, map, Observable, scan } from 'rxjs';
+import {
+  concatMap,
+  defer,
+  filter,
+  ignoreElements,
+  merge,
+  Observable,
+  tap,
+} from 'rxjs';
 
 import {
   AkgenticMessage,
@@ -205,60 +213,61 @@ function resolveReturn(
 }
 
 /**
- * Pure ordered fold over the message log → the cumulative list of workspace
- * invalidation instructions (Epic 39 / ADR-031 §D1).
+ * Everything ONE subscription holds between messages, and the whole of this
+ * unit's memory: no workspace cache, no "last invalidated at" stamp, no dirty
+ * flag, no cursor and no announced-so-far count.
  *
- * A projection, not a reactor, by ADR-025's test: it has to REMEMBER something.
- * The return event names no path, so a mutating call is held until its matching
- * return arrives.
- *
- * Three pieces of state, all derived from the log itself:
- * - the per-agent workspace contributions (a `StartMessage` sets, a `StopMessage`
- *   deletes) — read at CALL time, never at return time;
- * - the in-flight `tool_call_id → call` map, the ONLY memory this unit holds:
- *   no workspace cache, no "last invalidated at" stamp, no dirty flag;
- * - the ordered output list.
- *
- * The attribution is resolved at call time on purpose. Resolving it at the end
- * instead would make the fold prefix-UNSTABLE — a later `StopMessage` would
- * retroactively erase an already-emitted instruction — and the delta in
- * `WorkspaceInvalidationService` depends on the prefix never changing.
- *
- * Folding `log$` (and not `appended$`) is what makes the lifecycle free:
- * `reset()` re-emits `[]`, a fold over `[]` starts with an empty in-flight map,
- * and no per-store reset code exists anywhere.
- *
- * No field this fold reads itself can throw: `__model__` and `sender` are both
- * reached defensively (`messageListFold` guards `sender` the same way), the
- * inner guards accept `null`/`undefined`, and the argument parser returns `null`
- * rather than raising. A fold that throws on one bad frame stops folding for the
- * rest of the session. The one frame that could still raise is a `StartMessage`
- * carrying no `config` at all, which `startContribution` dereferences — shared
- * with `workspaceRegistryReduce`, and recorded as a deferred finding on Epic 39
- * rather than hardened here.
- *
- * Exported at module scope so specs assert it directly without a `TestBed`, the
- * same way `workspaceRegistryReduce` is exercised.
+ * - `contributions` — the effective workspace ids each agent's `WorkspaceTool`s
+ *   resolve to. A `StartMessage` sets an agent's entry (last-wins), a
+ *   `StopMessage` deletes it. Read at CALL time and never at return time, so a
+ *   `StopMessage` landing between a call and its return cannot retroactively
+ *   erase the instruction (ADR-031 §D4).
+ * - `inFlight` — the mutating calls still awaiting a return, keyed by
+ *   `tool_call_id`. The return frame names no path, so everything an
+ *   instruction needs is captured here from the call frame.
  */
-export function workspaceInvalidationReduce(
-  log: AkgenticMessage[],
+interface InvalidationState {
+  contributions: Map<string, Set<string>>;
+  inFlight: Map<string, InFlightCall>;
+}
+
+/**
+ * Absorb messages into one subscription's state and return the instructions
+ * they COMPLETED — none, one, or several, in the order the messages arrived.
+ *
+ * It walks only the messages it is handed. On the live path that is exactly
+ * what `appended$` just delivered, so a message is absorbed once and a call's
+ * `arguments` string is parsed once, for the life of the subscription. Nothing
+ * re-reads a message the log already delivered.
+ *
+ * No field it reads can throw: `__model__` and `sender` are both reached
+ * defensively (`messageListFold` reaches `sender?.role` the same way), the inner
+ * guards accept `null`/`undefined`, and the argument parser returns `null`
+ * rather than raising. Those reads matter MORE here than they did under a fold:
+ * a fold that threw spoiled one emission's derivation, whereas a throw out of a
+ * live subscription tears the subscription down for good and nothing
+ * re-subscribes. The one frame that could still raise is a `StartMessage`
+ * carrying no `config` at all, which `startContribution` dereferences — shared
+ * with `workspaceRegistryReduce`, and carried as a deferred finding rather than
+ * hardened here.
+ */
+function absorb(
+  state: InvalidationState,
+  messages: AkgenticMessage[],
 ): WorkspaceInvalidation[] {
-  const contributions = new Map<string, Set<string>>();
-  const inFlight = new Map<string, InFlightCall>();
   const instructions: WorkspaceInvalidation[] = [];
 
-  for (const m of log) {
+  for (const m of messages) {
     if (!m.__model__) continue;
-    // `sender` is typed as required but arrives off the wire: reached the same
-    // defensive way `messageListFold` reaches `sender?.role`. A frame without
+    // `sender` is typed as required but arrives off the wire. A frame without
     // one keys the empty agent id, which no well-formed frame ever claims.
     const agentId = m.sender?.agent_id ?? '';
     if (isStartMessage(m)) {
-      contributions.set(agentId, startContribution(m));
+      state.contributions.set(agentId, startContribution(m));
       continue;
     }
     if (isStopMessage(m)) {
-      contributions.delete(agentId);
+      state.contributions.delete(agentId);
       continue;
     }
     if (!isEventMessage(m)) continue;
@@ -268,87 +277,126 @@ export function workspaceInvalidationReduce(
     // `any` from propagating into this module.
     const inner: { __model__?: string } | null | undefined = m.event;
     if (isToolCallEvent(inner)) {
-      recordCall(inFlight, inner, contributions.get(agentId));
+      recordCall(state.inFlight, inner, state.contributions.get(agentId));
     } else if (isToolReturnEvent(inner)) {
       instructions.push(
-        ...resolveReturn(inFlight, inner.tool_call_id, inner.success),
+        ...resolveReturn(state.inFlight, inner.tool_call_id, inner.success),
       );
     }
   }
   return instructions;
 }
 
-/** Rebasing state for the delta: how much of the cumulative fold has already
- *  been announced, whether a baseline has been taken, and the tail to emit. */
-interface InvalidationDelta {
-  cursor: number;
-  seeded: boolean;
-  delta: WorkspaceInvalidation[];
-}
-
-const INITIAL_DELTA: InvalidationDelta = {
-  cursor: 0,
-  seeded: false,
-  delta: [],
-};
-
 /**
- * Emit only what was appended since the previous emission.
+ * Absorb the log as it already stands, announcing nothing — run ONCE, when a
+ * subscriber arrives.
  *
- * Sound because the log is append-or-reset only and the fold is prefix-stable,
- * so a longer cumulative list always shares its prefix with the previous one.
- * A SHORTER list means `reset()` — rebase the cursor to zero and announce
- * nothing.
+ * It is not the whole-log derivation this unit used to run: that walked the
+ * entire log on EVERY emission and re-parsed every historical call's arguments,
+ * file bodies included, for the life of the session. This walks what was there
+ * at subscribe time and then never again.
  *
- * The FIRST emission a subscriber receives establishes the baseline and
- * announces nothing. For a live team the explorer mounts against an empty log,
- * so nothing is lost — and the explorer's own initial tree load IS that
- * baseline read. Without it, opening the panel on a stopped team would fire one
- * listing per historical mutation in its REST replay.
+ * It cannot be dropped in favour of reading `appended$` alone. `appended$` is a
+ * plain `Subject` with no replay buffer, so every message that predates the
+ * subscription is invisible to it — the `StartMessage`s that carry the
+ * agent→workspace attribution above all. That is the PRODUCTION ordering, not
+ * an artefact of tests: a workspace tab only exists once a `StartMessage` has
+ * announced the `WorkspaceTool` that created it, and the explorer subscribes
+ * from its constructor, so the attribution always predates the subscription.
+ * Without this, every live instruction would resolve to no workspace at all and
+ * nothing would ever refresh.
+ *
+ * Discarding what it returns is the old baseline, and for the same reason:
+ * opening the panel on a stopped team must not fire one listing per historical
+ * mutation in its REST replay. The explorer's own initial tree load IS that
+ * baseline read.
  */
-function rebase(
-  state: InvalidationDelta,
-  all: WorkspaceInvalidation[],
-): InvalidationDelta {
-  const grew = state.seeded && all.length > state.cursor;
-  return {
-    cursor: all.length,
-    seeded: true,
-    delta: grew ? all.slice(state.cursor) : [],
-  };
+function seedFrom(
+  state: InvalidationState,
+  log: AkgenticMessage[],
+): void {
+  absorb(state, log);
 }
 
 /**
- * WorkspaceInvalidationService — Story 39-2 (ADR-031 §D1).
+ * WorkspaceInvalidationService — Epic 42 (ADR-031 §D11).
  *
  * Publishes `invalidations$`: one `WorkspaceInvalidation` at a time, in log
  * order, for every mutating workspace tool call that has since completed
- * successfully. Nothing subscribes to it yet — the explorer wiring is Story
- * 39-4, exactly as `WorkspaceRegistryService` deferred its own wiring to Story
- * 23-3.
+ * successfully. `WorkspaceExplorerComponent` consumes it, one explorer per
+ * workspace tab (Story 39-4).
  *
- * It is a PROJECTION over `MessageLogService.log$` and nothing else: no HTTP, no
+ * It READS `MessageLogService.appended$` — the messages that just entered the
+ * log, post id-dedup — and HOLDS its in-flight calls, instead of re-deriving
+ * them by folding the whole log on every emission and diffing the result
+ * against a cursor. What that removes is structural, not a measured speed-up:
+ * the whole-log walk per emission, the re-parse of every historical call's
+ * arguments, and the cursor-and-baseline machinery that existed only to answer
+ * "which of these are new?". Because a call is now parsed exactly once, there is
+ * nothing left for a parse cache to save, and none is kept.
+ *
+ * It reaches `MessageLogService` and nothing else: no HTTP, no
  * `WorkspaceService`, no `ContextService`, no toast surface. It writes to
  * nothing outside itself.
  *
- * Scope: component-scoped (NOT `providedIn: 'root'`) because it injects the
- * component-scoped `MessageLogService`. A root-scoped projection would outlive
- * the team switch that is supposed to empty it.
+ * The state lives inside `defer`, PER SUBSCRIPTION. `WorkspaceTabsComponent`
+ * renders one explorer per workspace against a single component-scoped
+ * instance, so a single shared map would need multicasting — without it the
+ * first subscriber's `delete` consumes the entry and every workspace tab but
+ * one silently stops refreshing. Per-subscription state gives each explorer the
+ * complete stream with no multicast, and keeps the unit inert until subscribed
+ * (nothing in this layer subscribes in a constructor).
+ *
+ * `log$` is still watched, but ONLY for `reset()` — an O(1) length check per
+ * emission, not the derivation that was deleted. It is what empties the two maps
+ * on a team switch: `IngestionService.init()` runs several times per component
+ * lifetime, the `ProcessComponent` and this service survive it, `reset()` emits
+ * on `log$` and deliberately NOT on `appended$`, and a subscriber that watched
+ * only `appended$` would carry the previous team's entries and attribution into
+ * the next one. The whole-log fold got that for free by folding an empty array.
  *
  * Deliberately NOT `shareReplay`ed: a late subscriber must not receive a
  * replayed burst of invalidations for state it never rendered — the same class
- * of bug `appended$`'s plain `Subject` exists to avoid. The rebasing state lives
- * inside the operator chain, per subscription, so there is no cursor field on
- * this class.
+ * of bug `appended$`'s plain `Subject` exists to avoid.
+ *
+ * Scope: component-scoped (NOT `providedIn: 'root'`) because it injects the
+ * component-scoped `MessageLogService`. A root-scoped instance would outlive the
+ * team switch that is supposed to empty it.
  */
 @Injectable()
 export class WorkspaceInvalidationService {
   private readonly log: MessageLogService = inject(MessageLogService);
 
-  readonly invalidations$: Observable<WorkspaceInvalidation> =
-    this.log.log$.pipe(
-      map(workspaceInvalidationReduce),
-      scan(rebase, INITIAL_DELTA),
-      concatMap((state) => state.delta),
+  readonly invalidations$: Observable<WorkspaceInvalidation> = defer(() => {
+    const state: InvalidationState = {
+      contributions: new Map<string, Set<string>>(),
+      inFlight: new Map<string, InFlightCall>(),
+    };
+    seedFrom(state, this.log.snapshot());
+
+    // `reset()` is the only shrink the log has, and it emits on `log$` alone.
+    // `ignoreElements` keeps this watch out of the value stream.
+    const cleared$ = this.log.log$.pipe(
+      filter((log) => log.length === 0),
+      tap(() => {
+        state.contributions.clear();
+        state.inFlight.clear();
+      }),
+      ignoreElements(),
     );
+
+    // `concatMap` over a plain ARRAY emits synchronously and in order, so one
+    // batch carrying N completed mutations pushes its N instructions out before
+    // `appendAll` returns. The explorer's microtask coalescing depends on that
+    // literally — an asynchronous scheduler here turns one coalesced listing per
+    // directory back into one listing per event, with every spec still green.
+    const emitted$ = this.log.appended$.pipe(
+      concatMap((batch) => absorb(state, batch)),
+    );
+
+    // `cleared$` is subscribed first, so `log$`'s current value is consumed
+    // before the first batch can arrive. It is a no-op on an empty log and
+    // filtered out on a non-empty one, so it never disturbs the seed above.
+    return merge(cleared$, emitted$);
+  });
 }

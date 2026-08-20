@@ -73,12 +73,13 @@ interface VisualizationOption {
     // `providedIn: 'root'` — it shares the team-scoped log lifecycle, so a team
     // switch destroys it and never leaks workspaces across teams.
     WorkspaceRegistryService,
-    // Epic 39 (ADR-031): component-scoped projection that folds the message log
-    // into workspace re-read instructions, one per completed mutating workspace
-    // tool call. Provided AFTER MessageLogService (which it injects) and next to
-    // the registry it shares a lifecycle with. Never `providedIn: 'root'` — its
-    // delta baseline is per-team, and a root instance would carry one team's
-    // cursor into the next and burst on its replay.
+    // Epic 39 (ADR-031): component-scoped unit turning the message log into
+    // workspace re-read instructions, one per completed mutating workspace tool
+    // call. Provided AFTER MessageLogService (which it injects) and next to the
+    // registry it shares a lifecycle with. Never `providedIn: 'root'` — it HOLDS
+    // the team's in-flight calls and their agent→workspace attribution, and
+    // empties both on the log reset that opens a team switch; a root instance
+    // would carry one team's held calls into the next.
     WorkspaceInvalidationService,
     // Epic 23 (ADR-020): component-scoped identity map that folds the message
     // log into `agent_id -> { name, role }`, combined in WorkspaceTabsComponent
