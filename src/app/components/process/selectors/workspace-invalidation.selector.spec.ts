@@ -956,12 +956,19 @@ describe('WorkspaceInvalidationService — incremental reading (Epic 42)', () =>
     // (c) seed the replay for a STOPPED team via `appendAll`, (d) wire the
     // consumers, then open the socket. The replay lands at (c), before any
     // consumer exists, and `appended$` is a plain `Subject` with no replay
-    // buffer, so a subscriber wired at or after (d) can never see it.
+    // buffer, so a subscriber wired at or after (d) never receives it as a
+    // batch. What it does instead is absorb the log at subscribe time and
+    // announce nothing — which is why the live mutation below still attributes
+    // to `ws-1` rather than to no workspace at all.
     //
-    // Move the consumer wiring above the replay seed in `ingestion.service.ts`
-    // and opening the panel on a stopped team bursts one listing per historical
-    // mutation again — silently, with every other spec here still green. This
-    // spec is the only thing that would notice.
+    // What this spec pins is THIS unit's half of the property: a subscriber
+    // arriving after a batch registers it silently. It cannot pin the other
+    // half. Move the consumer wiring above the replay seed in
+    // `ingestion.service.ts` and opening the panel on a stopped team bursts one
+    // listing per historical mutation again — silently, with every spec in this
+    // file still green, THIS ONE INCLUDED, because it drives the correct order
+    // itself. No spec anywhere pins that ordering; the gap is recorded on epic
+    // 42.
     log.reset(); // (b)
     log.appendAll([
       // (c) the REST replay
