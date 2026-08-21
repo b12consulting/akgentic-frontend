@@ -26,9 +26,17 @@
   font-size: 0.75rem;
 }
 
+// darkred (#8b0000), not the PrimeNG red token, and deliberately a literal.
+// The token resolves to a light #e24c4c that sits at roughly 3.4:1 on the
+// dialog's white surface -- legible, but not obviously an error at a glance.
+// darkred is ~10.7:1 there. Safe as a literal because the app pins
+// `darkModeSelector: 'none'` (app.config.ts), so this text is only ever painted
+// on a light surface; if a dark theme is ever turned on, this is one of the
+// declarations that has to be revisited.
 .team-metadata-modal__error {
-  color: var(--p-red-500, #e24c4c);
+  color: darkred;
   font-size: 0.85rem;
+  font-weight: 500;
   white-space: pre-line;
 }
 
