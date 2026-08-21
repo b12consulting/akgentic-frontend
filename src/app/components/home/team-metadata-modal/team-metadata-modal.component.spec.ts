@@ -114,12 +114,29 @@ describe('TeamMetadataModalComponent', () => {
     expect(el('metadata-label-tenant')!.getAttribute('for')).toBe(input('tenant').id);
   });
 
-  it('(AC2) falls back to the key when the description is empty', async () => {
+  it('(AC2) falls back to the key, capitalised, when the description is empty', async () => {
     await open(contract([field('tenant', { description: '' })]));
 
     const label = el('metadata-label-tenant');
-    expect(label?.textContent?.trim()).toContain('tenant');
+    // Capitalised, not verbatim: an identifier rendered as-is beside real
+    // sentences reads as a rendering bug rather than an absent description.
+    expect(label?.textContent?.trim()).toContain('Tenant');
     expect(label?.textContent?.trim()).not.toBe('');
+  });
+
+  it('(AC2) capitalises only the first character of the key fallback', async () => {
+    // The rest of the key is left alone, so a deliberately-cased name survives.
+    await open(contract([field('caseRef', { description: '' })]));
+
+    expect(el('metadata-label-caseRef')?.textContent?.trim()).toBe('CaseRef');
+  });
+
+  it('(AC2) renders a description verbatim and never recases it', async () => {
+    // The author wrote it as a sentence; its casing is theirs. A lower-case
+    // first character in a description is a choice, not a defect to repair.
+    await open(contract([field('tenant', { description: 'iOS device identifier' })]));
+
+    expect(el('metadata-label-tenant')?.textContent?.trim()).toBe('iOS device identifier');
   });
 
   it('(AC2) renders one input per descriptor, in contract order', async () => {

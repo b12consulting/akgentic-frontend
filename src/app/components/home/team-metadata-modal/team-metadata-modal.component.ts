@@ -115,9 +115,22 @@ export class TeamMetadataModalComponent implements OnChanges {
     return this.contract?.fields ?? [];
   }
 
-  /** `description`, falling back to `key` so a label is never blank. */
+  /**
+   * `description`, falling back to `key` so a label is never blank.
+   *
+   * A description is rendered VERBATIM — the model author wrote it as a
+   * sentence and its casing is theirs. Only the fallback is adjusted: a field
+   * name is an identifier, lower-case by Python convention, and `note` sitting
+   * under `Service tier the team runs under.` reads as a rendering bug rather
+   * than as the deliberate absence of a description. Capitalising the first
+   * character is the whole adjustment; the rest of the key is left alone, so a
+   * name that is deliberately cased (`caseRef`, `HTTPProxy`) is not mangled.
+   */
   labelFor(field: MetadataFieldDescriptor): string {
-    return field.description || field.key;
+    if (field.description) {
+      return field.description;
+    }
+    return field.key.charAt(0).toUpperCase() + field.key.slice(1);
   }
 
   /** Whitespace-only counts as blank — for the gate AND for omission. */
