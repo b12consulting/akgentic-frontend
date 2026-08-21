@@ -88,6 +88,10 @@ describe('TeamMetadataModalComponent', () => {
     await open(contract([field('tenant', { description: 'Tenant code' })]));
 
     expect(el('metadata-label-tenant')?.textContent).toContain('Tenant code');
+    // The label the user reads is the label the input is NAMED by. Pinned in
+    // both directions: dropping `for` reads null, dropping the input's `id`
+    // leaves the right-hand side empty while `for` still names the input.
+    expect(el('metadata-label-tenant')!.getAttribute('for')).toBe(input('tenant').id);
   });
 
   it('(AC2) falls back to the key when the description is empty', async () => {
@@ -135,6 +139,11 @@ describe('TeamMetadataModalComponent', () => {
     await open(contract([field('tenant', { mandatory: true })]));
 
     expect(el('metadata-required-tenant')).not.toBeNull();
+    // The asterisk above is `aria-hidden`, so it carries mandatory-ness to
+    // sighted users only. `required` is what a screen reader announces —
+    // reflected onto the element by Angular's RequiredValidator, whose value
+    // is the empty string, so the check is "present", not "true".
+    expect(input('tenant').getAttribute('required')).not.toBeNull();
     expect((el('metadata-confirm') as HTMLButtonElement).disabled).toBeTrue();
     expect(el('metadata-blocked-hint')).not.toBeNull();
   });
@@ -167,6 +176,23 @@ describe('TeamMetadataModalComponent', () => {
     expect(el('metadata-blocked-hint')?.textContent).toContain('Tenant code');
   });
 
+  it('(AC3) the Create button names the blocked hint, and the name resolves', async () => {
+    await open(
+      contract([field('tenant', { description: 'Tenant code', mandatory: true })]),
+    );
+
+    const describedBy = el('metadata-confirm')!.getAttribute('aria-describedby');
+    expect(describedBy).not.toBeNull();
+
+    // Follow the reference through to an element. A presence check on the
+    // attribute passes against a typo, a stale id, and a hint that was
+    // deleted — none of which reach a screen reader.
+    const hint = document.getElementById(describedBy!);
+    expect(hint).not.toBeNull();
+    expect(hint).toBe(el('metadata-blocked-hint'));
+    expect(hint?.textContent).toContain('Tenant code');
+  });
+
   // -------------------------------------------------------------------------
   // AC4 — index is a quiet affordance and gates nothing
   // -------------------------------------------------------------------------
@@ -175,6 +201,24 @@ describe('TeamMetadataModalComponent', () => {
     await open(contract([field('tenant', { index: true })]));
 
     expect(el('metadata-index-tenant')).not.toBeNull();
+  });
+
+  it('(AC4) the input names the filterable hint, and the name resolves', async () => {
+    await open(contract([field('tenant', { index: true })]));
+
+    const describedBy = input('tenant').getAttribute('aria-describedby');
+    expect(describedBy).not.toBeNull();
+
+    const hint = document.getElementById(describedBy!);
+    expect(hint).not.toBeNull();
+    expect(hint).toBe(el('metadata-index-tenant'));
+    expect(hint?.textContent).toContain('filterable');
+
+    // The null branch. A non-indexed field renders no hint, so it must name
+    // none: an aria-describedby pointing at an element that is not in the
+    // document is worse than no association at all.
+    await open(contract([field('case')]));
+    expect(input('case').getAttribute('aria-describedby')).toBeNull();
   });
 
   it('(AC4) an indexed, non-mandatory field left blank does not block confirm', async () => {
@@ -332,6 +376,28 @@ describe('TeamMetadataModalComponent', () => {
     fixture.detectChanges();
 
     expect(el('metadata-error')?.textContent).toContain('case: field required');
+  });
+
+  it('(AC14) a rejected create leaves the typed draft in the input', async () => {
+    await open(contract([field('tenant')]));
+    type('tenant', 'acme');
+
+    // `setInput` so ANGULAR builds the SimpleChanges `ngOnChanges` receives:
+    // a hand-written one would test the reset condition against an object
+    // this spec wrote. An `errorMessage` change matches neither reset
+    // trigger, so the draft survives — the half a "clear the form on error"
+    // edit would silently destroy on every 422.
+    setInput('errorMessage', 'tenant: field required');
+    fixture.detectChanges();
+    // NgModel writes a CHANGED model back to the view in a microtask, so a
+    // draft wiped by ngOnChanges would still read 'acme' in the DOM on a
+    // synchronous check. Drain the queue first, or this assertion cannot see
+    // the very edit it exists to catch.
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(input('tenant').value).toBe('acme');
+    expect(component.visible).toBeTrue();
   });
 
   // -------------------------------------------------------------------------

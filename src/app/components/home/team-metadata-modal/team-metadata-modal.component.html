@@ -63,14 +63,23 @@
         [(ngModel)]="values[field.key]"
         [disabled]="pending"
         [required]="field.mandatory"
+        [attr.aria-describedby]="field.index ? 'metadata-index-' + field.key : null"
         autocomplete="off"
         [attr.data-test]="'metadata-field-' + field.key"
       />
 
       <!-- Quiet "filterable" affordance for an indexed field. Informational
-           only — `index` gates nothing. -->
+           only — `index` gates nothing.
+
+           The input's `aria-describedby` is bound conditionally on the same
+           `field.index`: this hint is not in the document for a non-indexed
+           field, and an attribute naming an absent element is a dangling
+           reference — assistive tech announces nothing and the markup lies.
+           The id derives from the key, which the server guarantees is a
+           unique identifier, so two fields can never collide. -->
       <small
         *ngIf="field.index"
+        [id]="'metadata-index-' + field.key"
         class="team-metadata-modal__index"
         [attr.data-test]="'metadata-index-' + field.key"
       >filterable</small>
@@ -90,9 +99,16 @@
   <div class="team-metadata-modal__actions">
     <!-- The reason confirmation is blocked, next to the disabled control: a
          disabled button fires no mouse events, so a tooltip on it would be
-         unreachable. -->
+         unreachable.
+
+         The Create button's `aria-describedby` is bound on the same
+         `!canConfirm` for the same reason as the index hint: the hint is out
+         of the document once confirmation is unblocked, and a reference to an
+         absent element is worse than no reference at all. A singleton hint
+         listing every missing label, so the id stays literal. -->
     <small
       *ngIf="!canConfirm"
+      id="metadata-blocked-hint"
       class="team-metadata-modal__blocked-hint"
       data-test="metadata-blocked-hint"
     >Required: {{ missingMandatoryLabels.join(', ') }}</small>
@@ -113,6 +129,7 @@
       label="Create"
       [icon]="pending ? 'pi pi-spinner pi-spin' : 'pi pi-plus'"
       [disabled]="!canConfirm || pending"
+      [attr.aria-describedby]="!canConfirm ? 'metadata-blocked-hint' : null"
       (click)="onConfirm()"
       data-test="metadata-confirm"
     ></button>
