@@ -213,8 +213,61 @@ describe('ContextService', () => {
     await service.createTeamAndNavigate('cat-1');
 
     expect(reloadSpy).not.toHaveBeenCalled();
-    expect(apiSpy.createTeam).toHaveBeenCalledOnceWith('cat-1');
+    // Two arguments, not one: `createTeamAndNavigate` forwards `metadata`
+    // UNCONDITIONALLY (Story 43.1), so an omitted metadata reaches the api
+    // service as an explicit `undefined`. Jasmine compares the whole argument
+    // array, so the recorded call is ['cat-1', undefined]. The emptiness rule
+    // lives in exactly one place — `apiService.createTeam` — and the body it
+    // produces is pinned in api.service.spec.ts.
+    expect(apiSpy.createTeam).toHaveBeenCalledOnceWith('cat-1', undefined);
     expect(routerSpy.navigate).toHaveBeenCalledOnceWith(['/process', 'new']);
+  });
+
+  // --- Story 43.1 — metadata forwarding ----------------------------------
+
+  it('(43.1 AC7) createTeamAndNavigate forwards metadata unchanged to apiService.createTeam', async () => {
+    apiSpy.getTeams.and.returnValue(Promise.resolve([]));
+    await service.getTeams();
+
+    apiSpy.createTeam.and.returnValue(Promise.resolve(makeTeamResponse('new')));
+    routerSpy.navigate.and.returnValue(Promise.resolve(true));
+
+    await service.createTeamAndNavigate('cat-1', { tenant: 'acme' });
+
+    expect(apiSpy.createTeam).toHaveBeenCalledOnceWith('cat-1', {
+      tenant: 'acme',
+    });
+  });
+
+  it('(43.1 AC7) forwarding metadata leaves the cache append and navigation unchanged', async () => {
+    const existing = [makeTeam('a')];
+    apiSpy.getTeams.and.returnValue(Promise.resolve(existing));
+    await service.getTeams();
+
+    apiSpy.createTeam.and.returnValue(Promise.resolve(makeTeamResponse('new')));
+    routerSpy.navigate.and.returnValue(Promise.resolve(true));
+
+    await service.createTeamAndNavigate('cat-1', { tenant: 'acme' });
+
+    const next = await firstValueFrom(service.teams$);
+    expect(next.length).toBe(existing.length + 1);
+    expect(next[next.length - 1].team_id).toBe('new');
+    expect(routerSpy.navigate).toHaveBeenCalledOnceWith(['/process', 'new']);
+  });
+
+  it('(43.1 AC7) an EMPTY metadata object is forwarded as-is — no gate of its own', async () => {
+    apiSpy.getTeams.and.returnValue(Promise.resolve([]));
+    await service.getTeams();
+
+    apiSpy.createTeam.and.returnValue(Promise.resolve(makeTeamResponse('new')));
+    routerSpy.navigate.and.returnValue(Promise.resolve(true));
+
+    await service.createTeamAndNavigate('cat-1', {});
+
+    // NOT normalised to `undefined` here: the "only when non-empty" rule
+    // belongs to `apiService.createTeam` alone, so this service must hand it
+    // whatever it was given.
+    expect(apiSpy.createTeam).toHaveBeenCalledOnceWith('cat-1', {});
   });
 
   it('(AC1 10.4) createTeamAndNavigate preserves immutability on append', async () => {

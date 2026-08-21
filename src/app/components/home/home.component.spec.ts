@@ -13,7 +13,61 @@ import { ConfigService } from '../../core/config/config.service';
 import { ContextService } from '../../core/context/context.service';
 import { TeamContext } from '../../core/context/team.interface';
 import { NamespacePanelComponent } from '../catalog/namespace-panel/namespace-panel.component';
+import { HttpError } from '../../core/http/fetch.service';
+import {
+  MetadataFieldDescriptor,
+  NamespaceSummary,
+  TeamMetadataContract,
+} from '../../protocol/catalog.interface';
 import { HomeComponent } from './home.component';
+import { TeamMetadataModalComponent } from './team-metadata-modal/team-metadata-modal.component';
+
+/**
+ * A `NamespaceSummary` fixture carrying neutral values for every field these
+ * specs do not exercise. Only `namespace` / `name` / `description` and the
+ * optional metadata contract are ever asserted on here; the rest exist because
+ * the interface requires them.
+ *
+ * `teamMetadata` is deliberately three-valued. OMITTING the argument leaves the
+ * `team_metadata` KEY OFF the object entirely — the shape a server predating
+ * the field sends, and the default every pre-existing spec here inherits.
+ * Passing `null` sets the key to `null`. Both mean "asks nothing", and the two
+ * are distinct fixtures precisely because a gate written as `=== null` passes
+ * one and fails the other.
+ */
+function nsSummary(
+  namespace: string,
+  name: string,
+  description: string,
+  teamMetadata?: TeamMetadataContract | null,
+): NamespaceSummary {
+  const summary: NamespaceSummary = {
+    namespace,
+    name,
+    description,
+    team: false,
+    shareable: false,
+    public: false,
+    owner: null,
+    counts: {},
+  };
+  if (teamMetadata !== undefined) {
+    summary.team_metadata = teamMetadata;
+  }
+  return summary;
+}
+
+/** One declared field; all four properties are always present on the wire. */
+function field(
+  key: string,
+  overrides: Partial<MetadataFieldDescriptor> = {},
+): MetadataFieldDescriptor {
+  return { key, description: '', index: false, mandatory: false, ...overrides };
+}
+
+function contract(fields: MetadataFieldDescriptor[]): TeamMetadataContract {
+  return { type: 'acme.contracts.CaseMetadata', fields };
+}
 
 function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
   return {
@@ -216,14 +270,17 @@ describe('HomeComponent', () => {
   });
 
   it('(AC4 10.4) HomeComponent.createTeamAndNavigate delegates to contextService and has no reload compensation', async () => {
-    const ns = { namespace: 'cat-1', name: 'Cat One', description: 'first cat' };
+    const ns = nsSummary('cat-1', 'Cat One', 'first cat');
     component.selectedNamespace$.next(ns);
     // The component has not invoked ngOnInit yet (no detectChanges in this
     // test), so contextSpy.getTeams should not have been called. Reset to
     // guard against any spurious prior invocation.
     contextSpy.getTeams.calls.reset();
     await component.createTeamAndNavigate();
-    expect(contextSpy.createTeamAndNavigate).toHaveBeenCalledOnceWith('cat-1');
+    expect(contextSpy.createTeamAndNavigate).toHaveBeenCalledOnceWith(
+      'cat-1',
+      undefined,
+    );
     // No per-component compensation for the removed reload.
     expect(contextSpy.getTeams).not.toHaveBeenCalled();
   });
@@ -237,8 +294,8 @@ describe('HomeComponent', () => {
   it('(AC1 1.9) ngOnInit loads namespaces via getNamespaces and selects the first', async () => {
     apiSpy.getNamespaces.and.returnValue(
       Promise.resolve([
-        { namespace: 'agent-team-v1', name: 'Agent Team', description: 'Default' },
-        { namespace: 'rag-team-v1', name: 'RAG Team', description: 'With RAG' },
+        nsSummary('agent-team-v1', 'Agent Team', 'Default'),
+        nsSummary('rag-team-v1', 'RAG Team', 'With RAG'),
       ]),
     );
     await component.ngOnInit();
@@ -248,25 +305,24 @@ describe('HomeComponent', () => {
   });
 
   it('(AC3 1.9) createTeam sends the selected namespace to apiService.createTeam', async () => {
-    component.selectedNamespace$.next({
-      namespace: 'agent-team-v1',
-      name: 'Agent Team',
-      description: 'Default',
-    });
+    component.selectedNamespace$.next(
+      nsSummary('agent-team-v1', 'Agent Team', 'Default'),
+    );
     apiSpy.createTeam.calls.reset();
     await component.createTeam();
-    expect(apiSpy.createTeam).toHaveBeenCalledOnceWith('agent-team-v1');
+    expect(apiSpy.createTeam).toHaveBeenCalledOnceWith('agent-team-v1', undefined);
   });
 
   it('(AC3 1.9) createTeamAndNavigate passes selected.namespace (not an id lookup)', async () => {
-    component.selectedNamespace$.next({
-      namespace: 'rag-team-v1',
-      name: 'RAG Team',
-      description: 'With RAG',
-    });
+    component.selectedNamespace$.next(
+      nsSummary('rag-team-v1', 'RAG Team', 'With RAG'),
+    );
     contextSpy.createTeamAndNavigate.calls.reset();
     await component.createTeamAndNavigate();
-    expect(contextSpy.createTeamAndNavigate).toHaveBeenCalledOnceWith('rag-team-v1');
+    expect(contextSpy.createTeamAndNavigate).toHaveBeenCalledOnceWith(
+      'rag-team-v1',
+      undefined,
+    );
   });
 
   it('(AC5 1.9) empty namespace list leaves the dropdown empty and no selection', async () => {
@@ -387,13 +443,9 @@ describe('HomeComponent', () => {
     // the seeded selection — otherwise the reconciliation correctly drops a
     // selection absent from the fetched list, clearing it to null.
     apiSpy.getNamespaces.and.returnValue(
-      Promise.resolve([{ namespace: 'foo', name: 'Foo', description: '' }]),
+      Promise.resolve([nsSummary('foo', 'Foo', '')]),
     );
-    component.selectedNamespace$.next({
-      namespace: 'foo',
-      name: 'Foo',
-      description: '',
-    });
+    component.selectedNamespace$.next(nsSummary('foo', 'Foo', ''));
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -407,13 +459,9 @@ describe('HomeComponent', () => {
     // See note above: keep the seeded selection present in the fetched list so
     // the reconciliation does not drop it during ngOnInit.
     apiSpy.getNamespaces.and.returnValue(
-      Promise.resolve([{ namespace: 'foo', name: 'Foo', description: '' }]),
+      Promise.resolve([nsSummary('foo', 'Foo', '')]),
     );
-    component.selectedNamespace$.next({
-      namespace: 'foo',
-      name: 'Foo',
-      description: '',
-    });
+    component.selectedNamespace$.next(nsSummary('foo', 'Foo', ''));
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -535,8 +583,8 @@ describe('HomeComponent', () => {
     // Prime a new list and invoke the (saved) handler — the dropdown must
     // refresh.
     const updated = [
-      { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
-      { namespace: 'rag-team-v1', name: 'RAG Team', description: 'd2' },
+      nsSummary('agent-team-v1', 'Agent Team', 'd1'),
+      nsSummary('rag-team-v1', 'RAG Team', 'd2'),
     ];
     apiSpy.getNamespaces.calls.reset();
     apiSpy.getNamespaces.and.returnValue(Promise.resolve(updated));
@@ -549,14 +597,12 @@ describe('HomeComponent', () => {
 
   it('(14.2 AC8) stale selection (deleted ns) is dropped → advances to first remaining', async () => {
     // Seed a selection that the refreshed list no longer contains.
-    component.selectedNamespace$.next({
-      namespace: 'agent-team-v1_copy',
-      name: 'Agent Team_copy',
-      description: 'clone',
-    });
+    component.selectedNamespace$.next(
+      nsSummary('agent-team-v1_copy', 'Agent Team_copy', 'clone'),
+    );
     const refreshed = [
-      { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
-      { namespace: 'rag-team-v1', name: 'RAG Team', description: 'd2' },
+      nsSummary('agent-team-v1', 'Agent Team', 'd1'),
+      nsSummary('rag-team-v1', 'RAG Team', 'd2'),
     ];
     apiSpy.getNamespaces.and.returnValue(Promise.resolve(refreshed));
 
@@ -568,18 +614,14 @@ describe('HomeComponent', () => {
 
   it('(14.2 AC9) still-present selection is preserved by `namespace` identity, untouched (no re-set)', async () => {
     // Seed the ORIGINAL object instance.
-    const original = {
-      namespace: 'rag-team-v1',
-      name: 'RAG Team',
-      description: 'original',
-    };
+    const original = nsSummary('rag-team-v1', 'RAG Team', 'original');
     component.selectedNamespace$.next(original);
 
     // Refresh returns a DIFFERENT object instance with the SAME namespace —
     // proves identity is compared on `namespace`, not object reference.
     const refreshed = [
-      { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
-      { namespace: 'rag-team-v1', name: 'RAG Team', description: 'refreshed copy' },
+      nsSummary('agent-team-v1', 'Agent Team', 'd1'),
+      nsSummary('rag-team-v1', 'RAG Team', 'refreshed copy'),
     ];
     apiSpy.getNamespaces.and.returnValue(Promise.resolve(refreshed));
 
@@ -591,11 +633,9 @@ describe('HomeComponent', () => {
   });
 
   it('(14.2 AC10) deleting the last namespace → null selection + placeholder', async () => {
-    component.selectedNamespace$.next({
-      namespace: 'only-team-v1',
-      name: 'Only Team',
-      description: 'last one',
-    });
+    component.selectedNamespace$.next(
+      nsSummary('only-team-v1', 'Only Team', 'last one'),
+    );
     apiSpy.getNamespaces.and.returnValue(Promise.resolve([]));
 
     await component.onNamespaceSaved();
@@ -626,8 +666,8 @@ describe('HomeComponent', () => {
     expect(component.selectedNamespace$.value).toBeNull();
     apiSpy.getNamespaces.and.returnValue(
       Promise.resolve([
-        { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
-        { namespace: 'rag-team-v1', name: 'RAG Team', description: 'd2' },
+        nsSummary('agent-team-v1', 'Agent Team', 'd1'),
+        nsSummary('rag-team-v1', 'RAG Team', 'd2'),
       ]),
     );
 
@@ -638,7 +678,7 @@ describe('HomeComponent', () => {
 
   it('(14.2 AC7) getNamespaces failure leaves namespaces$ unchanged and logs', async () => {
     component.namespaces$.next([
-      { namespace: 'existing-v1', name: 'Existing', description: 'd' },
+      nsSummary('existing-v1', 'Existing', 'd'),
     ]);
     apiSpy.getNamespaces.and.returnValue(Promise.reject(new Error('boom')));
     const consoleErrorSpy = spyOn(console, 'error');
@@ -647,14 +687,14 @@ describe('HomeComponent', () => {
 
     expect(consoleErrorSpy).toHaveBeenCalled();
     expect(component.namespaces$.value).toEqual([
-      { namespace: 'existing-v1', name: 'Existing', description: 'd' },
+      nsSummary('existing-v1', 'Existing', 'd'),
     ]);
   });
 
   it('(11.5 AC13) namespaceIdentifiers returns the `.namespace` field of each namespaces$ entry', () => {
     component.namespaces$.next([
-      { namespace: 'foo', name: 'F', description: '' },
-      { namespace: 'bar', name: 'B', description: '' },
+      nsSummary('foo', 'F', ''),
+      nsSummary('bar', 'B', ''),
     ]);
     expect(component.namespaceIdentifiers).toEqual(['foo', 'bar']);
   });
@@ -775,11 +815,7 @@ describe('HomeComponent', () => {
   });
 
   it('(11.7 AC8) namespaceLabel returns selected.name when present', () => {
-    component.selectedNamespace$.next({
-      namespace: 'foo',
-      name: 'Foo Display',
-      description: '',
-    });
+    component.selectedNamespace$.next(nsSummary('foo', 'Foo Display', ''));
     expect(component.namespaceLabel).toBe('Foo Display');
   });
 
@@ -820,8 +856,8 @@ describe('HomeComponent', () => {
     // the default empty list: make `getNamespaces` resolve with the pair we
     // want to observe on the binding.
     const list = [
-      { namespace: 'alpha', name: 'Alpha', description: '' },
-      { namespace: 'beta', name: 'Beta', description: '' },
+      nsSummary('alpha', 'Alpha', ''),
+      nsSummary('beta', 'Beta', ''),
     ];
     apiSpy.getNamespaces.and.returnValue(Promise.resolve(list));
 
@@ -907,7 +943,7 @@ describe('HomeComponent', () => {
     apiSpy.getNamespaces.calls.reset();
     apiSpy.getNamespaces.and.returnValue(
       Promise.resolve([
-        { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd' },
+        nsSummary('agent-team-v1', 'Agent Team', 'd'),
       ]),
     );
 
@@ -920,11 +956,11 @@ describe('HomeComponent', () => {
 
   it('(14.4 AC3) toggling on re-fetches with all=true and surfaces a foreign namespace', async () => {
     currentUser$.next({ user_id: 'gpiroux', roles: ['admin'] });
-    const foreign = {
-      namespace: 'other-tenant-ns',
-      name: 'Other Tenant',
-      description: 'foreign-owned',
-    };
+    const foreign = nsSummary(
+      'other-tenant-ns',
+      'Other Tenant',
+      'foreign-owned',
+    );
     apiSpy.getNamespaces.and.returnValue(Promise.resolve([foreign]));
     apiSpy.getNamespaces.calls.reset();
 
@@ -962,14 +998,10 @@ describe('HomeComponent', () => {
     currentUser$.next({ user_id: 'gpiroux', roles: ['admin'] });
     // Seed a selection that the toggled-on list no longer contains — the
     // reconciliation must drop it and advance to the first remaining ns.
-    component.selectedNamespace$.next({
-      namespace: 'stale-ns',
-      name: 'Stale',
-      description: 'gone',
-    });
+    component.selectedNamespace$.next(nsSummary('stale-ns', 'Stale', 'gone'));
     const refreshed = [
-      { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
-      { namespace: 'rag-team-v1', name: 'RAG Team', description: 'd2' },
+      nsSummary('agent-team-v1', 'Agent Team', 'd1'),
+      nsSummary('rag-team-v1', 'RAG Team', 'd2'),
     ];
     apiSpy.getNamespaces.and.returnValue(Promise.resolve(refreshed));
 
@@ -985,16 +1017,12 @@ describe('HomeComponent', () => {
 
   it('(14.4 AC6, AC18) toggle re-fetch preserves a still-present selection by identity', async () => {
     currentUser$.next({ user_id: 'gpiroux', roles: ['admin'] });
-    const original = {
-      namespace: 'rag-team-v1',
-      name: 'RAG Team',
-      description: 'original',
-    };
+    const original = nsSummary('rag-team-v1', 'RAG Team', 'original');
     component.selectedNamespace$.next(original);
     apiSpy.getNamespaces.and.returnValue(
       Promise.resolve([
-        { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
-        { namespace: 'rag-team-v1', name: 'RAG Team', description: 'refreshed' },
+        nsSummary('agent-team-v1', 'Agent Team', 'd1'),
+        nsSummary('rag-team-v1', 'RAG Team', 'refreshed'),
       ]),
     );
 
@@ -1107,18 +1135,16 @@ describe('HomeComponent', () => {
   });
 
   it('(28.2 AC8e) createTeam resets to page 1, reloads page 1, and does not blank the list', async () => {
-    component.selectedNamespace$.next({
-      namespace: 'agent-team-v1',
-      name: 'Agent Team',
-      description: 'd',
-    });
+    component.selectedNamespace$.next(
+      nsSummary('agent-team-v1', 'Agent Team', 'd'),
+    );
     component.currentPage = 4;
     component.first = 750;
     contextSpy.loadTeamsPage.calls.reset();
 
     await component.createTeam();
 
-    expect(apiSpy.createTeam).toHaveBeenCalledOnceWith('agent-team-v1');
+    expect(apiSpy.createTeam).toHaveBeenCalledOnceWith('agent-team-v1', undefined);
     expect(contextSpy.loadTeamsPage).toHaveBeenCalledOnceWith(1, 250);
     expect(component.currentPage).toBe(1);
     expect(component.first).toBe(0);
@@ -1303,14 +1329,12 @@ describe('HomeComponent', () => {
       // clears it to null and the create branch has no namespace to use).
       apiSpy.getNamespaces.and.returnValue(
         Promise.resolve([
-          { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd' },
+          nsSummary('agent-team-v1', 'Agent Team', 'd'),
         ]),
       );
-      component.selectedNamespace$.next({
-        namespace: 'agent-team-v1',
-        name: 'Agent Team',
-        description: 'd',
-      });
+      component.selectedNamespace$.next(
+        nsSummary('agent-team-v1', 'Agent Team', 'd'),
+      );
       // Seed an EMPTY page so the create branch runs.
       contextSpy.loadTeamsPage.and.callFake(async () => {
         teams$.next([]);
@@ -1321,7 +1345,530 @@ describe('HomeComponent', () => {
       await component.loadPage({ first: 0, rows: 250 });
       await init;
 
-      expect(contextSpy.createTeamAndNavigate).toHaveBeenCalledOnceWith('agent-team-v1');
+      expect(contextSpy.createTeamAndNavigate).toHaveBeenCalledOnceWith(
+        'agent-team-v1',
+        undefined,
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Story 43.2 — the creation modal gates all three creation paths.
+  //
+  // These specs drive the gate through the component's methods and host state,
+  // NOT through the child modal's DOM: the child's markup is covered by its own
+  // spec, and coupling the host spec to it would make both brittle.
+  // -------------------------------------------------------------------------
+
+  describe('metadata gate (43.2)', () => {
+    const asking = contract([field('tenant', { mandatory: true })]);
+
+    it('(AC9) createTeam with no contract creates immediately, with no metadata payload', async () => {
+      component.selectedNamespace$.next(
+        nsSummary('agent-team-v1', 'Agent Team', 'd'),
+      );
+      component.currentPage = 4;
+      component.first = 750;
+      apiSpy.createTeam.calls.reset();
+      contextSpy.loadTeamsPage.calls.reset();
+
+      await component.createTeam();
+
+      expect(component.metadataModalVisible).toBeFalse();
+      // The two-argument form 43.1 pins to today's byte-for-byte body.
+      expect(apiSpy.createTeam.calls.mostRecent().args).toEqual([
+        'agent-team-v1',
+        undefined,
+      ]);
+      expect(component.first).toBe(0);
+      expect(component.currentPage).toBe(1);
+      expect(contextSpy.loadTeamsPage).toHaveBeenCalledOnceWith(1, 250);
+    });
+
+    it('(AC9, AC13) createTeam with a contract opens the modal, creates nothing, and does not spin', async () => {
+      component.selectedNamespace$.next(
+        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
+      );
+      apiSpy.createTeam.calls.reset();
+
+      await component.createTeam();
+
+      expect(component.metadataModalVisible).toBeTrue();
+      expect(component.metadataContract).toBe(asking);
+      expect(apiSpy.createTeam).not.toHaveBeenCalled();
+      expect(component.isCreatingTeam).toBeFalse();
+    });
+
+    it('(AC10) createTeamAndNavigate with no contract navigates immediately', async () => {
+      component.selectedNamespace$.next(
+        nsSummary('agent-team-v1', 'Agent Team', 'd'),
+      );
+      contextSpy.createTeamAndNavigate.calls.reset();
+
+      await component.createTeamAndNavigate();
+
+      expect(component.metadataModalVisible).toBeFalse();
+      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args).toEqual([
+        'agent-team-v1',
+        undefined,
+      ]);
+    });
+
+    it('(AC10) createTeamAndNavigate with a contract opens the modal and creates nothing', async () => {
+      component.selectedNamespace$.next(
+        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
+      );
+      contextSpy.createTeamAndNavigate.calls.reset();
+
+      await component.createTeamAndNavigate();
+
+      expect(component.metadataModalVisible).toBeTrue();
+      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
+    });
+
+    // --- AC8: the three no-ask states, each pinned separately ---
+
+    it('(AC8) an ABSENT team_metadata key asks nothing', async () => {
+      const ns = nsSummary('agent-team-v1', 'Agent Team', 'd');
+      expect('team_metadata' in ns).toBeFalse();
+      component.selectedNamespace$.next(ns);
+
+      await component.createTeam();
+
+      expect(component.metadataModalVisible).toBeFalse();
+      expect(apiSpy.createTeam).toHaveBeenCalled();
+    });
+
+    it('(AC8) a null team_metadata asks nothing', async () => {
+      component.selectedNamespace$.next(
+        nsSummary('agent-team-v1', 'Agent Team', 'd', null),
+      );
+
+      await component.createTeam();
+
+      expect(component.metadataModalVisible).toBeFalse();
+      expect(apiSpy.createTeam).toHaveBeenCalled();
+    });
+
+    it('(AC8) a declared contract with an empty fields list asks nothing', async () => {
+      component.selectedNamespace$.next(
+        nsSummary('agent-team-v1', 'Agent Team', 'd', contract([])),
+      );
+
+      await component.createTeam();
+
+      expect(component.metadataModalVisible).toBeFalse();
+      expect(apiSpy.createTeam).toHaveBeenCalled();
+    });
+
+    // --- Confirm / cancel dispatch ---
+
+    it('(AC5, AC9) confirming from the create path creates with the emitted map', async () => {
+      component.selectedNamespace$.next(
+        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
+      );
+      await component.createTeam();
+      apiSpy.createTeam.calls.reset();
+
+      await component.onMetadataConfirm({ tenant: 'acme' });
+
+      expect(apiSpy.createTeam.calls.mostRecent().args).toEqual([
+        'acme-cases',
+        { tenant: 'acme' },
+      ]);
+      expect(component.metadataModalVisible).toBeFalse();
+      expect(component.isCreatingTeam).toBeFalse();
+    });
+
+    it('(AC10) confirming from the navigate path navigates with the emitted map', async () => {
+      component.selectedNamespace$.next(
+        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
+      );
+      await component.createTeamAndNavigate();
+      contextSpy.createTeamAndNavigate.calls.reset();
+
+      await component.onMetadataConfirm({ tenant: 'acme' });
+
+      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args).toEqual([
+        'acme-cases',
+        { tenant: 'acme' },
+      ]);
+      expect(apiSpy.createTeam).not.toHaveBeenCalled();
+      expect(component.metadataModalVisible).toBeFalse();
+    });
+
+    it('(AC6, AC13) cancelling creates nothing and leaves the spinner off', async () => {
+      component.selectedNamespace$.next(
+        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
+      );
+      await component.createTeam();
+      apiSpy.createTeam.calls.reset();
+
+      component.onMetadataCancel();
+
+      expect(component.metadataModalVisible).toBeFalse();
+      expect(component.metadataContract).toBeNull();
+      expect(apiSpy.createTeam).not.toHaveBeenCalled();
+      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
+      expect(component.isCreatingTeam).toBeFalse();
+    });
+
+    it('(AC7, Trap 5) uses the namespace captured at open time, not the live selection', async () => {
+      component.selectedNamespace$.next(
+        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
+      );
+      await component.createTeam();
+      expect(component.metadataNamespaceLabel).toBe('Acme Cases');
+
+      // The dropdown stays live behind the dialog.
+      component.selectedNamespace$.next(
+        nsSummary('other-ns', 'Other', 'd'),
+      );
+      apiSpy.createTeam.calls.reset();
+
+      await component.onMetadataConfirm({ tenant: 'acme' });
+
+      expect(apiSpy.createTeam.calls.mostRecent().args[0]).toBe('acme-cases');
+    });
+
+    // --- AC14: a rejected create keeps the modal open ---
+
+    it('(AC14) a 422 keeps the modal open and renders the server message', async () => {
+      component.selectedNamespace$.next(
+        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
+      );
+      await component.createTeam();
+      apiSpy.createTeam.and.returnValue(
+        Promise.reject(
+          new HttpError('Unprocessable', 422, {
+            detail: [{ loc: ['body', 'metadata', 'tenant'], msg: 'field required' }],
+          }),
+        ),
+      );
+
+      await component.onMetadataConfirm({ case: 'C-1234' });
+
+      expect(component.metadataModalVisible).toBeTrue();
+      expect(component.metadataError).toBe('tenant: field required');
+      expect(component.metadataSubmitting).toBeFalse();
+      expect(component.isCreatingTeam).toBeFalse();
+    });
+
+    it('(AC14) a non-422 failure keeps the modal open with no inline message', async () => {
+      const consoleErrorSpy = spyOn(console, 'error');
+      component.selectedNamespace$.next(
+        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
+      );
+      await component.createTeam();
+      apiSpy.createTeam.and.returnValue(
+        Promise.reject(new HttpError('Server error', 500, 'boom')),
+      );
+
+      await component.onMetadataConfirm({ tenant: 'acme' });
+
+      expect(component.metadataModalVisible).toBeTrue();
+      expect(component.metadataError).toBeNull();
+      // The create path keeps its existing log; nothing new is toasted.
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        'Failed to create team:',
+        jasmine.any(HttpError),
+      );
+    });
+
+    it('(AC14) a rejected create leaves the typed values alone — the host never clears the contract', async () => {
+      component.selectedNamespace$.next(
+        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
+      );
+      await component.createTeam();
+      apiSpy.createTeam.and.returnValue(
+        Promise.reject(new HttpError('Unprocessable', 422, 'nope')),
+      );
+
+      await component.onMetadataConfirm({ tenant: 'acme' });
+
+      expect(component.metadataContract).toBe(asking);
+      expect(component.metadataNamespace).toBe('acme-cases');
+    });
+
+    // --- The 422 body has three shapes ---
+
+    it('(AC14) renders a string body verbatim', () => {
+      expect(
+        (component as any).metadataErrorMessage('tenant is required'),
+      ).toBe('tenant is required');
+    });
+
+    it('(AC14) renders a { detail: "..." } envelope', () => {
+      expect(
+        (component as any).metadataErrorMessage({ detail: 'tenant is required' }),
+      ).toBe('tenant is required');
+    });
+
+    it('(AC14) renders one line per FastAPI detail entry, naming the field', () => {
+      expect(
+        (component as any).metadataErrorMessage({
+          detail: [
+            { loc: ['body', 'metadata', 'tenant'], msg: 'field required' },
+            { loc: ['body', 'metadata', 'case'], msg: 'not a valid integer' },
+          ],
+        }),
+      ).toBe('tenant: field required\ncase: not a valid integer');
+    });
+
+    it('(AC14) falls back to the serialized body for an unknown shape', () => {
+      expect((component as any).metadataErrorMessage({ oops: 1 })).toBe(
+        '{"oops":1}',
+      );
+    });
+
+    it('(AC14) a 422 with nothing to say renders no alert region at all', async () => {
+      component.selectedNamespace$.next(
+        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
+      );
+      await component.createTeam();
+      // FetchService hands an empty response body over as `''`, and an empty
+      // FastAPI `detail` list extracts to `''` too. Either way there is no
+      // message, and `''` would paint an empty red box.
+      apiSpy.createTeam.and.returnValue(
+        Promise.reject(new HttpError('Unprocessable', 422, '')),
+      );
+
+      await component.onMetadataConfirm({ tenant: 'acme' });
+
+      expect(component.metadataModalVisible).toBeTrue();
+      expect(component.metadataError).toBeNull();
+
+      apiSpy.createTeam.and.returnValue(
+        Promise.reject(new HttpError('Unprocessable', 422, { detail: [] })),
+      );
+
+      await component.onMetadataConfirm({ tenant: 'acme' });
+
+      expect(component.metadataModalVisible).toBeTrue();
+      expect(component.metadataError).toBeNull();
+    });
+
+    // --- AC13: the spinner's OTHER half — it does turn, while the POST runs ---
+
+    it('(AC13) isCreatingTeam is true while the POST is in flight, and false after', async () => {
+      component.selectedNamespace$.next(
+        nsSummary('agent-team-v1', 'Agent Team', 'd'),
+      );
+      let release: (value: any) => void = () => undefined;
+      apiSpy.createTeam.and.returnValue(
+        new Promise<any>((resolve) => {
+          release = resolve;
+        }),
+      );
+
+      const inFlight = component.createTeam();
+      // The flag is the Create button's spinner AND its double-submit guard
+      // (`[disabled]="isCreatingTeam || …"`). Every other assertion in this
+      // file only ever pins it FALSE, so deleting the `= true` would go
+      // unnoticed.
+      expect(component.isCreatingTeam).toBeTrue();
+
+      release({});
+      await inFlight;
+
+      expect(component.isCreatingTeam).toBeFalse();
+    });
+
+    it('(AC13) isCreatingTeam clears when the POST is rejected', async () => {
+      spyOn(console, 'error');
+      component.selectedNamespace$.next(
+        nsSummary('agent-team-v1', 'Agent Team', 'd'),
+      );
+      apiSpy.createTeam.and.returnValue(
+        Promise.reject(new HttpError('Server error', 500, 'boom')),
+      );
+
+      await component.createTeam();
+
+      expect(component.isCreatingTeam).toBeFalse();
+    });
+
+    // --- The host↔child JOIN: the template bindings themselves ---
+    //
+    // Every spec above asserts the HOST's state, and the modal's own spec
+    // asserts the MODAL's inputs. Neither notices if a binding in
+    // `home.component.html` is deleted — dropping `[errorMessage]` alone would
+    // remove AC14's entire user-visible outcome with both suites still green.
+    // These two specs pin the join, and nothing else about the child's markup.
+
+    function modal(): TeamMetadataModalComponent {
+      return fixture.debugElement.query(By.directive(TeamMetadataModalComponent))
+        .componentInstance as TeamMetadataModalComponent;
+    }
+
+    /**
+     * Render FIRST, select AFTER. `fixture.detectChanges()` runs `ngOnInit`,
+     * and `loadNamespaces` reconciles the selection against the (empty)
+     * `getNamespaces` spy result — so a selection pushed before the first
+     * render is replaced by `null` and every creation path silently takes its
+     * no-selection guard.
+     */
+    async function renderThenSelect(ns: NamespaceSummary): Promise<void> {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      component.selectedNamespace$.next(ns);
+      fixture.detectChanges();
+    }
+
+    it('(AC1, AC7, AC14) the host state reaches the modal through the template bindings', async () => {
+      await renderThenSelect(nsSummary('acme-cases', 'Acme Cases', 'd', asking));
+
+      expect(modal().visible).toBeFalse();
+
+      await component.createTeam();
+      fixture.detectChanges();
+
+      expect(modal().visible).toBeTrue();
+      expect(modal().contract).toBe(asking);
+      expect(modal().namespaceLabel).toBe('Acme Cases');
+      expect(modal().pending).toBeFalse();
+      expect(modal().errorMessage).toBeNull();
+
+      apiSpy.createTeam.and.returnValue(
+        Promise.reject(
+          new HttpError('Unprocessable', 422, { detail: 'tenant is required' }),
+        ),
+      );
+
+      await component.onMetadataConfirm({ case: 'C-1234' });
+      fixture.detectChanges();
+
+      expect(modal().visible).toBeTrue();
+      expect(modal().errorMessage).toBe('tenant is required');
+    });
+
+    it('(AC5) the modal `confirmed` output reaches the host through the template', async () => {
+      await renderThenSelect(nsSummary('acme-cases', 'Acme Cases', 'd', asking));
+      await component.createTeam();
+      fixture.detectChanges();
+      expect(modal().visible).toBeTrue();
+      apiSpy.createTeam.calls.reset();
+
+      // The POST is issued synchronously by the handler the binding names.
+      modal().confirmed.emit({ tenant: 'acme' });
+
+      expect(apiSpy.createTeam.calls.mostRecent().args).toEqual([
+        'acme-cases',
+        { tenant: 'acme' },
+      ]);
+    });
+
+    it('(AC6) the modal `cancelled` output reaches the host through the template', async () => {
+      await renderThenSelect(nsSummary('acme-cases', 'Acme Cases', 'd', asking));
+      await component.createTeam();
+      fixture.detectChanges();
+      // Guard the guard: without this the cancel assertion below passes on a
+      // modal that never opened.
+      expect(modal().visible).toBeTrue();
+      apiSpy.createTeam.calls.reset();
+
+      modal().cancelled.emit();
+
+      expect(component.metadataModalVisible).toBeFalse();
+      expect(apiSpy.createTeam).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('metadata gate on the gesture-less hideHome route (43.2 AC11)', () => {
+    const asking = contract([field('tenant', { mandatory: true })]);
+
+    beforeEach(async () => {
+      // Re-configure with hideHome ON so the auto-route branch runs, exactly as
+      // the 28.2 hideHome block above does.
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [HomeComponent, CommonModule, NoopAnimationsModule],
+        providers: [
+          { provide: ApiService, useValue: apiSpy },
+          { provide: ContextService, useValue: contextSpy },
+          { provide: AuthService, useValue: authSpy },
+          { provide: ConfigService, useValue: { hideHome: true } },
+          { provide: Router, useValue: routerSpy },
+        ],
+        schemas: [CUSTOM_ELEMENTS_SCHEMA],
+      }).compileComponents();
+      fixture = TestBed.createComponent(HomeComponent);
+      component = fixture.componentInstance;
+
+      // Seed an EMPTY page so the create branch of handleHideHome runs.
+      contextSpy.loadTeamsPage.and.callFake(async () => {
+        teams$.next([]);
+        return { teams: [], total_count: 0 };
+      });
+    });
+
+    it('(AC11) with no contract it creates and navigates exactly as today', async () => {
+      apiSpy.getNamespaces.and.returnValue(
+        Promise.resolve([nsSummary('agent-team-v1', 'Agent Team', 'd')]),
+      );
+      contextSpy.createTeamAndNavigate.calls.reset();
+
+      const init = component.ngOnInit();
+      await component.loadPage({ first: 0, rows: 250 });
+      await init;
+
+      expect(component.metadataModalVisible).toBeFalse();
+      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args).toEqual([
+        'agent-team-v1',
+        undefined,
+      ]);
+    });
+
+    it('(AC11) with a contract it opens the modal instead of creating silently', async () => {
+      apiSpy.getNamespaces.and.returnValue(
+        Promise.resolve([nsSummary('acme-cases', 'Acme Cases', 'd', asking)]),
+      );
+      contextSpy.createTeamAndNavigate.calls.reset();
+      apiSpy.createTeam.calls.reset();
+
+      const init = component.ngOnInit();
+      await component.loadPage({ first: 0, rows: 250 });
+      await init;
+
+      expect(component.metadataModalVisible).toBeTrue();
+      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
+      expect(apiSpy.createTeam).not.toHaveBeenCalled();
+    });
+
+    it('(AC11) confirming from the gesture-less route creates and navigates', async () => {
+      apiSpy.getNamespaces.and.returnValue(
+        Promise.resolve([nsSummary('acme-cases', 'Acme Cases', 'd', asking)]),
+      );
+
+      const init = component.ngOnInit();
+      await component.loadPage({ first: 0, rows: 250 });
+      await init;
+      contextSpy.createTeamAndNavigate.calls.reset();
+
+      await component.onMetadataConfirm({ tenant: 'acme' });
+
+      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args).toEqual([
+        'acme-cases',
+        { tenant: 'acme' },
+      ]);
+      expect(component.metadataModalVisible).toBeFalse();
+    });
+
+    it('(AC11) cancelling from the gesture-less route creates nothing', async () => {
+      apiSpy.getNamespaces.and.returnValue(
+        Promise.resolve([nsSummary('acme-cases', 'Acme Cases', 'd', asking)]),
+      );
+
+      const init = component.ngOnInit();
+      await component.loadPage({ first: 0, rows: 250 });
+      await init;
+      contextSpy.createTeamAndNavigate.calls.reset();
+
+      component.onMetadataCancel();
+
+      expect(component.metadataModalVisible).toBeFalse();
+      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
+      expect(apiSpy.createTeam).not.toHaveBeenCalled();
     });
   });
 });

@@ -1,0 +1,47 @@
+.team-metadata-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.team-metadata-modal__row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.team-metadata-modal__label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.team-metadata-modal__required {
+  color: var(--p-red-500, #e24c4c);
+  margin-left: 0.15rem;
+}
+
+// Quiet affordance: the field is filterable server-side. Informational only.
+.team-metadata-modal__index {
+  color: var(--p-text-muted-color, #6c757d);
+  font-size: 0.75rem;
+}
+
+.team-metadata-modal__error {
+  color: var(--p-red-500, #e24c4c);
+  font-size: 0.85rem;
+  white-space: pre-line;
+}
+
+.team-metadata-modal__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+.team-metadata-modal__blocked-hint {
+  color: var(--p-text-muted-color, #6c757d);
+  font-size: 0.75rem;
+  margin-right: auto;
+}

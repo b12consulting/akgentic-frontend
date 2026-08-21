@@ -1,0 +1,137 @@
+<!--
+  Team-metadata dialog.
+
+  Same `p-dialog` shape as the namespace panel on the home page: `[visible]`
+  split from `(visibleChange)` so the HOST owns visibility, `[modal]="true"`,
+  and a `<ng-template pTemplate="header">` block so the header can name the
+  namespace.
+
+  `closeOnEscape` is left at its PrimeNG default deliberately. The home page
+  already has ONE document-level Escape handler (`onConfigDialogEscape`), but
+  it returns immediately unless the namespace panel is open, so it cannot
+  interfere here — PrimeNG's own listener closes this dialog and the resulting
+  `(visibleChange)` routes to cancel like every other dismissal channel.
+
+  `[closable]` / `[dismissableMask]` lock the dismissal channels while a
+  confirmed create is in flight, matching the namespace panel's
+  write-in-flight treatment.
+-->
+<p-dialog
+  [visible]="visible"
+  (visibleChange)="onVisibleChange($event)"
+  [modal]="true"
+  [draggable]="false"
+  [style]="{ width: '32rem' }"
+  [closable]="!pending"
+  [dismissableMask]="!pending"
+  data-test="metadata-dialog"
+>
+  <ng-template pTemplate="header">
+    <span class="p-dialog-title" data-test="metadata-dialog-header">
+      {{ namespaceLabel }}
+    </span>
+  </ng-template>
+
+  <div class="team-metadata-modal__body">
+    <div
+      *ngFor="let field of fields"
+      class="team-metadata-modal__row"
+    >
+      <label
+        [attr.for]="'metadata-input-' + field.key"
+        class="team-metadata-modal__label"
+        [attr.data-test]="'metadata-label-' + field.key"
+      >
+        {{ labelFor(field) }}
+        <!-- Required marker. Rendered for `mandatory` fields only; the gate
+             itself lives in `canConfirm`. -->
+        <span
+          *ngIf="field.mandatory"
+          class="team-metadata-modal__required"
+          aria-hidden="true"
+          [attr.data-test]="'metadata-required-' + field.key"
+        >*</span>
+      </label>
+
+      <!-- Free-text, always. The descriptor carries no type; nothing here
+           infers a control from the key name (AC15). -->
+      <input
+        type="text"
+        pInputText
+        [id]="'metadata-input-' + field.key"
+        [name]="field.key"
+        [(ngModel)]="values[field.key]"
+        [disabled]="pending"
+        [required]="field.mandatory"
+        [attr.aria-describedby]="field.index ? 'metadata-index-' + field.key : null"
+        autocomplete="off"
+        [attr.data-test]="'metadata-field-' + field.key"
+      />
+
+      <!-- Quiet "filterable" affordance for an indexed field. Informational
+           only — `index` gates nothing.
+
+           The input's `aria-describedby` is bound conditionally on the same
+           `field.index`: this hint is not in the document for a non-indexed
+           field, and an attribute naming an absent element is a dangling
+           reference — assistive tech announces nothing and the markup lies.
+           The id derives from the key, which the server guarantees is a
+           unique identifier, so two fields can never collide. -->
+      <small
+        *ngIf="field.index"
+        [id]="'metadata-index-' + field.key"
+        class="team-metadata-modal__index"
+        [attr.data-test]="'metadata-index-' + field.key"
+      >filterable</small>
+    </div>
+
+    <!-- The server's rejection message. Kept inside the dialog with the input
+         intact so the named field can actually be corrected. role="alert"
+         implies aria-live="assertive" so it is announced on appearance. -->
+    <div
+      *ngIf="errorMessage !== null"
+      class="team-metadata-modal__error"
+      role="alert"
+      data-test="metadata-error"
+    >{{ errorMessage }}</div>
+  </div>
+
+  <div class="team-metadata-modal__actions">
+    <!-- The reason confirmation is blocked, next to the disabled control: a
+         disabled button fires no mouse events, so a tooltip on it would be
+         unreachable.
+
+         The Create button's `aria-describedby` is bound on the same
+         `!canConfirm` for the same reason as the index hint: the hint is out
+         of the document once confirmation is unblocked, and a reference to an
+         absent element is worse than no reference at all. A singleton hint
+         listing every missing label, so the id stays literal. -->
+    <small
+      *ngIf="!canConfirm"
+      id="metadata-blocked-hint"
+      class="team-metadata-modal__blocked-hint"
+      data-test="metadata-blocked-hint"
+    >Required: {{ missingMandatoryLabels.join(', ') }}</small>
+    <button
+      pButton
+      type="button"
+      size="small"
+      severity="secondary"
+      label="Cancel"
+      [disabled]="pending"
+      (click)="onCancel()"
+      data-test="metadata-cancel"
+    ></button>
+    <button
+      pButton
+      type="button"
+      size="small"
+      label="Create"
+      [icon]="pending ? 'pi pi-spinner pi-spin' : 'pi pi-plus'"
+      [disabled]="!canConfirm || pending"
+      [attr.aria-describedby]="!canConfirm ? 'metadata-blocked-hint' : null"
+      (click)="onConfirm()"
+      data-test="metadata-confirm"
+    ></button>
+  </div>
+</p-dialog>
