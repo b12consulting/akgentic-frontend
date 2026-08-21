@@ -8,8 +8,14 @@ import {
 import { TeamMetadataModalComponent } from './team-metadata-modal.component';
 
 /**
- * One declared field. Every property is always present on the wire, so the
- * factory fills all four and the caller overrides only what the spec is about.
+ * One declared field. The first four properties are always present on the
+ * wire, so the factory fills all four and the caller overrides only what the
+ * spec is about.
+ *
+ * `pattern` is deliberately NOT defaulted here. It is optional on the wire and
+ * no deployed server sends it yet, so leaving it out keeps every other spec in
+ * this file exercising the no-pattern branch — which is the branch production
+ * takes today. A spec that wants one passes it through `overrides`.
  */
 function field(
   key: string,
@@ -80,6 +86,20 @@ describe('TeamMetadataModalComponent', () => {
     fixture.detectChanges();
   }
 
+  /**
+   * Leave a field. The pattern check runs here and nowhere on the typing path,
+   * so a spec that only ever calls `type()` sees no message by design.
+   */
+  function blur(key: string): void {
+    input(key).dispatchEvent(new Event('blur'));
+    fixture.detectChanges();
+  }
+
+  /** The rendered pattern complaint for a field, or `null` when there is none. */
+  function patternError(key: string): HTMLElement | null {
+    return el(`metadata-pattern-error-${key}`);
+  }
+
   // -------------------------------------------------------------------------
   // AC2 — one input per descriptor, in contract order, never a blank label
   // -------------------------------------------------------------------------
@@ -94,12 +114,29 @@ describe('TeamMetadataModalComponent', () => {
     expect(el('metadata-label-tenant')!.getAttribute('for')).toBe(input('tenant').id);
   });
 
-  it('(AC2) falls back to the key when the description is empty', async () => {
+  it('(AC2) falls back to the key, capitalised, when the description is empty', async () => {
     await open(contract([field('tenant', { description: '' })]));
 
     const label = el('metadata-label-tenant');
-    expect(label?.textContent?.trim()).toContain('tenant');
+    // Capitalised, not verbatim: an identifier rendered as-is beside real
+    // sentences reads as a rendering bug rather than an absent description.
+    expect(label?.textContent?.trim()).toContain('Tenant');
     expect(label?.textContent?.trim()).not.toBe('');
+  });
+
+  it('(AC2) capitalises only the first character of the key fallback', async () => {
+    // The rest of the key is left alone, so a deliberately-cased name survives.
+    await open(contract([field('caseRef', { description: '' })]));
+
+    expect(el('metadata-label-caseRef')?.textContent?.trim()).toBe('CaseRef');
+  });
+
+  it('(AC2) renders a description verbatim and never recases it', async () => {
+    // The author wrote it as a sentence; its casing is theirs. A lower-case
+    // first character in a description is a choice, not a defect to repair.
+    await open(contract([field('tenant', { description: 'iOS device identifier' })]));
+
+    expect(el('metadata-label-tenant')?.textContent?.trim()).toBe('iOS device identifier');
   });
 
   it('(AC2) renders one input per descriptor, in contract order', async () => {
@@ -474,5 +511,260 @@ describe('TeamMetadataModalComponent', () => {
     component.onConfirm();
 
     expect(confirmed).toBe(0);
+  });
+
+  // -------------------------------------------------------------------------
+  // 43.4 — a value that is PRESENT is checked against its field's pattern
+  //
+  // Every spec below passes `pattern` through `overrides`; the factory does not
+  // default it, so nothing above this line is affected.
+  // -------------------------------------------------------------------------
+
+  it('(43.4 AC2) a non-matching value blocks confirm and renders the field message', async () => {
+    await open(
+      contract([field('tenant', { description: 'Tenant code', pattern: '^[a-z]+$' })]),
+    );
+    const emissions: Record<string, string>[] = [];
+    component.confirmed.subscribe((value) => emissions.push(value));
+
+    type('tenant', 'ACME!');
+    component.onConfirm();
+    fixture.detectChanges();
+
+    expect(emissions.length).toBe(0);
+    expect(patternError('tenant')).not.toBeNull();
+    expect((el('metadata-confirm') as HTMLButtonElement).disabled).toBeTrue();
+
+    // AC17. Blocked no longer means "a mandatory field is blank": there is no
+    // mandatory field here, so the blocked hint must stay out of the document
+    // rather than render `Required: ` with nothing after it — and the Create
+    // button must not name a hint that is not there.
+    expect(el('metadata-blocked-hint')).toBeNull();
+    expect(el('metadata-confirm')!.getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('(43.4 AC3) a matching value confirms and emits, unchanged', async () => {
+    await open(contract([field('tenant', { pattern: '^[a-z]+$' })]));
+    const emissions: Record<string, string>[] = [];
+    component.confirmed.subscribe((value) => emissions.push(value));
+
+    type('tenant', 'acme');
+    blur('tenant');
+    component.onConfirm();
+    fixture.detectChanges();
+
+    expect(emissions[0]).toEqual({ tenant: 'acme' });
+    expect(patternError('tenant')).toBeNull();
+  });
+
+  it('(43.4 AC4) a blank optional field carrying a pattern still confirms, and its key is absent', async () => {
+    await open(
+      contract([field('tenant'), field('case', { pattern: '^[a-z]+$' })]),
+    );
+    const emissions: Record<string, string>[] = [];
+    component.confirmed.subscribe((value) => emissions.push(value));
+
+    type('tenant', 'acme');
+    // Focus lands on the patterned field and leaves it empty. `pattern`
+    // constrains a value that is PRESENT; it never makes a field mandatory.
+    blur('case');
+    component.onConfirm();
+    fixture.detectChanges();
+
+    expect(patternError('case')).toBeNull();
+    expect(emissions[0]).toEqual({ tenant: 'acme' });
+    expect('case' in emissions[0]).toBeFalse();
+  });
+
+  it('(43.4 AC5) checks the TRIMMED value — the same string that would be posted', async () => {
+    // The padded string fails this pattern; the trimmed one passes. Checking
+    // the raw value would reject exactly the input the server accepts.
+    await open(contract([field('tenant', { pattern: '^[a-z]+$' })]));
+    const emissions: Record<string, string>[] = [];
+    component.confirmed.subscribe((value) => emissions.push(value));
+
+    type('tenant', '  acme  ');
+    blur('tenant');
+    component.onConfirm();
+    fixture.detectChanges();
+
+    expect(patternError('tenant')).toBeNull();
+    expect(emissions[0]).toEqual({ tenant: 'acme' });
+  });
+
+  it('(43.4 AC7) the pattern is NOT anchored here — a value that only contains a match is accepted', async () => {
+    // The one assertion that fails if someone "tidies up" `matches()` by
+    // wrapping the pattern in `^…$`. Every other spec in this file declares an
+    // already-anchored pattern, so anchoring is invisible to all of them.
+    //
+    // Pydantic's `pattern` SEARCHES rather than full-matches: a field declared
+    // `Field(pattern=r"[a-z]+")` accepts `"123abc456"`. `RegExp.test` searches
+    // too, which is why this code adds no anchors — an author who wants an
+    // anchored pattern writes the anchors. Anchoring client-side would reject a
+    // value the server accepts, and the client being too STRICT is the one
+    // direction an advisory check must never fail: it blocks a submission the
+    // authority would have taken.
+    await open(contract([field('tenant', { pattern: '[a-z]+' })]));
+    const emissions: Record<string, string>[] = [];
+    component.confirmed.subscribe((value) => emissions.push(value));
+
+    type('tenant', '123abc456');
+    blur('tenant');
+    component.onConfirm();
+    fixture.detectChanges();
+
+    expect(patternError('tenant')).toBeNull();
+    expect(emissions[0]).toEqual({ tenant: '123abc456' });
+  });
+
+  it('(43.4 AC8) a pattern that will not compile leaves the field unchecked', async () => {
+    // Deployment-controlled catalog data: a malformed pattern must degrade to
+    // "no client-side check", never to a broken modal or a blocked confirm.
+    await open(contract([field('tenant', { pattern: '(' })]));
+    const emissions: Record<string, string>[] = [];
+    component.confirmed.subscribe((value) => emissions.push(value));
+
+    type('tenant', 'anything at all');
+    blur('tenant');
+    component.onConfirm();
+    fixture.detectChanges();
+
+    expect(patternError('tenant')).toBeNull();
+    expect(emissions[0]).toEqual({ tenant: 'anything at all' });
+  });
+
+  it('(43.4 AC6) an explicit null pattern behaves exactly as an absent one', async () => {
+    await open(contract([field('tenant', { pattern: null })]));
+    const emissions: Record<string, string>[] = [];
+    component.confirmed.subscribe((value) => emissions.push(value));
+
+    type('tenant', 'Anything Goes 42');
+    blur('tenant');
+    component.onConfirm();
+    fixture.detectChanges();
+
+    expect(patternError('tenant')).toBeNull();
+    expect(emissions[0]).toEqual({ tenant: 'Anything Goes 42' });
+  });
+
+  it('(43.4 AC12) the message names the field and says what is expected, never the pattern', async () => {
+    const pattern = '^[a-z][a-z0-9-]{2,31}$';
+    await open(
+      contract([field('tenant', { description: 'Tenant code', pattern })]),
+    );
+
+    type('tenant', 'NOPE!');
+    blur('tenant');
+
+    const text = patternError('tenant')?.textContent ?? '';
+    expect(text).toContain('tenant');
+    expect(text).toContain('Tenant code');
+    // A regex is not an error message. Leaking it tells the user nothing and
+    // exposes the contract's internals.
+    expect(text).not.toContain(pattern);
+  });
+
+  it('(43.4 AC12) with no description the message carries a generic phrasing and still names the field', async () => {
+    await open(
+      contract([field('tenant', { description: '', pattern: '^[a-z]+$' })]),
+    );
+
+    type('tenant', 'NOPE!');
+    blur('tenant');
+
+    const text = patternError('tenant')?.textContent ?? '';
+    expect(text).toContain('tenant');
+    expect(text).toContain('not in the expected format');
+  });
+
+  it('(43.4 AC13) the input names the message among its describedby tokens, and the name resolves', async () => {
+    // Both hints at once: an indexed field carrying a failure is described by
+    // TWO elements, so the attribute is a token list and must be read as one.
+    await open(contract([field('tenant', { index: true, pattern: '^[a-z]+$' })]));
+
+    type('tenant', 'NOPE!');
+    blur('tenant');
+
+    const tokens = (input('tenant').getAttribute('aria-describedby') ?? '')
+      .split(/\s+/)
+      .filter((token) => token !== '');
+    expect(tokens.length).toBe(2);
+    expect(tokens).toContain('metadata-index-tenant');
+
+    // Follow the REFERENCE through to a real element. Asserting the attribute
+    // is present passes against a typo, a stale id and a deleted target.
+    const messageId = tokens.find((token) => token !== 'metadata-index-tenant');
+    expect(messageId).toBeDefined();
+    const message = document.getElementById(messageId as string);
+    expect(message).not.toBeNull();
+    expect(message).toBe(patternError('tenant'));
+    expect(message?.textContent).toContain('tenant');
+  });
+
+  it('(43.4 AC10) typing a non-matching value shows no message until the field is blurred', async () => {
+    await open(contract([field('tenant', { pattern: '^[a-z]+$' })]));
+
+    type('tenant', 'NOPE!');
+
+    // The absence is the assertion. A check wired to every keystroke would
+    // render here, and a spec that only looked after the blur could not see it.
+    expect(patternError('tenant')).toBeNull();
+
+    blur('tenant');
+
+    expect(patternError('tenant')).not.toBeNull();
+  });
+
+  it('(43.4 AC15) a recorded pattern error survives neither a reopen nor a contract switch', async () => {
+    const c = contract([field('tenant', { pattern: '^[a-z]+$' })]);
+    await open(c);
+    type('tenant', 'NOPE!');
+    blur('tenant');
+    expect(patternError('tenant')).not.toBeNull();
+
+    // The SAME contract object comes back, so only `visible` changes.
+    component.onCancel();
+    setInput('visible', false);
+    fixture.detectChanges();
+    setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(patternError('tenant')).toBeNull();
+    expect((el('metadata-confirm') as HTMLButtonElement).disabled).toBeFalse();
+
+    // And a switch to a DIFFERENT contract that happens to declare the key.
+    type('tenant', 'NOPE!');
+    blur('tenant');
+    expect(patternError('tenant')).not.toBeNull();
+
+    await open(contract([field('tenant', { pattern: '^[a-z]+$' })]));
+
+    expect(patternError('tenant')).toBeNull();
+  });
+
+  it('(43.4 AC16) a 422 with a pattern present keeps the modal open with the draft intact', async () => {
+    // The server stays the authority: Python `re` and ECMA-262 are different
+    // languages, so a value this client accepts can still be rejected. No new
+    // contract for it — the one 43.2 established still applies.
+    await open(contract([field('tenant', { pattern: '^[a-z]+$' })]));
+    type('tenant', 'acme');
+    blur('tenant');
+
+    setInput('errorMessage', 'tenant: string does not match the declared format');
+    fixture.detectChanges();
+    // NgModel writes a CHANGED model back to the view in a microtask, so a
+    // draft wiped by ngOnChanges would still read 'acme' on a synchronous
+    // check. Drain the queue, or this cannot see the edit it exists to catch.
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(input('tenant').value).toBe('acme');
+    expect(component.visible).toBeTrue();
+    expect(el('metadata-error')?.textContent).toContain(
+      'tenant: string does not match the declared format',
+    );
+    expect(patternError('tenant')).toBeNull();
   });
 });

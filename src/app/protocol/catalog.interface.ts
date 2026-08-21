@@ -5,19 +5,33 @@
 /**
  * One declared field of a team's metadata contract.
  *
- * Mirrors the catalog backend's `MetadataFieldDescriptor` DTO. All four
- * properties are always emitted — none is optional on the wire:
+ * Mirrors the catalog backend's `MetadataFieldDescriptor` DTO. The first four
+ * properties are always emitted — none of them is optional on the wire:
  *
  * - `description` is `""` when the field declares none; the key is always
  *   present, so a consumer never has to distinguish absent from empty.
  * - `index` marks the field as filterable server-side.
  * - `mandatory` means required *and* not nullable.
+ *
+ * `pattern` is the exception: it is optional AND nullable, for the same two
+ * independent reasons `NamespaceSummary.team_metadata` already documents. A
+ * server predating the catalog release that introduced it does not send the
+ * key at all; and even against a current server the field carries a default,
+ * so FastAPI leaves it out of OpenAPI's `required` list and a generated client
+ * types it possibly-`undefined`. `undefined` and `null` therefore both mean
+ * exactly the same thing — NO PATTERN, this field has no client-side check.
+ *
+ * The value is an ECMA-262 regular expression, which is JSON Schema's dialect
+ * and the browser's own. The server sources it from `model_json_schema()`
+ * precisely so the string handed to a browser is already in the dialect a
+ * browser parses — see catalog ADR-022 §D7.
  */
 export interface MetadataFieldDescriptor {
   key: string;
   description: string;
   index: boolean;
   mandatory: boolean;
+  pattern?: string | null;
 }
 
 /**
