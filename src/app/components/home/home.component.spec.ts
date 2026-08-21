@@ -13,7 +13,30 @@ import { ConfigService } from '../../core/config/config.service';
 import { ContextService } from '../../core/context/context.service';
 import { TeamContext } from '../../core/context/team.interface';
 import { NamespacePanelComponent } from '../catalog/namespace-panel/namespace-panel.component';
+import { NamespaceSummary } from '../../protocol/catalog.interface';
 import { HomeComponent } from './home.component';
+
+/**
+ * A `NamespaceSummary` fixture carrying neutral values for every field these
+ * specs do not exercise. Only `namespace` / `name` / `description` are ever
+ * asserted on here; the rest exist because the interface requires them.
+ */
+function nsSummary(
+  namespace: string,
+  name: string,
+  description: string,
+): NamespaceSummary {
+  return {
+    namespace,
+    name,
+    description,
+    team: false,
+    shareable: false,
+    public: false,
+    owner: null,
+    counts: {},
+  };
+}
 
 function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
   return {
@@ -216,7 +239,7 @@ describe('HomeComponent', () => {
   });
 
   it('(AC4 10.4) HomeComponent.createTeamAndNavigate delegates to contextService and has no reload compensation', async () => {
-    const ns = { namespace: 'cat-1', name: 'Cat One', description: 'first cat' };
+    const ns = nsSummary('cat-1', 'Cat One', 'first cat');
     component.selectedNamespace$.next(ns);
     // The component has not invoked ngOnInit yet (no detectChanges in this
     // test), so contextSpy.getTeams should not have been called. Reset to
@@ -237,8 +260,8 @@ describe('HomeComponent', () => {
   it('(AC1 1.9) ngOnInit loads namespaces via getNamespaces and selects the first', async () => {
     apiSpy.getNamespaces.and.returnValue(
       Promise.resolve([
-        { namespace: 'agent-team-v1', name: 'Agent Team', description: 'Default' },
-        { namespace: 'rag-team-v1', name: 'RAG Team', description: 'With RAG' },
+        nsSummary('agent-team-v1', 'Agent Team', 'Default'),
+        nsSummary('rag-team-v1', 'RAG Team', 'With RAG'),
       ]),
     );
     await component.ngOnInit();
@@ -248,22 +271,18 @@ describe('HomeComponent', () => {
   });
 
   it('(AC3 1.9) createTeam sends the selected namespace to apiService.createTeam', async () => {
-    component.selectedNamespace$.next({
-      namespace: 'agent-team-v1',
-      name: 'Agent Team',
-      description: 'Default',
-    });
+    component.selectedNamespace$.next(
+      nsSummary('agent-team-v1', 'Agent Team', 'Default'),
+    );
     apiSpy.createTeam.calls.reset();
     await component.createTeam();
     expect(apiSpy.createTeam).toHaveBeenCalledOnceWith('agent-team-v1');
   });
 
   it('(AC3 1.9) createTeamAndNavigate passes selected.namespace (not an id lookup)', async () => {
-    component.selectedNamespace$.next({
-      namespace: 'rag-team-v1',
-      name: 'RAG Team',
-      description: 'With RAG',
-    });
+    component.selectedNamespace$.next(
+      nsSummary('rag-team-v1', 'RAG Team', 'With RAG'),
+    );
     contextSpy.createTeamAndNavigate.calls.reset();
     await component.createTeamAndNavigate();
     expect(contextSpy.createTeamAndNavigate).toHaveBeenCalledOnceWith('rag-team-v1');
@@ -387,13 +406,9 @@ describe('HomeComponent', () => {
     // the seeded selection — otherwise the reconciliation correctly drops a
     // selection absent from the fetched list, clearing it to null.
     apiSpy.getNamespaces.and.returnValue(
-      Promise.resolve([{ namespace: 'foo', name: 'Foo', description: '' }]),
+      Promise.resolve([nsSummary('foo', 'Foo', '')]),
     );
-    component.selectedNamespace$.next({
-      namespace: 'foo',
-      name: 'Foo',
-      description: '',
-    });
+    component.selectedNamespace$.next(nsSummary('foo', 'Foo', ''));
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -407,13 +422,9 @@ describe('HomeComponent', () => {
     // See note above: keep the seeded selection present in the fetched list so
     // the reconciliation does not drop it during ngOnInit.
     apiSpy.getNamespaces.and.returnValue(
-      Promise.resolve([{ namespace: 'foo', name: 'Foo', description: '' }]),
+      Promise.resolve([nsSummary('foo', 'Foo', '')]),
     );
-    component.selectedNamespace$.next({
-      namespace: 'foo',
-      name: 'Foo',
-      description: '',
-    });
+    component.selectedNamespace$.next(nsSummary('foo', 'Foo', ''));
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -535,8 +546,8 @@ describe('HomeComponent', () => {
     // Prime a new list and invoke the (saved) handler — the dropdown must
     // refresh.
     const updated = [
-      { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
-      { namespace: 'rag-team-v1', name: 'RAG Team', description: 'd2' },
+      nsSummary('agent-team-v1', 'Agent Team', 'd1'),
+      nsSummary('rag-team-v1', 'RAG Team', 'd2'),
     ];
     apiSpy.getNamespaces.calls.reset();
     apiSpy.getNamespaces.and.returnValue(Promise.resolve(updated));
@@ -549,14 +560,12 @@ describe('HomeComponent', () => {
 
   it('(14.2 AC8) stale selection (deleted ns) is dropped → advances to first remaining', async () => {
     // Seed a selection that the refreshed list no longer contains.
-    component.selectedNamespace$.next({
-      namespace: 'agent-team-v1_copy',
-      name: 'Agent Team_copy',
-      description: 'clone',
-    });
+    component.selectedNamespace$.next(
+      nsSummary('agent-team-v1_copy', 'Agent Team_copy', 'clone'),
+    );
     const refreshed = [
-      { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
-      { namespace: 'rag-team-v1', name: 'RAG Team', description: 'd2' },
+      nsSummary('agent-team-v1', 'Agent Team', 'd1'),
+      nsSummary('rag-team-v1', 'RAG Team', 'd2'),
     ];
     apiSpy.getNamespaces.and.returnValue(Promise.resolve(refreshed));
 
@@ -568,18 +577,14 @@ describe('HomeComponent', () => {
 
   it('(14.2 AC9) still-present selection is preserved by `namespace` identity, untouched (no re-set)', async () => {
     // Seed the ORIGINAL object instance.
-    const original = {
-      namespace: 'rag-team-v1',
-      name: 'RAG Team',
-      description: 'original',
-    };
+    const original = nsSummary('rag-team-v1', 'RAG Team', 'original');
     component.selectedNamespace$.next(original);
 
     // Refresh returns a DIFFERENT object instance with the SAME namespace —
     // proves identity is compared on `namespace`, not object reference.
     const refreshed = [
-      { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
-      { namespace: 'rag-team-v1', name: 'RAG Team', description: 'refreshed copy' },
+      nsSummary('agent-team-v1', 'Agent Team', 'd1'),
+      nsSummary('rag-team-v1', 'RAG Team', 'refreshed copy'),
     ];
     apiSpy.getNamespaces.and.returnValue(Promise.resolve(refreshed));
 
@@ -591,11 +596,9 @@ describe('HomeComponent', () => {
   });
 
   it('(14.2 AC10) deleting the last namespace → null selection + placeholder', async () => {
-    component.selectedNamespace$.next({
-      namespace: 'only-team-v1',
-      name: 'Only Team',
-      description: 'last one',
-    });
+    component.selectedNamespace$.next(
+      nsSummary('only-team-v1', 'Only Team', 'last one'),
+    );
     apiSpy.getNamespaces.and.returnValue(Promise.resolve([]));
 
     await component.onNamespaceSaved();
@@ -626,8 +629,8 @@ describe('HomeComponent', () => {
     expect(component.selectedNamespace$.value).toBeNull();
     apiSpy.getNamespaces.and.returnValue(
       Promise.resolve([
-        { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
-        { namespace: 'rag-team-v1', name: 'RAG Team', description: 'd2' },
+        nsSummary('agent-team-v1', 'Agent Team', 'd1'),
+        nsSummary('rag-team-v1', 'RAG Team', 'd2'),
       ]),
     );
 
@@ -638,7 +641,7 @@ describe('HomeComponent', () => {
 
   it('(14.2 AC7) getNamespaces failure leaves namespaces$ unchanged and logs', async () => {
     component.namespaces$.next([
-      { namespace: 'existing-v1', name: 'Existing', description: 'd' },
+      nsSummary('existing-v1', 'Existing', 'd'),
     ]);
     apiSpy.getNamespaces.and.returnValue(Promise.reject(new Error('boom')));
     const consoleErrorSpy = spyOn(console, 'error');
@@ -647,14 +650,14 @@ describe('HomeComponent', () => {
 
     expect(consoleErrorSpy).toHaveBeenCalled();
     expect(component.namespaces$.value).toEqual([
-      { namespace: 'existing-v1', name: 'Existing', description: 'd' },
+      nsSummary('existing-v1', 'Existing', 'd'),
     ]);
   });
 
   it('(11.5 AC13) namespaceIdentifiers returns the `.namespace` field of each namespaces$ entry', () => {
     component.namespaces$.next([
-      { namespace: 'foo', name: 'F', description: '' },
-      { namespace: 'bar', name: 'B', description: '' },
+      nsSummary('foo', 'F', ''),
+      nsSummary('bar', 'B', ''),
     ]);
     expect(component.namespaceIdentifiers).toEqual(['foo', 'bar']);
   });
@@ -775,11 +778,7 @@ describe('HomeComponent', () => {
   });
 
   it('(11.7 AC8) namespaceLabel returns selected.name when present', () => {
-    component.selectedNamespace$.next({
-      namespace: 'foo',
-      name: 'Foo Display',
-      description: '',
-    });
+    component.selectedNamespace$.next(nsSummary('foo', 'Foo Display', ''));
     expect(component.namespaceLabel).toBe('Foo Display');
   });
 
@@ -820,8 +819,8 @@ describe('HomeComponent', () => {
     // the default empty list: make `getNamespaces` resolve with the pair we
     // want to observe on the binding.
     const list = [
-      { namespace: 'alpha', name: 'Alpha', description: '' },
-      { namespace: 'beta', name: 'Beta', description: '' },
+      nsSummary('alpha', 'Alpha', ''),
+      nsSummary('beta', 'Beta', ''),
     ];
     apiSpy.getNamespaces.and.returnValue(Promise.resolve(list));
 
@@ -907,7 +906,7 @@ describe('HomeComponent', () => {
     apiSpy.getNamespaces.calls.reset();
     apiSpy.getNamespaces.and.returnValue(
       Promise.resolve([
-        { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd' },
+        nsSummary('agent-team-v1', 'Agent Team', 'd'),
       ]),
     );
 
@@ -920,11 +919,11 @@ describe('HomeComponent', () => {
 
   it('(14.4 AC3) toggling on re-fetches with all=true and surfaces a foreign namespace', async () => {
     currentUser$.next({ user_id: 'gpiroux', roles: ['admin'] });
-    const foreign = {
-      namespace: 'other-tenant-ns',
-      name: 'Other Tenant',
-      description: 'foreign-owned',
-    };
+    const foreign = nsSummary(
+      'other-tenant-ns',
+      'Other Tenant',
+      'foreign-owned',
+    );
     apiSpy.getNamespaces.and.returnValue(Promise.resolve([foreign]));
     apiSpy.getNamespaces.calls.reset();
 
@@ -962,14 +961,10 @@ describe('HomeComponent', () => {
     currentUser$.next({ user_id: 'gpiroux', roles: ['admin'] });
     // Seed a selection that the toggled-on list no longer contains — the
     // reconciliation must drop it and advance to the first remaining ns.
-    component.selectedNamespace$.next({
-      namespace: 'stale-ns',
-      name: 'Stale',
-      description: 'gone',
-    });
+    component.selectedNamespace$.next(nsSummary('stale-ns', 'Stale', 'gone'));
     const refreshed = [
-      { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
-      { namespace: 'rag-team-v1', name: 'RAG Team', description: 'd2' },
+      nsSummary('agent-team-v1', 'Agent Team', 'd1'),
+      nsSummary('rag-team-v1', 'RAG Team', 'd2'),
     ];
     apiSpy.getNamespaces.and.returnValue(Promise.resolve(refreshed));
 
@@ -985,16 +980,12 @@ describe('HomeComponent', () => {
 
   it('(14.4 AC6, AC18) toggle re-fetch preserves a still-present selection by identity', async () => {
     currentUser$.next({ user_id: 'gpiroux', roles: ['admin'] });
-    const original = {
-      namespace: 'rag-team-v1',
-      name: 'RAG Team',
-      description: 'original',
-    };
+    const original = nsSummary('rag-team-v1', 'RAG Team', 'original');
     component.selectedNamespace$.next(original);
     apiSpy.getNamespaces.and.returnValue(
       Promise.resolve([
-        { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd1' },
-        { namespace: 'rag-team-v1', name: 'RAG Team', description: 'refreshed' },
+        nsSummary('agent-team-v1', 'Agent Team', 'd1'),
+        nsSummary('rag-team-v1', 'RAG Team', 'refreshed'),
       ]),
     );
 
@@ -1107,11 +1098,9 @@ describe('HomeComponent', () => {
   });
 
   it('(28.2 AC8e) createTeam resets to page 1, reloads page 1, and does not blank the list', async () => {
-    component.selectedNamespace$.next({
-      namespace: 'agent-team-v1',
-      name: 'Agent Team',
-      description: 'd',
-    });
+    component.selectedNamespace$.next(
+      nsSummary('agent-team-v1', 'Agent Team', 'd'),
+    );
     component.currentPage = 4;
     component.first = 750;
     contextSpy.loadTeamsPage.calls.reset();
@@ -1303,14 +1292,12 @@ describe('HomeComponent', () => {
       // clears it to null and the create branch has no namespace to use).
       apiSpy.getNamespaces.and.returnValue(
         Promise.resolve([
-          { namespace: 'agent-team-v1', name: 'Agent Team', description: 'd' },
+          nsSummary('agent-team-v1', 'Agent Team', 'd'),
         ]),
       );
-      component.selectedNamespace$.next({
-        namespace: 'agent-team-v1',
-        name: 'Agent Team',
-        description: 'd',
-      });
+      component.selectedNamespace$.next(
+        nsSummary('agent-team-v1', 'Agent Team', 'd'),
+      );
       // Seed an EMPTY page so the create branch runs.
       contextSpy.loadTeamsPage.and.callFake(async () => {
         teams$.next([]);

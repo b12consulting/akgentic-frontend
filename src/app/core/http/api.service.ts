@@ -80,12 +80,46 @@ export class ApiService {
     return toTeamContext(response);
   }
 
-  async createTeam(namespace: string): Promise<TeamResponse> {
+  /**
+   * Create a team from a catalog namespace.
+   *
+   * `metadata` carries the answers to the metadata contract that namespace's
+   * team declares (`NamespaceSummary.team_metadata`) — a flat key→value map
+   * whose keys are the declared field keys. The client never names a type and
+   * never sends a `__model__` tag: the server resolves the declared type from
+   * the namespace itself.
+   *
+   * THE `metadata` KEY IS ATTACHED ONLY WHEN THE OBJECT IS PRESENT AND HAS AT
+   * LEAST ONE ENTRY. An empty object contributes nothing, because `{}` is
+   * truthy in JavaScript and a bare `if (metadata)` would send `"metadata":{}`.
+   *
+   * The no-metadata body is the pinned legacy shape —
+   * `{"catalog_namespace":"<ns>","params":{}}`, byte for byte, with the two
+   * keys in that order and no third key. Every namespace shipped today
+   * declares no metadata, so every existing deployment travels this path. The
+   * base object is built first and `metadata` assigned onto it afterwards
+   * precisely so key insertion order puts the new key LAST and leaves the
+   * first two exactly where they were; do not restructure this into a spread.
+   */
+  async createTeam(
+    namespace: string,
+    metadata?: Record<string, string>,
+  ): Promise<TeamResponse> {
+    const payload: {
+      catalog_namespace: string;
+      params: Record<string, unknown>;
+      metadata?: Record<string, string>;
+    } = { catalog_namespace: namespace, params: {} };
+
+    if (metadata && Object.keys(metadata).length > 0) {
+      payload.metadata = metadata;
+    }
+
     return await this.fetchService.fetch({
       url: `${this.apiUrl}/teams`,
       options: {
         method: 'POST',
-        body: JSON.stringify({ catalog_namespace: namespace, params: {} }),
+        body: JSON.stringify(payload),
         headers: { 'Content-Type': 'application/json' },
       },
     });
