@@ -135,8 +135,21 @@ export class ContextService {
     await this.router.navigate(['/']);
   }
 
-  async createTeamAndNavigate(namespace: string) {
-    const response = await this.apiService.createTeam(namespace);
+  /**
+   * Create a team from a catalog namespace, cache it, and navigate to it.
+   *
+   * `metadata` is forwarded to `apiService.createTeam` UNCONDITIONALLY —
+   * including when it is `undefined` or `{}`. This method applies no gate of
+   * its own: the "attach the key only when non-empty" rule lives in exactly
+   * one place, `apiService.createTeam`, and `createTeam(ns, undefined)` and
+   * `createTeam(ns)` produce the same request body by construction. A second
+   * copy of that rule here would be a second thing to keep in step.
+   */
+  async createTeamAndNavigate(
+    namespace: string,
+    metadata?: Record<string, string>,
+  ) {
+    const response = await this.apiService.createTeam(namespace, metadata);
     const newTeam = toTeamContext(response);
     const prev = this._context$.value;
     this._context$.next([...prev, newTeam]);

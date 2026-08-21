@@ -310,3 +310,27 @@
     />
   }
 </p-dialog>
+
+<!--
+  Team-metadata dialog. Opened by whichever creation path found a contract on
+  the selected namespace; the host owns visibility, the captured namespace and
+  the error state, so both bindings below are one-way in and the two outputs
+  carry the decision back.
+
+  NOT deferred: this component is small and pulls in no heavy chunk. The
+  @defer block above exists for the namespace panel's Monaco dependency.
+
+  No extra Escape wiring either — `onConfigDialogEscape` is inactive unless the
+  namespace panel is open, so PrimeNG's own `closeOnEscape` handles this dialog
+  and the resulting `(visibleChange)` routes to cancel like every other
+  dismissal channel.
+-->
+<app-team-metadata-modal
+  [visible]="metadataModalVisible"
+  [contract]="metadataContract"
+  [namespaceLabel]="metadataNamespaceLabel"
+  [errorMessage]="metadataError"
+  [pending]="metadataSubmitting"
+  (confirmed)="onMetadataConfirm($event)"
+  (cancelled)="onMetadataCancel()"
+/>

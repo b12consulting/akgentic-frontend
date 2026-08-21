@@ -1,0 +1,55 @@
+.team-metadata-modal__body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.team-metadata-modal__row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.team-metadata-modal__label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.team-metadata-modal__required {
+  color: var(--p-red-500, #e24c4c);
+  margin-left: 0.15rem;
+}
+
+// Quiet affordance: the field is filterable server-side. Informational only.
+.team-metadata-modal__index {
+  color: var(--p-text-muted-color, #6c757d);
+  font-size: 0.75rem;
+}
+
+// darkred (#8b0000), not the PrimeNG red token, and deliberately a literal.
+// The token resolves to a light #e24c4c that sits at roughly 3.4:1 on the
+// dialog's white surface -- legible, but not obviously an error at a glance.
+// darkred is ~10.7:1 there. Safe as a literal because the app pins
+// `darkModeSelector: 'none'` (app.config.ts), so this text is only ever painted
+// on a light surface; if a dark theme is ever turned on, this is one of the
+// declarations that has to be revisited.
+.team-metadata-modal__error {
+  color: darkred;
+  font-size: 0.85rem;
+  font-weight: 500;
+  white-space: pre-line;
+}
+
+.team-metadata-modal__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+.team-metadata-modal__blocked-hint {
+  color: var(--p-text-muted-color, #6c757d);
+  font-size: 0.75rem;
+  margin-right: auto;
+}
