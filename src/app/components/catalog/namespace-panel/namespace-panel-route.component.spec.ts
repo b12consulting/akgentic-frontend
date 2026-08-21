@@ -69,7 +69,16 @@ function makeHttpError(status: number, body: unknown = ''): HttpError {
 }
 
 function summary(ns: string): NamespaceSummary {
-  return { namespace: ns, name: ns, description: '' };
+  return {
+    namespace: ns,
+    name: ns,
+    description: '',
+    team: false,
+    shareable: false,
+    public: false,
+    owner: null,
+    counts: {},
+  };
 }
 
 function cleanReport(namespace = 'foo'): NamespaceValidationReport {

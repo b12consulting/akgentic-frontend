@@ -3,6 +3,7 @@ import { ApiService } from './api.service';
 import { FetchService, NetworkError } from './fetch.service';
 import { AuthService } from '../auth/auth.service';
 import { Router } from '@angular/router';
+import { NamespaceSummary } from '../../protocol/catalog.interface';
 
 describe('ApiService', () => {
   let service: ApiService;
@@ -44,8 +45,17 @@ describe('ApiService', () => {
 
   describe('getNamespaces (Story 1.9)', () => {
     it('hits GET /catalog/namespaces and returns the array', async () => {
-      const payload = [
-        { namespace: 'agent-team-v1', name: 'Agent Team', description: 'Default' },
+      const payload: NamespaceSummary[] = [
+        {
+          namespace: 'agent-team-v1',
+          name: 'Agent Team',
+          description: 'Default',
+          team: true,
+          shareable: false,
+          public: false,
+          owner: null,
+          counts: { team: { total: 1 }, agent: { total: 7 } },
+        },
       ];
       fetchServiceSpy.fetch.and.returnValue(Promise.resolve(payload));
 
@@ -94,6 +104,94 @@ describe('ApiService', () => {
       expect(callArgs.options?.method).toBe('POST');
       const body = JSON.parse(callArgs.options?.body as string);
       expect(body).toEqual({ catalog_namespace: 'agent-team-v1', params: {} });
+    });
+  });
+
+  describe('createTeam metadata (Story 43.1)', () => {
+    /**
+     * The regression pin. Every namespace shipped today declares no metadata,
+     * so the one-argument call must keep producing the legacy body BYTE FOR
+     * BYTE — same keys, same order, no `metadata` key. Asserted on the
+     * serialized string, not only on the parsed object: `toEqual` on the parse
+     * would still pass if key insertion order changed.
+     */
+    it('(AC6) a one-argument call sends the legacy body byte for byte', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve({} as any));
+
+      await service.createTeam('agent-team-v1');
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.options?.body).toBe(
+        JSON.stringify({ catalog_namespace: 'agent-team-v1', params: {} }),
+      );
+      expect(
+        Object.prototype.hasOwnProperty.call(
+          JSON.parse(callArgs.options!.body as string),
+          'metadata',
+        ),
+      ).toBeFalse();
+    });
+
+    it('(AC6) an explicit undefined sends the same legacy body', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve({} as any));
+
+      await service.createTeam('agent-team-v1', undefined);
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.options?.body).toBe(
+        JSON.stringify({ catalog_namespace: 'agent-team-v1', params: {} }),
+      );
+    });
+
+    it('(AC6) an EMPTY metadata object contributes no key', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve({} as any));
+
+      await service.createTeam('agent-team-v1', {});
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.options?.body).toBe(
+        JSON.stringify({ catalog_namespace: 'agent-team-v1', params: {} }),
+      );
+      expect(
+        Object.prototype.hasOwnProperty.call(
+          JSON.parse(callArgs.options!.body as string),
+          'metadata',
+        ),
+      ).toBeFalse();
+    });
+
+    it('(AC5) a populated metadata object reaches the body', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve({} as any));
+
+      await service.createTeam('agent-team-v1', {
+        tenant: 'acme',
+        case: 'C-1234',
+      });
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.url).toMatch(/\/teams$/);
+      expect(callArgs.options?.method).toBe('POST');
+      const body = JSON.parse(callArgs.options?.body as string);
+      expect(body).toEqual({
+        catalog_namespace: 'agent-team-v1',
+        params: {},
+        metadata: { tenant: 'acme', case: 'C-1234' },
+      });
+    });
+
+    it('(AC5) metadata is appended last — the first two keys keep their place', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve({} as any));
+
+      await service.createTeam('agent-team-v1', { tenant: 'acme' });
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.options?.body).toBe(
+        JSON.stringify({
+          catalog_namespace: 'agent-team-v1',
+          params: {},
+          metadata: { tenant: 'acme' },
+        }),
+      );
     });
   });
 
