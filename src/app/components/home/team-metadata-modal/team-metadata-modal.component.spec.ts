@@ -647,7 +647,7 @@ describe('TeamMetadataModalComponent', () => {
     expect(emissions[0]).toEqual({ tenant: 'Anything Goes 42' });
   });
 
-  it('(43.4 AC12) the message names the field and says what is expected, never the pattern', async () => {
+  it('(43.4 AC12) the message states the pattern, the only source of the required format', async () => {
     const pattern = '^[a-z][a-z0-9-]{2,31}$';
     await open(
       contract([field('tenant', { description: 'Tenant code', pattern })]),
@@ -656,15 +656,48 @@ describe('TeamMetadataModalComponent', () => {
     type('tenant', 'NOPE!');
     blur('tenant');
 
-    const text = patternError('tenant')?.textContent ?? '';
-    expect(text).toContain('tenant');
-    expect(text).toContain('Tenant code');
-    // A regex is not an error message. Leaking it tells the user nothing and
-    // exposes the contract's internals.
-    expect(text).not.toContain(pattern);
+    // The pattern is the ONLY statement of the required shape anywhere in this
+    // form: a description gives a field's MEANING, never its format. Withhold
+    // it and a rejected user has nothing to act on.
+    expect(patternError('tenant')?.textContent).toContain(pattern);
   });
 
-  it('(43.4 AC12) with no description the message carries a generic phrasing and still names the field', async () => {
+  it('(43.4 AC12) the message does not repeat the description, which states meaning not shape', async () => {
+    // Regression: `expected ${description}` rendered
+    // "tenant: expected Slug of the tenant the team belongs to." -- grammatical
+    // nonsense that told the user nothing about why the value was rejected.
+    await open(
+      contract([
+        field('tenant', {
+          description: 'Slug of the tenant the team belongs to.',
+          pattern: '^[a-z]+$',
+        }),
+      ]),
+    );
+
+    type('tenant', 'NOPE!');
+    blur('tenant');
+
+    const text = patternError('tenant')?.textContent ?? '';
+    expect(text).not.toContain('Slug of the tenant');
+    expect(text).not.toContain('expected Slug');
+  });
+
+  it('(43.4 AC12) the message does not repeat the field key, which the label already carries', async () => {
+    // The message renders directly beneath its own labelled input, so a `key:`
+    // prefix repeated the identification the label carries -- in the raw
+    // identifier form the label deliberately avoids.
+    await open(
+      contract([field('tenant', { description: 'Tenant code', pattern: '^[a-z]+$' })]),
+    );
+
+    type('tenant', 'NOPE!');
+    blur('tenant');
+
+    expect(patternError('tenant')?.textContent).not.toContain('tenant:');
+  });
+
+  it('(43.4 AC12) falls back to a generic phrasing when there is somehow no pattern', async () => {
     await open(
       contract([field('tenant', { description: '', pattern: '^[a-z]+$' })]),
     );
@@ -672,9 +705,12 @@ describe('TeamMetadataModalComponent', () => {
     type('tenant', 'NOPE!');
     blur('tenant');
 
-    const text = patternError('tenant')?.textContent ?? '';
-    expect(text).toContain('tenant');
-    expect(text).toContain('not in the expected format');
+    // Defensive: this path is unreachable while a recorded failure implies a
+    // compiled pattern, so it is pinned on the method rather than the DOM.
+    const component = fixture.componentInstance;
+    expect(component.patternMessageFor({
+      key: 'tenant', description: '', index: false, mandatory: false, pattern: null,
+    })).toContain('not in the expected format');
   });
 
   it('(43.4 AC13) the input names the message among its describedby tokens, and the name resolves', async () => {
@@ -698,7 +734,9 @@ describe('TeamMetadataModalComponent', () => {
     const message = document.getElementById(messageId as string);
     expect(message).not.toBeNull();
     expect(message).toBe(patternError('tenant'));
-    expect(message?.textContent).toContain('tenant');
+    // The resolved element carries the CONSTRAINT, not merely some text: this
+    // is what a screen reader announces when the input takes focus.
+    expect(message?.textContent).toContain('^[a-z]+$');
   });
 
   it('(43.4 AC10) typing a non-matching value shows no message until the field is blurred', async () => {

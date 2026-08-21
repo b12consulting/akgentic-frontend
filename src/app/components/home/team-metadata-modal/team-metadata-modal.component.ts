@@ -263,19 +263,26 @@ export class TeamMetadataModalComponent implements OnChanges {
   }
 
   /**
-   * What the user reads. NEVER the pattern itself — a regex is not an error
-   * message. The field's `description` says what is expected; `key` names the
-   * field, and is always present and unique where a description may be empty.
+   * What the user reads: the constraint they violated.
    *
-   * Built from `key` and `description` separately rather than from
-   * `labelFor()`, which already falls back to the key and would otherwise
-   * render the description twice.
+   * This shows the pattern, having previously shown the `description` instead
+   * on the reasoning that a regex is not an error message. That was wrong, and
+   * the output proved it: a description states a field's MEANING, never its
+   * SHAPE, so `expected ${description}` rendered
+   * `tenant: expected Slug of the tenant the team belongs to.` — ungrammatical,
+   * and it told the user nothing about why their value was rejected. There is
+   * no third source: if the pattern is withheld, the required format is not
+   * discoverable from this form at all.
+   *
+   * The field is NOT named here. This message renders directly beneath its own
+   * labelled input, so a `key:` prefix repeated the identification the label
+   * already carries — and repeated it in the raw identifier form the label
+   * deliberately avoids.
    */
   patternMessageFor(field: MetadataFieldDescriptor): string {
-    const expected = field.description
-      ? `expected ${field.description}`
-      : 'value is not in the expected format';
-    return `${field.key}: ${expected}`;
+    return field.pattern
+      ? `Must match ${field.pattern}`
+      : 'Value is not in the expected format';
   }
 
   /**
