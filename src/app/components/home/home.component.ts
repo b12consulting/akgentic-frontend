@@ -431,7 +431,14 @@ export class HomeComponent {
   ): void {
     const status = (error as { status?: number })?.status;
     if (status === 422) {
-      this.metadataError = this.metadataErrorMessage((error as HttpError).body);
+      // An extraction that comes back empty — an empty response body, which
+      // `FetchService` hands over as `''`, or a `{"detail": []}` envelope —
+      // must NOT become an empty alert region. `errorMessage` is rendered on
+      // `!== null`, so `''` would paint an empty red box and announce an empty
+      // `role="alert"`. Nothing to say means say nothing, as for any other
+      // failure; the modal still stays open with the input intact.
+      const message = this.metadataErrorMessage((error as HttpError).body);
+      this.metadataError = message.trim() === '' ? null : message;
       return;
     }
     this.metadataError = null;

@@ -35,15 +35,26 @@ describe('TeamMetadataModalComponent', () => {
     component = fixture.componentInstance;
   });
 
+  /**
+   * Set one declared `@Input()` the way the host's template does.
+   *
+   * Deliberately NOT a field assignment plus a hand-built `SimpleChanges`:
+   * that harness verifies the reset-on-open contract against an object the
+   * SPEC wrote, so a renamed input or a `changes[...]` key that no longer
+   * matches would leave every spec here green. `setInput` goes through
+   * Angular's own input pipeline — it throws on a property that is not an
+   * `@Input()`, and Angular builds the `SimpleChanges` that `ngOnChanges`
+   * receives.
+   */
+  function setInput(name: string, value: unknown): void {
+    fixture.componentRef.setInput(name, value);
+  }
+
   /** Open the dialog on `c` and flush a render. */
   async function open(c: TeamMetadataContract, label = 'Acme Cases'): Promise<void> {
-    component.contract = c;
-    component.namespaceLabel = label;
-    component.visible = true;
-    component.ngOnChanges({
-      contract: { currentValue: c, previousValue: null, firstChange: true, isFirstChange: () => true },
-      visible: { currentValue: true, previousValue: false, firstChange: true, isFirstChange: () => true },
-    });
+    setInput('contract', c);
+    setInput('namespaceLabel', label);
+    setInput('visible', true);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -317,7 +328,7 @@ describe('TeamMetadataModalComponent', () => {
 
     expect(el('metadata-error')).toBeNull();
 
-    component.errorMessage = 'case: field required';
+    setInput('errorMessage', 'case: field required');
     fixture.detectChanges();
 
     expect(el('metadata-error')?.textContent).toContain('case: field required');
@@ -331,7 +342,7 @@ describe('TeamMetadataModalComponent', () => {
     await open(contract([field('tenant')]));
     type('tenant', 'acme');
 
-    component.pending = true;
+    setInput('pending', true);
     fixture.detectChanges();
     // NgModel applies a `[disabled]` binding through the form control in a
     // microtask, so the DOM property lands only after the queue drains.
@@ -352,16 +363,13 @@ describe('TeamMetadataModalComponent', () => {
     type('tenant', 'acme');
 
     component.onCancel();
-    component.visible = false;
-    component.ngOnChanges({
-      visible: { currentValue: false, previousValue: true, firstChange: false, isFirstChange: () => false },
-    });
+    setInput('visible', false);
     fixture.detectChanges();
 
-    component.visible = true;
-    component.ngOnChanges({
-      visible: { currentValue: true, previousValue: false, firstChange: false, isFirstChange: () => false },
-    });
+    // The SAME contract object comes back, so nothing but `visible` changes —
+    // which is exactly why the reset has to key off the open, not only off the
+    // contract.
+    setInput('visible', true);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -381,10 +389,8 @@ describe('TeamMetadataModalComponent', () => {
   });
 
   it('(Trap 1) a null contract seeds no keys and confirms an empty map', () => {
-    component.contract = null;
-    component.ngOnChanges({
-      contract: { currentValue: null, previousValue: null, firstChange: true, isFirstChange: () => true },
-    });
+    setInput('contract', null);
+    fixture.detectChanges();
 
     const emissions: Record<string, string>[] = [];
     component.confirmed.subscribe((value) => emissions.push(value));

@@ -20,6 +20,7 @@ import {
   TeamMetadataContract,
 } from '../../protocol/catalog.interface';
 import { HomeComponent } from './home.component';
+import { TeamMetadataModalComponent } from './team-metadata-modal/team-metadata-modal.component';
 
 /**
  * A `NamespaceSummary` fixture carrying neutral values for every field these
@@ -1618,6 +1619,158 @@ describe('HomeComponent', () => {
       expect((component as any).metadataErrorMessage({ oops: 1 })).toBe(
         '{"oops":1}',
       );
+    });
+
+    it('(AC14) a 422 with nothing to say renders no alert region at all', async () => {
+      component.selectedNamespace$.next(
+        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
+      );
+      await component.createTeam();
+      // FetchService hands an empty response body over as `''`, and an empty
+      // FastAPI `detail` list extracts to `''` too. Either way there is no
+      // message, and `''` would paint an empty red box.
+      apiSpy.createTeam.and.returnValue(
+        Promise.reject(new HttpError('Unprocessable', 422, '')),
+      );
+
+      await component.onMetadataConfirm({ tenant: 'acme' });
+
+      expect(component.metadataModalVisible).toBeTrue();
+      expect(component.metadataError).toBeNull();
+
+      apiSpy.createTeam.and.returnValue(
+        Promise.reject(new HttpError('Unprocessable', 422, { detail: [] })),
+      );
+
+      await component.onMetadataConfirm({ tenant: 'acme' });
+
+      expect(component.metadataModalVisible).toBeTrue();
+      expect(component.metadataError).toBeNull();
+    });
+
+    // --- AC13: the spinner's OTHER half — it does turn, while the POST runs ---
+
+    it('(AC13) isCreatingTeam is true while the POST is in flight, and false after', async () => {
+      component.selectedNamespace$.next(
+        nsSummary('agent-team-v1', 'Agent Team', 'd'),
+      );
+      let release: (value: any) => void = () => undefined;
+      apiSpy.createTeam.and.returnValue(
+        new Promise<any>((resolve) => {
+          release = resolve;
+        }),
+      );
+
+      const inFlight = component.createTeam();
+      // The flag is the Create button's spinner AND its double-submit guard
+      // (`[disabled]="isCreatingTeam || …"`). Every other assertion in this
+      // file only ever pins it FALSE, so deleting the `= true` would go
+      // unnoticed.
+      expect(component.isCreatingTeam).toBeTrue();
+
+      release({});
+      await inFlight;
+
+      expect(component.isCreatingTeam).toBeFalse();
+    });
+
+    it('(AC13) isCreatingTeam clears when the POST is rejected', async () => {
+      spyOn(console, 'error');
+      component.selectedNamespace$.next(
+        nsSummary('agent-team-v1', 'Agent Team', 'd'),
+      );
+      apiSpy.createTeam.and.returnValue(
+        Promise.reject(new HttpError('Server error', 500, 'boom')),
+      );
+
+      await component.createTeam();
+
+      expect(component.isCreatingTeam).toBeFalse();
+    });
+
+    // --- The host↔child JOIN: the template bindings themselves ---
+    //
+    // Every spec above asserts the HOST's state, and the modal's own spec
+    // asserts the MODAL's inputs. Neither notices if a binding in
+    // `home.component.html` is deleted — dropping `[errorMessage]` alone would
+    // remove AC14's entire user-visible outcome with both suites still green.
+    // These two specs pin the join, and nothing else about the child's markup.
+
+    function modal(): TeamMetadataModalComponent {
+      return fixture.debugElement.query(By.directive(TeamMetadataModalComponent))
+        .componentInstance as TeamMetadataModalComponent;
+    }
+
+    /**
+     * Render FIRST, select AFTER. `fixture.detectChanges()` runs `ngOnInit`,
+     * and `loadNamespaces` reconciles the selection against the (empty)
+     * `getNamespaces` spy result — so a selection pushed before the first
+     * render is replaced by `null` and every creation path silently takes its
+     * no-selection guard.
+     */
+    async function renderThenSelect(ns: NamespaceSummary): Promise<void> {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      component.selectedNamespace$.next(ns);
+      fixture.detectChanges();
+    }
+
+    it('(AC1, AC7, AC14) the host state reaches the modal through the template bindings', async () => {
+      await renderThenSelect(nsSummary('acme-cases', 'Acme Cases', 'd', asking));
+
+      expect(modal().visible).toBeFalse();
+
+      await component.createTeam();
+      fixture.detectChanges();
+
+      expect(modal().visible).toBeTrue();
+      expect(modal().contract).toBe(asking);
+      expect(modal().namespaceLabel).toBe('Acme Cases');
+      expect(modal().pending).toBeFalse();
+      expect(modal().errorMessage).toBeNull();
+
+      apiSpy.createTeam.and.returnValue(
+        Promise.reject(
+          new HttpError('Unprocessable', 422, { detail: 'tenant is required' }),
+        ),
+      );
+
+      await component.onMetadataConfirm({ case: 'C-1234' });
+      fixture.detectChanges();
+
+      expect(modal().visible).toBeTrue();
+      expect(modal().errorMessage).toBe('tenant is required');
+    });
+
+    it('(AC5) the modal `confirmed` output reaches the host through the template', async () => {
+      await renderThenSelect(nsSummary('acme-cases', 'Acme Cases', 'd', asking));
+      await component.createTeam();
+      fixture.detectChanges();
+      expect(modal().visible).toBeTrue();
+      apiSpy.createTeam.calls.reset();
+
+      // The POST is issued synchronously by the handler the binding names.
+      modal().confirmed.emit({ tenant: 'acme' });
+
+      expect(apiSpy.createTeam.calls.mostRecent().args).toEqual([
+        'acme-cases',
+        { tenant: 'acme' },
+      ]);
+    });
+
+    it('(AC6) the modal `cancelled` output reaches the host through the template', async () => {
+      await renderThenSelect(nsSummary('acme-cases', 'Acme Cases', 'd', asking));
+      await component.createTeam();
+      fixture.detectChanges();
+      // Guard the guard: without this the cancel assertion below passes on a
+      // modal that never opened.
+      expect(modal().visible).toBeTrue();
+      apiSpy.createTeam.calls.reset();
+
+      modal().cancelled.emit();
+
+      expect(component.metadataModalVisible).toBeFalse();
+      expect(apiSpy.createTeam).not.toHaveBeenCalled();
     });
   });
 
