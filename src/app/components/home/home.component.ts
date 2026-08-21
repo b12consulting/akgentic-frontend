@@ -13,8 +13,12 @@ import { BehaviorSubject, firstValueFrom, Observable } from 'rxjs';
 import { filter, map, take } from 'rxjs/operators';
 
 import { ApiService } from '../../core/http/api.service';
+import { HttpError } from '../../core/http/fetch.service';
 import { isRunning } from '../../core/context/team.interface';
-import { NamespaceSummary } from '../../protocol/catalog.interface';
+import {
+  NamespaceSummary,
+  TeamMetadataContract,
+} from '../../protocol/catalog.interface';
 
 import { CommonModule } from '@angular/common';
 import { ButtonModule } from 'primeng/button';
@@ -35,6 +39,7 @@ import { ContextService } from '../../core/context/context.service';
 // loaded only on first opening of the namespace-editor dialog — the initial
 // home-page bundle stays Monaco-free.
 import { NamespacePanelComponent } from '../catalog/namespace-panel/namespace-panel.component';
+import { TeamMetadataModalComponent } from './team-metadata-modal/team-metadata-modal.component';
 
 // Classic team-list page size (Epic 28, ADR-032 §Decision 3). Bound to the
 // paginator's [rows] and used as the loadTeamsPage size fallback so no magic
@@ -54,6 +59,7 @@ const PAGE_SIZE = 250;
     InputTextModule,
     ToggleSwitchModule,
     NamespacePanelComponent,
+    TeamMetadataModalComponent,
   ],
   templateUrl: './home.component.html',
   styleUrl: './home.component.scss',
@@ -128,6 +134,40 @@ export class HomeComponent {
   @ViewChild(NamespacePanelComponent)
   namespacePanel?: NamespacePanelComponent;
 
+  // -----------------------------------------------------------------------
+  // Team-metadata modal host state.
+  //
+  // The modal is purely presentational: it renders the contract and emits the
+  // answers. Everything below is the host's half — which namespace the user
+  // answered FOR, which creation path is waiting on the answer, and what the
+  // server said if it refused.
+  // -----------------------------------------------------------------------
+
+  metadataModalVisible = false;
+  metadataContract: TeamMetadataContract | null = null;
+
+  // The namespace and its label are CAPTURED when the modal opens, never read
+  // back off `selectedNamespace$`. The dropdown stays live behind the dialog,
+  // so re-reading the selection in the confirm handler would create a team for
+  // whatever is selected THEN — not what the header said and not what the user
+  // answered.
+  metadataNamespace: string | null = null;
+  metadataNamespaceLabel = '';
+
+  // The server's 422 message. Non-null keeps the modal open with an inline
+  // explanation; every other failure leaves it null (FetchService has already
+  // toasted, so a second message would double up).
+  metadataError: string | null = null;
+
+  // A confirmed create is in flight — locks the modal's controls. Distinct
+  // from `isCreatingTeam`, which is the page's Create-button spinner and must
+  // NOT turn merely because a dialog is open.
+  metadataSubmitting = false;
+
+  // Which creation path opened the modal, so confirm dispatches to the same
+  // body the un-gated branch would have run.
+  private pendingCreation: 'create' | 'navigate' | null = null;
+
   // Expose isRunning to template
   isRunning = isRunning;
 
@@ -171,7 +211,17 @@ export class HomeComponent {
     if (!teams || teams.length === 0) {
       const selected = this.selectedNamespace$.value;
       if (selected) {
-        await this.contextService.createTeamAndNavigate(selected.namespace);
+        // Gated like every other creation path. This one runs with NO user
+        // gesture, so skipping the modal here is precisely how a mandatory
+        // field would go unfilled without anyone noticing: when the namespace
+        // asks something, open the dialog and return — ngOnInit completes with
+        // no team created, and the answer (or the cancel) decides.
+        const contract = this.metadataContractOf(selected);
+        if (contract) {
+          this.openMetadataModal(selected, contract, 'navigate');
+          return;
+        }
+        await this.createAndNavigate(selected.namespace);
       }
       return;
     }
@@ -214,24 +264,76 @@ export class HomeComponent {
     }
   }
 
-  async createTeam() {
+  /**
+   * Does this namespace ask anything before its team can be created?
+   *
+   * The ONE place the three no-ask states are collapsed. `null` (the team
+   * declares no contract), `undefined` (a server predating the field omits the
+   * key, and even a current server's OpenAPI leaves it out of `required`, so a
+   * generated client types it possibly-undefined) and a declared contract with
+   * an empty `fields` list all mean "ask nothing". GATING ON `=== null` ALONE
+   * IS A BUG — the test is falsiness, plus the empty-fields collapse.
+   */
+  private metadataContractOf(ns: NamespaceSummary): TeamMetadataContract | null {
+    const contract = ns.team_metadata;
+    return contract && contract.fields.length > 0 ? contract : null;
+  }
+
+  /**
+   * Create on the current page. Today's `createTeam()` body, with `metadata`
+   * threaded through and the `isCreatingTeam` toggle wrapped around the POST
+   * ONLY — the flag is the Create button's spinner and must not turn merely
+   * because a dialog is open.
+   *
+   * `metadata` is forwarded UNCONDITIONALLY, including when `undefined`. The
+   * "attach the key only when non-empty" rule lives in exactly one place,
+   * `apiService.createTeam`; `createTeam(ns, undefined)` and `createTeam(ns)`
+   * produce the same body by construction.
+   *
+   * Rejections propagate: the modal path needs to see a 422 to keep itself
+   * open, so the swallow-and-log lives in the caller.
+   */
+  private async createOnPage(
+    namespace: string,
+    metadata?: Record<string, string>,
+  ): Promise<void> {
     this.isCreatingTeam = true;
     try {
-      const selected = this.selectedNamespace$.value;
-      if (!selected) {
-        console.warn('No namespace selected');
-        return;
-      }
-      await this.apiService.createTeam(selected.namespace);
+      await this.apiService.createTeam(namespace, metadata);
       // New team is newest under created_at desc → it belongs on page 1.
       // Move the paginator to page 1 and reload (REPLACE — no empty flash).
       this.first = 0;
       this.currentPage = 1;
       await this.contextService.loadTeamsPage(1, PAGE_SIZE);
-    } catch (error) {
-      console.error('Failed to create team:', error);
     } finally {
       this.isCreatingTeam = false;
+    }
+  }
+
+  /** Create and navigate. Forwards `metadata` unconditionally, as above. */
+  private async createAndNavigate(
+    namespace: string,
+    metadata?: Record<string, string>,
+  ): Promise<void> {
+    await this.contextService.createTeamAndNavigate(namespace, metadata);
+  }
+
+  async createTeam() {
+    const selected = this.selectedNamespace$.value;
+    if (!selected) {
+      console.warn('No namespace selected');
+      return;
+    }
+    const contract = this.metadataContractOf(selected);
+    if (contract) {
+      // Ask first. No POST, and no spinner while the dialog is open.
+      this.openMetadataModal(selected, contract, 'create');
+      return;
+    }
+    try {
+      await this.createOnPage(selected.namespace);
+    } catch (error) {
+      console.error('Failed to create team:', error);
     }
   }
 
@@ -241,7 +343,133 @@ export class HomeComponent {
       console.warn('No namespace selected');
       return;
     }
-    await this.contextService.createTeamAndNavigate(selected.namespace);
+    const contract = this.metadataContractOf(selected);
+    if (contract) {
+      this.openMetadataModal(selected, contract, 'navigate');
+      return;
+    }
+    await this.createAndNavigate(selected.namespace);
+  }
+
+  /**
+   * Open the metadata dialog for `ns`, capturing the namespace AND its label
+   * at open time (the dropdown stays live behind the dialog).
+   *
+   * Deliberately does NOT touch `isCreatingTeam`: the Create button must not
+   * spin for as long as the dialog is open, nor keep spinning after Cancel.
+   */
+  private openMetadataModal(
+    ns: NamespaceSummary,
+    contract: TeamMetadataContract,
+    mode: 'create' | 'navigate',
+  ): void {
+    this.metadataNamespace = ns.namespace;
+    this.metadataNamespaceLabel = ns.name || ns.namespace;
+    this.metadataContract = contract;
+    this.metadataError = null;
+    this.metadataSubmitting = false;
+    this.pendingCreation = mode;
+    this.metadataModalVisible = true;
+  }
+
+  /**
+   * `(confirmed)` handler. Dispatches to the same shared body the un-gated
+   * branch of the originating path would have run, with the namespace captured
+   * at open time.
+   *
+   * On success the modal closes and the host state resets. On ANY failure it
+   * stays open with the user's input intact — closing on a network blip would
+   * discard everything typed, and Cancel is always available, so the user is
+   * never trapped.
+   */
+  async onMetadataConfirm(metadata: Record<string, string>): Promise<void> {
+    const namespace = this.metadataNamespace;
+    const mode = this.pendingCreation;
+    if (namespace === null || mode === null) {
+      return;
+    }
+    this.metadataSubmitting = true;
+    this.metadataError = null;
+    try {
+      if (mode === 'create') {
+        await this.createOnPage(namespace, metadata);
+      } else {
+        await this.createAndNavigate(namespace, metadata);
+      }
+      this.closeMetadataModal();
+    } catch (error) {
+      this.handleMetadataCreateError(error, mode);
+    } finally {
+      this.metadataSubmitting = false;
+    }
+  }
+
+  /** `(cancelled)` handler. Creates nothing and leaves `isCreatingTeam` alone. */
+  onMetadataCancel(): void {
+    this.closeMetadataModal();
+  }
+
+  private closeMetadataModal(): void {
+    this.metadataModalVisible = false;
+    this.metadataContract = null;
+    this.metadataNamespace = null;
+    this.metadataNamespaceLabel = '';
+    this.metadataError = null;
+    this.pendingCreation = null;
+  }
+
+  /**
+   * A rejected create keeps the modal open either way; only the 422 carries a
+   * message worth rendering, because it names the offending field and the user
+   * cannot correct anything without it. Every other failure has ALREADY been
+   * toasted by FetchService, so nothing is added here — no second message, no
+   * new error type, no retry.
+   */
+  private handleMetadataCreateError(
+    error: unknown,
+    mode: 'create' | 'navigate',
+  ): void {
+    const status = (error as { status?: number })?.status;
+    if (status === 422) {
+      this.metadataError = this.metadataErrorMessage((error as HttpError).body);
+      return;
+    }
+    this.metadataError = null;
+    if (mode === 'create') {
+      console.error('Failed to create team:', error);
+    }
+  }
+
+  /**
+   * Extract a renderable message from an `HttpError.body`, which is the parsed
+   * JSON when the server sent JSON and the raw text otherwise. Three shapes
+   * reach here from the create endpoint: a bare string, a `{detail: "..."}`
+   * envelope, and FastAPI/Pydantic's `{detail: [{loc, msg}, ...]}` list — the
+   * one that names the offending field, rendered one line per entry as
+   * "<last loc segment>: <msg>". Anything else is shown verbatim.
+   */
+  private metadataErrorMessage(body: unknown): string {
+    if (typeof body === 'string') {
+      return body;
+    }
+    const detail = (body as { detail?: unknown } | null)?.detail;
+    if (typeof detail === 'string') {
+      return detail;
+    }
+    if (Array.isArray(detail)) {
+      return detail.map((entry) => this.metadataErrorLine(entry)).join('\n');
+    }
+    return JSON.stringify(body);
+  }
+
+  /** One `{loc, msg}` entry as "<field>: <msg>", or just the message. */
+  private metadataErrorLine(entry: unknown): string {
+    const loc = (entry as { loc?: unknown })?.loc;
+    const msg = (entry as { msg?: unknown })?.msg;
+    const message = typeof msg === 'string' ? msg : JSON.stringify(entry);
+    const field =
+      Array.isArray(loc) && loc.length > 0 ? String(loc[loc.length - 1]) : '';
+    return field === '' ? message : `${field}: ${message}`;
   }
 
   async deleteTeam(teamId: string) {
