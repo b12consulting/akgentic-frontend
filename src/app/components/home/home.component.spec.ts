@@ -269,25 +269,27 @@ describe('HomeComponent', () => {
     expect((component as any).context).toBeUndefined();
   });
 
-  it('(AC4 10.4) HomeComponent.createTeamAndNavigate delegates to contextService and has no reload compensation', async () => {
+  it('(AC4 10.4) createTeam delegates to contextService.createTeamAndNavigate with no reload compensation', async () => {
     const ns = nsSummary('cat-1', 'Cat One', 'first cat');
     component.selectedNamespace$.next(ns);
     // The component has not invoked ngOnInit yet (no detectChanges in this
     // test), so contextSpy.getTeams should not have been called. Reset to
     // guard against any spurious prior invocation.
     contextSpy.getTeams.calls.reset();
-    await component.createTeamAndNavigate();
+    await component.createTeam();
     expect(contextSpy.createTeamAndNavigate).toHaveBeenCalledOnceWith(
       'cat-1',
       undefined,
     );
-    // No per-component compensation for the removed reload.
+    // No reload, no paginator jump: the home page is being LEFT — every
+    // creation path now lands in the new team's process view.
     expect(contextSpy.getTeams).not.toHaveBeenCalled();
+    expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
   });
 
-  it('(AC4 10.4) HomeComponent.createTeamAndNavigate no-entry guard returns cleanly', async () => {
+  it('(AC4 10.4) createTeam no-entry guard returns cleanly', async () => {
     component.selectedNamespace$.next(null);
-    await component.createTeamAndNavigate();
+    await component.createTeam();
     expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
   });
 
@@ -304,21 +306,12 @@ describe('HomeComponent', () => {
     expect(component.selectedNamespace$.value?.namespace).toBe('agent-team-v1');
   });
 
-  it('(AC3 1.9) createTeam sends the selected namespace to apiService.createTeam', async () => {
-    component.selectedNamespace$.next(
-      nsSummary('agent-team-v1', 'Agent Team', 'Default'),
-    );
-    apiSpy.createTeam.calls.reset();
-    await component.createTeam();
-    expect(apiSpy.createTeam).toHaveBeenCalledOnceWith('agent-team-v1', undefined);
-  });
-
-  it('(AC3 1.9) createTeamAndNavigate passes selected.namespace (not an id lookup)', async () => {
+  it('(AC3 1.9) createTeam passes selected.namespace (not an id lookup)', async () => {
     component.selectedNamespace$.next(
       nsSummary('rag-team-v1', 'RAG Team', 'With RAG'),
     );
     contextSpy.createTeamAndNavigate.calls.reset();
-    await component.createTeamAndNavigate();
+    await component.createTeam();
     expect(contextSpy.createTeamAndNavigate).toHaveBeenCalledOnceWith(
       'rag-team-v1',
       undefined,
@@ -1134,21 +1127,29 @@ describe('HomeComponent', () => {
     expect(text).not.toContain('team-page-1');
   });
 
-  it('(28.2 AC8e) createTeam resets to page 1, reloads page 1, and does not blank the list', async () => {
+  it('(28.2 AC8e, superseded) createTeam leaves — no reload, no paginator jump, no blanked list', async () => {
+    // Superseded behaviour: create used to stay on the home page and reload
+    // page 1. Every creation path now navigates to the new team's process
+    // view, so the paginator is left exactly where it was and NOTHING is
+    // reloaded — the page is being unmounted, and a reload here would be a
+    // wasted request racing the navigation.
     component.selectedNamespace$.next(
       nsSummary('agent-team-v1', 'Agent Team', 'd'),
     );
     component.currentPage = 4;
     component.first = 750;
     contextSpy.loadTeamsPage.calls.reset();
+    contextSpy.createTeamAndNavigate.calls.reset();
 
     await component.createTeam();
 
-    expect(apiSpy.createTeam).toHaveBeenCalledOnceWith('agent-team-v1', undefined);
-    expect(contextSpy.loadTeamsPage).toHaveBeenCalledOnceWith(1, 250);
-    expect(component.currentPage).toBe(1);
-    expect(component.first).toBe(0);
-    // No empty flash — never reset before reload.
+    expect(contextSpy.createTeamAndNavigate).toHaveBeenCalledOnceWith(
+      'agent-team-v1',
+      undefined,
+    );
+    expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
+    expect(component.currentPage).toBe(4);
+    expect(component.first).toBe(750);
     expect(contextSpy.resetTeams).not.toHaveBeenCalled();
   });
 
@@ -1369,43 +1370,45 @@ describe('HomeComponent', () => {
       );
       component.currentPage = 4;
       component.first = 750;
-      apiSpy.createTeam.calls.reset();
+      contextSpy.createTeamAndNavigate.calls.reset();
       contextSpy.loadTeamsPage.calls.reset();
 
       await component.createTeam();
 
       expect(component.metadataModalVisible).toBeFalse();
       // The two-argument form 43.1 pins to today's byte-for-byte body.
-      expect(apiSpy.createTeam.calls.mostRecent().args).toEqual([
+      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args).toEqual([
         'agent-team-v1',
         undefined,
       ]);
-      expect(component.first).toBe(0);
-      expect(component.currentPage).toBe(1);
-      expect(contextSpy.loadTeamsPage).toHaveBeenCalledOnceWith(1, 250);
+      // The page is being LEFT for the process view: no reload, no
+      // paginator jump — both would be wasted work racing the navigation.
+      expect(component.first).toBe(750);
+      expect(component.currentPage).toBe(4);
+      expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
     });
 
     it('(AC9, AC13) createTeam with a contract opens the modal, creates nothing, and does not spin', async () => {
       component.selectedNamespace$.next(
         nsSummary('acme-cases', 'Acme Cases', 'd', asking),
       );
-      apiSpy.createTeam.calls.reset();
+      contextSpy.createTeamAndNavigate.calls.reset();
 
       await component.createTeam();
 
       expect(component.metadataModalVisible).toBeTrue();
       expect(component.metadataContract).toBe(asking);
-      expect(apiSpy.createTeam).not.toHaveBeenCalled();
+      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
       expect(component.isCreatingTeam).toBeFalse();
     });
 
-    it('(AC10) createTeamAndNavigate with no contract navigates immediately', async () => {
+    it('(AC10) createTeam with no contract navigates immediately', async () => {
       component.selectedNamespace$.next(
         nsSummary('agent-team-v1', 'Agent Team', 'd'),
       );
       contextSpy.createTeamAndNavigate.calls.reset();
 
-      await component.createTeamAndNavigate();
+      await component.createTeam();
 
       expect(component.metadataModalVisible).toBeFalse();
       expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args).toEqual([
@@ -1414,13 +1417,13 @@ describe('HomeComponent', () => {
       ]);
     });
 
-    it('(AC10) createTeamAndNavigate with a contract opens the modal and creates nothing', async () => {
+    it('(AC10) createTeam with a contract opens the modal and creates nothing', async () => {
       component.selectedNamespace$.next(
         nsSummary('acme-cases', 'Acme Cases', 'd', asking),
       );
       contextSpy.createTeamAndNavigate.calls.reset();
 
-      await component.createTeamAndNavigate();
+      await component.createTeam();
 
       expect(component.metadataModalVisible).toBeTrue();
       expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
@@ -1436,7 +1439,7 @@ describe('HomeComponent', () => {
       await component.createTeam();
 
       expect(component.metadataModalVisible).toBeFalse();
-      expect(apiSpy.createTeam).toHaveBeenCalled();
+      expect(contextSpy.createTeamAndNavigate).toHaveBeenCalled();
     });
 
     it('(AC8) a null team_metadata asks nothing', async () => {
@@ -1447,7 +1450,7 @@ describe('HomeComponent', () => {
       await component.createTeam();
 
       expect(component.metadataModalVisible).toBeFalse();
-      expect(apiSpy.createTeam).toHaveBeenCalled();
+      expect(contextSpy.createTeamAndNavigate).toHaveBeenCalled();
     });
 
     it('(AC8) a declared contract with an empty fields list asks nothing', async () => {
@@ -1458,7 +1461,7 @@ describe('HomeComponent', () => {
       await component.createTeam();
 
       expect(component.metadataModalVisible).toBeFalse();
-      expect(apiSpy.createTeam).toHaveBeenCalled();
+      expect(contextSpy.createTeamAndNavigate).toHaveBeenCalled();
     });
 
     // --- Confirm / cancel dispatch ---
@@ -1468,23 +1471,6 @@ describe('HomeComponent', () => {
         nsSummary('acme-cases', 'Acme Cases', 'd', asking),
       );
       await component.createTeam();
-      apiSpy.createTeam.calls.reset();
-
-      await component.onMetadataConfirm({ tenant: 'acme' });
-
-      expect(apiSpy.createTeam.calls.mostRecent().args).toEqual([
-        'acme-cases',
-        { tenant: 'acme' },
-      ]);
-      expect(component.metadataModalVisible).toBeFalse();
-      expect(component.isCreatingTeam).toBeFalse();
-    });
-
-    it('(AC10) confirming from the navigate path navigates with the emitted map', async () => {
-      component.selectedNamespace$.next(
-        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
-      );
-      await component.createTeamAndNavigate();
       contextSpy.createTeamAndNavigate.calls.reset();
 
       await component.onMetadataConfirm({ tenant: 'acme' });
@@ -1493,7 +1479,23 @@ describe('HomeComponent', () => {
         'acme-cases',
         { tenant: 'acme' },
       ]);
-      expect(apiSpy.createTeam).not.toHaveBeenCalled();
+      expect(component.metadataModalVisible).toBeFalse();
+      expect(component.isCreatingTeam).toBeFalse();
+    });
+
+    it('(AC10) confirming from the gesture-less path navigates with the emitted map', async () => {
+      component.selectedNamespace$.next(
+        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
+      );
+      await component.createTeam();
+      contextSpy.createTeamAndNavigate.calls.reset();
+
+      await component.onMetadataConfirm({ tenant: 'acme' });
+
+      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args).toEqual([
+        'acme-cases',
+        { tenant: 'acme' },
+      ]);
       expect(component.metadataModalVisible).toBeFalse();
     });
 
@@ -1502,13 +1504,13 @@ describe('HomeComponent', () => {
         nsSummary('acme-cases', 'Acme Cases', 'd', asking),
       );
       await component.createTeam();
-      apiSpy.createTeam.calls.reset();
+      contextSpy.createTeamAndNavigate.calls.reset();
 
       component.onMetadataCancel();
 
       expect(component.metadataModalVisible).toBeFalse();
       expect(component.metadataContract).toBeNull();
-      expect(apiSpy.createTeam).not.toHaveBeenCalled();
+      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
       expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
       expect(component.isCreatingTeam).toBeFalse();
     });
@@ -1524,11 +1526,11 @@ describe('HomeComponent', () => {
       component.selectedNamespace$.next(
         nsSummary('other-ns', 'Other', 'd'),
       );
-      apiSpy.createTeam.calls.reset();
+      contextSpy.createTeamAndNavigate.calls.reset();
 
       await component.onMetadataConfirm({ tenant: 'acme' });
 
-      expect(apiSpy.createTeam.calls.mostRecent().args[0]).toBe('acme-cases');
+      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args[0]).toBe('acme-cases');
     });
 
     // --- AC14: a rejected create keeps the modal open ---
@@ -1538,7 +1540,7 @@ describe('HomeComponent', () => {
         nsSummary('acme-cases', 'Acme Cases', 'd', asking),
       );
       await component.createTeam();
-      apiSpy.createTeam.and.returnValue(
+      contextSpy.createTeamAndNavigate.and.returnValue(
         Promise.reject(
           new HttpError('Unprocessable', 422, {
             detail: [{ loc: ['body', 'metadata', 'tenant'], msg: 'field required' }],
@@ -1560,7 +1562,7 @@ describe('HomeComponent', () => {
         nsSummary('acme-cases', 'Acme Cases', 'd', asking),
       );
       await component.createTeam();
-      apiSpy.createTeam.and.returnValue(
+      contextSpy.createTeamAndNavigate.and.returnValue(
         Promise.reject(new HttpError('Server error', 500, 'boom')),
       );
 
@@ -1568,11 +1570,9 @@ describe('HomeComponent', () => {
 
       expect(component.metadataModalVisible).toBeTrue();
       expect(component.metadataError).toBeNull();
-      // The create path keeps its existing log; nothing new is toasted.
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        'Failed to create team:',
-        jasmine.any(HttpError),
-      );
+      // FetchService has ALREADY toasted the failure; the host adds no
+      // second channel — no inline message, no console noise.
+      expect(consoleErrorSpy).not.toHaveBeenCalled();
     });
 
     it('(AC14) a rejected create leaves the typed values alone — the host never clears the contract', async () => {
@@ -1580,7 +1580,7 @@ describe('HomeComponent', () => {
         nsSummary('acme-cases', 'Acme Cases', 'd', asking),
       );
       await component.createTeam();
-      apiSpy.createTeam.and.returnValue(
+      contextSpy.createTeamAndNavigate.and.returnValue(
         Promise.reject(new HttpError('Unprocessable', 422, 'nope')),
       );
 
@@ -1629,7 +1629,7 @@ describe('HomeComponent', () => {
       // FetchService hands an empty response body over as `''`, and an empty
       // FastAPI `detail` list extracts to `''` too. Either way there is no
       // message, and `''` would paint an empty red box.
-      apiSpy.createTeam.and.returnValue(
+      contextSpy.createTeamAndNavigate.and.returnValue(
         Promise.reject(new HttpError('Unprocessable', 422, '')),
       );
 
@@ -1638,7 +1638,7 @@ describe('HomeComponent', () => {
       expect(component.metadataModalVisible).toBeTrue();
       expect(component.metadataError).toBeNull();
 
-      apiSpy.createTeam.and.returnValue(
+      contextSpy.createTeamAndNavigate.and.returnValue(
         Promise.reject(new HttpError('Unprocessable', 422, { detail: [] })),
       );
 
@@ -1655,7 +1655,7 @@ describe('HomeComponent', () => {
         nsSummary('agent-team-v1', 'Agent Team', 'd'),
       );
       let release: (value: any) => void = () => undefined;
-      apiSpy.createTeam.and.returnValue(
+      contextSpy.createTeamAndNavigate.and.returnValue(
         new Promise<any>((resolve) => {
           release = resolve;
         }),
@@ -1679,7 +1679,7 @@ describe('HomeComponent', () => {
       component.selectedNamespace$.next(
         nsSummary('agent-team-v1', 'Agent Team', 'd'),
       );
-      apiSpy.createTeam.and.returnValue(
+      contextSpy.createTeamAndNavigate.and.returnValue(
         Promise.reject(new HttpError('Server error', 500, 'boom')),
       );
 
@@ -1729,7 +1729,7 @@ describe('HomeComponent', () => {
       expect(modal().pending).toBeFalse();
       expect(modal().errorMessage).toBeNull();
 
-      apiSpy.createTeam.and.returnValue(
+      contextSpy.createTeamAndNavigate.and.returnValue(
         Promise.reject(
           new HttpError('Unprocessable', 422, { detail: 'tenant is required' }),
         ),
@@ -1747,12 +1747,12 @@ describe('HomeComponent', () => {
       await component.createTeam();
       fixture.detectChanges();
       expect(modal().visible).toBeTrue();
-      apiSpy.createTeam.calls.reset();
+      contextSpy.createTeamAndNavigate.calls.reset();
 
       // The POST is issued synchronously by the handler the binding names.
       modal().confirmed.emit({ tenant: 'acme' });
 
-      expect(apiSpy.createTeam.calls.mostRecent().args).toEqual([
+      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args).toEqual([
         'acme-cases',
         { tenant: 'acme' },
       ]);
@@ -1765,12 +1765,12 @@ describe('HomeComponent', () => {
       // Guard the guard: without this the cancel assertion below passes on a
       // modal that never opened.
       expect(modal().visible).toBeTrue();
-      apiSpy.createTeam.calls.reset();
+      contextSpy.createTeamAndNavigate.calls.reset();
 
       modal().cancelled.emit();
 
       expect(component.metadataModalVisible).toBeFalse();
-      expect(apiSpy.createTeam).not.toHaveBeenCalled();
+      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
     });
   });
 
@@ -1824,7 +1824,7 @@ describe('HomeComponent', () => {
         Promise.resolve([nsSummary('acme-cases', 'Acme Cases', 'd', asking)]),
       );
       contextSpy.createTeamAndNavigate.calls.reset();
-      apiSpy.createTeam.calls.reset();
+      contextSpy.createTeamAndNavigate.calls.reset();
 
       const init = component.ngOnInit();
       await component.loadPage({ first: 0, rows: 250 });
@@ -1832,7 +1832,7 @@ describe('HomeComponent', () => {
 
       expect(component.metadataModalVisible).toBeTrue();
       expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
-      expect(apiSpy.createTeam).not.toHaveBeenCalled();
+      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
     });
 
     it('(AC11) confirming from the gesture-less route creates and navigates', async () => {
@@ -1868,7 +1868,7 @@ describe('HomeComponent', () => {
 
       expect(component.metadataModalVisible).toBeFalse();
       expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
-      expect(apiSpy.createTeam).not.toHaveBeenCalled();
+      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
     });
   });
 });

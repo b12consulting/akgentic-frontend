@@ -15,6 +15,7 @@ import {
   ValidationErrors,
   ValidatorFn,
 } from '@angular/forms';
+import { AutoFocusModule } from 'primeng/autofocus';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { InputTextModule } from 'primeng/inputtext';
@@ -104,7 +105,7 @@ function trimmedPattern(regex: RegExp): ValidatorFn {
  */
 @Component({
   selector: 'app-team-metadata-modal',
-  imports: [CommonModule, ReactiveFormsModule, DialogModule, ButtonModule, InputTextModule],
+  imports: [CommonModule, ReactiveFormsModule, DialogModule, ButtonModule, InputTextModule, AutoFocusModule],
   templateUrl: './team-metadata-modal.component.html',
   styleUrl: './team-metadata-modal.component.scss',
 })
@@ -306,6 +307,26 @@ export class TeamMetadataModalComponent implements OnChanges {
       }
     }
     this.confirmed.emit(out);
+  }
+
+  /**
+   * Cmd+Enter (macOS) / Ctrl+Enter submits from anywhere in the form —
+   * the chord a multi-line dialog uses so that plain Enter stays free.
+   *
+   * Routes through `onConfirm`, so every gate the Create button applies
+   * applies here too — including the confirm-time `markAllAsTouched` sweep,
+   * which means the chord on a never-blurred invalid field surfaces the
+   * message instead of submitting. The one gate the button carries that
+   * `onConfirm` does not is `pending` (the button expresses it as
+   * `[disabled]`, which a keyboard path never consults), so it is checked
+   * here explicitly: a create already in flight must not be double-fired.
+   */
+  onSubmitShortcut(event: Event): void {
+    event.preventDefault();
+    if (this.pending) {
+      return;
+    }
+    this.onConfirm();
   }
 
   /** Emits `cancelled`; the host closes and creates nothing. */

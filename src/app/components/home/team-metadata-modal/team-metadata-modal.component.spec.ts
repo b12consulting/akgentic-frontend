@@ -457,6 +457,135 @@ describe('TeamMetadataModalComponent', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Autofocus — the first field takes focus on open
+  // -------------------------------------------------------------------------
+
+  /**
+   * pAutoFocus focuses through a setTimeout — drain it before asserting. The
+   * margin also covers the dialog's 150ms close animation in the reopen spec:
+   * reopening INSIDE the leave animation makes PrimeNG tear the container
+   * down at animation end and rebuild it, which is an interrupted-animation
+   * state a real user reopening a closed dialog never sits in.
+   */
+  async function flushAutofocus(ms = 10): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
+    fixture.detectChanges();
+  }
+
+  it('(focus) the FIRST field takes focus on open — not the dialog close button', async () => {
+    await open(contract([field('tenant'), field('note')]));
+    await flushAutofocus();
+
+    expect(document.activeElement).toBe(input('tenant'));
+  });
+
+  it('(focus) a reopened dialog focuses the first field again', async () => {
+    const c = contract([field('tenant'), field('note')]);
+    await open(c);
+    await flushAutofocus();
+    input('note').focus();
+    expect(document.activeElement).toBe(input('note'));
+
+    component.onCancel();
+    setInput('visible', false);
+    fixture.detectChanges();
+    // Let the close animation FINISH before reopening — see flushAutofocus.
+    await flushAutofocus(250);
+    setInput('visible', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await flushAutofocus(50);
+
+    expect(document.activeElement).toBe(input('tenant'));
+  });
+
+  // -------------------------------------------------------------------------
+  // Cmd+Enter / Ctrl+Enter — the submit chord
+  // -------------------------------------------------------------------------
+
+  /** Dispatches the chord from inside a field, where a typing user's focus is. */
+  function pressSubmitChord(key: string, modifier: 'meta' | 'control'): void {
+    input(key).dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Enter',
+        metaKey: modifier === 'meta',
+        ctrlKey: modifier === 'control',
+        bubbles: true,
+      }),
+    );
+    fixture.detectChanges();
+  }
+
+  it('(chord) cmd+enter submits a valid form from inside a field', async () => {
+    await open(contract([field('tenant')]));
+    const emissions: Record<string, string>[] = [];
+    component.confirmed.subscribe((value) => emissions.push(value));
+
+    type('tenant', '  acme  ');
+    pressSubmitChord('tenant', 'meta');
+
+    // The chord IS the Create button: same trim, same omission rules.
+    expect(emissions).toEqual([{ tenant: 'acme' }]);
+  });
+
+  it('(chord) ctrl+enter submits too — the chord is not macOS-only', async () => {
+    await open(contract([field('tenant')]));
+    const emissions: Record<string, string>[] = [];
+    component.confirmed.subscribe((value) => emissions.push(value));
+
+    type('tenant', 'acme');
+    pressSubmitChord('tenant', 'control');
+
+    expect(emissions).toEqual([{ tenant: 'acme' }]);
+  });
+
+  it('(chord) a blank mandatory field blocks the chord exactly as it blocks the button', async () => {
+    await open(contract([field('tenant', { mandatory: true }), field('note')]));
+    const emissions: Record<string, string>[] = [];
+    component.confirmed.subscribe((value) => emissions.push(value));
+
+    type('note', 'hello');
+    pressSubmitChord('note', 'meta');
+
+    expect(emissions).toEqual([]);
+  });
+
+  it('(chord) on a never-blurred invalid field the chord surfaces the message instead of submitting', async () => {
+    await open(contract([field('tenant', { pattern: '^[a-z]+$' })]));
+    const emissions: Record<string, string>[] = [];
+    component.confirmed.subscribe((value) => emissions.push(value));
+
+    // Typed but never blurred — the message is not showing yet.
+    type('tenant', 'NOPE!');
+    expect(patternError('tenant')).toBeNull();
+
+    pressSubmitChord('tenant', 'meta');
+
+    // The confirm-time markAllAsTouched sweep runs, exactly as on a click.
+    expect(emissions).toEqual([]);
+    expect(patternError('tenant')).not.toBeNull();
+  });
+
+  it('(chord) a create already in flight is not double-fired', async () => {
+    await open(contract([field('tenant')]));
+    type('tenant', 'acme');
+    setInput('pending', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const emissions: Record<string, string>[] = [];
+    component.confirmed.subscribe((value) => emissions.push(value));
+
+    // The button expresses this gate as [disabled], which a keyboard path
+    // never consults — the handler must carry it itself.
+    pressSubmitChord('tenant', 'meta');
+
+    expect(emissions).toEqual([]);
+  });
+
+  // -------------------------------------------------------------------------
   // Trap 9 — the draft resets on every open, and carries no stale key
   // -------------------------------------------------------------------------
 

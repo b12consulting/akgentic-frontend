@@ -164,9 +164,9 @@ export class HomeComponent {
   // NOT turn merely because a dialog is open.
   metadataSubmitting = false;
 
-  // Which creation path opened the modal, so confirm dispatches to the same
-  // body the un-gated branch would have run.
-  private pendingCreation: 'create' | 'navigate' | null = null;
+  // A modal confirm is only meaningful while a namespace is captured; the
+  // destination is always the new team's process view, so no mode is kept.
+  private pendingCreation = false;
 
   // Expose isRunning to template
   isRunning = isRunning;
@@ -218,7 +218,7 @@ export class HomeComponent {
         // no team created, and the answer (or the cancel) decides.
         const contract = this.metadataContractOf(selected);
         if (contract) {
-          this.openMetadataModal(selected, contract, 'navigate');
+          this.openMetadataModal(selected, contract);
           return;
         }
         await this.createAndNavigate(selected.namespace);
@@ -280,37 +280,22 @@ export class HomeComponent {
   }
 
   /**
-   * Create on the current page. Today's `createTeam()` body, with `metadata`
-   * threaded through and the `isCreatingTeam` toggle wrapped around the POST
-   * ONLY — the flag is the Create button's spinner and must not turn merely
-   * because a dialog is open.
+   * Create and go to the new team's process view. EVERY creation path lands
+   * here — with or without the metadata modal, gestured or not — because a
+   * user who just created a team wants to be IN it, not looking at its row.
+   * `contextService.createTeamAndNavigate` creates, seeds the team into the
+   * context cache (so the process view has it before any refetch), and
+   * navigates; there is no reload compensation because the home page is being
+   * left behind.
    *
    * `metadata` is forwarded UNCONDITIONALLY, including when `undefined`. The
    * "attach the key only when non-empty" rule lives in exactly one place,
-   * `apiService.createTeam`; `createTeam(ns, undefined)` and `createTeam(ns)`
-   * produce the same body by construction.
+   * `apiService.createTeam`; forwarding `undefined` produces the same body by
+   * construction.
    *
    * Rejections propagate: the modal path needs to see a 422 to keep itself
    * open, so the swallow-and-log lives in the caller.
    */
-  private async createOnPage(
-    namespace: string,
-    metadata?: Record<string, string>,
-  ): Promise<void> {
-    this.isCreatingTeam = true;
-    try {
-      await this.apiService.createTeam(namespace, metadata);
-      // New team is newest under created_at desc → it belongs on page 1.
-      // Move the paginator to page 1 and reload (REPLACE — no empty flash).
-      this.first = 0;
-      this.currentPage = 1;
-      await this.contextService.loadTeamsPage(1, PAGE_SIZE);
-    } finally {
-      this.isCreatingTeam = false;
-    }
-  }
-
-  /** Create and navigate. Forwards `metadata` unconditionally, as above. */
   private async createAndNavigate(
     namespace: string,
     metadata?: Record<string, string>,
@@ -327,28 +312,20 @@ export class HomeComponent {
     const contract = this.metadataContractOf(selected);
     if (contract) {
       // Ask first. No POST, and no spinner while the dialog is open.
-      this.openMetadataModal(selected, contract, 'create');
+      this.openMetadataModal(selected, contract);
       return;
     }
+    // The spinner doubles as the double-click guard; it wraps the POST only,
+    // never the dialog. Cleared in `finally` even though navigation usually
+    // unmounts this page first — a rejected create must re-arm the button.
+    this.isCreatingTeam = true;
     try {
-      await this.createOnPage(selected.namespace);
+      await this.createAndNavigate(selected.namespace);
     } catch (error) {
       console.error('Failed to create team:', error);
+    } finally {
+      this.isCreatingTeam = false;
     }
-  }
-
-  async createTeamAndNavigate() {
-    const selected = this.selectedNamespace$.value;
-    if (!selected) {
-      console.warn('No namespace selected');
-      return;
-    }
-    const contract = this.metadataContractOf(selected);
-    if (contract) {
-      this.openMetadataModal(selected, contract, 'navigate');
-      return;
-    }
-    await this.createAndNavigate(selected.namespace);
   }
 
   /**
@@ -361,14 +338,13 @@ export class HomeComponent {
   private openMetadataModal(
     ns: NamespaceSummary,
     contract: TeamMetadataContract,
-    mode: 'create' | 'navigate',
   ): void {
     this.metadataNamespace = ns.namespace;
     this.metadataNamespaceLabel = ns.name || ns.namespace;
     this.metadataContract = contract;
     this.metadataError = null;
     this.metadataSubmitting = false;
-    this.pendingCreation = mode;
+    this.pendingCreation = true;
     this.metadataModalVisible = true;
   }
 
@@ -384,21 +360,16 @@ export class HomeComponent {
    */
   async onMetadataConfirm(metadata: Record<string, string>): Promise<void> {
     const namespace = this.metadataNamespace;
-    const mode = this.pendingCreation;
-    if (namespace === null || mode === null) {
+    if (namespace === null || !this.pendingCreation) {
       return;
     }
     this.metadataSubmitting = true;
     this.metadataError = null;
     try {
-      if (mode === 'create') {
-        await this.createOnPage(namespace, metadata);
-      } else {
-        await this.createAndNavigate(namespace, metadata);
-      }
+      await this.createAndNavigate(namespace, metadata);
       this.closeMetadataModal();
     } catch (error) {
-      this.handleMetadataCreateError(error, mode);
+      this.handleMetadataCreateError(error);
     } finally {
       this.metadataSubmitting = false;
     }
@@ -415,7 +386,7 @@ export class HomeComponent {
     this.metadataNamespace = null;
     this.metadataNamespaceLabel = '';
     this.metadataError = null;
-    this.pendingCreation = null;
+    this.pendingCreation = false;
   }
 
   /**
@@ -425,10 +396,7 @@ export class HomeComponent {
    * toasted by FetchService, so nothing is added here — no second message, no
    * new error type, no retry.
    */
-  private handleMetadataCreateError(
-    error: unknown,
-    mode: 'create' | 'navigate',
-  ): void {
+  private handleMetadataCreateError(error: unknown): void {
     const status = (error as { status?: number })?.status;
     if (status === 422) {
       // An extraction that comes back empty — an empty response body, which
@@ -441,10 +409,9 @@ export class HomeComponent {
       this.metadataError = message.trim() === '' ? null : message;
       return;
     }
+    // Every non-422 failure has ALREADY been toasted by FetchService —
+    // nothing to add here.
     this.metadataError = null;
-    if (mode === 'create') {
-      console.error('Failed to create team:', error);
-    }
   }
 
   /**

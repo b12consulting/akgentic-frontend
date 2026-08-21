@@ -24,6 +24,7 @@
   [style]="{ width: '32rem' }"
   [closable]="!pending"
   [dismissableMask]="!pending"
+  [focusOnShow]="false"
   data-test="metadata-dialog"
 >
   <ng-template pTemplate="header">
@@ -32,9 +33,27 @@
     </span>
   </ng-template>
 
-  <div class="team-metadata-modal__body" [formGroup]="form">
+  <!-- Cmd+Enter / Ctrl+Enter submit. Bound on the form container so the
+       chord works from any input (keydown bubbles); plain Enter is left
+       alone — there is no native form element here, and Enter submitting a
+       multi-field dialog mid-fill is a misfire, not a convenience.
+
+       `*ngIf="visible"` recreates the content on every open. Focus owns the
+       reason: the dialog keeps its children alive across a close, so a
+       once-fired `pAutoFocus` would never fire again — and the dialog's own
+       `focusOnShow` is OFF above because it focuses the first focusable in
+       the HEADER (the X close button), stealing focus from the field and
+       real-blurring it, which marks a fresh control touched. Recreating the
+       content gives every open a fresh directive and a fresh focus. -->
+  <div
+    *ngIf="visible"
+    class="team-metadata-modal__body"
+    [formGroup]="form"
+    (keydown.meta.enter)="onSubmitShortcut($event)"
+    (keydown.control.enter)="onSubmitShortcut($event)"
+  >
     <div
-      *ngFor="let field of fields"
+      *ngFor="let field of fields; let isFirst = first"
       class="team-metadata-modal__row"
     >
       <label
@@ -62,12 +81,19 @@
            `touched` on blur — the state this template used to feed a hand
            handler pair. `pending` disables through the form, not an
            attribute binding, which is why no `[disabled]` appears here. -->
+      <!-- The FIRST field takes focus on open. The dialog's own
+           `focusOnShow` cannot do this: it calls `focus()` with no parent,
+           which falls through to the header and lands on the X close button
+           — a user who opened the dialog to type would start by closing it.
+           `pAutoFocus` re-instantiates with the dialog's content on every
+           open, so a reopened dialog focuses again. -->
       <input
         type="text"
         pInputText
         [id]="'metadata-input-' + field.key"
         [formControlName]="field.key"
         [required]="field.mandatory"
+        [pAutoFocus]="isFirst"
         [attr.aria-describedby]="describedByFor(field)"
         autocomplete="off"
         [attr.data-test]="'metadata-field-' + field.key"
