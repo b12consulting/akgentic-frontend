@@ -575,6 +575,31 @@ describe('TeamMetadataModalComponent', () => {
     expect(emissions[0]).toEqual({ tenant: 'acme' });
   });
 
+  it('(43.4 AC7) the pattern is NOT anchored here — a value that only contains a match is accepted', async () => {
+    // The one assertion that fails if someone "tidies up" `matches()` by
+    // wrapping the pattern in `^…$`. Every other spec in this file declares an
+    // already-anchored pattern, so anchoring is invisible to all of them.
+    //
+    // Pydantic's `pattern` SEARCHES rather than full-matches: a field declared
+    // `Field(pattern=r"[a-z]+")` accepts `"123abc456"`. `RegExp.test` searches
+    // too, which is why this code adds no anchors — an author who wants an
+    // anchored pattern writes the anchors. Anchoring client-side would reject a
+    // value the server accepts, and the client being too STRICT is the one
+    // direction an advisory check must never fail: it blocks a submission the
+    // authority would have taken.
+    await open(contract([field('tenant', { pattern: '[a-z]+' })]));
+    const emissions: Record<string, string>[] = [];
+    component.confirmed.subscribe((value) => emissions.push(value));
+
+    type('tenant', '123abc456');
+    blur('tenant');
+    component.onConfirm();
+    fixture.detectChanges();
+
+    expect(patternError('tenant')).toBeNull();
+    expect(emissions[0]).toEqual({ tenant: '123abc456' });
+  });
+
   it('(43.4 AC8) a pattern that will not compile leaves the field unchecked', async () => {
     // Deployment-controlled catalog data: a malformed pattern must degrade to
     // "no client-side check", never to a broken modal or a blocked confirm.
