@@ -63,6 +63,12 @@ export interface NamespaceKindCount {
  * kinds are always present (zero-valued where the namespace holds none of
  * that kind), and a `string` key costs nothing while not going stale when a
  * seventh kind is added server-side.
+ *
+ * "Six" is the server's count and is correct — do NOT reconcile it against
+ * the `EntryKind` alias below, which declares five and is itself the stale
+ * one: the server gained a sixth kind, `meta`, and this client has not caught
+ * up. Keying `counts` on `string` is precisely what stops that staleness from
+ * mattering here.
  */
 export interface NamespaceSummary {
   namespace: string;
