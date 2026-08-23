@@ -18,7 +18,9 @@ import {
 import {
   AkgenticMessage,
   EventMessage,
+  HandledMessage,
   isEventMessage,
+  isHandledMessage,
   isLlmContextClearedEvent,
   isLlmContextCompactedEvent,
   isProcessedMessage,
@@ -69,18 +71,32 @@ export interface ThinkingToolEntry {
  *   EventMessage+ToolReturnEvent → flips entry.done to true
  *   SentMessage                 → if tools empty: removed; else final = true
  *   ProcessedMessage            → if tools empty: removed; else final = true
+ *
+ * Story 44-1 (ADR-032 §D2) added one more transition:
+ *   HandledMessage              → closes the live state (same rule as above)
+ *                                 and opens a successor anchored on the
+ *                                 absorbed message.
  */
 export interface ThinkingState {
   /** Stable UUID of the receiving agent actor (from ReceivedMessage.sender). */
   agent_id: string;
   /** Display name — header label source (e.g. "@Researcher"). */
   agent_name: string;
-  /** Timestamp of the triggering ReceivedMessage — chronological anchor. */
+  /** Timestamp of the message that opened this bubble — chronological anchor.
+   *  The triggering ReceivedMessage, or the HandledMessage that split a
+   *  predecessor open (ADR-032 §D4). */
   start_time: Date;
   /** Tool calls observed while the agent was "thinking". */
   tools: ThinkingToolEntry[];
-  /** Inner BaseMessage id of the triggering ReceivedMessage — stable trackBy key
-   *  across ephemeral → persistent transitions. */
+  /** Inner BaseMessage id of the message this bubble is working on — stable
+   *  trackBy key across ephemeral → persistent transitions.
+   *
+   *  Two producers, one id space (ADR-032 §D3): the triggering
+   *  `ReceivedMessage.message_id` for a bubble opened on a turn of its own, and
+   *  `HandledMessage.message_id` — the id of the message absorbed mid-run — for
+   *  a successor bubble opened by the split. Both name the user message the
+   *  bubble is answering, which is why the split needs no second identity
+   *  field. */
   anchor_message_id: string;
   /** false while animation is active; true once finalised as chat history. */
   final: boolean;
@@ -178,6 +194,49 @@ function applyReceivedToThinking(
   };
 }
 
+/**
+ * Split the agent's live thinking bubble on an absorbed message (ADR-032 §D2).
+ *
+ * A message pulled out of the inbox mid-run never gets a turn of its own, so it
+ * emits neither `ReceivedMessage` nor `ProcessedMessage`; without this branch
+ * one bubble stands for two conversations and sorts above the message it
+ * answers. The predecessor is closed through the SAME `finaliseThinking` the
+ * `Sent`/`Processed` branches use (§D2a) — one place decides what closing means,
+ * and an empty predecessor (a `/stop` purged before any tool call) is removed
+ * rather than left final and empty forever.
+ *
+ * The successor is opened eagerly and may stay empty; `finaliseThinking`'s
+ * existing remove-if-no-tools rule deletes it at `Sent`/`Processed` (§D5). No
+ * message CLASS is inspected here — a cancel purge is a `HandledMessage` like
+ * any other.
+ */
+function applyHandledToThinking(
+  state: ChatState,
+  msg: HandledMessage,
+): ChatState {
+  const agentId = msg.sender.agent_id;
+  const live = state.thinkingAgents.find(
+    (s) => s.agent_id === agentId && !s.final,
+  );
+  // No live bubble to split — identity no-op (AC7 reference equality).
+  if (!live) return state;
+  const closed = finaliseThinking(state, agentId);
+  const successor: ThinkingState = {
+    agent_id: agentId,
+    agent_name: live.agent_name,
+    // The HandledMessage's own timestamp: this is what sorts the successor
+    // BELOW the absorbed message's own SentMessage in `buildDisplayItems`.
+    start_time: new Date(msg.timestamp),
+    anchor_message_id: msg.message_id,
+    tools: [],
+    final: false,
+  };
+  return {
+    ...closed,
+    thinkingAgents: [...closed.thinkingAgents, successor],
+  };
+}
+
 function applyToolCallToThinking(
   state: ChatState,
   msg: EventMessage,
@@ -210,6 +269,20 @@ function applyToolCallToThinking(
   return { ...state, thinkingAgents: nextThinking };
 }
 
+/**
+ * Flip the matching tool row to `done: true`, searching EVERY segment the agent
+ * owns — newest first, with no `final` filter (ADR-032 §D6).
+ *
+ * A return routinely lands after its own segment was closed: a tool-return part
+ * reaches the log only when the next `ModelRequest` is appended, which is after
+ * the per-tool hook that absorbs a mailbox message and splits the bubble. A
+ * lookup restricted to the live segment drops those rows and they stay
+ * `done: false` for the rest of the session. `tool_call_id` is globally unique,
+ * so at most one segment can hold it and the flip is unambiguous whichever way
+ * the events interleave — the correctness does not depend on the emission order,
+ * which this repository does not own. This also repairs the pre-existing case of
+ * a return arriving after `Sent`/`Processed`.
+ */
 function applyToolReturnToThinking(
   state: ChatState,
   msg: EventMessage,
@@ -218,19 +291,22 @@ function applyToolReturnToThinking(
   const inner = msg.event;
   if (!agentId || !inner) return state;
   const toolCallId: string = inner.tool_call_id;
-  const idx = state.thinkingAgents.findIndex(
-    (s) => s.agent_id === agentId && !s.final,
-  );
-  if (idx === -1) return state;
-  const existing = state.thinkingAgents[idx];
-  const toolIdx = existing.tools.findIndex((t) => t.tool_call_id === toolCallId);
-  if (toolIdx === -1) return state;
-  const updatedTools = [...existing.tools];
-  updatedTools[toolIdx] = { ...updatedTools[toolIdx], done: true };
-  const updated: ThinkingState = { ...existing, tools: updatedTools };
-  const nextThinking = [...state.thinkingAgents];
-  nextThinking[idx] = updated;
-  return { ...state, thinkingAgents: nextThinking };
+  for (let idx = state.thinkingAgents.length - 1; idx >= 0; idx--) {
+    const existing = state.thinkingAgents[idx];
+    if (existing.agent_id !== agentId) continue;
+    const toolIdx = existing.tools.findIndex(
+      (t) => t.tool_call_id === toolCallId,
+    );
+    if (toolIdx === -1) continue;
+    const updatedTools = [...existing.tools];
+    updatedTools[toolIdx] = { ...updatedTools[toolIdx], done: true };
+    const updated: ThinkingState = { ...existing, tools: updatedTools };
+    const nextThinking = [...state.thinkingAgents];
+    nextThinking[idx] = updated;
+    return { ...state, thinkingAgents: nextThinking };
+  }
+  // Nothing holds this tool_call_id — identity no-op (AC7 reference equality).
+  return state;
 }
 
 function applySentToThinking(state: ChatState, msg: SentMessage): ChatState {
@@ -293,6 +369,9 @@ export function chatStep(state: ChatState, msg: AkgenticMessage): ChatState {
   }
   if (isReceivedMessage(msg)) {
     return applyReceivedToThinking(state, msg);
+  }
+  if (isHandledMessage(msg)) {
+    return applyHandledToThinking(state, msg);
   }
   if (isEventMessage(msg)) {
     const inner = (msg as EventMessage).event;

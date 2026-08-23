@@ -14,7 +14,10 @@ PyPI, so it is absent from the `akgentic-framework` bundle distribution.
 
 A running team, from a single append-only event log fed by one WebSocket:
 
-- **Chat panel** — the multi-party conversation, with per-agent thinking bubbles and tool-call history
+- **Chat panel** — the multi-party conversation, with per-agent thinking bubbles and tool-call
+  history. A message an agent absorbs **mid-run** — read out of its own inbox rather than waiting for
+  a turn — gets its own bubble, under the message it answers, instead of disappearing into the turn
+  that absorbed it
 - **Graph / tree** — live agent topology, built from `StartMessage`/`StopMessage` and message edges
 - **Messages tab** — the raw protocol log, including the error / warning / notification family
 - **Per-agent tabs** — state, LLM context, system prompt, token usage, workspace files

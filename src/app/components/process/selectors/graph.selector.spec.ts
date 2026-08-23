@@ -7,6 +7,7 @@ import {
   AkgenticMessage,
   BaseMessage,
   ErrorMessage,
+  HandledMessage,
   ProcessedMessage,
   ReceivedMessage,
   SentMessage,
@@ -142,6 +143,21 @@ function makeProcessed(agent_id: string): ProcessedMessage {
     content: null,
     __model__: 'akgentic.core.messages.orchestrator.ProcessedMessage',
     message_id: 'inner-' + agent_id,
+  };
+}
+
+/** Story 44-1 — the absorbed-message telemetry envelope (ADR-032 §D7). */
+function makeHandled(agent_id: string): HandledMessage {
+  return {
+    id: 'hnd-' + agent_id,
+    parent_id: null,
+    team_id: 'team-1',
+    timestamp: '2026-04-08T10:00:00Z',
+    sender: makeAddress({ agent_id }),
+    display_type: 'other',
+    content: null,
+    __model__: 'akgentic.core.messages.orchestrator.HandledMessage',
+    message_id: 'absorbed-' + agent_id,
   };
 }
 
@@ -467,6 +483,34 @@ describe('graphFold / graphStep (pure)', () => {
     const after = graphStep(before, makeProcessed('a1'), cs);
     expect(after).toBe(before);
     expect(after.nodes).toBe(before.nodes);
+  });
+
+  // Story 44-1 (ADR-032 §D7) — a deliberate NON-change, pinned.
+  //
+  // The thinking border is set on ReceivedMessage and cleared on
+  // ProcessedMessage, and an absorbed message emits neither: the pairing is
+  // already balanced. A HandledMessage arm here would clear a border no message
+  // set. `graphStep` switches on the class-name suffix, so it falls to `default`.
+  it('a HandledMessage sets no thinking border', () => {
+    const s = graphFold(
+      [makeStart({ sender: makeAddress({ agent_id: 'a1' }) }), makeHandled('a1')],
+      cs,
+    );
+    expect(s.nodes[0].itemStyle?.borderColor).toBeUndefined();
+  });
+
+  it('a HandledMessage after a ReceivedMessage neither clears nor sets the border, by identity', () => {
+    const before: GraphState = graphFold(
+      [
+        makeStart({ sender: makeAddress({ agent_id: 'a1' }) }),
+        makeReceived('a1'),
+      ],
+      cs,
+    );
+    const after = graphStep(before, makeHandled('a1'), cs);
+    expect(after).toBe(before);
+    expect(after.nodes).toBe(before.nodes);
+    expect(after.nodes[0].itemStyle?.borderColor).toBe('darkred');
   });
 });
 

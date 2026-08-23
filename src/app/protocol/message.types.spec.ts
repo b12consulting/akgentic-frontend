@@ -7,15 +7,24 @@ import {
   isCommandsAnnouncedEvent,
   isErrorMessage,
   isEventMessage,
+  isHandledMessage,
   isLlmContextClearedEvent,
   isLlmContextCompactedEvent,
   isLlmMessageEvent,
   isLlmSystemPromptEvent,
   isLlmUsageEvent,
   isNotificationMessage,
+  isProcessedMessage,
+  isReceivedMessage,
+  isResultMessage,
+  isSentMessage,
+  isStartMessage,
+  isStateChangedMessage,
+  isStopMessage,
   isTeamStoppingEvent,
   isToolCallEvent,
   isToolReturnEvent,
+  isUserMessage,
   isWarningMessage,
   isWelcomeAnnouncement,
   isWelcomeMessage,
@@ -1043,5 +1052,87 @@ describe('parseToolCallArguments — unrecognised tool names (AC #10)', () => {
         .withContext(toolName)
         .toBeNull();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 44-1 (AC #1, #2) — `isHandledMessage` and the outer-guard partition.
+//
+// `isHandledMessage` is a bare `.includes('HandledMessage')` like its three
+// telemetry siblings, so the load-bearing property is that the substring
+// collides with nothing IN EITHER DIRECTION: no existing outer guard may fire
+// for a `HandledMessage` `__model__`, and `isHandledMessage` may fire for no
+// existing outer `__model__`. Without both directions the guard's placement in
+// `chatStep` would be silently order-dependent.
+// ---------------------------------------------------------------------------
+
+const HANDLED_MODEL = 'akgentic.core.messages.orchestrator.HandledMessage';
+
+/** Every outer `__model__` on the wire today, excluding `HandledMessage`. */
+const OTHER_OUTER_MODELS = [
+  'akgentic.core.messages.orchestrator.SentMessage',
+  'akgentic.core.messages.orchestrator.ReceivedMessage',
+  'akgentic.core.messages.orchestrator.ProcessedMessage',
+  'akgentic.core.messages.orchestrator.StartMessage',
+  'akgentic.core.messages.orchestrator.StopMessage',
+  'akgentic.core.messages.orchestrator.ErrorMessage',
+  'akgentic.core.messages.orchestrator.WarningMessage',
+  'akgentic.core.messages.orchestrator.NotificationMessage',
+  'akgentic.core.messages.orchestrator.StateChangedMessage',
+  'akgentic.core.messages.orchestrator.EventMessage',
+  'akgentic.core.messages.orchestrator.UserMessage',
+  'akgentic.core.messages.orchestrator.ResultMessage',
+] as const;
+
+/** The outer guards those twelve models belong to, in the same spirit. */
+const OTHER_OUTER_GUARDS = [
+  isSentMessage,
+  isReceivedMessage,
+  isProcessedMessage,
+  isStartMessage,
+  isStopMessage,
+  isErrorMessage,
+  isWarningMessage,
+  isNotificationMessage,
+  isStateChangedMessage,
+  isEventMessage,
+  isUserMessage,
+  isResultMessage,
+] as const;
+
+describe('isHandledMessage (Story 44-1, AC #1)', () => {
+  it('returns true for the HandledMessage envelope', () => {
+    expect(isHandledMessage(makeNotification(HANDLED_MODEL))).toBe(true);
+  });
+
+  it('returns false for a message with no __model__ signal at all', () => {
+    expect(
+      isHandledMessage(makeNotification('akgentic.future.UnknownFutureMessage')),
+    ).toBe(false);
+  });
+});
+
+describe('HandledMessage vs every pre-existing outer guard (Story 44-1, AC #2)', () => {
+  it('no pre-existing outer guard fires for a HandledMessage', () => {
+    for (const guard of OTHER_OUTER_GUARDS) {
+      expect(guard(makeNotification(HANDLED_MODEL)))
+        .withContext(guard.name)
+        .toBe(false);
+    }
+  });
+
+  it('isHandledMessage fires for no pre-existing outer model', () => {
+    for (const model of OTHER_OUTER_MODELS) {
+      expect(isHandledMessage(makeNotification(model)))
+        .withContext(model)
+        .toBe(false);
+    }
+  });
+
+  it('exactly one guard fires for the HandledMessage envelope', () => {
+    const fired = [...OTHER_OUTER_GUARDS, isHandledMessage]
+      .map((g) => g(makeNotification(HANDLED_MODEL)))
+      .filter(Boolean);
+    expect(fired.length).toBe(1);
   });
 });
