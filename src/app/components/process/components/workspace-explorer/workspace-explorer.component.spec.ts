@@ -1664,7 +1664,14 @@ describe('WorkspaceExplorerComponent — NFR3 OnPush regression gate', () => {
     })
       .overrideComponent(WorkspaceExplorerComponent, {
         set: {
-          imports: [CommonModule],
+          // ToolbarModule because the upload gate moved into the toolbar's
+          // `end` template, which PrimeNG instantiates only when the module is
+          // present. It belongs in the OVERRIDE, not the TestBed imports: this
+          // `set` REPLACES the component's own imports, so a module added
+          // outside it never reaches the template. ButtonModule stays out —
+          // `gate().disabled` reads the unclaimed property off the p-button
+          // host, the same idiom as `tooltipOf`.
+          imports: [CommonModule, ToolbarModule],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
       })
@@ -2050,12 +2057,15 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
   // gate on both is what FR9 protects, and it is asserted on both — losing
   // either half would be a silent regression in exactly that.
 
-  it('scenario 38 — a flip to running enables the folder footer AND the file-open toolbar control, with no re-init and no extra call', async () => {
+  it('scenario 38 — a flip to running enables the folder upload control, with no re-init and no extra call', async () => {
     await createStopped();
     selectFolder();
     expect(isDisabled('Upload Files')).toBe(true);
+    // Opening a file no longer offers upload at all, so there is no second
+    // control to gate — the pane is checked for its ABSENCE instead.
     openFileInPane();
-    expect(isDisabled('Upload here')).toBe(true);
+    expect(uploadControl(fixture.nativeElement, 'Upload Files')).toBeNull();
+    expect(uploadControl(fixture.nativeElement, 'Upload here')).toBeNull();
 
     const treeCalls = workspaceServiceSpy.getWorkspaceTree.calls.count();
     const contentCalls = workspaceServiceSpy.getFileContent.calls.count();
@@ -2064,7 +2074,6 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
     contextServiceStub.currentTeamRunning$.next(true);
     fixture.detectChanges();
 
-    expect(isDisabled('Upload here')).toBe(false);
     closeOpenFile();
     expect(isDisabled('Upload Files')).toBe(false);
     expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(treeCalls);
@@ -2087,12 +2096,12 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
     expect(contextServiceStub.getCurrentTeam).not.toHaveBeenCalled();
   });
 
-  it('scenario 40 — the reverse flip disables the folder footer AND the file-open toolbar control again', async () => {
+  it('scenario 40 — the reverse flip disables the folder upload control again', async () => {
     await createRunning();
     selectFolder();
     expect(isDisabled('Upload Files')).toBe(false);
     openFileInPane();
-    expect(isDisabled('Upload here')).toBe(false);
+    expect(uploadControl(fixture.nativeElement, 'Upload Files')).toBeNull();
 
     const treeCalls = workspaceServiceSpy.getWorkspaceTree.calls.count();
     contextServiceStub.getCurrentTeam.calls.reset();
@@ -2100,7 +2109,6 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
     contextServiceStub.currentTeamRunning$.next(false);
     fixture.detectChanges();
 
-    expect(isDisabled('Upload here')).toBe(true);
     closeOpenFile();
     expect(isDisabled('Upload Files')).toBe(true);
     expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(treeCalls);
@@ -2142,23 +2150,21 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
     expect(component.isProcessRunning()).toBe(false);
   });
 
-  it('scenario 44 — all three tooltips read the same live source as the three disabled bindings', async () => {
+  it('scenario 44 — both tooltips read the same live source as the disabled bindings', async () => {
     await createStopped();
 
+    // Two labels, not three: upload is a single control whose label names its
+    // target, so the root and subdirectory forms are all that remain. The
+    // tooltip is the ONLY thing that says why the control is dead, which is why
+    // it survived the tooltip cull.
     expect(tooltipOf('Upload to Root')).toBe(STOPPED_TOOLTIP);
     selectFolder();
     expect(tooltipOf('Upload Files')).toBe(STOPPED_TOOLTIP);
-    // "Upload here" now presents from the file-open state (ADR-033 §D8); the
-    // tooltip and the disabled binding still read the one live source.
-    openFileInPane();
-    expect(tooltipOf('Upload here')).toBe(STOPPED_TOOLTIP);
 
     contextServiceStub.currentTeamRunning$.next(true);
     fixture.detectChanges();
 
-    // Running: none of the three presents the stopped-team tooltip.
-    expect(tooltipOf('Upload here')).toBe('');
-    closeOpenFile();
+    // Running: neither presents the stopped-team tooltip.
     expect(tooltipOf('Upload Files')).toBe('');
     clearSelection();
     expect(tooltipOf('Upload to Root')).toBe('');
@@ -2178,8 +2184,8 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
 // --------------------------------------------------------------------
 
 describe('WorkspaceExplorerComponent — per-file refresh control (Epic 38)', () => {
-  const FILE_REFRESH = 'p-button[pTooltip="Refresh this file"]';
-  const WORKSPACE_REFRESH = 'p-button[pTooltip="Refresh workspace"]';
+  const FILE_REFRESH = 'p-button[data-testid="refresh-file"]';
+  const WORKSPACE_REFRESH = 'p-button[data-testid="refresh-workspace"]';
   const SIZE_TAG = 'p-tag[severity="secondary"]';
 
   let component: WorkspaceExplorerComponent;
@@ -2374,8 +2380,8 @@ describe('WorkspaceExplorerComponent — per-file refresh control (Epic 38)', ()
 describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39)', () => {
   const TEAM_ID = 'proc';
   const OPEN_PATH = 'docs/a.txt';
-  const FILE_REFRESH = 'p-button[pTooltip="Refresh this file"]';
-  const WORKSPACE_REFRESH = 'p-button[pTooltip="Refresh workspace"]';
+  const FILE_REFRESH = 'p-button[data-testid="refresh-file"]';
+  const WORKSPACE_REFRESH = 'p-button[data-testid="refresh-workspace"]';
   const SIZE_TAG = 'p-tag[severity="secondary"]';
 
   let component: WorkspaceExplorerComponent;
@@ -2989,8 +2995,8 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
 describe('WorkspaceExplorerComponent — gesture-less reads log instead of bannering (Epic 40)', () => {
   const TEAM_ID = 'proc';
   const OPEN_PATH = 'docs/a.txt';
-  const FILE_REFRESH = 'p-button[pTooltip="Refresh this file"]';
-  const WORKSPACE_REFRESH = 'p-button[pTooltip="Refresh workspace"]';
+  const FILE_REFRESH = 'p-button[data-testid="refresh-file"]';
+  const WORKSPACE_REFRESH = 'p-button[data-testid="refresh-workspace"]';
 
   let component: WorkspaceExplorerComponent;
   let fixture: ComponentFixture<WorkspaceExplorerComponent>;
@@ -3492,7 +3498,6 @@ describe('WorkspaceExplorerComponent — the pane state model (Epic 45)', () => 
     '.file-content',
     '.markdown-content',
     '.directory-list',
-    '.upload-footer',
   ];
 
   function renderedBlocks(): string[] {
@@ -3656,16 +3661,16 @@ describe('WorkspaceExplorerComponent — the pane state model (Epic 45)', () => 
     expect(renderedBlocks()).toEqual(['.deleted-notice']);
   });
 
-  it('scenario 111 — the list case renders its two blocks in the pane and nothing else', async () => {
+  it('scenario 111 — the list case renders its one block in the pane and nothing else', async () => {
     await create();
     fixture.detectChanges();
 
     // FR8 replaced the centred "Workspace Root" placeholder with the list
-    // region and the footer pinned beneath it. Both belong to the `'list'`
-    // case, so "exactly one view-mode block" still holds — the case simply has
-    // two parts, and no OTHER case's block may appear beside them.
+    // region. The footer that once sat pinned beneath it is gone — upload is a
+    // single toolbar control now — so the `'list'` case is back to exactly one
+    // block, and no OTHER case's block may appear beside it.
     expect(component.viewMode()).toBe('list');
-    expect(renderedBlocks()).toEqual(['.directory-list', '.upload-footer']);
+    expect(renderedBlocks()).toEqual(['.directory-list']);
   });
 
   // --- FR5 / AC7: the split, in both directions ------------------------
@@ -3967,8 +3972,16 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     return pane().querySelector('.directory-list') as HTMLElement | null;
   }
 
-  function footer(): HTMLElement | null {
-    return pane().querySelector('.upload-footer') as HTMLElement | null;
+  /**
+   * The upload control, wherever the toolbar currently puts it.
+   *
+   * Was `.upload-footer`, a pinned block below the list. The footer is gone:
+   * upload is ONE control in the toolbar, rendered only in the list view.
+   */
+  function uploadControl(): UploadControlEl | null {
+    return fixture.nativeElement.querySelector(
+      'p-toolbar p-button[label^="Upload"]',
+    ) as UploadControlEl | null;
   }
 
   function rowEls(): HTMLButtonElement[] {
@@ -4036,14 +4049,15 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
 
   // --- AC1 / AC3.2: the pane lists where it is, from the load it already made ---
 
-  it('scenario 118 — the pane lists the root on entry, folders first, with each group in backend order', async () => {
+  it('scenario 118 — the pane lists the root on entry, folders first, each group sorted by name', async () => {
     workspaceServiceSpy.getWorkspaceTree.and.resolveTo(rootEntries());
     await create();
 
-    // Folders first as a stable PARTITION, not a sort: `docs` before `assets`
-    // and `b.txt` before `a.txt` are the backend's order, preserved within each
-    // group. Alphabetical sorting anywhere reorders both groups.
-    expect(rowNames()).toEqual(['docs', 'assets', 'b.txt', 'a.txt']);
+    // Two blocks, each alphabetical. The fixture arrives from the backend as
+    // `docs, assets, b.txt, a.txt`, so BOTH groups come back reversed — which is
+    // what makes this spec falsifiable: dropping either `.sort` restores the
+    // backend's order and turns it red.
+    expect(rowNames()).toEqual(['assets', 'docs', 'a.txt', 'b.txt']);
     expect(component.viewMode()).toBe('list');
 
     // A row reuses what already exists — `getFileIcon` and `formatFileSize`.
@@ -4053,7 +4067,9 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
       'pi-folder',
     );
     expect(folderRow.querySelector('.directory-entry-size')).toBeNull();
-    const fileRow = rowEls()[2];
+    // Located by NAME, not by index: this assertion is about the size
+    // formatter, and an index would silently re-couple it to the sort order.
+    const fileRow = rowEls()[rowNames().indexOf('b.txt')];
     expect(
       fileRow.querySelector('.directory-entry-size')!.textContent!.trim(),
     ).toBe('2 KB');
@@ -4221,7 +4237,7 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
 
     await clickToolbar('Up');
     expect(component.currentDirectory()).toBe('');
-    expect(rowNames()).toEqual(['docs', 'assets', 'b.txt', 'a.txt']);
+    expect(rowNames()).toEqual(['assets', 'docs', 'a.txt', 'b.txt']);
     expect(
       (toolbarHost('Up')!.querySelector('button') as HTMLButtonElement).disabled,
     ).toBe(true);
@@ -4314,69 +4330,70 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
 
   // --- AC7 / AC8: one upload affordance, pinned outside the scroll ------
 
-  it('scenario 128 — the footer sits OUTSIDE the scrolling list region, gated and tooltipped', async () => {
+  it('scenario 128 — the upload control sits in the toolbar, outside the scrolling list, gated and tooltipped', async () => {
     running.next(false);
     workspaceServiceSpy.getWorkspaceTree.and.resolveTo(rootEntries());
     await create();
 
     const list = listRegion();
-    const foot = footer();
+    const control = uploadControl();
     expect(list).withContext('the scrolling list region').not.toBeNull();
-    expect(foot).withContext('the pinned upload footer').not.toBeNull();
+    expect(control).withContext('the toolbar upload control').not.toBeNull();
 
-    // The structural relationship, not a pixel: the SCSS is invisible to Karma,
-    // so containment is the only thing that can be pinned. A footer inside the
-    // scrolling region scrolls away on a long listing — the exact failure the
-    // pinning exists to prevent.
-    expect(list!.contains(foot!))
-      .withContext('the footer must not be a descendant of the scrolling region')
+    // The structural claim survives the move and is the reason for it: SCSS is
+    // invisible to Karma, so containment is the only thing pinnable, and a
+    // control inside the scrolling region scrolls away on a long listing. In
+    // the toolbar it is not merely outside the list — it is outside the PANE.
+    expect(list!.contains(control!))
+      .withContext('the upload control must not be a descendant of the scrolling region')
       .toBe(false);
-    expect(foot!.parentElement).toBe(pane());
+    expect(pane().contains(control!))
+      .withContext('it lives in the toolbar, above the pane')
+      .toBe(false);
     expect(list!.parentElement).toBe(pane());
 
     // The run-state gate and its tooltip, verbatim.
-    const control = foot!.querySelector('p-button[label="Upload to Root"]') as UploadControlEl;
-    expect(control).not.toBeNull();
-    expect((control.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
-    expect(control.pTooltip).toBe(STOPPED_TOOLTIP);
+    expect(control!.getAttribute('label')).toBe('Upload to Root');
+    expect((control!.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+    expect(control!.pTooltip).toBe(STOPPED_TOOLTIP);
 
     running.next(true);
     fixture.detectChanges();
-    expect((control.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
+    expect((control!.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
 
     // And it actually uploads: a REAL click on the rendered control.
-    (control.querySelector('button') as HTMLButtonElement).click();
+    (control!.querySelector('button') as HTMLButtonElement).click();
     fixture.detectChanges();
     expect(component.uploadModalVisible).toBe(true);
     expect(component.uploadTargetPath).toBe('');
   });
 
-  it('scenario 129 — exactly ONE labelled upload control is rendered in each view', async () => {
+  it('scenario 129 — ONE labelled upload control in the list view, and none with a file open', async () => {
     listingsBy({ '': rootEntries(), docs: docsEntries() });
     await create();
 
-    // The list, at the root: the footer, and only the footer.
+    // The list, at the root: one control, naming the root as its target.
     expect(labelledUploadControls()).toEqual(['Upload to Root']);
 
-    // The list, in a subdirectory: still one. This is the case that catches
-    // "Upload here" back on its old `!openFile() && currentDirectory() !== ''`
-    // condition — two identical affordances ~200px apart in the same view.
+    // The list, in a subdirectory: still exactly one. This is the case that
+    // catches a second affordance reappearing beside the first.
     await clickRow('docs');
     expect(labelledUploadControls()).toEqual(['Upload Files']);
+    expect(component.uploadTargetPath).toBe('');
 
-    // A file open: no footer, and "Upload here" doing the job — which after
-    // §D3's file-open rule already targets the file's own directory.
-    await clickRow('a.txt');
-    expect(labelledUploadControls()).toEqual(['Upload here']);
-
-    (toolbarHost('Upload here')!.querySelector('button') as HTMLButtonElement).click();
+    (toolbarHost('Upload Files')!.querySelector('button') as HTMLButtonElement).click();
     fixture.detectChanges();
     expect(component.uploadTargetPath).toBe('docs');
+
+    // A file open: NONE. Upload is a directory action, and the thing on screen
+    // is a file — the old "Upload here" is gone rather than relocated.
+    await clickRow('a.txt');
+    expect(labelledUploadControls()).toEqual([]);
   });
 
   // --- AC9: an empty folder, and a listing that does not describe the pane ---
 
-  it('scenario 130 — an empty folder renders the empty-directory element and the footer, not an empty shell', async () => {
+  it('scenario 130 — an empty folder renders the empty-directory element and keeps upload offered, not an empty shell', async () => {
     listingsBy({ '': rootEntries(), assets: [] });
     await create();
 
@@ -4386,13 +4403,13 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     const empty = pane().querySelector('.empty-directory') as HTMLElement | null;
     expect(empty).withContext('an explicit empty-directory element').not.toBeNull();
     expect(empty!.textContent).toContain('This folder is empty');
-    expect(footer()!.querySelector('p-button[label="Upload Files"]')).not.toBeNull();
+    expect(uploadControl()!.getAttribute('label')).toBe('Upload Files');
   });
 
   it('scenario 131 — a listing that does not describe the pane renders neither entries nor the empty-state', async () => {
     listingsBy({ '': rootEntries() });
     await create();
-    expect(rowNames()).toEqual(['docs', 'assets', 'b.txt', 'a.txt']);
+    expect(rowNames()).toEqual(['assets', 'docs', 'a.txt', 'b.txt']);
 
     const pending = deferred<FileNode[]>();
     workspaceServiceSpy.getWorkspaceTree.and.returnValue(pending.promise);
@@ -4407,7 +4424,9 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     expect(component.listing()!.path).toBe('');
     expect(rowEls().length).toBe(0);
     expect(pane().querySelector('.empty-directory')).toBeNull();
-    expect(footer()).withContext('the footer still renders').not.toBeNull();
+    expect(uploadControl())
+      .withContext('upload stays offered while the listing is in flight')
+      .not.toBeNull();
 
     pending.resolve(docsEntries());
     await flushMicrotasks();
@@ -4468,7 +4487,9 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     // taking the footer and the verb the user needs to get back out with it.
     expect(component.fileError()).toBeNull();
     expect(component.viewMode()).toBe('list');
-    expect(footer()).withContext('the footer still renders').not.toBeNull();
+    expect(uploadControl())
+      .withContext('upload stays offered while the listing is in flight')
+      .not.toBeNull();
     expect(navVerbs()).toEqual(['Up']);
     expect((toolbarHost('Up')!.querySelector('button') as HTMLButtonElement).disabled)
       .withContext('Up is the way out of a failed navigation')

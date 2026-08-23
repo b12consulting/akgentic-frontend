@@ -151,6 +151,19 @@ export class WorkspaceExplorerComponent {
   treeNodes = signal<TreeNode[]>([]);
 
   /**
+   * The navigator's selected node, held HERE rather than inside `p-tree`.
+   *
+   * PrimeNG keeps its own selection when `[selection]` is unbound, and nothing
+   * outside the tree can clear it — so the `Root` row above the tree would
+   * highlight while the previously chosen folder stayed highlighted too, two
+   * rows claiming to be where the pane is. Owning the value is what lets the
+   * root row deselect the tree.
+   *
+   * `null` means the root, which is the one location the tree has no node for.
+   */
+  selectedTreeNode = signal<TreeNode | null>(null);
+
+  /**
    * Where the pane is, as a workspace-relative path. `''` IS the root — not
    * "nothing selected" (ADR-033 §D1, §D4).
    *
@@ -278,6 +291,37 @@ export class WorkspaceExplorerComponent {
   );
 
   /**
+   * The toolbar trail: **Root** first, then one crumb per path segment.
+   *
+   * Always at least one entry, so the toolbar has something to render at the
+   * root instead of a placeholder — the root IS a location, and naming it is
+   * more useful than *"Select a file or folder"*.
+   *
+   * Each crumb carries the absolute path to navigate to, accumulated left to
+   * right, so a click never has to re-derive it from an index. `last` marks the
+   * current directory, which renders as text rather than a link: it is where
+   * the pane already is.
+   *
+   * Derived from `currentDirectory()` alone, deliberately. It does not consult
+   * `openFile()`, so opening a file leaves the trail describing that file's
+   * directory — which after §D3's file-open rule is exactly where the pane is.
+   */
+  breadcrumb = computed<{ name: string; path: string; last: boolean }[]>(() => {
+    const segments = this.currentDirectory().split('/').filter(Boolean);
+    const crumbs = [{ name: 'Root', path: '', last: segments.length === 0 }];
+    let path = '';
+    segments.forEach((segment, index) => {
+      path = path === '' ? segment : `${path}/${segment}`;
+      crumbs.push({
+        name: segment,
+        path,
+        last: index === segments.length - 1,
+      });
+    });
+    return crumbs;
+  });
+
+  /**
    * The rows the list renders — folders first — or `null` while `listing()`
    * does not describe `currentDirectory()`.
    *
@@ -287,16 +331,27 @@ export class WorkspaceExplorerComponent {
    * `listingLoading` signal to go stale: an empty array here means the backend
    * said the directory is empty, and `null` means we do not know yet.
    *
-   * The partition is stable, not a sort: directories in listing order, then
-   * files in listing order. The backend's order is preserved within each group
-   * — adding an alphabetical sort here would silently override it.
+   * Directories first, then files, each block sorted by name. The backend's own
+   * order is deliberately **not** preserved: it is whatever the filesystem
+   * yielded, which is stable enough to look intentional and arbitrary enough to
+   * be unfindable. Two predictable blocks beat one unpredictable one.
+   *
+   * `localeCompare` with `sensitivity: 'base'` so `Reports` and `reports` sort
+   * as neighbours rather than by code point, which would put every capitalised
+   * name in a block of its own above the lowercase ones. `numeric` so `file10`
+   * follows `file9` instead of `file1`.
    */
   listedEntries = computed<FileNode[] | null>(() => {
     const listed = this.listing();
     if (listed === null || listed.path !== this.currentDirectory()) return null;
+    const byName = (a: FileNode, b: FileNode): number =>
+      a.name.localeCompare(b.name, undefined, {
+        sensitivity: 'base',
+        numeric: true,
+      });
     return [
-      ...listed.entries.filter((entry) => entry.type === 'directory'),
-      ...listed.entries.filter((entry) => entry.type !== 'directory'),
+      ...listed.entries.filter((entry) => entry.type === 'directory').sort(byName),
+      ...listed.entries.filter((entry) => entry.type !== 'directory').sort(byName),
     ];
   });
 
@@ -861,6 +916,34 @@ export class WorkspaceExplorerComponent {
   /** **Up** — leave the directory. Disabled at the root, where it is a no-op. */
   goUp(): void {
     this.navigateTo(this.getParentPath(this.currentDirectory()));
+  }
+
+  /**
+   * **Root row** — the navigator's way back to the top.
+   *
+   * Clears the tree's selection as well as navigating, because the root is the
+   * one location no tree node stands for: leaving the previous node selected
+   * would show two highlighted rows, one of them wrong.
+   */
+  selectRoot(): void {
+    this.selectedTreeNode.set(null);
+    this.navigateToCrumb('');
+  }
+
+  /**
+   * **Breadcrumb** — jump straight to an ancestor, from the toolbar trail.
+   *
+   * The same navigation `goUp` performs, without walking one level at a time.
+   * It routes through `navigateTo` rather than writing `currentDirectory`, so a
+   * crumb clears the open file, its content and both notices exactly as every
+   * other navigation does — a crumb that only moved the directory would leave
+   * the pane showing a file from somewhere else.
+   *
+   * @param path Absolute workspace path of the crumb; `''` is the root.
+   */
+  navigateToCrumb(path: string): void {
+    if (path === this.currentDirectory() && this.openFile() === null) return;
+    this.navigateTo(path);
   }
 
   /**

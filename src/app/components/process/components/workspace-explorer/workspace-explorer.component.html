@@ -13,28 +13,13 @@
           <h3 class="navigator-title">Workspace Files</h3>
           <div class="header-actions">
             <p-button
-              icon="pi pi-upload"
-              [text]="true"
-              [rounded]="true"
-              severity="secondary"
-              size="small"
-              (onClick)="openUploadModalToCurrentSelection()"
-              [pTooltip]="
-                openFile()
-                  ? 'Upload to parent folder'
-                  : currentDirectory() !== ''
-                  ? 'Upload to ' + currentDirectoryName()
-                  : 'Upload to root folder'
-              "
-            />
-            <p-button
               icon="pi pi-refresh"
+              data-testid="refresh-workspace"
               [text]="true"
               [rounded]="true"
               severity="secondary"
               size="small"
               (onClick)="refresh()"
-              pTooltip="Refresh workspace"
             />
           </div>
         </div>
@@ -62,14 +47,51 @@
             </div>
           </div>
 
+          <!--
+            The root, which the tree itself cannot offer: its top-level nodes
+            ARE the root's children, so there is no node to select and no way
+            back up from the navigator once you have descended. Rendered beside
+            the tree rather than as a synthetic node wrapping it — `treeNodes`
+            is written by the root load, the refresh and the lazy-expand splice,
+            and a wrapper would have to survive all three.
+          -->
+          <button
+            *ngIf="!loading() && !treeError()"
+            type="button"
+            class="tree-root-row"
+            [class.selected]="selectedTreeNode() === null"
+            (click)="selectRoot()"
+          >
+            <i class="pi pi-home tree-root-icon"></i>
+            <span>Root</span>
+          </button>
+
           <p-tree
             *ngIf="!loading() && !treeError() && treeNodes().length > 0"
             [value]="treeNodes()"
             selectionMode="single"
+            [selection]="selectedTreeNode()"
+            (selectionChange)="selectedTreeNode.set($any($event))"
             (onNodeSelect)="onNodeSelect($event)"
             (onNodeExpand)="onNodeExpand($event)"
             [style]="{ width: '100%', border: 'none' }"
-          />
+          >
+            <!--
+              Overrides only the LABEL. The node's icon, toggler, selection and
+              keyboard handling stay PrimeNG's — this template renders inside the
+              row it already builds.
+            -->
+            <ng-template let-node pTemplate="default">
+              <span class="tree-node">
+                <span class="tree-node-name">{{ node.label }}</span>
+                @if (node.data?.type === 'file') {
+                  <span class="tree-node-size">{{
+                    formatFileSize(node.data.size)
+                  }}</span>
+                }
+              </span>
+            </ng-template>
+          </p-tree>
         </div>
 
         <!-- Collapsed state strip -->
@@ -95,7 +117,6 @@
               [rounded]="true"
               severity="secondary"
               (onClick)="closeFile()"
-              pTooltip="Close this file"
             />
           } @else {
             <p-button
@@ -106,75 +127,109 @@
               severity="secondary"
               [disabled]="currentDirectory() === ''"
               (onClick)="goUp()"
-              pTooltip="Go to the parent folder"
             />
           }
           <div class="file-info">
-            <i *ngIf="openFile()" class="pi pi-file file-icon"></i>
-            <i
-              *ngIf="!openFile() && currentDirectory() !== ''"
-              class="pi pi-folder file-icon"
-            ></i>
-            <h3 *ngIf="openFile()" class="toolbar-title">
-              {{ openFile()!.name }}
-            </h3>
-            <h3
-              *ngIf="!openFile() && currentDirectory() !== ''"
-              class="toolbar-title"
-            >
-              {{ currentDirectoryName() }}
-            </h3>
-            <h3
-              *ngIf="!openFile() && currentDirectory() === ''"
-              class="toolbar-title placeholder"
-            >
-              Select a file or folder
-            </h3>
+            <!--
+              The trail is where the pane IS, so it renders in both states. With
+              a file open it names that file's directory — after §D3's
+              file-open rule those are the same place — and the file's own name
+              follows as the final crumb, which is why `last` is not styled as
+              current there: the file is.
+            -->
+            <nav class="breadcrumb" aria-label="Workspace location">
+              @for (crumb of breadcrumb(); track crumb.path) {
+                @if (!$first) {
+                  <i class="pi pi-angle-right breadcrumb-separator"></i>
+                }
+                @if (crumb.last && !openFile()) {
+                  <span class="breadcrumb-current" aria-current="page">
+                    {{ crumb.name }}
+                  </span>
+                } @else {
+                  <button
+                    type="button"
+                    class="breadcrumb-link"
+                    (click)="navigateToCrumb(crumb.path)"
+                  >
+                    {{ crumb.name }}
+                  </button>
+                }
+              }
+              @if (openFile()) {
+                <i class="pi pi-angle-right breadcrumb-separator"></i>
+                <!-- `title` because this crumb is the one that can ellipsize. -->
+                <span
+                  class="breadcrumb-current"
+                  aria-current="page"
+                  [title]="openFile()!.name"
+                >
+                  <i class="pi pi-file breadcrumb-file-icon"></i>
+                  {{ openFile()!.name }}
+                </span>
+              }
+            </nav>
             <p-tag
               *ngIf="openFile() && openFile()!.size"
               [value]="formatFileSize(openFile()!.size)"
               severity="secondary"
             />
-            <p-tag
-              *ngIf="!openFile() && currentDirectory() !== ''"
-              value="Folder"
-              severity="info"
-            />
           </div>
         </ng-template>
         <ng-template pTemplate="end">
           <!--
-            Kept when a file is open, hidden in the list view, where the pinned
-            footer is the one upload affordance (ADR-033 §D8). Two identical
-            controls ~200px apart is the clutter this redesign removes. After
-            §D3's file-open rule `currentDirectory()` IS the open file's parent,
-            so the binding below already targets the right directory.
+            Upload is a DIRECTORY action and lives HERE, in the toolbar, shown
+            only in the list view (ADR-033 §D8, revised 2026-08-23). It used to
+            be a pinned footer below the list, with a second copy in this
+            toolbar for the file view and a third icon in the navigator header —
+            the same action in three places, two of them while the thing on
+            screen was a file. The root/subdirectory split survives the move:
+            the label names the target, which is the only cue for where an
+            upload lands.
           -->
-          <p-button
-            *ngIf="openFile()"
-            label="Upload here"
-            icon="pi pi-upload"
-            [text]="true"
-            [rounded]="true"
-            severity="primary"
-            [disabled]="!isProcessRunning()"
-            (onClick)="openUploadModal(currentDirectory())"
-            [pTooltip]="
-              !isProcessRunning()
-                ? 'Process must be running to upload files'
-                : ''
-            "
-          />
+          @if (!openFile()) {
+            @if (currentDirectory() === '') {
+              <p-button
+                label="Upload to Root"
+                icon="pi pi-upload"
+                [text]="true"
+                [rounded]="true"
+                severity="primary"
+                [disabled]="!isProcessRunning()"
+                (onClick)="openUploadModal()"
+                [pTooltip]="
+                  !isProcessRunning()
+                    ? 'Process must be running to upload files'
+                    : ''
+                "
+              />
+            } @else {
+              <p-button
+                label="Upload Files"
+                icon="pi pi-upload"
+                [text]="true"
+                [rounded]="true"
+                severity="primary"
+                [disabled]="!isProcessRunning()"
+                (onClick)="openUploadModal(currentDirectory())"
+                [pTooltip]="
+                  !isProcessRunning()
+                    ? 'Process must be running to upload files'
+                    : ''
+                "
+              />
+            }
+          }
           <p-button
             *ngIf="openFile()"
             label="Refresh"
             icon="pi pi-refresh"
+            data-testid="refresh-file"
             [text]="true"
             [rounded]="true"
             severity="secondary"
             [disabled]="refreshingFile() || loadingContent()"
             (onClick)="refreshSelectedFile()"
-            pTooltip="Refresh this file"
           />
           <p-button
             *ngIf="openFile()"
@@ -272,45 +327,6 @@
               }
             </div>
 
-            <!--
-              The non-scrolling half, and a SIBLING of the list rather than a
-              child of it (ADR-033 §D8): `.panel-content` used to be the scroll
-              container, so a footer inside the list scrolls away on a long
-              directory. Both labels survive with their run-state gate and
-              tooltip verbatim — collapsing them into one reddens nine FR9
-              scenarios that query them by label.
-            -->
-            <div class="empty-section upload-footer">
-              @if (currentDirectory() === '') {
-                <p-button
-                  label="Upload to Root"
-                  icon="pi pi-upload"
-                  severity="primary"
-                  [disabled]="!isProcessRunning()"
-                  (onClick)="openUploadModal()"
-                  styleClass="upload-button"
-                  [pTooltip]="
-                    !isProcessRunning()
-                      ? 'Process must be running to upload files'
-                      : ''
-                  "
-                />
-              } @else {
-                <p-button
-                  label="Upload Files"
-                  icon="pi pi-upload"
-                  severity="primary"
-                  [disabled]="!isProcessRunning()"
-                  (onClick)="openUploadModal(currentDirectory())"
-                  styleClass="upload-button"
-                  [pTooltip]="
-                    !isProcessRunning()
-                      ? 'Process must be running to upload files'
-                      : ''
-                  "
-                />
-              }
-            </div>
           }
           @case ('binary') {
             <p-card styleClass="binary-card">

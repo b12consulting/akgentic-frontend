@@ -2,7 +2,7 @@
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: var(--surface-ground);
+  background-color: var(--p-surface-50);
 }
 
 .explorer-layout {
@@ -17,9 +17,10 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: var(--surface-card);
+  background-color: var(--p-content-background);
   position: relative;
-  padding-left: 20px;
+  /* Clears the folded navigator's visible sliver (320 - 295 = 25px). */
+  padding-left: 25px;
 }
 
 /* Custom Sliding File Navigator */
@@ -29,12 +30,12 @@
   top: 0;
   bottom: 0;
   width: 320px;
-  background-color: var(--surface-card, #ffffff);
-  border-right: 1px solid var(--surface-border, #dee2e6);
+  background-color: var(--p-content-background);
+  border-right: 1px solid var(--p-content-border-color);
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
   display: flex;
   flex-direction: column;
-  transform: translateX(-300px);
+  transform: translateX(-295px);
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 100;
   pointer-events: auto;
@@ -51,7 +52,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--surface-border);
+  border-bottom: 1px solid var(--p-content-border-color);
   min-height: 56px;
   flex-shrink: 0;
   opacity: 0;
@@ -66,7 +67,7 @@
   margin: 0;
   font-size: 14px;
   font-weight: 600;
-  color: var(--text-color);
+  color: var(--p-text-color);
 }
 
 .navigator-content {
@@ -108,26 +109,34 @@
   }
 }
 
-/* Collapsed Strip */
+/*
+ * Collapsed Strip — the same white as the toolbar above it, so the folded
+ * navigator reads as part of the chrome rather than as a grey gutter beside it.
+ *
+ * `opacity` is deliberately NOT used to soften it: at 0.4 the fill composites
+ * against whatever is behind, so white came out the grey visible in the pane.
+ * The strip is opaque and its restraint comes from the muted icon instead. The
+ * expanded rule below still fades it out, which is a different job.
+ */
 .collapsed-strip {
   position: absolute;
   right: 0;
   top: 0;
   bottom: 0;
-  width: 20px;
-  background: var(--surface-300);
+  width: 25px;
+  background: var(--p-content-background);
+  border-right: 1px solid var(--p-content-border-color);
   transition: opacity 0.2s, width 0.2s, background-color 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  opacity: 0.4;
+  opacity: 1;
 }
 
 .file-navigator:not(.expanded):hover .collapsed-strip {
-  opacity: 0.7;
-  width: 24px;
-  background: var(--surface-400);
+  width: 29px;
+  background: var(--p-content-hover-background);
 }
 
 .file-navigator.expanded .collapsed-strip {
@@ -137,8 +146,77 @@
 
 .collapsed-strip i {
   font-size: 1.25rem;
-  color: var(--text-color-secondary);
+  color: var(--p-text-muted-color);
   transform: rotate(90deg);
+}
+
+/*
+ * Sits above the tree and matches a PrimeNG node row: same padding, radius and
+ * hover, so it reads as the tree's first row rather than as a control bolted
+ * on top of it.
+ */
+.tree-root-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.25rem 0.5rem;
+  border: none;
+  border-radius: var(--p-content-border-radius);
+  background: none;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--p-text-color);
+  text-align: left;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--p-content-hover-background);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--p-primary-color);
+    outline-offset: -2px;
+  }
+
+  /* Mirrors PrimeNG's own selected node, so "where am I" reads the same
+     whether the answer is the root or a folder inside it. */
+  &.selected {
+    background: var(--p-highlight-background);
+    color: var(--p-highlight-color);
+  }
+}
+
+.tree-root-icon {
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+/*
+ * The tree row's label, widened to carry a size on the right. `width: 100%` is
+ * what lets `justify-content` push the two apart — PrimeNG's label span is
+ * inline by default, so without it the size sits against the name.
+ */
+.tree-node {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.tree-node-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-node-size {
+  color: var(--p-text-muted-color);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
 }
 
 .header-actions {
@@ -147,28 +225,16 @@
   align-items: center;
 }
 
-.toolbar-title {
-  margin: 0;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--text-color);
-}
-
 :host ::ng-deep .preview-toolbar {
   border: none;
   border-radius: 0;
   padding: 0.75rem 1rem;
-  background: var(--surface-card);
-  border-bottom: 1px solid var(--surface-border);
+  background: var(--p-content-background);
+  border-bottom: 1px solid var(--p-content-border-color);
 }
 
 :host ::ng-deep .p-divider {
   margin: 0;
-}
-
-.toolbar-title.placeholder {
-  color: var(--text-color-secondary);
-  font-weight: 400;
 }
 
 .file-info {
@@ -176,18 +242,92 @@
   align-items: center;
   gap: 12px;
   flex: 1;
+  /* The trail is the one thing here that can outgrow the toolbar. */
+  min-width: 0;
 }
 
-.file-icon {
-  color: var(--primary-color);
-  font-size: 1.2rem;
+/*
+ * The location trail. Wraps rather than scrolls or truncates: a deep path is
+ * still every segment, and losing the middle of a path is losing the part that
+ * says where you are. `row-gap` keeps a wrapped second line off the first.
+ */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  column-gap: 0.25rem;
+  row-gap: 0.125rem;
+  min-width: 0;
+  font-size: 0.875rem;
 }
+
+.breadcrumb-separator {
+  color: var(--p-text-muted-color);
+  font-size: 0.75rem;
+  /* Decorative: the nav landmark and aria-current carry the structure. */
+  opacity: 0.7;
+}
+
+/*
+ * A button, not an anchor: this navigates a signal, not a URL, so there is no
+ * href to give and a link without one is a lie to the keyboard and to
+ * assistive tech. Styled back down to inline text.
+ */
+.breadcrumb-link {
+  padding: 0.125rem 0.25rem;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  font: inherit;
+  color: var(--p-text-muted-color);
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover {
+    color: var(--p-primary-color);
+    background: var(--p-content-hover-background);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--p-primary-color);
+    outline-offset: 1px;
+  }
+}
+
+.breadcrumb-current {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.125rem 0.25rem;
+  font-weight: 600;
+  color: var(--p-text-color);
+  /* The one crumb allowed to lose characters — a long filename should not push
+     the toolbar's controls off the row. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.breadcrumb-file-icon {
+  color: var(--p-primary-color);
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
 
 /*
  * A flex COLUMN that does not scroll. The scrolling moved down one level, into
  * whichever child owns the long content (`.directory-list`, `.file-content`,
  * `.markdown-content`) — that is what lets the upload footer pin beneath the
  * list instead of scrolling away with it (ADR-033 §D8).
+ */
+/*
+ * The pane body sits on the platform's grey, not on the card white the toolbar
+ * and navigator use. That is the whole distinction: chrome is white, content is
+ * grey, and the file view's page (below) reads as a sheet on a desk rather than
+ * as more chrome. `--p-surface-50` is the same token `.workspace-explorer`
+ * already uses, so this is the existing grey, not a new one.
  */
 .panel-content {
   flex: 1;
@@ -196,6 +336,7 @@
   overflow: hidden;
   padding: 1rem;
   position: relative;
+  background-color: var(--p-surface-50);
 }
 
 .directory-list {
@@ -217,9 +358,9 @@
   width: 100%;
   padding: 0.5rem 0.75rem;
   border: none;
-  border-radius: var(--border-radius);
+  border-radius: var(--p-content-border-radius);
   background: transparent;
-  color: var(--text-color);
+  color: var(--p-text-color);
   font-family: inherit;
   font-size: 0.875rem;
   text-align: left;
@@ -227,11 +368,11 @@
   transition: background-color 0.2s;
 
   &:hover {
-    background-color: var(--surface-hover);
+    background-color: var(--p-content-hover-background);
   }
 
   &-icon {
-    color: var(--text-color-secondary);
+    color: var(--p-text-muted-color);
     font-size: 1rem;
   }
 
@@ -243,7 +384,7 @@
   }
 
   &-size {
-    color: var(--text-color-secondary);
+    color: var(--p-text-muted-color);
     font-size: 0.75rem;
     flex-shrink: 0;
   }
@@ -296,13 +437,13 @@
 
   i {
     font-size: 3rem;
-    color: var(--red-500);
+    color: var(--p-red-500);
   }
 
   p {
     margin: 0;
     font-size: 0.875rem;
-    color: var(--text-color);
+    color: var(--p-text-color);
   }
 }
 
@@ -364,20 +505,20 @@
 
   i {
     font-size: 3rem;
-    color: var(--blue-500);
+    color: var(--p-blue-500);
   }
 
   p {
     margin: 0;
     font-size: 0.875rem;
-    color: var(--text-color);
+    color: var(--p-text-color);
   }
 }
 
 :host ::ng-deep .binary-card {
   margin: 1rem;
   box-shadow: none;
-  border: 1px solid var(--surface-border);
+  border: 1px solid var(--p-content-border-color);
 }
 
 /*
@@ -388,18 +529,37 @@
  * the default `min-height: auto` the block would refuse to shrink and clip
  * against `.panel-content`'s `overflow: hidden`.
  */
+/*
+ * THE PAGE. Shared by both file bodies: a white sheet with its own padding,
+ * floating on `.panel-content`'s grey. The scroll stays on the sheet, not on
+ * the grey around it, so the padding is a fixed margin the content never slides
+ * under.
+ */
+%file-page {
+  background-color: var(--p-content-background);
+  border: 1px solid var(--p-content-border-color);
+  border-radius: var(--p-content-border-radius);
+  padding: 1.5rem;
+}
+
 .file-content {
+  @extend %file-page;
   flex: 1;
   min-height: 0;
   height: 100%;
   overflow: auto;
 
+  /*
+   * Bare inside the page: the sheet is the surface now, so the old inset panel
+   * — its own grey fill, border and padding — would be a second card inside the
+   * first. For a text file this `pre` IS the document, not a code block quoted
+   * within one.
+   */
   pre {
     margin: 0;
-    padding: 1rem;
-    background-color: var(--surface-50);
-    border-radius: var(--border-radius);
-    border: 1px solid var(--surface-border);
+    padding: 0;
+    background: none;
+    border: none;
     overflow-x: auto;
     font-family: monospace;
     font-size: 85%;
@@ -410,17 +570,17 @@
 
   code {
     font-family: monospace;
-    color: var(--text-color);
+    color: var(--p-text-color);
   }
 }
 
-/* Same story as `.file-content` above — its own scroll, kept. */
+/* Same story as `.file-content` above — its own scroll, kept, and the same page. */
 .markdown-content {
+  @extend %file-page;
   flex: 1;
   min-height: 0;
   height: 100%;
   overflow: auto;
-  padding: 1rem;
 }
 
 /* Tree customization */
@@ -440,7 +600,7 @@
 
 :host ::ng-deep .p-tree .p-treenode-content {
   padding: 0.5rem;
-  border-radius: var(--border-radius);
+  border-radius: var(--p-content-border-radius);
   transition: background-color 0.2s;
   cursor: pointer;
   width: 100%;
@@ -449,12 +609,12 @@
 }
 
 :host ::ng-deep .p-tree .p-treenode-content:hover {
-  background-color: var(--surface-hover);
+  background-color: var(--p-content-hover-background);
 }
 
 :host ::ng-deep .p-tree .p-treenode-content.p-highlight {
-  background-color: var(--primary-50);
-  color: var(--primary-color);
+  background-color: var(--p-primary-50);
+  color: var(--p-primary-color);
 }
 
 :host ::ng-deep .p-tree .p-tree-toggler {
@@ -463,12 +623,12 @@
 
 :host ::ng-deep .p-tree .p-treenode-icon {
   margin-right: 0.5rem;
-  color: var(--text-color-secondary);
+  color: var(--p-text-muted-color);
 }
 
 :host ::ng-deep .p-tree .p-treenode-label {
   font-size: 0.8125rem;
-  color: var(--text-color);
+  color: var(--p-text-color);
   flex: 1;
   cursor: pointer;
 }
@@ -476,11 +636,11 @@
 /* Root node styling */
 :host ::ng-deep .p-tree > .p-tree-container > .p-treenode:first-child > .p-treenode-content {
   font-weight: 600;
-  background-color: var(--surface-50);
+  background-color: var(--p-surface-50);
   margin-bottom: 0.25rem;
   
   .p-treenode-icon {
-    color: var(--primary-color);
+    color: var(--p-primary-color);
   }
   
   .p-treenode-label {
@@ -489,11 +649,11 @@
 }
 
 :host ::ng-deep .p-tree > .p-tree-container > .p-treenode:first-child > .p-treenode-content:hover {
-  background-color: var(--surface-100);
+  background-color: var(--p-surface-100);
 }
 
 :host ::ng-deep .p-tree > .p-tree-container > .p-treenode:first-child > .p-treenode-content.p-highlight {
-  background-color: var(--primary-100);
+  background-color: var(--p-primary-100);
 }
 
 /* Scrollbar styling — follows the scroll, which moved into the list region. */
@@ -503,14 +663,14 @@
 }
 
 .directory-list::-webkit-scrollbar-track {
-  background: var(--surface-ground);
+  background: var(--p-surface-50);
 }
 
 .directory-list::-webkit-scrollbar-thumb {
-  background: var(--surface-400);
-  border-radius: var(--border-radius);
+  background: var(--p-surface-400);
+  border-radius: var(--p-content-border-radius);
 }
 
 .directory-list::-webkit-scrollbar-thumb:hover {
-  background: var(--surface-500);
+  background: var(--p-surface-500);
 }
