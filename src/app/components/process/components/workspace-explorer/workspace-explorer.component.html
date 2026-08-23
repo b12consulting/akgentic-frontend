@@ -20,10 +20,10 @@
               size="small"
               (onClick)="openUploadModalToCurrentSelection()"
               [pTooltip]="
-                selectedFolder()
-                  ? 'Upload to ' + selectedFolder()!.name
-                  : selectedFile()
+                openFile()
                   ? 'Upload to parent folder'
+                  : currentDirectory() !== ''
+                  ? 'Upload to ' + currentDirectoryName()
                   : 'Upload to root folder'
               "
             />
@@ -46,13 +46,13 @@
             [style]="{ width: '50px', height: '50px' }"
           />
 
-          <div *ngIf="errorMessage() && !loading()" class="error-message">
+          <div *ngIf="treeError() && !loading()" class="error-message">
             <i class="pi pi-exclamation-triangle"></i>
-            <p>{{ errorMessage() }}</p>
+            <p>{{ treeError() }}</p>
           </div>
 
           <div
-            *ngIf="!loading() && !errorMessage() && treeNodes().length === 0"
+            *ngIf="!loading() && !treeError() && treeNodes().length === 0"
             class="empty-workspace"
           >
             <i class="pi pi-folder-open empty-workspace-icon"></i>
@@ -63,7 +63,7 @@
           </div>
 
           <p-tree
-            *ngIf="!loading() && !errorMessage() && treeNodes().length > 0"
+            *ngIf="!loading() && !treeError() && treeNodes().length > 0"
             [value]="treeNodes()"
             selectionMode="single"
             (onNodeSelect)="onNodeSelect($event)"
@@ -81,38 +81,48 @@
       <p-toolbar styleClass="preview-toolbar">
         <ng-template pTemplate="start">
           <div class="file-info">
-            <i *ngIf="selectedFile()" class="pi pi-file file-icon"></i>
-            <i *ngIf="selectedFolder()" class="pi pi-folder file-icon"></i>
-            <h3 *ngIf="selectedFile()" class="toolbar-title">
-              {{ selectedFile()!.name }}
-            </h3>
-            <h3 *ngIf="selectedFolder()" class="toolbar-title">
-              {{ selectedFolder()!.name }}
+            <i *ngIf="openFile()" class="pi pi-file file-icon"></i>
+            <i
+              *ngIf="!openFile() && currentDirectory() !== ''"
+              class="pi pi-folder file-icon"
+            ></i>
+            <h3 *ngIf="openFile()" class="toolbar-title">
+              {{ openFile()!.name }}
             </h3>
             <h3
-              *ngIf="!selectedFile() && !selectedFolder()"
+              *ngIf="!openFile() && currentDirectory() !== ''"
+              class="toolbar-title"
+            >
+              {{ currentDirectoryName() }}
+            </h3>
+            <h3
+              *ngIf="!openFile() && currentDirectory() === ''"
               class="toolbar-title placeholder"
             >
               Select a file or folder
             </h3>
             <p-tag
-              *ngIf="selectedFile() && selectedFile()!.size"
-              [value]="formatFileSize(selectedFile()!.size)"
+              *ngIf="openFile() && openFile()!.size"
+              [value]="formatFileSize(openFile()!.size)"
               severity="secondary"
             />
-            <p-tag *ngIf="selectedFolder()" value="Folder" severity="info" />
+            <p-tag
+              *ngIf="!openFile() && currentDirectory() !== ''"
+              value="Folder"
+              severity="info"
+            />
           </div>
         </ng-template>
         <ng-template pTemplate="end">
           <p-button
-            *ngIf="selectedFolder()"
+            *ngIf="!openFile() && currentDirectory() !== ''"
             label="Upload here"
             icon="pi pi-upload"
             [text]="true"
             [rounded]="true"
             severity="primary"
             [disabled]="!isProcessRunning()"
-            (onClick)="openUploadModal(selectedFolder()!.path)"
+            (onClick)="openUploadModal(currentDirectory())"
             [pTooltip]="
               !isProcessRunning()
                 ? 'Process must be running to upload files'
@@ -120,7 +130,7 @@
             "
           />
           <p-button
-            *ngIf="selectedFile()"
+            *ngIf="openFile()"
             label="Refresh"
             icon="pi pi-refresh"
             [text]="true"
@@ -131,7 +141,7 @@
             pTooltip="Refresh this file"
           />
           <p-button
-            *ngIf="selectedFile()"
+            *ngIf="openFile()"
             label="Download"
             icon="pi pi-download"
             [text]="true"
@@ -145,140 +155,125 @@
       <p-divider />
 
       <div class="panel-content">
-        <p-progressSpinner
-          *ngIf="loadingContent()"
-          styleClass="spinner"
-          [style]="{ width: '50px', height: '50px' }"
-        />
-
-        <div *ngIf="errorMessage() && !loadingContent()" class="error-message">
-          <i class="pi pi-exclamation-triangle"></i>
-          <p>{{ errorMessage() }}</p>
-        </div>
+        <!--
+          A failed re-read of a file the pane is still showing banners ABOVE the
+          body rather than replacing it: losing a readable document because a
+          re-read failed is strictly worse than reading a slightly old one under
+          a warning (ADR-030 §D5). `viewMode`'s 'error' case is the other half —
+          a failure with no body to fall back on.
+        -->
+        @if (fileError() && content() !== null) {
+          <div class="error-message">
+            <i class="pi pi-exclamation-triangle"></i>
+            <p>{{ fileError() }}</p>
+          </div>
+        }
 
         <!--
-          A workspace tool deleted the file this pane was showing. Its own
-          block and its own signal: routed through `errorMessage` instead, this
-          would blank the navigator's whole file tree (which is gated on
-          `!errorMessage()`) over one deleted file.
+          One switch on one computed value (ADR-033 §D6). Six hand-written
+          conditions used to decide this between them, and two of them carried
+          comments explaining that they must not render together; exclusivity is
+          now a property of `viewMode` rather than a rule the next editor has to
+          re-derive.
         -->
-        <div
-          *ngIf="deletedNotice() && !loadingContent()"
-          class="empty-section file-placeholder deleted-notice"
-        >
-          <div class="empty-section-box">
-            <i class="pi pi-trash file-placeholder-icon"></i>
-            <div class="file-placeholder-title">File deleted</div>
-            <div class="file-placeholder-desc">
-              {{ deletedNotice() }} was deleted from this workspace. Select
-              another file from the tree to continue.
+        @switch (viewMode()) {
+          @case ('loading') {
+            <p-progressSpinner
+              styleClass="spinner"
+              [style]="{ width: '50px', height: '50px' }"
+            />
+          }
+          @case ('error') {
+            <div class="error-message">
+              <i class="pi pi-exclamation-triangle"></i>
+              <p>{{ fileError() }}</p>
             </div>
-          </div>
-        </div>
-
-        <!--
-          The notice above replaces this placeholder rather than sitting beside
-          it: clearing the selection is what raises the notice, so both
-          conditions are true at once and "Select a file to view its content"
-          next to "that file was deleted" reads as two panes disagreeing.
-        -->
-        <div
-          *ngIf="
-            !selectedFile() &&
-            !selectedFolder() &&
-            !deletedNotice() &&
-            !loadingContent()
-          "
-          class="empty-section file-placeholder"
-        >
-          <div class="empty-section-box">
-            <i class="pi pi-folder-open file-placeholder-icon"></i>
-            <div class="file-placeholder-title">Workspace Root</div>
-            <div class="file-placeholder-desc">
-              Select a file from the tree to view its content, or upload files
-              to the root folder
+          }
+          @case ('deleted') {
+            <div class="empty-section file-placeholder deleted-notice">
+              <div class="empty-section-box">
+                <i class="pi pi-trash file-placeholder-icon"></i>
+                <div class="file-placeholder-title">File deleted</div>
+                <div class="file-placeholder-desc">
+                  {{ deletedNotice() }} was deleted from this workspace. Select
+                  another file from the tree to continue.
+                </div>
+              </div>
             </div>
-            <p-button
-              label="Upload to Root"
-              icon="pi pi-upload"
-              severity="primary"
-              [disabled]="!isProcessRunning()"
-              (onClick)="openUploadModal()"
-              styleClass="upload-button"
-              [pTooltip]="
-                !isProcessRunning()
-                  ? 'Process must be running to upload files'
-                  : ''
-              "
-            />
-          </div>
-        </div>
-
-        <div
-          *ngIf="selectedFolder() && !loadingContent()"
-          class="empty-section folder-view"
-        >
-          <div class="empty-section-box">
-            <i class="pi pi-folder folder-icon"></i>
-            <div class="folder-title">{{ selectedFolder()!.name }}</div>
-            <div class="folder-desc">Upload files to this folder</div>
-            <p-button
-              label="Upload Files"
-              icon="pi pi-upload"
-              severity="primary"
-              [disabled]="!isProcessRunning()"
-              (onClick)="openUploadModal(selectedFolder()!.path)"
-              styleClass="upload-button"
-              [pTooltip]="
-                !isProcessRunning()
-                  ? 'Process must be running to upload files'
-                  : ''
-              "
-            />
-          </div>
-        </div>
-
-        <p-card
-          *ngIf="selectedFile() && isBinaryFile() && !loadingContent()"
-          styleClass="binary-card"
-        >
-          <div class="binary-message">
-            <i class="pi pi-info-circle"></i>
-            <p>{{ fileContent() }}</p>
-            <p-button
-              label="Download to view"
-              icon="pi pi-download"
-              severity="info"
-              (onClick)="downloadFile()"
-            />
-          </div>
-        </p-card>
-
-        <div
-          *ngIf="
-            selectedFile() &&
-            !isBinaryFile() &&
-            !isMarkdownFile() &&
-            fileContent() !== null &&
-            !loadingContent()
-          "
-          class="file-content"
-        >
-          <pre><code>{{ fileContent() }}</code></pre>
-        </div>
-
-        <div
-          *ngIf="
-            selectedFile() &&
-            !isBinaryFile() &&
-            isMarkdownFile() &&
-            fileContent() !== null &&
-            !loadingContent()
-          "
-          class="markdown-content"
-        >
-          <markdown [data]="fileContent()"></markdown>
-        </div>
+          }
+          @case ('list') {
+            @if (currentDirectory() === '') {
+              <div class="empty-section file-placeholder">
+                <div class="empty-section-box">
+                  <i class="pi pi-folder-open file-placeholder-icon"></i>
+                  <div class="file-placeholder-title">Workspace Root</div>
+                  <div class="file-placeholder-desc">
+                    Select a file from the tree to view its content, or upload
+                    files to the root folder
+                  </div>
+                  <p-button
+                    label="Upload to Root"
+                    icon="pi pi-upload"
+                    severity="primary"
+                    [disabled]="!isProcessRunning()"
+                    (onClick)="openUploadModal()"
+                    styleClass="upload-button"
+                    [pTooltip]="
+                      !isProcessRunning()
+                        ? 'Process must be running to upload files'
+                        : ''
+                    "
+                  />
+                </div>
+              </div>
+            } @else {
+              <div class="empty-section folder-view">
+                <div class="empty-section-box">
+                  <i class="pi pi-folder folder-icon"></i>
+                  <div class="folder-title">{{ currentDirectoryName() }}</div>
+                  <div class="folder-desc">Upload files to this folder</div>
+                  <p-button
+                    label="Upload Files"
+                    icon="pi pi-upload"
+                    severity="primary"
+                    [disabled]="!isProcessRunning()"
+                    (onClick)="openUploadModal(currentDirectory())"
+                    styleClass="upload-button"
+                    [pTooltip]="
+                      !isProcessRunning()
+                        ? 'Process must be running to upload files'
+                        : ''
+                    "
+                  />
+                </div>
+              </div>
+            }
+          }
+          @case ('binary') {
+            <p-card styleClass="binary-card">
+              <div class="binary-message">
+                <i class="pi pi-info-circle"></i>
+                <p>{{ content()!.body }}</p>
+                <p-button
+                  label="Download to view"
+                  icon="pi pi-download"
+                  severity="info"
+                  (onClick)="downloadFile()"
+                />
+              </div>
+            </p-card>
+          }
+          @case ('markdown') {
+            <div class="markdown-content">
+              <markdown [data]="content()!.body"></markdown>
+            </div>
+          }
+          @case ('text') {
+            <div class="file-content">
+              <pre><code>{{ content()!.body }}</code></pre>
+            </div>
+          }
+        }
       </div>
     </div>
   </div>
