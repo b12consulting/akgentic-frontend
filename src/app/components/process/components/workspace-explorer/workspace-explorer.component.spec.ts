@@ -4437,4 +4437,48 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     expect(rowNames()).toEqual(['deep', 'a.txt', 'new.txt']);
     expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith('proc', 'docs');
   });
+
+  // --- ADR-033 §D3: a navigation whose listing FAILS ---------------------
+
+  it('scenario 133 — a navigation whose listing fails renders no entries under the new name, and is not a dead end', async () => {
+    listingsBy({ '': rootEntries(), docs: docsEntries() });
+    await create();
+    await clickRow('docs');
+    expect(rowNames()).toEqual(['deep', 'a.txt']);
+
+    const logged = spyOn(console, 'error');
+    workspaceServiceSpy.getWorkspaceTree.and.rejectWith(new Error('503'));
+    await clickRow('deep');
+
+    // THE INVARIANT (§D3): the pane must never render one directory's entries
+    // under another directory's name — ADR-030 §A4's defect arriving through
+    // the directory path instead of the file one. `docs`'s rows must not
+    // survive under `docs/deep`, and the path tag on `listing` is what makes
+    // that structural rather than a rule the failure path has to remember.
+    expect(component.currentDirectory()).toBe('docs/deep');
+    expect(component.listing()!.path).toBe('docs');
+    expect(rowEls().length).toBe(0);
+    // ...and no empty-state either: "this folder is empty" is a claim about the
+    // backend's answer, and there was no answer.
+    expect(pane().querySelector('.empty-directory')).toBeNull();
+
+    // NOT A DEAD END, which is why the failure is logged rather than bannered.
+    // A `fileError` here would make `viewMode` return 'error' with no content
+    // loaded, and the banner REPLACES the pane under one `@switch` (§D6) —
+    // taking the footer and the verb the user needs to get back out with it.
+    expect(component.fileError()).toBeNull();
+    expect(component.viewMode()).toBe('list');
+    expect(footer()).withContext('the footer still renders').not.toBeNull();
+    expect(navVerbs()).toEqual(['Up']);
+    expect((toolbarHost('Up')!.querySelector('button') as HTMLButtonElement).disabled)
+      .withContext('Up is the way out of a failed navigation')
+      .toBe(false);
+    expect(logged).toHaveBeenCalled();
+
+    // And the way out works: Up re-lists the directory it came from.
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo(docsEntries());
+    await clickToolbar('Up');
+    expect(component.currentDirectory()).toBe('docs');
+    expect(rowNames()).toEqual(['deep', 'a.txt']);
+  });
 });
