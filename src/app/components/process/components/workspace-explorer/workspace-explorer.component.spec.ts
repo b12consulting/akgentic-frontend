@@ -703,7 +703,7 @@ describe('WorkspaceExplorerComponent', () => {
       await component.refreshSelectedFile();
 
       // The banner AND the body — the pane reports the failure over the stale
-      // bytes rather than instead of them. Scenario 112 pins the same fact
+      // bytes rather than instead of them. Scenario 114 pins the same fact
       // through the DOM, which is the only place a switch that subsumed the
       // content would show up.
       expect(component.fileError()).toBe('read failed');
