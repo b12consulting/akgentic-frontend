@@ -470,11 +470,12 @@ describe('WorkspaceExplorerComponent', () => {
       component.processId = 'proc';
     });
 
-    it('scenario 23 — selecting a file sets openFile, loads content, and leaves currentDirectory alone', async () => {
-      // Seed a directory the pane is already in. There is no folder SELECTION
-      // to clear any more: opening a file writes `openFile` and nothing else,
-      // and the chrome reads `openFile` first (AC12), so the two never
-      // disagree. Whether opening from the TREE should also descend is 45-2's.
+    it("scenario 23 — selecting a file sets openFile, loads content, and descends to that file's directory", async () => {
+      // Seed a DIFFERENT directory, so the descent is observable. Story 45-1
+      // asserted this stayed `'old'` and recorded the question; ADR-033 §D3 was
+      // amended to decide it, because "Back stays put" and "Back from a nested
+      // file lands in that file's directory" are the same sentence only if
+      // opening the file moved you there. A behaviour change, not a rename.
       component.currentDirectory.set('old');
       const file = fileNode({
         name: 'a.ts',
@@ -486,7 +487,7 @@ describe('WorkspaceExplorerComponent', () => {
       await component.onNodeSelect({ node: { data: file } });
 
       expect(component.openFile()).toEqual(file);
-      expect(component.currentDirectory()).toBe('old');
+      expect(component.currentDirectory()).toBe('src');
       expect(workspaceServiceSpy.getFileContent).toHaveBeenCalledWith(
         'proc',
         'src/a.ts',
@@ -1961,9 +1962,9 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
   }
 
   /**
-   * Reach the in-a-folder render state — where "Upload here" and "Upload
-   * Files" live — by writing the signal directly. `onNodeSelect` would also
-   * fire a `getFileContent` fetch that has nothing to do with run state.
+   * Reach the in-a-folder render state — where the footer's "Upload Files"
+   * lives — by writing the signal directly. `onNodeSelect` would also fire a
+   * `getFileContent` fetch that has nothing to do with run state.
    */
   function selectFolder(): void {
     component.currentDirectory.set('docs');
@@ -1973,6 +1974,35 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
   /** Back to the root, which is `''` and not "nothing selected" (§D1). */
   function clearSelection(): void {
     component.currentDirectory.set('');
+    fixture.detectChanges();
+  }
+
+  /**
+   * Reach the file-open render state — where "Upload here" lives after ADR-033
+   * §D8 re-gated it on `openFile()`. The signals are written directly for the
+   * same reason `selectFolder` writes one: going through `onNodeSelect` fires a
+   * `getFileContent` read, and this block's no-extra-call assertions count it.
+   *
+   * `currentDirectory` is set to the file's parent because §D3 says that is
+   * where opening a file leaves the pane — so the state reached here is the one
+   * a real file open produces, not an assembled approximation.
+   */
+  function openFileInPane(): void {
+    component.currentDirectory.set('docs');
+    component.openFile.set(
+      fileNode({
+        name: 'a.txt',
+        path: 'docs/a.txt',
+        type: 'file',
+        extension: '.txt',
+      }),
+    );
+    fixture.detectChanges();
+  }
+
+  /** Close the open file without a control, so no listing fetch is issued. */
+  function closeOpenFile(): void {
+    component.openFile.set(null);
     fixture.detectChanges();
   }
 
@@ -2014,12 +2044,18 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
     expect(contextServiceStub.getCurrentTeam).not.toHaveBeenCalled();
   });
 
-  it('scenario 38 — a flip to running enables both folder-selected controls, with no re-init and no extra call', async () => {
+  // The two non-root controls no longer share one render state: ADR-033 §D8
+  // hides "Upload here" in the list view, so its run-state coverage is driven
+  // from the FILE-OPEN state while "Upload Files" keeps the folder state. The
+  // gate on both is what FR9 protects, and it is asserted on both — losing
+  // either half would be a silent regression in exactly that.
+
+  it('scenario 38 — a flip to running enables the folder footer AND the file-open toolbar control, with no re-init and no extra call', async () => {
     await createStopped();
     selectFolder();
-
-    expect(isDisabled('Upload here')).toBe(true);
     expect(isDisabled('Upload Files')).toBe(true);
+    openFileInPane();
+    expect(isDisabled('Upload here')).toBe(true);
 
     const treeCalls = workspaceServiceSpy.getWorkspaceTree.calls.count();
     const contentCalls = workspaceServiceSpy.getFileContent.calls.count();
@@ -2029,6 +2065,7 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
     fixture.detectChanges();
 
     expect(isDisabled('Upload here')).toBe(false);
+    closeOpenFile();
     expect(isDisabled('Upload Files')).toBe(false);
     expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(treeCalls);
     expect(workspaceServiceSpy.getFileContent.calls.count()).toBe(contentCalls);
@@ -2050,12 +2087,12 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
     expect(contextServiceStub.getCurrentTeam).not.toHaveBeenCalled();
   });
 
-  it('scenario 40 — the reverse flip disables both folder-selected controls again', async () => {
+  it('scenario 40 — the reverse flip disables the folder footer AND the file-open toolbar control again', async () => {
     await createRunning();
     selectFolder();
-
-    expect(isDisabled('Upload here')).toBe(false);
     expect(isDisabled('Upload Files')).toBe(false);
+    openFileInPane();
+    expect(isDisabled('Upload here')).toBe(false);
 
     const treeCalls = workspaceServiceSpy.getWorkspaceTree.calls.count();
     contextServiceStub.getCurrentTeam.calls.reset();
@@ -2064,6 +2101,7 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
     fixture.detectChanges();
 
     expect(isDisabled('Upload here')).toBe(true);
+    closeOpenFile();
     expect(isDisabled('Upload Files')).toBe(true);
     expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(treeCalls);
     expect(contextServiceStub.getCurrentTeam).not.toHaveBeenCalled();
@@ -2109,14 +2147,18 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
 
     expect(tooltipOf('Upload to Root')).toBe(STOPPED_TOOLTIP);
     selectFolder();
-    expect(tooltipOf('Upload here')).toBe(STOPPED_TOOLTIP);
     expect(tooltipOf('Upload Files')).toBe(STOPPED_TOOLTIP);
+    // "Upload here" now presents from the file-open state (ADR-033 §D8); the
+    // tooltip and the disabled binding still read the one live source.
+    openFileInPane();
+    expect(tooltipOf('Upload here')).toBe(STOPPED_TOOLTIP);
 
     contextServiceStub.currentTeamRunning$.next(true);
     fixture.detectChanges();
 
     // Running: none of the three presents the stopped-team tooltip.
     expect(tooltipOf('Upload here')).toBe('');
+    closeOpenFile();
     expect(tooltipOf('Upload Files')).toBe('');
     clearSelection();
     expect(tooltipOf('Upload to Root')).toBe('');
@@ -3429,6 +3471,16 @@ describe('WorkspaceExplorerComponent — the pane state model (Epic 45)', () => 
    * MATCHED SELECTORS rather than child elements is what makes the exclusivity
    * assertion meaningful: `@switch` leaves comment anchors between cases, and a
    * child count would be satisfied by any single wrapper.
+   *
+   * The helper still means "exactly one VIEW-MODE block". The `'list'` case is
+   * the one case that renders two of them — the scrolling list region and the
+   * footer pinned under it are both part of that case (ADR-033 §D8) — so its
+   * assertion names both and every other case still names exactly one.
+   *
+   * `.file-placeholder:not(.deleted-notice)` and `.folder-view` no longer have
+   * markup: FR8 replaced the root placeholder and the folder view with the list
+   * and the footer. They are KEPT rather than dropped, as guards — either one
+   * matching again means a centred call-to-action came back into the list case.
    */
   const PANE_BLOCKS = [
     'p-progressspinner, p-progressSpinner',
@@ -3439,6 +3491,8 @@ describe('WorkspaceExplorerComponent — the pane state model (Epic 45)', () => 
     '.binary-card, p-card',
     '.file-content',
     '.markdown-content',
+    '.directory-list',
+    '.upload-footer',
   ];
 
   function renderedBlocks(): string[] {
@@ -3602,12 +3656,16 @@ describe('WorkspaceExplorerComponent — the pane state model (Epic 45)', () => 
     expect(renderedBlocks()).toEqual(['.deleted-notice']);
   });
 
-  it('scenario 111 — the empty-selection case renders exactly ONE block in the pane', async () => {
+  it('scenario 111 — the list case renders its two blocks in the pane and nothing else', async () => {
     await create();
     fixture.detectChanges();
 
+    // FR8 replaced the centred "Workspace Root" placeholder with the list
+    // region and the footer pinned beneath it. Both belong to the `'list'`
+    // case, so "exactly one view-mode block" still holds — the case simply has
+    // two parts, and no OTHER case's block may appear beside them.
     expect(component.viewMode()).toBe('list');
-    expect(renderedBlocks()).toEqual(['.file-placeholder:not(.deleted-notice)']);
+    expect(renderedBlocks()).toEqual(['.directory-list', '.upload-footer']);
   });
 
   // --- FR5 / AC7: the split, in both directions ------------------------
@@ -3766,5 +3824,617 @@ describe('WorkspaceExplorerComponent — the pane state model (Epic 45)', () => 
     expect(empty).withContext('empty-workspace block').not.toBeNull();
     expect(empty!.textContent).toContain('No files found');
     expect(tree()).withContext('no tree for an empty workspace').toBeNull();
+  });
+});
+
+// --------------------------------------------------------------------
+// The drill-down list and the pinned upload footer (Epic 45 / ADR-033 §D2,
+// §D3, §D8).
+//
+// Its own TestBed and its own factories — the file's convention is per-block
+// fixtures, never a helper reached across a `describe` boundary. The widened
+// override (`ButtonModule` + `ToolbarModule`) is load-bearing twice over: Up,
+// Back and "Upload here" live inside `<ng-template pTemplate="start|end">` and
+// only PrimeNG's Toolbar instantiates those, and `[disabled]` has to reach a
+// real inner <button> for the run-state assertions. `TooltipModule` stays out,
+// so `[pTooltip]` remains an unclaimed binding readable off the p-button host.
+//
+// Every new control is driven by a REAL DOM event in at least one spec —
+// `.directory-entry.click()`, and the inner <button> of Up / Back / the footer.
+// A spec that calls the handler on the instance leaves the suite green while
+// the binding is deleted and the control is inert in a browser, which is
+// already recorded twice as `backlog.md` rows 8 and 18.
+// --------------------------------------------------------------------
+
+describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic 45)', () => {
+  const TEAM_ID = 'proc';
+  const STOPPED_TOOLTIP = 'Process must be running to upload files';
+
+  let component: WorkspaceExplorerComponent;
+  let fixture: ComponentFixture<WorkspaceExplorerComponent>;
+  let workspaceServiceSpy: jasmine.SpyObj<WorkspaceService>;
+  let invalidations: FakeWorkspaceInvalidationService;
+  let running: BehaviorSubject<boolean>;
+
+  /**
+   * The root listing, deliberately INTERLEAVED and not alphabetical: a file,
+   * then a folder, then a file, then a folder. Folders-first is a stable
+   * PARTITION, so the expected render order is `docs`, `assets`, `b.txt`,
+   * `a.txt` — each group keeping the backend's own order. An alphabetical sort
+   * anywhere would reorder both groups and fail.
+   */
+  function rootEntries(): FileNode[] {
+    return [
+      fileNode({ name: 'b.txt', path: 'b.txt', type: 'file', size: 2048, extension: '.txt' }),
+      fileNode({ name: 'docs', path: 'docs', type: 'directory', size: 0 }),
+      fileNode({ name: 'a.txt', path: 'a.txt', type: 'file', size: 10, extension: '.txt' }),
+      fileNode({ name: 'assets', path: 'assets', type: 'directory', size: 0 }),
+    ];
+  }
+
+  function docsEntries(): FileNode[] {
+    return [
+      fileNode({ name: 'a.txt', path: 'docs/a.txt', type: 'file', size: 10, extension: '.txt' }),
+      fileNode({ name: 'deep', path: 'docs/deep', type: 'directory', size: 0 }),
+    ];
+  }
+
+  function deepEntries(): FileNode[] {
+    return [
+      fileNode({ name: 'a.txt', path: 'docs/deep/a.txt', type: 'file', size: 10, extension: '.txt' }),
+    ];
+  }
+
+  function nestedFile(): FileNode {
+    return fileNode({
+      name: 'a.txt',
+      path: 'docs/deep/a.txt',
+      type: 'file',
+      size: 10,
+      extension: '.txt',
+    });
+  }
+
+  /** A listing resolver keyed by path, so a navigation and a root load can differ. */
+  function listingsBy(byPath: Record<string, FileNode[]>): void {
+    workspaceServiceSpy.getWorkspaceTree.and.callFake(
+      async (_team: string, path?: string) => byPath[path ?? ''] ?? [],
+    );
+  }
+
+  beforeEach(async () => {
+    workspaceServiceSpy = jasmine.createSpyObj('WorkspaceService', [
+      'getWorkspaceTree',
+      'getFileContent',
+      'getDownloadUrl',
+      'uploadFiles',
+    ]);
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: 'body',
+      type: 'text',
+    });
+    invalidations = new FakeWorkspaceInvalidationService();
+    running = new BehaviorSubject<boolean>(true);
+
+    await TestBed.configureTestingModule({
+      imports: [WorkspaceExplorerComponent, NoopAnimationsModule],
+      providers: [
+        { provide: WorkspaceService, useValue: workspaceServiceSpy },
+        {
+          provide: ContextService,
+          useValue: {
+            currentProcessId$: new BehaviorSubject<string>(TEAM_ID),
+            currentTeamRunning$: running,
+            getCurrentTeam: jasmine
+              .createSpy('getCurrentTeam')
+              .and.callFake(async () => makeTeam()),
+          },
+        },
+        { provide: WorkspaceInvalidationService, useValue: invalidations },
+      ],
+    })
+      .overrideComponent(WorkspaceExplorerComponent, {
+        set: {
+          imports: [CommonModule, ButtonModule, ToolbarModule],
+          schemas: [CUSTOM_ELEMENTS_SCHEMA],
+        },
+      })
+      .compileComponents();
+  });
+
+  async function create(): Promise<void> {
+    fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+    component = fixture.componentInstance;
+    await flushRootLoad(fixture);
+  }
+
+  /** Push instructions as ONE synchronous delta, then settle the fetches. */
+  async function deliver(...batch: WorkspaceInvalidation[]): Promise<void> {
+    for (const instruction of batch) {
+      invalidations.invalidations$.next(instruction);
+    }
+    await flushMicrotasks();
+    await flushMicrotasks();
+    fixture.detectChanges();
+  }
+
+  function pane(): HTMLElement {
+    return fixture.nativeElement.querySelector('.panel-content') as HTMLElement;
+  }
+
+  function listRegion(): HTMLElement | null {
+    return pane().querySelector('.directory-list') as HTMLElement | null;
+  }
+
+  function footer(): HTMLElement | null {
+    return pane().querySelector('.upload-footer') as HTMLElement | null;
+  }
+
+  function rowEls(): HTMLButtonElement[] {
+    return Array.from(pane().querySelectorAll('.directory-entry'));
+  }
+
+  function rowNames(): string[] {
+    return rowEls().map((row) =>
+      (row.querySelector('.directory-entry-name') as HTMLElement).textContent!.trim(),
+    );
+  }
+
+  /** A REAL click on a rendered row — never the handler on the instance. */
+  async function clickRow(name: string): Promise<void> {
+    const row = rowEls().find(
+      (el) =>
+        (el.querySelector('.directory-entry-name') as HTMLElement).textContent!.trim() ===
+        name,
+    );
+    expect(row).withContext(`list row "${name}" should be rendered`).toBeDefined();
+    row!.click();
+    await flushMicrotasks();
+    fixture.detectChanges();
+  }
+
+  function toolbarHost(label: string): UploadControlEl | null {
+    return fixture.nativeElement.querySelector(
+      `p-toolbar p-button[label="${label}"]`,
+    ) as UploadControlEl | null;
+  }
+
+  /** A REAL click on the inner <button> PrimeNG renders for a p-button. */
+  async function clickToolbar(label: string): Promise<void> {
+    const host = toolbarHost(label);
+    expect(host).withContext(`toolbar control "${label}" should be rendered`).not.toBeNull();
+    (host!.querySelector('button') as HTMLButtonElement).click();
+    await flushMicrotasks();
+    fixture.detectChanges();
+  }
+
+  /**
+   * Which of the two navigation verbs is on screen. Deliberately reads ONLY
+   * Up/Back: they vary on `openFile()` while the upload control varies on
+   * `viewMode()`, and those differ in the 'deleted', 'error' and 'loading'
+   * states — so satisfying this through the upload control would be asserting
+   * the wrong thing (ADR-033 §D8, story 45-2 AC8).
+   */
+  function navVerbs(): string[] {
+    return ['Up', 'Back'].filter((label) => toolbarHost(label) !== null);
+  }
+
+  /**
+   * Every LABELLED upload control rendered in the preview panel. The
+   * navigator header's upload button is icon-only — it carries no `label`
+   * attribute at all — so it is excluded by construction rather than by a
+   * hand-maintained blocklist. It is a different column and is not part of
+   * this count.
+   */
+  function labelledUploadControls(): string[] {
+    const panel = fixture.nativeElement.querySelector('.preview-panel') as HTMLElement;
+    return Array.from(panel.querySelectorAll('p-button[label]'))
+      .map((el) => el.getAttribute('label')!)
+      .filter((label) => label.toLowerCase().includes('upload'));
+  }
+
+  // --- AC1 / AC3.2: the pane lists where it is, from the load it already made ---
+
+  it('scenario 118 — the pane lists the root on entry, folders first, with each group in backend order', async () => {
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo(rootEntries());
+    await create();
+
+    // Folders first as a stable PARTITION, not a sort: `docs` before `assets`
+    // and `b.txt` before `a.txt` are the backend's order, preserved within each
+    // group. Alphabetical sorting anywhere reorders both groups.
+    expect(rowNames()).toEqual(['docs', 'assets', 'b.txt', 'a.txt']);
+    expect(component.viewMode()).toBe('list');
+
+    // A row reuses what already exists — `getFileIcon` and `formatFileSize`.
+    // No second icon map, no second formatter.
+    const folderRow = rowEls()[0];
+    expect(folderRow.querySelector('.directory-entry-icon')!.className).toContain(
+      'pi-folder',
+    );
+    expect(folderRow.querySelector('.directory-entry-size')).toBeNull();
+    const fileRow = rowEls()[2];
+    expect(
+      fileRow.querySelector('.directory-entry-size')!.textContent!.trim(),
+    ).toBe('2 KB');
+  });
+
+  it('scenario 119 — startup issues exactly ONE getWorkspaceTree(\'\'): the tree and the list come from it', async () => {
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo(rootEntries());
+    await create();
+
+    // The root's tree fetch and its list fetch ARE the same request. A separate
+    // `fetchTree('')` for the list would double every root load — including the
+    // gesture-less ones — and move counts the rest of this file asserts on.
+    expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith('proc', '');
+    expect(component.listing()).toEqual({ path: '', entries: rootEntries() });
+    expect(component.treeNodes().length).toBe(4);
+  });
+
+  // --- AC2: the list shares nothing with the tree but `currentDirectory` ---
+
+  it('scenario 120 — a folder the navigator has NEVER expanded lists when navigated into', async () => {
+    listingsBy({ '': rootEntries(), docs: docsEntries() });
+    await create();
+
+    // `docs` is materialized in the tree as a LAZY node: children undefined, so
+    // `findTreeNodeByPath` finds the node but nothing under it. The list does
+    // not consult the tree at all — that is what makes a flat list simpler than
+    // the second `p-tree` §A1 rejected.
+    expect(component.treeNodes()[1].label).toBe('docs');
+    expect(component.treeNodes()[1].children).toBeUndefined();
+
+    await clickRow('docs');
+
+    expect(component.currentDirectory()).toBe('docs');
+    expect(rowNames()).toEqual(['deep', 'a.txt']);
+    // Still unmaterialized in the tree afterwards: the list took nothing from it
+    // and gave nothing back.
+    expect(component.treeNodes()[1].children).toBeUndefined();
+  });
+
+  // --- AC3.1: a background root load cannot repaint the user's directory ---
+
+  it('scenario 121 — a background root load with the user deep in a subdirectory writes NO listing', async () => {
+    listingsBy({ '': rootEntries(), 'docs/deep': deepEntries() });
+    await create();
+
+    await component.onNodeSelect({
+      node: { data: fileNode({ name: 'deep', path: 'docs/deep', type: 'directory' }) },
+    });
+    await flushMicrotasks();
+    fixture.detectChanges();
+    expect(component.listing()).toEqual({ path: 'docs/deep', entries: deepEntries() });
+
+    // An agent writes a file: a whole-tree instruction routes to `refresh(true)`,
+    // whose sink is `applyRootLoad` — and, now, `applyRootListing` beside it.
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
+      fileNode({ name: 'other', path: 'other', type: 'directory' }),
+    ]);
+    await deliver(invalidation({ workspaceId: TEAM_ID, wholeTree: true }));
+
+    // The TREE was replaced. The user's list was not: an applier without the
+    // `currentDirectory() === ''` guard repaints `docs/deep` with the root's
+    // entries, which is the same "an agent moved me" surprise `applyRootLoad`
+    // already refuses for `currentDirectory` itself.
+    expect(component.treeNodes()[0].label).toBe('other');
+    expect(component.listing()).toEqual({ path: 'docs/deep', entries: deepEntries() });
+    expect(rowNames()).toEqual(['a.txt']);
+  });
+
+  // --- AC4: a superseded listing is discarded, by path ------------------
+
+  it('scenario 122 — a listing that resolves after the user has moved on is discarded, by path', async () => {
+    listingsBy({ '': rootEntries() });
+    await create();
+
+    // Navigate into `docs`, whose listing resolves LATE.
+    const slow = deferred<FileNode[]>();
+    workspaceServiceSpy.getWorkspaceTree.and.returnValue(slow.promise);
+    await clickRow('docs');
+    expect(component.currentDirectory()).toBe('docs');
+
+    // ...and on into `assets` from the navigator before `docs` resolves. The
+    // point is only that the pane has moved on while a listing is in flight.
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
+      fileNode({ name: 'logo.png', path: 'assets/logo.png', type: 'file', size: 4 }),
+    ]);
+    await component.onNodeSelect({
+      node: { data: fileNode({ name: 'assets', path: 'assets', type: 'directory' }) },
+    });
+    await flushMicrotasks();
+    fixture.detectChanges();
+    expect(component.listing()).toEqual({
+      path: 'assets',
+      entries: [
+        fileNode({ name: 'logo.png', path: 'assets/logo.png', type: 'file', size: 4 }),
+      ],
+    });
+
+    slow.resolve(docsEntries());
+    await flushMicrotasks();
+    fixture.detectChanges();
+
+    // `applyFileContent`'s rule, applied to the list: without it `docs`'s
+    // entries render under `assets`'s name — a listing and the directory it
+    // describes disagreeing, which the path tag exists to prevent.
+    expect(component.currentDirectory()).toBe('assets');
+    expect(component.listing()!.path).toBe('assets');
+    expect(rowNames()).toEqual(['logo.png']);
+  });
+
+  // --- AC5 / AC6: three verbs, one place --------------------------------
+
+  it('scenario 123 — a folder click descends and clears the open file, from the list AND from the navigator', async () => {
+    listingsBy({ '': rootEntries(), docs: docsEntries(), assets: [] });
+    await create();
+
+    // Seed an open file so the descent's clears are observable.
+    component.openFile.set(nestedFile());
+    component.content.set({ kind: 'text', body: 'stale' });
+    component.fileError.set('stale failure');
+    fixture.detectChanges();
+
+    // Entry point 1 — the NAVIGATOR.
+    await component.onNodeSelect({
+      node: { data: fileNode({ name: 'docs', path: 'docs', type: 'directory' }) },
+    });
+    await flushMicrotasks();
+    fixture.detectChanges();
+
+    expect(component.currentDirectory()).toBe('docs');
+    expect(component.openFile()).toBeNull();
+    expect(component.content()).toBeNull();
+    // Without the `fileError` clear the pane returns `viewMode === 'error'` and
+    // the navigation appears to do nothing — a file-scoped banner has nothing
+    // left to describe once its file is closed.
+    expect(component.fileError()).toBeNull();
+    expect(component.viewMode()).toBe('list');
+    expect(rowNames()).toEqual(['deep', 'a.txt']);
+
+    // Entry point 2 — the LIST, through a real DOM click. Both doorways go
+    // through the one descent method: two copies of the rule is how the panel
+    // and the pane end up pointing at different places (§D3).
+    await clickRow('deep');
+    expect(component.currentDirectory()).toBe('docs/deep');
+    expect(component.openFile()).toBeNull();
+  });
+
+  it('scenario 124 — Up ascends through the DOM and is disabled at the root', async () => {
+    listingsBy({ '': rootEntries(), docs: docsEntries(), 'docs/deep': deepEntries() });
+    await create();
+
+    // At the root Up is rendered and DISABLED — there is nowhere above `''`.
+    const atRoot = toolbarHost('Up')!;
+    expect((atRoot.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+
+    await clickRow('docs');
+    await clickRow('deep');
+    expect(component.currentDirectory()).toBe('docs/deep');
+
+    const inDeep = toolbarHost('Up')!;
+    expect((inDeep.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
+
+    await clickToolbar('Up');
+    expect(component.currentDirectory()).toBe('docs');
+    expect(rowNames()).toEqual(['deep', 'a.txt']);
+
+    await clickToolbar('Up');
+    expect(component.currentDirectory()).toBe('');
+    expect(rowNames()).toEqual(['docs', 'assets', 'b.txt', 'a.txt']);
+    expect(
+      (toolbarHost('Up')!.querySelector('button') as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it('scenario 125 — Back closes the file, leaves currentDirectory, and re-lists nothing it already has', async () => {
+    listingsBy({ '': rootEntries(), docs: docsEntries() });
+    await create();
+    await clickRow('docs');
+
+    // Open a file IN the directory the pane is already showing.
+    await clickRow('a.txt');
+    expect(component.openFile()!.path).toBe('docs/a.txt');
+    expect(component.currentDirectory()).toBe('docs');
+
+    const listings = workspaceServiceSpy.getWorkspaceTree.calls.count();
+    await clickToolbar('Back');
+
+    expect(component.openFile()).toBeNull();
+    expect(component.content()).toBeNull();
+    // Back stays put — that is the whole distinction from Up.
+    expect(component.currentDirectory()).toBe('docs');
+    expect(rowNames()).toEqual(['deep', 'a.txt']);
+    // ...and costs no request, because the entries already describe `docs`.
+    expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(listings);
+  });
+
+  it('scenario 126 — exactly one of Up / Back is rendered in every reachable state', async () => {
+    listingsBy({ '': rootEntries(), docs: docsEntries() });
+    await create();
+
+    // 1. the list, at the root
+    expect(navVerbs()).toEqual(['Up']);
+
+    // 2. the list, in a subdirectory
+    await clickRow('docs');
+    expect(navVerbs()).toEqual(['Up']);
+
+    // 3. a file open with its body rendered
+    await clickRow('a.txt');
+    expect(component.viewMode()).toBe('text');
+    expect(navVerbs()).toEqual(['Back']);
+
+    // 4. a read in flight — Back keys on `openFile()`, not on `viewMode()`
+    component.loadingContent.set(true);
+    fixture.detectChanges();
+    expect(component.viewMode()).toBe('loading');
+    expect(navVerbs()).toEqual(['Back']);
+    component.loadingContent.set(false);
+
+    // 5. a failure with nothing to fall back on
+    component.content.set(null);
+    component.fileError.set('403 Forbidden');
+    fixture.detectChanges();
+    expect(component.viewMode()).toBe('error');
+    expect(navVerbs()).toEqual(['Back']);
+
+    // 6. the deleted-file notice, which clears `openFile`
+    component.fileError.set(null);
+    component.openFile.set(null);
+    component.deletedNotice.set('docs/a.txt');
+    fixture.detectChanges();
+    expect(component.viewMode()).toBe('deleted');
+    expect(navVerbs()).toEqual(['Up']);
+  });
+
+  it("scenario 127 — Back from a file opened in the NAVIGATOR lands in that file's directory and lists it", async () => {
+    listingsBy({ '': rootEntries(), 'docs/deep': deepEntries() });
+    await create();
+    expect(component.currentDirectory()).toBe('');
+
+    // Opened from the tree, three levels down, while the pane is at the root.
+    await component.onNodeSelect({ node: { data: nestedFile() } });
+    fixture.detectChanges();
+
+    // §D3 as amended: opening a file MOVES the pane to that file's directory,
+    // which is what makes "Back stays put" and "Back from a nested file lands
+    // in that file's directory" the same sentence. No listing is fetched here.
+    expect(component.currentDirectory()).toBe('docs/deep');
+    expect(component.listing()!.path).toBe('');
+
+    await clickToolbar('Back');
+
+    // Not the root — the directory the file came from, listed.
+    expect(component.currentDirectory()).toBe('docs/deep');
+    expect(component.openFile()).toBeNull();
+    expect(rowNames()).toEqual(['a.txt']);
+    expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledWith('proc', 'docs/deep');
+  });
+
+  // --- AC7 / AC8: one upload affordance, pinned outside the scroll ------
+
+  it('scenario 128 — the footer sits OUTSIDE the scrolling list region, gated and tooltipped', async () => {
+    running.next(false);
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo(rootEntries());
+    await create();
+
+    const list = listRegion();
+    const foot = footer();
+    expect(list).withContext('the scrolling list region').not.toBeNull();
+    expect(foot).withContext('the pinned upload footer').not.toBeNull();
+
+    // The structural relationship, not a pixel: the SCSS is invisible to Karma,
+    // so containment is the only thing that can be pinned. A footer inside the
+    // scrolling region scrolls away on a long listing — the exact failure the
+    // pinning exists to prevent.
+    expect(list!.contains(foot!))
+      .withContext('the footer must not be a descendant of the scrolling region')
+      .toBe(false);
+    expect(foot!.parentElement).toBe(pane());
+    expect(list!.parentElement).toBe(pane());
+
+    // The run-state gate and its tooltip, verbatim.
+    const control = foot!.querySelector('p-button[label="Upload to Root"]') as UploadControlEl;
+    expect(control).not.toBeNull();
+    expect((control.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+    expect(control.pTooltip).toBe(STOPPED_TOOLTIP);
+
+    running.next(true);
+    fixture.detectChanges();
+    expect((control.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
+
+    // And it actually uploads: a REAL click on the rendered control.
+    (control.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(component.uploadModalVisible).toBe(true);
+    expect(component.uploadTargetPath).toBe('');
+  });
+
+  it('scenario 129 — exactly ONE labelled upload control is rendered in each view', async () => {
+    listingsBy({ '': rootEntries(), docs: docsEntries() });
+    await create();
+
+    // The list, at the root: the footer, and only the footer.
+    expect(labelledUploadControls()).toEqual(['Upload to Root']);
+
+    // The list, in a subdirectory: still one. This is the case that catches
+    // "Upload here" back on its old `!openFile() && currentDirectory() !== ''`
+    // condition — two identical affordances ~200px apart in the same view.
+    await clickRow('docs');
+    expect(labelledUploadControls()).toEqual(['Upload Files']);
+
+    // A file open: no footer, and "Upload here" doing the job — which after
+    // §D3's file-open rule already targets the file's own directory.
+    await clickRow('a.txt');
+    expect(labelledUploadControls()).toEqual(['Upload here']);
+
+    (toolbarHost('Upload here')!.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(component.uploadTargetPath).toBe('docs');
+  });
+
+  // --- AC9: an empty folder, and a listing that does not describe the pane ---
+
+  it('scenario 130 — an empty folder renders the empty-directory element and the footer, not an empty shell', async () => {
+    listingsBy({ '': rootEntries(), assets: [] });
+    await create();
+
+    await clickRow('assets');
+
+    expect(rowEls().length).toBe(0);
+    const empty = pane().querySelector('.empty-directory') as HTMLElement | null;
+    expect(empty).withContext('an explicit empty-directory element').not.toBeNull();
+    expect(empty!.textContent).toContain('This folder is empty');
+    expect(footer()!.querySelector('p-button[label="Upload Files"]')).not.toBeNull();
+  });
+
+  it('scenario 131 — a listing that does not describe the pane renders neither entries nor the empty-state', async () => {
+    listingsBy({ '': rootEntries() });
+    await create();
+    expect(rowNames()).toEqual(['docs', 'assets', 'b.txt', 'a.txt']);
+
+    const pending = deferred<FileNode[]>();
+    workspaceServiceSpy.getWorkspaceTree.and.returnValue(pending.promise);
+    await clickRow('docs');
+
+    // IN FLIGHT. The root's entries are still in `listing`, and they must not
+    // render under `docs` — nor may the empty-state flash, which is what an
+    // implementation with a `listingLoading` flag gets wrong on the frame
+    // between the navigation and the flag being raised. The path tag answers
+    // both with one comparison and no flag.
+    expect(component.currentDirectory()).toBe('docs');
+    expect(component.listing()!.path).toBe('');
+    expect(rowEls().length).toBe(0);
+    expect(pane().querySelector('.empty-directory')).toBeNull();
+    expect(footer()).withContext('the footer still renders').not.toBeNull();
+
+    pending.resolve(docsEntries());
+    await flushMicrotasks();
+    fixture.detectChanges();
+    expect(rowNames()).toEqual(['deep', 'a.txt']);
+  });
+
+  // --- AC10: the directory on screen stays current, at zero extra cost ---
+
+  it('scenario 132 — an invalidation naming the current directory updates the list with no extra call', async () => {
+    listingsBy({ '': rootEntries(), docs: docsEntries() });
+    await create();
+    await clickRow('docs');
+    expect(rowNames()).toEqual(['deep', 'a.txt']);
+
+    workspaceServiceSpy.getWorkspaceTree.calls.reset();
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
+      ...docsEntries(),
+      fileNode({ name: 'new.txt', path: 'docs/new.txt', type: 'file', size: 3, extension: '.txt' }),
+    ]);
+
+    await deliver(invalidation({ workspaceId: TEAM_ID, directories: ['docs'] }));
+
+    // The listing `refreshDirectory` already fetched is reused — this AC issues
+    // no fetch of its own, so the directory pass costs exactly what it did
+    // before this story.
+    expect(rowNames()).toEqual(['deep', 'a.txt', 'new.txt']);
+    expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith('proc', 'docs');
   });
 });

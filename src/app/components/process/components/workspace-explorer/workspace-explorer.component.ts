@@ -47,6 +47,17 @@ import { UploadModalComponent } from './upload-modal/upload-modal.component';
  */
 interface RootLoadResult {
   nodes: TreeNode[] | null;
+  /**
+   * The same load's RAW listing, carried beside `nodes` so the main pane's flat
+   * list can be applied from the request the tree was going to make anyway.
+   *
+   * A separate `fetchTree('')` for the list would double every root load —
+   * including the gesture-less ones — and move `getWorkspaceTree` call counts
+   * on paths that have nothing to do with the list (ADR-033 §D2). It is the
+   * raw `FileNode[]` rather than the converted `TreeNode[]` so the listing is
+   * not reconstructed out of a shape built for PrimeNG.
+   */
+  entries: FileNode[] | null;
   error: string | null;
   /**
    * True when NO user gesture is behind the load that produced this result.
@@ -174,6 +185,21 @@ export class WorkspaceExplorerComponent {
     body: string;
   } | null>(null);
 
+  /**
+   * The directory listing the main pane renders, tagged with the path it
+   * describes — or `null` before the first one arrives (ADR-033 §D2).
+   *
+   * **The path rides on the value** for the reason `content`'s kind does (§D5)
+   * and the reason `applyFileContent` compares paths (ADR-030 §A4): a listing
+   * and the directory it describes are ONE fact, and two fields let them
+   * disagree. Every reader — the supersession rule in `applyListing`, the
+   * "does this describe where I am?" test the template applies through
+   * `listedEntries` — is that one comparison, which is also why no in-flight
+   * flag is needed: a listing that does not name `currentDirectory()` is
+   * exactly the set of "in flight" and "never fetched".
+   */
+  listing = signal<{ path: string; entries: FileNode[] } | null>(null);
+
   loading = signal(false);
   loadingContent = signal(false);
 
@@ -252,6 +278,29 @@ export class WorkspaceExplorerComponent {
   );
 
   /**
+   * The rows the list renders — folders first — or `null` while `listing()`
+   * does not describe `currentDirectory()`.
+   *
+   * `null` is the render-nothing case, and it covers BOTH "a listing is in
+   * flight" and "none was ever fetched" with one comparison. That is what stops
+   * *"this folder is empty"* flashing on every navigation without a
+   * `listingLoading` signal to go stale: an empty array here means the backend
+   * said the directory is empty, and `null` means we do not know yet.
+   *
+   * The partition is stable, not a sort: directories in listing order, then
+   * files in listing order. The backend's order is preserved within each group
+   * — adding an alphabetical sort here would silently override it.
+   */
+  listedEntries = computed<FileNode[] | null>(() => {
+    const listed = this.listing();
+    if (listed === null || listed.path !== this.currentDirectory()) return null;
+    return [
+      ...listed.entries.filter((entry) => entry.type === 'directory'),
+      ...listed.entries.filter((entry) => entry.type !== 'directory'),
+    ];
+  });
+
+  /**
    * True while a per-file refresh is in flight — the ONLY state this feature
    * adds. It drives the toolbar control's disabled binding AND the guard at the
    * top of `refreshSelectedFile`, so a second activation cannot race the first
@@ -312,7 +361,10 @@ export class WorkspaceExplorerComponent {
         switchMap((ws) => this.loadRootTree$(ws)),
         takeUntilDestroyed(this.destroyRef),
       )
-      .subscribe((result) => this.applyRootLoad(result));
+      .subscribe((result) => {
+        this.applyRootLoad(result);
+        this.applyRootListing(result);
+      });
 
     // The panel stops being the one view that ignores the log it already
     // receives (Epic 39 / ADR-031): every completed mutating workspace tool
@@ -515,7 +567,12 @@ export class WorkspaceExplorerComponent {
    */
   private loadRootTree$(ws?: string, background: boolean = false) {
     if (!this.processId) {
-      return of<RootLoadResult>({ nodes: null, error: null, background });
+      return of<RootLoadResult>({
+        nodes: null,
+        entries: null,
+        error: null,
+        background,
+      });
     }
 
     if (!background) {
@@ -531,6 +588,7 @@ export class WorkspaceExplorerComponent {
     return from(this.fetchTree('', ws)).pipe(
       map((tree): RootLoadResult => ({
         nodes: this.convertToTreeNodes(tree),
+        entries: tree,
         error: null,
         background,
       })),
@@ -538,6 +596,7 @@ export class WorkspaceExplorerComponent {
         console.error('Error loading workspace', error);
         return of<RootLoadResult>({
           nodes: null,
+          entries: null,
           error: error?.message || 'Failed to load workspace',
           background,
         });
@@ -574,6 +633,62 @@ export class WorkspaceExplorerComponent {
     if (result.nodes !== null) {
       this.treeNodes.set(result.nodes);
     }
+  }
+
+  /**
+   * Apply the SAME root-load result to the main pane's list — but only while
+   * the pane is actually at the root.
+   *
+   * Deliberately a second method rather than three lines inside
+   * `applyRootLoad`, and the separation is the whole design (ADR-033 §D2):
+   * `applyRootLoad` writes `treeNodes` and `treeError` and nothing else, so a
+   * background refresh can never move the user, and after this it must not
+   * repaint their directory either. A user sitting in `docs/deep` while an
+   * agent writes a file gets a fresh TREE and an untouched LIST — the
+   * `currentDirectory() === ''` guard is what makes that true, and it is the
+   * only thing standing between a gesture-less load and the root's entries
+   * appearing under a subdirectory's name.
+   *
+   * Reading the load's own result is also what keeps the root free: the tree
+   * fetch and the list fetch ARE the same `fetchTree('')`, so nothing here
+   * issues a request and no `getWorkspaceTree` call count moves.
+   */
+  private applyRootListing(result: RootLoadResult): void {
+    if (result.error !== null || result.entries === null) return;
+    if (this.currentDirectory() !== '') return;
+    this.listing.set({ path: '', entries: result.entries });
+  }
+
+  /**
+   * Fetch the listing for one directory and hand it to `applyListing`.
+   *
+   * The failure is logged rather than bannered. A `fileError` here would take
+   * the whole pane (`viewMode` returns `'error'` with no content loaded), so a
+   * transient listing failure would replace the list — and the navigation that
+   * issued it — with a banner the user cannot navigate out of. Recorded as an
+   * open question in story 45-2 rather than decided here.
+   */
+  private async loadListing(path: string): Promise<void> {
+    try {
+      this.applyListing(path, await this.fetchTree(path));
+    } catch (error: unknown) {
+      console.error('Error listing directory', error);
+    }
+  }
+
+  /**
+   * Write one listing result into the pane — but ONLY while it still describes
+   * where the pane is.
+   *
+   * `requestedPath` is the path the listing was ISSUED for; `currentDirectory()`
+   * is read at RESOLUTION time. This is `applyFileContent`'s rule applied to
+   * the list, for the identical reason (ADR-030 §A4): navigate A → B and A's
+   * slow listing would otherwise render A's entries under B's name. It is the
+   * fifth member of that family of guards and is written to the same shape.
+   */
+  private applyListing(requestedPath: string, entries: FileNode[]): void {
+    if (requestedPath !== this.currentDirectory()) return;
+    this.listing.set({ path: requestedPath, entries });
   }
 
   /**
@@ -669,24 +784,101 @@ export class WorkspaceExplorerComponent {
     }
   }
 
+  /**
+   * The NAVIGATOR's doorway into the two verbs. The list's row click is the
+   * other one (`onEntryClick`), and both go through the same two methods.
+   *
+   * §D3 says why they must not each carry their own copy of the rule:
+   * "otherwise the panel and the pane can point at different places — the same
+   * disagreement the first draft's shared selection model existed to prevent,
+   * merely relocated."
+   *
+   * The question story 45-1 recorded rather than guessed — does opening a file
+   * from the TREE also descend to its parent? — is decided: **yes**, in
+   * `openFileNode`, by ADR-033 §D3 as amended. With no list and no Back control
+   * 45-1 had nothing to be consistent with; now "Back stays put" and "Back from
+   * a nested file lands in that file's directory" are the same sentence only if
+   * opening the file moved you there.
+   */
   async onNodeSelect(event: any) {
     const node: FileNode = event.node.data;
 
-    // Any selection re-populates the pane, so a deletion notice from a previous
-    // file has nothing left to describe. Cleared once, ahead of both branches.
-    this.deletedNotice.set(null);
-
     if (node.type === 'file') {
-      // Opening a file does not move the pane's directory: `openFile` is what
-      // the chrome and the upload target read while a file is open, and there
-      // is no longer a folder selection to clear. Whether opening a file from
-      // the TREE should also descend to its parent is story 45-2's to decide.
-      this.openFile.set(node);
-      await this.loadFileContent(node.path);
+      await this.openFileNode(node);
     } else if (node.type === 'directory') {
-      this.openFile.set(null);
-      this.currentDirectory.set(node.path);
-      this.content.set(null);
+      this.navigateTo(node.path);
+    }
+  }
+
+  /** The LIST's doorway into the same two verbs (ADR-033 §D3). */
+  onEntryClick(entry: FileNode): void {
+    if (entry.type === 'directory') {
+      this.navigateTo(entry.path);
+      return;
+    }
+    void this.openFileNode(entry);
+  }
+
+  /**
+   * Descend into (or ascend to) a directory: the pane moves, whatever file was
+   * open closes, and the listing for the new directory is fetched.
+   *
+   * `fileError` is cleared with `content` and not merely alongside it. Without
+   * that clear the pane returns `viewMode === 'error'` — a file failure with no
+   * content — and the navigation appears to do nothing: the file-scoped banner
+   * has nothing left to describe once its file is closed. This NARROWS
+   * `backlog.md` row 33(a) (a gesture now clears the banner) and does not close
+   * it: neither `fileError` write site has acquired a path rule.
+   *
+   * `deletedNotice` goes for the same reason — the notice describes a file the
+   * pane is no longer about.
+   */
+  private navigateTo(path: string): void {
+    this.currentDirectory.set(path);
+    this.openFile.set(null);
+    this.content.set(null);
+    this.fileError.set(null);
+    this.deletedNotice.set(null);
+    void this.loadListing(path);
+  }
+
+  /**
+   * Open a file in the pane, from either view — and move the pane INTO that
+   * file's directory (ADR-033 §D3, amended 2026-08-23).
+   *
+   * No listing is fetched here: the pane is showing the file, not the list.
+   * `closeFile` is what pays for the listing, and only when the entries do not
+   * already describe that directory. Pre-fetching would spend a request on a
+   * view the user may never return to — accepted as designed, not an oversight.
+   */
+  private async openFileNode(node: FileNode): Promise<void> {
+    this.deletedNotice.set(null);
+    this.openFile.set(node);
+    this.currentDirectory.set(this.getParentPath(node.path));
+    await this.loadFileContent(node.path);
+  }
+
+  /** **Up** — leave the directory. Disabled at the root, where it is a no-op. */
+  goUp(): void {
+    this.navigateTo(this.getParentPath(this.currentDirectory()));
+  }
+
+  /**
+   * **Back** — close the file and STAY PUT. `currentDirectory` is untouched,
+   * which is the whole distinction from Up (ADR-033 §D3).
+   *
+   * The re-fetch is conditional: coming back from a file opened in the
+   * directory the pane is already in costs no request, because the entries
+   * already describe it. After §D3's file-open rule that is the common case.
+   */
+  closeFile(): void {
+    this.openFile.set(null);
+    this.content.set(null);
+    this.fileError.set(null);
+
+    const here = this.currentDirectory();
+    if (this.listing()?.path !== here) {
+      void this.loadListing(here);
     }
   }
 
@@ -943,7 +1135,10 @@ export class WorkspaceExplorerComponent {
     // stream (the only owner of the loading/treeNodes lifecycle now).
     this.loadRootTree$(this.workspaceId(), background)
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((result) => this.applyRootLoad(result));
+      .subscribe((result) => {
+        this.applyRootLoad(result);
+        this.applyRootListing(result);
+      });
 
     // The workspace-scoped control also re-reads whatever file is open, through
     // the same per-file path — refreshing the tree while leaving the pane on
@@ -1037,10 +1232,23 @@ export class WorkspaceExplorerComponent {
    * Returns the fresh listing so a caller that needs a single entry out of it
    * (the per-file refresh, re-resolving the open file's metadata) can read it
    * without issuing a second request or duplicating the splice.
+   *
+   * The main pane's list is a THIRD reader of that same response: when this
+   * listing is for the directory the pane is showing, it is written straight
+   * into `listing` (ADR-033 §D2). No fetch is added anywhere by that — the
+   * invalidation route, the upload path and the metadata half all already make
+   * this call, so the directory the user is looking at stays current at zero
+   * extra cost and no `getWorkspaceTree` count moves.
    */
   private async refreshDirectory(path: string): Promise<FileNode[]> {
     const fresh = await this.fetchTree(path);
     const freshNodes = this.convertToTreeNodes(fresh);
+
+    // Compared at RESOLUTION time, like every other listing write: the user can
+    // navigate away while this is in flight.
+    if (path === this.currentDirectory()) {
+      this.listing.set({ path, entries: fresh });
+    }
 
     if (path === '') {
       this.treeNodes.set(freshNodes);

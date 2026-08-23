@@ -80,6 +80,35 @@
 
       <p-toolbar styleClass="preview-toolbar">
         <ng-template pTemplate="start">
+          <!--
+            ONE toolbar position, showing whichever verb applies (ADR-033 §D3).
+            Back closes the file; Up leaves the directory — they are never both
+            offered, and never neither, because `openFile()` is a total test.
+            The upload control in `end` varies by `viewMode()` instead, which is
+            a different question in the 'deleted', 'error' and 'loading' states.
+          -->
+          @if (openFile()) {
+            <p-button
+              label="Back"
+              icon="pi pi-arrow-left"
+              [text]="true"
+              [rounded]="true"
+              severity="secondary"
+              (onClick)="closeFile()"
+              pTooltip="Close this file"
+            />
+          } @else {
+            <p-button
+              label="Up"
+              icon="pi pi-arrow-up"
+              [text]="true"
+              [rounded]="true"
+              severity="secondary"
+              [disabled]="currentDirectory() === ''"
+              (onClick)="goUp()"
+              pTooltip="Go to the parent folder"
+            />
+          }
           <div class="file-info">
             <i *ngIf="openFile()" class="pi pi-file file-icon"></i>
             <i
@@ -114,8 +143,15 @@
           </div>
         </ng-template>
         <ng-template pTemplate="end">
+          <!--
+            Kept when a file is open, hidden in the list view, where the pinned
+            footer is the one upload affordance (ADR-033 §D8). Two identical
+            controls ~200px apart is the clutter this redesign removes. After
+            §D3's file-open rule `currentDirectory()` IS the open file's parent,
+            so the binding below already targets the right directory.
+          -->
           <p-button
-            *ngIf="!openFile() && currentDirectory() !== ''"
+            *ngIf="openFile()"
             label="Upload here"
             icon="pi pi-upload"
             [text]="true"
@@ -202,52 +238,79 @@
             </div>
           }
           @case ('list') {
-            @if (currentDirectory() === '') {
-              <div class="empty-section file-placeholder">
-                <div class="empty-section-box">
-                  <i class="pi pi-folder-open file-placeholder-icon"></i>
-                  <div class="file-placeholder-title">Workspace Root</div>
-                  <div class="file-placeholder-desc">
-                    Select a file from the tree to view its content, or upload
-                    files to the root folder
+            <!--
+              The scrolling half of the flex column. `listedEntries()` is null
+              while the listing does not describe `currentDirectory()` — in
+              flight, or never fetched — and renders NEITHER entries nor the
+              empty-state, which is what stops "this folder is empty" flashing
+              on every navigation without an in-flight flag to go stale.
+            -->
+            <div class="directory-list">
+              @if (listedEntries(); as entries) {
+                @if (entries.length === 0) {
+                  <div class="empty-directory">
+                    <i class="pi pi-folder-open empty-directory-icon"></i>
+                    <div class="empty-directory-title">This folder is empty</div>
                   </div>
-                  <p-button
-                    label="Upload to Root"
-                    icon="pi pi-upload"
-                    severity="primary"
-                    [disabled]="!isProcessRunning()"
-                    (onClick)="openUploadModal()"
-                    styleClass="upload-button"
-                    [pTooltip]="
-                      !isProcessRunning()
-                        ? 'Process must be running to upload files'
-                        : ''
-                    "
-                  />
-                </div>
-              </div>
-            } @else {
-              <div class="empty-section folder-view">
-                <div class="empty-section-box">
-                  <i class="pi pi-folder folder-icon"></i>
-                  <div class="folder-title">{{ currentDirectoryName() }}</div>
-                  <div class="folder-desc">Upload files to this folder</div>
-                  <p-button
-                    label="Upload Files"
-                    icon="pi pi-upload"
-                    severity="primary"
-                    [disabled]="!isProcessRunning()"
-                    (onClick)="openUploadModal(currentDirectory())"
-                    styleClass="upload-button"
-                    [pTooltip]="
-                      !isProcessRunning()
-                        ? 'Process must be running to upload files'
-                        : ''
-                    "
-                  />
-                </div>
-              </div>
-            }
+                } @else {
+                  @for (entry of entries; track entry.path) {
+                    <button
+                      type="button"
+                      class="directory-entry"
+                      (click)="onEntryClick(entry)"
+                    >
+                      <i class="directory-entry-icon {{ getFileIcon(entry) }}"></i>
+                      <span class="directory-entry-name">{{ entry.name }}</span>
+                      @if (entry.type === 'file') {
+                        <span class="directory-entry-size">{{
+                          formatFileSize(entry.size)
+                        }}</span>
+                      }
+                    </button>
+                  }
+                }
+              }
+            </div>
+
+            <!--
+              The non-scrolling half, and a SIBLING of the list rather than a
+              child of it (ADR-033 §D8): `.panel-content` used to be the scroll
+              container, so a footer inside the list scrolls away on a long
+              directory. Both labels survive with their run-state gate and
+              tooltip verbatim — collapsing them into one reddens nine FR9
+              scenarios that query them by label.
+            -->
+            <div class="empty-section upload-footer">
+              @if (currentDirectory() === '') {
+                <p-button
+                  label="Upload to Root"
+                  icon="pi pi-upload"
+                  severity="primary"
+                  [disabled]="!isProcessRunning()"
+                  (onClick)="openUploadModal()"
+                  styleClass="upload-button"
+                  [pTooltip]="
+                    !isProcessRunning()
+                      ? 'Process must be running to upload files'
+                      : ''
+                  "
+                />
+              } @else {
+                <p-button
+                  label="Upload Files"
+                  icon="pi pi-upload"
+                  severity="primary"
+                  [disabled]="!isProcessRunning()"
+                  (onClick)="openUploadModal(currentDirectory())"
+                  styleClass="upload-button"
+                  [pTooltip]="
+                    !isProcessRunning()
+                      ? 'Process must be running to upload files'
+                      : ''
+                  "
+                />
+              }
+            </div>
           }
           @case ('binary') {
             <p-card styleClass="binary-card">

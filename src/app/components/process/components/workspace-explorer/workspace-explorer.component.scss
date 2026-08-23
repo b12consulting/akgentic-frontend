@@ -183,11 +183,97 @@
   font-size: 1.2rem;
 }
 
+/*
+ * A flex COLUMN that does not scroll. The scrolling moved down one level, into
+ * whichever child owns the long content (`.directory-list`, `.file-content`,
+ * `.markdown-content`) — that is what lets the upload footer pin beneath the
+ * list instead of scrolling away with it (ADR-033 §D8).
+ */
 .panel-content {
   flex: 1;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   padding: 1rem;
   position: relative;
+}
+
+.directory-list {
+  flex: 1;
+  overflow: auto;
+  /*
+   * LOAD-BEARING. A flex item's default `min-height: auto` refuses to shrink
+   * below its content, so without this the region grows to the length of the
+   * listing and pushes the footer out of view — the exact failure the pinning
+   * exists to prevent, and invisible to Karma.
+   */
+  min-height: 0;
+}
+
+.directory-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: none;
+  border-radius: var(--border-radius);
+  background: transparent;
+  color: var(--text-color);
+  font-family: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.2s;
+
+  &:hover {
+    background-color: var(--surface-hover);
+  }
+
+  &-icon {
+    color: var(--text-color-secondary);
+    font-size: 1rem;
+  }
+
+  &-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &-size {
+    color: var(--text-color-secondary);
+    font-size: 0.75rem;
+    flex-shrink: 0;
+  }
+}
+
+.empty-directory {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 1rem;
+  text-align: center;
+  color: #6c757d;
+
+  &-icon {
+    font-size: 2.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  &-title {
+    font-size: 0.95rem;
+    font-weight: 500;
+  }
+}
+
+/* The pinned half: a sibling of the scrolling list, never a child of it. */
+.upload-footer {
+  flex-shrink: 0;
+  margin-top: 1rem;
+  padding: 1.25rem;
 }
 
 .spinner {
@@ -202,6 +288,8 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  /* Above a body that stays (ADR-030 §D5) — the banner must not be squeezed. */
+  flex-shrink: 0;
   padding: 2rem;
   text-align: center;
   gap: 0.75rem;
@@ -265,35 +353,6 @@
   }
 }
 
-.folder-view {
-  margin: 2rem;
-  padding: 3rem 2rem;
-
-  .folder-icon {
-    font-size: 3.5rem;
-    margin-bottom: 1rem;
-    color: var(--primary-color);
-  }
-
-  .folder-title {
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin-bottom: 0.75rem;
-    color: var(--text-color);
-  }
-
-  .folder-desc {
-    font-size: 0.95rem;
-    color: #6c757d;
-    margin-bottom: 1.5rem;
-    line-height: 1.5;
-  }
-
-  ::ng-deep .upload-button {
-    margin-top: 0.5rem;
-  }
-}
-
 .binary-message {
   display: flex;
   flex-direction: column;
@@ -321,7 +380,17 @@
   border: 1px solid var(--surface-border);
 }
 
+/*
+ * Keeps its OWN `overflow: auto` — that is what preserves the reader's
+ * scrollTop across an in-place content replacement (ADR-030 §D2), and the
+ * reason no scroll bookkeeping exists in this component. `flex: 1; min-height:
+ * 0` is the flex-column parent's requirement, not a change of ownership: with
+ * the default `min-height: auto` the block would refuse to shrink and clip
+ * against `.panel-content`'s `overflow: hidden`.
+ */
 .file-content {
+  flex: 1;
+  min-height: 0;
   height: 100%;
   overflow: auto;
 
@@ -345,7 +414,10 @@
   }
 }
 
+/* Same story as `.file-content` above — its own scroll, kept. */
 .markdown-content {
+  flex: 1;
+  min-height: 0;
   height: 100%;
   overflow: auto;
   padding: 1rem;
@@ -424,21 +496,21 @@
   background-color: var(--primary-100);
 }
 
-/* Scrollbar styling */
-.panel-content::-webkit-scrollbar {
+/* Scrollbar styling — follows the scroll, which moved into the list region. */
+.directory-list::-webkit-scrollbar {
   width: 0.5rem;
   height: 0.5rem;
 }
 
-.panel-content::-webkit-scrollbar-track {
+.directory-list::-webkit-scrollbar-track {
   background: var(--surface-ground);
 }
 
-.panel-content::-webkit-scrollbar-thumb {
+.directory-list::-webkit-scrollbar-thumb {
   background: var(--surface-400);
   border-radius: var(--border-radius);
 }
 
-.panel-content::-webkit-scrollbar-thumb:hover {
+.directory-list::-webkit-scrollbar-thumb:hover {
   background: var(--surface-500);
 }
