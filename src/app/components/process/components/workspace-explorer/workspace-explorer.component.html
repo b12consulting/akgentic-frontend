@@ -15,6 +15,7 @@
             <p-button
               icon="pi pi-refresh"
               data-testid="refresh-workspace"
+              ariaLabel="Refresh workspace"
               [text]="true"
               [rounded]="true"
               severity="secondary"
@@ -59,13 +60,24 @@
             *ngIf="!loading() && !treeError()"
             type="button"
             class="tree-root-row"
-            [class.selected]="selectedTreeNode() === null"
+            [class.selected]="currentDirectory() === '' && !openFile()"
+            [attr.aria-current]="
+              currentDirectory() === '' && !openFile() ? 'true' : null
+            "
             (click)="selectRoot()"
           >
             <i class="pi pi-home tree-root-icon"></i>
             <span>Root</span>
           </button>
 
+          <!--
+            `[selection]` is bound so the SELECTION IS OURS: PrimeNG keeps it
+            privately when the input is unbound, and then nothing outside the
+            tree can clear it. `$any` on the change because `selectionChange` is
+            an untyped EventEmitter — a TypeScript `as` cast is not available
+            here, an Angular template has no cast syntax and its parser reads
+            the `|` of a union as a pipe.
+          -->
           <p-tree
             *ngIf="!loading() && !treeError() && treeNodes().length > 0"
             [value]="treeNodes()"
@@ -103,32 +115,13 @@
       <p-toolbar styleClass="preview-toolbar">
         <ng-template pTemplate="start">
           <!--
-            ONE toolbar position, showing whichever verb applies (ADR-033 §D3).
-            Back closes the file; Up leaves the directory — they are never both
-            offered, and never neither, because `openFile()` is a total test.
-            The upload control in `end` varies by `viewMode()` instead, which is
-            a different question in the 'deleted', 'error' and 'loading' states.
+            No Back/Up pair here any more. The trail below does both jobs, and
+            says where they lead: the parent crumb IS "Up", and with a file open
+            that same crumb IS "Back", because clicking a directory crumb closes
+            the file and returns to its listing. A button labelled only with a direction was the best
+            available answer while the toolbar showed a single folder name; the
+            breadcrumb replaced the thing that made it necessary.
           -->
-          @if (openFile()) {
-            <p-button
-              label="Back"
-              icon="pi pi-arrow-left"
-              [text]="true"
-              [rounded]="true"
-              severity="secondary"
-              (onClick)="closeFile()"
-            />
-          } @else {
-            <p-button
-              label="Up"
-              icon="pi pi-arrow-up"
-              [text]="true"
-              [rounded]="true"
-              severity="secondary"
-              [disabled]="currentDirectory() === ''"
-              (onClick)="goUp()"
-            />
-          }
           <div class="file-info">
             <!--
               The trail is where the pane IS, so it renders in both states. With
@@ -179,9 +172,9 @@
         <ng-template pTemplate="end">
           <!--
             Upload is a DIRECTORY action and lives HERE, in the toolbar, shown
-            only in the list view (ADR-033 §D8, revised 2026-08-23). It used to
-            be a pinned footer below the list, with a second copy in this
-            toolbar for the file view and a third icon in the navigator header —
+            only in the list view. It used to be a pinned footer below the list,
+            with a second copy in this toolbar for the file view and a third icon
+            in the navigator header —
             the same action in three places, two of them while the thing on
             screen was a file. The root/subdirectory split survives the move:
             the label names the target, which is the only cue for where an

@@ -282,15 +282,6 @@ export class WorkspaceExplorerComponent {
   });
 
   /**
-   * Last segment of `currentDirectory()` — the folder's own name, as the
-   * toolbar and the folder view render it. `''` at the root, where no caller
-   * reads it.
-   */
-  currentDirectoryName = computed<string>(
-    () => this.currentDirectory().split('/').pop() ?? '',
-  );
-
-  /**
    * The toolbar trail: **Root** first, then one crumb per path segment.
    *
    * Always at least one entry, so the toolbar has something to render at the
@@ -894,7 +885,29 @@ export class WorkspaceExplorerComponent {
     this.content.set(null);
     this.fileError.set(null);
     this.deletedNotice.set(null);
+    this.syncTreeSelection(path);
     void this.loadListing(path);
+  }
+
+  /**
+   * Point the navigator at *path*, whichever route the pane took to get there.
+   *
+   * Without this the tree's highlight followed clicks INSIDE the tree only, so
+   * navigating by a breadcrumb crumb or a list row left the navigator
+   * highlighting a folder the pane had left — and the ``Root`` row, whose whole
+   * job is to answer "am I at the root", answered wrongly in both directions:
+   * lit while the pane sat inside a folder reached from the list, unlit while
+   * the pane was at the root after ascending out of the tree.
+   *
+   * ``null`` for the root, which has no node of its own, and equally for a path
+   * whose node is not materialized — an unexpanded branch. Highlighting nothing
+   * is the honest answer there; the alternative would light ``Root`` for a
+   * directory that is not the root.
+   */
+  private syncTreeSelection(path: string): void {
+    this.selectedTreeNode.set(
+      path === '' ? null : this.findTreeNodeByPath(this.treeNodes(), path),
+    );
   }
 
   /**
@@ -913,11 +926,6 @@ export class WorkspaceExplorerComponent {
     await this.loadFileContent(node.path);
   }
 
-  /** **Up** — leave the directory. Disabled at the root, where it is a no-op. */
-  goUp(): void {
-    this.navigateTo(this.getParentPath(this.currentDirectory()));
-  }
-
   /**
    * **Root row** — the navigator's way back to the top.
    *
@@ -933,17 +941,25 @@ export class WorkspaceExplorerComponent {
   /**
    * **Breadcrumb** — jump straight to an ancestor, from the toolbar trail.
    *
-   * The same navigation `goUp` performs, without walking one level at a time.
-   * It routes through `navigateTo` rather than writing `currentDirectory`, so a
-   * crumb clears the open file, its content and both notices exactly as every
-   * other navigation does — a crumb that only moved the directory would leave
-   * the pane showing a file from somewhere else.
+   * Ascending to an ancestor routes through `navigateTo`, so a crumb clears the
+   * open file, its content and both notices exactly as every other navigation
+   * does — a crumb that only moved the directory would leave the pane showing a
+   * file from somewhere else.
+   *
+   * The crumb naming the pane's OWN directory is the exception, and it is what
+   * the retired **Back** button was: with a file open it closes the file and
+   * stays put, which `closeFile` does without re-listing entries that already
+   * describe the directory. Routing it through `navigateTo` instead would spend
+   * a request arriving where the pane already is.
    *
    * @param path Absolute workspace path of the crumb; `''` is the root.
    */
   navigateToCrumb(path: string): void {
-    if (path === this.currentDirectory() && this.openFile() === null) return;
-    this.navigateTo(path);
+    if (path !== this.currentDirectory()) {
+      this.navigateTo(path);
+      return;
+    }
+    if (this.openFile() !== null) this.closeFile();
   }
 
   /**
@@ -1250,21 +1266,6 @@ export class WorkspaceExplorerComponent {
   openUploadModal(targetPath?: string) {
     this.uploadTargetPath = targetPath || '';
     this.uploadModalVisible = true;
-  }
-
-  /**
-   * Target the upload at whatever the pane is describing. A file open wins —
-   * the same precedence the toolbar's chrome uses — and resolves to its parent
-   * folder; otherwise the current directory, which is `''` at the root and
-   * therefore already the "upload to root" case.
-   */
-  openUploadModalToCurrentSelection() {
-    const file = this.openFile();
-    if (file) {
-      this.openUploadModal(this.getParentPath(file.path));
-      return;
-    }
-    this.openUploadModal(this.currentDirectory());
   }
 
   private getParentPath(filePath: string): string {

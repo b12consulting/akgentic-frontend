@@ -10,6 +10,7 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { TreeNode } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { ToolbarModule } from 'primeng/toolbar';
+import { TreeModule } from 'primeng/tree';
 import { BehaviorSubject, Subject } from 'rxjs';
 
 import { ContextService } from '../../../../core/context/context.service';
@@ -81,7 +82,7 @@ function fileNode(overrides: Partial<FileNode>): FileNode {
 }
 
 /**
- * One of the three upload controls, in either override this file uses.
+ * The upload control, in either override this file uses.
  *
  * Where PrimeNG's `ButtonModule` is NOT imported, `<p-button>` is an unknown
  * custom element with no inner `<button>` and every property binding lands
@@ -1868,7 +1869,7 @@ describe('WorkspaceExplorerComponent — NFR3 OnPush regression gate', () => {
 // --------------------------------------------------------------------
 // Live run-state tracking (FR9).
 //
-// The three upload controls read run state LIVE off
+// Both upload labels read run state LIVE off
 // `ContextService.currentTeamRunning$` — the stream ADR-010 makes the sole
 // writer of — instead of latching it once at init. Every spec here drives the
 // subject AFTER the component is created and never re-runs initialization: a
@@ -3478,15 +3479,16 @@ describe('WorkspaceExplorerComponent — the pane state model (Epic 45)', () => 
    * assertion meaningful: `@switch` leaves comment anchors between cases, and a
    * child count would be satisfied by any single wrapper.
    *
-   * The helper still means "exactly one VIEW-MODE block". The `'list'` case is
-   * the one case that renders two of them — the scrolling list region and the
-   * footer pinned under it are both part of that case (ADR-033 §D8) — so its
-   * assertion names both and every other case still names exactly one.
+   * The helper means "exactly one VIEW-MODE block", and every case now names
+   * exactly one — including `'list'`, which briefly named two while upload was a
+   * footer pinned under the scrolling region.
    *
-   * `.file-placeholder:not(.deleted-notice)` and `.folder-view` no longer have
-   * markup: FR8 replaced the root placeholder and the folder view with the list
-   * and the footer. They are KEPT rather than dropped, as guards — either one
-   * matching again means a centred call-to-action came back into the list case.
+   * `.file-placeholder:not(.deleted-notice)`, `.folder-view` and
+   * `.upload-footer` no longer have markup. They are KEPT rather than dropped,
+   * as guards — a match on any of them means something this pane deliberately
+   * removed has come back into the list case. `.upload-footer` earns its place
+   * the most: upload is a single toolbar control now, and a footer returning
+   * beneath the list is the regression this change makes most plausible.
    */
   const PANE_BLOCKS = [
     'p-progressspinner, p-progressSpinner',
@@ -3498,6 +3500,7 @@ describe('WorkspaceExplorerComponent — the pane state model (Epic 45)', () => 
     '.file-content',
     '.markdown-content',
     '.directory-list',
+    '.upload-footer',
   ];
 
   function renderedBlocks(): string[] {
@@ -3862,11 +3865,12 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
   let running: BehaviorSubject<boolean>;
 
   /**
-   * The root listing, deliberately INTERLEAVED and not alphabetical: a file,
-   * then a folder, then a file, then a folder. Folders-first is a stable
-   * PARTITION, so the expected render order is `docs`, `assets`, `b.txt`,
-   * `a.txt` — each group keeping the backend's own order. An alphabetical sort
-   * anywhere would reorder both groups and fail.
+   * The root listing, deliberately INTERLEAVED and REVERSE-alphabetical within
+   * each kind: `b.txt`, `docs`, `a.txt`, `assets`. Folders come first and each
+   * block is sorted by name, so the expected render order is `assets`, `docs`,
+   * `a.txt`, `b.txt` — every one of the four moves. That is what makes the sort
+   * falsifiable: dropping either `.sort` restores the backend's order and
+   * reddens every spec that names the rows.
    */
   function rootEntries(): FileNode[] {
     return [
@@ -3941,7 +3945,10 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     })
       .overrideComponent(WorkspaceExplorerComponent, {
         set: {
-          imports: [CommonModule, ButtonModule, ToolbarModule],
+          // TreeModule so the navigator's label template actually
+          // instantiates — the size label is rendered by a
+          // pTemplate, which a schema-stubbed <p-tree> never runs.
+          imports: [CommonModule, ButtonModule, ToolbarModule, TreeModule],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
       })
@@ -4029,8 +4036,29 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
    * states — so satisfying this through the upload control would be asserting
    * the wrong thing (ADR-033 §D8, story 45-2 AC8).
    */
-  function navVerbs(): string[] {
-    return ['Up', 'Back'].filter((label) => toolbarHost(label) !== null);
+  /** Every CLICKABLE crumb, in trail order — the ancestors you can climb to. */
+  function crumbLinks(): string[] {
+    return Array.from(
+      fixture.nativeElement.querySelectorAll('.breadcrumb-link'),
+    ).map((el) => (el as HTMLElement).textContent!.trim());
+  }
+
+  /** The trail's last entry — where the pane says it is. */
+  function crumbCurrent(): string | null {
+    const marks = fixture.nativeElement.querySelectorAll('.breadcrumb-current');
+    const last = marks[marks.length - 1] as HTMLElement | undefined;
+    return last ? last.textContent!.trim() : null;
+  }
+
+  /** A REAL click on the crumb naming *name*. */
+  async function clickCrumb(name: string): Promise<void> {
+    const link = Array.from(
+      fixture.nativeElement.querySelectorAll('.breadcrumb-link'),
+    ).find((el) => (el as HTMLElement).textContent!.trim() === name);
+    expect(link).withContext(`crumb "${name}" should be clickable`).toBeTruthy();
+    (link as HTMLButtonElement).click();
+    await flushMicrotasks();
+    fixture.detectChanges();
   }
 
   /**
@@ -4216,34 +4244,35 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     expect(component.openFile()).toBeNull();
   });
 
-  it('scenario 124 — Up ascends through the DOM and is disabled at the root', async () => {
+  it('scenario 124 — the trail ascends through the DOM, and the root offers no ancestor', async () => {
     listingsBy({ '': rootEntries(), docs: docsEntries(), 'docs/deep': deepEntries() });
     await create();
 
-    // At the root Up is rendered and DISABLED — there is nowhere above `''`.
-    const atRoot = toolbarHost('Up')!;
-    expect((atRoot.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+    // At the root there is nothing above `''`, so the trail is one entry and it
+    // is not a link. This replaces the old disabled "Up": the absence of an
+    // ancestor is now shown by there being no ancestor to click, rather than by
+    // a dead button pointing nowhere.
+    expect(crumbLinks()).toEqual([]);
+    expect(crumbCurrent()).toBe('Root');
 
     await clickRow('docs');
     await clickRow('deep');
     expect(component.currentDirectory()).toBe('docs/deep');
+    expect(crumbLinks()).toEqual(['Root', 'docs']);
+    expect(crumbCurrent()).toBe('deep');
 
-    const inDeep = toolbarHost('Up')!;
-    expect((inDeep.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
-
-    await clickToolbar('Up');
+    // One level up, by naming it rather than by repeating a direction.
+    await clickCrumb('docs');
     expect(component.currentDirectory()).toBe('docs');
     expect(rowNames()).toEqual(['deep', 'a.txt']);
 
-    await clickToolbar('Up');
+    await clickCrumb('Root');
     expect(component.currentDirectory()).toBe('');
     expect(rowNames()).toEqual(['assets', 'docs', 'a.txt', 'b.txt']);
-    expect(
-      (toolbarHost('Up')!.querySelector('button') as HTMLButtonElement).disabled,
-    ).toBe(true);
+    expect(crumbLinks()).toEqual([]);
   });
 
-  it('scenario 125 — Back closes the file, leaves currentDirectory, and re-lists nothing it already has', async () => {
+  it('scenario 125 — the current directory crumb closes the file, stays put, and re-lists nothing', async () => {
     listingsBy({ '': rootEntries(), docs: docsEntries() });
     await create();
     await clickRow('docs');
@@ -4254,38 +4283,47 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     expect(component.currentDirectory()).toBe('docs');
 
     const listings = workspaceServiceSpy.getWorkspaceTree.calls.count();
-    await clickToolbar('Back');
+    // With a file open the pane's OWN directory is a link — that crumb is what
+    // the "Back" button used to be. Clicking it closes the file.
+    await clickCrumb('docs');
 
     expect(component.openFile()).toBeNull();
     expect(component.content()).toBeNull();
-    // Back stays put — that is the whole distinction from Up.
+    // It stays put: the crumb clicked IS where the pane already was.
     expect(component.currentDirectory()).toBe('docs');
     expect(rowNames()).toEqual(['deep', 'a.txt']);
     // ...and costs no request, because the entries already describe `docs`.
     expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(listings);
   });
 
-  it('scenario 126 — exactly one of Up / Back is rendered in every reachable state', async () => {
+  it('scenario 126 — the trail names where the pane is, in every reachable state', async () => {
     listingsBy({ '': rootEntries(), docs: docsEntries() });
     await create();
 
+    // The Up/Back pair used to answer this: exactly one verb, chosen by
+    // `openFile()`. The trail answers it better — it says where the verb WOULD
+    // lead — and the property to guard is the same totality: every reachable
+    // state ends the trail at the pane's own location, none leaves it blank.
+
     // 1. the list, at the root
-    expect(navVerbs()).toEqual(['Up']);
+    expect(crumbCurrent()).toBe('Root');
 
     // 2. the list, in a subdirectory
     await clickRow('docs');
-    expect(navVerbs()).toEqual(['Up']);
+    expect(crumbCurrent()).toBe('docs');
 
-    // 3. a file open with its body rendered
+    // 3. a file open with its body rendered — the file is the last crumb, and
+    //    its directory becomes the clickable way back.
     await clickRow('a.txt');
     expect(component.viewMode()).toBe('text');
-    expect(navVerbs()).toEqual(['Back']);
+    expect(crumbCurrent()).toBe('a.txt');
+    expect(crumbLinks()).toEqual(['Root', 'docs']);
 
-    // 4. a read in flight — Back keys on `openFile()`, not on `viewMode()`
+    // 4. a read in flight — the trail keys on `openFile()`, not on `viewMode()`
     component.loadingContent.set(true);
     fixture.detectChanges();
     expect(component.viewMode()).toBe('loading');
-    expect(navVerbs()).toEqual(['Back']);
+    expect(crumbCurrent()).toBe('a.txt');
     component.loadingContent.set(false);
 
     // 5. a failure with nothing to fall back on
@@ -4293,7 +4331,7 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     component.fileError.set('403 Forbidden');
     fixture.detectChanges();
     expect(component.viewMode()).toBe('error');
-    expect(navVerbs()).toEqual(['Back']);
+    expect(crumbCurrent()).toBe('a.txt');
 
     // 6. the deleted-file notice, which clears `openFile`
     component.fileError.set(null);
@@ -4301,10 +4339,10 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     component.deletedNotice.set('docs/a.txt');
     fixture.detectChanges();
     expect(component.viewMode()).toBe('deleted');
-    expect(navVerbs()).toEqual(['Up']);
+    expect(crumbCurrent()).toBe('docs');
   });
 
-  it("scenario 127 — Back from a file opened in the NAVIGATOR lands in that file's directory and lists it", async () => {
+  it("scenario 127 — leaving a file opened in the NAVIGATOR lands in that file's directory and lists it", async () => {
     listingsBy({ '': rootEntries(), 'docs/deep': deepEntries() });
     await create();
     expect(component.currentDirectory()).toBe('');
@@ -4314,12 +4352,14 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     fixture.detectChanges();
 
     // §D3 as amended: opening a file MOVES the pane to that file's directory,
-    // which is what makes "Back stays put" and "Back from a nested file lands
-    // in that file's directory" the same sentence. No listing is fetched here.
+    // which is what makes "leaving the file stays put" and "leaving a nested
+    // file lands in that file's directory" the same sentence. No listing is
+    // fetched here.
     expect(component.currentDirectory()).toBe('docs/deep');
     expect(component.listing()!.path).toBe('');
 
-    await clickToolbar('Back');
+    // The pane's own directory is the last clickable crumb — the retired Back.
+    await clickCrumb('deep');
 
     // Not the root — the directory the file came from, listed.
     expect(component.currentDirectory()).toBe('docs/deep');
@@ -4484,22 +4524,168 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     // NOT A DEAD END, which is why the failure is logged rather than bannered.
     // A `fileError` here would make `viewMode` return 'error' with no content
     // loaded, and the banner REPLACES the pane under one `@switch` (§D6) —
-    // taking the footer and the verb the user needs to get back out with it.
+    // taking the upload control and the trail the user needs to get back out
+    // with it.
     expect(component.fileError()).toBeNull();
     expect(component.viewMode()).toBe('list');
     expect(uploadControl())
       .withContext('upload stays offered while the listing is in flight')
       .not.toBeNull();
-    expect(navVerbs()).toEqual(['Up']);
-    expect((toolbarHost('Up')!.querySelector('button') as HTMLButtonElement).disabled)
-      .withContext('Up is the way out of a failed navigation')
-      .toBe(false);
+    // The trail is the way out, and it describes the failed destination rather
+    // than the directory whose entries are no longer shown.
+    expect(crumbCurrent()).toBe('deep');
+    expect(crumbLinks())
+      .withContext('the ancestors are the way out of a failed navigation')
+      .toEqual(['Root', 'docs']);
     expect(logged).toHaveBeenCalled();
 
-    // And the way out works: Up re-lists the directory it came from.
+    // And the way out works: the parent crumb re-lists the directory it came from.
     workspaceServiceSpy.getWorkspaceTree.and.resolveTo(docsEntries());
-    await clickToolbar('Up');
+    await clickCrumb('docs');
     expect(component.currentDirectory()).toBe('docs');
     expect(rowNames()).toEqual(['deep', 'a.txt']);
   });
+
+  // ===================================================================
+  // The location trail, the Root row, and the tree selection that binds
+  // them (2026-08-23). None of this had coverage when it shipped; the
+  // navigator's highlight was wrong on every route that did not go
+  // through the tree, and a green suite could not see it.
+  // ===================================================================
+
+  describe('the trail and the navigator agree on where the pane is', () => {
+    /** The `Root` row above the tree, lit when the pane is at the root. */
+    function rootRow(): HTMLButtonElement {
+      const row = fixture.nativeElement.querySelector('.tree-root-row');
+      expect(row).withContext('the Root row').not.toBeNull();
+      return row as HTMLButtonElement;
+    }
+
+    function rootRowLit(): boolean {
+      return rootRow().classList.contains('selected');
+    }
+
+    it('the trail accumulates a path per crumb, and the root is one entry', async () => {
+      listingsBy({ '': rootEntries(), docs: docsEntries(), 'docs/deep': deepEntries() });
+      await create();
+
+      // The root is a location, not "nothing selected" — one crumb, no ancestors.
+      expect(component.breadcrumb()).toEqual([
+        { name: 'Root', path: '', last: true },
+      ]);
+
+      await clickRow('docs');
+      await clickRow('deep');
+
+      // Paths accumulate left to right so a click never re-derives one from an
+      // index, and exactly one crumb is `last`.
+      expect(component.breadcrumb()).toEqual([
+        { name: 'Root', path: '', last: false },
+        { name: 'docs', path: 'docs', last: false },
+        { name: 'deep', path: 'docs/deep', last: true },
+      ]);
+    });
+
+    it('the Root row follows the PANE, not the tree — on every route', async () => {
+      listingsBy({ '': rootEntries(), docs: docsEntries() });
+      await create();
+      expect(rootRowLit()).withContext('at the root on entry').toBe(true);
+
+      // Route 1: a LIST row. The tree was never clicked, so a Root row keyed on
+      // the tree's selection would still be lit here — claiming the root while
+      // the pane is inside docs.
+      await clickRow('docs');
+      expect(component.currentDirectory()).toBe('docs');
+      expect(rootRowLit()).withContext('lit while the pane is inside docs').toBe(false);
+
+      // Route 2: a breadcrumb crumb back out. Symmetrically, a Root row keyed on
+      // the tree would stay UNLIT here — the pane is at the root and the
+      // navigator would say otherwise.
+      await clickCrumb('Root');
+      expect(component.currentDirectory()).toBe('');
+      expect(rootRowLit()).withContext('unlit while the pane is at the root').toBe(true);
+    });
+
+    it('opening a file un-lights the Root row, and closing it re-lights it', async () => {
+      listingsBy({ '': rootEntries() });
+      await create();
+      expect(rootRowLit()).toBe(true);
+
+      // `currentDirectory` is still '' with a root file open, so the row has to
+      // consult `openFile()` too or it claims the pane is showing the listing.
+      await clickRow('a.txt');
+      expect(component.currentDirectory()).toBe('');
+      expect(component.openFile()!.path).toBe('a.txt');
+      expect(rootRowLit()).toBe(false);
+
+      await clickCrumb('Root');
+      expect(component.openFile()).toBeNull();
+      expect(rootRowLit()).toBe(true);
+    });
+
+    it('the tree selection follows a navigation that never touched the tree', async () => {
+      listingsBy({ '': rootEntries(), docs: docsEntries() });
+      await create();
+      expect(component.selectedTreeNode()).toBeNull();
+
+      // Descending from the LIST points the navigator at the same folder, so
+      // the two halves of the pane cannot disagree about where the user is.
+      await clickRow('docs');
+      expect(component.selectedTreeNode()?.data.path).toBe('docs');
+
+      await clickCrumb('Root');
+      expect(component.selectedTreeNode()).toBeNull();
+    });
+
+    it('selectRoot clears the tree selection as well as navigating', async () => {
+      listingsBy({ '': rootEntries(), docs: docsEntries() });
+      await create();
+      await clickRow('docs');
+      expect(component.selectedTreeNode()).not.toBeNull();
+
+      rootRow().click();
+      await flushMicrotasks();
+      fixture.detectChanges();
+
+      // Both, or the tree keeps highlighting docs beside a lit Root row — the
+      // two-rows-claiming-the-same-thing bug this row was fixed for.
+      expect(component.currentDirectory()).toBe('');
+      expect(component.selectedTreeNode()).toBeNull();
+      expect(rootRowLit()).toBe(true);
+    });
+
+    it('a crumb naming the pane\'s own directory closes the file without re-listing', async () => {
+      listingsBy({ '': rootEntries(), docs: docsEntries() });
+      await create();
+      await clickRow('docs');
+      await clickRow('a.txt');
+
+      const listings = workspaceServiceSpy.getWorkspaceTree.calls.count();
+      await clickCrumb('docs');
+
+      // This crumb IS the retired Back button: close the file, stay put, and
+      // spend no request arriving where the pane already is.
+      expect(component.openFile()).toBeNull();
+      expect(component.currentDirectory()).toBe('docs');
+      expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(listings);
+    });
+
+    it('the navigator labels a file row with its size and a folder row with none', async () => {
+      listingsBy({ '': rootEntries() });
+      await create();
+
+      const labels = Array.from(
+        fixture.nativeElement.querySelectorAll('.tree-node'),
+      ).map((el) => ({
+        name: (el as HTMLElement).querySelector('.tree-node-name')!.textContent!.trim(),
+        size: (el as HTMLElement).querySelector('.tree-node-size')?.textContent?.trim() ?? null,
+      }));
+
+      expect(labels).toContain({ name: 'b.txt', size: '2 KB' });
+      expect(labels).toContain({ name: 'a.txt', size: '10 B' });
+      // A directory has no size worth reporting, and shows none.
+      expect(labels).toContain({ name: 'docs', size: null });
+    });
+  });
+
 });

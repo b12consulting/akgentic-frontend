@@ -179,11 +179,18 @@
     outline-offset: -2px;
   }
 
-  /* Mirrors PrimeNG's own selected node, so "where am I" reads the same
-     whether the answer is the root or a folder inside it. */
+  /*
+   * Mirrors the tree's own selected node, so "where am I" reads the same
+   * whether the answer is the root or a folder inside it. These two values are
+   * copied from `.p-treenode-content.p-highlight` below and must move with it —
+   * they were `--p-highlight-*` first, which this app's preset overrides to
+   * sky.900 on sky.100, the photographic negative of the tree's sky.50 on
+   * sky.800. Two rows answering one question in inverted palettes is the
+   * confusion this row exists to remove.
+   */
   &.selected {
-    background: var(--p-highlight-background);
-    color: var(--p-highlight-color);
+    background: var(--p-primary-50);
+    color: var(--p-primary-color);
   }
 }
 
@@ -410,12 +417,6 @@
   }
 }
 
-/* The pinned half: a sibling of the scrolling list, never a child of it. */
-.upload-footer {
-  flex-shrink: 0;
-  margin-top: 1rem;
-  padding: 1.25rem;
-}
 
 .spinner {
   display: flex;
@@ -633,28 +634,6 @@
   cursor: pointer;
 }
 
-/* Root node styling */
-:host ::ng-deep .p-tree > .p-tree-container > .p-treenode:first-child > .p-treenode-content {
-  font-weight: 600;
-  background-color: var(--p-surface-50);
-  margin-bottom: 0.25rem;
-  
-  .p-treenode-icon {
-    color: var(--p-primary-color);
-  }
-  
-  .p-treenode-label {
-    font-size: 0.875rem;
-  }
-}
-
-:host ::ng-deep .p-tree > .p-tree-container > .p-treenode:first-child > .p-treenode-content:hover {
-  background-color: var(--p-surface-100);
-}
-
-:host ::ng-deep .p-tree > .p-tree-container > .p-treenode:first-child > .p-treenode-content.p-highlight {
-  background-color: var(--p-primary-100);
-}
 
 /* Scrollbar styling — follows the scroll, which moved into the list region. */
 .directory-list::-webkit-scrollbar {
