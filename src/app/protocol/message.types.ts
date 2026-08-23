@@ -80,6 +80,24 @@ export interface ProcessedMessage extends BaseMessage {
   message_id: string;
 }
 
+/**
+ * Absorbed-message telemetry (ADR-032 §D1). Emitted once per `consume_mailbox`
+ * removal, when a message waiting in an agent's inbox is pulled into a run
+ * already in progress: the message never gets a turn of its own, so it produces
+ * neither `ReceivedMessage` nor `ProcessedMessage`.
+ *
+ * Same one-field shape and same telemetry family as `ReceivedMessage` /
+ * `ProcessedMessage` — the inner message is NOT serialised into this envelope.
+ * `message_id` is the **absorbed inner `BaseMessage.id`**, the same id space as
+ * `ReceivedMessage.message_id` and `ChatMessage.message_id`, which is what lets
+ * `chatFold` anchor the successor thinking bubble on the user message it
+ * answers. See `akgentic.core.messages.orchestrator.HandledMessage`.
+ */
+export interface HandledMessage extends BaseMessage {
+  __model__: 'akgentic.core.messages.orchestrator.HandledMessage';
+  message_id: string;
+}
+
 export interface StartMessage extends BaseMessage {
   __model__: 'akgentic.core.messages.orchestrator.StartMessage';
   config: BaseConfig;
@@ -501,6 +519,7 @@ export type AkgenticMessage =
   | SentMessage
   | ReceivedMessage
   | ProcessedMessage
+  | HandledMessage
   | StartMessage
   | StopMessage
   | ErrorMessage
@@ -523,6 +542,17 @@ export function isReceivedMessage(msg: BaseMessage): msg is ReceivedMessage {
 
 export function isProcessedMessage(msg: BaseMessage): msg is ProcessedMessage {
   return msg.__model__.includes('ProcessedMessage');
+}
+
+/**
+ * True for the absorbed-message telemetry envelope (ADR-032 §D1). A bare
+ * `.includes()` like its three siblings: `'HandledMessage'` is contained by no
+ * other outer `__model__` on the wire, and no other outer guard's substring is
+ * contained by `'…orchestrator.HandledMessage'`, so guard order in `chatStep`
+ * is free.
+ */
+export function isHandledMessage(msg: BaseMessage): msg is HandledMessage {
+  return msg.__model__.includes('HandledMessage');
 }
 
 export function isStartMessage(msg: BaseMessage): msg is StartMessage {

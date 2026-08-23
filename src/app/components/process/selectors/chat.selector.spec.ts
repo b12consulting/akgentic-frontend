@@ -7,6 +7,7 @@ import {
   AkgenticMessage,
   BaseMessage,
   EventMessage,
+  HandledMessage,
   ProcessedMessage,
   ReceivedMessage,
   SentMessage,
@@ -125,6 +126,23 @@ function makeProcessed(overrides: Partial<ProcessedMessage> = {}): ProcessedMess
     content: null,
     __model__: 'akgentic.core.messages.orchestrator.ProcessedMessage',
     message_id: 'inner-rcv-1',
+    ...overrides,
+  };
+}
+
+/** Story 44-1 — the absorbed-message telemetry envelope. Defaults to the same
+ *  agent as `makeReceived`, so a fold of the two splits one bubble. */
+function makeHandled(overrides: Partial<HandledMessage> = {}): HandledMessage {
+  return {
+    id: 'handled-1',
+    parent_id: null,
+    team_id: 'team-1',
+    timestamp: '2026-04-12T10:05:00Z',
+    sender: makeAddress({ name: '@Researcher', agent_id: 'agent-1' }),
+    display_type: 'other',
+    content: null,
+    __model__: 'akgentic.core.messages.orchestrator.HandledMessage',
+    message_id: 'inner-absorbed-X',
     ...overrides,
   };
 }
@@ -787,5 +805,247 @@ describe('computePendingNotifications', () => {
       }),
     ];
     expect(computePendingNotifications(msgs).size).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 44-1 (ADR-032) — the thinking bubble splits on a HandledMessage.
+//
+// A message absorbed mid-run gets no turn of its own, so it emits neither
+// ReceivedMessage nor ProcessedMessage. Without the split, one bubble stands for
+// two conversations AND sorts above the message it answers, because a bubble
+// carries a single `start_time`.
+// ---------------------------------------------------------------------------
+
+function makeToolCall(toolCallId: string, overrides: Partial<EventMessage> = {}) {
+  return makeEvent(
+    {
+      __model__: 'akgentic.llm.event.ToolCallEvent',
+      tool_call_id: toolCallId,
+      tool_name: 'search_web',
+      arguments: '{"q":"x"}',
+    },
+    overrides,
+  );
+}
+
+function makeToolReturn(toolCallId: string, overrides: Partial<EventMessage> = {}) {
+  return makeEvent(
+    {
+      __model__: 'akgentic.llm.event.ToolReturnEvent',
+      tool_call_id: toolCallId,
+      tool_name: 'search_web',
+      success: true,
+    },
+    overrides,
+  );
+}
+
+/** The agent's own answer, closing the run. */
+function makeAgentSent(overrides: Partial<SentMessage> = {}): SentMessage {
+  return makeSent({
+    sender: makeAddress({ name: '@Researcher', agent_id: 'agent-1', role: 'Worker' }),
+    ...overrides,
+  });
+}
+
+describe('chatFold — HandledMessage splits the thinking bubble (Story 44-1)', () => {
+  it('(AC3) a HandledMessage mid-run yields two segments, the first final', () => {
+    const state = chatFold([
+      makeReceived(),
+      makeToolCall('call-a'),
+      makeToolCall('call-b', { id: 'evt-2' }),
+      makeHandled(),
+      makeToolCall('call-c', { id: 'evt-3' }),
+      makeAgentSent(),
+    ]);
+    expect(state.thinkingAgents.length).toBe(2);
+    expect(state.thinkingAgents[0].tools.map((t) => t.tool_call_id)).toEqual([
+      'call-a',
+      'call-b',
+    ]);
+    expect(state.thinkingAgents[0].final).toBe(true);
+    expect(state.thinkingAgents[1].tools.map((t) => t.tool_call_id)).toEqual([
+      'call-c',
+    ]);
+  });
+
+  it('(AC4) the successor is anchored on the absorbed message and timestamped from the HandledMessage', () => {
+    const handled = makeHandled({
+      timestamp: '2026-04-12T10:07:30Z',
+      message_id: 'inner-absorbed-X',
+    });
+    const state = chatFold([
+      makeReceived(),
+      makeToolCall('call-a'),
+      handled,
+      makeToolCall('call-c', { id: 'evt-3' }),
+    ]);
+    const successor = state.thinkingAgents[1];
+    expect(successor.anchor_message_id).toBe('inner-absorbed-X');
+    // The ONLY field that puts the second box below the second user message.
+    expect(successor.start_time).toEqual(new Date('2026-04-12T10:07:30Z'));
+    // …and the predecessor keeps its own anchor and its own start_time.
+    expect(state.thinkingAgents[0].anchor_message_id).toBe('inner-rcv-1');
+    expect(state.thinkingAgents[0].start_time).toEqual(
+      new Date('2026-04-12T10:00:00Z'),
+    );
+  });
+
+  it('(AC5) the successor carries the same agent identity as its predecessor', () => {
+    const state = chatFold([makeReceived(), makeToolCall('call-a'), makeHandled()]);
+    expect(state.thinkingAgents[1].agent_id).toBe('agent-1');
+    expect(state.thinkingAgents[1].agent_name).toBe('@Researcher');
+    expect(state.thinkingAgents[1].final).toBe(false);
+    expect(state.thinkingAgents[1].tools).toEqual([]);
+  });
+
+  it('(AC6) a successor that receives no tool calls leaves no trailing bubble — same shape for /stop and for a plain answer', () => {
+    // Absorbed then just answered: the predecessor had a tool, the successor none.
+    const answered = chatFold([
+      makeReceived(),
+      makeToolCall('call-a'),
+      makeHandled(),
+      makeAgentSent(),
+    ]);
+    expect(answered.thinkingAgents.length).toBe(1);
+    expect(answered.thinkingAgents[0].tools.length).toBe(1);
+    expect(answered.thinkingAgents[0].final).toBe(true);
+
+    // The /stop shape: a cancel purged before any tool call was issued. Empty
+    // predecessor removed by the split, empty successor removed at Processed.
+    const stopped = chatFold([makeReceived(), makeHandled(), makeProcessed()]);
+    expect(stopped.thinkingAgents.length).toBe(0);
+  });
+
+  it('(AC6) the empty predecessor is removed by the split itself, never left final and empty', () => {
+    const state = chatFold([makeReceived(), makeHandled()]);
+    expect(state.thinkingAgents.length).toBe(1);
+    expect(state.thinkingAgents[0].anchor_message_id).toBe('inner-absorbed-X');
+    expect(state.thinkingAgents[0].final).toBe(false);
+  });
+
+  it('(AC10) a HandledMessage with no live thinking state is an identity no-op', () => {
+    const before = chatFold([]);
+    expect(chatStep(before, makeHandled())).toBe(before);
+
+    // Also after the agent already finalised: nothing live left to split.
+    const finalised = chatFold([makeReceived(), makeToolCall('call-a'), makeAgentSent()]);
+    expect(chatStep(finalised, makeHandled())).toBe(finalised);
+  });
+
+  it('(AC10) a HandledMessage for a DIFFERENT agent does not split this one', () => {
+    const before = chatFold([makeReceived(), makeToolCall('call-a')]);
+    const other = makeHandled({
+      sender: makeAddress({ name: '@Writer', agent_id: 'agent-2' }),
+    });
+    expect(chatStep(before, other)).toBe(before);
+  });
+
+  it('(AC11) two absorptions in one run produce three segments with three distinct anchors', () => {
+    const state = chatFold([
+      makeReceived(),
+      makeToolCall('call-a'),
+      makeHandled({ message_id: 'inner-absorbed-X' }),
+      makeToolCall('call-b', { id: 'evt-2' }),
+      makeHandled({ id: 'handled-2', message_id: 'inner-absorbed-Y' }),
+      makeToolCall('call-c', { id: 'evt-3' }),
+    ]);
+    expect(state.thinkingAgents.length).toBe(3);
+    expect(state.thinkingAgents.map((s) => s.anchor_message_id)).toEqual([
+      'inner-rcv-1',
+      'inner-absorbed-X',
+      'inner-absorbed-Y',
+    ]);
+    expect(new Set(state.thinkingAgents.map((s) => s.anchor_message_id)).size).toBe(3);
+  });
+
+  it('(AC16) the split is a pure fold — folding the same log twice gives the same value', () => {
+    const log = [
+      makeReceived(),
+      makeToolCall('call-a'),
+      makeHandled(),
+      makeToolCall('call-c', { id: 'evt-3' }),
+    ];
+    expect(chatFold(log)).toEqual(chatFold(log));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Story 44-1 (AC7, AC8, AC9) — the tool-return lookup searches EVERY segment.
+//
+// A tool-return part reaches the log only when the next ModelRequest is
+// appended, i.e. after the hook that absorbed the mailbox message and split the
+// bubble. So a return routinely arrives once its own segment is already final.
+// ---------------------------------------------------------------------------
+
+describe('applyToolReturnToThinking — every segment of the agent (Story 44-1)', () => {
+  it('(AC7) a ToolReturnEvent flips a row in an ALREADY-FINAL segment', () => {
+    const state = chatFold([
+      makeReceived(),
+      makeToolCall('call-a'),
+      makeHandled(),
+      makeToolReturn('call-a', { id: 'evt-ret-1' }),
+    ]);
+    expect(state.thinkingAgents.length).toBe(2);
+    expect(state.thinkingAgents[0].final).toBe(true);
+    expect(state.thinkingAgents[0].tools[0].done).toBe(true);
+  });
+
+  it('(AC7) a return arriving after Sent/Processed still flips its row', () => {
+    const state = chatFold([
+      makeReceived(),
+      makeToolCall('call-a'),
+      makeAgentSent(),
+      makeToolReturn('call-a', { id: 'evt-ret-1' }),
+    ]);
+    expect(state.thinkingAgents[0].final).toBe(true);
+    expect(state.thinkingAgents[0].tools[0].done).toBe(true);
+  });
+
+  it('(AC8) both interleavings of HandledMessage and ToolReturnEvent fold to the same end state', () => {
+    const returnAfterSplit = chatFold([
+      makeReceived(),
+      makeToolCall('call-a'),
+      makeHandled(),
+      makeToolReturn('call-a', { id: 'evt-ret-1' }),
+    ]);
+    const returnBeforeSplit = chatFold([
+      makeReceived(),
+      makeToolCall('call-a'),
+      makeToolReturn('call-a', { id: 'evt-ret-1' }),
+      makeHandled(),
+    ]);
+    expect(returnAfterSplit).toEqual(returnBeforeSplit);
+    expect(returnAfterSplit.thinkingAgents[0].tools[0].done).toBe(true);
+    expect(returnBeforeSplit.thinkingAgents[0].tools[0].done).toBe(true);
+  });
+
+  it('(AC7) the return lands on the segment holding its tool_call_id, not on the newest one', () => {
+    const state = chatFold([
+      makeReceived(),
+      makeToolCall('call-a'),
+      makeHandled(),
+      makeToolCall('call-c', { id: 'evt-3' }),
+      makeToolReturn('call-a', { id: 'evt-ret-1' }),
+    ]);
+    expect(state.thinkingAgents[0].tools[0].done).toBe(true);
+    expect(state.thinkingAgents[1].tools[0].done).toBe(false);
+  });
+
+  it('(AC9) a ToolReturnEvent matching no tool_call_id is an identity no-op and does not throw', () => {
+    const before = chatFold([makeReceived(), makeToolCall('call-a'), makeHandled()]);
+    const ret = makeToolReturn('call-nothing', { id: 'evt-ret-1' });
+    expect(() => chatStep(before, ret)).not.toThrow();
+    expect(chatStep(before, ret)).toBe(before);
+  });
+
+  it('(AC9) a ToolReturnEvent for another agent is an identity no-op', () => {
+    const before = chatFold([makeReceived(), makeToolCall('call-a')]);
+    const ret = makeToolReturn('call-a', {
+      id: 'evt-ret-1',
+      sender: makeAddress({ name: '@Writer', agent_id: 'agent-2' }),
+    });
+    expect(chatStep(before, ret)).toBe(before);
   });
 });

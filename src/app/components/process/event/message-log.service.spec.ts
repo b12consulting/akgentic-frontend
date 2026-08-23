@@ -413,6 +413,25 @@ describe('messageListFold (Story 6.4, AC4)', () => {
     ];
     expect(messageListFold(log).map((m) => m.id)).toEqual(['w1', 's2']);
   });
+
+  // Story 44-1 (ADR-032 §D7) — a deliberate NON-change, pinned.
+  //
+  // `HandledMessage` is telemetry, not a transcript entry, and it must never
+  // enter `MESSAGE_LIST_MODELS`: every admitted model has to be classifiable by
+  // `notificationSeverity`, and one that is not falls through to the component's
+  // `SentMessage` branch and reads a payload it does not have.
+  it('excludes a HandledMessage — telemetry never enters the message list', () => {
+    expect(messageListFold([msg('h1', 'HandledMessage')])).toEqual([]);
+  });
+
+  it('a HandledMessage interleaved in a real log changes nothing else', () => {
+    const log: AkgenticMessage[] = [
+      msg('a', 'SentMessage'),
+      msg('h1', 'HandledMessage'),
+      msg('b', 'ErrorMessage'),
+    ];
+    expect(messageListFold(log).map((m) => m.id)).toEqual(['a', 'b']);
+  });
 });
 
 describe('MessageLogService.messageList$ (Story 6.4, AC4)', () => {

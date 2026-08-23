@@ -14,12 +14,13 @@ import { provideMarkdown } from 'ngx-markdown';
 
 import { ChatPanelComponent } from './chat-panel.component';
 import {
+  chatFold,
   ChatService,
   computePendingNotifications,
   ThinkingState,
 } from '../../selectors/chat.selector';
 import { SelectionService } from '../../ui-state/selection.service';
-import { ActorAddress, SentMessage, AkgenticMessage, StartMessage, isSentMessage } from '../../../../protocol/message.types';
+import { ActorAddress, EventMessage, HandledMessage, ReceivedMessage, SentMessage, AkgenticMessage, StartMessage, isSentMessage } from '../../../../protocol/message.types';
 import { ChatMessage, classifyMessage } from '../../selectors/chat-message.model';
 import { ApiService } from '../../../../core/http/api.service';
 import { AkgentService } from '../../../../core/ui/akgent.service';
@@ -1388,4 +1389,232 @@ describe('ChatPanelComponent', () => {
     });
   });
 
+});
+
+// ---------------------------------------------------------------------------
+// Story 44-1 (AC12, AC13) — the split, seen end to end through the REAL fold.
+//
+// This is the criterion the user actually looks at. A unit test on `chatFold`
+// alone can pass while the panel still draws one box ABOVE the message that
+// caused the work: what interleaves the two bubbles with the two user messages
+// is the successor's `start_time`, read by `buildDisplayItems`. Feeding the real
+// fold's output into the component is the only way to see that.
+//
+// Self-contained TestBed (its own `describe`), so the surrounding specs' feed —
+// which projects `SentMessage`s through a stand-in classification rather than
+// through `chatFold` — is left exactly as it was.
+// ---------------------------------------------------------------------------
+
+describe('ChatPanelComponent — HandledMessage split, end to end (Story 44-1)', () => {
+  let component: ChatPanelComponent;
+  let fixture: ComponentFixture<ChatPanelComponent>;
+
+  const AGENT = makeAddress({ name: '@Researcher', agent_id: 'agent-1' });
+  const HUMAN = makeAddress({ name: '@Human', role: 'Human', agent_id: 'human-1' });
+
+  function userSent(id: string, content: string, timestamp: string): SentMessage {
+    return {
+      id,
+      parent_id: null,
+      team_id: 'team-1',
+      timestamp,
+      sender: HUMAN,
+      display_type: 'human',
+      content: null,
+      __model__: 'akgentic.core.messages.orchestrator.SentMessage',
+      message: {
+        id: 'inner-' + id,
+        parent_id: null,
+        team_id: 'team-1',
+        timestamp,
+        sender: HUMAN,
+        display_type: 'human',
+        content,
+        __model__: 'akgentic.core.messages.orchestrator.SentMessage',
+      },
+      recipient: AGENT,
+    };
+  }
+
+  function agentSent(id: string, content: string, timestamp: string): SentMessage {
+    return {
+      ...userSent(id, content, timestamp),
+      sender: AGENT,
+      recipient: HUMAN,
+      message: {
+        ...userSent(id, content, timestamp).message,
+        sender: AGENT,
+      },
+    };
+  }
+
+  function received(timestamp: string): ReceivedMessage {
+    return {
+      id: 'rcv-1',
+      parent_id: null,
+      team_id: 'team-1',
+      timestamp,
+      sender: AGENT,
+      display_type: 'other',
+      content: null,
+      __model__: 'akgentic.core.messages.orchestrator.ReceivedMessage',
+      message_id: 'inner-msg-first',
+    };
+  }
+
+  function handled(messageId: string, timestamp: string): HandledMessage {
+    return {
+      id: 'handled-1',
+      parent_id: null,
+      team_id: 'team-1',
+      timestamp,
+      sender: AGENT,
+      display_type: 'other',
+      content: null,
+      __model__: 'akgentic.core.messages.orchestrator.HandledMessage',
+      message_id: messageId,
+    };
+  }
+
+  function toolCall(id: string, toolCallId: string): EventMessage {
+    return {
+      id,
+      parent_id: null,
+      team_id: 'team-1',
+      timestamp: '2026-04-12T10:00:02Z',
+      sender: AGENT,
+      display_type: 'other',
+      content: null,
+      __model__: 'akgentic.core.messages.orchestrator.EventMessage',
+      event: {
+        __model__: 'akgentic.llm.event.ToolCallEvent',
+        tool_call_id: toolCallId,
+        tool_name: 'search_web',
+        arguments: '{"q":"x"}',
+      },
+    };
+  }
+
+  /** The realistic log: a run that absorbed the user's second message. */
+  const LOG: AkgenticMessage[] = [
+    userSent('msg-first', 'find two people', '2026-04-12T10:00:00Z'),
+    received('2026-04-12T10:00:01Z'),
+    toolCall('evt-1', 'call-a'),
+    handled('inner-msg-absorbed', '2026-04-12T10:00:05Z'),
+    userSent('msg-absorbed', 'also add Arnaud', '2026-04-12T10:00:04Z'),
+    toolCall('evt-2', 'call-c'),
+    agentSent('msg-answer', 'here they are', '2026-04-12T10:00:09Z'),
+  ];
+
+  /** `kind:id` for a message, `kind:anchor` for a bubble — the same shape
+   *  `trackByDisplayItem` builds, so the assertion reads as the rendered list. */
+  function describeItems(): string[] {
+    return component.displayItems.map((item) =>
+      item.kind === 'message'
+        ? 'message:' + item.data.id
+        : 'thinking:' + item.data.anchor_message_id,
+    );
+  }
+
+  beforeEach(async () => {
+    const folded = chatFold(LOG);
+    const chatService = {
+      messages$: new BehaviorSubject<ChatMessage[]>(folded.messages),
+      pendingNotifications$: of(computePendingNotifications(folded.messages)),
+      thinkingAgents$: new BehaviorSubject<ThinkingState[]>(folded.thinkingAgents),
+      justSent$: new Subject<string>().asObservable(),
+      emitJustSent: (_key: string) => undefined,
+    };
+
+    await TestBed.configureTestingModule({
+      imports: [ChatPanelComponent, NoopAnimationsModule],
+      providers: [
+        provideMarkdown(),
+        { provide: ChatService, useValue: chatService },
+        {
+          provide: SelectionService,
+          useValue: jasmine.createSpyObj('SelectionService', ['handleSelection']),
+        },
+        {
+          provide: ApiService,
+          useValue: jasmine.createSpyObj('ApiService', [
+            'sendMessage',
+            'processHumanInput',
+          ]),
+        },
+        {
+          provide: AkgentService,
+          useValue: { selectedAkgent$: new BehaviorSubject<any>(null) },
+        },
+        { provide: GraphDataService, useValue: { nodes$: of([]) } },
+        {
+          provide: IngestionService,
+          useValue: {
+            commands: { snapshot: (_id: string) => [] as any[] },
+            loadingProcess$: new BehaviorSubject<boolean>(false),
+          },
+        },
+        MessageService,
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ChatPanelComponent);
+    component = fixture.componentInstance;
+    component.processId = 'test-team';
+    fixture.detectChanges();
+  });
+
+  it('(AC12) the display list reads message, bubble, absorbed message, bubble', () => {
+    expect(describeItems()).toEqual([
+      'message:msg-first',
+      'thinking:inner-msg-first',
+      'message:msg-absorbed',
+      'thinking:inner-msg-absorbed',
+      'message:msg-answer',
+    ]);
+  });
+
+  it('(AC12) the successor bubble is drawn BELOW the message that caused it', () => {
+    const items = describeItems();
+    expect(items.indexOf('thinking:inner-msg-absorbed')).toBeGreaterThan(
+      items.indexOf('message:msg-absorbed'),
+    );
+    // …and the predecessor still sits under the FIRST message, not the second.
+    expect(items.indexOf('thinking:inner-msg-first')).toBeLessThan(
+      items.indexOf('message:msg-absorbed'),
+    );
+  });
+
+  it('(AC12) each bubble holds only the tool calls issued in its own segment', () => {
+    const bubbles = component.displayItems
+      .filter((i) => i.kind === 'thinking')
+      .map((i) => i.data as ThinkingState);
+    expect(bubbles.length).toBe(2);
+    expect(bubbles[0].tools.map((t) => t.tool_call_id)).toEqual(['call-a']);
+    expect(bubbles[1].tools.map((t) => t.tool_call_id)).toEqual(['call-c']);
+  });
+
+  it('(AC13) trackByDisplayItem yields distinct keys for the two segments', () => {
+    const bubbles = component.displayItems.filter((i) => i.kind === 'thinking');
+    const keys = bubbles.map((b, i) => component.trackByDisplayItem(i, b));
+    expect(new Set(keys).size).toBe(2);
+    expect(keys[0]).not.toBe(keys[1]);
+  });
+
+  it('(AC13) expanding one segment does not expand the other', () => {
+    const bubbles = component.displayItems
+      .filter((i) => i.kind === 'thinking')
+      .map((i) => i.data as ThinkingState);
+    component.onToggleThinkingExpanded(bubbles[0].anchor_message_id);
+    expect(component.isThinkingExpanded(bubbles[0])).toBe(true);
+    expect(component.isThinkingExpanded(bubbles[1])).toBe(false);
+
+    component.onToggleThinkingExpanded(bubbles[1].anchor_message_id);
+    expect(component.isThinkingExpanded(bubbles[0])).toBe(true);
+    expect(component.isThinkingExpanded(bubbles[1])).toBe(true);
+
+    component.onToggleThinkingExpanded(bubbles[0].anchor_message_id);
+    expect(component.isThinkingExpanded(bubbles[0])).toBe(false);
+    expect(component.isThinkingExpanded(bubbles[1])).toBe(true);
+  });
 });
