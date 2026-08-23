@@ -10,6 +10,7 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { TreeNode } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
 import { ToolbarModule } from 'primeng/toolbar';
+import { TreeModule } from 'primeng/tree';
 import { BehaviorSubject, Subject } from 'rxjs';
 
 import { ContextService } from '../../../../core/context/context.service';
@@ -81,7 +82,7 @@ function fileNode(overrides: Partial<FileNode>): FileNode {
 }
 
 /**
- * One of the three upload controls, in either override this file uses.
+ * The upload control, in either override this file uses.
  *
  * Where PrimeNG's `ButtonModule` is NOT imported, `<p-button>` is an unknown
  * custom element with no inner `<button>` and every property binding lands
@@ -187,7 +188,7 @@ describe('WorkspaceExplorerComponent', () => {
   // --- declarative root-tree load -----------------------------------
 
   describe('root-tree load', () => {
-    it('scenario 1 — root listing wraps backend entries under synthetic Root Folder', async () => {
+    it('scenario 1 — root listing becomes treeNodes directly, with no wrapper node', async () => {
       workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
         fileNode({
           name: 'a.md',
@@ -203,48 +204,44 @@ describe('WorkspaceExplorerComponent', () => {
       component = fixture.componentInstance;
       await flushRootLoad(fixture);
 
-      expect(component.treeNodes().length).toBe(1);
-      const root = component.treeNodes()[0];
-      expect(root.label).toBe('Root Folder');
-      expect(root.icon).toBe('pi pi-home');
-      expect(root.expanded).toBe(true);
-      expect(root.children?.length).toBe(2);
-      expect(component.errorMessage()).toBeNull();
+      // The root's ENTRIES are treeNodes: `''` is the root, so there is no node
+      // standing for it and the one-element wrapper array is gone (FR2, §D4).
+      expect(component.treeNodes().length).toBe(2);
+      expect(component.treeError()).toBeNull();
 
       // The directory child should be lazy (children === undefined, leaf false)
-      const subChild = root.children![1];
+      const subChild = component.treeNodes()[1];
       expect(subChild.label).toBe('sub');
       expect(subChild.leaf).toBe(false);
       expect(subChild.children).toBeUndefined();
 
       // The file child should be a leaf
-      const fileChild = root.children![0];
+      const fileChild = component.treeNodes()[0];
       expect(fileChild.label).toBe('a.md');
       expect(fileChild.leaf).toBe(true);
     });
 
-    it('scenario 2 — empty backend renders synthetic root with empty children', async () => {
+    it('scenario 2 — empty backend leaves treeNodes empty', async () => {
       workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
 
       fixture = TestBed.createComponent(WorkspaceExplorerComponent);
       component = fixture.componentInstance;
       await flushRootLoad(fixture);
 
-      // Synthetic root always exists; its children are []
-      expect(component.treeNodes().length).toBe(1);
-      expect(component.treeNodes()[0].label).toBe('Root Folder');
-      expect(component.treeNodes()[0].children).toEqual([]);
-      expect(component.errorMessage()).toBeNull();
+      // No wrapper means an empty workspace really is an empty array — which is
+      // what makes the navigator's "No files found" block reachable (AC13).
+      expect(component.treeNodes()).toEqual([]);
+      expect(component.treeError()).toBeNull();
     });
 
-    it('scenario 3 — HTTP error sets errorMessage and clears loading', async () => {
+    it('scenario 3 — HTTP error sets treeError and clears loading', async () => {
       workspaceServiceSpy.getWorkspaceTree.and.rejectWith(new Error('500'));
 
       fixture = TestBed.createComponent(WorkspaceExplorerComponent);
       component = fixture.componentInstance;
       await flushRootLoad(fixture);
 
-      expect(component.errorMessage()).toBe('500');
+      expect(component.treeError()).toBe('500');
       expect(component.loading()).toBe(false);
     });
   });
@@ -344,7 +341,7 @@ describe('WorkspaceExplorerComponent', () => {
       expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(1);
     });
 
-    it('scenario 8 — HTTP error sets errorMessage and leaves children undefined (retryable)', async () => {
+    it('scenario 8 — HTTP error sets treeError and leaves children undefined (retryable)', async () => {
       const subDir: TreeNode = {
         label: 'bad',
         data: fileNode({ name: 'bad', path: 'bad', type: 'directory' }),
@@ -358,7 +355,8 @@ describe('WorkspaceExplorerComponent', () => {
 
       await component.onNodeExpand({ node: subDir });
 
-      expect(component.errorMessage()).toBe('boom');
+      // The lazy expand is a TREE-scoped read, so its failure gates the tree.
+      expect(component.treeError()).toBe('boom');
       expect(subDir.children).toBeUndefined();
     });
   });
@@ -373,11 +371,11 @@ describe('WorkspaceExplorerComponent', () => {
       component.processId = 'proc';
     });
 
-    it('scenario 19 — text result writes fileContent, clears loadingContent and isBinaryFile', async () => {
+    it('scenario 19 — text result writes a text-kinded content and clears loadingContent', async () => {
       // The pane is showing the file being read. Previously this scenario drove
       // the loader with no selection at all — a state no production caller can
       // produce, and one whose result is now applied to nothing (scenario 70).
-      component.selectedFile.set(
+      component.openFile.set(
         fileNode({
           name: 'readme.txt',
           path: 'docs/readme.txt',
@@ -392,15 +390,15 @@ describe('WorkspaceExplorerComponent', () => {
 
       await component.loadFileContent('docs/readme.txt');
 
-      expect(component.fileContent()).toBe('hello world');
+      // One signal carries both facts, so `binary && markdown` cannot be
+      // asserted away — it cannot be constructed (FR3).
+      expect(component.content()).toEqual({ kind: 'text', body: 'hello world' });
       expect(component.loadingContent()).toBe(false);
-      expect(component.isBinaryFile()).toBe(false);
-      expect(component.isMarkdownFile()).toBe(false);
-      expect(component.errorMessage()).toBeNull();
+      expect(component.fileError()).toBeNull();
     });
 
-    it('scenario 20 — a .md selected file flags isMarkdownFile on a text result', async () => {
-      component.selectedFile.set(
+    it('scenario 20 — a .md open file yields the markdown kind on a text result', async () => {
+      component.openFile.set(
         fileNode({
           name: 'a.md',
           path: 'docs/a.md',
@@ -415,16 +413,14 @@ describe('WorkspaceExplorerComponent', () => {
 
       await component.loadFileContent('docs/a.md');
 
-      expect(component.fileContent()).toBe('# Title');
-      expect(component.isMarkdownFile()).toBe(true);
-      expect(component.isBinaryFile()).toBe(false);
+      expect(component.content()).toEqual({ kind: 'markdown', body: '# Title' });
       expect(component.loadingContent()).toBe(false);
     });
 
-    it('scenario 21 — binary result flags isBinaryFile and shows the binary message', async () => {
+    it('scenario 21 — binary result yields the binary kind and shows the binary message', async () => {
       // Same correction as scenario 19: the pane must be showing the file whose
       // bytes are read, because a result for any other path is now discarded.
-      component.selectedFile.set(
+      component.openFile.set(
         fileNode({
           name: 'image.png',
           path: 'docs/image.png',
@@ -440,20 +436,24 @@ describe('WorkspaceExplorerComponent', () => {
 
       await component.loadFileContent('docs/image.png');
 
-      expect(component.isBinaryFile()).toBe(true);
-      expect(component.fileContent()).toBe('Binary file cannot be displayed');
-      expect(component.isMarkdownFile()).toBe(false);
+      expect(component.content()).toEqual({
+        kind: 'binary',
+        body: 'Binary file cannot be displayed',
+      });
       expect(component.loadingContent()).toBe(false);
     });
 
-    it('scenario 22 — rejected fetch sets errorMessage and clears loadingContent', async () => {
+    it('scenario 22 — rejected fetch sets fileError and clears loadingContent', async () => {
       workspaceServiceSpy.getFileContent.and.rejectWith(new Error('read failed'));
 
       await component.loadFileContent('docs/bad.txt');
 
-      expect(component.errorMessage()).toBe('read failed');
+      // A body read is FILE-scoped: after the split it cannot reach the signal
+      // that gates the navigator's tree at all (FR5).
+      expect(component.fileError()).toBe('read failed');
+      expect(component.treeError()).toBeNull();
       expect(component.loadingContent()).toBe(false);
-      expect(component.fileContent()).toBeNull();
+      expect(component.content()).toBeNull();
     });
   });
 
@@ -471,11 +471,13 @@ describe('WorkspaceExplorerComponent', () => {
       component.processId = 'proc';
     });
 
-    it('scenario 23 — selecting a file sets selectedFile, clears selectedFolder, loads content', async () => {
-      // Seed a stale folder selection to prove it is cleared.
-      component.selectedFolder.set(
-        fileNode({ name: 'old', path: 'old', type: 'directory' })
-      );
+    it("scenario 23 — selecting a file sets openFile, loads content, and descends to that file's directory", async () => {
+      // Seed a DIFFERENT directory, so the descent is observable. Story 45-1
+      // asserted this stayed `'old'` and recorded the question; ADR-033 §D3 was
+      // amended to decide it, because "Back stays put" and "Back from a nested
+      // file lands in that file's directory" are the same sentence only if
+      // opening the file moved you there. A behaviour change, not a rename.
+      component.currentDirectory.set('old');
       const file = fileNode({
         name: 'a.ts',
         path: 'src/a.ts',
@@ -485,35 +487,31 @@ describe('WorkspaceExplorerComponent', () => {
 
       await component.onNodeSelect({ node: { data: file } });
 
-      expect(component.selectedFile()).toEqual(file);
-      expect(component.selectedFolder()).toBeNull();
+      expect(component.openFile()).toEqual(file);
+      expect(component.currentDirectory()).toBe('src');
       expect(workspaceServiceSpy.getFileContent).toHaveBeenCalledWith(
         'proc',
         'src/a.ts',
         undefined
       );
-      expect(component.fileContent()).toBe('data');
+      expect(component.content()).toEqual({ kind: 'text', body: 'data' });
     });
 
-    it('scenario 24 — selecting a directory sets selectedFolder, clears file + content signals', async () => {
-      // Seed a stale file + content selection to prove they are cleared.
-      component.selectedFile.set(
+    it('scenario 24 — selecting a directory sets currentDirectory, clears the open file and its content', async () => {
+      // Seed a stale open file + content to prove they are cleared.
+      component.openFile.set(
         fileNode({ name: 'a.ts', path: 'src/a.ts', type: 'file' })
       );
-      component.fileContent.set('stale content');
-      component.isBinaryFile.set(true);
-      component.isMarkdownFile.set(true);
+      component.content.set({ kind: 'binary', body: 'stale content' });
 
       workspaceServiceSpy.getFileContent.calls.reset();
       const dir = fileNode({ name: 'src', path: 'src', type: 'directory' });
 
       await component.onNodeSelect({ node: { data: dir } });
 
-      expect(component.selectedFolder()).toEqual(dir);
-      expect(component.selectedFile()).toBeNull();
-      expect(component.fileContent()).toBeNull();
-      expect(component.isBinaryFile()).toBe(false);
-      expect(component.isMarkdownFile()).toBe(false);
+      expect(component.currentDirectory()).toBe('src');
+      expect(component.openFile()).toBeNull();
+      expect(component.content()).toBeNull();
       // Selecting a directory loads no content.
       expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
     });
@@ -541,24 +539,22 @@ describe('WorkspaceExplorerComponent', () => {
       });
     }
 
-    /** Root wrapper → `docs` (materialized) → `a.md`. */
+    /**
+     * `docs` (materialized) → `a.md`, as ONE root entry. There is no wrapper
+     * node any more, so callers spread this into `treeNodes` directly:
+     * `treeNodes.set([materializedTree()])` IS the root's entry list.
+     */
     function materializedTree(): TreeNode {
       const aMd: TreeNode = {
         label: 'a.md',
         data: openFile(10),
         leaf: true,
       };
-      const docs: TreeNode = {
+      return {
         label: 'docs',
         data: fileNode({ name: 'docs', path: 'docs', type: 'directory' }),
         leaf: false,
         children: [aMd],
-      };
-      return {
-        label: 'Root Folder',
-        data: fileNode({ name: 'Root Folder', path: '', type: 'directory' }),
-        children: [docs],
-        expanded: true,
       };
     }
 
@@ -574,9 +570,9 @@ describe('WorkspaceExplorerComponent', () => {
     });
 
     it('scenario 45 — activating refresh re-reads the body and renders the new content', async () => {
-      component.selectedFile.set(openFile());
+      component.openFile.set(openFile());
       await component.loadFileContent(OPEN_FILE_PATH);
-      expect(component.fileContent()).toBe('first');
+      expect(component.content()?.body).toBe('first');
 
       workspaceServiceSpy.getFileContent.and.resolveTo({
         content: 'first + appended',
@@ -586,13 +582,13 @@ describe('WorkspaceExplorerComponent', () => {
 
       await component.refreshSelectedFile();
 
-      expect(component.fileContent()).toBe('first + appended');
+      expect(component.content()?.body).toBe('first + appended');
     });
 
     it('scenario 46 — the same activation re-resolves the file entry and splices the fresh listing', async () => {
       component.treeNodes.set([materializedTree()]);
-      component.selectedFile.set(openFile(10));
-      component.fileContent.set('first');
+      component.openFile.set(openFile(10));
+      component.content.set({ kind: 'markdown', body: 'first' });
 
       workspaceServiceSpy.getWorkspaceTree.calls.reset();
       workspaceServiceSpy.getFileContent.calls.reset();
@@ -612,23 +608,18 @@ describe('WorkspaceExplorerComponent', () => {
       );
 
       // The metadata the toolbar tag reads moved with the body.
-      expect(component.selectedFile()!.size).toBe(2048);
+      expect(component.openFile()!.size).toBe(2048);
       // ...and so did the tree entry behind it.
-      const docsNode = component.treeNodes()[0].children![0];
+      const docsNode = component.treeNodes()[0];
       expect(docsNode.children!.length).toBe(1);
       expect((docsNode.children![0].data as FileNode).size).toBe(2048);
     });
 
     it('scenario 47 — a file in a never-expanded directory refreshes without throwing or corrupting the tree', async () => {
-      // Only the synthetic root is materialized; `docs` was never expanded.
-      const bareRoot: TreeNode = {
-        label: 'Root Folder',
-        data: fileNode({ name: 'Root Folder', path: '', type: 'directory' }),
-        children: [],
-        expanded: true,
-      };
-      component.treeNodes.set([bareRoot]);
-      component.selectedFile.set(openFile(10));
+      // The root listing is empty and `docs` was never expanded, so the walk
+      // finds no target — the case the wrapper node used to stand in for.
+      component.treeNodes.set([]);
+      component.openFile.set(openFile(10));
 
       workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
       workspaceServiceSpy.getFileContent.and.resolveTo({
@@ -639,14 +630,14 @@ describe('WorkspaceExplorerComponent', () => {
       await expectAsync(component.refreshSelectedFile()).toBeResolved();
 
       // The unmaterialized target is left alone; the open file still refreshed.
-      expect(component.treeNodes()[0].children).toEqual([]);
-      expect(component.selectedFile()!.size).toBe(2048);
-      expect(component.fileContent()).toBe('body');
+      expect(component.treeNodes()).toEqual([]);
+      expect(component.openFile()!.size).toBe(2048);
+      expect(component.content()?.body).toBe('body');
     });
 
-    it('scenario 48 — the pane is never blanked: fileContent stays non-null and loadingContent stays down across the whole cycle', async () => {
-      component.selectedFile.set(openFile(10));
-      component.fileContent.set('old body');
+    it('scenario 48 — the pane is never blanked: content stays non-null and loadingContent stays down across the whole cycle', async () => {
+      component.openFile.set(openFile(10));
+      component.content.set({ kind: 'markdown', body: 'old body' });
       workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
 
       const body = deferred<FileContent>();
@@ -655,7 +646,7 @@ describe('WorkspaceExplorerComponent', () => {
       const observed: { content: string | null; loading: boolean }[] = [];
       const observe = (): void => {
         observed.push({
-          content: component.fileContent(),
+          content: component.content()?.body ?? null,
           loading: component.loadingContent(),
         });
       };
@@ -676,12 +667,12 @@ describe('WorkspaceExplorerComponent', () => {
 
       expect(observed.map((o) => o.content)).not.toContain(null);
       expect(observed.map((o) => o.loading)).not.toContain(true);
-      expect(component.fileContent()).toBe('new body');
+      expect(component.content()?.body).toBe('new body');
       expect(component.refreshingFile()).toBe(false);
     });
 
     it('scenario 49 — the selection path still blanks, still raises loadingContent and still issues exactly one request', async () => {
-      component.fileContent.set('stale body');
+      component.content.set({ kind: 'markdown', body: 'stale body' });
       workspaceServiceSpy.getWorkspaceTree.calls.reset();
       workspaceServiceSpy.getFileContent.calls.reset();
 
@@ -690,14 +681,14 @@ describe('WorkspaceExplorerComponent', () => {
 
       const selection = component.onNodeSelect({ node: { data: openFile() } });
 
-      expect(component.fileContent()).toBeNull();
+      expect(component.content()).toBeNull();
       expect(component.loadingContent()).toBe(true);
 
       body.resolve({ content: 'body', type: 'text' });
       await selection;
 
       expect(component.loadingContent()).toBe(false);
-      expect(component.fileContent()).toBe('body');
+      expect(component.content()?.body).toBe('body');
       // One body read, and NO directory listing — selection is not a refresh.
       expect(workspaceServiceSpy.getFileContent.calls.count()).toBe(1);
       expect(workspaceServiceSpy.getWorkspaceTree).not.toHaveBeenCalled();
@@ -705,24 +696,28 @@ describe('WorkspaceExplorerComponent', () => {
 
     it('scenario 50 — a failed body read keeps the stale body and reports the error', async () => {
       const original = openFile(10);
-      component.selectedFile.set(original);
-      component.fileContent.set('old body');
+      component.openFile.set(original);
+      component.content.set({ kind: 'markdown', body: 'old body' });
 
       workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
       workspaceServiceSpy.getFileContent.and.rejectWith(new Error('read failed'));
 
       await component.refreshSelectedFile();
 
-      expect(component.errorMessage()).toBe('read failed');
-      expect(component.fileContent()).toBe('old body');
+      // The banner AND the body — the pane reports the failure over the stale
+      // bytes rather than instead of them. Scenario 114 pins the same fact
+      // through the DOM, which is the only place a switch that subsumed the
+      // content would show up.
+      expect(component.fileError()).toBe('read failed');
+      expect(component.content()?.body).toBe('old body');
       expect(component.loadingContent()).toBe(false);
       expect(component.refreshingFile()).toBe(false);
     });
 
-    it('scenario 51 — a failed listing leaves selectedFile alone, still refreshes the body, and releases the button', async () => {
+    it('scenario 51 — a failed listing leaves openFile alone, still refreshes the body, and releases the button', async () => {
       const original = openFile(10);
-      component.selectedFile.set(original);
-      component.fileContent.set('old body');
+      component.openFile.set(original);
+      component.content.set({ kind: 'markdown', body: 'old body' });
 
       workspaceServiceSpy.getWorkspaceTree.and.rejectWith(
         new Error('listing failed')
@@ -734,15 +729,15 @@ describe('WorkspaceExplorerComponent', () => {
 
       await component.refreshSelectedFile();
 
-      expect(component.errorMessage()).toBe('listing failed');
-      expect(component.selectedFile()).toEqual(original);
-      expect(component.fileContent()).toBe('new body');
+      expect(component.fileError()).toBe('listing failed');
+      expect(component.openFile()).toEqual(original);
+      expect(component.content()?.body).toBe('new body');
       expect(component.refreshingFile()).toBe(false);
     });
 
-    it('scenario 52 — a vanished file leaves selectedFile as it is', async () => {
+    it('scenario 52 — a vanished file leaves openFile as it is', async () => {
       const original = openFile(10);
-      component.selectedFile.set(original);
+      component.openFile.set(original);
       // Fresh listing no longer carries the open file's path.
       workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
         fileNode({ name: 'b.md', path: 'docs/b.md', type: 'file', size: 5 }),
@@ -754,11 +749,11 @@ describe('WorkspaceExplorerComponent', () => {
 
       await component.refreshSelectedFile();
 
-      expect(component.selectedFile()).toEqual(original);
+      expect(component.openFile()).toEqual(original);
     });
 
     it('scenario 53 — with no file open the refresh is a no-op', async () => {
-      component.selectedFile.set(null);
+      component.openFile.set(null);
       workspaceServiceSpy.getWorkspaceTree.calls.reset();
       workspaceServiceSpy.getFileContent.calls.reset();
 
@@ -772,7 +767,7 @@ describe('WorkspaceExplorerComponent', () => {
       fixture.componentRef.setInput('workspaceId', 'ws-1');
       await flushRootLoad(fixture);
 
-      component.selectedFile.set(openFile(10));
+      component.openFile.set(openFile(10));
       workspaceServiceSpy.getWorkspaceTree.calls.reset();
       workspaceServiceSpy.getFileContent.calls.reset();
       workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
@@ -796,7 +791,7 @@ describe('WorkspaceExplorerComponent', () => {
     });
 
     it('scenario 55 — an unset workspaceId omits the id on both calls', async () => {
-      component.selectedFile.set(openFile(10));
+      component.openFile.set(openFile(10));
       workspaceServiceSpy.getWorkspaceTree.calls.reset();
       workspaceServiceSpy.getFileContent.calls.reset();
       workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
@@ -820,7 +815,7 @@ describe('WorkspaceExplorerComponent', () => {
     });
 
     it('scenario 56 — the navigator refresh re-runs the root load AND re-reads the open file', async () => {
-      component.selectedFile.set(openFile(10));
+      component.openFile.set(openFile(10));
       workspaceServiceSpy.getWorkspaceTree.calls.reset();
       workspaceServiceSpy.getFileContent.calls.reset();
       workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
@@ -847,11 +842,11 @@ describe('WorkspaceExplorerComponent', () => {
         OPEN_FILE_PATH,
         undefined
       );
-      expect(component.selectedFile()!.size).toBe(2048);
+      expect(component.openFile()!.size).toBe(2048);
     });
 
     it('scenario 57 — with no file open the navigator refresh is tree-only', async () => {
-      component.selectedFile.set(null);
+      component.openFile.set(null);
       workspaceServiceSpy.getWorkspaceTree.calls.reset();
       workspaceServiceSpy.getFileContent.calls.reset();
 
@@ -872,8 +867,8 @@ describe('WorkspaceExplorerComponent', () => {
     // the pane with the older bytes.
 
     it('scenario 63 — a second activation while a refresh is in flight is ignored', async () => {
-      component.selectedFile.set(openFile(10));
-      component.fileContent.set('old body');
+      component.openFile.set(openFile(10));
+      component.content.set({ kind: 'markdown', body: 'old body' });
       workspaceServiceSpy.getWorkspaceTree.calls.reset();
       workspaceServiceSpy.getFileContent.calls.reset();
       workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
@@ -894,12 +889,12 @@ describe('WorkspaceExplorerComponent', () => {
       await first;
 
       expect(component.refreshingFile()).toBe(false);
-      expect(component.fileContent()).toBe('new body');
+      expect(component.content()?.body).toBe('new body');
       expect(workspaceServiceSpy.getFileContent.calls.count()).toBe(1);
     });
 
     it('scenario 64 — the navigator refresh skips the file half while an initial load is in flight', async () => {
-      component.selectedFile.set(openFile(10));
+      component.openFile.set(openFile(10));
       workspaceServiceSpy.getWorkspaceTree.calls.reset();
       workspaceServiceSpy.getFileContent.calls.reset();
       workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
@@ -922,7 +917,7 @@ describe('WorkspaceExplorerComponent', () => {
 
   // --- superseded reads (Epic 39, FR8) -------------------------------
   //
-  // Two body reads are trivially concurrent: `onNodeSelect` sets `selectedFile`
+  // Two body reads are trivially concurrent: `onNodeSelect` sets `openFile`
   // and issues a read without awaiting or cancelling one already in flight. If
   // the OLDER read resolves LAST it still wins every write it is allowed to
   // make, and the pane renders one file's bytes under another file's name and
@@ -932,7 +927,7 @@ describe('WorkspaceExplorerComponent', () => {
   // metadata twin in `refreshFileMetadata`.
   //
   // The reads are overlapped through the REAL entry point wherever the defect
-  // is the subject, because `onNodeSelect`'s `selectedFile` write order is part
+  // is the subject, because `onNodeSelect`'s `openFile` write order is part
   // of what makes the race reachable.
 
   describe('superseded reads', () => {
@@ -977,8 +972,8 @@ describe('WorkspaceExplorerComponent', () => {
       a.resolve({ content: 'A body', type: 'text' });
       await first;
 
-      expect(component.fileContent()).toBe('B body');
-      expect(component.selectedFile()!.path).toBe('docs/b.txt');
+      expect(component.content()?.body).toBe('B body');
+      expect(component.openFile()!.path).toBe('docs/b.txt');
     });
 
     it('scenario 66 — a stale binary result flips neither the renderer flag nor the body', async () => {
@@ -1006,8 +1001,8 @@ describe('WorkspaceExplorerComponent', () => {
       await first;
 
       // The binary placeholder never reaches the pane.
-      expect(component.isBinaryFile()).toBe(false);
-      expect(component.fileContent()).toBe('B body');
+      expect(component.content()?.kind).toBe('text');
+      expect(component.content()?.body).toBe('B body');
     });
 
     it('scenario 67 — a stale .md result does not switch the renderer under an open .txt file', async () => {
@@ -1031,17 +1026,17 @@ describe('WorkspaceExplorerComponent', () => {
       await first;
 
       // Guards the half-finished fix: an implementation that guards the body
-      // write but leaves the flag writes outside the guard passes scenario 65
+      // write but leaves the kind write outside the guard passes scenario 65
       // and fails here.
-      expect(component.isMarkdownFile()).toBe(false);
-      expect(component.fileContent()).toBe('B body');
+      expect(component.content()?.kind).toBe('text');
+      expect(component.content()?.body).toBe('B body');
     });
 
     it('scenario 68 — markdown-ness comes from the requested path, not from FileNode.extension', async () => {
       // `extension` deliberately absent: the flag must not depend on a listing
-      // field the backend may omit, nor on what `selectedFile` holds when the
+      // field the backend may omit, nor on what `openFile` holds when the
       // response lands.
-      component.selectedFile.set(
+      component.openFile.set(
         fileNode({ name: 'a.md', path: 'docs/a.md', type: 'file', size: 10 })
       );
       workspaceServiceSpy.getFileContent.and.resolveTo({
@@ -1051,20 +1046,19 @@ describe('WorkspaceExplorerComponent', () => {
 
       await component.loadFileContent('docs/a.md');
 
-      expect(component.isMarkdownFile()).toBe(true);
-      expect(component.fileContent()).toBe('# Title');
+      expect(component.content()).toEqual({ kind: 'markdown', body: '# Title' });
 
       // Case-insensitive, like the extension comparison it replaces.
-      component.selectedFile.set(
+      component.openFile.set(
         fileNode({ name: 'B.MD', path: 'docs/B.MD', type: 'file', size: 4 })
       );
       await component.loadFileContent('docs/B.MD');
 
-      expect(component.isMarkdownFile()).toBe(true);
+      expect(component.content()?.kind).toBe('markdown');
     });
 
-    it('scenario 69 — a superseded metadata refresh does not write a stale FileNode into selectedFile', async () => {
-      component.selectedFile.set(fileA());
+    it('scenario 69 — a superseded metadata refresh does not write a stale FileNode into openFile', async () => {
+      component.openFile.set(fileA());
       workspaceServiceSpy.getFileContent.and.resolveTo({
         content: 'A body',
         type: 'text',
@@ -1075,7 +1069,7 @@ describe('WorkspaceExplorerComponent', () => {
       const cycle = component.refreshSelectedFile();
       // The body half has settled; the directory listing is still in flight.
       await flushMicrotasks();
-      component.selectedFile.set(fileB());
+      component.openFile.set(fileB());
 
       listing.resolve([
         fileNode({
@@ -1089,25 +1083,23 @@ describe('WorkspaceExplorerComponent', () => {
       await cycle;
 
       // File A's name and size tag must not land above file B's body.
-      expect(component.selectedFile()!.path).toBe('docs/b.txt');
-      expect(component.selectedFile()!.size).toBe(20);
+      expect(component.openFile()!.path).toBe('docs/b.txt');
+      expect(component.openFile()!.size).toBe(20);
     });
 
     it('scenario 70 — with no file selected a resolved read is applied to nothing', async () => {
-      component.selectedFile.set(null);
+      component.openFile.set(null);
       workspaceServiceSpy.getFileContent.and.resolveTo({
         content: 'orphan body',
         type: 'text',
       });
 
       // The stated semantics: no selection means no pane to write into. Both
-      // production entry points establish or require `selectedFile` first, so
+      // production entry points establish or require `openFile` first, so
       // this state is reachable only by driving the loader directly.
       await expectAsync(component.loadFileContent('docs/x.txt')).toBeResolved();
 
-      expect(component.fileContent()).toBeNull();
-      expect(component.isBinaryFile()).toBe(false);
-      expect(component.isMarkdownFile()).toBe(false);
+      expect(component.content()).toBeNull();
       expect(component.loadingContent()).toBe(false);
     });
 
@@ -1124,8 +1116,8 @@ describe('WorkspaceExplorerComponent', () => {
       a.reject(new Error('A read failed'));
       await first;
 
-      expect(component.errorMessage()).toBeNull();
-      expect(component.fileContent()).toBe('B body');
+      expect(component.fileError()).toBeNull();
+      expect(component.content()?.body).toBe('B body');
     });
 
     it('scenario 72 — a superseded read does not lower the spinner a newer read is still holding', async () => {
@@ -1141,13 +1133,13 @@ describe('WorkspaceExplorerComponent', () => {
 
       // B is still fetching, so the pane is blank and the spinner belongs to it.
       expect(component.loadingContent()).toBe(true);
-      expect(component.fileContent()).toBeNull();
+      expect(component.content()).toBeNull();
 
       b.resolve({ content: 'B body', type: 'text' });
       await second;
 
       expect(component.loadingContent()).toBe(false);
-      expect(component.fileContent()).toBe('B body');
+      expect(component.content()?.body).toBe('B body');
     });
 
     it('scenario 73 — selecting a directory mid-read leaves the folder pane alone and still releases the spinner', async () => {
@@ -1164,9 +1156,9 @@ describe('WorkspaceExplorerComponent', () => {
       a.resolve({ content: 'A body', type: 'text' });
       await first;
 
-      expect(component.selectedFile()).toBeNull();
+      expect(component.openFile()).toBeNull();
       // The late body does not repaint a pane that is showing a folder...
-      expect(component.fileContent()).toBeNull();
+      expect(component.content()).toBeNull();
       // ...and the spinner still comes down: the directory branch issues no
       // read, so the read in flight is still the one that owns it. A release
       // gated on the path would strand it raised for ever here.
@@ -1194,7 +1186,7 @@ describe('WorkspaceExplorerComponent', () => {
       component.processId = 'proc';
       await flushRootLoad(fixture);
 
-      component.selectedFile.set(
+      component.openFile.set(
         fileNode({
           name: 'a.md',
           path: 'docs/a.md',
@@ -1239,17 +1231,8 @@ describe('WorkspaceExplorerComponent', () => {
         leaf: false,
         children: [aMd],
       };
-      const root: TreeNode = {
-        label: 'Root Folder',
-        data: fileNode({
-          name: 'Root Folder',
-          path: '',
-          type: 'directory',
-        }),
-        children: [docs],
-        expanded: true,
-      };
-      component.treeNodes.set([root]);
+      // `docs` IS a root entry — there is no wrapper node above it.
+      component.treeNodes.set([docs]);
       component.uploadTargetPath = 'docs';
 
       // Stub the upload modal ViewChild
@@ -1282,22 +1265,12 @@ describe('WorkspaceExplorerComponent', () => {
         'docs'
       );
 
-      const refreshedDocs = component.treeNodes()[0].children![0];
+      const refreshedDocs = component.treeNodes()[0];
       expect(refreshedDocs.children?.length).toBe(2);
     });
 
-    it('scenario 10 — root target refreshes the synthetic Root Folder wrapper children', async () => {
-      const root: TreeNode = {
-        label: 'Root Folder',
-        data: fileNode({
-          name: 'Root Folder',
-          path: '',
-          type: 'directory',
-        }),
-        children: [],
-        expanded: true,
-      };
-      component.treeNodes.set([root]);
+    it('scenario 10 — a root target replaces treeNodes wholesale', async () => {
+      component.treeNodes.set([]);
       component.uploadTargetPath = '';
       component.uploadModal = {
         getSelectedFiles: () => [new File(['x'], 'c.md')],
@@ -1319,11 +1292,10 @@ describe('WorkspaceExplorerComponent', () => {
         'proc',
         ''
       );
-      // Root wrapper itself stays; its children are replaced with fresh listing
+      // There is no wrapper whose children get replaced: the root's children
+      // ARE `treeNodes`, so the fresh listing simply becomes the array (FR2).
       expect(component.treeNodes().length).toBe(1);
-      expect(component.treeNodes()[0].label).toBe('Root Folder');
-      expect(component.treeNodes()[0].children?.length).toBe(1);
-      expect(component.treeNodes()[0].children![0].label).toBe('c.md');
+      expect(component.treeNodes()[0].label).toBe('c.md');
     });
 
     it('scenario 11 — no files selected: no-op (uploadFiles NOT called)', async () => {
@@ -1388,7 +1360,7 @@ describe('WorkspaceExplorerComponent', () => {
       );
 
       // getDownloadUrl via downloadFile
-      component.selectedFile.set(
+      component.openFile.set(
         fileNode({
           name: 'a.md',
           path: 'docs/a.md',
@@ -1439,7 +1411,7 @@ describe('WorkspaceExplorerComponent', () => {
       );
 
       // getDownloadUrl via downloadFile: same undefined-id passthrough.
-      component.selectedFile.set(
+      component.openFile.set(
         fileNode({ name: 'a.md', path: 'docs/a.md', type: 'file' })
       );
       spyOn(window, 'open');
@@ -1609,7 +1581,7 @@ describe('WorkspaceExplorerComponent', () => {
       await flushRootLoad(fixture);
 
       // ws-B's tree is in place
-      expect(component.treeNodes()[0].children![0].label).toBe('fromB.md');
+      expect(component.treeNodes()[0].label).toBe('fromB.md');
 
       // Now the stale ws-A response finally arrives — switchMap cancelled it,
       // so it must NOT overwrite ws-B's tree.
@@ -1618,7 +1590,7 @@ describe('WorkspaceExplorerComponent', () => {
       ]);
       await flushRootLoad(fixture);
 
-      expect(component.treeNodes()[0].children![0].label).toBe('fromB.md');
+      expect(component.treeNodes()[0].label).toBe('fromB.md');
     });
   });
 
@@ -1693,7 +1665,14 @@ describe('WorkspaceExplorerComponent — NFR3 OnPush regression gate', () => {
     })
       .overrideComponent(WorkspaceExplorerComponent, {
         set: {
-          imports: [CommonModule],
+          // ToolbarModule because the upload gate moved into the toolbar's
+          // `end` template, which PrimeNG instantiates only when the module is
+          // present. It belongs in the OVERRIDE, not the TestBed imports: this
+          // `set` REPLACES the component's own imports, so a module added
+          // outside it never reaches the template. ButtonModule stays out —
+          // `gate().disabled` reads the unclaimed property off the p-button
+          // host, the same idiom as `tooltipOf`.
+          imports: [CommonModule, ToolbarModule],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
       })
@@ -1752,7 +1731,7 @@ describe('WorkspaceExplorerComponent — NFR3 OnPush regression gate', () => {
   // content pane instead of the tree pane. Host the explorer inside an OnPush
   // parent rendered once and never re-marked; select a file (driving
   // loadFileContent with a slow getFileContent); the content-pane spinner must
-  // clear and fileContent() must be set after the promise resolves WITHOUT any
+  // clear and content() must be set after the promise resolves WITHOUT any
   // further parent re-mark. Fails against a default-CD / loadingContent-field
   // impl (the child's field mutation never marks the OnPush parent dirty);
   // passes against the signal/OnPush impl (the signal write does). The query is
@@ -1828,7 +1807,7 @@ describe('WorkspaceExplorerComponent — NFR3 OnPush regression gate', () => {
     await hostFixture.whenStable();
 
     expect(explorer.loadingContent()).toBe(false);
-    expect(explorer.fileContent()).toBe('plain text body');
+    expect(explorer.content()?.body).toBe('plain text body');
     expect(contentSpinner(hostFixture))
       .withContext('content spinner must be gone after resolve')
       .toBeNull();
@@ -1890,7 +1869,7 @@ describe('WorkspaceExplorerComponent — NFR3 OnPush regression gate', () => {
 // --------------------------------------------------------------------
 // Live run-state tracking (FR9).
 //
-// The three upload controls read run state LIVE off
+// Both upload labels read run state LIVE off
 // `ContextService.currentTeamRunning$` — the stream ADR-010 makes the sole
 // writer of — instead of latching it once at init. Every spec here drives the
 // subject AFTER the component is created and never re-runs initialization: a
@@ -1991,19 +1970,47 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
   }
 
   /**
-   * Reach the folder-selected render state — where "Upload here" and "Upload
-   * Files" live — by writing the signal directly. `onNodeSelect` would also
-   * fire a `getFileContent` fetch that has nothing to do with run state.
+   * Reach the in-a-folder render state — where the footer's "Upload Files"
+   * lives — by writing the signal directly. `onNodeSelect` would also fire a
+   * `getFileContent` fetch that has nothing to do with run state.
    */
   function selectFolder(): void {
-    component.selectedFolder.set(
-      fileNode({ name: 'docs', path: 'docs', type: 'directory' })
+    component.currentDirectory.set('docs');
+    fixture.detectChanges();
+  }
+
+  /** Back to the root, which is `''` and not "nothing selected" (§D1). */
+  function clearSelection(): void {
+    component.currentDirectory.set('');
+    fixture.detectChanges();
+  }
+
+  /**
+   * Reach the file-open render state — where "Upload here" lives after ADR-033
+   * §D8 re-gated it on `openFile()`. The signals are written directly for the
+   * same reason `selectFolder` writes one: going through `onNodeSelect` fires a
+   * `getFileContent` read, and this block's no-extra-call assertions count it.
+   *
+   * `currentDirectory` is set to the file's parent because §D3 says that is
+   * where opening a file leaves the pane — so the state reached here is the one
+   * a real file open produces, not an assembled approximation.
+   */
+  function openFileInPane(): void {
+    component.currentDirectory.set('docs');
+    component.openFile.set(
+      fileNode({
+        name: 'a.txt',
+        path: 'docs/a.txt',
+        type: 'file',
+        extension: '.txt',
+      }),
     );
     fixture.detectChanges();
   }
 
-  function clearSelection(): void {
-    component.selectedFolder.set(null);
+  /** Close the open file without a control, so no listing fetch is issued. */
+  function closeOpenFile(): void {
+    component.openFile.set(null);
     fixture.detectChanges();
   }
 
@@ -2045,12 +2052,21 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
     expect(contextServiceStub.getCurrentTeam).not.toHaveBeenCalled();
   });
 
-  it('scenario 38 — a flip to running enables both folder-selected controls, with no re-init and no extra call', async () => {
+  // The two non-root controls no longer share one render state: ADR-033 §D8
+  // hides "Upload here" in the list view, so its run-state coverage is driven
+  // from the FILE-OPEN state while "Upload Files" keeps the folder state. The
+  // gate on both is what FR9 protects, and it is asserted on both — losing
+  // either half would be a silent regression in exactly that.
+
+  it('scenario 38 — a flip to running enables the folder upload control, with no re-init and no extra call', async () => {
     await createStopped();
     selectFolder();
-
-    expect(isDisabled('Upload here')).toBe(true);
     expect(isDisabled('Upload Files')).toBe(true);
+    // Opening a file no longer offers upload at all, so there is no second
+    // control to gate — the pane is checked for its ABSENCE instead.
+    openFileInPane();
+    expect(uploadControl(fixture.nativeElement, 'Upload Files')).toBeNull();
+    expect(uploadControl(fixture.nativeElement, 'Upload here')).toBeNull();
 
     const treeCalls = workspaceServiceSpy.getWorkspaceTree.calls.count();
     const contentCalls = workspaceServiceSpy.getFileContent.calls.count();
@@ -2059,7 +2075,7 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
     contextServiceStub.currentTeamRunning$.next(true);
     fixture.detectChanges();
 
-    expect(isDisabled('Upload here')).toBe(false);
+    closeOpenFile();
     expect(isDisabled('Upload Files')).toBe(false);
     expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(treeCalls);
     expect(workspaceServiceSpy.getFileContent.calls.count()).toBe(contentCalls);
@@ -2081,12 +2097,12 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
     expect(contextServiceStub.getCurrentTeam).not.toHaveBeenCalled();
   });
 
-  it('scenario 40 — the reverse flip disables both folder-selected controls again', async () => {
+  it('scenario 40 — the reverse flip disables the folder upload control again', async () => {
     await createRunning();
     selectFolder();
-
-    expect(isDisabled('Upload here')).toBe(false);
     expect(isDisabled('Upload Files')).toBe(false);
+    openFileInPane();
+    expect(uploadControl(fixture.nativeElement, 'Upload Files')).toBeNull();
 
     const treeCalls = workspaceServiceSpy.getWorkspaceTree.calls.count();
     contextServiceStub.getCurrentTeam.calls.reset();
@@ -2094,7 +2110,7 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
     contextServiceStub.currentTeamRunning$.next(false);
     fixture.detectChanges();
 
-    expect(isDisabled('Upload here')).toBe(true);
+    closeOpenFile();
     expect(isDisabled('Upload Files')).toBe(true);
     expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(treeCalls);
     expect(contextServiceStub.getCurrentTeam).not.toHaveBeenCalled();
@@ -2135,19 +2151,21 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
     expect(component.isProcessRunning()).toBe(false);
   });
 
-  it('scenario 44 — all three tooltips read the same live source as the three disabled bindings', async () => {
+  it('scenario 44 — both tooltips read the same live source as the disabled bindings', async () => {
     await createStopped();
 
+    // Two labels, not three: upload is a single control whose label names its
+    // target, so the root and subdirectory forms are all that remain. The
+    // tooltip is the ONLY thing that says why the control is dead, which is why
+    // it survived the tooltip cull.
     expect(tooltipOf('Upload to Root')).toBe(STOPPED_TOOLTIP);
     selectFolder();
-    expect(tooltipOf('Upload here')).toBe(STOPPED_TOOLTIP);
     expect(tooltipOf('Upload Files')).toBe(STOPPED_TOOLTIP);
 
     contextServiceStub.currentTeamRunning$.next(true);
     fixture.detectChanges();
 
-    // Running: none of the three presents the stopped-team tooltip.
-    expect(tooltipOf('Upload here')).toBe('');
+    // Running: neither presents the stopped-team tooltip.
     expect(tooltipOf('Upload Files')).toBe('');
     clearSelection();
     expect(tooltipOf('Upload to Root')).toBe('');
@@ -2167,8 +2185,8 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
 // --------------------------------------------------------------------
 
 describe('WorkspaceExplorerComponent — per-file refresh control (Epic 38)', () => {
-  const FILE_REFRESH = 'p-button[pTooltip="Refresh this file"]';
-  const WORKSPACE_REFRESH = 'p-button[pTooltip="Refresh workspace"]';
+  const FILE_REFRESH = 'p-button[data-testid="refresh-file"]';
+  const WORKSPACE_REFRESH = 'p-button[data-testid="refresh-workspace"]';
   const SIZE_TAG = 'p-tag[severity="secondary"]';
 
   let component: WorkspaceExplorerComponent;
@@ -2250,7 +2268,7 @@ describe('WorkspaceExplorerComponent — per-file refresh control (Epic 38)', ()
   }
 
   async function selectOpenFile(size = 10): Promise<void> {
-    component.selectedFile.set(openFile(size));
+    component.openFile.set(openFile(size));
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -2363,8 +2381,8 @@ describe('WorkspaceExplorerComponent — per-file refresh control (Epic 38)', ()
 describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39)', () => {
   const TEAM_ID = 'proc';
   const OPEN_PATH = 'docs/a.txt';
-  const FILE_REFRESH = 'p-button[pTooltip="Refresh this file"]';
-  const WORKSPACE_REFRESH = 'p-button[pTooltip="Refresh workspace"]';
+  const FILE_REFRESH = 'p-button[data-testid="refresh-file"]';
+  const WORKSPACE_REFRESH = 'p-button[data-testid="refresh-workspace"]';
   const SIZE_TAG = 'p-tag[severity="secondary"]';
 
   let component: WorkspaceExplorerComponent;
@@ -2382,20 +2400,14 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
     });
   }
 
-  /** Root wrapper → `docs` (materialized) → `a.txt`. */
+  /** `docs` (materialized) → `a.txt`, as ONE root entry — there is no wrapper. */
   function materializedTree(): TreeNode {
     const aTxt: TreeNode = { label: 'a.txt', data: openFile(10), leaf: true };
-    const docs: TreeNode = {
+    return {
       label: 'docs',
       data: fileNode({ name: 'docs', path: 'docs', type: 'directory' }),
       leaf: false,
       children: [aTxt],
-    };
-    return {
-      label: 'Root Folder',
-      data: fileNode({ name: 'Root Folder', path: '', type: 'directory' }),
-      children: [docs],
-      expanded: true,
     };
   }
 
@@ -2550,7 +2562,7 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
     expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
 
     // ...and it went in through the existing splice.
-    const docsNode = component.treeNodes()[0].children![0];
+    const docsNode = component.treeNodes()[0];
     expect(docsNode.children!.length).toBe(1);
     expect((docsNode.children![0].data as FileNode).size).toBe(2048);
   });
@@ -2559,7 +2571,7 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
 
   it('scenario 78 — the open file is re-read through the REFRESH path: the pane is never blanked', async () => {
     await openInPane();
-    expect(component.fileContent()).toBe('body');
+    expect(component.content()?.body).toBe('body');
 
     const body = deferred<FileContent>();
     workspaceServiceSpy.getFileContent.and.returnValue(body.promise);
@@ -2574,13 +2586,13 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
     // already nulled the body and raised the spinner by this point, and would
     // still satisfy an outcome-only assertion once the read resolves.
     expect(workspaceServiceSpy.getFileContent.calls.count()).toBe(1);
-    expect(component.fileContent()).toBe('body');
+    expect(component.content()?.body).toBe('body');
     expect(component.loadingContent()).toBe(false);
 
     body.resolve({ content: 'new body', type: 'text' });
     await flushMicrotasks();
 
-    expect(component.fileContent()).toBe('new body');
+    expect(component.content()?.body).toBe('new body');
     expect(component.loadingContent()).toBe(false);
   });
 
@@ -2608,7 +2620,7 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
     fixture.detectChanges();
 
     expect(listedPaths()).toEqual(['docs']);
-    expect(component.selectedFile()!.size).toBe(2048);
+    expect(component.openFile()!.size).toBe(2048);
     expect(sizeTag().value).toBe('2 KB');
   });
 
@@ -2632,9 +2644,8 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
 
   it('scenario 81 — a deleted open file clears the pane and the selection, and is NEVER re-read', async () => {
     await openInPane();
-    // Prove both renderer flags are cleared rather than merely already false.
-    component.isBinaryFile.set(true);
-    component.isMarkdownFile.set(true);
+    // Prove the loaded content is cleared rather than merely already null.
+    component.content.set({ kind: 'binary', body: 'stale' });
 
     await deliver(
       invalidation({ directories: ['docs'], deletions: [OPEN_PATH] }),
@@ -2643,10 +2654,8 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
 
     // Re-reading a deleted path 404s — which is why `deletions` is its own field.
     expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
-    expect(component.selectedFile()).toBeNull();
-    expect(component.fileContent()).toBeNull();
-    expect(component.isBinaryFile()).toBe(false);
-    expect(component.isMarkdownFile()).toBe(false);
+    expect(component.openFile()).toBeNull();
+    expect(component.content()).toBeNull();
     expect(component.deletedNotice()).toBe(OPEN_PATH);
 
     // The parent directory is re-listed in the same batch, so the tree entry
@@ -2664,7 +2673,7 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
     expect(notice!.textContent).toContain(OPEN_PATH);
   });
 
-  it('scenario 82 — the deletion notice leaves errorMessage null and the navigator tree rendered', async () => {
+  it('scenario 82 — the deletion notice leaves BOTH error halves null and the navigator tree rendered', async () => {
     component.treeNodes.set([materializedTree()]);
     await openInPane();
     fixture.detectChanges();
@@ -2677,12 +2686,19 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
     );
     fixture.detectChanges();
 
-    // `errorMessage` gates the tree
-    // (`*ngIf="!loading() && !errorMessage() && treeNodes().length > 0"`), so
+    // `treeError` gates the tree
+    // (`*ngIf="!loading() && !treeError() && treeNodes().length > 0"`), so
     // reporting the deletion there would blank the navigator the user needs in
     // order to select something else. Asserted through the rendered view, not
     // only through the signal.
-    expect(component.errorMessage()).toBeNull();
+    //
+    // BOTH halves, deliberately. Before the split this asserted a file-path
+    // writer against a tree-scoped consequence; after it, the tree half is
+    // structurally unreachable from here and the file half is the one a lazy
+    // implementation would still reach for. Asserting only the half that can
+    // still be written would silently drop the original assertion's meaning.
+    expect(component.treeError()).toBeNull();
+    expect(component.fileError()).toBeNull();
     expect(fixture.nativeElement.querySelector('p-tree'))
       .withContext('navigator tree after the deletion')
       .not.toBeNull();
@@ -2723,7 +2739,7 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
     );
 
     expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
-    expect(component.selectedFile()).toBeNull();
+    expect(component.openFile()).toBeNull();
     expect(component.deletedNotice()).toBe(OPEN_PATH);
   });
 
@@ -2878,7 +2894,7 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
     expect(workspaceServiceSpy.getWorkspaceTree).not.toHaveBeenCalled();
     expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
     expect(component.deletedNotice()).toBeNull();
-    expect(component.selectedFile()).not.toBeNull();
+    expect(component.openFile()).not.toBeNull();
   });
 
   it('scenario 91 — a second explorer takes its OWN subscription to the shared stream', async () => {
@@ -2937,11 +2953,11 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
     await deliver(invalidation({ directories: ['docs'] }));
     fixture.detectChanges();
 
-    // No user gesture is behind this fetch, and `errorMessage` gates the
+    // No user gesture is behind this fetch, and `treeError` gates the
     // navigator's tree — bannering here would blank the file tree over a
     // background listing, the same panel-wide outage the deletion path refuses.
     // The manual Refresh controls remain the loud path.
-    expect(component.errorMessage()).toBeNull();
+    expect(component.treeError()).toBeNull();
     expect(fixture.nativeElement.querySelector('p-tree'))
       .withContext('navigator tree after a failed background listing')
       .not.toBeNull();
@@ -2951,13 +2967,19 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
 // --------------------------------------------------------------------
 // Gesture-less reads log instead of bannering (Epic 40, FR1-FR3).
 //
-// `errorMessage` gates the navigator's `p-tree` AND its empty state, so ANY
-// write to it removes the file tree. That was tolerable while every read
-// followed a user gesture. Epic 39 made reads fire from the event stream, and a
-// background 404 or transient 500 now blanks the whole navigator with nothing
-// behind it — and `selectedFile` is never cleared, so `Refresh workspace`
-// re-enters the identical cycle and the panel stays broken until the user
-// switches tab or team.
+// `treeError` gates the navigator's `p-tree` AND its empty state, so ANY write
+// to it removes the file tree. That was tolerable while every read followed a
+// user gesture. Epic 39 made reads fire from the event stream, and a background
+// 404 or transient 500 now blanks the whole navigator with nothing behind it —
+// and `openFile` is never cleared, so `Refresh workspace` re-enters the
+// identical cycle and the panel stays broken until the user switches tab or
+// team.
+//
+// Epic 45's error split (ADR-033 §D7) narrows which routes can reach that
+// signal at all — a body read can no longer reach it under any conditions —
+// but it does not replace this rule: `treeError` still has two gesture-less
+// writers of its own (the root load and the lazy expand), and the file half
+// still owns a banner the pane shows.
 //
 // The rule is one rule on every route the event stream can reach: the body
 // read, the directory listing and the whole-tree root load. Both halves of it
@@ -2966,16 +2988,16 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
 // that tree was ever re-validated.
 //
 // The three GESTURE paths are pinned just as hard: the cheap version of this
-// fix (never write `errorMessage` from `loadFileContent` at all) satisfies
-// every background scenario below while deleting the error reporting a user who
+// fix (never write the banner from `loadFileContent` at all) satisfies every
+// background scenario below while deleting the error reporting a user who
 // selects an unreadable file depends on.
 // --------------------------------------------------------------------
 
 describe('WorkspaceExplorerComponent — gesture-less reads log instead of bannering (Epic 40)', () => {
   const TEAM_ID = 'proc';
   const OPEN_PATH = 'docs/a.txt';
-  const FILE_REFRESH = 'p-button[pTooltip="Refresh this file"]';
-  const WORKSPACE_REFRESH = 'p-button[pTooltip="Refresh workspace"]';
+  const FILE_REFRESH = 'p-button[data-testid="refresh-file"]';
+  const WORKSPACE_REFRESH = 'p-button[data-testid="refresh-workspace"]';
 
   let component: WorkspaceExplorerComponent;
   let fixture: ComponentFixture<WorkspaceExplorerComponent>;
@@ -2992,20 +3014,14 @@ describe('WorkspaceExplorerComponent — gesture-less reads log instead of banne
     });
   }
 
-  /** Root wrapper → `docs` (materialized) → `a.txt`. */
+  /** `docs` (materialized) → `a.txt`, as ONE root entry — there is no wrapper. */
   function materializedTree(): TreeNode {
     const aTxt: TreeNode = { label: 'a.txt', data: openFile(10), leaf: true };
-    const docs: TreeNode = {
+    return {
       label: 'docs',
       data: fileNode({ name: 'docs', path: 'docs', type: 'directory' }),
       leaf: false,
       children: [aTxt],
-    };
-    return {
-      label: 'Root Folder',
-      data: fileNode({ name: 'Root Folder', path: '', type: 'directory' }),
-      children: [docs],
-      expanded: true,
     };
   }
 
@@ -3088,7 +3104,7 @@ describe('WorkspaceExplorerComponent — gesture-less reads log instead of banne
     component.treeNodes.set([materializedTree()]);
     await openInPane();
     fixture.detectChanges();
-    expect(component.fileContent()).toBe('body');
+    expect(component.content()?.body).toBe('body');
     expect(tree()).withContext('navigator tree before the failure').not.toBeNull();
 
     const consoleError = spyOn(console, 'error');
@@ -3098,13 +3114,12 @@ describe('WorkspaceExplorerComponent — gesture-less reads log instead of banne
     await deliver(invalidation({ directories: ['docs'], files: [OPEN_PATH] }));
     fixture.detectChanges();
 
-    // The banner gates the tree, so writing it here is a panel-wide outage over
-    // a read nobody asked for. Intermediate state is asserted too: a spec that
-    // only checked `errorMessage()` would pass on a component that blanked the
-    // pane and raised a spinner instead.
-    expect(component.errorMessage()).toBeNull();
+    // Nobody asked for this read, so it does not banner. Intermediate state is
+    // asserted too: a spec that only checked the banner would pass on a
+    // component that blanked the pane and raised a spinner instead.
+    expect(component.fileError()).toBeNull();
     expect(tree()).withContext('navigator tree after the failure').not.toBeNull();
-    expect(component.fileContent())
+    expect(component.content()?.body)
       .withContext('the pane keeps its last good bytes')
       .toBe('body');
     expect(component.loadingContent()).toBe(false);
@@ -3122,8 +3137,9 @@ describe('WorkspaceExplorerComponent — gesture-less reads log instead of banne
     fixture.detectChanges();
 
     // Fixing the body read and leaving the root load bannering repeats the
-    // original mistake one level up: this route reaches the SAME signal.
-    expect(component.errorMessage()).toBeNull();
+    // original mistake one level up. The error split does NOT close this: the
+    // root load is exactly the writer that still owns `treeError`.
+    expect(component.treeError()).toBeNull();
     expect(component.treeNodes().length)
       .withContext('the previously loaded tree survives')
       .toBe(1);
@@ -3147,8 +3163,8 @@ describe('WorkspaceExplorerComponent — gesture-less reads log instead of banne
     await deliver(invalidation({ files: [OPEN_PATH] }));
     fixture.detectChanges();
 
-    expect(component.errorMessage()).toBeNull();
-    expect(component.fileContent())
+    expect(component.fileError()).toBeNull();
+    expect(component.content()?.body)
       .withContext('the body half still landed')
       .toBe('new body');
     expect(consoleError).toHaveBeenCalled();
@@ -3159,7 +3175,7 @@ describe('WorkspaceExplorerComponent — gesture-less reads log instead of banne
   it('scenario 97 — a background body re-read does not clear a genuine root-load banner', async () => {
     component.treeNodes.set([materializedTree()]);
     await openInPane();
-    component.errorMessage.set('Failed to load workspace');
+    component.treeError.set('Failed to load workspace');
     fixture.detectChanges();
     expect(tree()).withContext('navigator hidden by the genuine banner').toBeNull();
 
@@ -3175,13 +3191,19 @@ describe('WorkspaceExplorerComponent — gesture-less reads log instead of banne
     // The entry-side clear is a tree-scoped write in the other direction:
     // erasing it makes the navigator reappear rendering a stale tree with the
     // failure silently gone.
-    expect(component.errorMessage()).toBe('Failed to load workspace');
+    //
+    // After the error split this is STRUCTURALLY true rather than
+    // behaviourally true — a body read writes `fileError` and cannot reach
+    // `treeError` under any conditions. That is the intended strengthening, and
+    // the scenario is kept rather than deleted because it is what pins the
+    // structure: an implementation that re-merged the two halves fails here.
+    expect(component.treeError()).toBe('Failed to load workspace');
     expect(tree()).withContext('navigator still hidden').toBeNull();
   });
 
   it('scenario 98 — a background root load does not clear the banner on entry either', async () => {
     component.treeNodes.set([materializedTree()]);
-    component.errorMessage.set('Failed to load workspace');
+    component.treeError.set('Failed to load workspace');
 
     const pending = deferred<FileNode[]>();
     workspaceServiceSpy.getWorkspaceTree.and.returnValue(pending.promise);
@@ -3190,17 +3212,17 @@ describe('WorkspaceExplorerComponent — gesture-less reads log instead of banne
     await flushMicrotasks();
 
     // IN FLIGHT — the assertion that matters. The entry clear runs at
-    // subscribe time, so an unconditional `errorMessage.set(null)` has already
+    // subscribe time, so an unconditional `treeError.set(null)` has already
     // erased the banner by this point and an outcome-only assertion after the
     // load settles would never see it.
-    expect(component.errorMessage()).toBe('Failed to load workspace');
+    expect(component.treeError()).toBe('Failed to load workspace');
 
     pending.resolve([]);
     await settle();
 
     // ...and no "clear on success" rule is invented here either: neither the
     // epic nor the ADR states one.
-    expect(component.errorMessage()).toBe('Failed to load workspace');
+    expect(component.treeError()).toBe('Failed to load workspace');
   });
 
   // --- the stuck cycle: an outage rather than a glitch ----------------
@@ -3217,12 +3239,13 @@ describe('WorkspaceExplorerComponent — gesture-less reads log instead of banne
     await deliver(invalidation({ directories: ['docs'], files: [OPEN_PATH] }));
     fixture.detectChanges();
 
-    expect(component.errorMessage()).toBeNull();
+    expect(component.treeError()).toBeNull();
+    expect(component.fileError()).toBeNull();
     expect(tree()).withContext('navigator survives the background failure').not.toBeNull();
 
     // The escape route the outage removed: with the banner up the tree is gone,
-    // and `selectedFile` is never cleared, so this control re-enters the
-    // identical failing cycle and the panel stays broken from the inside.
+    // and `openFile` is never cleared, so this control re-enters the identical
+    // failing cycle and the panel stays broken from the inside.
     workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(4096)]);
     workspaceServiceSpy.getFileContent.and.resolveTo({
       content: 'recovered',
@@ -3235,8 +3258,9 @@ describe('WorkspaceExplorerComponent — gesture-less reads log instead of banne
     await settle();
     fixture.detectChanges();
 
-    expect(component.errorMessage()).toBeNull();
-    expect(component.fileContent()).toBe('recovered');
+    expect(component.treeError()).toBeNull();
+    expect(component.fileError()).toBeNull();
+    expect(component.content()?.body).toBe('recovered');
     expect(component.treeNodes().length).toBe(1);
     expect(tree()).withContext('navigator repainted by the manual refresh').not.toBeNull();
   });
@@ -3251,7 +3275,7 @@ describe('WorkspaceExplorerComponent — gesture-less reads log instead of banne
     fixture.detectChanges();
 
     // Selecting an unreadable file is the case the cheap fix silently deletes.
-    expect(component.errorMessage()).toBe('403 Forbidden');
+    expect(component.fileError()).toBe('403 Forbidden');
     expect(component.loadingContent()).toBe(false);
   });
 
@@ -3270,7 +3294,7 @@ describe('WorkspaceExplorerComponent — gesture-less reads log instead of banne
     // `loadFileContent(path, true)` reaches this loader with `refresh` SET, the
     // same as the invalidation route — which is why `refresh === true` cannot
     // be the gesture test.
-    expect(component.errorMessage()).toBe('read failed');
+    expect(component.fileError()).toBe('read failed');
   });
 
   it('scenario 102 — the toolbar Refresh this file still banners when the METADATA half fails', async () => {
@@ -3288,7 +3312,10 @@ describe('WorkspaceExplorerComponent — gesture-less reads log instead of banne
     fileRefresh.triggerEventHandler('onClick', {});
     await settle();
 
-    expect(component.errorMessage()).toBe('listing failed');
+    // The metadata half fetches a DIRECTORY listing but is issued on behalf of
+    // the open file, so its failure is file-scoped: it must not cost the tree.
+    expect(component.fileError()).toBe('listing failed');
+    expect(component.treeError()).toBeNull();
   });
 
   it('scenario 103 — the navigator Refresh workspace still banners when the ROOT load fails', async () => {
@@ -3303,7 +3330,7 @@ describe('WorkspaceExplorerComponent — gesture-less reads log instead of banne
     await settle();
     fixture.detectChanges();
 
-    expect(component.errorMessage()).toBe('root failed');
+    expect(component.treeError()).toBe('root failed');
   });
 
   it('scenario 104 — the navigator Refresh workspace still banners when the DELEGATED body read fails', async () => {
@@ -3319,7 +3346,1346 @@ describe('WorkspaceExplorerComponent — gesture-less reads log instead of banne
     await settle();
 
     // `refresh()` carries its origin to BOTH halves; the per-file half it
-    // delegates to is a gesture too.
-    expect(component.errorMessage()).toBe('body failed');
+    // delegates to is a gesture too. It banners on the FILE half — the tree
+    // half of the same activation succeeded, and must not be reported as failed.
+    expect(component.fileError()).toBe('body failed');
+    expect(component.treeError()).toBeNull();
   });
+});
+
+// --------------------------------------------------------------------
+// The pane's state model (Epic 45, FR1-FR5 / FR9).
+//
+// `currentDirectory` + `openFile` + one kind-tagged `content` + one computed
+// `viewMode` + two scoped error signals, replacing five signals, six
+// hand-switched template branches and one synthetic root node.
+//
+// Every scenario in this block is a DOM or in-flight assertion, deliberately.
+// The defects they guard are invisible to the signals: a `@switch` that
+// subsumes a rendered body, two blocks rendering at once, a spinner raised for
+// a load nobody asked for, and an error signal that gates the wrong half of
+// the panel all leave the signal values a naive spec would check unchanged.
+//
+// The widened override is reused (`ButtonModule` + `ToolbarModule`) so the
+// toolbar's `start`/`end` templates instantiate and `[disabled]` reaches a real
+// inner <button>. The open file is a `.txt`: a `.md` renders through
+// `<markdown>`, which has no dash and is therefore not resolvable under
+// CUSTOM_ELEMENTS_SCHEMA (the constraint scenario 27 documents).
+// --------------------------------------------------------------------
+
+describe('WorkspaceExplorerComponent — the pane state model (Epic 45)', () => {
+  const TEAM_ID = 'proc';
+  const OPEN_PATH = 'docs/deep/a.txt';
+
+  let component: WorkspaceExplorerComponent;
+  let fixture: ComponentFixture<WorkspaceExplorerComponent>;
+  let workspaceServiceSpy: jasmine.SpyObj<WorkspaceService>;
+  let invalidations: FakeWorkspaceInvalidationService;
+
+  function openFile(size = 10): FileNode {
+    return fileNode({
+      name: 'a.txt',
+      path: OPEN_PATH,
+      type: 'file',
+      size,
+      extension: '.txt',
+    });
+  }
+
+  /** `docs` (materialized) → `deep` → `a.txt`, as ONE root entry. */
+  function materializedTree(): TreeNode {
+    const aTxt: TreeNode = { label: 'a.txt', data: openFile(10), leaf: true };
+    const deep: TreeNode = {
+      label: 'deep',
+      data: fileNode({ name: 'deep', path: 'docs/deep', type: 'directory' }),
+      leaf: false,
+      children: [aTxt],
+    };
+    return {
+      label: 'docs',
+      data: fileNode({ name: 'docs', path: 'docs', type: 'directory' }),
+      leaf: false,
+      children: [deep],
+    };
+  }
+
+  beforeEach(async () => {
+    workspaceServiceSpy = jasmine.createSpyObj('WorkspaceService', [
+      'getWorkspaceTree',
+      'getFileContent',
+      'getDownloadUrl',
+      'uploadFiles',
+    ]);
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: 'body',
+      type: 'text',
+    });
+    invalidations = new FakeWorkspaceInvalidationService();
+
+    await TestBed.configureTestingModule({
+      imports: [WorkspaceExplorerComponent, NoopAnimationsModule],
+      providers: [
+        { provide: WorkspaceService, useValue: workspaceServiceSpy },
+        {
+          provide: ContextService,
+          useValue: {
+            currentProcessId$: new BehaviorSubject<string>(TEAM_ID),
+            currentTeamRunning$: new BehaviorSubject<boolean>(true),
+            getCurrentTeam: jasmine
+              .createSpy('getCurrentTeam')
+              .and.callFake(async () => makeTeam()),
+          },
+        },
+        { provide: WorkspaceInvalidationService, useValue: invalidations },
+      ],
+    })
+      .overrideComponent(WorkspaceExplorerComponent, {
+        set: {
+          imports: [CommonModule, ButtonModule, ToolbarModule],
+          schemas: [CUSTOM_ELEMENTS_SCHEMA],
+        },
+      })
+      .compileComponents();
+  });
+
+  /** Create and settle the component. Callers that need an in-flight window create it themselves. */
+  async function create(): Promise<void> {
+    fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+    component = fixture.componentInstance;
+    await flushRootLoad(fixture);
+  }
+
+  /** Push instructions as ONE synchronous delta, then settle the fetches. */
+  async function deliver(...batch: WorkspaceInvalidation[]): Promise<void> {
+    for (const instruction of batch) {
+      invalidations.invalidations$.next(instruction);
+    }
+    await flushMicrotasks();
+    await flushMicrotasks();
+  }
+
+  function tree(): HTMLElement | null {
+    return fixture.nativeElement.querySelector('p-tree') as HTMLElement | null;
+  }
+
+  function pane(): HTMLElement {
+    return fixture.nativeElement.querySelector('.panel-content') as HTMLElement;
+  }
+
+  /**
+   * The blocks `.panel-content` can render, as a set of selectors. Counting
+   * MATCHED SELECTORS rather than child elements is what makes the exclusivity
+   * assertion meaningful: `@switch` leaves comment anchors between cases, and a
+   * child count would be satisfied by any single wrapper.
+   *
+   * The helper means "exactly one VIEW-MODE block", and every case now names
+   * exactly one — including `'list'`, which briefly named two while upload was a
+   * footer pinned under the scrolling region.
+   *
+   * `.file-placeholder:not(.deleted-notice)`, `.folder-view` and
+   * `.upload-footer` no longer have markup. They are KEPT rather than dropped,
+   * as guards — a match on any of them means something this pane deliberately
+   * removed has come back into the list case. `.upload-footer` earns its place
+   * the most: upload is a single toolbar control now, and a footer returning
+   * beneath the list is the regression this change makes most plausible.
+   */
+  const PANE_BLOCKS = [
+    'p-progressspinner, p-progressSpinner',
+    '.error-message',
+    '.deleted-notice',
+    '.file-placeholder:not(.deleted-notice)',
+    '.folder-view',
+    '.binary-card, p-card',
+    '.file-content',
+    '.markdown-content',
+    '.directory-list',
+    '.upload-footer',
+  ];
+
+  function renderedBlocks(): string[] {
+    return PANE_BLOCKS.filter((selector) => pane().querySelector(selector) !== null);
+  }
+
+  // --- FR1 / FR2: the model starts at the root and the load writes no selection ---
+
+  it("scenario 105 — currentDirectory starts '' and the root load populates the tree without writing a selection", async () => {
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
+      fileNode({ name: 'docs', path: 'docs', type: 'directory' }),
+    ]);
+
+    fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+    component = fixture.componentInstance;
+
+    // Before the listing arrives: already AT the root, with an empty list.
+    // There is no "unset" state to distinguish and no flag standing for one.
+    expect(component.currentDirectory()).toBe('');
+    expect(component.openFile()).toBeNull();
+
+    await flushRootLoad(fixture);
+
+    expect(component.treeNodes().length).toBe(1);
+    // The load writes the TREE. It does not move the user (AC8).
+    expect(component.currentDirectory()).toBe('');
+    expect(component.openFile()).toBeNull();
+    expect(component.viewMode()).toBe('list');
+  });
+
+  // --- AC8: applyRootLoad never navigates the user ---------------------
+
+  it('scenario 106 — a background refresh with a file open deep in a subdirectory moves neither signal', async () => {
+    await create();
+    component.treeNodes.set([materializedTree()]);
+    component.currentDirectory.set('docs/deep');
+    await component.onNodeSelect({ node: { data: openFile(10) } });
+    fixture.detectChanges();
+
+    expect(component.currentDirectory()).toBe('docs/deep');
+    expect(component.openFile()!.path).toBe(OPEN_PATH);
+
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
+      fileNode({ name: 'other', path: 'other', type: 'directory' }),
+    ]);
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: 'body',
+      type: 'text',
+    });
+
+    // A whole-tree instruction — an agent writing a file — routes to
+    // `refresh(true)`, whose sink is `applyRootLoad`.
+    await deliver(invalidation({ workspaceId: TEAM_ID, wholeTree: true }));
+
+    // The tree was replaced; the user was NOT navigated. An `applyRootLoad`
+    // that reset either signal "to keep the pane consistent with the fresh
+    // tree" fails here, and only here.
+    expect(component.treeNodes()[0].label).toBe('other');
+    expect(component.currentDirectory()).toBe('docs/deep');
+    expect(component.openFile()!.path).toBe(OPEN_PATH);
+  });
+
+  it('scenario 107 — a superseded root load writes neither treeNodes nor currentDirectory', async () => {
+    fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+    component = fixture.componentInstance;
+
+    // First (slow) fetch for ws-A: resolves LATE.
+    const slow = deferred<FileNode[]>();
+    workspaceServiceSpy.getWorkspaceTree.and.returnValue(slow.promise);
+    fixture.componentRef.setInput('workspaceId', 'ws-A');
+    fixture.detectChanges();
+
+    // Second (fast) fetch for ws-B wins, and the user then navigates.
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
+      fileNode({ name: 'fromB', path: 'fromB', type: 'directory' }),
+    ]);
+    fixture.componentRef.setInput('workspaceId', 'ws-B');
+    await flushRootLoad(fixture);
+    component.currentDirectory.set('fromB');
+
+    slow.resolve([fileNode({ name: 'fromA', path: 'fromA', type: 'directory' })]);
+    await flushRootLoad(fixture);
+
+    // switchMap cancelled ws-A, so it overwrites neither half — and the
+    // second half is true BY CONSTRUCTION, because `applyRootLoad` has no
+    // `currentDirectory` write to guard in the first place (NFR1).
+    expect(component.treeNodes()[0].label).toBe('fromB');
+    expect(component.currentDirectory()).toBe('fromB');
+  });
+
+  // --- FR3: binary && markdown is unrepresentable ----------------------
+
+  it('scenario 108 — a markdown read then a binary read of the SAME path leave exactly one kind', async () => {
+    await create();
+    const mdPath = 'docs/a.md';
+    component.openFile.set(
+      fileNode({ name: 'a.md', path: mdPath, type: 'file', extension: '.md' }),
+    );
+
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: '# Title',
+      type: 'text',
+    });
+    await component.loadFileContent(mdPath);
+    expect(component.content()).toEqual({ kind: 'markdown', body: '# Title' });
+
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: null,
+      type: 'binary',
+      message: 'Binary file cannot be displayed',
+    });
+    await component.loadFileContent(mdPath);
+
+    // Under the three-flag model the second read set `isBinaryFile` while
+    // `isMarkdownFile` was still true from the first — a state the template had
+    // to order its conditions around. One signal cannot hold two kinds.
+    expect(component.content()).toEqual({
+      kind: 'binary',
+      body: 'Binary file cannot be displayed',
+    });
+    expect(component.viewMode()).toBe('binary');
+  });
+
+  it('scenario 109 — a text result with a null body loads as an empty string, not as "nothing loaded"', async () => {
+    await create();
+    component.openFile.set(
+      fileNode({ name: 'e.txt', path: 'docs/e.txt', type: 'file', extension: '.txt' }),
+    );
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: null,
+      type: 'text',
+    });
+
+    await component.loadFileContent('docs/e.txt');
+    fixture.detectChanges();
+
+    // "Loaded and empty" is a different fact from "nothing is loaded": the
+    // former renders an empty document, the latter used to render nothing at
+    // all because the template tested `fileContent() !== null`.
+    expect(component.content()).toEqual({ kind: 'text', body: '' });
+    expect(component.viewMode()).toBe('text');
+    expect(pane().querySelector('.file-content pre')).not.toBeNull();
+  });
+
+  // --- FR4 / AC10: exactly one value, exactly one rendered block -------
+
+  it('scenario 110 — the deleted-file case renders exactly ONE block in the pane', async () => {
+    await create();
+    await component.onNodeSelect({ node: { data: openFile(10) } });
+
+    await deliver(
+      invalidation({ workspaceId: TEAM_ID, deletions: [OPEN_PATH] }),
+    );
+    fixture.detectChanges();
+
+    // The two blocks `component.html:159`/`:179` warned about by hand: with
+    // `openFile` cleared, "Select a file to view its content" and "that file
+    // was deleted" were both true and rendered together. `viewMode` returns
+    // one value, so one block renders.
+    expect(component.viewMode()).toBe('deleted');
+    expect(renderedBlocks()).toEqual(['.deleted-notice']);
+  });
+
+  it('scenario 111 — the list case renders its one block in the pane and nothing else', async () => {
+    await create();
+    fixture.detectChanges();
+
+    // FR8 replaced the centred "Workspace Root" placeholder with the list
+    // region. The footer that once sat pinned beneath it is gone — upload is a
+    // single toolbar control now — so the `'list'` case is back to exactly one
+    // block, and no OTHER case's block may appear beside it.
+    expect(component.viewMode()).toBe('list');
+    expect(renderedBlocks()).toEqual(['.directory-list']);
+  });
+
+  // --- FR5 / AC7: the split, in both directions ------------------------
+
+  it('scenario 112 — a failed FILE read leaves the navigator tree rendered', async () => {
+    await create();
+    component.treeNodes.set([materializedTree()]);
+    fixture.detectChanges();
+    expect(tree()).withContext('navigator tree before the failure').not.toBeNull();
+
+    spyOn(console, 'error');
+    workspaceServiceSpy.getFileContent.and.rejectWith(new Error('403 Forbidden'));
+
+    // A USER gesture, so it must banner — and must banner on the half that
+    // does not gate the tree. Against the single signal the tree disappears.
+    await component.onNodeSelect({ node: { data: openFile(10) } });
+    fixture.detectChanges();
+
+    expect(component.fileError()).toBe('403 Forbidden');
+    expect(component.treeError()).toBeNull();
+    expect(tree()).withContext('navigator tree after the failed read').not.toBeNull();
+  });
+
+  it('scenario 113 — neither error half can clear or overwrite the other', async () => {
+    await create();
+    component.treeNodes.set([materializedTree()]);
+    spyOn(console, 'error');
+
+    // A file failure is on screen first.
+    workspaceServiceSpy.getFileContent.and.rejectWith(new Error('403 Forbidden'));
+    await component.onNodeSelect({ node: { data: openFile(10) } });
+    expect(component.fileError()).toBe('403 Forbidden');
+
+    // ...then a root load fails under it. Against the single signal the root
+    // load's entry clear erases the file banner before its own write lands.
+    workspaceServiceSpy.getWorkspaceTree.and.rejectWith(new Error('root failed'));
+    component.refresh();
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(component.treeError()).toBe('root failed');
+    expect(component.fileError())
+      .withContext('the file banner survives a tree failure')
+      .not.toBeNull();
+
+    // ...and the reverse: a file read succeeding does not erase the tree
+    // banner, nor does a failing one overwrite it.
+    workspaceServiceSpy.getFileContent.and.rejectWith(new Error('read failed'));
+    await component.loadFileContent(OPEN_PATH);
+
+    expect(component.fileError()).toBe('read failed');
+    expect(component.treeError())
+      .withContext('the tree banner survives a file failure')
+      .toBe('root failed');
+  });
+
+  // --- AC5: the banner renders ABOVE a body that stays -----------------
+
+  it('scenario 114 — a failed REFRESH keeps the body rendered, with the banner above it', async () => {
+    await create();
+    await component.onNodeSelect({ node: { data: openFile(10) } });
+    fixture.detectChanges();
+    expect(pane().querySelector('.file-content')).not.toBeNull();
+
+    spyOn(console, 'error');
+    workspaceServiceSpy.getFileContent.and.rejectWith(new Error('read failed'));
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([openFile(2048)]);
+
+    await component.refreshSelectedFile();
+    fixture.detectChanges();
+
+    // A DOM assertion, because the signals cannot see this: a `@switch` whose
+    // 'error' case subsumed the content leaves `fileError` and `content` at
+    // exactly these values and still blanks the reader's document.
+    const banner = pane().querySelector('.error-message');
+    const body = pane().querySelector('.file-content');
+    expect(banner).withContext('the failure is reported').not.toBeNull();
+    expect(body).withContext('the readable body survives the failed re-read').not.toBeNull();
+    expect(banner!.textContent).toContain('read failed');
+    // ABOVE, not beside: the reader meets the warning before the stale bytes.
+    expect(
+      banner!.compareDocumentPosition(body!) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  // --- FR9 / row 24: a background root load does not unmount the navigator ---
+
+  it('scenario 115 — the tree stays rendered DURING a background root load', async () => {
+    await create();
+    component.treeNodes.set([materializedTree()]);
+    fixture.detectChanges();
+    expect(tree()).withContext('navigator tree before the load').not.toBeNull();
+
+    const pending = deferred<FileNode[]>();
+    workspaceServiceSpy.getWorkspaceTree.and.returnValue(pending.promise);
+
+    invalidations.invalidations$.next(
+      invalidation({ workspaceId: TEAM_ID, wholeTree: true }),
+    );
+    await flushMicrotasks();
+    fixture.detectChanges();
+
+    // IN FLIGHT — the assertion that matters, in scenario 98's shape. The
+    // spinner is raised at subscribe time, so an implementation that calls
+    // `loading.set(true)` above the `background` check has already unmounted
+    // the tree by this point and an outcome-only assertion never sees it.
+    expect(component.loading())
+      .withContext('a gesture-less load raises no spinner')
+      .toBe(false);
+    expect(tree()).withContext('navigator tree DURING the load').not.toBeNull();
+
+    pending.resolve([fileNode({ name: 'fresh', path: 'fresh', type: 'directory' })]);
+    await flushMicrotasks();
+    await flushMicrotasks();
+    fixture.detectChanges();
+
+    expect(component.loading()).toBe(false);
+    expect(tree()).withContext('navigator tree after the load').not.toBeNull();
+  });
+
+  it('scenario 116 — a GESTURE root load still raises and lowers the spinner', async () => {
+    await create();
+    component.treeNodes.set([materializedTree()]);
+
+    const pending = deferred<FileNode[]>();
+    workspaceServiceSpy.getWorkspaceTree.and.returnValue(pending.promise);
+
+    // The other half of row 24's guard: moving the write below the check must
+    // not delete the spinner the navigator's own Refresh control depends on.
+    component.refresh();
+    fixture.detectChanges();
+    expect(component.loading()).toBe(true);
+    expect(tree()).withContext('the tree yields to the spinner on a gesture').toBeNull();
+
+    pending.resolve([]);
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(component.loading()).toBe(false);
+  });
+
+  // --- AC13: the empty-workspace block becomes reachable ---------------
+
+  it('scenario 117 — a genuinely empty workspace renders the empty-workspace block', async () => {
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+    await create();
+    fixture.detectChanges();
+
+    // Dead code until FR2: `wrapRootTree` always returned a one-element array,
+    // so `treeNodes().length === 0` was never true and this block never
+    // rendered. It is the third user-visible change in this story.
+    expect(component.treeNodes()).toEqual([]);
+    const empty = fixture.nativeElement.querySelector(
+      '.empty-workspace',
+    ) as HTMLElement | null;
+    expect(empty).withContext('empty-workspace block').not.toBeNull();
+    expect(empty!.textContent).toContain('No files found');
+    expect(tree()).withContext('no tree for an empty workspace').toBeNull();
+  });
+});
+
+// --------------------------------------------------------------------
+// The drill-down list and the pinned upload footer (Epic 45 / ADR-033 §D2,
+// §D3, §D8).
+//
+// Its own TestBed and its own factories — the file's convention is per-block
+// fixtures, never a helper reached across a `describe` boundary. The widened
+// override (`ButtonModule` + `ToolbarModule`) is load-bearing twice over: Up,
+// Back and "Upload here" live inside `<ng-template pTemplate="start|end">` and
+// only PrimeNG's Toolbar instantiates those, and `[disabled]` has to reach a
+// real inner <button> for the run-state assertions. `TooltipModule` stays out,
+// so `[pTooltip]` remains an unclaimed binding readable off the p-button host.
+//
+// Every new control is driven by a REAL DOM event in at least one spec —
+// `.directory-entry.click()`, and the inner <button> of Up / Back / the footer.
+// A spec that calls the handler on the instance leaves the suite green while
+// the binding is deleted and the control is inert in a browser, which is
+// already recorded twice as `backlog.md` rows 8 and 18.
+// --------------------------------------------------------------------
+
+describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic 45)', () => {
+  const TEAM_ID = 'proc';
+  const STOPPED_TOOLTIP = 'Process must be running to upload files';
+
+  let component: WorkspaceExplorerComponent;
+  let fixture: ComponentFixture<WorkspaceExplorerComponent>;
+  let workspaceServiceSpy: jasmine.SpyObj<WorkspaceService>;
+  let invalidations: FakeWorkspaceInvalidationService;
+  let running: BehaviorSubject<boolean>;
+
+  /**
+   * The root listing, deliberately INTERLEAVED and REVERSE-alphabetical within
+   * each kind: `b.txt`, `docs`, `a.txt`, `assets`. Folders come first and each
+   * block is sorted by name, so the expected render order is `assets`, `docs`,
+   * `a.txt`, `b.txt` — every one of the four moves. That is what makes the sort
+   * falsifiable: dropping either `.sort` restores the backend's order and
+   * reddens every spec that names the rows.
+   */
+  function rootEntries(): FileNode[] {
+    return [
+      fileNode({ name: 'b.txt', path: 'b.txt', type: 'file', size: 2048, extension: '.txt' }),
+      fileNode({ name: 'docs', path: 'docs', type: 'directory', size: 0 }),
+      fileNode({ name: 'a.txt', path: 'a.txt', type: 'file', size: 10, extension: '.txt' }),
+      fileNode({ name: 'assets', path: 'assets', type: 'directory', size: 0 }),
+    ];
+  }
+
+  function docsEntries(): FileNode[] {
+    return [
+      fileNode({ name: 'a.txt', path: 'docs/a.txt', type: 'file', size: 10, extension: '.txt' }),
+      fileNode({ name: 'deep', path: 'docs/deep', type: 'directory', size: 0 }),
+    ];
+  }
+
+  function deepEntries(): FileNode[] {
+    return [
+      fileNode({ name: 'a.txt', path: 'docs/deep/a.txt', type: 'file', size: 10, extension: '.txt' }),
+    ];
+  }
+
+  function nestedFile(): FileNode {
+    return fileNode({
+      name: 'a.txt',
+      path: 'docs/deep/a.txt',
+      type: 'file',
+      size: 10,
+      extension: '.txt',
+    });
+  }
+
+  /** A listing resolver keyed by path, so a navigation and a root load can differ. */
+  function listingsBy(byPath: Record<string, FileNode[]>): void {
+    workspaceServiceSpy.getWorkspaceTree.and.callFake(
+      async (_team: string, path?: string) => byPath[path ?? ''] ?? [],
+    );
+  }
+
+  beforeEach(async () => {
+    workspaceServiceSpy = jasmine.createSpyObj('WorkspaceService', [
+      'getWorkspaceTree',
+      'getFileContent',
+      'getDownloadUrl',
+      'uploadFiles',
+    ]);
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+    workspaceServiceSpy.getFileContent.and.resolveTo({
+      content: 'body',
+      type: 'text',
+    });
+    invalidations = new FakeWorkspaceInvalidationService();
+    running = new BehaviorSubject<boolean>(true);
+
+    await TestBed.configureTestingModule({
+      imports: [WorkspaceExplorerComponent, NoopAnimationsModule],
+      providers: [
+        { provide: WorkspaceService, useValue: workspaceServiceSpy },
+        {
+          provide: ContextService,
+          useValue: {
+            currentProcessId$: new BehaviorSubject<string>(TEAM_ID),
+            currentTeamRunning$: running,
+            getCurrentTeam: jasmine
+              .createSpy('getCurrentTeam')
+              .and.callFake(async () => makeTeam()),
+          },
+        },
+        { provide: WorkspaceInvalidationService, useValue: invalidations },
+      ],
+    })
+      .overrideComponent(WorkspaceExplorerComponent, {
+        set: {
+          // TreeModule so the navigator's label template actually
+          // instantiates — the size label is rendered by a
+          // pTemplate, which a schema-stubbed <p-tree> never runs.
+          imports: [CommonModule, ButtonModule, ToolbarModule, TreeModule],
+          schemas: [CUSTOM_ELEMENTS_SCHEMA],
+        },
+      })
+      .compileComponents();
+  });
+
+  async function create(): Promise<void> {
+    fixture = TestBed.createComponent(WorkspaceExplorerComponent);
+    component = fixture.componentInstance;
+    await flushRootLoad(fixture);
+  }
+
+  /** Push instructions as ONE synchronous delta, then settle the fetches. */
+  async function deliver(...batch: WorkspaceInvalidation[]): Promise<void> {
+    for (const instruction of batch) {
+      invalidations.invalidations$.next(instruction);
+    }
+    await flushMicrotasks();
+    await flushMicrotasks();
+    fixture.detectChanges();
+  }
+
+  function pane(): HTMLElement {
+    return fixture.nativeElement.querySelector('.panel-content') as HTMLElement;
+  }
+
+  function listRegion(): HTMLElement | null {
+    return pane().querySelector('.directory-list') as HTMLElement | null;
+  }
+
+  /**
+   * The upload control, wherever the toolbar currently puts it.
+   *
+   * Was `.upload-footer`, a pinned block below the list. The footer is gone:
+   * upload is ONE control in the toolbar, rendered only in the list view.
+   */
+  function uploadControl(): UploadControlEl | null {
+    return fixture.nativeElement.querySelector(
+      'p-toolbar p-button[label^="Upload"]',
+    ) as UploadControlEl | null;
+  }
+
+  function rowEls(): HTMLButtonElement[] {
+    return Array.from(pane().querySelectorAll('.directory-entry'));
+  }
+
+  function rowNames(): string[] {
+    return rowEls().map((row) =>
+      (row.querySelector('.directory-entry-name') as HTMLElement).textContent!.trim(),
+    );
+  }
+
+  /** A REAL click on a rendered row — never the handler on the instance. */
+  async function clickRow(name: string): Promise<void> {
+    const row = rowEls().find(
+      (el) =>
+        (el.querySelector('.directory-entry-name') as HTMLElement).textContent!.trim() ===
+        name,
+    );
+    expect(row).withContext(`list row "${name}" should be rendered`).toBeDefined();
+    row!.click();
+    await flushMicrotasks();
+    fixture.detectChanges();
+  }
+
+  function toolbarHost(label: string): UploadControlEl | null {
+    return fixture.nativeElement.querySelector(
+      `p-toolbar p-button[label="${label}"]`,
+    ) as UploadControlEl | null;
+  }
+
+  /** A REAL click on the inner <button> PrimeNG renders for a p-button. */
+  async function clickToolbar(label: string): Promise<void> {
+    const host = toolbarHost(label);
+    expect(host).withContext(`toolbar control "${label}" should be rendered`).not.toBeNull();
+    (host!.querySelector('button') as HTMLButtonElement).click();
+    await flushMicrotasks();
+    fixture.detectChanges();
+  }
+
+  /**
+   * Which of the two navigation verbs is on screen. Deliberately reads ONLY
+   * Up/Back: they vary on `openFile()` while the upload control varies on
+   * `viewMode()`, and those differ in the 'deleted', 'error' and 'loading'
+   * states — so satisfying this through the upload control would be asserting
+   * the wrong thing (ADR-033 §D8, story 45-2 AC8).
+   */
+  /** Every CLICKABLE crumb, in trail order — the ancestors you can climb to. */
+  function crumbLinks(): string[] {
+    return Array.from(
+      fixture.nativeElement.querySelectorAll('.breadcrumb-link'),
+    ).map((el) => (el as HTMLElement).textContent!.trim());
+  }
+
+  /** The trail's last entry — where the pane says it is. */
+  function crumbCurrent(): string | null {
+    const marks = fixture.nativeElement.querySelectorAll('.breadcrumb-current');
+    const last = marks[marks.length - 1] as HTMLElement | undefined;
+    return last ? last.textContent!.trim() : null;
+  }
+
+  /** A REAL click on the crumb naming *name*. */
+  async function clickCrumb(name: string): Promise<void> {
+    const link = Array.from(
+      fixture.nativeElement.querySelectorAll('.breadcrumb-link'),
+    ).find((el) => (el as HTMLElement).textContent!.trim() === name);
+    expect(link).withContext(`crumb "${name}" should be clickable`).toBeTruthy();
+    (link as HTMLButtonElement).click();
+    await flushMicrotasks();
+    fixture.detectChanges();
+  }
+
+  /**
+   * Every LABELLED upload control rendered in the preview panel. The
+   * navigator header's upload button is icon-only — it carries no `label`
+   * attribute at all — so it is excluded by construction rather than by a
+   * hand-maintained blocklist. It is a different column and is not part of
+   * this count.
+   */
+  function labelledUploadControls(): string[] {
+    const panel = fixture.nativeElement.querySelector('.preview-panel') as HTMLElement;
+    return Array.from(panel.querySelectorAll('p-button[label]'))
+      .map((el) => el.getAttribute('label')!)
+      .filter((label) => label.toLowerCase().includes('upload'));
+  }
+
+  // --- AC1 / AC3.2: the pane lists where it is, from the load it already made ---
+
+  it('scenario 118 — the pane lists the root on entry, folders first, each group sorted by name', async () => {
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo(rootEntries());
+    await create();
+
+    // Two blocks, each alphabetical. The fixture arrives from the backend as
+    // `docs, assets, b.txt, a.txt`, so BOTH groups come back reversed — which is
+    // what makes this spec falsifiable: dropping either `.sort` restores the
+    // backend's order and turns it red.
+    expect(rowNames()).toEqual(['assets', 'docs', 'a.txt', 'b.txt']);
+    expect(component.viewMode()).toBe('list');
+
+    // A row reuses what already exists — `getFileIcon` and `formatFileSize`.
+    // No second icon map, no second formatter.
+    const folderRow = rowEls()[0];
+    expect(folderRow.querySelector('.directory-entry-icon')!.className).toContain(
+      'pi-folder',
+    );
+    expect(folderRow.querySelector('.directory-entry-size')).toBeNull();
+    // Located by NAME, not by index: this assertion is about the size
+    // formatter, and an index would silently re-couple it to the sort order.
+    const fileRow = rowEls()[rowNames().indexOf('b.txt')];
+    expect(
+      fileRow.querySelector('.directory-entry-size')!.textContent!.trim(),
+    ).toBe('2 KB');
+  });
+
+  it('scenario 119 — startup issues exactly ONE getWorkspaceTree(\'\'): the tree and the list come from it', async () => {
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo(rootEntries());
+    await create();
+
+    // The root's tree fetch and its list fetch ARE the same request. A separate
+    // `fetchTree('')` for the list would double every root load — including the
+    // gesture-less ones — and move counts the rest of this file asserts on.
+    expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith('proc', '');
+    expect(component.listing()).toEqual({ path: '', entries: rootEntries() });
+    expect(component.treeNodes().length).toBe(4);
+  });
+
+  // --- AC2: the list shares nothing with the tree but `currentDirectory` ---
+
+  it('scenario 120 — a folder the navigator has NEVER expanded lists when navigated into', async () => {
+    listingsBy({ '': rootEntries(), docs: docsEntries() });
+    await create();
+
+    // `docs` is materialized in the tree as a LAZY node: children undefined, so
+    // `findTreeNodeByPath` finds the node but nothing under it. The list does
+    // not consult the tree at all — that is what makes a flat list simpler than
+    // the second `p-tree` §A1 rejected.
+    expect(component.treeNodes()[1].label).toBe('docs');
+    expect(component.treeNodes()[1].children).toBeUndefined();
+
+    await clickRow('docs');
+
+    expect(component.currentDirectory()).toBe('docs');
+    expect(rowNames()).toEqual(['deep', 'a.txt']);
+    // Still unmaterialized in the tree afterwards: the list took nothing from it
+    // and gave nothing back.
+    expect(component.treeNodes()[1].children).toBeUndefined();
+  });
+
+  // --- AC3.1: a background root load cannot repaint the user's directory ---
+
+  it('scenario 121 — a background root load with the user deep in a subdirectory writes NO listing', async () => {
+    listingsBy({ '': rootEntries(), 'docs/deep': deepEntries() });
+    await create();
+
+    await component.onNodeSelect({
+      node: { data: fileNode({ name: 'deep', path: 'docs/deep', type: 'directory' }) },
+    });
+    await flushMicrotasks();
+    fixture.detectChanges();
+    expect(component.listing()).toEqual({ path: 'docs/deep', entries: deepEntries() });
+
+    // An agent writes a file: a whole-tree instruction routes to `refresh(true)`,
+    // whose sink is `applyRootLoad` — and, now, `applyRootListing` beside it.
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
+      fileNode({ name: 'other', path: 'other', type: 'directory' }),
+    ]);
+    await deliver(invalidation({ workspaceId: TEAM_ID, wholeTree: true }));
+
+    // The TREE was replaced. The user's list was not: an applier without the
+    // `currentDirectory() === ''` guard repaints `docs/deep` with the root's
+    // entries, which is the same "an agent moved me" surprise `applyRootLoad`
+    // already refuses for `currentDirectory` itself.
+    expect(component.treeNodes()[0].label).toBe('other');
+    expect(component.listing()).toEqual({ path: 'docs/deep', entries: deepEntries() });
+    expect(rowNames()).toEqual(['a.txt']);
+  });
+
+  // --- AC4: a superseded listing is discarded, by path ------------------
+
+  it('scenario 122 — a listing that resolves after the user has moved on is discarded, by path', async () => {
+    listingsBy({ '': rootEntries() });
+    await create();
+
+    // Navigate into `docs`, whose listing resolves LATE.
+    const slow = deferred<FileNode[]>();
+    workspaceServiceSpy.getWorkspaceTree.and.returnValue(slow.promise);
+    await clickRow('docs');
+    expect(component.currentDirectory()).toBe('docs');
+
+    // ...and on into `assets` from the navigator before `docs` resolves. The
+    // point is only that the pane has moved on while a listing is in flight.
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
+      fileNode({ name: 'logo.png', path: 'assets/logo.png', type: 'file', size: 4 }),
+    ]);
+    await component.onNodeSelect({
+      node: { data: fileNode({ name: 'assets', path: 'assets', type: 'directory' }) },
+    });
+    await flushMicrotasks();
+    fixture.detectChanges();
+    expect(component.listing()).toEqual({
+      path: 'assets',
+      entries: [
+        fileNode({ name: 'logo.png', path: 'assets/logo.png', type: 'file', size: 4 }),
+      ],
+    });
+
+    slow.resolve(docsEntries());
+    await flushMicrotasks();
+    fixture.detectChanges();
+
+    // `applyFileContent`'s rule, applied to the list: without it `docs`'s
+    // entries render under `assets`'s name — a listing and the directory it
+    // describes disagreeing, which the path tag exists to prevent.
+    expect(component.currentDirectory()).toBe('assets');
+    expect(component.listing()!.path).toBe('assets');
+    expect(rowNames()).toEqual(['logo.png']);
+  });
+
+  // --- AC5 / AC6: three verbs, one place --------------------------------
+
+  it('scenario 123 — a folder click descends and clears the open file, from the list AND from the navigator', async () => {
+    listingsBy({ '': rootEntries(), docs: docsEntries(), assets: [] });
+    await create();
+
+    // Seed an open file so the descent's clears are observable.
+    component.openFile.set(nestedFile());
+    component.content.set({ kind: 'text', body: 'stale' });
+    component.fileError.set('stale failure');
+    fixture.detectChanges();
+
+    // Entry point 1 — the NAVIGATOR.
+    await component.onNodeSelect({
+      node: { data: fileNode({ name: 'docs', path: 'docs', type: 'directory' }) },
+    });
+    await flushMicrotasks();
+    fixture.detectChanges();
+
+    expect(component.currentDirectory()).toBe('docs');
+    expect(component.openFile()).toBeNull();
+    expect(component.content()).toBeNull();
+    // Without the `fileError` clear the pane returns `viewMode === 'error'` and
+    // the navigation appears to do nothing — a file-scoped banner has nothing
+    // left to describe once its file is closed.
+    expect(component.fileError()).toBeNull();
+    expect(component.viewMode()).toBe('list');
+    expect(rowNames()).toEqual(['deep', 'a.txt']);
+
+    // Entry point 2 — the LIST, through a real DOM click. Both doorways go
+    // through the one descent method: two copies of the rule is how the panel
+    // and the pane end up pointing at different places (§D3).
+    await clickRow('deep');
+    expect(component.currentDirectory()).toBe('docs/deep');
+    expect(component.openFile()).toBeNull();
+  });
+
+  it('scenario 124 — the trail ascends through the DOM, and the root offers no ancestor', async () => {
+    listingsBy({ '': rootEntries(), docs: docsEntries(), 'docs/deep': deepEntries() });
+    await create();
+
+    // At the root there is nothing above `''`, so the trail is one entry and it
+    // is not a link. This replaces the old disabled "Up": the absence of an
+    // ancestor is now shown by there being no ancestor to click, rather than by
+    // a dead button pointing nowhere.
+    expect(crumbLinks()).toEqual([]);
+    expect(crumbCurrent()).toBe('Root');
+
+    await clickRow('docs');
+    await clickRow('deep');
+    expect(component.currentDirectory()).toBe('docs/deep');
+    expect(crumbLinks()).toEqual(['Root', 'docs']);
+    expect(crumbCurrent()).toBe('deep');
+
+    // One level up, by naming it rather than by repeating a direction.
+    await clickCrumb('docs');
+    expect(component.currentDirectory()).toBe('docs');
+    expect(rowNames()).toEqual(['deep', 'a.txt']);
+
+    await clickCrumb('Root');
+    expect(component.currentDirectory()).toBe('');
+    expect(rowNames()).toEqual(['assets', 'docs', 'a.txt', 'b.txt']);
+    expect(crumbLinks()).toEqual([]);
+  });
+
+  it('scenario 125 — the current directory crumb closes the file, stays put, and re-lists nothing', async () => {
+    listingsBy({ '': rootEntries(), docs: docsEntries() });
+    await create();
+    await clickRow('docs');
+
+    // Open a file IN the directory the pane is already showing.
+    await clickRow('a.txt');
+    expect(component.openFile()!.path).toBe('docs/a.txt');
+    expect(component.currentDirectory()).toBe('docs');
+
+    const listings = workspaceServiceSpy.getWorkspaceTree.calls.count();
+    // With a file open the pane's OWN directory is a link — that crumb is what
+    // the "Back" button used to be. Clicking it closes the file.
+    await clickCrumb('docs');
+
+    expect(component.openFile()).toBeNull();
+    expect(component.content()).toBeNull();
+    // It stays put: the crumb clicked IS where the pane already was.
+    expect(component.currentDirectory()).toBe('docs');
+    expect(rowNames()).toEqual(['deep', 'a.txt']);
+    // ...and costs no request, because the entries already describe `docs`.
+    expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(listings);
+  });
+
+  it('scenario 126 — the trail names where the pane is, in every reachable state', async () => {
+    listingsBy({ '': rootEntries(), docs: docsEntries() });
+    await create();
+
+    // The Up/Back pair used to answer this: exactly one verb, chosen by
+    // `openFile()`. The trail answers it better — it says where the verb WOULD
+    // lead — and the property to guard is the same totality: every reachable
+    // state ends the trail at the pane's own location, none leaves it blank.
+
+    // 1. the list, at the root
+    expect(crumbCurrent()).toBe('Root');
+
+    // 2. the list, in a subdirectory
+    await clickRow('docs');
+    expect(crumbCurrent()).toBe('docs');
+
+    // 3. a file open with its body rendered — the file is the last crumb, and
+    //    its directory becomes the clickable way back.
+    await clickRow('a.txt');
+    expect(component.viewMode()).toBe('text');
+    expect(crumbCurrent()).toBe('a.txt');
+    expect(crumbLinks()).toEqual(['Root', 'docs']);
+
+    // 4. a read in flight — the trail keys on `openFile()`, not on `viewMode()`
+    component.loadingContent.set(true);
+    fixture.detectChanges();
+    expect(component.viewMode()).toBe('loading');
+    expect(crumbCurrent()).toBe('a.txt');
+    component.loadingContent.set(false);
+
+    // 5. a failure with nothing to fall back on
+    component.content.set(null);
+    component.fileError.set('403 Forbidden');
+    fixture.detectChanges();
+    expect(component.viewMode()).toBe('error');
+    expect(crumbCurrent()).toBe('a.txt');
+
+    // 6. the deleted-file notice, which clears `openFile`
+    component.fileError.set(null);
+    component.openFile.set(null);
+    component.deletedNotice.set('docs/a.txt');
+    fixture.detectChanges();
+    expect(component.viewMode()).toBe('deleted');
+    expect(crumbCurrent()).toBe('docs');
+  });
+
+  it("scenario 127 — leaving a file opened in the NAVIGATOR lands in that file's directory and lists it", async () => {
+    listingsBy({ '': rootEntries(), 'docs/deep': deepEntries() });
+    await create();
+    expect(component.currentDirectory()).toBe('');
+
+    // Opened from the tree, three levels down, while the pane is at the root.
+    await component.onNodeSelect({ node: { data: nestedFile() } });
+    fixture.detectChanges();
+
+    // §D3 as amended: opening a file MOVES the pane to that file's directory,
+    // which is what makes "leaving the file stays put" and "leaving a nested
+    // file lands in that file's directory" the same sentence. No listing is
+    // fetched here.
+    expect(component.currentDirectory()).toBe('docs/deep');
+    expect(component.listing()!.path).toBe('');
+
+    // The pane's own directory is the last clickable crumb — the retired Back.
+    await clickCrumb('deep');
+
+    // Not the root — the directory the file came from, listed.
+    expect(component.currentDirectory()).toBe('docs/deep');
+    expect(component.openFile()).toBeNull();
+    expect(rowNames()).toEqual(['a.txt']);
+    expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledWith('proc', 'docs/deep');
+  });
+
+  // --- AC7 / AC8: one upload affordance, pinned outside the scroll ------
+
+  it('scenario 128 — the upload control sits in the toolbar, outside the scrolling list, gated and tooltipped', async () => {
+    running.next(false);
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo(rootEntries());
+    await create();
+
+    const list = listRegion();
+    const control = uploadControl();
+    expect(list).withContext('the scrolling list region').not.toBeNull();
+    expect(control).withContext('the toolbar upload control').not.toBeNull();
+
+    // The structural claim survives the move and is the reason for it: SCSS is
+    // invisible to Karma, so containment is the only thing pinnable, and a
+    // control inside the scrolling region scrolls away on a long listing. In
+    // the toolbar it is not merely outside the list — it is outside the PANE.
+    expect(list!.contains(control!))
+      .withContext('the upload control must not be a descendant of the scrolling region')
+      .toBe(false);
+    expect(pane().contains(control!))
+      .withContext('it lives in the toolbar, above the pane')
+      .toBe(false);
+    expect(list!.parentElement).toBe(pane());
+
+    // The run-state gate and its tooltip, verbatim.
+    expect(control!.getAttribute('label')).toBe('Upload to Root');
+    expect((control!.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
+    expect(control!.pTooltip).toBe(STOPPED_TOOLTIP);
+
+    running.next(true);
+    fixture.detectChanges();
+    expect((control!.querySelector('button') as HTMLButtonElement).disabled).toBe(false);
+
+    // And it actually uploads: a REAL click on the rendered control.
+    (control!.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(component.uploadModalVisible).toBe(true);
+    expect(component.uploadTargetPath).toBe('');
+  });
+
+  it('scenario 129 — ONE labelled upload control in the list view, and none with a file open', async () => {
+    listingsBy({ '': rootEntries(), docs: docsEntries() });
+    await create();
+
+    // The list, at the root: one control, naming the root as its target.
+    expect(labelledUploadControls()).toEqual(['Upload to Root']);
+
+    // The list, in a subdirectory: still exactly one. This is the case that
+    // catches a second affordance reappearing beside the first.
+    await clickRow('docs');
+    expect(labelledUploadControls()).toEqual(['Upload Files']);
+    expect(component.uploadTargetPath).toBe('');
+
+    (toolbarHost('Upload Files')!.querySelector('button') as HTMLButtonElement).click();
+    fixture.detectChanges();
+    expect(component.uploadTargetPath).toBe('docs');
+
+    // A file open: NONE. Upload is a directory action, and the thing on screen
+    // is a file — the old "Upload here" is gone rather than relocated.
+    await clickRow('a.txt');
+    expect(labelledUploadControls()).toEqual([]);
+  });
+
+  // --- AC9: an empty folder, and a listing that does not describe the pane ---
+
+  it('scenario 130 — an empty folder renders the empty-directory element and keeps upload offered, not an empty shell', async () => {
+    listingsBy({ '': rootEntries(), assets: [] });
+    await create();
+
+    await clickRow('assets');
+
+    expect(rowEls().length).toBe(0);
+    const empty = pane().querySelector('.empty-directory') as HTMLElement | null;
+    expect(empty).withContext('an explicit empty-directory element').not.toBeNull();
+    expect(empty!.textContent).toContain('This folder is empty');
+    expect(uploadControl()!.getAttribute('label')).toBe('Upload Files');
+  });
+
+  it('scenario 131 — a listing that does not describe the pane renders neither entries nor the empty-state', async () => {
+    listingsBy({ '': rootEntries() });
+    await create();
+    expect(rowNames()).toEqual(['assets', 'docs', 'a.txt', 'b.txt']);
+
+    const pending = deferred<FileNode[]>();
+    workspaceServiceSpy.getWorkspaceTree.and.returnValue(pending.promise);
+    await clickRow('docs');
+
+    // IN FLIGHT. The root's entries are still in `listing`, and they must not
+    // render under `docs` — nor may the empty-state flash, which is what an
+    // implementation with a `listingLoading` flag gets wrong on the frame
+    // between the navigation and the flag being raised. The path tag answers
+    // both with one comparison and no flag.
+    expect(component.currentDirectory()).toBe('docs');
+    expect(component.listing()!.path).toBe('');
+    expect(rowEls().length).toBe(0);
+    expect(pane().querySelector('.empty-directory')).toBeNull();
+    expect(uploadControl())
+      .withContext('upload stays offered while the listing is in flight')
+      .not.toBeNull();
+
+    pending.resolve(docsEntries());
+    await flushMicrotasks();
+    fixture.detectChanges();
+    expect(rowNames()).toEqual(['deep', 'a.txt']);
+  });
+
+  // --- AC10: the directory on screen stays current, at zero extra cost ---
+
+  it('scenario 132 — an invalidation naming the current directory updates the list with no extra call', async () => {
+    listingsBy({ '': rootEntries(), docs: docsEntries() });
+    await create();
+    await clickRow('docs');
+    expect(rowNames()).toEqual(['deep', 'a.txt']);
+
+    workspaceServiceSpy.getWorkspaceTree.calls.reset();
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
+      ...docsEntries(),
+      fileNode({ name: 'new.txt', path: 'docs/new.txt', type: 'file', size: 3, extension: '.txt' }),
+    ]);
+
+    await deliver(invalidation({ workspaceId: TEAM_ID, directories: ['docs'] }));
+
+    // The listing `refreshDirectory` already fetched is reused — this AC issues
+    // no fetch of its own, so the directory pass costs exactly what it did
+    // before this story.
+    expect(rowNames()).toEqual(['deep', 'a.txt', 'new.txt']);
+    expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith('proc', 'docs');
+  });
+
+  // --- ADR-033 §D3: a navigation whose listing FAILS ---------------------
+
+  it('scenario 133 — a navigation whose listing fails renders no entries under the new name, and is not a dead end', async () => {
+    listingsBy({ '': rootEntries(), docs: docsEntries() });
+    await create();
+    await clickRow('docs');
+    expect(rowNames()).toEqual(['deep', 'a.txt']);
+
+    const logged = spyOn(console, 'error');
+    workspaceServiceSpy.getWorkspaceTree.and.rejectWith(new Error('503'));
+    await clickRow('deep');
+
+    // THE INVARIANT (§D3): the pane must never render one directory's entries
+    // under another directory's name — ADR-030 §A4's defect arriving through
+    // the directory path instead of the file one. `docs`'s rows must not
+    // survive under `docs/deep`, and the path tag on `listing` is what makes
+    // that structural rather than a rule the failure path has to remember.
+    expect(component.currentDirectory()).toBe('docs/deep');
+    expect(component.listing()!.path).toBe('docs');
+    expect(rowEls().length).toBe(0);
+    // ...and no empty-state either: "this folder is empty" is a claim about the
+    // backend's answer, and there was no answer.
+    expect(pane().querySelector('.empty-directory')).toBeNull();
+
+    // NOT A DEAD END, which is why the failure is logged rather than bannered.
+    // A `fileError` here would make `viewMode` return 'error' with no content
+    // loaded, and the banner REPLACES the pane under one `@switch` (§D6) —
+    // taking the upload control and the trail the user needs to get back out
+    // with it.
+    expect(component.fileError()).toBeNull();
+    expect(component.viewMode()).toBe('list');
+    expect(uploadControl())
+      .withContext('upload stays offered while the listing is in flight')
+      .not.toBeNull();
+    // The trail is the way out, and it describes the failed destination rather
+    // than the directory whose entries are no longer shown.
+    expect(crumbCurrent()).toBe('deep');
+    expect(crumbLinks())
+      .withContext('the ancestors are the way out of a failed navigation')
+      .toEqual(['Root', 'docs']);
+    expect(logged).toHaveBeenCalled();
+
+    // And the way out works: the parent crumb re-lists the directory it came from.
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo(docsEntries());
+    await clickCrumb('docs');
+    expect(component.currentDirectory()).toBe('docs');
+    expect(rowNames()).toEqual(['deep', 'a.txt']);
+  });
+
+  // ===================================================================
+  // The location trail, the Root row, and the tree selection that binds
+  // them (2026-08-23). None of this had coverage when it shipped; the
+  // navigator's highlight was wrong on every route that did not go
+  // through the tree, and a green suite could not see it.
+  // ===================================================================
+
+  describe('the trail and the navigator agree on where the pane is', () => {
+    /** The `Root` row above the tree, lit when the pane is at the root. */
+    function rootRow(): HTMLButtonElement {
+      const row = fixture.nativeElement.querySelector('.tree-root-row');
+      expect(row).withContext('the Root row').not.toBeNull();
+      return row as HTMLButtonElement;
+    }
+
+    function rootRowLit(): boolean {
+      return rootRow().classList.contains('selected');
+    }
+
+    it('the trail accumulates a path per crumb, and the root is one entry', async () => {
+      listingsBy({ '': rootEntries(), docs: docsEntries(), 'docs/deep': deepEntries() });
+      await create();
+
+      // The root is a location, not "nothing selected" — one crumb, no ancestors.
+      expect(component.breadcrumb()).toEqual([
+        { name: 'Root', path: '', last: true },
+      ]);
+
+      await clickRow('docs');
+      await clickRow('deep');
+
+      // Paths accumulate left to right so a click never re-derives one from an
+      // index, and exactly one crumb is `last`.
+      expect(component.breadcrumb()).toEqual([
+        { name: 'Root', path: '', last: false },
+        { name: 'docs', path: 'docs', last: false },
+        { name: 'deep', path: 'docs/deep', last: true },
+      ]);
+    });
+
+    it('the Root row follows the PANE, not the tree — on every route', async () => {
+      listingsBy({ '': rootEntries(), docs: docsEntries() });
+      await create();
+      expect(rootRowLit()).withContext('at the root on entry').toBe(true);
+
+      // Route 1: a LIST row. The tree was never clicked, so a Root row keyed on
+      // the tree's selection would still be lit here — claiming the root while
+      // the pane is inside docs.
+      await clickRow('docs');
+      expect(component.currentDirectory()).toBe('docs');
+      expect(rootRowLit()).withContext('lit while the pane is inside docs').toBe(false);
+
+      // Route 2: a breadcrumb crumb back out. Symmetrically, a Root row keyed on
+      // the tree would stay UNLIT here — the pane is at the root and the
+      // navigator would say otherwise.
+      await clickCrumb('Root');
+      expect(component.currentDirectory()).toBe('');
+      expect(rootRowLit()).withContext('unlit while the pane is at the root').toBe(true);
+    });
+
+    it('opening a file un-lights the Root row, and closing it re-lights it', async () => {
+      listingsBy({ '': rootEntries() });
+      await create();
+      expect(rootRowLit()).toBe(true);
+
+      // `currentDirectory` is still '' with a root file open, so the row has to
+      // consult `openFile()` too or it claims the pane is showing the listing.
+      await clickRow('a.txt');
+      expect(component.currentDirectory()).toBe('');
+      expect(component.openFile()!.path).toBe('a.txt');
+      expect(rootRowLit()).toBe(false);
+
+      await clickCrumb('Root');
+      expect(component.openFile()).toBeNull();
+      expect(rootRowLit()).toBe(true);
+    });
+
+    it('the tree selection follows a navigation that never touched the tree', async () => {
+      listingsBy({ '': rootEntries(), docs: docsEntries() });
+      await create();
+      expect(component.selectedTreeNode()).toBeNull();
+
+      // Descending from the LIST points the navigator at the same folder, so
+      // the two halves of the pane cannot disagree about where the user is.
+      await clickRow('docs');
+      expect(component.selectedTreeNode()?.data.path).toBe('docs');
+
+      await clickCrumb('Root');
+      expect(component.selectedTreeNode()).toBeNull();
+    });
+
+    it('selectRoot clears the tree selection as well as navigating', async () => {
+      listingsBy({ '': rootEntries(), docs: docsEntries() });
+      await create();
+      await clickRow('docs');
+      expect(component.selectedTreeNode()).not.toBeNull();
+
+      rootRow().click();
+      await flushMicrotasks();
+      fixture.detectChanges();
+
+      // Both, or the tree keeps highlighting docs beside a lit Root row — the
+      // two-rows-claiming-the-same-thing bug this row was fixed for.
+      expect(component.currentDirectory()).toBe('');
+      expect(component.selectedTreeNode()).toBeNull();
+      expect(rootRowLit()).toBe(true);
+    });
+
+    it('a crumb naming the pane\'s own directory closes the file without re-listing', async () => {
+      listingsBy({ '': rootEntries(), docs: docsEntries() });
+      await create();
+      await clickRow('docs');
+      await clickRow('a.txt');
+
+      const listings = workspaceServiceSpy.getWorkspaceTree.calls.count();
+      await clickCrumb('docs');
+
+      // This crumb IS the retired Back button: close the file, stay put, and
+      // spend no request arriving where the pane already is.
+      expect(component.openFile()).toBeNull();
+      expect(component.currentDirectory()).toBe('docs');
+      expect(workspaceServiceSpy.getWorkspaceTree.calls.count()).toBe(listings);
+    });
+
+    it('the navigator labels a file row with its size and a folder row with none', async () => {
+      listingsBy({ '': rootEntries() });
+      await create();
+
+      const labels = Array.from(
+        fixture.nativeElement.querySelectorAll('.tree-node'),
+      ).map((el) => ({
+        name: (el as HTMLElement).querySelector('.tree-node-name')!.textContent!.trim(),
+        size: (el as HTMLElement).querySelector('.tree-node-size')?.textContent?.trim() ?? null,
+      }));
+
+      expect(labels).toContain({ name: 'b.txt', size: '2 KB' });
+      expect(labels).toContain({ name: 'a.txt', size: '10 B' });
+      // A directory has no size worth reporting, and shows none.
+      expect(labels).toContain({ name: 'docs', size: null });
+    });
+  });
+
 });
