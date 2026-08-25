@@ -144,13 +144,12 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
     expect(contextStub.getCurrentTeam).not.toHaveBeenCalled();
   });
 
-  it('(AC9 10.6) header renders name/config_name/Running tag when currentTeam$ emits a running team', async () => {
+  it('(AC9 10.6) header renders name/Running tag when currentTeam$ emits a running team', async () => {
     const team = makeTeam({ name: 'Alpha', config_name: 'alpha-cfg', status: 'running' });
     await emitTeam(team);
 
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Alpha');
-    expect(text).toContain('alpha-cfg');
     const tags = headerTagValues();
     expect(tags).toContain('Running');
     expect(tags).not.toContain('Stopped');
@@ -162,10 +161,23 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
 
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Beta');
-    expect(text).toContain('beta-cfg');
     const tags = headerTagValues();
     expect(tags).toContain('Stopped');
     expect(tags).not.toContain('Running');
+  });
+
+  it('header names the team ONCE — config_name is not rendered beside it', async () => {
+    // The regression pin. `toTeamContext` sets `config_name` to the team name,
+    // so the old template rendered "Alpha — Alpha". Naming them differently
+    // here is what makes the duplicate detectable at all: with the placeholder
+    // value the two spellings are indistinguishable in the DOM text.
+    const team = makeTeam({ name: 'Alpha', config_name: 'alpha-cfg' });
+    await emitTeam(team);
+
+    const header = fixture.nativeElement.querySelector('.process-type');
+    expect(header).not.toBeNull();
+    expect(header.textContent).not.toContain('alpha-cfg');
+    expect(header.querySelector('.process-config-name')).toBeNull();
   });
 
   it('(AC9 10.6) header metadata block is hidden when currentTeam$ emits null', async () => {
@@ -338,7 +350,6 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
 
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Alpha');
-    expect(text).toContain('cfg-alpha');
     expect(headerTagValues()).toContain('Running');
     expect(contextStub.getCurrentTeam).not.toHaveBeenCalled();
     expect(apiStub.getTeam).not.toHaveBeenCalled();

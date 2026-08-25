@@ -27,15 +27,10 @@
     border: 1px solid #e9ecef;
     
     &::before {
-      content: "Process: ";
+      content: "Team: ";
       font-weight: normal;
       color: #6c757d;
       font-size: 1rem;
-    }
-    .process-config-name {
-      font-size: 1rem;
-      color: #6c757d;
-      margin-left: 0.25rem;
     }
   }
 }

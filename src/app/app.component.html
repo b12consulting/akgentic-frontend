@@ -19,7 +19,6 @@
           >
             <span class="process-type"
               >{{ team.name }}
-              <span class="process-config-name"> — {{ team.config_name }}</span>
               <p-tag
                 *ngIf="(contextService.currentTeamRunning$ | async) === false"
                 value="Stopped"
