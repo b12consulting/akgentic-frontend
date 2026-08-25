@@ -160,3 +160,29 @@
   font-size: 1rem;
   vertical-align: middle;
 }
+
+// Metadata column — one chip per answered field. Wraps rather than truncates:
+// a case reference cut off mid-string is worse than a taller row, and a team
+// declares a handful of fields, not dozens.
+.team-metadata-cell {
+  .team-metadata-chip {
+    display: inline-block;
+    font-size: 0.9rem;
+    color: #495057;
+    background: #eef1f4;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 0.1rem 0.4rem;
+    margin: 0.1rem 0.25rem 0.1rem 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+
+    .team-metadata-chip__label {
+      color: #6c757d;
+
+      &::after {
+        content: ": ";
+      }
+    }
+  }
+}
