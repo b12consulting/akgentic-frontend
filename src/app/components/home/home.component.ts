@@ -16,6 +16,10 @@ import { ApiService } from '../../core/http/api.service';
 import { HttpError } from '../../core/http/fetch.service';
 import { isRunning } from '../../core/context/team.interface';
 import {
+  TeamMetadataPipe,
+  trackMetadataEntry,
+} from '../../core/context/team-metadata.pipe';
+import {
   NamespaceSummary,
   TeamMetadataContract,
 } from '../../protocol/catalog.interface';
@@ -60,6 +64,7 @@ const PAGE_SIZE = 250;
     ToggleSwitchModule,
     NamespacePanelComponent,
     TeamMetadataModalComponent,
+    TeamMetadataPipe,
   ],
   templateUrl: './home.component.html',
   styleUrl: './home.component.scss',
@@ -170,6 +175,9 @@ export class HomeComponent {
 
   // Expose isRunning to template
   isRunning = isRunning;
+
+  // `trackBy` for the Metadata column's chips. See the pipe.
+  trackMetadataEntry = trackMetadataEntry;
 
   async ngOnInit() {
     await this.loadNamespaces();

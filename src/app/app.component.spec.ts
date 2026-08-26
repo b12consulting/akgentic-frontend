@@ -11,6 +11,7 @@ import { BehaviorSubject, of } from 'rxjs';
 
 import { AppComponent } from './app.component';
 import { isRunning, TeamContext } from './core/context/team.interface';
+import { TeamMetadataPipe } from './core/context/team-metadata.pipe';
 import { ApiService } from './core/http/api.service';
 import { AuthService } from './core/auth/auth.service';
 import { ConfigService } from './core/config/config.service';
@@ -95,7 +96,16 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
     })
       .overrideComponent(AppComponent, {
         set: {
-          imports: [CommonModule, MenubarModule, TagModule, RouterModule],
+          // TeamMetadataPipe belongs in EVERY override list that keeps the
+          // real template: the override REPLACES the component's own imports,
+          // so a missing pipe is an NG0302 at render, not a silent no-op.
+          imports: [
+            CommonModule,
+            MenubarModule,
+            TagModule,
+            RouterModule,
+            TeamMetadataPipe,
+          ],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
       })
@@ -144,13 +154,12 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
     expect(contextStub.getCurrentTeam).not.toHaveBeenCalled();
   });
 
-  it('(AC9 10.6) header renders name/config_name/Running tag when currentTeam$ emits a running team', async () => {
+  it('(AC9 10.6) header renders name/Running tag when currentTeam$ emits a running team', async () => {
     const team = makeTeam({ name: 'Alpha', config_name: 'alpha-cfg', status: 'running' });
     await emitTeam(team);
 
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Alpha');
-    expect(text).toContain('alpha-cfg');
     const tags = headerTagValues();
     expect(tags).toContain('Running');
     expect(tags).not.toContain('Stopped');
@@ -162,10 +171,80 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
 
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Beta');
-    expect(text).toContain('beta-cfg');
     const tags = headerTagValues();
     expect(tags).toContain('Stopped');
     expect(tags).not.toContain('Running');
+  });
+
+  // --- Header identity + metadata --------------------------------------
+
+  it('header names the team ONCE — config_name is not rendered beside it', async () => {
+    // The regression pin. `toTeamContext` sets `config_name` to the team name,
+    // so the old template rendered "Alpha — Alpha". Naming them differently
+    // here is what makes the duplicate detectable at all: with the placeholder
+    // value the two spellings are indistinguishable in the DOM text.
+    const team = makeTeam({ name: 'Alpha', config_name: 'alpha-cfg' });
+    await emitTeam(team);
+
+    const header = fixture.nativeElement.querySelector('.process-type');
+    expect(header).not.toBeNull();
+    expect(header.textContent).not.toContain('alpha-cfg');
+    expect(header.querySelector('.process-config-name')).toBeNull();
+  });
+
+  it('header renders one chip per metadata field, label and value', async () => {
+    const team = makeTeam({ metadata: { case_id: 'C-1234', tenant: 'acme' } });
+    await emitTeam(team);
+
+    const chips = Array.from(
+      fixture.nativeElement.querySelectorAll('.process-metadata'),
+    ) as HTMLElement[];
+    expect(chips.length).toBe(2);
+    expect(chips[0].textContent).toContain('Case id');
+    expect(chips[0].textContent).toContain('C-1234');
+    expect(chips[1].textContent).toContain('Tenant');
+    expect(chips[1].textContent).toContain('acme');
+  });
+
+  it('does not rebuild the metadata chips on a change-detection cycle', async () => {
+    // The reported bug: the chips visibly churned in devtools on every tick.
+    //
+    // The cause is that `metadataEntries` returns a FRESH array of FRESH
+    // objects per call, so calling it straight from the binding
+    // (`*ngFor="let entry of metadataEntries(team)"`) hands NgForOf's identity
+    // differ all-new identities each cycle and it destroys and recreates every
+    // chip. The pure pipe memoises on the input reference so repeat cycles see
+    // the identical array and the differ finds nothing to do.
+    //
+    // Asserted on NODE IDENTITY, not on the rendered text: a rebuilt chip
+    // renders exactly the same text, so text is blind to this. `toBe` is the
+    // whole test — the node must be the same node.
+    await emitTeam(makeTeam({ metadata: { tenant: 'acme', tier: 'gold' } }));
+
+    const before = Array.from(
+      fixture.nativeElement.querySelectorAll('.process-metadata'),
+    ) as HTMLElement[];
+    expect(before.length).toBe(2);
+
+    fixture.detectChanges();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const after = Array.from(
+      fixture.nativeElement.querySelectorAll('.process-metadata'),
+    ) as HTMLElement[];
+    expect(after.length).toBe(2);
+    expect(after[0]).toBe(before[0]);
+    expect(after[1]).toBe(before[1]);
+  });
+
+  it('header renders no metadata chip when the team carries none', async () => {
+    await emitTeam(makeTeam({ metadata: null }));
+
+    expect(
+      fixture.nativeElement.querySelectorAll('.process-metadata').length,
+    ).toBe(0);
   });
 
   it('(AC9 10.6) header metadata block is hidden when currentTeam$ emits null', async () => {
@@ -338,7 +417,6 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
 
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Alpha');
-    expect(text).toContain('cfg-alpha');
     expect(headerTagValues()).toContain('Running');
     expect(contextStub.getCurrentTeam).not.toHaveBeenCalled();
     expect(apiStub.getTeam).not.toHaveBeenCalled();

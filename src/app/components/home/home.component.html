@@ -124,6 +124,7 @@
       <ng-template #header>
         <tr>
           <th>Name</th>
+          <th>Metadata</th>
           <th>Creation Date</th>
           <th>Status</th>
           <th>Team ID</th>
@@ -191,6 +192,31 @@
                 ></button>
               </div>
             </div>
+          </td>
+          <!--
+            The team's business metadata, one chip per answered field.
+
+            Deliberately EMPTY when the team carries none — no dash, no
+            "None". Every team created before a namespace declared a contract
+            is in that state, and a placeholder repeated down a 250-row page
+            reads as missing data rather than as an absent contract.
+
+            Through the PIPE, never a bare `metadataEntries(ctx)` call: a
+            function in a binding re-runs every change-detection cycle and
+            returns new object identities, so `NgForOf` would rebuild every
+            chip in every row each tick. See TeamMetadataPipe.
+          -->
+          <td class="team-metadata-cell">
+            <span
+              *ngFor="
+                let entry of ctx.metadata | teamMetadata;
+                trackBy: trackMetadataEntry
+              "
+              class="team-metadata-chip"
+              [attr.data-test]="'row-metadata-' + entry.key"
+              ><span class="team-metadata-chip__label">{{ entry.label }}</span
+              >{{ entry.value }}</span
+            >
           </td>
           <td>{{ ctx.created_at | date: "short" }}</td>
           <td>

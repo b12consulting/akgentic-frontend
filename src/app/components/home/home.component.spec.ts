@@ -235,6 +235,45 @@ describe('HomeComponent', () => {
     void rows;
   });
 
+  // --- Metadata column -------------------------------------------------
+
+  it('renders one metadata chip per answered field, label and value', async () => {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    teams$.next([
+      makeTeam({ team_id: 't-1', metadata: { case_id: 'C-1234', tenant: 'acme' } }),
+    ]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const chips = Array.from(
+      fixture.nativeElement.querySelectorAll('.team-metadata-chip'),
+    ) as HTMLElement[];
+    expect(chips.length).toBe(2);
+    expect(chips[0].textContent).toContain('Case id');
+    expect(chips[0].textContent).toContain('C-1234');
+    expect(chips[1].textContent).toContain('Tenant');
+    expect(chips[1].textContent).toContain('acme');
+  });
+
+  it('leaves the metadata cell EMPTY for a team carrying none', async () => {
+    // No dash, no "None" — every team predating a namespace contract is in
+    // this state, and a placeholder repeated down the page reads as a load
+    // failure rather than as an absent contract.
+    fixture.detectChanges();
+    await fixture.whenStable();
+    teams$.next([makeTeam({ team_id: 't-1', metadata: null })]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const cell = fixture.nativeElement.querySelector('.team-metadata-cell');
+    expect(cell).not.toBeNull();
+    expect(cell.querySelectorAll('.team-metadata-chip').length).toBe(0);
+    expect((cell.textContent as string).trim()).toBe('');
+  });
+
   it('(AC6, AC9) pushing a new list into teams$ triggers a re-render', async () => {
     fixture.detectChanges();
     await fixture.whenStable();

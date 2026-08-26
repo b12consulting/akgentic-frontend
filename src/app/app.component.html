@@ -19,7 +19,28 @@
           >
             <span class="process-type"
               >{{ team.name }}
-              <span class="process-config-name"> — {{ team.config_name }}</span>
+              <!--
+                The team's business metadata, between the name and the status
+                chip. Renders nothing at all when the team carries none — the
+                pipe yields `[]` for both wire spellings of "no metadata"
+                (absent key, explicit null), so no empty container and no
+                placeholder is emitted.
+
+                Through the PIPE, never a bare `metadataEntries(team)` call: a
+                function in a binding re-runs every change-detection cycle and
+                returns new object identities, which makes `NgForOf` rebuild
+                every chip each tick. See TeamMetadataPipe.
+              -->
+              <span
+                *ngFor="
+                  let entry of team.metadata | teamMetadata;
+                  trackBy: trackMetadataEntry
+                "
+                class="process-metadata"
+                [attr.data-test]="'header-metadata-' + entry.key"
+                ><span class="process-metadata__label">{{ entry.label }}</span
+                >{{ entry.value }}</span
+              >
               <p-tag
                 *ngIf="(contextService.currentTeamRunning$ | async) === false"
                 value="Stopped"

@@ -1895,7 +1895,7 @@ describe('WorkspaceExplorerComponent — NFR3 OnPush regression gate', () => {
 // --------------------------------------------------------------------
 
 describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
-  const STOPPED_TOOLTIP = 'Process must be running to upload files';
+  const STOPPED_TOOLTIP = 'Team must be running to upload files';
 
   let component: WorkspaceExplorerComponent;
   let fixture: ComponentFixture<WorkspaceExplorerComponent>;
@@ -3856,7 +3856,7 @@ describe('WorkspaceExplorerComponent — the pane state model (Epic 45)', () => 
 
 describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic 45)', () => {
   const TEAM_ID = 'proc';
-  const STOPPED_TOOLTIP = 'Process must be running to upload files';
+  const STOPPED_TOOLTIP = 'Team must be running to upload files';
 
   let component: WorkspaceExplorerComponent;
   let fixture: ComponentFixture<WorkspaceExplorerComponent>;

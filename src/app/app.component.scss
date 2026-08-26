@@ -27,15 +27,33 @@
     border: 1px solid #e9ecef;
     
     &::before {
-      content: "Process: ";
+      content: "Team: ";
       font-weight: normal;
       color: #6c757d;
       font-size: 1rem;
     }
-    .process-config-name {
-      font-size: 1rem;
-      color: #6c757d;
-      margin-left: 0.25rem;
+
+    // One metadata pair. Quieter than the team name it sits beside: the name
+    // identifies the team, these qualify it.
+    .process-metadata {
+      font-size: 0.90rem;
+      font-weight: 500;
+      color: #495057;
+      background: #eef1f4;
+      border: 1px solid #dee2e6;
+      border-radius: 4px;
+      padding: 0.1rem 0.4rem;
+      margin-left: 0.5rem;
+      white-space: nowrap;
+
+      .process-metadata__label {
+        font-weight: normal;
+        color: #6c757d;
+
+        &::after {
+          content: ": ";
+        }
+      }
     }
   }
 }

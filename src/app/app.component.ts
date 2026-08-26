@@ -16,6 +16,10 @@ import { ContextService } from './core/context/context.service';
 import { FaviconService } from './core/config/favicon.service';
 import { NotificationToastService } from './core/ui/notification-toast.service';
 import { ViewService } from './core/ui/view.service';
+import {
+  TeamMetadataPipe,
+  trackMetadataEntry,
+} from './core/context/team-metadata.pipe';
 
 @Component({
   selector: 'app-root',
@@ -26,11 +30,15 @@ import { ViewService } from './core/ui/view.service';
     ToastModule,
     TagModule,
     CommonModule,
+    TeamMetadataPipe,
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
 })
 export class AppComponent {
+  /** `trackBy` for the header's metadata chips. See the pipe. */
+  trackMetadataEntry = trackMetadataEntry;
+
   title = 'akgent-app';
   items: MenuItem[] | undefined;
   private configService = inject(ConfigService);
