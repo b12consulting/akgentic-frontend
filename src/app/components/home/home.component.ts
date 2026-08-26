@@ -14,7 +14,11 @@ import { filter, map, take } from 'rxjs/operators';
 
 import { ApiService, MIN_FILTER_TERM_LENGTH } from '../../core/http/api.service';
 import { HttpError } from '../../core/http/fetch.service';
-import { isRunning, TeamFilter } from '../../core/context/team.interface';
+import {
+  isRunning,
+  metadataKeyLabel,
+  TeamFilter,
+} from '../../core/context/team.interface';
 import {
   TeamMetadataPipe,
   trackMetadataEntry,
@@ -45,7 +49,6 @@ import { ContextService } from '../../core/context/context.service';
 // home-page bundle stays Monaco-free.
 import { NamespacePanelComponent } from '../catalog/namespace-panel/namespace-panel.component';
 import {
-  metadataFieldLabel,
   TeamMetadataModalComponent,
 } from './team-metadata-modal/team-metadata-modal.component';
 
@@ -211,8 +214,13 @@ export class HomeComponent {
   /** Exposed for the inputs' placeholder — one floor, named in one place. */
   readonly minFilterTermLength = MIN_FILTER_TERM_LENGTH;
 
-  /** Labels a filter input exactly as the creation modal labels its own. */
-  metadataFieldLabel = metadataFieldLabel;
+  /**
+   * Labels a filter input with its KEY, humanised the same way the table's
+   * metadata chips humanise it — the chip and the input that filters on it
+   * must read the same word. The field's declared description is a sentence
+   * meant for the creation form, and goes in the input's title instead.
+   */
+  metadataKeyLabel = metadataKeyLabel;
 
   /** `trackBy` for the filter inputs — the field key is their identity. */
   trackFilterField = (_index: number, field: MetadataFieldDescriptor): string =>

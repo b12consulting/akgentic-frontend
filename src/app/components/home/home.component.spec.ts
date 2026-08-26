@@ -2070,10 +2070,16 @@ describe('HomeComponent', () => {
       const labels: HTMLLabelElement[] = Array.from(
         fixture.nativeElement.querySelectorAll('.home-filter__field label'),
       );
+      // The humanised KEY, not the declared description — the same word the
+      // table's metadata chip shows for that field, so the two agree.
       expect(labels.map((l) => l.textContent?.trim())).toEqual([
-        'Case reference.',
+        'Case id',
         'Tenant',
       ]);
+      // The description is not lost; it moves to the title. A field that
+      // declares none gets no title rather than an empty one.
+      expect(labels[0].getAttribute('title')).toBe('Case reference.');
+      expect(labels[1].getAttribute('title')).toBeNull();
     });
 
     it('the filter row is CLOSED on arrival', async () => {
@@ -2100,12 +2106,19 @@ describe('HomeComponent', () => {
       expect(component.hasActiveFilter).toBe(false);
     });
 
-    it('every control in the filter row puts its label ABOVE it', async () => {
-      // Including the narrowing toggle, which is the odd one out: it is a
-      // switch rather than an input, and it was the last control still reading
-      // left-to-right. Document order is the assertion — a label that follows
-      // its control cannot be rendered above it without absolute positioning,
-      // which nothing here uses.
+    it('the metadata fields stack their label, the narrowing toggle does not', async () => {
+      // Two deliberate and different layouts, so both are pinned together —
+      // asserting only one would let the other drift silently.
+      //
+      // A field's label is its declared DESCRIPTION, a sentence, so inline it
+      // would push the input far to the right; stacked it wraps in a bounded
+      // column. The toggle is the opposite case: a switch alone shows nothing,
+      // where an input at least displays what was typed, so its caption has to
+      // stay beside it or the state is separated from its meaning.
+      //
+      // Document order is the assertion. A label that follows its control
+      // cannot render above it without absolute positioning, which nothing
+      // here uses.
       await renderThenFilterOn(
         nsSummary(
           'acme-cases',
@@ -2115,20 +2128,27 @@ describe('HomeComponent', () => {
         ),
       );
 
-      const groups: HTMLElement[] = Array.from(
-        fixture.nativeElement.querySelectorAll(
-          '.home-filter__namespace, .home-filter__field',
-        ),
+      const fieldChildren = Array.from(
+        (fixture.nativeElement.querySelector('.home-filter__field') as HTMLElement)
+          .children,
+      ) as HTMLElement[];
+      expect(fieldChildren[0].tagName).toBe('LABEL');
+
+      const toggleChildren = Array.from(
+        (
+          fixture.nativeElement.querySelector(
+            '.home-filter__namespace',
+          ) as HTMLElement
+        ).children,
+      ) as HTMLElement[];
+      const toggleLabelIndex = toggleChildren.findIndex(
+        (c) => c.tagName === 'LABEL',
       );
-      expect(groups.length).toBe(2);
-      for (const group of groups) {
-        const children = Array.from(group.children) as HTMLElement[];
-        const labelIndex = children.findIndex((c) => c.tagName === 'LABEL');
-        const controlIndex = children.findIndex((c) => c.tagName !== 'LABEL');
-        expect(labelIndex).toBeGreaterThanOrEqual(0);
-        expect(controlIndex).toBeGreaterThanOrEqual(0);
-        expect(labelIndex).toBeLessThan(controlIndex);
-      }
+      const switchIndex = toggleChildren.findIndex(
+        (c) => c.tagName !== 'LABEL',
+      );
+      expect(switchIndex).toBeGreaterThanOrEqual(0);
+      expect(toggleLabelIndex).toBeGreaterThan(switchIndex);
     });
 
     it('the narrowing toggle keeps its full meaning in a title', async () => {
@@ -2144,6 +2164,9 @@ describe('HomeComponent', () => {
         'label[for="filter-namespace-toggle"]',
       ) as HTMLLabelElement;
       expect(label).not.toBeNull();
+      // Exact, not `toContain`: a weaker assertion here would still pass if the
+      // label degraded to "Team type", which is the SELECT's label and the one
+      // wording this control must never collapse to.
       expect(label.textContent?.trim()).toBe('This team type only');
       expect(label.getAttribute('title')).toContain('selected team type');
     });

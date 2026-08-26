@@ -197,8 +197,15 @@ export interface TeamMetadataEntry {
   value: string;
 }
 
-/** Humanise a metadata key for display: `case_id` -> `Case id`. */
-function metadataLabel(key: string): string {
+/**
+ * Humanise a metadata key for display: `case_id` -> `Case id`.
+ *
+ * Exported because the filter bar labels its inputs with it too. A team's
+ * metadata chip and the input that filters on it must read identically — two
+ * humanisers would let `Case id` sit above a chip saying `CaseId` and nothing
+ * would notice.
+ */
+export function metadataKeyLabel(key: string): string {
   const spaced = key.replace(/[_-]+/g, ' ').trim();
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
@@ -246,7 +253,7 @@ export function metadataEntries(
     .filter(([, value]) => value !== null && value !== undefined)
     .map(([key, value]) => ({
       key,
-      label: metadataLabel(key),
+      label: metadataKeyLabel(key),
       value: metadataValue(value),
     }))
     .filter((entry) => entry.value.trim() !== '');

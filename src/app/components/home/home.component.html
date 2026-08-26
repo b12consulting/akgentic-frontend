@@ -142,6 +142,12 @@
         toggleswitch. Behaviour is unchanged either way.
       -->
       <span class="home-filter__namespace">
+        <p-toggleswitch
+          [ngModel]="filterByNamespace"
+          (ngModelChange)="onFilterNamespaceToggle($event)"
+          data-test="filter-namespace-toggle"
+          inputId="filter-namespace-toggle"
+        ></p-toggleswitch>
         <!--
           Short by design. The control sits inside the filter panel, directly
           under the "Team type" select it refers to, so the context is already
@@ -151,20 +157,28 @@
         <label
           for="filter-namespace-toggle"
           title="Show only teams created from the selected team type"
-          >Team type</label
+          >This team type only</label
         >
-        <p-toggleswitch
-          [ngModel]="filterByNamespace"
-          (ngModelChange)="onFilterNamespaceToggle($event)"
-          data-test="filter-namespace-toggle"
-          inputId="filter-namespace-toggle"
-        ></p-toggleswitch>
       </span>
       <span
         class="home-filter__field"
         *ngFor="let f of filterFields; trackBy: trackFilterField"
       >
-        <label [attr.for]="'filter-meta-' + f.key">{{ metadataFieldLabel(f) }}</label>
+        <!--
+          The KEY, humanised exactly as the table's metadata chips humanise it,
+          so a chip and the input that filters on it read the same word.
+
+          NOT the declared description, which the creation modal uses: a
+          description is a sentence written to be answered once in a form
+          ("Reference of the case the team was opened for, if any."), and above
+          a filter input it is a paragraph where a word is wanted. It moves to
+          the title, so nothing is lost.
+        -->
+        <label
+          [attr.for]="'filter-meta-' + f.key"
+          [attr.title]="f.description || null"
+          >{{ metadataKeyLabel(f.key) }}</label
+        >
         <input
           type="text"
           pInputText
