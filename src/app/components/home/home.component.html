@@ -59,8 +59,8 @@
       size="small"
       type="button"
       label="Create"
-      [icon]="isCreatingTeam ? 'pi pi-spinner pi-spin' : 'pi pi-plus'"
-      [disabled]="isCreatingTeam || ((namespaces$ | async) || []).length === 0"
+      [icon]="creation.creatingByGesture ? 'pi pi-spinner pi-spin' : 'pi pi-plus'"
+      [disabled]="creation.creatingByGesture || ((namespaces$ | async) || []).length === 0"
       (click)="createTeam()"
       class="extra-small-button"
     ></button>
@@ -213,10 +213,15 @@
 </p-dialog>
 
 <!--
-  Team-metadata dialog. Opened by whichever creation path found a contract on
-  the selected namespace; the host owns visibility, the captured namespace and
-  the error state, so both bindings below are one-way in and the two outputs
-  carry the decision back.
+  Team-metadata dialog. Opened by the creation gate, whichever path asked it —
+  the Create button or the gesture-less hideHome route. The GATE owns
+  visibility, the captured namespace and the error state, so all five bindings
+  below are one-way in off `creation` and the two outputs carry the decision
+  straight back to it. This page renders the element and owns none of it.
+
+  `(confirmed)` binds a promise-returning method to a `void` output. That is
+  fine in a template and its result is ignored; wrapping it or adding a
+  page-side forwarder would put a creation member straight back on the page.
 
   NOT deferred: this component is small and pulls in no heavy chunk. The
   @defer block above exists for the namespace panel's Monaco dependency.
@@ -227,11 +232,11 @@
   dismissal channel.
 -->
 <app-team-metadata-modal
-  [visible]="metadataModalVisible"
-  [contract]="metadataContract"
-  [namespaceLabel]="metadataNamespaceLabel"
-  [errorMessage]="metadataError"
-  [pending]="metadataSubmitting"
-  (confirmed)="onMetadataConfirm($event)"
-  (cancelled)="onMetadataCancel()"
+  [visible]="creation.modalVisible"
+  [contract]="creation.contract"
+  [namespaceLabel]="creation.namespaceLabel"
+  [errorMessage]="creation.errorMessage"
+  [pending]="creation.submitting"
+  (confirmed)="creation.confirm($event)"
+  (cancelled)="creation.cancel()"
 />
