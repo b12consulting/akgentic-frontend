@@ -98,8 +98,23 @@ interface UploadControlEl extends HTMLElement {
 }
 
 /** Query one upload control by its STATIC `label` attribute (a real attribute). */
+/**
+ * The upload p-button for a target, by TEST HOOK rather than by label.
+ *
+ * The toolbar's controls are icon-only now, so `label` is gone from the DOM.
+ * The hook is the better identifier anyway: it survives a wording change, where
+ * a label query silently found nothing and read as "the control is missing".
+ */
+const UPLOAD_TESTID: Record<string, string> = {
+  'Upload to Root': 'upload-root',
+  'Upload Files': 'upload-files',
+};
+
 function uploadControl(host: HTMLElement, label: string): UploadControlEl | null {
-  return host.querySelector(`p-button[label="${label}"]`) as UploadControlEl | null;
+  const testid = UPLOAD_TESTID[label] ?? label;
+  return host.querySelector(
+    `p-button[data-testid="${testid}"]`,
+  ) as UploadControlEl | null;
 }
 
 /**
@@ -1705,24 +1720,47 @@ describe('WorkspaceExplorerComponent — NFR3 OnPush regression gate', () => {
       explorerDe.componentInstance as WorkspaceExplorerComponent;
 
     expect(explorer.loading()).toBe(true);
+
+    // The spinner is gated on `showLoading`, which lags `loading` by the
+    // anti-flicker delay — so it is deliberately NOT on screen yet. Waiting the
+    // delay out is what this spec is about: that when it does appear, and later
+    // clears, both happen through the signal-driven global tick without the
+    // OnPush parent being re-marked.
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await hostFixture.whenStable();
+    // Queried by the overlay's own icon class. The pane used to render a
+    // `p-progressSpinner`; it now spins the same font icon the teams table
+    // does, because two indicators meant to read as one thing should be one
+    // thing — an SVG stroke and a font glyph never match in weight.
     expect(
-      hostFixture.nativeElement.querySelector('p-progressspinner') ||
-        hostFixture.nativeElement.querySelector('p-progressSpinner')
-    ).withContext('spinner should be visible while pending').not.toBeNull();
+      hostFixture.nativeElement.querySelector('.navigator-content .pane-loading-icon'),
+    ).withContext('spinner should be visible once the delay elapses').not.toBeNull();
 
     // Resolve the tree. CRITICALLY: never call hostFixture.detectChanges()
     // (which would force-check the OnPush parent). Only let the zone settle —
     // the spinner must clear via the signal-driven global tick alone.
     resolveTree([fileNode({ name: 'a.md', path: 'a.md', type: 'file' })]);
     await hostFixture.whenStable();
+    // One macrotask hop. The clear is a signal write in a promise microtask,
+    // and the auto-detect tick that paints it runs after the zone drains — the
+    // same hop the appearance above needed. Still NO parent re-mark, which is
+    // what this spec is about.
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     // The signal write repainted the explorer's own OnPush view via the global
     // tick, even though the parent was never explicitly re-marked.
     expect(explorer.loading()).toBe(false);
+    expect(explorer.showLoading())
+      .withContext('showLoading must clear with loading')
+      .toBe(false);
+    // Scoped to the TREE pane, which is this spec's subject — the same scoping
+    // scenario 27 applies for its own pane, and for the same reason: the
+    // content pane has a spinner of its own whose state says nothing about the
+    // tree load. Unscoped, this assertion was answering a question it had not
+    // asked.
     expect(
-      hostFixture.nativeElement.querySelector('p-progressspinner') ||
-        hostFixture.nativeElement.querySelector('p-progressSpinner')
-    ).withContext('spinner must be gone after resolve').toBeNull();
+      hostFixture.nativeElement.querySelector('.navigator-content .pane-loading-icon'),
+    ).withContext('tree-pane spinner must be gone after resolve').toBeNull();
   });
 
   // --- the content-pane gate (AC1, NFR3 analogue) -------------------
@@ -2165,10 +2203,14 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
     contextServiceStub.currentTeamRunning$.next(true);
     fixture.detectChanges();
 
-    // Running: neither presents the stopped-team tooltip.
-    expect(tooltipOf('Upload Files')).toBe('');
+    // Running: neither presents the stopped-team tooltip. It is no longer the
+    // EMPTY string though — the controls are icon-only now, so the tooltip
+    // carries the name the label used to. What this spec guards is unchanged:
+    // the tooltip and the disabled binding read the same live source, so they
+    // cannot disagree about whether the team is running.
+    expect(tooltipOf('Upload Files')).toBe('Upload Files');
     clearSelection();
-    expect(tooltipOf('Upload to Root')).toBe('');
+    expect(tooltipOf('Upload to Root')).toBe('Upload to Root');
   });
 });
 
@@ -2284,9 +2326,10 @@ describe('WorkspaceExplorerComponent — per-file refresh control (Epic 38)', ()
     expect(refresh).withContext('per-file refresh control').not.toBeNull();
     expect(refresh!.getAttribute('icon')).toBe('pi pi-refresh');
     expect(refresh!.getAttribute('severity')).toBe('secondary');
-    // Labelled, like every other control in this toolbar. The icon-only
-    // register belongs to the navigator header, not here.
-    expect(refresh!.getAttribute('label')).toBe('Refresh');
+    // ICON-ONLY, and named by its tooltip instead. The toolbar was labelled
+    // until the directory Refresh joined it and the row ran out of width; the
+    // name did not disappear, it moved to hover.
+    expect(refresh!.getAttribute('pTooltip')).toBe('Refresh this file');
 
     const button = fixture.debugElement.query(By.css(FILE_REFRESH))
       .componentInstance as { text: boolean; rounded: boolean };
@@ -2295,7 +2338,7 @@ describe('WorkspaceExplorerComponent — per-file refresh control (Epic 38)', ()
 
     // Immediately before Download, and inside the same toolbar container.
     const download = fixture.nativeElement.querySelector(
-      'p-button[label="Download"]'
+      'p-button[data-testid="download-file"]',
     ) as HTMLElement;
     expect(download).withContext('download control').not.toBeNull();
     expect(refresh!.parentElement).toBe(download.parentElement);
@@ -2853,9 +2896,9 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
 
     const fileRefresh = fixture.debugElement.query(By.css(FILE_REFRESH));
     expect(fileRefresh).withContext('per-file refresh').not.toBeNull();
-    expect((fileRefresh.nativeElement as HTMLElement).getAttribute('label')).toBe(
-      'Refresh',
-    );
+    expect(
+      (fileRefresh.nativeElement as HTMLElement).getAttribute('pTooltip'),
+    ).toBe('Refresh this file');
     expect(
       (fileRefresh.nativeElement as HTMLElement).querySelector('button')!
         .disabled,
@@ -3806,7 +3849,12 @@ describe('WorkspaceExplorerComponent — the pane state model (Epic 45)', () => 
     component.refresh();
     fixture.detectChanges();
     expect(component.loading()).toBe(true);
-    expect(tree()).withContext('the tree yields to the spinner on a gesture').toBeNull();
+    // The tree STAYS. It used to be replaced by the spinner, which is what made
+    // a refresh two visible changes for one wait — and threw away a listing
+    // that is still accurate until the new one lands. The spinner is an overlay
+    // over it now, so what this spec guards moves to the overlay: the gesture
+    // still raises an indicator, and still lowers it.
+    expect(tree()).withContext('the tree survives a gesture refresh').not.toBeNull();
 
     pending.resolve([]);
     await flushMicrotasks();
@@ -3832,6 +3880,178 @@ describe('WorkspaceExplorerComponent — the pane state model (Epic 45)', () => 
     expect(empty).withContext('empty-workspace block').not.toBeNull();
     expect(empty!.textContent).toContain('No files found');
     expect(tree()).withContext('no tree for an empty workspace').toBeNull();
+  });
+
+  it('does NOT render the empty block before the first load has settled', async () => {
+    // The flicker, pinned as the STATE it happens in rather than by trying to
+    // catch the instant. On mount `loading` is false, `treeError` is null and
+    // `treeNodes` is empty — exactly the three signals that rendered "No files
+    // found" — for the frame between the component existing and the load
+    // setting `loading`. An empty workspace announced before anything had been
+    // read.
+    //
+    // A first draft of this spec held the fetch on a never-settling promise and
+    // asserted after `create()`. It was green under the bug: by then the load
+    // HAS started, so `loading` is true and hides the block for the wrong
+    // reason. The state below is the one the template must refuse, and it is
+    // reachable only by naming it.
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+    await create();
+    fixture.detectChanges();
+
+    component.hasLoadedRoot.set(false);
+    component.showLoading.set(false);
+    component.treeError.set(null);
+    component.treeNodes.set([]);
+    fixture.detectChanges();
+
+    expect(
+      fixture.nativeElement.querySelector('.empty-workspace'),
+    ).withContext('empty block before the first load settles').toBeNull();
+  });
+
+  it('a refresh FASTER than the delay never shows the spinner', async () => {
+    // The flicker itself, and the only spec that fails if the delay is removed
+    // — the two placeholder specs above drive `showLoading` directly, so they
+    // pin the template gate and say nothing about what sets it.
+    //
+    // Asserted SYNCHRONOUSLY after the refresh: without the delay `setLoading`
+    // turns the spinner on in that same statement, so this is exactly where a
+    // regression shows.
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+    await create();
+    fixture.detectChanges();
+
+    component.refresh();
+
+    expect(component.loading())
+      .withContext('the load itself is marked in flight at once')
+      .toBeTrue();
+    expect(component.showLoading())
+      .withContext('but nothing is shown yet')
+      .toBeFalse();
+
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.showLoading())
+      .withContext('and a fetch that beat the delay showed nothing at all')
+      .toBeFalse();
+  });
+
+  it('a refresh at the ROOT re-lists the root rather than the whole tree', async () => {
+    // It used to delegate to the whole-tree refresh at the root, which did more
+    // than this control offers — the tree has its own Refresh in the navigator
+    // header — and returned before setting the main pane's indicator, so that
+    // pane showed nothing at all while it worked.
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+    await create();
+    fixture.detectChanges();
+    expect(component.currentDirectory()).toBe('');
+    workspaceServiceSpy.getWorkspaceTree.calls.reset();
+
+    const done = component.refreshCurrentDirectory();
+
+    expect(component.refreshingDirectory())
+      .withContext('the re-read is marked in flight at once')
+      .toBeTrue();
+
+    await done;
+
+    expect(workspaceServiceSpy.getWorkspaceTree)
+      .withContext('the root listing was actually re-read')
+      .toHaveBeenCalled();
+    expect(component.refreshingDirectory()).toBeFalse();
+  });
+
+  it('the main pane shows an indicator for a slow FILE re-read', async () => {
+    // The file half had no indicator at all: `refreshSelectedFile` set a flag
+    // that nothing rendered, so a slow re-read looked like a dead button.
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
+      fileNode({ name: 'a.txt', path: 'a.txt', type: 'file' }),
+    ]);
+    await create();
+    fixture.detectChanges();
+
+    await component.onNodeSelect({
+      node: { data: fileNode({ name: 'a.txt', path: 'a.txt', type: 'file' }) },
+    });
+    expect(component.openFile()).not.toBeNull();
+
+    let release!: (content: unknown) => void;
+    workspaceServiceSpy.getFileContent.and.returnValue(
+      new Promise((resolve) => (release = resolve as (c: unknown) => void)),
+    );
+
+    void component.refreshOpenFile();
+    // Past the delay, so the indicator has had its chance to appear.
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    expect(component.showMainLoading())
+      .withContext('the main pane says it is re-reading')
+      .toBeTrue();
+
+    release({ content: 'x', isBinary: false });
+    await fixture.whenStable();
+  });
+
+  it('the LEFT PANEL refresh does not put a spinner over the open file', async () => {
+    // It re-reads the tree, and it re-reads the open file so the pane is not
+    // left on stale bytes — but its subject is the tree. An overlay on the file
+    // claims the thing being re-read is the thing you are reading, which is the
+    // other pane's job to say.
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
+      fileNode({ name: 'a.txt', path: 'a.txt', type: 'file' }),
+    ]);
+    await create();
+    fixture.detectChanges();
+    await component.onNodeSelect({
+      node: { data: fileNode({ name: 'a.txt', path: 'a.txt', type: 'file' }) },
+    });
+
+    // Both reads held open, so the assertion is about a wait that is genuinely
+    // still running rather than one that already finished.
+    workspaceServiceSpy.getWorkspaceTree.and.returnValue(new Promise(() => {}));
+    workspaceServiceSpy.getFileContent.and.returnValue(new Promise(() => {}));
+
+    component.refresh();
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    expect(component.showLoading())
+      .withContext('the tree, whose control this is, says it is re-reading')
+      .toBeTrue();
+    expect(component.showMainLoading())
+      .withContext('the file view does not')
+      .toBeFalse();
+  });
+
+  it('renders the empty block once that same state has SETTLED', async () => {
+    // The other half: without it the spec above is satisfied by a block that
+    // never renders at all, and the placeholder would be dead rather than
+    // merely delayed.
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+    await create();
+    fixture.detectChanges();
+
+    component.hasLoadedRoot.set(true);
+    component.showLoading.set(false);
+    component.treeError.set(null);
+    component.treeNodes.set([]);
+    fixture.detectChanges();
+
+    expect(
+      fixture.nativeElement.querySelector('.empty-workspace'),
+    ).withContext('empty block after the load settles').not.toBeNull();
+  });
+
+  it('unblocks the empty block when the first load FAILS', async () => {
+    // Settled is settled. Gating on success alone would leave a failed root
+    // load claiming the workspace was still being read, forever.
+    workspaceServiceSpy.getWorkspaceTree.and.rejectWith(new Error('boom'));
+    await create();
+    fixture.detectChanges();
+
+    expect(component.hasLoadedRoot()).toBeTrue();
   });
 });
 
@@ -3987,7 +4207,7 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
    */
   function uploadControl(): UploadControlEl | null {
     return fixture.nativeElement.querySelector(
-      'p-toolbar p-button[label^="Upload"]',
+      'p-toolbar p-button[data-testid^="upload-"]',
     ) as UploadControlEl | null;
   }
 
@@ -4015,8 +4235,12 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
   }
 
   function toolbarHost(label: string): UploadControlEl | null {
+    // By test hook, not by label: the toolbar is icon-only now. Callers still
+    // pass the human name, which reads better at the call site and keeps the
+    // mapping in one place.
+    const testid = UPLOAD_TESTID[label] ?? label;
     return fixture.nativeElement.querySelector(
-      `p-toolbar p-button[label="${label}"]`,
+      `p-toolbar p-button[data-testid="${testid}"]`,
     ) as UploadControlEl | null;
   }
 
@@ -4070,9 +4294,9 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
    */
   function labelledUploadControls(): string[] {
     const panel = fixture.nativeElement.querySelector('.preview-panel') as HTMLElement;
-    return Array.from(panel.querySelectorAll('p-button[label]'))
-      .map((el) => el.getAttribute('label')!)
-      .filter((label) => label.toLowerCase().includes('upload'));
+    return Array.from(panel.querySelectorAll('p-button[data-testid^="upload-"]')).map(
+      (el) => el.getAttribute('data-testid')!,
+    );
   }
 
   // --- AC1 / AC3.2: the pane lists where it is, from the load it already made ---
@@ -4393,7 +4617,9 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     expect(list!.parentElement).toBe(pane());
 
     // The run-state gate and its tooltip, verbatim.
-    expect(control!.getAttribute('label')).toBe('Upload to Root');
+    // The target is still named — by the hook, and by the tooltip the user
+    // reads. It is no longer on screen as a label.
+    expect(control!.getAttribute('data-testid')).toBe('upload-root');
     expect((control!.querySelector('button') as HTMLButtonElement).disabled).toBe(true);
     expect(control!.pTooltip).toBe(STOPPED_TOOLTIP);
 
@@ -4413,12 +4639,12 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     await create();
 
     // The list, at the root: one control, naming the root as its target.
-    expect(labelledUploadControls()).toEqual(['Upload to Root']);
+    expect(labelledUploadControls()).toEqual(['upload-root']);
 
     // The list, in a subdirectory: still exactly one. This is the case that
     // catches a second affordance reappearing beside the first.
     await clickRow('docs');
-    expect(labelledUploadControls()).toEqual(['Upload Files']);
+    expect(labelledUploadControls()).toEqual(['upload-files']);
     expect(component.uploadTargetPath).toBe('');
 
     (toolbarHost('Upload Files')!.querySelector('button') as HTMLButtonElement).click();
@@ -4443,7 +4669,7 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     const empty = pane().querySelector('.empty-directory') as HTMLElement | null;
     expect(empty).withContext('an explicit empty-directory element').not.toBeNull();
     expect(empty!.textContent).toContain('This folder is empty');
-    expect(uploadControl()!.getAttribute('label')).toBe('Upload Files');
+    expect(uploadControl()!.getAttribute('data-testid')).toBe('upload-files');
   });
 
   it('scenario 131 — a listing that does not describe the pane renders neither entries nor the empty-state', async () => {

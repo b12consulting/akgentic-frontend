@@ -79,6 +79,89 @@ function unionTargets(current: string[], next: string[]): string[] {
   return [...new Set([...current, ...next])];
 }
 
+/**
+ * How long a wait must last before the pane admits to it.
+ *
+ * Below this, nothing is shown at all: most reads return faster, and an
+ * indicator that appears and vanishes inside a tenth of a second reads as a
+ * flicker rather than as feedback.
+ */
+export const INDICATOR_DELAY_MS = 50;
+
+/**
+ * How long the indicator stays once it HAS appeared.
+ *
+ * The delay above stops a fast read showing anything; this stops a read that
+ * only just crossed the delay from showing something for 20ms. Without it the
+ * two thresholds fight: a wait of delay-plus-a-bit produces exactly the blink
+ * the delay exists to remove.
+ */
+export const INDICATOR_MIN_MS = 500;
+
+/**
+ * A boolean that lags on the way up and lingers on the way down.
+ *
+ * Turns on only if the wait outlives `delayMs`; once on, stays on for at least
+ * `minMs` even if the work finishes first. One object per indicator, because
+ * two panes can be re-reading independently and a shared one would let the
+ * faster of them clear the slower's spinner.
+ *
+ * A plain object with a signal rather than an observable pipeline: this
+ * component is OnPush and carries a guard that a signal write repaints it
+ * WITHOUT the parent being re-marked, which a `toObservable` round-trip breaks
+ * by inserting an effect. It also avoids RxJS `timer`, which schedules through
+ * the async scheduler — that calls `setInterval`, and this pane forbids that
+ * outright because polling here is a defect it has had before.
+ */
+export class DelayedIndicator {
+  /** Writable so a spec can drive the rendered state directly. */
+  readonly visible = signal(false);
+
+  private delayTimer: ReturnType<typeof setTimeout> | null = null;
+  private minElapsed = true;
+  private busy = false;
+
+  constructor(
+    private readonly delayMs: number,
+    private readonly minMs: number,
+  ) {}
+
+  set(busy: boolean): void {
+    this.busy = busy;
+    if (busy) {
+      // Already showing, or already counting down to it: a second overlapping
+      // read must not restart the delay and must not stack a second timer.
+      if (this.visible() || this.delayTimer !== null) {
+        return;
+      }
+      this.delayTimer = setTimeout(() => {
+        this.delayTimer = null;
+        this.minElapsed = false;
+        this.visible.set(true);
+        setTimeout(() => {
+          this.minElapsed = true;
+          // Only if the work has ALSO finished. Otherwise the read still owns
+          // the indicator and its own completion will clear it.
+          if (!this.busy) {
+            this.visible.set(false);
+          }
+        }, this.minMs);
+      }, this.delayMs);
+      return;
+    }
+
+    if (this.delayTimer !== null) {
+      clearTimeout(this.delayTimer);
+      this.delayTimer = null;
+    }
+    // Shown but not yet past its minimum: leave it, and let the minimum's own
+    // timer clear it. Clearing here is what made it blink.
+    if (this.visible() && this.minElapsed) {
+      this.visible.set(false);
+    }
+  }
+}
+
 @Component({
   selector: 'app-workspace-explorer',
   standalone: true,
@@ -214,6 +297,66 @@ export class WorkspaceExplorerComponent {
   listing = signal<{ path: string; entries: FileNode[] } | null>(null);
 
   loading = signal(false);
+
+  /**
+   * Whether a root load has ever SETTLED for the current workspace.
+   *
+   * The empty-state placeholder needs it because "no files" and "not asked
+   * yet" are the same three signals otherwise: on mount `loading` is false,
+   * `treeError` is null and `treeNodes` is empty — exactly the state that
+   * renders "No files found" — and it stays that way for the frame between the
+   * component appearing and the load setting `loading`. That frame is the
+   * flicker: an empty workspace announced before anything had been read.
+   *
+   * Set when a load SETTLES, success or failure, so a failed root load stops
+   * claiming the workspace is still being read. Cleared when the workspace id
+   * changes, because what has been read about the previous one says nothing
+   * about the next.
+   */
+  hasLoadedRoot = signal(false);
+
+  /**
+   * The tree pane's indicator — `loading`, delayed and held.
+   *
+   * The flicker it removes: clicking Refresh set `loading` immediately, so the
+   * placeholder vanished and a spinner appeared for the fraction of a second
+   * the fetch took, then the two swapped back. Two visible changes for a wait
+   * nobody perceived as one.
+   *
+   * The placeholder, the tree and this all read the SAME signal, so a read that
+   * beats the delay changes nothing on screen at all.
+   */
+  private readonly treeIndicator = new DelayedIndicator(
+    INDICATOR_DELAY_MS,
+    INDICATOR_MIN_MS,
+  );
+
+  readonly showLoading = this.treeIndicator.visible;
+
+  /**
+   * The main pane's indicator — for EITHER of its own re-reads.
+   *
+   * One indicator and not two, because the pane shows one thing at a time: a
+   * directory listing or a file. Whichever is on screen is what a re-read is
+   * re-reading, so a single overlay says it.
+   */
+  private readonly mainIndicator = new DelayedIndicator(
+    INDICATOR_DELAY_MS,
+    INDICATOR_MIN_MS,
+  );
+
+  readonly showMainLoading = this.mainIndicator.visible;
+
+  /**
+   * The single writer of the tree pane's loading state.
+   *
+   * `loading` still flips at once — the in-flight guards read it — while the
+   * indicator applies the delay and the minimum on top.
+   */
+  private setLoading(busy: boolean): void {
+    this.loading.set(busy);
+    this.treeIndicator.set(busy);
+  }
   loadingContent = signal(false);
 
   /**
@@ -357,6 +500,16 @@ export class WorkspaceExplorerComponent {
   refreshingFile = signal(false);
 
   /**
+   * True while the main pane's own directory re-read is in flight.
+   *
+   * Its own flag rather than the pane-wide `loading`: that one gates the
+   * SIDEBAR's tree, so driving it from a main-pane action would blank the tree
+   * to answer a question about the list. Same shape as `refreshingFile`, which
+   * exists for the same reason on the file half.
+   */
+  refreshingDirectory = signal(false);
+
+  /**
    * Monotonic id stamped on every body read so a response can be matched back to
    * the request that issued it. `readToken` is the id of the most recently
    * ISSUED read; `loadingOwner` is the id of the read that raised the spinner.
@@ -404,6 +557,12 @@ export class WorkspaceExplorerComponent {
     // tab's treeNodes (ADR-021 §Decision 2). Stable APIs only — no resource().
     toObservable(this.workspaceId)
       .pipe(
+        // Cleared HERE, per emission, and not inside `loadRootTree$`: a
+        // background invalidation also runs that method, and clearing there
+        // would re-blank the placeholder gate on a read the user never asked
+        // for. What has settled about the previous workspace says nothing
+        // about the next one.
+        tap(() => this.hasLoadedRoot.set(false)),
         switchMap((ws) => this.loadRootTree$(ws)),
         takeUntilDestroyed(this.destroyRef),
       )
@@ -622,7 +781,7 @@ export class WorkspaceExplorerComponent {
     }
 
     if (!background) {
-      this.loading.set(true);
+      this.setLoading(true);
       // Clearing the banner is as tree-scoped a write as setting it: the
       // navigator is gated on `!treeError()`, so erasing a genuine root-load
       // failure from a read the user never asked for makes the tree reappear
@@ -648,7 +807,11 @@ export class WorkspaceExplorerComponent {
         });
       }),
       tap(() => {
-        if (!background) this.loading.set(false);
+        if (!background) this.setLoading(false);
+        // Settled, whatever the outcome — the `catchError` above turns a
+        // failure into a result rather than an error notification, so this runs
+        // on both paths and the placeholder is unblocked either way.
+        this.hasLoadedRoot.set(true);
       }),
     );
   }
@@ -1138,6 +1301,27 @@ export class WorkspaceExplorerComponent {
    * reporting their failures, and a caller that forgets the parameter fails
    * towards *an error is shown* rather than towards *an error disappears*.
    */
+  /**
+   * The file view's own Refresh button.
+   *
+   * Wraps `refreshSelectedFile` with the main pane's indicator, rather than the
+   * indicator living inside that method: the navigator's workspace-wide Refresh
+   * reaches it too, and that control's subject is the TREE. Driving the overlay
+   * from inside meant clicking Refresh on the left panel put a spinner over the
+   * file on the right, which is not what it offered to re-read.
+   *
+   * A declined call — the in-flight guard inside — returns immediately, so the
+   * indicator is set and cleared well inside its delay and nothing appears.
+   */
+  async refreshOpenFile(): Promise<void> {
+    this.mainIndicator.set(true);
+    try {
+      await this.refreshSelectedFile();
+    } finally {
+      this.mainIndicator.set(false);
+    }
+  }
+
   async refreshSelectedFile(background: boolean = false): Promise<void> {
     const file = this.openFile();
     if (!file) return;
@@ -1324,6 +1508,40 @@ export class WorkspaceExplorerComponent {
    * this call, so the directory the user is looking at stays current at zero
    * extra cost and no `getWorkspaceTree` count moves.
    */
+  /**
+   * Re-read the directory the main pane is showing.
+   *
+   * At the root it defers to `refresh()`, which owns the root listing — the
+   * root tree and the root list are written by the same load, and re-listing
+   * the root separately would leave the two disagreeing until the next tree
+   * load. Below the root it re-lists that directory alone.
+   *
+   * Guarded so a second click cannot race the first; the error is logged rather
+   * than bannered, because the pane still holds the listing it had and blanking
+   * it to report a failed refresh loses more than it says.
+   */
+  async refreshCurrentDirectory(): Promise<void> {
+    if (this.refreshingDirectory()) {
+      return;
+    }
+    const path = this.currentDirectory();
+    this.refreshingDirectory.set(true);
+    this.mainIndicator.set(true);
+    try {
+      // The root is not a special case. It used to delegate to the whole-tree
+      // `refresh()`, which re-read the tree as well — more than this control
+      // offers to do, and it left the main pane with no indicator of its own
+      // because that path returned before the one below was set. The tree has
+      // its own Refresh in the navigator header.
+      await this.refreshDirectory(path);
+    } catch (error: unknown) {
+      console.error('Error refreshing directory', error);
+    } finally {
+      this.refreshingDirectory.set(false);
+      this.mainIndicator.set(false);
+    }
+  }
+
   private async refreshDirectory(path: string): Promise<FileNode[]> {
     const fresh = await this.fetchTree(path);
     const freshNodes = this.convertToTreeNodes(fresh);

@@ -18,6 +18,7 @@
 -->
 <p-table
   [value]="teams"
+  [loading]="loading"
   selectionMode="single"
   (onRowSelect)="onRowSelect($event)"
   [tableStyle]="{ 'min-width': '50rem' }"

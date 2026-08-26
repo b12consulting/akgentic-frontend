@@ -418,11 +418,82 @@
 }
 
 
+// A pane's "re-reading" overlay: the content stays, this floats over it.
+//
+// Both panes that use it are the positioning context for it (`position:
+// relative` below), so `inset: 0` covers exactly that pane and the flex
+// centring puts the spinner in the middle of it. Previously the spinner was a
+// plain child of the pane and sat in the top-left corner, because the centring
+// rule below was on the SPINNER — a 50px box centring its own 50px contents.
+//
+// `pointer-events: none` so a brief overlay cannot swallow a click on the tree
+// underneath, and no background: dimming the listing would say it is no longer
+// accurate, and it is until the new one lands.
+.pane-loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 2;
+}
+
+// A surface behind the spinner, matching the teams table's.
+//
+// The overlay itself stays transparent — the tree or listing underneath is
+// still accurate until the new one lands, and dimming it would say otherwise.
+// The spinner needs its own ground only so it stays readable against whatever
+// row it happens to land on.
+//
+// A wrapper element OF OURS, not PrimeNG's `styleClass`. That class lands on a
+// div inside the spinner's own template, which carries no `_ngcontent`
+// attribute of this component — so a scoped rule never reaches it. That is also
+// why the spinner used to sit in the top-left corner: the centring rule written
+// against `.spinner` had never applied to anything.
+.pane-loading-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  // The teams table's proportions, exactly: a 6.5rem box around a 3rem
+  // spinner. Sized rather than padded, so the ratio holds whatever the spinner
+  // inside it measures — the workspace box was padding-sized around a 50px
+  // spinner, which made the same wheel look larger in its box than on the
+  // table.
+  width: 6.5rem;
+  height: 6.5rem;
+  border-radius: 12px;
+  background: #f1f3f5;
+  border: 1px solid #dee2e6;
+  // Lifts it off the content without the heavy shadow of a dialog.
+  box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
+
+  // No baseline strut under the icon, which would push it off the box's centre.
+  line-height: 0;
+}
+
+// The SAME element the teams table spins, at the same size and colour.
+//
+// It was PrimeNG's `p-progressSpinner` — an SVG with its own stroke width,
+// which no amount of matching makes identical to a font icon's. Two spinners
+// that are meant to read as one thing should be one thing.
+.pane-loading-icon {
+  display: block;
+  font-size: 3rem;
+  width: 3rem;
+  height: 3rem;
+  color: #94a3b8;
+}
+
+.navigator-content,
+.panel-content {
+  position: relative;
+}
+
 .spinner {
   display: flex;
   justify-content: center;
   align-items: center;
-  height: 200px;
 }
 
 .error-message {

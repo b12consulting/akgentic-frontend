@@ -3,7 +3,7 @@ import { Router } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from '../http/api.service';
-import { ContextService } from './context.service';
+import { ContextService, LOADING_INDICATOR_DELAY_MS } from './context.service';
 import { TeamContext, TeamFilter, TeamPage, TeamResponse } from './team.interface';
 
 function makeTeam(
@@ -1906,5 +1906,181 @@ describe('ContextService filter (Story 48.1)', () => {
     flushMicrotasks();
 
     expect(teamNames()).toEqual(['recovered']);
+  }));
+});
+
+// ---------------------------------------------------------------------------
+// The loading indicator.
+//
+// Every spec here drives time with `fakeAsync` / `tick`. The whole behaviour IS
+// timing: a fake that resolves synchronously would show the flag going true and
+// false again with nothing in between, and would pass whether or not the delay
+// existed at all.
+// ---------------------------------------------------------------------------
+
+describe('ContextService loading', () => {
+  // IMPORTED, not restated. A local copy is what let these specs drift from the
+  // source the first time the delay was tuned: the constant moved and the specs
+  // went on asserting against the old number, so "faster than the delay" was
+  // measured against a delay that no longer existed. Every wait below is
+  // expressed relative to this, so tuning the value cannot break them.
+  const DELAY_MS = LOADING_INDICATOR_DELAY_MS;
+  const FILTER_DEBOUNCE_MS = 250;
+
+  let service: ContextService;
+  let apiSpy: jasmine.SpyObj<ApiService>;
+  let routerSpy: jasmine.SpyObj<Router>;
+  let seen: boolean[];
+
+  beforeEach(() => {
+    apiSpy = jasmine.createSpyObj('ApiService', [
+      'getTeams',
+      'getTeamsPage',
+      'getTeam',
+      'createTeam',
+      'deleteTeam',
+      'stopTeam',
+      'restoreTeam',
+    ]);
+    routerSpy = jasmine.createSpyObj('Router', ['navigate']);
+    routerSpy.navigate.and.returnValue(Promise.resolve(true));
+
+    TestBed.configureTestingModule({
+      providers: [
+        ContextService,
+        { provide: ApiService, useValue: apiSpy },
+        { provide: Router, useValue: routerSpy },
+      ],
+    });
+
+    service = TestBed.inject(ContextService);
+    seen = [];
+    service.loading$.subscribe((v) => seen.push(v));
+  });
+
+  function emptyPage(): TeamPage {
+    return { teams: [], total_count: 0 };
+  }
+
+  /** A fetch that resolves only when the returned function is called. */
+  function deferredPage(): () => void {
+    let release!: (page: TeamPage) => void;
+    apiSpy.getTeamsPage.and.returnValue(
+      new Promise<TeamPage>((resolve) => (release = resolve)),
+    );
+    return () => release(emptyPage());
+  }
+
+  it('starts false', () => {
+    expect(seen).toEqual([false]);
+  });
+
+  it('a fetch FASTER than the delay never shows the spinner', fakeAsync(() => {
+    // The reason the delay exists. Most of these return in well under 150ms,
+    // and a spinner that appears and vanishes inside 100ms reads as a flicker
+    // rather than as feedback.
+    const release = deferredPage();
+    service.loadTeamsPage(1, 250);
+
+    tick(Math.max(1, DELAY_MS - 1));
+    release();
+    flushMicrotasks();
+    tick(500);
+
+    expect(seen).toEqual([false]);
+  }));
+
+  it('a fetch SLOWER than the delay shows the spinner, then clears it', fakeAsync(() => {
+    const release = deferredPage();
+    service.loadTeamsPage(1, 250);
+
+    tick(DELAY_MS);
+    expect(seen).toEqual([false, true]);
+
+    release();
+    flushMicrotasks();
+    tick(0);
+
+    expect(seen).toEqual([false, true, false]);
+  }));
+
+  it('clears IMMEDIATELY on arrival — the delay is not applied to the clear', fakeAsync(() => {
+    // `switchMap` over a timer, not `debounceTime`: a debounce would delay the
+    // clear as well, leaving the spinner up after the rows had arrived.
+    const release = deferredPage();
+    service.loadTeamsPage(1, 250);
+    tick(DELAY_MS);
+    seen.length = 0;
+
+    release();
+    flushMicrotasks();
+    tick(0);
+
+    expect(seen).toEqual([false]);
+  }));
+
+  it('clears when the fetch REJECTS', fakeAsync(() => {
+    // The error is already reported by FetchService; a table left spinning
+    // would claim the request was still running.
+    apiSpy.getTeamsPage.and.returnValue(Promise.reject(new Error('boom')));
+    service.loadTeamsPage(1, 250).catch(() => undefined);
+
+    tick(DELAY_MS);
+    flushMicrotasks();
+    tick(500);
+
+    expect(seen[seen.length - 1]).toBeFalse();
+  }));
+
+  it('clears when a filter fetch is SUPERSEDED — the count is not stranded', fakeAsync(() => {
+    // The defect this guards: `switchMap` unsubscribes a superseded fetch, so a
+    // count that only decremented on completion would strand the spinner on
+    // forever after the first superseded keystroke. `finalize` covers
+    // unsubscription; `tap` would not.
+    const first = deferredPage();
+    service.setFilter({ meta: { case_id: 'aaa' }, catalogNamespace: null });
+    tick(FILTER_DEBOUNCE_MS);
+    tick(DELAY_MS);
+    expect(seen[seen.length - 1]).toBeTrue();
+
+    // A second change supersedes the first, and THIS one resolves.
+    apiSpy.getTeamsPage.and.returnValue(Promise.resolve(emptyPage()));
+    service.setFilter({ meta: { case_id: 'bbb' }, catalogNamespace: null });
+    tick(FILTER_DEBOUNCE_MS);
+    flushMicrotasks();
+    tick(500);
+
+    expect(seen[seen.length - 1]).toBeFalse();
+    // The first fetch resolving late must not resurrect anything.
+    first();
+    flushMicrotasks();
+    tick(500);
+    expect(seen[seen.length - 1]).toBeFalse();
+  }));
+
+  it('two overlapping fetches clear only when BOTH have finished', fakeAsync(() => {
+    // Why the in-flight tracker is a COUNT and not a boolean: a page turn
+    // finishing must not clear a spinner a filter change is still waiting on.
+    let releaseA!: (p: TeamPage) => void;
+    let releaseB!: (p: TeamPage) => void;
+    apiSpy.getTeamsPage.and.returnValues(
+      new Promise<TeamPage>((r) => (releaseA = r)),
+      new Promise<TeamPage>((r) => (releaseB = r)),
+    );
+
+    service.loadTeamsPage(1, 250);
+    service.loadTeamsPage(2, 250);
+    tick(DELAY_MS);
+    expect(seen[seen.length - 1]).toBeTrue();
+
+    releaseA(emptyPage());
+    flushMicrotasks();
+    tick(50);
+    expect(seen[seen.length - 1]).toBeTrue();
+
+    releaseB(emptyPage());
+    flushMicrotasks();
+    tick(50);
+    expect(seen[seen.length - 1]).toBeFalse();
   }));
 });

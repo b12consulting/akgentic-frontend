@@ -139,6 +139,7 @@
       that answer those requests stay here.
     -->
     <app-team-table
+      [loading]="(contextService.loading$ | async) ?? false"
       [teams]="(contextService.teams$ | async) || []"
       [totalRecords]="contextService.totalCount"
       [rows]="rows"

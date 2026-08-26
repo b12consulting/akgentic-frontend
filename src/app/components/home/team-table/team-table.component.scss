@@ -126,3 +126,57 @@ p-table {
     }
   }
 }
+
+// The loading overlay.
+//
+// PrimeNG's mask ships with `p-overlay-mask`, whose dim covers the whole table
+// body. That is right for a modal, which needs to say "you cannot touch this",
+// and wrong here: the rows underneath are the PREVIOUS page, they are still
+// accurate until the new one lands, and dimming them says they are not.
+//
+// So the mask itself goes transparent and the spinner gets its own small
+// surface instead — enough to read against any row beneath it, small enough
+// that the table plainly keeps its content. `::ng-deep` because PrimeNG renders
+// the mask inside this component's view but outside its template, so scoped
+// selectors never reach it; `:host` keeps it from escaping to other tables.
+:host ::ng-deep .p-datatable-mask {
+    background: transparent;
+    // The mask is `position: absolute` over the body and would otherwise
+    // swallow the scroll it is sitting on top of.
+    pointer-events: none;
+}
+
+// The box behind the spinner.
+//
+// A PSEUDO-ELEMENT on the mask, not a background on the icon: the icon is the
+// thing that spins, so a box painted on it spins with it. The mask does not
+// move, so a box drawn there stays still while the spinner turns inside it.
+//
+// Absolutely positioned and centred rather than sized by its content, so the
+// box keeps one size whatever the theme puts inside it.
+:host ::ng-deep .p-datatable-mask::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 6.5rem;
+    height: 6.5rem;
+    border-radius: 12px;
+    background: #f1f3f5;
+    border: 1px solid #dee2e6;
+    // Lifts it off the rows without the heavy shadow of a dialog.
+    box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
+}
+
+:host ::ng-deep .p-datatable-loading-icon {
+    // Positioned, so it paints ABOVE the absolutely-positioned box behind it.
+    position: relative;
+    // Large and light, like the chat panel's loading placeholder — and a fixed
+    // neutral colour, so it never lands on one of the theme spinner's four
+    // animated stops. Red in particular reads as an error here.
+    font-size: 3rem;
+    width: 3rem;
+    height: 3rem;
+    color: #94a3b8;
+}

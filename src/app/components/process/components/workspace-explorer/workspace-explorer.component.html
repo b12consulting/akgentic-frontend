@@ -26,19 +26,26 @@
         </div>
 
         <div class="navigator-content">
-          <p-progressSpinner
-            *ngIf="loading()"
-            styleClass="spinner"
-            [style]="{ width: '50px', height: '50px' }"
-          />
+          <!--
+            An OVERLAY, not a replacement. Swapping the tree (or the empty-state
+            placeholder) out for a spinner is two visible changes for one wait,
+            and it throws away content that is still accurate until the new
+            listing lands. The pane keeps what it has and says it is re-reading
+            on top of it — the same shape the teams table uses.
+          -->
+          <div class="pane-loading-overlay" *ngIf="showLoading()">
+            <div class="pane-loading-box">
+              <i class="pi pi-spin pi-spinner pane-loading-icon"></i>
+            </div>
+          </div>
 
-          <div *ngIf="treeError() && !loading()" class="error-message">
+          <div *ngIf="treeError()" class="error-message">
             <i class="pi pi-exclamation-triangle"></i>
             <p>{{ treeError() }}</p>
           </div>
 
           <div
-            *ngIf="!loading() && !treeError() && treeNodes().length === 0"
+            *ngIf="hasLoadedRoot() && !treeError() && treeNodes().length === 0"
             class="empty-workspace"
           >
             <i class="pi pi-folder-open empty-workspace-icon"></i>
@@ -57,7 +64,7 @@
             and a wrapper would have to survive all three.
           -->
           <button
-            *ngIf="!loading() && !treeError()"
+            *ngIf="!treeError()"
             type="button"
             class="tree-root-row"
             [class.selected]="currentDirectory() === '' && !openFile()"
@@ -79,7 +86,7 @@
             the `|` of a union as a pipe.
           -->
           <p-tree
-            *ngIf="!loading() && !treeError() && treeNodes().length > 0"
+            *ngIf="!treeError() && treeNodes().length > 0"
             [value]="treeNodes()"
             selectionMode="single"
             [selection]="selectedTreeNode()"
@@ -181,10 +188,27 @@
             upload lands.
           -->
           @if (!openFile()) {
+            <!--
+              FIRST, and only while the pane is showing a directory: it
+              re-reads the listing on screen. First because the file view puts
+              its own Refresh first too — otherwise the icon changes position
+              when a file is opened, and the eye has to find it again.
+            -->
+            <p-button
+              icon="pi pi-refresh"
+              data-testid="refresh-directory"
+              pTooltip="Refresh this folder"
+              tooltipPosition="left"
+              [text]="true"
+              [rounded]="true"
+              severity="secondary"
+              [disabled]="refreshingDirectory()"
+              (onClick)="refreshCurrentDirectory()"
+            />
             @if (currentDirectory() === '') {
               <p-button
-                label="Upload to Root"
                 icon="pi pi-upload"
+                data-testid="upload-root"
                 [text]="true"
                 [rounded]="true"
                 severity="primary"
@@ -193,13 +217,14 @@
                 [pTooltip]="
                   !isProcessRunning()
                     ? 'Team must be running to upload files'
-                    : ''
+                    : 'Upload to Root'
                 "
+                tooltipPosition="left"
               />
             } @else {
               <p-button
-                label="Upload Files"
                 icon="pi pi-upload"
+                data-testid="upload-files"
                 [text]="true"
                 [rounded]="true"
                 severity="primary"
@@ -208,26 +233,30 @@
                 [pTooltip]="
                   !isProcessRunning()
                     ? 'Team must be running to upload files'
-                    : ''
+                    : 'Upload Files'
                 "
+                tooltipPosition="left"
               />
             }
           }
           <p-button
             *ngIf="openFile()"
-            label="Refresh"
             icon="pi pi-refresh"
             data-testid="refresh-file"
+            pTooltip="Refresh this file"
+            tooltipPosition="left"
             [text]="true"
             [rounded]="true"
             severity="secondary"
             [disabled]="refreshingFile() || loadingContent()"
-            (onClick)="refreshSelectedFile()"
+            (onClick)="refreshOpenFile()"
           />
           <p-button
             *ngIf="openFile()"
-            label="Download"
             icon="pi pi-download"
+            data-testid="download-file"
+            pTooltip="Download this file"
+            tooltipPosition="left"
             [text]="true"
             [rounded]="true"
             severity="secondary"
@@ -239,6 +268,16 @@
       <p-divider />
 
       <div class="panel-content">
+        <!--
+          Same overlay for the main pane's own re-reads — the directory listing
+          and the open file both. NOT `showLoading`: that one belongs to the
+          tree, and a re-read here must not claim the tree is being re-read.
+        -->
+        <div class="pane-loading-overlay" *ngIf="showMainLoading()">
+          <div class="pane-loading-box">
+            <i class="pi pi-spin pi-spinner pane-loading-icon"></i>
+          </div>
+        </div>
         <!--
           A failed re-read of a file the pane is still showing banners ABOVE the
           body rather than replacing it: losing a readable document because a
