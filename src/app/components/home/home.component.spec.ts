@@ -2066,6 +2066,23 @@ describe('HomeComponent', () => {
       ]);
     });
 
+    it('the narrowing toggle keeps its full meaning in a title', async () => {
+      // The visible label is deliberately short — it sits inside the filter
+      // panel under the "Team type" select, so the context is already on
+      // screen. The title is where the unabbreviated sentence lives, so the
+      // control never depends on that context being noticed.
+      await renderThenFilterOn(
+        nsSummary('acme-cases', 'Acme Cases', 'd', contract([])),
+      );
+
+      const label = fixture.nativeElement.querySelector(
+        'label[for="filter-namespace-toggle"]',
+      ) as HTMLLabelElement;
+      expect(label).not.toBeNull();
+      expect(label.textContent?.trim()).toBe('This team type only');
+      expect(label.getAttribute('title')).toContain('selected team type');
+    });
+
     // --- The collapse control --------------------------------------------
 
     it('the narrowing toggle is rendered BEFORE the metadata inputs', async () => {

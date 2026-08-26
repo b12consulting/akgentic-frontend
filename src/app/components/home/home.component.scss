@@ -105,6 +105,15 @@
 // of inputs that scrolls sideways hides the ones on the right.
 .home-filter {
     flex: 0 0 auto;
+    // Framed as its own panel. Without the border the row read as a second line
+    // of page controls, and the narrowing toggle in particular looked like it
+    // belonged to the Create/Configuration/Refresh group above it rather than
+    // to the filter. The frame is what makes "these controls narrow the list,
+    // those ones act on it" legible without reading a single label.
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    background: #ffffff;
+    padding: 0.75rem 0.9rem;
     display: flex;
     flex-wrap: wrap;
     // `flex-end`, matching .home-controls: the fields stack their label above
@@ -146,8 +155,9 @@
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    // Lift it off the bottom edge so it centres against the inputs rather than
-    // the row's baseline, now that the fields are taller than their controls.
+    // Centre against the INPUTS, not the row baseline: the fields stack a label
+    // above their input, so a bottom-aligned toggle would sit level with the
+    // input while reading as if it belonged to the label above it.
     padding-bottom: 0.4rem;
 
     label {

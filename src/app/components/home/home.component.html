@@ -148,8 +148,16 @@
           data-test="filter-namespace-toggle"
           inputId="filter-namespace-toggle"
         ></p-toggleswitch>
-        <label for="filter-namespace-toggle"
-          >Only this team type's teams</label
+        <!--
+          Short by design. The control sits inside the filter panel, directly
+          under the "Team type" select it refers to, so the context is already
+          on screen — the long form spent a third of the row restating it. The
+          full sentence stays in the title for anyone who needs it.
+        -->
+        <label
+          for="filter-namespace-toggle"
+          title="Show only teams created from the selected team type"
+          >This team type only</label
         >
       </span>
       <span
