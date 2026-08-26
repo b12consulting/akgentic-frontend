@@ -1,12 +1,4 @@
-import {
-  Component,
-  HostListener,
-  inject,
-  ViewChild,
-  ViewChildren,
-  QueryList,
-  ElementRef,
-} from '@angular/core';
+import { Component, HostListener, inject, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Params, Router } from '@angular/router';
 
@@ -19,29 +11,14 @@ import { BehaviorSubject, firstValueFrom, Observable } from 'rxjs';
 import { filter, map, take } from 'rxjs/operators';
 
 import { ApiService, MIN_FILTER_TERM_LENGTH } from '../../core/http/api.service';
-import { HttpError } from '../../core/http/fetch.service';
-import {
-  isRunning,
-  NO_TEAM_FILTER,
-  TeamFilter,
-} from '../../core/context/team.interface';
-import {
-  TeamMetadataPipe,
-  trackMetadataEntry,
-} from '../../core/context/team-metadata.pipe';
-import {
-  MetadataFieldDescriptor,
-  NamespaceSummary,
-  TeamMetadataContract,
-} from '../../protocol/catalog.interface';
+import { NO_TEAM_FILTER, TeamFilter } from '../../core/context/team.interface';
+import { NamespaceSummary } from '../../protocol/catalog.interface';
 
 import { CommonModule } from '@angular/common';
 import { ButtonModule } from 'primeng/button';
 import { SelectModule } from 'primeng/select';
-import { TableModule, TableLazyLoadEvent } from 'primeng/table';
-import { TagModule } from 'primeng/tag';
+import { TableLazyLoadEvent } from 'primeng/table';
 import { DialogModule } from 'primeng/dialog';
-import { InputTextModule } from 'primeng/inputtext';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 
 import { AuthService } from '../../core/auth/auth.service';
@@ -58,6 +35,12 @@ import {
   TeamMetadataModalComponent,
 } from './team-metadata-modal/team-metadata-modal.component';
 import { TeamFilterComponent } from './team-filter/team-filter.component';
+import { TeamCreationService } from './team-creation/team-creation.service';
+import {
+  TeamDescriptionSave,
+  TeamRowAction,
+  TeamTableComponent,
+} from './team-table/team-table.component';
 
 // Classic team-list page size (Epic 28, ADR-032 §Decision 3). Bound to the
 // paginator's [rows] and used as the loadTeamsPage size fallback so no magic
@@ -69,21 +52,22 @@ const PAGE_SIZE = 250;
   selector: 'app-home',
   imports: [
     FormsModule,
-    TableModule,
     SelectModule,
     ButtonModule,
-    TagModule,
     CommonModule,
     DialogModule,
-    InputTextModule,
     ToggleSwitchModule,
     NamespacePanelComponent,
     TeamMetadataModalComponent,
-    TeamMetadataPipe,
     TeamFilterComponent,
+    TeamTableComponent,
   ],
   templateUrl: './home.component.html',
   styleUrl: './home.component.scss',
+  // ONE gate per page mount, not a root singleton. The dialog's state must die
+  // with this component: a root-scoped gate would carry a captured namespace
+  // and an open dialog across a navigation away and back.
+  providers: [TeamCreationService],
 })
 export class HomeComponent {
   apiService: ApiService = inject(ApiService);
@@ -93,15 +77,18 @@ export class HomeComponent {
   authService: AuthService = inject(AuthService);
   private config = inject(ConfigService);
 
+  /**
+   * The creation gate. PUBLIC because the template binds the dialog straight to
+   * it — the page renders `<app-team-metadata-modal>` but owns none of its
+   * state, and both creation paths ask the gate rather than deciding for
+   * themselves.
+   */
+  creation = inject(TeamCreationService);
+
   // Catalog namespaces for the team creation dropdown
   namespaces$ = new BehaviorSubject<NamespaceSummary[]>([]);
   selectedNamespace$ = new BehaviorSubject<NamespaceSummary | null>(null);
-  isCreatingTeam = false;
   isRefreshing = false;
-  stoppingTeams = new Set<string>();
-  restoringTeams = new Set<string>();
-  editingDescriptionFor: string | null = null;
-  descriptionDrafts = new Map<string, string>();
 
   // Classic paginator state (Epic 28). `rows` feeds [rows]; `first` is the
   // row offset the paginator is parked on; `currentPage` (1-based) is tracked
@@ -146,8 +133,6 @@ export class HomeComponent {
     map((u) => u?.roles?.includes('admin') === true),
   );
 
-  @ViewChildren('descriptionInput') descriptionInputs!: QueryList<ElementRef>;
-
   // @ViewChild on the @defer-rendered panel. The reference is `undefined`
   // until the user opens the dialog (the @defer block only mounts the child
   // when `namespacePanelVisible` flips true), so the close handler MUST
@@ -156,45 +141,10 @@ export class HomeComponent {
   @ViewChild(NamespacePanelComponent)
   namespacePanel?: NamespacePanelComponent;
 
-  // -----------------------------------------------------------------------
-  // Team-metadata modal host state.
-  //
-  // The modal is purely presentational: it renders the contract and emits the
-  // answers. Everything below is the host's half — which namespace the user
-  // answered FOR, which creation path is waiting on the answer, and what the
-  // server said if it refused.
-  // -----------------------------------------------------------------------
-
-  metadataModalVisible = false;
-  metadataContract: TeamMetadataContract | null = null;
-
-  // The namespace and its label are CAPTURED when the modal opens, never read
-  // back off `selectedNamespace$`. The dropdown stays live behind the dialog,
-  // so re-reading the selection in the confirm handler would create a team for
-  // whatever is selected THEN — not what the header said and not what the user
-  // answered.
-  metadataNamespace: string | null = null;
-  metadataNamespaceLabel = '';
-
-  // The server's 422 message. Non-null keeps the modal open with an inline
-  // explanation; every other failure leaves it null (FetchService has already
-  // toasted, so a second message would double up).
-  metadataError: string | null = null;
-
-  // A confirmed create is in flight — locks the modal's controls. Distinct
-  // from `isCreatingTeam`, which is the page's Create-button spinner and must
-  // NOT turn merely because a dialog is open.
-  metadataSubmitting = false;
-
-  // A modal confirm is only meaningful while a namespace is captured; the
-  // destination is always the new team's process view, so no mode is kept.
-  private pendingCreation = false;
-
-  // Expose isRunning to template
-  isRunning = isRunning;
-
-  // `trackBy` for the Metadata column's chips. See the pipe.
-  trackMetadataEntry = trackMetadataEntry;
+  // The team-metadata dialog's host state is NOT here. It belongs to
+  // `TeamCreationService` — which namespace the user answered FOR, what the
+  // server said if it refused, and whether the Create button is spinning. The
+  // page renders the element and binds it to the gate; it owns none of it.
 
   // -----------------------------------------------------------------------
   // The filter bar (Epic 48).
@@ -311,17 +261,12 @@ export class HomeComponent {
     if (!teams || teams.length === 0) {
       const selected = this.selectedNamespace$.value;
       if (selected) {
-        // Gated like every other creation path. This one runs with NO user
-        // gesture, so skipping the modal here is precisely how a mandatory
-        // field would go unfilled without anyone noticing: when the namespace
-        // asks something, open the dialog and return — ngOnInit completes with
-        // no team created, and the answer (or the cancel) decides.
-        const contract = this.metadataContractOf(selected);
-        if (contract) {
-          this.openMetadataModal(selected, contract);
-          return;
-        }
-        await this.createAndNavigate(selected.namespace);
+        // Gated like every other creation path, and the gate is TOLD which one
+        // this is. `'auto'` runs with NO user gesture, so it must still ask —
+        // skipping the dialog here is precisely how a mandatory field would go
+        // unfilled without anyone noticing — and it must NOT spin the Create
+        // button, which nobody pressed.
+        await this.creation.request(selected, 'auto');
       }
       return;
     }
@@ -389,21 +334,6 @@ export class HomeComponent {
     } catch (error) {
       console.error('Failed to load namespaces:', error);
     }
-  }
-
-  /**
-   * Does this namespace ask anything before its team can be created?
-   *
-   * The ONE place the three no-ask states are collapsed. `null` (the team
-   * declares no contract), `undefined` (a server predating the field omits the
-   * key, and even a current server's OpenAPI leaves it out of `required`, so a
-   * generated client types it possibly-undefined) and a declared contract with
-   * an empty `fields` list all mean "ask nothing". GATING ON `=== null` ALONE
-   * IS A BUG — the test is falsiness, plus the empty-fields collapse.
-   */
-  private metadataContractOf(ns: NamespaceSummary): TeamMetadataContract | null {
-    const contract = ns.team_metadata;
-    return contract && contract.fields.length > 0 ? contract : null;
   }
 
   // -----------------------------------------------------------------------
@@ -588,207 +518,77 @@ export class HomeComponent {
    */
   private restoreNamespace: string | null = null;
 
-
-
   /**
-   * Create and go to the new team's process view. EVERY creation path lands
-   * here — with or without the metadata modal, gestured or not — because a
-   * user who just created a team wants to be IN it, not looking at its row.
-   * `contextService.createTeamAndNavigate` creates, seeds the team into the
-   * context cache (so the process view has it before any refetch), and
-   * navigates; there is no reload compensation because the home page is being
-   * left behind.
-   *
-   * `metadata` is forwarded UNCONDITIONALLY, including when `undefined`. The
-   * "attach the key only when non-empty" rule lives in exactly one place,
-   * `apiService.createTeam`; forwarding `undefined` produces the same body by
-   * construction.
-   *
-   * Rejections propagate: the modal path needs to see a 422 to keep itself
-   * open, so the swallow-and-log lives in the caller.
+   * The Create button's handler. The no-selection guard is the PAGE's — the
+   * dropdown is the page's control and an empty one is not a creation the gate
+   * should ever hear about. Everything past it belongs to the gate: whether
+   * this team type asks something first, the dialog if it does, the POST if it
+   * does not, and the spinner while that POST runs.
    */
-  private async createAndNavigate(
-    namespace: string,
-    metadata?: Record<string, string>,
-  ): Promise<void> {
-    await this.contextService.createTeamAndNavigate(namespace, metadata);
-  }
-
-  async createTeam() {
+  async createTeam(): Promise<void> {
     const selected = this.selectedNamespace$.value;
     if (!selected) {
       console.warn('No namespace selected');
       return;
     }
-    const contract = this.metadataContractOf(selected);
-    if (contract) {
-      // Ask first. No POST, and no spinner while the dialog is open.
-      this.openMetadataModal(selected, contract);
-      return;
-    }
-    // The spinner doubles as the double-click guard; it wraps the POST only,
-    // never the dialog. Cleared in `finally` even though navigation usually
-    // unmounts this page first — a rejected create must re-arm the button.
-    this.isCreatingTeam = true;
-    try {
-      await this.createAndNavigate(selected.namespace);
-    } catch (error) {
-      console.error('Failed to create team:', error);
-    } finally {
-      this.isCreatingTeam = false;
-    }
-  }
-
-  /**
-   * Open the metadata dialog for `ns`, capturing the namespace AND its label
-   * at open time (the dropdown stays live behind the dialog).
-   *
-   * Deliberately does NOT touch `isCreatingTeam`: the Create button must not
-   * spin for as long as the dialog is open, nor keep spinning after Cancel.
-   */
-  private openMetadataModal(
-    ns: NamespaceSummary,
-    contract: TeamMetadataContract,
-  ): void {
-    this.metadataNamespace = ns.namespace;
-    this.metadataNamespaceLabel = ns.name || ns.namespace;
-    this.metadataContract = contract;
-    this.metadataError = null;
-    this.metadataSubmitting = false;
-    this.pendingCreation = true;
-    this.metadataModalVisible = true;
-  }
-
-  /**
-   * `(confirmed)` handler. Dispatches to the same shared body the un-gated
-   * branch of the originating path would have run, with the namespace captured
-   * at open time.
-   *
-   * On success the modal closes and the host state resets. On ANY failure it
-   * stays open with the user's input intact — closing on a network blip would
-   * discard everything typed, and Cancel is always available, so the user is
-   * never trapped.
-   */
-  async onMetadataConfirm(metadata: Record<string, string>): Promise<void> {
-    const namespace = this.metadataNamespace;
-    if (namespace === null || !this.pendingCreation) {
-      return;
-    }
-    this.metadataSubmitting = true;
-    this.metadataError = null;
-    try {
-      await this.createAndNavigate(namespace, metadata);
-      this.closeMetadataModal();
-    } catch (error) {
-      this.handleMetadataCreateError(error);
-    } finally {
-      this.metadataSubmitting = false;
-    }
-  }
-
-  /** `(cancelled)` handler. Creates nothing and leaves `isCreatingTeam` alone. */
-  onMetadataCancel(): void {
-    this.closeMetadataModal();
-  }
-
-  private closeMetadataModal(): void {
-    this.metadataModalVisible = false;
-    this.metadataContract = null;
-    this.metadataNamespace = null;
-    this.metadataNamespaceLabel = '';
-    this.metadataError = null;
-    this.pendingCreation = false;
-  }
-
-  /**
-   * A rejected create keeps the modal open either way; only the 422 carries a
-   * message worth rendering, because it names the offending field and the user
-   * cannot correct anything without it. Every other failure has ALREADY been
-   * toasted by FetchService, so nothing is added here — no second message, no
-   * new error type, no retry.
-   */
-  private handleMetadataCreateError(error: unknown): void {
-    const status = (error as { status?: number })?.status;
-    if (status === 422) {
-      // An extraction that comes back empty — an empty response body, which
-      // `FetchService` hands over as `''`, or a `{"detail": []}` envelope —
-      // must NOT become an empty alert region. `errorMessage` is rendered on
-      // `!== null`, so `''` would paint an empty red box and announce an empty
-      // `role="alert"`. Nothing to say means say nothing, as for any other
-      // failure; the modal still stays open with the input intact.
-      const message = this.metadataErrorMessage((error as HttpError).body);
-      this.metadataError = message.trim() === '' ? null : message;
-      return;
-    }
-    // Every non-422 failure has ALREADY been toasted by FetchService —
-    // nothing to add here.
-    this.metadataError = null;
-  }
-
-  /**
-   * Extract a renderable message from an `HttpError.body`, which is the parsed
-   * JSON when the server sent JSON and the raw text otherwise. Three shapes
-   * reach here from the create endpoint: a bare string, a `{detail: "..."}`
-   * envelope, and FastAPI/Pydantic's `{detail: [{loc, msg}, ...]}` list — the
-   * one that names the offending field, rendered one line per entry as
-   * "<last loc segment>: <msg>". Anything else is shown verbatim.
-   */
-  private metadataErrorMessage(body: unknown): string {
-    if (typeof body === 'string') {
-      return body;
-    }
-    const detail = (body as { detail?: unknown } | null)?.detail;
-    if (typeof detail === 'string') {
-      return detail;
-    }
-    if (Array.isArray(detail)) {
-      return detail.map((entry) => this.metadataErrorLine(entry)).join('\n');
-    }
-    return JSON.stringify(body);
-  }
-
-  /** One `{loc, msg}` entry as "<field>: <msg>", or just the message. */
-  private metadataErrorLine(entry: unknown): string {
-    const loc = (entry as { loc?: unknown })?.loc;
-    const msg = (entry as { msg?: unknown })?.msg;
-    const message = typeof msg === 'string' ? msg : JSON.stringify(entry);
-    const field =
-      Array.isArray(loc) && loc.length > 0 ? String(loc[loc.length - 1]) : '';
-    return field === '' ? message : `${field}: ${message}`;
+    await this.creation.request(selected, 'gesture');
   }
 
   async deleteTeam(teamId: string) {
     await this.contextService.deleteTeam(teamId);
   }
 
+  /**
+   * `(restoreRequested)` handler. The table asked; the page performs, and hands
+   * the work straight back so the row it came from stays busy for exactly as
+   * long as it runs — rejection included. Nothing here knows which row is
+   * marked; that is the table's business.
+   */
+  onRestoreRequested(action: TeamRowAction): void {
+    action.track(this.restoreTeam(action.teamId));
+  }
+
+  /** `(stopRequested)` handler. As `onRestoreRequested`. */
+  onStopRequested(action: TeamRowAction): void {
+    action.track(this.stopTeam(action.teamId));
+  }
+
+  /**
+   * LOGS, then re-throws. The row clears its mark either way, so the rejection
+   * is not what unwinds the spinner — but the table CONSUMES it (`then(clear,
+   * clear)`), so without this `console.error` a failed restore leaves no trace
+   * anywhere: the spinner stops, nothing changes on screen, and nothing is
+   * reported. Every action on this page logs its own failure; that is the rule,
+   * and whether it also re-throws depends only on whether the row needs to know
+   * (`saveDescription` does — it is holding the user's text; these two do not).
+   */
   async restoreTeam(teamId: string) {
-    this.restoringTeams.add(teamId);
     try {
       await this.apiService.restoreTeam(teamId);
       // Reload the current page (REPLACE — no empty flash); no page jump.
       await this.contextService.loadTeamsPage(this.currentPage, PAGE_SIZE);
-    } finally {
-      this.restoringTeams.delete(teamId);
+    } catch (error) {
+      console.error(`Failed to restore team ${teamId}:`, error);
+      throw error;
     }
   }
 
-  isRestoring(teamId: string): boolean {
-    return this.restoringTeams.has(teamId);
-  }
-
+  /**
+   * LOGS and RESOLVES. Nothing downstream needs the rejection: the row clears
+   * its mark on either outcome and there is no on-screen state to preserve, so
+   * absorbing it here keeps the one caller's contract simple.
+   *
+   * It is NOT absorbed to avoid an unhandled rejection — the table's `track`
+   * consumes both arms, so re-throwing would surface nowhere either. The
+   * difference between this and `restoreTeam` is a caller's need, not a hazard;
+   * what must never differ is that both LOG.
+   */
   async stopTeam(teamId: string) {
-    this.stoppingTeams.add(teamId);
     try {
       await this.contextService.stopTeamAndAwait(teamId);
     } catch (error) {
       console.error(`Failed to stop team ${teamId}:`, error);
-    } finally {
-      this.stoppingTeams.delete(teamId);
     }
-  }
-
-  isStopping(teamId: string): boolean {
-    return this.stoppingTeams.has(teamId);
   }
 
   async refreshContext() {
@@ -801,49 +601,45 @@ export class HomeComponent {
     }
   }
 
-  onRowSelect(event: any) {
-    const teamId = event.data.team_id;
+  /** `(rowSelected)` handler. A row was picked; this page decides that means go. */
+  onRowSelect(teamId: string) {
     this.router.navigate(['/process', teamId]);
   }
 
-  startEditDescription(teamId: string, currentDescription: string | null) {
-    this.editingDescriptionFor = teamId;
-    this.descriptionDrafts.set(teamId, currentDescription || '');
-
-    // Focus the input field after the view updates
-    setTimeout(() => {
-      const input = this.descriptionInputs?.first?.nativeElement;
-      if (input) {
-        input.focus();
-        input.select();
-      }
-    }, 0);
+  /**
+   * `(descriptionSaved)` handler. The table has already trimmed the draft and
+   * turned an empty one into `null`; the page performs the write and hands the
+   * work back, so the editor closes on success and stays open — with the typed
+   * text — on failure.
+   */
+  onDescriptionSaved(save: TeamDescriptionSave): void {
+    save.track(this.saveDescription(save.teamId, save.description));
   }
 
-  cancelEditDescription() {
-    this.editingDescriptionFor = null;
-  }
-
-  async saveDescription(teamId: string) {
-    const description = this.descriptionDrafts.get(teamId) || null;
-    const trimmed = description?.trim() || null;
-
+  /**
+   * Persist a description, already trimmed by the caller.
+   *
+   * RE-THROWS after logging rather than swallowing. The failure is not this
+   * page's alone to absorb any more: the table is holding an open editor with
+   * the user's text in it, and a resolved promise would tell it the save
+   * succeeded and take the text away.
+   */
+  async saveDescription(teamId: string, description: string | null) {
     try {
       // Note: updateTeamDescription is a no-op in V2 (no equivalent endpoint).
       // Description changes will not persist. This is a known limitation.
       console.warn(
         'Description editing is not available in V2 -- changes will not persist.'
       );
-      await this.apiService.updateTeamDescription(teamId, trimmed);
+      await this.apiService.updateTeamDescription(teamId, description);
 
       // Update local context optimistically. The service owns its cache and
       // writes a NEW team object through its single write path — an in-place
       // write here re-emitted nothing and left the screen stale (story 37-3).
-      this.contextService.setTeamDescription(teamId, trimmed);
-
-      this.editingDescriptionFor = null;
+      this.contextService.setTeamDescription(teamId, description);
     } catch (error) {
       console.error('Failed to update description:', error);
+      throw error;
     }
   }
 

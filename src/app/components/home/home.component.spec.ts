@@ -10,7 +10,6 @@ import {
   ParamMap,
   Router,
 } from '@angular/router';
-import { Table } from 'primeng/table';
 import { BehaviorSubject, of } from 'rxjs';
 
 import { ApiService } from '../../core/http/api.service';
@@ -30,7 +29,13 @@ import {
   TeamMetadataContract,
 } from '../../protocol/catalog.interface';
 import { HomeComponent } from './home.component';
+import { TeamCreationService } from './team-creation/team-creation.service';
 import { TeamMetadataModalComponent } from './team-metadata-modal/team-metadata-modal.component';
+import {
+  TeamDescriptionSave,
+  TeamRowAction,
+  TeamTableComponent,
+} from './team-table/team-table.component';
 
 /**
  * A `NamespaceSummary` fixture carrying neutral values for every field these
@@ -265,7 +270,13 @@ describe('HomeComponent', () => {
     expect((component as any).context).toBeUndefined();
   });
 
-  it('(AC6) template renders one row per team emitted on teams$', async () => {
+  it('(AC6) teams$ reaches the table through [teams] and renders a row each', async () => {
+    // The page's half of the row-rendering contract after the extraction: what
+    // the service emits arrives at `<app-team-table [teams]>` and comes out as
+    // rows. The REAL child renders here — stubbing it would leave this spec
+    // asserting that a stub does nothing. What a row LOOKS like (its six
+    // columns, its chips, its status tag) is the child's own spec.
+    //
     // Render first so the lazy table's initial (onLazyLoad) seed fires; then
     // push the page into teams$ (mirrors a real page arrival — REPLACE).
     fixture.detectChanges();
@@ -292,44 +303,9 @@ describe('HomeComponent', () => {
     void rows;
   });
 
-  // --- Metadata column -------------------------------------------------
-
-  it('renders one metadata chip per answered field, label and value', async () => {
-    fixture.detectChanges();
-    await fixture.whenStable();
-    teams$.next([
-      makeTeam({ team_id: 't-1', metadata: { case_id: 'C-1234', tenant: 'acme' } }),
-    ]);
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    const chips = Array.from(
-      fixture.nativeElement.querySelectorAll('.team-metadata-chip'),
-    ) as HTMLElement[];
-    expect(chips.length).toBe(2);
-    expect(chips[0].textContent).toContain('Case id');
-    expect(chips[0].textContent).toContain('C-1234');
-    expect(chips[1].textContent).toContain('Tenant');
-    expect(chips[1].textContent).toContain('acme');
-  });
-
-  it('leaves the metadata cell EMPTY for a team carrying none', async () => {
-    // No dash, no "None" — every team predating a namespace contract is in
-    // this state, and a placeholder repeated down the page reads as a load
-    // failure rather than as an absent contract.
-    fixture.detectChanges();
-    await fixture.whenStable();
-    teams$.next([makeTeam({ team_id: 't-1', metadata: null })]);
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    const cell = fixture.nativeElement.querySelector('.team-metadata-cell');
-    expect(cell).not.toBeNull();
-    expect(cell.querySelectorAll('.team-metadata-chip').length).toBe(0);
-    expect((cell.textContent as string).trim()).toBe('');
-  });
+  // The Metadata column's own specs — one chip per answered field, and an
+  // EMPTY cell for a team carrying none — moved with the markup into
+  // team-table.component.spec.ts.
 
   it('(AC6, AC9) pushing a new list into teams$ triggers a re-render', async () => {
     fixture.detectChanges();
@@ -365,7 +341,7 @@ describe('HomeComponent', () => {
     expect((component as any).context).toBeUndefined();
   });
 
-  it('(AC4 10.4) createTeam delegates to contextService.createTeamAndNavigate with no reload compensation', async () => {
+  it('(AC4 10.4) createTeam reaches createTeamAndNavigate through the gate, with no reload compensation', async () => {
     const ns = nsSummary('cat-1', 'Cat One', 'first cat');
     component.selectedNamespace$.next(ns);
     // The component has not invoked ngOnInit yet (no detectChanges in this
@@ -402,7 +378,7 @@ describe('HomeComponent', () => {
     expect(component.selectedNamespace$.value?.namespace).toBe('agent-team-v1');
   });
 
-  it('(AC3 1.9) createTeam passes selected.namespace (not an id lookup)', async () => {
+  it('(AC3 1.9) createTeam hands the gate the SELECTED summary, whose namespace is created (not an id lookup)', async () => {
     component.selectedNamespace$.next(
       nsSummary('rag-team-v1', 'RAG Team', 'With RAG'),
     );
@@ -441,26 +417,67 @@ describe('HomeComponent', () => {
     expect(contextSpy.getTeams).not.toHaveBeenCalled();
   });
 
-  it('(AC5 10.5) stopTeam tracks the teamId in stoppingTeams across the await boundary', async () => {
-    let resolveStop: (() => void) | null = null;
-    const pending = new Promise<void>((resolve) => {
-      resolveStop = resolve;
-    });
-    contextSpy.stopTeamAndAwait.and.returnValue(pending);
+  // The in-flight MARK is no longer the page's: `stoppingTeams` /
+  // `restoringTeams` live in the table, where "this row is busy" is per-row
+  // view state. What the page still owns is performing the work and handing it
+  // straight back, which is what these two assert. The mark's own behaviour —
+  // set on request, cleared when the work settles INCLUDING on rejection, and
+  // independent per row — is asserted in team-table.component.spec.ts.
 
-    const stopPromise = component.stopTeam('team-A');
+  /** Collects whatever the page hands back through a `TeamRowAction.track`. */
+  function trackingAction(teamId: string): {
+    action: TeamRowAction;
+    tracked: Promise<unknown>[];
+  } {
+    const tracked: Promise<unknown>[] = [];
+    return {
+      action: { teamId, track: (work) => tracked.push(work) },
+      tracked,
+    };
+  }
 
-    expect(component.isStopping('team-A')).toBe(true);
-    expect(component.stoppingTeams.has('team-A')).toBe(true);
+  it('(AC5 10.5) onStopRequested performs the stop and hands the work back to track', async () => {
+    const { action, tracked } = trackingAction('team-A');
 
-    resolveStop!();
-    await stopPromise;
+    component.onStopRequested(action);
 
-    expect(component.isStopping('team-A')).toBe(false);
-    expect(component.stoppingTeams.has('team-A')).toBe(false);
+    expect(contextSpy.stopTeamAndAwait).toHaveBeenCalledOnceWith('team-A');
+    // The row is told about the SAME work the page started, so its spinner
+    // lasts exactly as long as the stop does.
+    expect(tracked.length).toBe(1);
+    await expectAsync(tracked[0]).toBeResolved();
   });
 
-  it('(AC6 10.5) stopTeam catches timeout/error and clears the stoppingTeams entry', async () => {
+  it('(AC5 10.5) onRestoreRequested performs the restore and hands the work back', async () => {
+    const { action, tracked } = trackingAction('team-A');
+
+    component.onRestoreRequested(action);
+
+    expect(tracked.length).toBe(1);
+    await tracked[0];
+    expect(apiSpy.restoreTeam).toHaveBeenCalledOnceWith('team-A');
+  });
+
+  it('(AC6 10.5) restoreTeam LOGS its failure before re-throwing', async () => {
+    // The table consumes the rejection to clear the spinner, so this log is the
+    // ONLY trace a failed restore leaves. Without it the row simply stops
+    // spinning and nothing anywhere says the restore did not happen.
+    const consoleErrorSpy = spyOn(console, 'error');
+    apiSpy.restoreTeam.and.returnValue(Promise.reject(new Error('boom')));
+
+    await expectAsync(component.restoreTeam('team-A')).toBeRejected();
+
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    expect(contextSpy.loadTeamsPage).not.toHaveBeenCalledWith(
+      jasmine.anything(),
+      jasmine.anything(),
+    );
+  });
+
+  it('(AC6 10.5) stopTeam catches a timeout/error, logs it, and still resolves', async () => {
+    // The page absorbs the failure and logs it. It must still RESOLVE: the row
+    // clears its mark on either outcome, but a page that re-threw here would
+    // add an unhandled rejection to a failure it has already reported.
     const timeoutErr = Object.assign(new Error('timeout'), {
       name: 'TimeoutError',
     });
@@ -470,42 +487,7 @@ describe('HomeComponent', () => {
 
     await expectAsync(component.stopTeam('team-A')).toBeResolved();
 
-    expect(component.stoppingTeams.has('team-A')).toBe(false);
-    expect(component.isStopping('team-A')).toBe(false);
     expect(consoleErrorSpy).toHaveBeenCalled();
-  });
-
-  it('(AC7 10.5) stopTeam is safe to call concurrently for different teams', async () => {
-    let resolveA: (() => void) | null = null;
-    let resolveB: (() => void) | null = null;
-    contextSpy.stopTeamAndAwait.and.callFake((teamId: string) => {
-      if (teamId === 'team-A')
-        return new Promise<void>((r) => {
-          resolveA = r;
-        });
-      if (teamId === 'team-B')
-        return new Promise<void>((r) => {
-          resolveB = r;
-        });
-      return Promise.resolve();
-    });
-
-    const pA = component.stopTeam('team-A');
-    const pB = component.stopTeam('team-B');
-
-    expect(component.stoppingTeams.has('team-A')).toBe(true);
-    expect(component.stoppingTeams.has('team-B')).toBe(true);
-
-    resolveA!();
-    await pA;
-
-    expect(component.stoppingTeams.has('team-A')).toBe(false);
-    expect(component.stoppingTeams.has('team-B')).toBe(true);
-
-    resolveB!();
-    await pB;
-
-    expect(component.stoppingTeams.has('team-B')).toBe(false);
   });
 
   function editButton(): HTMLButtonElement | null {
@@ -1123,40 +1105,18 @@ describe('HomeComponent', () => {
 
   // --- Epic 28: classic lazy paginated table (view layer) ---
 
-  function paginatorEl(): HTMLElement | null {
-    return fixture.nativeElement.querySelector('p-paginator, .p-paginator');
+  /** The rendered child component instance. */
+  function teamTable(): TeamTableComponent {
+    return fixture.debugElement.query(By.directive(TeamTableComponent))
+      .componentInstance;
   }
 
-  // Reads the rendered PrimeNG Table instance to assert the scroll-contract
-  // inputs (28.3 AC #6a). The scroll body's p-scroller rows may not
-  // materialise deterministically in a detached fixture, so we assert the
-  // binding/configuration, not scraped viewport geometry.
-  function tableInstance(): Table {
-    return fixture.debugElement.query(By.directive(Table)).componentInstance;
-  }
+  // The scroll contract itself — [scrollable], scrollHeight="flex", no virtual
+  // scroll, the page-report template — moved with the <p-table> into
+  // team-table.component.spec.ts. What is left here is the page's half: the
+  // paging state it owns reaches the child's inputs.
 
-  it('(28.3 AC2/AC6a) table is configured scrollable with a flex scroll height and the paginator is present', async () => {
-    contextSpy.totalCount = 1000;
-    totalCount$.next(1000);
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    const table = tableInstance();
-    // The body scrolls within the bounded flex parent (sticky header + bottom
-    // paginator follow); the pager is always reachable without scrolling rows.
-    expect(table.scrollable).toBeTrue();
-    expect(table.scrollHeight).toBe('flex');
-    expect(paginatorEl()).withContext('paginator must render below the scroll body').not.toBeNull();
-  });
-
-  it('(28.3 AC4) table does NOT enable virtual scroll', () => {
-    fixture.detectChanges();
-    const table = tableInstance();
-    expect(table.virtualScroll).toBeFalsy();
-  });
-
-  it('(28.2 AC8a) table renders with a paginator and totalRecords driven by totalCount', async () => {
+  it('(28.2 AC8a) the page feeds totalCount, rows and first into the table', async () => {
     contextSpy.totalCount = 1000;
     totalCount$.next(1000);
     fixture.detectChanges();
@@ -1165,10 +1125,21 @@ describe('HomeComponent', () => {
 
     // The lazy table seeds page 1 on init (loadPage → loadTeamsPage).
     expect(contextSpy.loadTeamsPage).toHaveBeenCalled();
-    // Paginator chrome present; totalRecords reflects the 28.1 totalCount.
-    expect(paginatorEl()).withContext('paginator must render').not.toBeNull();
-    const text = fixture.nativeElement.textContent as string;
-    expect(text).toContain('1000');
+
+    // Turn a page. `first` is set AFTER the seed on purpose: `ngOnInit`'s
+    // restore writes it from the URL, so a value planted before the first
+    // render is overwritten and the assertion would be vacuous.
+    component.first = 250;
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const table = teamTable();
+    expect(table.totalRecords).toBe(1000);
+    expect(table.rows).toBe(component.rows);
+    expect(table.first).toBe(250);
+    // Rendered, not merely bound: the "X–Y of N" report is on screen.
+    expect(fixture.nativeElement.textContent as string).toContain('1000');
   });
 
   it('(28.2 AC8b) loadPage computes page = first / rows + 1 and delegates to loadTeamsPage', async () => {
@@ -1275,10 +1246,18 @@ describe('HomeComponent', () => {
     expect(contextSpy.resetTeams).not.toHaveBeenCalled();
   });
 
-  it('(28.2 AC8f) cell templates work on a paged row: select navigates, status tag, action handlers, inline edit', async () => {
-    spyOn(component, 'stopTeam').and.callThrough();
-    spyOn(component, 'deleteTeam').and.callThrough();
+  // -------------------------------------------------------------------------
+  // What the child asks for, the page performs (28.2 AC8f, split).
+  //
+  // The single spec these replace asserted FIVE behaviours at once — row
+  // select, the status tag, two action handlers and the inline editor. Split
+  // carelessly into one child spec it would have dropped four of them, so each
+  // is now its own `it` on the side that owns it: the page's four delegations
+  // here, the status tag and the editor's open/cancel in
+  // team-table.component.spec.ts.
+  // -------------------------------------------------------------------------
 
+  it('(28.2 AC8f) a paged row still renders, and (rowSelected) navigates to it', async () => {
     fixture.detectChanges();
     await fixture.whenStable();
     // Render a known running row (REPLACE the seed page).
@@ -1289,31 +1268,136 @@ describe('HomeComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    const text = fixture.nativeElement.textContent as string;
-    expect(text).toContain('row-1');
-    // Status tag reflects running state.
-    expect(text).toContain('Running');
+    expect(fixture.nativeElement.textContent as string).toContain('row-1');
 
-    // Row select → navigate to /process/{team_id}.
-    component.onRowSelect({ data: { team_id: 'row-1' } });
+    // The child emits the team_id; navigating is this page's decision.
+    component.onRowSelect('row-1');
+
     expect(routerSpy.navigate).toHaveBeenCalledWith(['/process', 'row-1']);
+  });
 
-    // Action handlers invoke the right delegations on a paged row.
+  it('(28.2 AC8f) (deleteRequested) delegates to contextService.deleteTeam', async () => {
     await component.deleteTeam('row-1');
-    expect(contextSpy.deleteTeam).toHaveBeenCalledWith('row-1');
-    await component.stopTeam('row-1');
-    expect(contextSpy.stopTeamAndAwait).toHaveBeenCalledWith('row-1');
 
-    // Inline description edit: open / save / cancel.
-    component.startEditDescription('row-1', 'old');
-    expect(component.editingDescriptionFor).toBe('row-1');
-    expect(component.descriptionDrafts.get('row-1')).toBe('old');
-    await component.saveDescription('row-1');
-    expect(apiSpy.updateTeamDescription).toHaveBeenCalled();
-    expect(component.editingDescriptionFor).toBeNull();
-    component.startEditDescription('row-1', 'again');
-    component.cancelEditDescription();
-    expect(component.editingDescriptionFor).toBeNull();
+    expect(contextSpy.deleteTeam).toHaveBeenCalledWith('row-1');
+  });
+
+  it('(28.2 AC8f) (stopRequested) delegates to contextService.stopTeamAndAwait', async () => {
+    await component.stopTeam('row-1');
+
+    expect(contextSpy.stopTeamAndAwait).toHaveBeenCalledWith('row-1');
+  });
+
+  it('(28.2 AC8f) (descriptionSaved) reaches the API', async () => {
+    await component.saveDescription('row-1', 'old');
+
+    expect(apiSpy.updateTeamDescription).toHaveBeenCalledWith('row-1', 'old');
+  });
+
+  // -------------------------------------------------------------------------
+  // The BINDINGS themselves, driven from the child's outputs.
+  //
+  // The four specs above call the page's methods directly, which proves the
+  // page still does the right thing but says nothing about whether the child
+  // is still WIRED to it. Deleting `(rowSelected)`, `(stopRequested)`,
+  // `(restoreRequested)`, `(deleteRequested)` and `(descriptionSaved)` from
+  // home.component.html leaves every one of them green — the extraction's own
+  // seam, unguarded. These emit from the REAL rendered child instead, so a
+  // binding lost in a rename or a merge goes red here.
+  //
+  // `(lazyLoad)` needs no spec of its own: the seed-load counts above already
+  // originate inside the child and travel through it.
+  // -------------------------------------------------------------------------
+
+  /** Render the page with one known running row, and return the real child. */
+  async function renderedTable(): Promise<TeamTableComponent> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    teams$.next([makeTeam({ team_id: 'row-1', status: 'running' })]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return teamTable();
+  }
+
+  it('(AC3) the child\'s (rowSelected) is bound to the page\'s navigation', async () => {
+    const table = await renderedTable();
+
+    table.rowSelected.emit('row-1');
+
+    expect(routerSpy.navigate).toHaveBeenCalledWith(['/process', 'row-1']);
+  });
+
+  it('(AC7) the child\'s (deleteRequested) is bound to deleteTeam', async () => {
+    const table = await renderedTable();
+
+    table.deleteRequested.emit('row-1');
+    await fixture.whenStable();
+
+    expect(contextSpy.deleteTeam).toHaveBeenCalledWith('row-1');
+  });
+
+  it('(AC4) the child\'s (stopRequested) is bound, and the work comes back', async () => {
+    const table = await renderedTable();
+    const { action, tracked } = trackingAction('row-1');
+
+    table.stopRequested.emit(action);
+
+    expect(contextSpy.stopTeamAndAwait).toHaveBeenCalledWith('row-1');
+    // Bound to `onStopRequested`, not to `stopTeam` — only the former hands
+    // the work back, and a row that is never told stays busy forever.
+    expect(tracked.length).toBe(1);
+    await tracked[0];
+  });
+
+  it('(AC6) the child\'s (restoreRequested) is bound, and the work comes back', async () => {
+    const table = await renderedTable();
+    const { action, tracked } = trackingAction('row-1');
+
+    table.restoreRequested.emit(action);
+
+    expect(tracked.length).toBe(1);
+    await tracked[0];
+    expect(apiSpy.restoreTeam).toHaveBeenCalledWith('row-1');
+  });
+
+  it('(AC11) the child\'s (descriptionSaved) is bound, and the work comes back', async () => {
+    const table = await renderedTable();
+    const tracked: Promise<unknown>[] = [];
+
+    table.descriptionSaved.emit({
+      teamId: 'row-1',
+      description: 'fresh',
+      track: (work) => tracked.push(work),
+    });
+
+    expect(tracked.length).toBe(1);
+    await tracked[0];
+    expect(apiSpy.updateTeamDescription).toHaveBeenCalledWith('row-1', 'fresh');
+  });
+
+  it('(AC17) the page no longer owns any of the table\'s row state', () => {
+    // Not tidiness: each of these left behind on the page is a second place the
+    // same state can be written, and the two would drift the moment one of them
+    // is updated. `descriptionInputs` in particular resolves to nothing here —
+    // its markup is in the child — so it would be a silently dead query.
+    for (const member of [
+      'stoppingTeams',
+      'restoringTeams',
+      'isStopping',
+      'isRestoring',
+      'editingDescriptionFor',
+      'descriptionDrafts',
+      'startEditDescription',
+      'cancelEditDescription',
+      'descriptionInputs',
+      'trackMetadataEntry',
+      'isRunning',
+    ]) {
+      expect((component as unknown as Record<string, unknown>)[member])
+        .withContext(`HomeComponent must no longer declare ${member}`)
+        .toBeUndefined();
+    }
   });
 
   // -------------------------------------------------------------------------
@@ -1328,16 +1412,24 @@ describe('HomeComponent', () => {
   // -------------------------------------------------------------------------
 
   describe('saveDescription delegation (Story 37-3 AC6)', () => {
-    it('delegates the trimmed description to ContextService', async () => {
+    it('forwards the description it is given, VERBATIM', async () => {
+      // The trim-and-null rule travels with the draft: the table applies it and
+      // emits the finished value. The page applying it a SECOND time would be a
+      // second place the rule lives, and the two would drift. Passed a value
+      // that is still padded, the page must forward the padding rather than
+      // quietly repair it.
       const team = makeTeam({ team_id: 'row-1', description: 'before' });
       teams$.next([team]);
 
-      component.startEditDescription('row-1', '  spaced out  ');
-      await component.saveDescription('row-1');
+      await component.saveDescription('row-1', '  spaced out  ');
 
       expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith(
         'row-1',
-        'spaced out',
+        '  spaced out  ',
+      );
+      expect(apiSpy.updateTeamDescription).toHaveBeenCalledWith(
+        'row-1',
+        '  spaced out  ',
       );
     });
 
@@ -1345,8 +1437,7 @@ describe('HomeComponent', () => {
       const team = makeTeam({ team_id: 'row-1', description: 'before' });
       teams$.next([team]);
 
-      component.startEditDescription('row-1', 'after');
-      await component.saveDescription('row-1');
+      await component.saveDescription('row-1', 'after');
 
       // `setTeamDescription` is a stub here, so the only way this object could
       // have changed is the component mutating it — which is the defect.
@@ -1354,38 +1445,61 @@ describe('HomeComponent', () => {
       expect(teams$.value[0].description).toBe('before');
     });
 
-    it('sends null for an empty draft rather than an empty string', async () => {
+    it('forwards a null description as null', async () => {
+      // The empty-draft case, arriving already resolved to `null` by the table.
       teams$.next([makeTeam({ team_id: 'row-1', description: 'before' })]);
 
-      component.startEditDescription('row-1', '   ');
-      await component.saveDescription('row-1');
+      await component.saveDescription('row-1', null);
 
       expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith('row-1', null);
     });
 
-    it('still calls the API and clears the editing row on success', async () => {
+    it('calls the API BEFORE the cache, and resolves on success', async () => {
       teams$.next([makeTeam({ team_id: 'row-1' })]);
 
-      component.startEditDescription('row-1', 'fresh');
-      await component.saveDescription('row-1');
+      await expectAsync(
+        component.saveDescription('row-1', 'fresh'),
+      ).toBeResolved();
 
       expect(apiSpy.updateTeamDescription).toHaveBeenCalledWith('row-1', 'fresh');
-      expect(component.editingDescriptionFor).toBeNull();
+      expect(contextSpy.setTeamDescription).toHaveBeenCalledWith('row-1', 'fresh');
     });
 
-    it('swallows an API failure, leaving the editing row open and the cache alone', async () => {
+    it('LOGS AND RE-THROWS an API failure, leaving the cache alone', async () => {
+      // It used to swallow, and cleared the editing row itself. Neither is
+      // possible now: the editor belongs to the table, and the only way to tell
+      // it a save failed — so it can keep the typed text on screen — is to
+      // reject the work it is tracking. A resolved promise here would close the
+      // editor and throw the user's text away on every failed save.
       apiSpy.updateTeamDescription.and.returnValue(
         Promise.reject(new Error('boom')),
       );
+      const consoleErrorSpy = spyOn(console, 'error');
       teams$.next([makeTeam({ team_id: 'row-1' })]);
 
-      component.startEditDescription('row-1', 'fresh');
-      await component.saveDescription('row-1');
+      await expectAsync(
+        component.saveDescription('row-1', 'fresh'),
+      ).toBeRejected();
 
       // The API call is awaited BEFORE the delegation, so a rejection means the
-      // cache is never touched and the row stays in edit mode.
+      // cache is never touched.
       expect(contextSpy.setTeamDescription).not.toHaveBeenCalled();
-      expect(component.editingDescriptionFor).toBe('row-1');
+      expect(consoleErrorSpy).toHaveBeenCalled();
+    });
+
+    it('onDescriptionSaved hands the write back to the row that asked for it', async () => {
+      const tracked: Promise<unknown>[] = [];
+      const save: TeamDescriptionSave = {
+        teamId: 'row-1',
+        description: 'fresh',
+        track: (work) => tracked.push(work),
+      };
+
+      component.onDescriptionSaved(save);
+
+      expect(tracked.length).toBe(1);
+      await tracked[0];
+      expect(apiSpy.updateTeamDescription).toHaveBeenCalledWith('row-1', 'fresh');
     });
   });
 
@@ -1422,7 +1536,7 @@ describe('HomeComponent', () => {
       expect(routerSpy.navigate).toHaveBeenCalledWith(['/process', 'team-page-1']);
     });
 
-    it('creates a team when the seeded page is empty', async () => {
+    it('creates a team through the gate, as an `auto` request, when the seeded page is empty', async () => {
       // loadNamespaces must keep the selection present (else reconciliation
       // clears it to null and the create branch has no namespace to use).
       apiSpy.getNamespaces.and.returnValue(
@@ -1451,347 +1565,23 @@ describe('HomeComponent', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Story 43.2 — the creation modal gates all three creation paths.
+  // Story 49.2 — the creation gate, from the PAGE's side.
   //
-  // These specs drive the gate through the component's methods and host state,
-  // NOT through the child modal's DOM: the child's markup is covered by its own
-  // spec, and coupling the host spec to it would make both brittle.
+  // What the gate DECIDES — the three no-ask states, the two origins, the
+  // spinner rule, the 422 shapes, capture-at-open — is
+  // `team-creation.service.spec.ts`, which runs without a page at all. Nothing
+  // here re-tests it.
+  //
+  // What is left is the page's own half, and it is exactly the half 49-1's
+  // review found missing: that the page ROUTES THROUGH the gate rather than
+  // creating for itself, and that the gate's state and the modal's answers
+  // actually travel across the seven template bindings. Every spec below drives
+  // the RENDERED page and the REAL modal; driving `creation.request` directly
+  // would prove nothing about the wiring.
   // -------------------------------------------------------------------------
 
-  describe('metadata gate (43.2)', () => {
+  describe('the creation gate, from the page (49.2)', () => {
     const asking = contract([field('tenant', { mandatory: true })]);
-
-    it('(AC9) createTeam with no contract creates immediately, with no metadata payload', async () => {
-      component.selectedNamespace$.next(
-        nsSummary('agent-team-v1', 'Agent Team', 'd'),
-      );
-      component.currentPage = 4;
-      component.first = 750;
-      contextSpy.createTeamAndNavigate.calls.reset();
-      contextSpy.loadTeamsPage.calls.reset();
-
-      await component.createTeam();
-
-      expect(component.metadataModalVisible).toBeFalse();
-      // The two-argument form 43.1 pins to today's byte-for-byte body.
-      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args).toEqual([
-        'agent-team-v1',
-        undefined,
-      ]);
-      // The page is being LEFT for the process view: no reload, no
-      // paginator jump — both would be wasted work racing the navigation.
-      expect(component.first).toBe(750);
-      expect(component.currentPage).toBe(4);
-      expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
-    });
-
-    it('(AC9, AC13) createTeam with a contract opens the modal, creates nothing, and does not spin', async () => {
-      component.selectedNamespace$.next(
-        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
-      );
-      contextSpy.createTeamAndNavigate.calls.reset();
-
-      await component.createTeam();
-
-      expect(component.metadataModalVisible).toBeTrue();
-      expect(component.metadataContract).toBe(asking);
-      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
-      expect(component.isCreatingTeam).toBeFalse();
-    });
-
-    it('(AC10) createTeam with no contract navigates immediately', async () => {
-      component.selectedNamespace$.next(
-        nsSummary('agent-team-v1', 'Agent Team', 'd'),
-      );
-      contextSpy.createTeamAndNavigate.calls.reset();
-
-      await component.createTeam();
-
-      expect(component.metadataModalVisible).toBeFalse();
-      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args).toEqual([
-        'agent-team-v1',
-        undefined,
-      ]);
-    });
-
-    it('(AC10) createTeam with a contract opens the modal and creates nothing', async () => {
-      component.selectedNamespace$.next(
-        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
-      );
-      contextSpy.createTeamAndNavigate.calls.reset();
-
-      await component.createTeam();
-
-      expect(component.metadataModalVisible).toBeTrue();
-      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
-    });
-
-    // --- AC8: the three no-ask states, each pinned separately ---
-
-    it('(AC8) an ABSENT team_metadata key asks nothing', async () => {
-      const ns = nsSummary('agent-team-v1', 'Agent Team', 'd');
-      expect('team_metadata' in ns).toBeFalse();
-      component.selectedNamespace$.next(ns);
-
-      await component.createTeam();
-
-      expect(component.metadataModalVisible).toBeFalse();
-      expect(contextSpy.createTeamAndNavigate).toHaveBeenCalled();
-    });
-
-    it('(AC8) a null team_metadata asks nothing', async () => {
-      component.selectedNamespace$.next(
-        nsSummary('agent-team-v1', 'Agent Team', 'd', null),
-      );
-
-      await component.createTeam();
-
-      expect(component.metadataModalVisible).toBeFalse();
-      expect(contextSpy.createTeamAndNavigate).toHaveBeenCalled();
-    });
-
-    it('(AC8) a declared contract with an empty fields list asks nothing', async () => {
-      component.selectedNamespace$.next(
-        nsSummary('agent-team-v1', 'Agent Team', 'd', contract([])),
-      );
-
-      await component.createTeam();
-
-      expect(component.metadataModalVisible).toBeFalse();
-      expect(contextSpy.createTeamAndNavigate).toHaveBeenCalled();
-    });
-
-    // --- Confirm / cancel dispatch ---
-
-    it('(AC5, AC9) confirming from the create path creates with the emitted map', async () => {
-      component.selectedNamespace$.next(
-        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
-      );
-      await component.createTeam();
-      contextSpy.createTeamAndNavigate.calls.reset();
-
-      await component.onMetadataConfirm({ tenant: 'acme' });
-
-      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args).toEqual([
-        'acme-cases',
-        { tenant: 'acme' },
-      ]);
-      expect(component.metadataModalVisible).toBeFalse();
-      expect(component.isCreatingTeam).toBeFalse();
-    });
-
-    it('(AC10) confirming from the gesture-less path navigates with the emitted map', async () => {
-      component.selectedNamespace$.next(
-        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
-      );
-      await component.createTeam();
-      contextSpy.createTeamAndNavigate.calls.reset();
-
-      await component.onMetadataConfirm({ tenant: 'acme' });
-
-      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args).toEqual([
-        'acme-cases',
-        { tenant: 'acme' },
-      ]);
-      expect(component.metadataModalVisible).toBeFalse();
-    });
-
-    it('(AC6, AC13) cancelling creates nothing and leaves the spinner off', async () => {
-      component.selectedNamespace$.next(
-        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
-      );
-      await component.createTeam();
-      contextSpy.createTeamAndNavigate.calls.reset();
-
-      component.onMetadataCancel();
-
-      expect(component.metadataModalVisible).toBeFalse();
-      expect(component.metadataContract).toBeNull();
-      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
-      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
-      expect(component.isCreatingTeam).toBeFalse();
-    });
-
-    it('(AC7, Trap 5) uses the namespace captured at open time, not the live selection', async () => {
-      component.selectedNamespace$.next(
-        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
-      );
-      await component.createTeam();
-      expect(component.metadataNamespaceLabel).toBe('Acme Cases');
-
-      // The dropdown stays live behind the dialog.
-      component.selectedNamespace$.next(
-        nsSummary('other-ns', 'Other', 'd'),
-      );
-      contextSpy.createTeamAndNavigate.calls.reset();
-
-      await component.onMetadataConfirm({ tenant: 'acme' });
-
-      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args[0]).toBe('acme-cases');
-    });
-
-    // --- AC14: a rejected create keeps the modal open ---
-
-    it('(AC14) a 422 keeps the modal open and renders the server message', async () => {
-      component.selectedNamespace$.next(
-        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
-      );
-      await component.createTeam();
-      contextSpy.createTeamAndNavigate.and.returnValue(
-        Promise.reject(
-          new HttpError('Unprocessable', 422, {
-            detail: [{ loc: ['body', 'metadata', 'tenant'], msg: 'field required' }],
-          }),
-        ),
-      );
-
-      await component.onMetadataConfirm({ case: 'C-1234' });
-
-      expect(component.metadataModalVisible).toBeTrue();
-      expect(component.metadataError).toBe('tenant: field required');
-      expect(component.metadataSubmitting).toBeFalse();
-      expect(component.isCreatingTeam).toBeFalse();
-    });
-
-    it('(AC14) a non-422 failure keeps the modal open with no inline message', async () => {
-      const consoleErrorSpy = spyOn(console, 'error');
-      component.selectedNamespace$.next(
-        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
-      );
-      await component.createTeam();
-      contextSpy.createTeamAndNavigate.and.returnValue(
-        Promise.reject(new HttpError('Server error', 500, 'boom')),
-      );
-
-      await component.onMetadataConfirm({ tenant: 'acme' });
-
-      expect(component.metadataModalVisible).toBeTrue();
-      expect(component.metadataError).toBeNull();
-      // FetchService has ALREADY toasted the failure; the host adds no
-      // second channel — no inline message, no console noise.
-      expect(consoleErrorSpy).not.toHaveBeenCalled();
-    });
-
-    it('(AC14) a rejected create leaves the typed values alone — the host never clears the contract', async () => {
-      component.selectedNamespace$.next(
-        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
-      );
-      await component.createTeam();
-      contextSpy.createTeamAndNavigate.and.returnValue(
-        Promise.reject(new HttpError('Unprocessable', 422, 'nope')),
-      );
-
-      await component.onMetadataConfirm({ tenant: 'acme' });
-
-      expect(component.metadataContract).toBe(asking);
-      expect(component.metadataNamespace).toBe('acme-cases');
-    });
-
-    // --- The 422 body has three shapes ---
-
-    it('(AC14) renders a string body verbatim', () => {
-      expect(
-        (component as any).metadataErrorMessage('tenant is required'),
-      ).toBe('tenant is required');
-    });
-
-    it('(AC14) renders a { detail: "..." } envelope', () => {
-      expect(
-        (component as any).metadataErrorMessage({ detail: 'tenant is required' }),
-      ).toBe('tenant is required');
-    });
-
-    it('(AC14) renders one line per FastAPI detail entry, naming the field', () => {
-      expect(
-        (component as any).metadataErrorMessage({
-          detail: [
-            { loc: ['body', 'metadata', 'tenant'], msg: 'field required' },
-            { loc: ['body', 'metadata', 'case'], msg: 'not a valid integer' },
-          ],
-        }),
-      ).toBe('tenant: field required\ncase: not a valid integer');
-    });
-
-    it('(AC14) falls back to the serialized body for an unknown shape', () => {
-      expect((component as any).metadataErrorMessage({ oops: 1 })).toBe(
-        '{"oops":1}',
-      );
-    });
-
-    it('(AC14) a 422 with nothing to say renders no alert region at all', async () => {
-      component.selectedNamespace$.next(
-        nsSummary('acme-cases', 'Acme Cases', 'd', asking),
-      );
-      await component.createTeam();
-      // FetchService hands an empty response body over as `''`, and an empty
-      // FastAPI `detail` list extracts to `''` too. Either way there is no
-      // message, and `''` would paint an empty red box.
-      contextSpy.createTeamAndNavigate.and.returnValue(
-        Promise.reject(new HttpError('Unprocessable', 422, '')),
-      );
-
-      await component.onMetadataConfirm({ tenant: 'acme' });
-
-      expect(component.metadataModalVisible).toBeTrue();
-      expect(component.metadataError).toBeNull();
-
-      contextSpy.createTeamAndNavigate.and.returnValue(
-        Promise.reject(new HttpError('Unprocessable', 422, { detail: [] })),
-      );
-
-      await component.onMetadataConfirm({ tenant: 'acme' });
-
-      expect(component.metadataModalVisible).toBeTrue();
-      expect(component.metadataError).toBeNull();
-    });
-
-    // --- AC13: the spinner's OTHER half — it does turn, while the POST runs ---
-
-    it('(AC13) isCreatingTeam is true while the POST is in flight, and false after', async () => {
-      component.selectedNamespace$.next(
-        nsSummary('agent-team-v1', 'Agent Team', 'd'),
-      );
-      let release: (value: any) => void = () => undefined;
-      contextSpy.createTeamAndNavigate.and.returnValue(
-        new Promise<any>((resolve) => {
-          release = resolve;
-        }),
-      );
-
-      const inFlight = component.createTeam();
-      // The flag is the Create button's spinner AND its double-submit guard
-      // (`[disabled]="isCreatingTeam || …"`). Every other assertion in this
-      // file only ever pins it FALSE, so deleting the `= true` would go
-      // unnoticed.
-      expect(component.isCreatingTeam).toBeTrue();
-
-      release({});
-      await inFlight;
-
-      expect(component.isCreatingTeam).toBeFalse();
-    });
-
-    it('(AC13) isCreatingTeam clears when the POST is rejected', async () => {
-      spyOn(console, 'error');
-      component.selectedNamespace$.next(
-        nsSummary('agent-team-v1', 'Agent Team', 'd'),
-      );
-      contextSpy.createTeamAndNavigate.and.returnValue(
-        Promise.reject(new HttpError('Server error', 500, 'boom')),
-      );
-
-      await component.createTeam();
-
-      expect(component.isCreatingTeam).toBeFalse();
-    });
-
-    // --- The host↔child JOIN: the template bindings themselves ---
-    //
-    // Every spec above asserts the HOST's state, and the modal's own spec
-    // asserts the MODAL's inputs. Neither notices if a binding in
-    // `home.component.html` is deleted — dropping `[errorMessage]` alone would
-    // remove AC14's entire user-visible outcome with both suites still green.
-    // These two specs pin the join, and nothing else about the child's markup.
 
     function modal(): TeamMetadataModalComponent {
       return fixture.debugElement.query(By.directive(TeamMetadataModalComponent))
@@ -1812,38 +1602,166 @@ describe('HomeComponent', () => {
       fixture.detectChanges();
     }
 
-    it('(AC1, AC7, AC14) the host state reaches the modal through the template bindings', async () => {
+    /** Render, select a contract-bearing namespace, and open the dialog. */
+    async function openDialog(): Promise<void> {
       await renderThenSelect(nsSummary('acme-cases', 'Acme Cases', 'd', asking));
+      await component.createTeam();
+      fixture.detectChanges();
+      // Guard the guard: every assertion below is vacuous on a dialog that
+      // never opened.
+      expect(modal().visible).toBeTrue();
+    }
 
+    // --- AC1: one gate per page mount, never a root singleton ---
+
+    it('(AC1) the gate is the PAGE\'s, not the root injector\'s', () => {
+      // A component-level provider is invisible to the environment injector.
+      // `providedIn: 'root'` would resolve here — and would then outlive the
+      // page, carrying a captured namespace and an open dialog across a
+      // navigation away and back. That is a behaviour change, not a refactor.
+      expect(TestBed.inject(TeamCreationService, null)).toBeNull();
+    });
+
+    it('(AC1) two page mounts hold two different gates', () => {
+      const second = TestBed.createComponent(HomeComponent);
+
+      expect(component.creation).toBeInstanceOf(TeamCreationService);
+      expect(second.componentInstance.creation).not.toBe(component.creation);
+    });
+
+    // --- AC14: the Create button routes through the gate ---
+
+    it('(AC14) the Create button opens the REAL modal on a selection that asks, and creates nothing', async () => {
+      await renderThenSelect(nsSummary('acme-cases', 'Acme Cases', 'd', asking));
+      contextSpy.createTeamAndNavigate.calls.reset();
       expect(modal().visible).toBeFalse();
 
       await component.createTeam();
       fixture.detectChanges();
 
       expect(modal().visible).toBeTrue();
-      expect(modal().contract).toBe(asking);
-      expect(modal().namespaceLabel).toBe('Acme Cases');
-      expect(modal().pending).toBeFalse();
-      expect(modal().errorMessage).toBeNull();
+      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
+    });
 
+    it('(AC14) the Create button creates with the two-argument form when nothing is asked', async () => {
+      await renderThenSelect(nsSummary('agent-team-v1', 'Agent Team', 'd'));
+      contextSpy.createTeamAndNavigate.calls.reset();
+
+      await component.createTeam();
+      fixture.detectChanges();
+
+      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args).toEqual([
+        'agent-team-v1',
+        undefined,
+      ]);
+      expect(modal().visible).toBeFalse();
+    });
+
+    it('(AC14, AC18) the no-selection guard is still the page\'s, and creates nothing', async () => {
+      component.selectedNamespace$.next(null);
+
+      await component.createTeam();
+
+      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
+    });
+
+    // --- AC8, from the page: the dropdown stays live behind the dialog ---
+
+    it('(AC8) confirming creates for the namespace the dialog was opened for, not the live selection', async () => {
+      await openDialog();
+      // WHAT THIS SPEC ACTUALLY GUARDS, because the title alone oversells it:
+      // capture-at-open is STRUCTURAL here — the gate injects `ContextService`
+      // and nothing else, so it cannot read the live selection even if it tried,
+      // and no mutation of the gate can make this assertion fail for the reason
+      // the title gives. That property is pinned in the gate's own spec
+      // ("uses the namespace CAPTURED at open time"), which a re-pointing
+      // mutation does redden.
+      //
+      // What goes red HERE is the ROUTE and the JOIN: the page reaching the gate
+      // at all, and `(confirmed)` carrying the answer back across the template.
+      // It is kept because it is the spec a reader looks for when they ask "can
+      // a dropdown change behind the dialog steal the create?" — and because it
+      // is the only place that question is asked of the RENDERED page.
+      //
+      // The user changes the dropdown while the dialog is up. The header still
+      // says Acme Cases and the answers are Acme Cases's.
+      component.selectedNamespace$.next(nsSummary('other-ns', 'Other', 'd'));
+      fixture.detectChanges();
+      contextSpy.createTeamAndNavigate.calls.reset();
+
+      modal().confirmed.emit({ tenant: 'acme' });
+      await fixture.whenStable();
+
+      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args[0]).toBe('acme-cases');
+    });
+
+    // --- AC16: the seven bindings, one spec each ---
+    //
+    // Deleting any ONE of them must redden at least one named spec. A single
+    // spec asserting all five inputs at once cannot say which binding went —
+    // and the two OUTPUTS are the pair 49-1 shipped unguarded, because its
+    // delegation specs called the page's own methods and never proved the child
+    // was wired to anything.
+
+    it('(AC16) [visible] — the gate\'s open state reaches the modal', async () => {
+      await renderThenSelect(nsSummary('acme-cases', 'Acme Cases', 'd', asking));
+      expect(modal().visible).toBeFalse();
+
+      await component.createTeam();
+      fixture.detectChanges();
+
+      expect(modal().visible).toBeTrue();
+    });
+
+    it('(AC16) [contract] — the captured contract reaches the modal', async () => {
+      await openDialog();
+
+      expect(modal().contract).toBe(asking);
+    });
+
+    it('(AC16) [namespaceLabel] — the captured label reaches the modal header', async () => {
+      await openDialog();
+
+      expect(modal().namespaceLabel).toBe('Acme Cases');
+    });
+
+    it('(AC16) [errorMessage] — the server\'s 422 reaches the modal', async () => {
+      await openDialog();
+      expect(modal().errorMessage).toBeNull();
       contextSpy.createTeamAndNavigate.and.returnValue(
         Promise.reject(
           new HttpError('Unprocessable', 422, { detail: 'tenant is required' }),
         ),
       );
 
-      await component.onMetadataConfirm({ case: 'C-1234' });
+      await component.creation.confirm({ case: 'C-1234' });
       fixture.detectChanges();
 
       expect(modal().visible).toBeTrue();
       expect(modal().errorMessage).toBe('tenant is required');
     });
 
-    it('(AC5) the modal `confirmed` output reaches the host through the template', async () => {
-      await renderThenSelect(nsSummary('acme-cases', 'Acme Cases', 'd', asking));
-      await component.createTeam();
+    it('(AC16) [pending] — an in-flight confirm reaches the modal and locks it', async () => {
+      await openDialog();
+      expect(modal().pending).toBeFalse();
+      let release: () => void = () => undefined;
+      contextSpy.createTeamAndNavigate.and.returnValue(
+        new Promise<void>((resolve) => {
+          release = () => resolve();
+        }),
+      );
+
+      const inFlight = component.creation.confirm({ tenant: 'acme' });
       fixture.detectChanges();
-      expect(modal().visible).toBeTrue();
+
+      expect(modal().pending).toBeTrue();
+
+      release();
+      await inFlight;
+    });
+
+    it('(AC16) (confirmed) — the modal\'s answers reach the gate through the template', async () => {
+      await openDialog();
       contextSpy.createTeamAndNavigate.calls.reset();
 
       // The POST is issued synchronously by the handler the binding names.
@@ -1855,24 +1773,69 @@ describe('HomeComponent', () => {
       ]);
     });
 
-    it('(AC6) the modal `cancelled` output reaches the host through the template', async () => {
-      await renderThenSelect(nsSummary('acme-cases', 'Acme Cases', 'd', asking));
-      await component.createTeam();
-      fixture.detectChanges();
-      // Guard the guard: without this the cancel assertion below passes on a
-      // modal that never opened.
-      expect(modal().visible).toBeTrue();
+    it('(AC16) (cancelled) — a dismissal reaches the gate through the template', async () => {
+      await openDialog();
       contextSpy.createTeamAndNavigate.calls.reset();
 
       modal().cancelled.emit();
+      fixture.detectChanges();
 
-      expect(component.metadataModalVisible).toBeFalse();
+      expect(component.creation.modalVisible).toBeFalse();
+      expect(modal().visible).toBeFalse();
       expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
+    });
+
+    // --- AC17: none of it is left behind on the page ---
+
+    it('(AC17) the page no longer owns any part of the creation gate', () => {
+      // Not tidiness: each of these left behind is a second place the same
+      // decision or the same state lives, and the two would drift the moment
+      // one of them is changed — which is the duplication this story removes.
+      for (const member of [
+        'metadataModalVisible',
+        'metadataContract',
+        'metadataNamespace',
+        'metadataNamespaceLabel',
+        'metadataError',
+        'metadataSubmitting',
+        'pendingCreation',
+        'isCreatingTeam',
+        'metadataContractOf',
+        'createAndNavigate',
+        'openMetadataModal',
+        'onMetadataConfirm',
+        'onMetadataCancel',
+        'closeMetadataModal',
+        'handleMetadataCreateError',
+        'metadataErrorMessage',
+        'metadataErrorLine',
+      ]) {
+        expect((component as unknown as Record<string, unknown>)[member])
+          .withContext(`HomeComponent must no longer declare ${member}`)
+          .toBeUndefined();
+      }
+      // What it KEEPS: the two call sites, both delegating.
+      expect(typeof component.createTeam).toBe('function');
     });
   });
 
-  describe('metadata gate on the gesture-less hideHome route (43.2 AC11)', () => {
+  describe('the creation gate on the gesture-less hideHome route (49.2 AC15)', () => {
     const asking = contract([field('tenant', { mandatory: true })]);
+
+    /**
+     * Let the `handleHideHome` chain run to (and through) its
+     * `await creation.request(...)`.
+     *
+     * The branch awaits two `firstValueFrom`s before it reaches the gate, and
+     * the gate then awaits the create — so a single microtask turn is nowhere
+     * near enough either to observe the create IN FLIGHT or to read the state
+     * it leaves behind.
+     */
+    async function settleMicrotasks(): Promise<void> {
+      for (let i = 0; i < 32; i += 1) {
+        await Promise.resolve();
+      }
+    }
 
     beforeEach(async () => {
       // Re-configure with hideHome ON so the auto-route branch runs, exactly as
@@ -1900,72 +1863,135 @@ describe('HomeComponent', () => {
       });
     });
 
-    it('(AC11) with no contract it creates and navigates exactly as today', async () => {
+    /**
+     * Arrive on the route: render, let the table's first `(onLazyLoad)` seed
+     * page 1, and let `handleHideHome` run to completion.
+     *
+     * `ngOnInit` is NOT called by hand. The first change detection runs it, so
+     * calling it as well would run the whole arrival TWICE — and the second
+     * pass re-opens the dialog behind the spec's back, after the first one has
+     * been confirmed or cancelled.
+     */
+    async function arriveOnTheRoute(): Promise<void> {
+      fixture.detectChanges();
+      await component.loadPage({ first: 0, rows: 250 });
+      await settleMicrotasks();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    function modal(): TeamMetadataModalComponent {
+      return fixture.debugElement.query(By.directive(TeamMetadataModalComponent))
+        .componentInstance as TeamMetadataModalComponent;
+    }
+
+    it('(AC15) a selection that ASKS opens the real modal and creates nothing', async () => {
+      // The whole reason the gesture-less route gates. Nobody pressed anything,
+      // so a mandatory field skipped here is skipped in silence.
+      apiSpy.getNamespaces.and.returnValue(
+        Promise.resolve([nsSummary('acme-cases', 'Acme Cases', 'd', asking)]),
+      );
+      contextSpy.createTeamAndNavigate.calls.reset();
+
+      await arriveOnTheRoute();
+
+      expect(component.creation.modalVisible).toBeTrue();
+      expect(modal().visible).toBeTrue();
+      expect(modal().contract).toBe(asking);
+      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
+    });
+
+    it('(AC15) a selection that asks NOTHING creates and navigates with (namespace, undefined)', async () => {
       apiSpy.getNamespaces.and.returnValue(
         Promise.resolve([nsSummary('agent-team-v1', 'Agent Team', 'd')]),
       );
       contextSpy.createTeamAndNavigate.calls.reset();
 
-      const init = component.ngOnInit();
-      await component.loadPage({ first: 0, rows: 250 });
-      await init;
+      await arriveOnTheRoute();
 
-      expect(component.metadataModalVisible).toBeFalse();
+      expect(component.creation.modalVisible).toBeFalse();
       expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args).toEqual([
         'agent-team-v1',
         undefined,
       ]);
     });
 
-    it('(AC11) with a contract it opens the modal instead of creating silently', async () => {
+    it('(AC15) the gesture-less create NEVER spins the Create button', async () => {
+      // The origin is what makes this true, and it is asserted MID-FLIGHT:
+      // after the create settles the flag is false whichever origin was passed,
+      // so an end-state assertion would pass on a route wrongly marked
+      // `'gesture'`.
       apiSpy.getNamespaces.and.returnValue(
-        Promise.resolve([nsSummary('acme-cases', 'Acme Cases', 'd', asking)]),
+        Promise.resolve([nsSummary('agent-team-v1', 'Agent Team', 'd')]),
       );
-      contextSpy.createTeamAndNavigate.calls.reset();
-      contextSpy.createTeamAndNavigate.calls.reset();
+      let release: () => void = () => undefined;
+      contextSpy.createTeamAndNavigate.and.returnValue(
+        new Promise<void>((resolve) => {
+          release = () => resolve();
+        }),
+      );
 
-      const init = component.ngOnInit();
+      fixture.detectChanges();
       await component.loadPage({ first: 0, rows: 250 });
-      await init;
+      await settleMicrotasks();
 
-      expect(component.metadataModalVisible).toBeTrue();
-      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
-      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
+      expect(contextSpy.createTeamAndNavigate).toHaveBeenCalled();
+      expect(component.creation.creatingByGesture).toBeFalse();
+
+      release();
+      await settleMicrotasks();
+
+      expect(component.creation.creatingByGesture).toBeFalse();
     });
 
-    it('(AC11) confirming from the gesture-less route creates and navigates', async () => {
+    it('(AC15) a gated arrival never spins the Create button either', async () => {
       apiSpy.getNamespaces.and.returnValue(
         Promise.resolve([nsSummary('acme-cases', 'Acme Cases', 'd', asking)]),
       );
 
-      const init = component.ngOnInit();
-      await component.loadPage({ first: 0, rows: 250 });
-      await init;
+      await arriveOnTheRoute();
+
+      expect(component.creation.modalVisible).toBeTrue();
+      expect(component.creation.creatingByGesture).toBeFalse();
+    });
+
+    it('(AC15) confirming from the gesture-less route creates and navigates', async () => {
+      apiSpy.getNamespaces.and.returnValue(
+        Promise.resolve([nsSummary('acme-cases', 'Acme Cases', 'd', asking)]),
+      );
+
+      await arriveOnTheRoute();
       contextSpy.createTeamAndNavigate.calls.reset();
 
-      await component.onMetadataConfirm({ tenant: 'acme' });
+      // Through the real modal's output, so the join is exercised on this route
+      // too — the confirm that follows an AUTO open was never actually covered
+      // before (the spec that claimed to drove `createTeam`).
+      modal().confirmed.emit({ tenant: 'acme' });
+      // `(confirmed)` binds a promise-returning method to a `void` output, so
+      // nothing here holds the create's promise — settle the microtasks by hand
+      // before reading the state it leaves behind.
+      await settleMicrotasks();
 
       expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args).toEqual([
         'acme-cases',
         { tenant: 'acme' },
       ]);
-      expect(component.metadataModalVisible).toBeFalse();
+      expect(component.creation.modalVisible).toBeFalse();
     });
 
-    it('(AC11) cancelling from the gesture-less route creates nothing', async () => {
+    it('(AC15) cancelling from the gesture-less route creates nothing', async () => {
       apiSpy.getNamespaces.and.returnValue(
         Promise.resolve([nsSummary('acme-cases', 'Acme Cases', 'd', asking)]),
       );
 
-      const init = component.ngOnInit();
-      await component.loadPage({ first: 0, rows: 250 });
-      await init;
+      await arriveOnTheRoute();
       contextSpy.createTeamAndNavigate.calls.reset();
 
-      component.onMetadataCancel();
+      modal().cancelled.emit();
+      fixture.detectChanges();
 
-      expect(component.metadataModalVisible).toBeFalse();
-      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
+      expect(component.creation.modalVisible).toBeFalse();
       expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
     });
   });

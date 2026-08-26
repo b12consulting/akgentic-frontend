@@ -68,34 +68,16 @@
 // The lazy paginated team list area grows to fill the column and bounds the
 // table's scrollHeight="flex" body. `min-height: 0` is the unlock that lets it
 // shrink below content so the inner scroll region forms (else the page scrolls).
+// It holds ONE child now, <app-team-table>, whose own :host continues the chain
+// with the `flex: 1; min-height: 0` that used to sit on the `p-table` rule
+// nested here. That rule moved WITH the element: a descendant selector written
+// on this page stops matching the moment the table lives inside another
+// component's view. So does the opaque sticky-header rule that was below.
 .home-table {
     flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
-
-    p-table {
-        display: flex;
-        flex-direction: column;
-        flex: 1;
-        min-height: 0;
-    }
-}
-
-// Story 28.4 — opaque sticky header. 28.3's [scrollable] gave the table a
-// sticky thead for free, but the app theme sets the datatable header-cell
-// background to `transparent` (app.theme.ts), so scrolling rows bleed through
-// behind the pinned "Name / Creation Date / Status / Team ID" labels. Paint
-// the home table's sticky thead (and its cells) white — matching the row
-// surface — so rows are masked as they scroll under it. PrimeNG renders the
-// datatable header INSIDE this component's view (unlike the teleported dialog
-// header below), so `::ng-deep` is needed to pierce encapsulation; `:host`
-// keeps the rule scoped here and off every other datatable (the global
-// `transparent` preset is intentionally untouched). PrimeNG's sticky thead
-// already wins the stacking, so no z-index is needed.
-:host ::ng-deep .p-datatable-thead,
-:host ::ng-deep .p-datatable-thead > tr > th {
-    background: #fff;
 }
 
 // Filter row (Epic 48). `flex: 0 0 auto` for the same reason .home-controls
@@ -196,63 +178,6 @@
     vertical-align: middle;
 }
 
-.team-info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-}
-
-.team-name {
-    font-weight: 600;
-    font-size: 1rem;
-}
-
-.team-description {
-    font-size: 0.875rem;
-    color: #666;
-    cursor: pointer;
-    padding: 0.25rem;
-    border-radius: 4px;
-    transition: background-color 0.2s;
-    max-width: 300px;
-
-    &:hover {
-        background-color: #f5f5f5;
-    }
-}
-
-.description-text {
-    color: #333;
-}
-
-.description-placeholder {
-    color: #999;
-    font-style: italic;
-}
-
-.description-editor {
-    display: flex;
-    gap: 0.5rem;
-    align-items: center;
-
-    .description-input {
-        flex: 1;
-        max-width: 300px;
-        font-size: 0.875rem;
-    }
-
-    .description-save-btn,
-    .description-cancel-btn {
-        width: 2rem;
-        height: 2rem;
-        padding: 0;
-
-        i {
-            font-size: 0.65rem;
-        }
-    }
-}
-
 // Story 11.7 AC 8, 9 — dirty-state indicator next to the namespace name in
 // the dialog header. PrimeNG renders the header outside the component's
 // view-encapsulated tree (it teleports to <body>'s overlay container), so
@@ -270,30 +195,4 @@
   margin-left: 0.4rem;
   font-size: 1rem;
   vertical-align: middle;
-}
-
-// Metadata column — one chip per answered field. Wraps rather than truncates:
-// a case reference cut off mid-string is worse than a taller row, and a team
-// declares a handful of fields, not dozens.
-.team-metadata-cell {
-  .team-metadata-chip {
-    display: inline-block;
-    font-size: 0.9rem;
-    color: #495057;
-    background: #eef1f4;
-    border: 1px solid #dee2e6;
-    border-radius: 4px;
-    padding: 0.1rem 0.4rem;
-    margin: 0.1rem 0.25rem 0.1rem 0;
-    max-width: 100%;
-    overflow-wrap: anywhere;
-
-    .team-metadata-chip__label {
-      color: #6c757d;
-
-      &::after {
-        content: ": ";
-      }
-    }
-  }
 }
