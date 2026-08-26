@@ -147,9 +147,16 @@ export class TeamTableComponent {
     this.lazyLoad.emit(event);
   }
 
+  /**
+   * PrimeNG types `data` as `TeamContext | TeamContext[] | undefined` because a
+   * table can select many rows. This one is `selectionMode="single"`, so the
+   * array arm never arrives — but it is narrowed rather than cast away: cast,
+   * an array would read `team_id` as `undefined` and navigate the page to
+   * `/process/undefined` instead of doing nothing.
+   */
   onRowSelect(event: TableRowSelectEvent<TeamContext>): void {
-    const row = event.data as TeamContext | undefined;
-    if (row === undefined) {
+    const row = event.data;
+    if (row === undefined || Array.isArray(row)) {
       return;
     }
     this.rowSelected.emit(row.team_id);

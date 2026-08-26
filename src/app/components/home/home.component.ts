@@ -748,12 +748,36 @@ export class HomeComponent {
     action.track(this.stopTeam(action.teamId));
   }
 
+  /**
+   * LOGS, then re-throws. The row clears its mark either way, so the rejection
+   * is not what unwinds the spinner — but the table CONSUMES it (`then(clear,
+   * clear)`), so without this `console.error` a failed restore leaves no trace
+   * anywhere: the spinner stops, nothing changes on screen, and nothing is
+   * reported. Every action on this page logs its own failure; that is the rule,
+   * and whether it also re-throws depends only on whether the row needs to know
+   * (`saveDescription` does — it is holding the user's text; these two do not).
+   */
   async restoreTeam(teamId: string) {
-    await this.apiService.restoreTeam(teamId);
-    // Reload the current page (REPLACE — no empty flash); no page jump.
-    await this.contextService.loadTeamsPage(this.currentPage, PAGE_SIZE);
+    try {
+      await this.apiService.restoreTeam(teamId);
+      // Reload the current page (REPLACE — no empty flash); no page jump.
+      await this.contextService.loadTeamsPage(this.currentPage, PAGE_SIZE);
+    } catch (error) {
+      console.error(`Failed to restore team ${teamId}:`, error);
+      throw error;
+    }
   }
 
+  /**
+   * LOGS and RESOLVES. Nothing downstream needs the rejection: the row clears
+   * its mark on either outcome and there is no on-screen state to preserve, so
+   * absorbing it here keeps the one caller's contract simple.
+   *
+   * It is NOT absorbed to avoid an unhandled rejection — the table's `track`
+   * consumes both arms, so re-throwing would surface nowhere either. The
+   * difference between this and `restoreTeam` is a caller's need, not a hazard;
+   * what must never differ is that both LOG.
+   */
   async stopTeam(teamId: string) {
     try {
       await this.contextService.stopTeamAndAwait(teamId);

@@ -285,6 +285,28 @@ describe('TeamTableComponent', () => {
 
   // --- Row selection -------------------------------------------------------
 
+  it('(AC3) the p-table\'s (onRowSelect) is bound to this component', async () => {
+    // The spec below calls `onRowSelect` directly, which proves what the method
+    // does but not that the template still calls it. Driven from the table's
+    // own emitter, the way the (onLazyLoad) spec above is, so a lost binding
+    // goes red rather than silently detaching row-click navigation.
+    await render([makeTeam({ team_id: 'row-1' })]);
+
+    tableInstance().onRowSelect.emit({
+      data: makeTeam({ team_id: 'row-1' }),
+    } as TableRowSelectEvent<TeamContext>);
+
+    expect(selected).toEqual(['row-1']);
+  });
+
+  it('(AC3) a row-select event carrying no data emits nothing', async () => {
+    await render([makeTeam({ team_id: 'row-1' })]);
+
+    component.onRowSelect({} as TableRowSelectEvent<TeamContext>);
+
+    expect(selected).toEqual([]);
+  });
+
   it('(AC3) selecting a row emits rowSelected with its team_id and nothing else', async () => {
     await render([makeTeam({ team_id: 'row-1', status: 'running' })]);
 

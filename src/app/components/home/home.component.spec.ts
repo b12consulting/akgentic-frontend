@@ -457,6 +457,22 @@ describe('HomeComponent', () => {
     expect(apiSpy.restoreTeam).toHaveBeenCalledOnceWith('team-A');
   });
 
+  it('(AC6 10.5) restoreTeam LOGS its failure before re-throwing', async () => {
+    // The table consumes the rejection to clear the spinner, so this log is the
+    // ONLY trace a failed restore leaves. Without it the row simply stops
+    // spinning and nothing anywhere says the restore did not happen.
+    const consoleErrorSpy = spyOn(console, 'error');
+    apiSpy.restoreTeam.and.returnValue(Promise.reject(new Error('boom')));
+
+    await expectAsync(component.restoreTeam('team-A')).toBeRejected();
+
+    expect(consoleErrorSpy).toHaveBeenCalled();
+    expect(contextSpy.loadTeamsPage).not.toHaveBeenCalledWith(
+      jasmine.anything(),
+      jasmine.anything(),
+    );
+  });
+
   it('(AC6 10.5) stopTeam catches a timeout/error, logs it, and still resolves', async () => {
     // The page absorbs the failure and logs it. It must still RESOLVE: the row
     // clears its mark on either outcome, but a page that re-threw here would
@@ -1275,6 +1291,88 @@ describe('HomeComponent', () => {
     await component.saveDescription('row-1', 'old');
 
     expect(apiSpy.updateTeamDescription).toHaveBeenCalledWith('row-1', 'old');
+  });
+
+  // -------------------------------------------------------------------------
+  // The BINDINGS themselves, driven from the child's outputs.
+  //
+  // The four specs above call the page's methods directly, which proves the
+  // page still does the right thing but says nothing about whether the child
+  // is still WIRED to it. Deleting `(rowSelected)`, `(stopRequested)`,
+  // `(restoreRequested)`, `(deleteRequested)` and `(descriptionSaved)` from
+  // home.component.html leaves every one of them green — the extraction's own
+  // seam, unguarded. These emit from the REAL rendered child instead, so a
+  // binding lost in a rename or a merge goes red here.
+  //
+  // `(lazyLoad)` needs no spec of its own: the seed-load counts above already
+  // originate inside the child and travel through it.
+  // -------------------------------------------------------------------------
+
+  /** Render the page with one known running row, and return the real child. */
+  async function renderedTable(): Promise<TeamTableComponent> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    teams$.next([makeTeam({ team_id: 'row-1', status: 'running' })]);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return teamTable();
+  }
+
+  it('(AC3) the child\'s (rowSelected) is bound to the page\'s navigation', async () => {
+    const table = await renderedTable();
+
+    table.rowSelected.emit('row-1');
+
+    expect(routerSpy.navigate).toHaveBeenCalledWith(['/process', 'row-1']);
+  });
+
+  it('(AC7) the child\'s (deleteRequested) is bound to deleteTeam', async () => {
+    const table = await renderedTable();
+
+    table.deleteRequested.emit('row-1');
+    await fixture.whenStable();
+
+    expect(contextSpy.deleteTeam).toHaveBeenCalledWith('row-1');
+  });
+
+  it('(AC4) the child\'s (stopRequested) is bound, and the work comes back', async () => {
+    const table = await renderedTable();
+    const { action, tracked } = trackingAction('row-1');
+
+    table.stopRequested.emit(action);
+
+    expect(contextSpy.stopTeamAndAwait).toHaveBeenCalledWith('row-1');
+    // Bound to `onStopRequested`, not to `stopTeam` — only the former hands
+    // the work back, and a row that is never told stays busy forever.
+    expect(tracked.length).toBe(1);
+    await tracked[0];
+  });
+
+  it('(AC6) the child\'s (restoreRequested) is bound, and the work comes back', async () => {
+    const table = await renderedTable();
+    const { action, tracked } = trackingAction('row-1');
+
+    table.restoreRequested.emit(action);
+
+    expect(tracked.length).toBe(1);
+    await tracked[0];
+    expect(apiSpy.restoreTeam).toHaveBeenCalledWith('row-1');
+  });
+
+  it('(AC11) the child\'s (descriptionSaved) is bound, and the work comes back', async () => {
+    const table = await renderedTable();
+    const tracked: Promise<unknown>[] = [];
+
+    table.descriptionSaved.emit({
+      teamId: 'row-1',
+      description: 'fresh',
+      track: (work) => tracked.push(work),
+    });
+
+    expect(tracked.length).toBe(1);
+    await tracked[0];
+    expect(apiSpy.updateTeamDescription).toHaveBeenCalledWith('row-1', 'fresh');
   });
 
   it('(AC17) the page no longer owns any of the table\'s row state', () => {
