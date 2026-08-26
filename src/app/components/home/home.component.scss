@@ -43,6 +43,26 @@
 // takes only its natural height and never grows.
 .home-controls {
     flex: 0 0 auto;
+    // A wrapping flex ROW aligned on its bottom edge. `flex-end` is what lets a
+    // stacked label/control group sit beside bare buttons without the buttons
+    // floating to the middle: every child lines up on the control's baseline,
+    // whatever height its label adds above.
+    //
+    // The spacer `&nbsp;` text nodes and trailing `<br>`s this row used to carry
+    // are gone: in a flex container each would become an anonymous flex item
+    // with a gap of its own.
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.5rem 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+// Label stacked ABOVE its control.
+.home-controls__group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
 }
 
 // The lazy paginated team list area grows to fill the column and bounds the
@@ -87,21 +107,52 @@
     flex: 0 0 auto;
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
+    // `flex-end`, matching .home-controls: the fields stack their label above
+    // the input, the narrowing toggle does not, and aligning on the bottom edge
+    // is what keeps the toggle level with the inputs rather than with the
+    // labels above them.
+    align-items: flex-end;
     gap: 0.75rem 1rem;
     margin-bottom: 0.75rem;
 
     label {
         font-size: 0.85rem;
-        white-space: nowrap;
     }
 }
 
-.home-filter__field,
+// A metadata filter field: label ABOVE its input.
+//
+// The label is the field's declared description, which is a sentence rather
+// than a word ("Reference of the case the team was opened for, if any."), so it
+// must NOT be `white-space: nowrap` — stacked, a long description would push
+// the row far wider than the viewport. It wraps instead, and the input below
+// keeps its own fixed width.
+.home-filter__field {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+    max-width: 22rem;
+
+    label {
+        line-height: 1.25;
+    }
+}
+
+// The narrowing toggle keeps its label BESIDE it — a switch reads as a single
+// control with its caption, and stacking it would misalign it against the
+// inputs it sits next to.
 .home-filter__namespace {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
+    // Lift it off the bottom edge so it centres against the inputs rather than
+    // the row's baseline, now that the fields are taller than their controls.
+    padding-bottom: 0.4rem;
+
+    label {
+        white-space: nowrap;
+    }
 }
 
 .home-filter__input {
@@ -112,7 +163,6 @@
 
 .home-controls__label {
     font-size: 0.85rem;
-    margin-right: 0.5rem;
 }
 
 .show-all-namespaces {

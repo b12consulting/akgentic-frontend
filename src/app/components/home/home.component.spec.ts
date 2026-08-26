@@ -2066,6 +2066,120 @@ describe('HomeComponent', () => {
       ]);
     });
 
+    // --- The collapse control --------------------------------------------
+
+    it('the narrowing toggle is rendered BEFORE the metadata inputs', async () => {
+      // Document order, not styling: the toggle narrows to the team type and
+      // the inputs narrow within it, so reading left to right should match how
+      // the terms compose.
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+
+      const row = fixture.nativeElement.querySelector('.home-filter');
+      const children: HTMLElement[] = Array.from(row.children);
+      const toggleIndex = children.findIndex((c) =>
+        c.classList.contains('home-filter__namespace'),
+      );
+      const firstFieldIndex = children.findIndex((c) =>
+        c.classList.contains('home-filter__field'),
+      );
+      expect(toggleIndex).toBeGreaterThanOrEqual(0);
+      expect(firstFieldIndex).toBeGreaterThanOrEqual(0);
+      expect(toggleIndex).toBeLessThan(firstFieldIndex);
+    });
+
+    it('the collapse control hides the filter row and shows it again', async () => {
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+      expect(fixture.nativeElement.querySelector('.home-filter')).not.toBeNull();
+
+      component.toggleFilters();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.home-filter')).toBeNull();
+
+      component.toggleFilters();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelector('.home-filter')).not.toBeNull();
+    });
+
+    it('collapsing does NOT clear the filter — the terms survive', async () => {
+      // Presentation only. A collapse that silently cleared the filter would
+      // repaint the table, which is a data change disguised as a layout one.
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+      component.onFilterTermChanged('case_id', 'C-1234');
+      contextSpy.setFilter.calls.reset();
+
+      component.toggleFilters();
+      fixture.detectChanges();
+
+      expect(component.filterTerms['case_id']).toBe('C-1234');
+      expect(contextSpy.setFilter).not.toHaveBeenCalled();
+    });
+
+    it('hasActiveFilter reports a HIDDEN row that is still narrowing the list', async () => {
+      // The reason the control changes appearance when collapsed. Without it a
+      // hidden row leaves a filtered table with its cause off screen.
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+      expect(component.hasActiveFilter).toBe(false);
+
+      component.onFilterTermChanged('case_id', 'C-1234');
+      expect(component.hasActiveFilter).toBe(true);
+    });
+
+    it('hasActiveFilter uses the SAME floor as the request, not merely non-empty', async () => {
+      // A one- or two-character term contributes nothing to the request, so
+      // reporting it as active would be its own small lie.
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+
+      component.onFilterTermChanged('case_id', 'C');
+      expect(component.hasActiveFilter).toBe(false);
+      component.onFilterTermChanged('case_id', 'C-1');
+      expect(component.hasActiveFilter).toBe(true);
+    });
+
+    it('hasActiveFilter is true on the narrowing toggle alone', async () => {
+      await renderThenFilterOn(
+        nsSummary('acme-cases', 'Acme Cases', 'd', contract([])),
+      );
+      expect(component.hasActiveFilter).toBe(false);
+
+      component.onFilterNamespaceToggle(true);
+      expect(component.hasActiveFilter).toBe(true);
+    });
+
     it('(AC1) each input names the three-character floor in its placeholder', async () => {
       await renderThenFilterOn(
         nsSummary(

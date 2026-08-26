@@ -218,6 +218,43 @@ export class HomeComponent {
   trackFilterField = (_index: number, field: MetadataFieldDescriptor): string =>
     field.key;
 
+  /**
+   * Whether the filter row is on screen. Collapsing it is presentation only —
+   * it does NOT clear the filter, so a collapsed row can still be narrowing the
+   * list. `hasActiveFilter` exists to make that visible; see there.
+   */
+  filtersVisible = true;
+
+  /** Show or hide the filter row. Never touches the filter itself. */
+  toggleFilters(): void {
+    this.filtersVisible = !this.filtersVisible;
+  }
+
+  /**
+   * Is the list currently narrowed by anything the filter row owns?
+   *
+   * Read by the collapse control so a HIDDEN row that is still filtering says
+   * so. Without it, collapsing the row while a term is typed leaves a filtered
+   * table with its cause off screen and no way to discover it — the same class
+   * of lie as a paginator reporting a total the rows do not match.
+   *
+   * The term test is the SAME floor the request composition uses, not merely
+   * "non-empty": a one- or two-character term contributes nothing to the
+   * request, so reporting it as active would be its own small lie.
+   *
+   * A getter is safe here where it would not be for `filterFields`: it returns
+   * a boolean, and Angular compares primitives by value, so re-evaluating it
+   * each cycle cannot churn the DOM.
+   */
+  get hasActiveFilter(): boolean {
+    if (this.filterByNamespace) {
+      return true;
+    }
+    return Object.values(this.filterTerms).some(
+      (term) => term.trim().length >= this.minFilterTermLength,
+    );
+  }
+
   async ngOnInit() {
     // FIRST, and synchronously. `ContextService` is a root singleton, so a
     // filter set during an earlier visit to this page outlives the component

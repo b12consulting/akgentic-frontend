@@ -14,6 +14,7 @@
       list. The narrowing control is the toggle in the filter row; labelled
       badly, this select reads as a filter that does not work (Epic 48 AC14).
     -->
+    <span class="home-controls__group">
     <label for="namespace-select" class="home-controls__label">Team type</label>
     <p-select
       size="small"
@@ -31,7 +32,7 @@
         <div [attr.title]="ns.description">{{ ns.name }}</div>
       </ng-template>
     </p-select>
-    &nbsp;
+    </span>
     <!--
       Admin-only "show all namespaces" toggle (ADR-028). Admin-gated UX
       affordance only; NOT the security boundary (the infra unscoping of admin
@@ -53,7 +54,6 @@
       ></p-toggleswitch>
       <label for="show-all-namespaces-toggle">Show all namespaces</label>
     </span>
-    &nbsp;
     <button
       pButton
       size="small"
@@ -64,7 +64,6 @@
       (click)="createTeam()"
       class="extra-small-button"
     ></button>
-    &nbsp;
     <!-- Edit Configuration button; opens the Monaco panel in a dialog. -->
     <button
       pButton
@@ -77,7 +76,6 @@
       class="extra-small-button"
       data-test="edit-namespace-yaml-btn"
     ></button>
-    &nbsp;
     <button
       pButton
       size="small"
@@ -88,8 +86,31 @@
       (click)="refreshContext()"
       class="extra-small-button"
     ></button>
-    <br />
-    <br />
+    <!--
+      Show/hide the filter row. Presentation only — it never clears the filter,
+      so a HIDDEN row can still be narrowing the list. `hasActiveFilter` is what
+      stops that being a lie: while the row is hidden AND filtering, the control
+      changes severity and says so in its title, because otherwise the table is
+      filtered with its cause off screen and nothing on the page explains it.
+    -->
+    <button
+      pButton
+      size="small"
+      type="button"
+      [label]="filtersVisible ? 'Hide filters' : 'Filters'"
+      [icon]="filtersVisible ? 'pi pi-filter-slash' : 'pi pi-filter'"
+      [severity]="!filtersVisible && hasActiveFilter ? 'warn' : 'secondary'"
+      [attr.aria-expanded]="filtersVisible"
+      aria-controls="home-filter-row"
+      [attr.title]="
+        !filtersVisible && hasActiveFilter
+          ? 'A filter is active — the list is narrowed. Show the filters to see or clear it.'
+          : (filtersVisible ? 'Hide the filter row' : 'Show the filter row')
+      "
+      (click)="toggleFilters()"
+      class="extra-small-button"
+      data-test="toggle-filters-btn"
+    ></button>
     </div>
 
     <!--
@@ -109,7 +130,28 @@
       check, no casefolding and no escaping. The three-character floor is NOT
       here either — it lives once, where the URL parameter is composed.
     -->
-    <div class="home-filter">
+    <div class="home-filter" id="home-filter-row" *ngIf="filtersVisible">
+      <!--
+        The narrowing control — the ONLY control on this page that filters the
+        list. It sits FIRST because it applies to the whole row: it narrows to
+        the selected team type, while the inputs after it narrow within that.
+        Reading left to right therefore matches how the terms compose.
+
+        A p-toggleswitch and not a checkbox: no p-checkbox exists in this
+        codebase, while "Show all namespaces" in the row above is already a
+        toggleswitch. Behaviour is unchanged either way.
+      -->
+      <span class="home-filter__namespace">
+        <p-toggleswitch
+          [ngModel]="filterByNamespace"
+          (ngModelChange)="onFilterNamespaceToggle($event)"
+          data-test="filter-namespace-toggle"
+          inputId="filter-namespace-toggle"
+        ></p-toggleswitch>
+        <label for="filter-namespace-toggle"
+          >Only this team type's teams</label
+        >
+      </span>
       <span
         class="home-filter__field"
         *ngFor="let f of filterFields; trackBy: trackFilterField"
@@ -125,23 +167,6 @@
           (ngModelChange)="onFilterTermChanged(f.key, $event)"
           [placeholder]="minFilterTermLength + '+ characters to filter'"
         />
-      </span>
-      <!--
-        The narrowing control — the ONLY control on this page that filters the
-        list. A p-toggleswitch and not a checkbox: no p-checkbox exists in this
-        codebase, while "Show all namespaces" immediately above is already a
-        toggleswitch. Behaviour is unchanged either way.
-      -->
-      <span class="home-filter__namespace">
-        <p-toggleswitch
-          [ngModel]="filterByNamespace"
-          (ngModelChange)="onFilterNamespaceToggle($event)"
-          data-test="filter-namespace-toggle"
-          inputId="filter-namespace-toggle"
-        ></p-toggleswitch>
-        <label for="filter-namespace-toggle"
-          >Only this team type's teams</label
-        >
       </span>
     </div>
 
