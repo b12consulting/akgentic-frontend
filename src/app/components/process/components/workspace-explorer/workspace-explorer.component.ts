@@ -32,7 +32,7 @@ import {
   FileNode,
   FileContent,
 } from '../../workspace/workspace.service';
-import { ContextService } from '../../../../core/context/context.service';
+import { ContextService, LOADING_INDICATOR_DELAY_MS } from '../../../../core/context/context.service';
 import {
   WorkspaceInvalidation,
   WorkspaceInvalidationService,
@@ -214,6 +214,70 @@ export class WorkspaceExplorerComponent {
   listing = signal<{ path: string; entries: FileNode[] } | null>(null);
 
   loading = signal(false);
+
+  /**
+   * Whether a root load has ever SETTLED for the current workspace.
+   *
+   * The empty-state placeholder needs it because "no files" and "not asked
+   * yet" are the same three signals otherwise: on mount `loading` is false,
+   * `treeError` is null and `treeNodes` is empty — exactly the state that
+   * renders "No files found" — and it stays that way for the frame between the
+   * component appearing and the load setting `loading`. That frame is the
+   * flicker: an empty workspace announced before anything had been read.
+   *
+   * Set when a load SETTLES, success or failure, so a failed root load stops
+   * claiming the workspace is still being read. Cleared when the workspace id
+   * changes, because what has been read about the previous one says nothing
+   * about the next.
+   */
+  hasLoadedRoot = signal(false);
+
+  /**
+   * `loading`, delayed — and the ONLY thing the pane switches on.
+   *
+   * The flicker this removes: clicking Refresh set `loading` immediately, so
+   * the placeholder (gated on `!loading`) vanished and the spinner appeared for
+   * the fraction of a second the fetch took, then the two swapped back. Two
+   * visible changes for a wait nobody perceived as one.
+   *
+   * Because the placeholder, the error and the spinner are gated on the SAME
+   * delayed signal, a fetch that beats the delay changes nothing on screen at
+   * all — the placeholder does not even blink out. Gating them on different
+   * signals is what produced the gap in the first place.
+   *
+   * A PLAIN SIGNAL written from a timer, not `toSignal(toObservable(loading))`.
+   * That round-trip inserts an effect between the write and the repaint, and
+   * this component is OnPush with a guard (scenario 18) asserting that a signal
+   * write repaints it WITHOUT the parent being re-marked. The derived form
+   * failed that guard: the spinner appeared but never cleared.
+   */
+  showLoading = signal(false);
+
+  private loadingDelayTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * The single writer of both loading signals.
+   *
+   * `loading` still flips immediately — the in-flight guards read it — while
+   * `showLoading` only turns on if the wait outlives the delay, and turns off
+   * at once. Cancelling the pending timer on the way down is what makes a fast
+   * fetch show nothing rather than blink after the fact.
+   */
+  private setLoading(busy: boolean): void {
+    this.loading.set(busy);
+    if (this.loadingDelayTimer !== null) {
+      clearTimeout(this.loadingDelayTimer);
+      this.loadingDelayTimer = null;
+    }
+    if (!busy) {
+      this.showLoading.set(false);
+      return;
+    }
+    this.loadingDelayTimer = setTimeout(() => {
+      this.loadingDelayTimer = null;
+      this.showLoading.set(true);
+    }, LOADING_INDICATOR_DELAY_MS);
+  }
   loadingContent = signal(false);
 
   /**
@@ -357,6 +421,16 @@ export class WorkspaceExplorerComponent {
   refreshingFile = signal(false);
 
   /**
+   * True while the main pane's own directory re-read is in flight.
+   *
+   * Its own flag rather than the pane-wide `loading`: that one gates the
+   * SIDEBAR's tree, so driving it from a main-pane action would blank the tree
+   * to answer a question about the list. Same shape as `refreshingFile`, which
+   * exists for the same reason on the file half.
+   */
+  refreshingDirectory = signal(false);
+
+  /**
    * Monotonic id stamped on every body read so a response can be matched back to
    * the request that issued it. `readToken` is the id of the most recently
    * ISSUED read; `loadingOwner` is the id of the read that raised the spinner.
@@ -404,6 +478,12 @@ export class WorkspaceExplorerComponent {
     // tab's treeNodes (ADR-021 §Decision 2). Stable APIs only — no resource().
     toObservable(this.workspaceId)
       .pipe(
+        // Cleared HERE, per emission, and not inside `loadRootTree$`: a
+        // background invalidation also runs that method, and clearing there
+        // would re-blank the placeholder gate on a read the user never asked
+        // for. What has settled about the previous workspace says nothing
+        // about the next one.
+        tap(() => this.hasLoadedRoot.set(false)),
         switchMap((ws) => this.loadRootTree$(ws)),
         takeUntilDestroyed(this.destroyRef),
       )
@@ -622,7 +702,7 @@ export class WorkspaceExplorerComponent {
     }
 
     if (!background) {
-      this.loading.set(true);
+      this.setLoading(true);
       // Clearing the banner is as tree-scoped a write as setting it: the
       // navigator is gated on `!treeError()`, so erasing a genuine root-load
       // failure from a read the user never asked for makes the tree reappear
@@ -648,7 +728,11 @@ export class WorkspaceExplorerComponent {
         });
       }),
       tap(() => {
-        if (!background) this.loading.set(false);
+        if (!background) this.setLoading(false);
+        // Settled, whatever the outcome — the `catchError` above turns a
+        // failure into a result rather than an error notification, so this runs
+        // on both paths and the placeholder is unblocked either way.
+        this.hasLoadedRoot.set(true);
       }),
     );
   }
@@ -1324,6 +1408,37 @@ export class WorkspaceExplorerComponent {
    * this call, so the directory the user is looking at stays current at zero
    * extra cost and no `getWorkspaceTree` count moves.
    */
+  /**
+   * Re-read the directory the main pane is showing.
+   *
+   * At the root it defers to `refresh()`, which owns the root listing — the
+   * root tree and the root list are written by the same load, and re-listing
+   * the root separately would leave the two disagreeing until the next tree
+   * load. Below the root it re-lists that directory alone.
+   *
+   * Guarded so a second click cannot race the first; the error is logged rather
+   * than bannered, because the pane still holds the listing it had and blanking
+   * it to report a failed refresh loses more than it says.
+   */
+  async refreshCurrentDirectory(): Promise<void> {
+    if (this.refreshingDirectory()) {
+      return;
+    }
+    const path = this.currentDirectory();
+    if (path === '') {
+      this.refresh();
+      return;
+    }
+    this.refreshingDirectory.set(true);
+    try {
+      await this.refreshDirectory(path);
+    } catch (error: unknown) {
+      console.error('Error refreshing directory', error);
+    } finally {
+      this.refreshingDirectory.set(false);
+    }
+  }
+
   private async refreshDirectory(path: string): Promise<FileNode[]> {
     const fresh = await this.fetchTree(path);
     const freshNodes = this.convertToTreeNodes(fresh);

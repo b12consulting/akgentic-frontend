@@ -27,18 +27,18 @@
 
         <div class="navigator-content">
           <p-progressSpinner
-            *ngIf="loading()"
+            *ngIf="showLoading()"
             styleClass="spinner"
             [style]="{ width: '50px', height: '50px' }"
           />
 
-          <div *ngIf="treeError() && !loading()" class="error-message">
+          <div *ngIf="treeError() && !showLoading()" class="error-message">
             <i class="pi pi-exclamation-triangle"></i>
             <p>{{ treeError() }}</p>
           </div>
 
           <div
-            *ngIf="!loading() && !treeError() && treeNodes().length === 0"
+            *ngIf="hasLoadedRoot() && !showLoading() && !treeError() && treeNodes().length === 0"
             class="empty-workspace"
           >
             <i class="pi pi-folder-open empty-workspace-icon"></i>
@@ -212,6 +212,22 @@
                 "
               />
             }
+            <!--
+              Beside Upload, and only while the pane is showing a directory: it
+              re-reads the listing on screen. The file half has its own Refresh
+              below, next to Download, for the same reason — each names what it
+              would re-read.
+            -->
+            <p-button
+              label="Refresh"
+              icon="pi pi-refresh"
+              data-testid="refresh-directory"
+              [text]="true"
+              [rounded]="true"
+              severity="secondary"
+              [disabled]="refreshingDirectory()"
+              (onClick)="refreshCurrentDirectory()"
+            />
           }
           <p-button
             *ngIf="openFile()"

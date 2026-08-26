@@ -1705,24 +1705,49 @@ describe('WorkspaceExplorerComponent — NFR3 OnPush regression gate', () => {
       explorerDe.componentInstance as WorkspaceExplorerComponent;
 
     expect(explorer.loading()).toBe(true);
+
+    // The spinner is gated on `showLoading`, which lags `loading` by the
+    // anti-flicker delay — so it is deliberately NOT on screen yet. Waiting the
+    // delay out is what this spec is about: that when it does appear, and later
+    // clears, both happen through the signal-driven global tick without the
+    // OnPush parent being re-marked.
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    await hostFixture.whenStable();
     expect(
       hostFixture.nativeElement.querySelector('p-progressspinner') ||
         hostFixture.nativeElement.querySelector('p-progressSpinner')
-    ).withContext('spinner should be visible while pending').not.toBeNull();
+    ).withContext('spinner should be visible once the delay elapses').not.toBeNull();
+    expect(
+      hostFixture.nativeElement.querySelector('.navigator-content p-progressspinner') ||
+        hostFixture.nativeElement.querySelector('.navigator-content p-progressSpinner'),
+    ).withContext('and it is the TREE pane spinner').not.toBeNull();
 
     // Resolve the tree. CRITICALLY: never call hostFixture.detectChanges()
     // (which would force-check the OnPush parent). Only let the zone settle —
     // the spinner must clear via the signal-driven global tick alone.
     resolveTree([fileNode({ name: 'a.md', path: 'a.md', type: 'file' })]);
     await hostFixture.whenStable();
+    // One macrotask hop. The clear is a signal write in a promise microtask,
+    // and the auto-detect tick that paints it runs after the zone drains — the
+    // same hop the appearance above needed. Still NO parent re-mark, which is
+    // what this spec is about.
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     // The signal write repainted the explorer's own OnPush view via the global
     // tick, even though the parent was never explicitly re-marked.
     expect(explorer.loading()).toBe(false);
+    expect(explorer.showLoading())
+      .withContext('showLoading must clear with loading')
+      .toBe(false);
+    // Scoped to the TREE pane, which is this spec's subject — the same scoping
+    // scenario 27 applies for its own pane, and for the same reason: the
+    // content pane has a spinner of its own whose state says nothing about the
+    // tree load. Unscoped, this assertion was answering a question it had not
+    // asked.
     expect(
-      hostFixture.nativeElement.querySelector('p-progressspinner') ||
-        hostFixture.nativeElement.querySelector('p-progressSpinner')
-    ).withContext('spinner must be gone after resolve').toBeNull();
+      hostFixture.nativeElement.querySelector('.navigator-content p-progressspinner') ||
+        hostFixture.nativeElement.querySelector('.navigator-content p-progressSpinner'),
+    ).withContext('tree-pane spinner must be gone after resolve').toBeNull();
   });
 
   // --- the content-pane gate (AC1, NFR3 analogue) -------------------
@@ -3832,6 +3857,92 @@ describe('WorkspaceExplorerComponent — the pane state model (Epic 45)', () => 
     expect(empty).withContext('empty-workspace block').not.toBeNull();
     expect(empty!.textContent).toContain('No files found');
     expect(tree()).withContext('no tree for an empty workspace').toBeNull();
+  });
+
+  it('does NOT render the empty block before the first load has settled', async () => {
+    // The flicker, pinned as the STATE it happens in rather than by trying to
+    // catch the instant. On mount `loading` is false, `treeError` is null and
+    // `treeNodes` is empty — exactly the three signals that rendered "No files
+    // found" — for the frame between the component existing and the load
+    // setting `loading`. An empty workspace announced before anything had been
+    // read.
+    //
+    // A first draft of this spec held the fetch on a never-settling promise and
+    // asserted after `create()`. It was green under the bug: by then the load
+    // HAS started, so `loading` is true and hides the block for the wrong
+    // reason. The state below is the one the template must refuse, and it is
+    // reachable only by naming it.
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+    await create();
+    fixture.detectChanges();
+
+    component.hasLoadedRoot.set(false);
+    component.showLoading.set(false);
+    component.treeError.set(null);
+    component.treeNodes.set([]);
+    fixture.detectChanges();
+
+    expect(
+      fixture.nativeElement.querySelector('.empty-workspace'),
+    ).withContext('empty block before the first load settles').toBeNull();
+  });
+
+  it('a refresh FASTER than the delay never shows the spinner', async () => {
+    // The flicker itself, and the only spec that fails if the delay is removed
+    // — the two placeholder specs above drive `showLoading` directly, so they
+    // pin the template gate and say nothing about what sets it.
+    //
+    // Asserted SYNCHRONOUSLY after the refresh: without the delay `setLoading`
+    // turns the spinner on in that same statement, so this is exactly where a
+    // regression shows.
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+    await create();
+    fixture.detectChanges();
+
+    component.refresh();
+
+    expect(component.loading())
+      .withContext('the load itself is marked in flight at once')
+      .toBeTrue();
+    expect(component.showLoading())
+      .withContext('but nothing is shown yet')
+      .toBeFalse();
+
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.showLoading())
+      .withContext('and a fetch that beat the delay showed nothing at all')
+      .toBeFalse();
+  });
+
+  it('renders the empty block once that same state has SETTLED', async () => {
+    // The other half: without it the spec above is satisfied by a block that
+    // never renders at all, and the placeholder would be dead rather than
+    // merely delayed.
+    workspaceServiceSpy.getWorkspaceTree.and.resolveTo([]);
+    await create();
+    fixture.detectChanges();
+
+    component.hasLoadedRoot.set(true);
+    component.showLoading.set(false);
+    component.treeError.set(null);
+    component.treeNodes.set([]);
+    fixture.detectChanges();
+
+    expect(
+      fixture.nativeElement.querySelector('.empty-workspace'),
+    ).withContext('empty block after the load settles').not.toBeNull();
+  });
+
+  it('unblocks the empty block when the first load FAILS', async () => {
+    // Settled is settled. Gating on success alone would leave a failed root
+    // load claiming the workspace was still being read, forever.
+    workspaceServiceSpy.getWorkspaceTree.and.rejectWith(new Error('boom'));
+    await create();
+    fixture.detectChanges();
+
+    expect(component.hasLoadedRoot()).toBeTrue();
   });
 });
 
