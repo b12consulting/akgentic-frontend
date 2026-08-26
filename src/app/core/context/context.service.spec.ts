@@ -349,7 +349,11 @@ describe('ContextService', () => {
     expect(next.map((t) => t.team_id)).toEqual(['b']);
     // Derived pipeline emitted `false` because `currentTeam$` → null.
     expect(service.currentTeamRunning$.value).toBe(false);
-    expect(routerSpy.navigate).toHaveBeenCalledWith(['/']);
+    // The home ROUTE, now carrying whatever query parameters the teams list
+    // last wrote (Story 48.2): deleting a team you filtered your way to must
+    // not also discard the filter that found it. Empty here — no home page has
+    // run in this spec — so the target is the same list, restored.
+    expect(routerSpy.navigate).toHaveBeenCalledWith([''], { queryParams: {} });
   });
 
   // --- AC11 (Story 10.1 late-subscriber on teams$) -----------------------

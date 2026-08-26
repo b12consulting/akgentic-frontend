@@ -2209,6 +2209,106 @@ describe('HomeComponent', () => {
       expect(label.getAttribute('title')).toContain('selected team type');
     });
 
+    // --- Reset ------------------------------------------------------------
+
+    it('reset clears every term and the narrowing toggle at once', async () => {
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([
+            field('case_id', { index: true }),
+            field('tenant', { index: true }),
+          ]),
+        ),
+      );
+      component.onFilterTermChanged('case_id', 'C-1234');
+      component.onFilterTermChanged('tenant', 'acme');
+      component.onFilterNamespaceToggle(true);
+
+      component.resetFilter();
+
+      expect(component.filterTerms).toEqual({});
+      expect(component.filterByNamespace).toBeFalse();
+      expect(component.hasActiveFilter).toBeFalse();
+    });
+
+    it('reset goes through the normal change path — it fetches and resets the page', async () => {
+      // Not a direct state write. A second way to change the filter is a second
+      // way for the URL, the page and the request to disagree.
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+      component.onFilterTermChanged('case_id', 'C-1234');
+      component.first = 500;
+      component.currentPage = 3;
+      contextSpy.setFilter.calls.reset();
+
+      component.resetFilter();
+
+      expect(contextSpy.setFilter).toHaveBeenCalledWith({
+        meta: {},
+        catalogNamespace: null,
+      });
+      expect(component.first).toBe(0);
+      expect(component.currentPage).toBe(1);
+    });
+
+    it('reset leaves the filter row OPEN', async () => {
+      // Clearing is not dismissing: collapsing here would take the controls
+      // away exactly when a different term is most likely to be typed.
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+      component.onFilterTermChanged('case_id', 'C-1234');
+
+      component.resetFilter();
+
+      expect(component.filtersVisible).toBeTrue();
+    });
+
+    it('reset is a no-op when nothing is filtered — no fetch', async () => {
+      await renderThenFilterOn(
+        nsSummary('acme-cases', 'Acme Cases', 'd', contract([])),
+      );
+      contextSpy.setFilter.calls.reset();
+
+      component.resetFilter();
+
+      expect(contextSpy.setFilter).not.toHaveBeenCalled();
+    });
+
+    it('the reset control is rendered only while something is filtered', async () => {
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+      expect(
+        fixture.nativeElement.querySelector('[data-test="reset-filter-btn"]'),
+      ).toBeNull();
+
+      component.onFilterTermChanged('case_id', 'C-1234');
+      fixture.detectChanges();
+      expect(
+        fixture.nativeElement.querySelector('[data-test="reset-filter-btn"]'),
+      ).not.toBeNull();
+    });
+
     // --- URL persistence (48.2) -------------------------------------------
     //
     // These specs re-create the component against a route stub carrying query

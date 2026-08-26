@@ -215,6 +215,32 @@ export class ContextService {
     this._filter$.next(next);
   }
 
+  /**
+   * The query parameters the home page last wrote, so a navigation that means
+   * "back to my list" can land on the list the user actually left.
+   *
+   * The home page's filter and page live in the URL (Story 48.2), and the URL
+   * is the authority on what that page shows: `router.navigate(['/'])` with no
+   * parameters therefore lands on an UNFILTERED list, which is what the logo,
+   * the leave-a-team path and the delete-and-return path all used to do.
+   *
+   * Held here rather than read back off the router because by the time these
+   * navigations run, the home route is no longer active and its parameters are
+   * gone. Written by `HomeComponent.writeUrl` — its single writer — and empty
+   * until that page has been visited, so a first navigation is unaffected.
+   *
+   * A plain record, not an observable: every reader wants the value at the
+   * moment it navigates, and none of them re-renders on a change.
+   */
+  homeQueryParams: Record<string, string | number | null> = {};
+
+  /** Navigate to the teams list as the user left it. */
+  async navigateHome(): Promise<boolean> {
+    return await this.router.navigate([''], {
+      queryParams: this.homeQueryParams,
+    });
+  }
+
   async getTeams(): Promise<TeamContext[]> {
     const teams = await this.apiService.getTeams();
     this._context$.next(teams);
@@ -279,7 +305,9 @@ export class ContextService {
 
   async clear(teamId: string) {
     await this.deleteTeam(teamId);
-    await this.router.navigate(['/']);
+    // Back to the list as it was: deleting a team you had filtered your way to
+    // should not also discard the filter that found it.
+    await this.navigateHome();
   }
 
   /**

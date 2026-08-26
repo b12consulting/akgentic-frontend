@@ -166,6 +166,13 @@
     }
 }
 
+// Sits on the same bottom edge as the inputs and the toggle beside it, since
+// it has no label of its own to stack.
+.home-filter__reset {
+    align-self: flex-end;
+    margin-bottom: 0.15rem;
+}
+
 .home-filter__input {
     // Wide enough for a case reference, narrow enough that several fit a row.
     width: 14rem;

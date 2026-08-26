@@ -550,6 +550,12 @@ export class HomeComponent {
         queryParams[URL_META_PREFIX + key] = term;
       }
     }
+    // Remembered for the navigations that mean "back to my list" — the logo,
+    // leaving a team, deleting the team you were in. They run when this route
+    // is no longer active, so the parameters cannot be read back off the router
+    // by then. Recorded on every write, so what they replay is what the address
+    // bar last showed.
+    this.contextService.homeQueryParams = queryParams;
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams,
@@ -616,6 +622,27 @@ export class HomeComponent {
    * the terms just restored beside it.
    */
   private restoreNamespace: string | null = null;
+
+  /**
+   * Clear every filter this row owns, in one action.
+   *
+   * Goes through the same `onFilterChanged` path a keystroke does, so the reset
+   * fetches, resets to page 1 and rewrites the URL exactly as any other change
+   * would. A reset that wrote the state directly would be a second way to
+   * change the filter, and the two would drift.
+   *
+   * The row STAYS OPEN. Clearing is not dismissing: collapsing here would take
+   * the controls away at the moment the user is most likely to type a different
+   * term, and it would hide the change that had just been made.
+   */
+  resetFilter(): void {
+    if (!this.hasActiveFilter) {
+      return;
+    }
+    this.filterTerms = {};
+    this.filterByNamespace = false;
+    this.onFilterChanged();
+  }
 
   /** A metadata input changed. */
   onFilterTermChanged(key: string, term: string): void {

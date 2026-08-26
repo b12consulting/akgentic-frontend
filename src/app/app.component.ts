@@ -185,6 +185,9 @@ export class AppComponent {
   // Navigate to home page and clear current process context
   navigateToHome() {
     this.contextService.currentProcessId$.next('');
-    this.router.navigate(['/']);
+    // Through the service, so the teams list comes back filtered as the user
+    // left it. A bare `navigate(['/'])` lands on an unfiltered list, because
+    // the home page's filter and page live in its query string.
+    void this.contextService.navigateHome();
   }
 }

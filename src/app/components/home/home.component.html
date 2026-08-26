@@ -160,6 +160,25 @@
           >This team type only</label
         >
       </span>
+      <!--
+        Clear everything the row owns. Rendered only while there IS something to
+        clear: a permanently visible reset on an empty form is a control that
+        does nothing on most of the visits it is seen.
+      -->
+      <button
+        *ngIf="hasActiveFilter"
+        pButton
+        size="small"
+        type="button"
+        label="Reset"
+        icon="pi pi-filter-slash"
+        severity="secondary"
+        [text]="true"
+        title="Clear every filter"
+        (click)="resetFilter()"
+        class="extra-small-button home-filter__reset"
+        data-test="reset-filter-btn"
+      ></button>
       <span
         class="home-filter__field"
         *ngFor="let f of filterFields; trackBy: trackFilterField"

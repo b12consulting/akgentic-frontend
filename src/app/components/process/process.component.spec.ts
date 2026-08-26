@@ -127,6 +127,7 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
       getCurrentTeam: jasmine
         .createSpy('getCurrentTeam')
         .and.callFake(async () => makeTeam()),
+      navigateHome: jasmine.createSpy('navigateHome').and.resolveTo(true),
     };
 
     // Story 6.4 (AC1): `messages$` / `message$` / `createAgentGraph$` were
@@ -369,7 +370,7 @@ describe('ProcessComponent (Story 10-2 — single-fetch navigation)', () => {
   }): Promise<{
     component: ProcessComponent;
     fixture: ComponentFixture<ProcessComponent>;
-    contextSpy: { getCurrentTeam: jasmine.Spy };
+    contextSpy: { getCurrentTeam: jasmine.Spy; navigateHome: jasmine.Spy };
     messageSpy: { init: jasmine.Spy };
     routerSpy: { navigate: jasmine.Spy };
   }> {
@@ -378,6 +379,7 @@ describe('ProcessComponent (Story 10-2 — single-fetch navigation)', () => {
       getCurrentTeam: jasmine
         .createSpy('getCurrentTeam')
         .and.returnValue(Promise.resolve(options.fetchedTeam)),
+      navigateHome: jasmine.createSpy('navigateHome').and.resolveTo(true),
     };
 
     const ingestionService = {
@@ -474,8 +476,12 @@ describe('ProcessComponent (Story 10-2 — single-fetch navigation)', () => {
   });
 
   it('(AC6) null team short-circuits: router.navigate([/]) is called and ingestionService.init is NOT', async () => {
-    const { messageSpy, routerSpy } = await setup({ fetchedTeam: null });
-    expect(routerSpy.navigate).toHaveBeenCalledWith(['/']);
+    const { messageSpy, contextSpy } = await setup({ fetchedTeam: null });
+    // The bail-out now DELEGATES: the component no longer builds the home
+    // route itself, so the router is no longer its collaborator here. Asserting
+    // on `navigateHome` is what keeps this spec about the short-circuit rather
+    // than about a URL shape that belongs to the teams list (Story 48.2).
+    expect(contextSpy.navigateHome).toHaveBeenCalled();
     expect(messageSpy.init).not.toHaveBeenCalled();
   });
 
