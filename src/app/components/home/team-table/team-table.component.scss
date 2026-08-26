@@ -149,11 +149,11 @@ p-table {
 // The box behind the spinner.
 //
 // A PSEUDO-ELEMENT on the mask, not a background on the icon: the icon is the
-// thing PrimeNG spins, so a box painted on it spins with it. The mask does not
-// move, so a box drawn there stays still while the icon turns inside it.
+// thing that spins, so a box painted on it spins with it. The mask does not
+// move, so a box drawn there stays still while the spinner turns inside it.
 //
 // Absolutely positioned and centred rather than sized by its content, so the
-// box keeps one size whatever icon the theme uses.
+// box keeps one size whatever the theme puts inside it.
 :host ::ng-deep .p-datatable-mask::before {
     content: "";
     position: absolute;
@@ -172,4 +172,11 @@ p-table {
 :host ::ng-deep .p-datatable-loading-icon {
     // Positioned, so it paints ABOVE the absolutely-positioned box behind it.
     position: relative;
+    // Large and light, like the chat panel's loading placeholder — and a fixed
+    // neutral colour, so it never lands on one of the theme spinner's four
+    // animated stops. Red in particular reads as an error here.
+    font-size: 3rem;
+    width: 3rem;
+    height: 3rem;
+    color: #94a3b8;
 }
