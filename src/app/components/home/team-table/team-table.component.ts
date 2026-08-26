@@ -11,6 +11,7 @@ import {
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
+import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import {
   TableLazyLoadEvent,
   TableModule,
@@ -68,6 +69,7 @@ export interface TeamDescriptionSave {
     CommonModule,
     FormsModule,
     TableModule,
+    ProgressSpinnerModule,
     TagModule,
     ButtonModule,
     InputTextModule,
@@ -88,6 +90,20 @@ export class TeamTableComponent {
 
   /** The row offset the paginator is parked on. */
   @Input() first = 0;
+
+  /**
+   * Whether the list is being fetched.
+   *
+   * Drives `p-table`'s own overlay, which dims the rows already on screen
+   * rather than emptying them. That distinction matters on this table more than
+   * most: it is filtered, and an emptied table reads as "no team matches" —
+   * the exact answer a filter exists to give — where dimmed rows read as
+   * "updating". The frame, the header and the paginator all stay put.
+   *
+   * The DELAY that keeps a fast fetch from flickering lives in
+   * `ContextService.loading$`, not here: this input is already the answer.
+   */
+  @Input() loading = false;
 
   /**
    * The `p-table`'s own lazy-load event, re-emitted VERBATIM.

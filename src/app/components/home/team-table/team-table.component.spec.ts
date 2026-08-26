@@ -639,4 +639,45 @@ describe('TeamTableComponent', () => {
       'rgb(255, 255, 255)',
     );
   });
+
+  // --- Loading -----------------------------------------------------------
+
+  it('passes `loading` through to the p-table, both ways', () => {
+    // The binding IS the feature here: the component adds no logic of its own,
+    // so an input that never reaches `p-table` would leave the spinner dead
+    // with every other spec still green.
+    component.teams = [makeTeam({ team_id: 't-1', name: 'Alpha' })];
+    component.loading = true;
+    fixture.detectChanges();
+
+    const table = fixture.debugElement.query(By.css('p-table'));
+    expect(table.componentInstance.loading).toBeTrue();
+
+    component.loading = false;
+    fixture.detectChanges();
+    expect(table.componentInstance.loading).toBeFalse();
+  });
+
+  it('defaults to NOT loading', () => {
+    // A table that arrives spinning before anything has been asked for would
+    // announce work that is not happening.
+    expect(component.loading).toBeFalse();
+  });
+
+  it('keeps the rows on screen while loading', () => {
+    // The previous page stays accurate until the new one lands. Emptying the
+    // table would read as "no team matches" — the exact answer the filter
+    // exists to give — where dimmed rows read as "updating".
+    component.teams = [
+      makeTeam({ team_id: 't-1', name: 'Alpha' }),
+      makeTeam({ team_id: 't-2', name: 'Beta' }),
+    ];
+    component.loading = true;
+    fixture.detectChanges();
+
+    const text = fixture.nativeElement.textContent as string;
+    expect(text).toContain('Alpha');
+    expect(text).toContain('Beta');
+  });
+
 });

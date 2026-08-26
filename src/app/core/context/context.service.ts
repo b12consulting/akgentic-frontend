@@ -8,11 +8,14 @@ import {
   from,
   interval,
   Observable,
+  of,
   Subject,
+  timer,
 } from 'rxjs';
 import {
   catchError,
   debounceTime,
+  finalize,
   distinctUntilChanged,
   filter,
   map,
@@ -44,6 +47,20 @@ const TEAM_STATE_TIMEOUT_MS = 10_000;
  * and one composed URL — not one URL per keystroke, most of them discarded.
  */
 const FILTER_DEBOUNCE_MS = 250;
+
+/**
+ * How long a team-list fetch may run before the table says it is loading.
+ *
+ * Most of these return faster than this, and a spinner that appears and
+ * vanishes inside 100ms reads as a flicker rather than as feedback — worse than
+ * showing nothing. Only a request that outlives the delay is worth announcing.
+ *
+ * It is a DELAY, not a minimum duration: a fetch that finishes at 140ms shows
+ * nothing at all, and one that finishes at 160ms shows the spinner for 10ms.
+ * The second case is the honest cost of not having a minimum, and it is rarer
+ * than the flicker the delay removes.
+ */
+export const LOADING_INDICATOR_DELAY_MS = 50;
 
 @Injectable({
   providedIn: 'root',
@@ -100,6 +117,61 @@ export class ContextService {
   }
 
   private _filterChanges$ = new Subject<TeamFilter>();
+
+  // --- Loading state ------------------------------------------------------
+  //
+  // Two independent paths fetch the team list: `loadTeamsPage`, called directly
+  // by the table's `(onLazyLoad)` for the arrival seed and every page turn; and
+  // the debounced filter pipeline below. They can overlap, so this is a COUNT
+  // rather than a boolean — a page turn finishing must not clear a spinner a
+  // filter change is still waiting on.
+  private _inFlight = 0;
+  private _busy$ = new BehaviorSubject<boolean>(false);
+
+  /**
+   * Whether the team list is loading, delayed so a fast fetch shows nothing.
+   *
+   * `switchMap` is what makes the delay a delay: when `_busy$` goes true it
+   * starts a timer, and when it goes false BEFORE that timer fires the timer is
+   * cancelled and `false` is emitted immediately. A `debounceTime` here would
+   * be wrong in exactly that case — it would delay the clear as well, leaving
+   * the spinner up after the rows had already arrived.
+   *
+   * `distinctUntilChanged` because the raw count crosses zero more often than
+   * the answer changes; without it a page turn overlapping a filter change
+   * would emit `false, true` and restart the delay for a table that never
+   * stopped loading.
+   */
+  public readonly loading$: Observable<boolean> = this._busy$.pipe(
+    switchMap((busy) =>
+      busy ? timer(LOADING_INDICATOR_DELAY_MS).pipe(map(() => true)) : of(false),
+    ),
+    distinctUntilChanged(),
+    shareReplay({ bufferSize: 1, refCount: false }),
+  );
+
+  /**
+   * Mark a fetch as started, and as finished.
+   *
+   * `endRequest` MUST run for a cancelled request too, not only a resolved or
+   * rejected one — the filter pipeline's `switchMap` unsubscribes a superseded
+   * fetch, and a count that only decrements on completion would strand the
+   * spinner on forever after the first superseded keystroke. `finalize` covers
+   * all three endings, which is why the pipeline uses it rather than `tap`.
+   */
+  private beginRequest(): void {
+    this._inFlight += 1;
+    if (this._inFlight === 1) {
+      this._busy$.next(true);
+    }
+  }
+
+  private endRequest(): void {
+    this._inFlight = Math.max(0, this._inFlight - 1);
+    if (this._inFlight === 0) {
+      this._busy$.next(false);
+    }
+  }
 
   // The page size the last `loadTeamsPage` was asked for, replayed by the
   // filter pipeline so a filtered refetch keeps the paginator's size. Left
@@ -161,11 +233,16 @@ export class ContextService {
       .pipe(
         debounceTime(FILTER_DEBOUNCE_MS),
         distinctUntilChanged(teamFilterEquals),
-        switchMap((next) =>
-          from(this.apiService.getTeamsPage(1, this._pageSize, next)).pipe(
+        switchMap((next) => {
+          this.beginRequest();
+          return from(this.apiService.getTeamsPage(1, this._pageSize, next)).pipe(
             catchError(() => EMPTY),
-          ),
-        ),
+            // Covers all three endings — resolved, rejected, and UNSUBSCRIBED
+            // when the next keystroke supersedes this fetch. `tap` would miss
+            // the third and strand the spinner on.
+            finalize(() => this.endRequest()),
+          );
+        }),
       )
       .subscribe((page) => {
         this._context$.next(page.teams);
@@ -262,10 +339,18 @@ export class ContextService {
    */
   async loadTeamsPage(page?: number, size?: number): Promise<TeamPage> {
     this._pageSize = size ?? this._pageSize;
-    const result = await this.apiService.getTeamsPage(page, size, this._filter$.value);
-    this._context$.next(result.teams);
-    this._totalCount$.next(result.total_count);
-    return result;
+    this.beginRequest();
+    try {
+      const result = await this.apiService.getTeamsPage(page, size, this._filter$.value);
+      this._context$.next(result.teams);
+      this._totalCount$.next(result.total_count);
+      return result;
+    } finally {
+      // `finally`, so a rejected fetch clears the spinner too. The error is
+      // already reported by `FetchService`; leaving the table spinning after it
+      // would claim the request was still running.
+      this.endRequest();
+    }
   }
 
   /** Clear team-list state on team-switch / context reset so a stale page or
