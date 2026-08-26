@@ -8,11 +8,19 @@
       below is the only flex/scroll region (Story 28.3).
     -->
     <div class="home-controls">
+    <!--
+      The team-TYPE select. It decides which team a Create makes AND which
+      metadata fields the filter bar below offers — it does NOT narrow the
+      list. The narrowing control is the toggle in the filter row; labelled
+      badly, this select reads as a filter that does not work (Epic 48 AC14).
+    -->
+    <label for="namespace-select" class="home-controls__label">Team type</label>
     <p-select
       size="small"
+      inputId="namespace-select"
       [options]="(namespaces$ | async) || []"
       [ngModel]="selectedNamespace$ | async"
-      (ngModelChange)="selectedNamespace$.next($event)"
+      (ngModelChange)="onNamespaceSelected($event)"
       optionLabel="name"
       placeholder="Select a team type"
     >
@@ -82,6 +90,59 @@
     ></button>
     <br />
     <br />
+    </div>
+
+    <!--
+      Filter row (Epic 48). Sits in normal flow like .home-controls above it —
+      the .home-table region below is the only flex/scroll area (Story 28.3).
+
+      ONE INPUT PER FIELD THE SELECTED NAMESPACE DECLARES WITH `index: true`,
+      in the contract's declaration order, and NOTHING when it declares none:
+      no empty container and no placeholder row, which is why the *ngFor sits
+      directly here rather than inside a wrapper of its own. `filterFields` is
+      a component FIELD recomputed on selection change — never a getter, which
+      would hand NgForOf a fresh array every tick and rebuild the inputs
+      mid-keystroke.
+
+      Every input is PLAIN TEXT regardless of the field's key name or its
+      declared `pattern`: no date picker, no select, no client-side pattern
+      check, no casefolding and no escaping. The three-character floor is NOT
+      here either — it lives once, where the URL parameter is composed.
+    -->
+    <div class="home-filter">
+      <span
+        class="home-filter__field"
+        *ngFor="let f of filterFields; trackBy: trackFilterField"
+      >
+        <label [attr.for]="'filter-meta-' + f.key">{{ metadataFieldLabel(f) }}</label>
+        <input
+          type="text"
+          pInputText
+          class="home-filter__input"
+          [id]="'filter-meta-' + f.key"
+          [attr.data-test]="'filter-meta-' + f.key"
+          [ngModel]="filterTerms[f.key] || ''"
+          (ngModelChange)="onFilterTermChanged(f.key, $event)"
+          [placeholder]="minFilterTermLength + '+ characters to filter'"
+        />
+      </span>
+      <!--
+        The narrowing control — the ONLY control on this page that filters the
+        list. A p-toggleswitch and not a checkbox: no p-checkbox exists in this
+        codebase, while "Show all namespaces" immediately above is already a
+        toggleswitch. Behaviour is unchanged either way.
+      -->
+      <span class="home-filter__namespace">
+        <p-toggleswitch
+          [ngModel]="filterByNamespace"
+          (ngModelChange)="onFilterNamespaceToggle($event)"
+          data-test="filter-namespace-toggle"
+          inputId="filter-namespace-toggle"
+        ></p-toggleswitch>
+        <label for="filter-namespace-toggle"
+          >Only this team type's teams</label
+        >
+      </span>
     </div>
 
     <!--

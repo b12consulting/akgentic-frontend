@@ -1,4 +1,10 @@
-import { metadataEntries, TeamResponse, toTeamContext } from './team.interface';
+import {
+  metadataEntries,
+  NO_TEAM_FILTER,
+  teamFilterEquals,
+  TeamResponse,
+  toTeamContext,
+} from './team.interface';
 
 function makeResponse(overrides: Partial<TeamResponse> = {}): TeamResponse {
   return {
@@ -79,5 +85,57 @@ describe('metadataEntries', () => {
     const entries = metadataEntries({ count: 0, urgent: false });
 
     expect(entries.map((e) => e.value)).toEqual(['0', 'false']);
+  });
+});
+
+describe('teamFilterEquals (48.1 AC3)', () => {
+  it('is true for two DISTINCT objects with equal contents', () => {
+    // The case that matters: every keystroke builds a fresh object, so an
+    // identity comparison would suppress nothing.
+    const a = { meta: { case_id: 'C-12', tenant: 'acme' }, catalogNamespace: 'ns' };
+    const b = { meta: { case_id: 'C-12', tenant: 'acme' }, catalogNamespace: 'ns' };
+
+    expect(a).not.toBe(b);
+    expect(teamFilterEquals(a, b)).toBeTrue();
+  });
+
+  it('ignores key ORDER — the same terms under the same keys are the same filter', () => {
+    const a = { meta: { case_id: 'C-12', tenant: 'acme' }, catalogNamespace: null };
+    const b = { meta: { tenant: 'acme', case_id: 'C-12' }, catalogNamespace: null };
+
+    expect(teamFilterEquals(a, b)).toBeTrue();
+  });
+
+  it('is false on a changed VALUE', () => {
+    const a = { meta: { case_id: 'C-12' }, catalogNamespace: null };
+    const b = { meta: { case_id: 'C-13' }, catalogNamespace: null };
+
+    expect(teamFilterEquals(a, b)).toBeFalse();
+  });
+
+  it('is false on a changed KEY SET, in either direction', () => {
+    const one = { meta: { case_id: 'C-12' }, catalogNamespace: null };
+    const two = { meta: { case_id: 'C-12', tenant: 'acme' }, catalogNamespace: null };
+    const swapped = { meta: { tenant: 'C-12' }, catalogNamespace: null };
+
+    expect(teamFilterEquals(one, two)).toBeFalse();
+    expect(teamFilterEquals(two, one)).toBeFalse();
+    // Same size, same values, different keys — a length check alone misses it.
+    expect(teamFilterEquals(one, swapped)).toBeFalse();
+  });
+
+  it('is false on a changed NAMESPACE, including on/off', () => {
+    const off = { meta: { case_id: 'C-12' }, catalogNamespace: null };
+    const on = { meta: { case_id: 'C-12' }, catalogNamespace: 'acme-support' };
+    const other = { meta: { case_id: 'C-12' }, catalogNamespace: 'other-ns' };
+
+    expect(teamFilterEquals(off, on)).toBeFalse();
+    expect(teamFilterEquals(on, other)).toBeFalse();
+  });
+
+  it('reports NO_TEAM_FILTER equal to a freshly-built empty filter', () => {
+    expect(
+      teamFilterEquals(NO_TEAM_FILTER, { meta: {}, catalogNamespace: null }),
+    ).toBeTrue();
   });
 });

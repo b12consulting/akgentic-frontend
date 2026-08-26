@@ -4,7 +4,7 @@ import { firstValueFrom } from 'rxjs';
 
 import { ApiService } from '../http/api.service';
 import { ContextService } from './context.service';
-import { TeamContext, TeamPage, TeamResponse } from './team.interface';
+import { TeamContext, TeamFilter, TeamPage, TeamResponse } from './team.interface';
 
 function makeTeam(
   teamId: string,
@@ -1022,7 +1022,15 @@ describe('ContextService', () => {
 
     await service.loadTeamsPage(3, 250);
 
-    expect(apiSpy.getTeamsPage).toHaveBeenCalledOnceWith(3, 250);
+    // CHANGED EXPECTATION (48.1). Before Epic 48 this asserted the two-argument
+    // call, which was complete at the time. `loadTeamsPage` now forwards the
+    // ACTIVE FILTER as a third argument — the one line that makes every reload
+    // path carry the filter without naming it — so the two-argument form would
+    // now be asserting the absence of that behaviour.
+    expect(apiSpy.getTeamsPage).toHaveBeenCalledOnceWith(3, 250, {
+      meta: {},
+      catalogNamespace: null,
+    });
   });
 
   it('(AC5h) resetTeams clears totalCount back to 0 and teams$ to []', async () => {
@@ -1622,4 +1630,277 @@ describe('ContextService.setTeamDescription (Story 37-3)', () => {
     expect(emissions[0]).toEqual([]);
     sub.unsubscribe();
   });
+});
+
+// ---------------------------------------------------------------------------
+// Story 48.1 — the filter state and the debounced pipeline.
+//
+// Every spec here drives time with `fakeAsync` / `tick` / `flushMicrotasks`.
+// That is not a convenience: a fake that resolves synchronously cannot see the
+// out-of-order defect at all, and a spec that skips the first `tick` collapses
+// two requests into one and then passes under `mergeMap` too — proving nothing.
+// ---------------------------------------------------------------------------
+
+describe('ContextService filter (Story 48.1)', () => {
+  const FILTER_DEBOUNCE_MS = 250;
+
+  let service: ContextService;
+  let apiSpy: jasmine.SpyObj<ApiService>;
+  let routerSpy: jasmine.SpyObj<Router>;
+
+  beforeEach(() => {
+    apiSpy = jasmine.createSpyObj('ApiService', [
+      'getTeams',
+      'getTeamsPage',
+      'getTeam',
+      'createTeam',
+      'deleteTeam',
+      'stopTeam',
+      'restoreTeam',
+    ]);
+    routerSpy = jasmine.createSpyObj('Router', ['navigate']);
+    routerSpy.navigate.and.returnValue(Promise.resolve(true));
+
+    TestBed.configureTestingModule({
+      providers: [
+        ContextService,
+        { provide: ApiService, useValue: apiSpy },
+        { provide: Router, useValue: routerSpy },
+      ],
+    });
+
+    service = TestBed.inject(ContextService);
+  });
+
+  function pageOf(...names: string[]): TeamPage {
+    return {
+      teams: names.map((name) => makeTeam(name, 'running', name)),
+      total_count: names.length,
+    };
+  }
+
+  /** The names currently held by `teams$`, read synchronously. */
+  function teamNames(): string[] {
+    let names: string[] = [];
+    service.teams$.subscribe((teams) => (names = teams.map((t) => t.name))).unsubscribe();
+    return names;
+  }
+
+  function filterOf(caseId: string): TeamFilter {
+    return { meta: { case_id: caseId }, catalogNamespace: null };
+  }
+
+  // --- AC2: the debounce is upstream of the URL build -----------------------
+
+  it('(AC2) a burst of keystrokes inside the window produces ONE fetch, carrying the final value', fakeAsync(() => {
+    apiSpy.getTeamsPage.and.returnValue(Promise.resolve(pageOf('final')));
+
+    service.setFilter(filterOf('a'));
+    tick(50);
+    service.setFilter(filterOf('az'));
+    tick(50);
+    service.setFilter(filterOf('aze'));
+    tick(50);
+    service.setFilter(filterOf('azer'));
+    tick(FILTER_DEBOUNCE_MS);
+    flushMicrotasks();
+
+    expect(apiSpy.getTeamsPage).toHaveBeenCalledTimes(1);
+    expect(apiSpy.getTeamsPage.calls.mostRecent().args[2]).toEqual(filterOf('azer'));
+  }));
+
+  it('(AC2, AC8) the debounced fetch always asks for page 1', fakeAsync(() => {
+    // Park the recorded page size on a real value first, as the paginator does.
+    apiSpy.getTeamsPage.and.returnValue(Promise.resolve(pageOf('t')));
+    service.loadTeamsPage(4, 250);
+    flushMicrotasks();
+    apiSpy.getTeamsPage.calls.reset();
+
+    service.setFilter(filterOf('aze'));
+    tick(FILTER_DEBOUNCE_MS);
+    flushMicrotasks();
+
+    expect(apiSpy.getTeamsPage.calls.mostRecent().args[0]).toBe(1);
+    // The size the paginator last asked for is replayed, not re-invented.
+    expect(apiSpy.getTeamsPage.calls.mostRecent().args[1]).toBe(250);
+  }));
+
+  // --- AC3: structurally equal successive filters fetch once ----------------
+
+  it('(AC3) two equal-but-distinct filters past the debounce produce ONE fetch', fakeAsync(() => {
+    apiSpy.getTeamsPage.and.returnValue(Promise.resolve(pageOf('t')));
+
+    service.setFilter({ meta: { case_id: 'aze' }, catalogNamespace: null });
+    tick(FILTER_DEBOUNCE_MS);
+    flushMicrotasks();
+    // A DIFFERENT object with the same contents — what a keystroke that
+    // retypes the same value produces. Reference equality would let it through.
+    service.setFilter({ meta: { case_id: 'aze' }, catalogNamespace: null });
+    tick(FILTER_DEBOUNCE_MS);
+    flushMicrotasks();
+
+    expect(apiSpy.getTeamsPage).toHaveBeenCalledTimes(1);
+  }));
+
+  it('(AC3) a genuinely different filter past the debounce DOES fetch again', fakeAsync(() => {
+    // Guards the guard: without this, a pipeline that never fetches twice for
+    // any reason would pass the spec above.
+    apiSpy.getTeamsPage.and.returnValue(Promise.resolve(pageOf('t')));
+
+    service.setFilter(filterOf('aze'));
+    tick(FILTER_DEBOUNCE_MS);
+    flushMicrotasks();
+    service.setFilter(filterOf('azer'));
+    tick(FILTER_DEBOUNCE_MS);
+    flushMicrotasks();
+
+    expect(apiSpy.getTeamsPage).toHaveBeenCalledTimes(2);
+  }));
+
+  // --- AC4: an out-of-order response never repaints the table ---------------
+
+  it('(AC4) the SECOND request wins when its response lands FIRST and the first lands last', fakeAsync(() => {
+    let resolveFirst!: (p: TeamPage) => void;
+    let resolveSecond!: (p: TeamPage) => void;
+    apiSpy.getTeamsPage.and.returnValues(
+      new Promise<TeamPage>((r) => (resolveFirst = r)),
+      new Promise<TeamPage>((r) => (resolveSecond = r)),
+    );
+
+    service.setFilter(filterOf('az'));
+    tick(FILTER_DEBOUNCE_MS); // the first request is in flight
+    service.setFilter(filterOf('aze'));
+    tick(FILTER_DEBOUNCE_MS); // the second request is in flight
+
+    expect(apiSpy.getTeamsPage).toHaveBeenCalledTimes(2);
+
+    resolveSecond(pageOf('aze-team')); // the newer answer lands FIRST
+    flushMicrotasks();
+    expect(teamNames()).toEqual(['aze-team']);
+
+    resolveFirst(pageOf('az-team')); // the slower older answer lands LAST
+    flushMicrotasks();
+
+    // The late response writes NOTHING — no flicker to the stale set and back.
+    expect(teamNames()).toEqual(['aze-team']);
+  }));
+
+  it('(AC4) the superseded response does not overwrite totalCount either', fakeAsync(() => {
+    let resolveFirst!: (p: TeamPage) => void;
+    let resolveSecond!: (p: TeamPage) => void;
+    apiSpy.getTeamsPage.and.returnValues(
+      new Promise<TeamPage>((r) => (resolveFirst = r)),
+      new Promise<TeamPage>((r) => (resolveSecond = r)),
+    );
+
+    service.setFilter(filterOf('az'));
+    tick(FILTER_DEBOUNCE_MS);
+    service.setFilter(filterOf('aze'));
+    tick(FILTER_DEBOUNCE_MS);
+
+    resolveSecond({ teams: [], total_count: 7 });
+    flushMicrotasks();
+    resolveFirst({ teams: [], total_count: 999 });
+    flushMicrotasks();
+
+    expect(service.totalCount).toBe(7);
+  }));
+
+  // --- AC10: every reload path carries the filter, none of them names it -----
+
+  it('(AC10) loadTeamsPage forwards the ACTIVE filter to getTeamsPage', fakeAsync(() => {
+    apiSpy.getTeamsPage.and.returnValue(Promise.resolve(pageOf('t')));
+
+    service.setFilter(filterOf('aze'));
+    tick(FILTER_DEBOUNCE_MS);
+    flushMicrotasks();
+    apiSpy.getTeamsPage.calls.reset();
+
+    // The shape every reload path takes — refresh, restore, stop, page change.
+    service.loadTeamsPage(3, 250);
+    flushMicrotasks();
+
+    expect(apiSpy.getTeamsPage).toHaveBeenCalledOnceWith(3, 250, filterOf('aze'));
+  }));
+
+  it('(AC10) filter exposes the active value synchronously and filter$ emits it', fakeAsync(() => {
+    apiSpy.getTeamsPage.and.returnValue(Promise.resolve(pageOf('t')));
+
+    expect(service.filter).toEqual({ meta: {}, catalogNamespace: null });
+
+    service.setFilter(filterOf('aze'));
+
+    expect(service.filter).toEqual(filterOf('aze'));
+    let emitted: TeamFilter | undefined;
+    service.filter$.subscribe((f) => (emitted = f)).unsubscribe();
+    expect(emitted!).toEqual(filterOf('aze'));
+
+    tick(FILTER_DEBOUNCE_MS);
+    flushMicrotasks();
+  }));
+
+  // --- AC11: the reset carries no fetch -------------------------------------
+
+  it('(AC11) clearFilter empties the filter and issues NO fetch', fakeAsync(() => {
+    apiSpy.getTeamsPage.and.returnValue(Promise.resolve(pageOf('t')));
+
+    service.clearFilter();
+    tick(FILTER_DEBOUNCE_MS);
+    flushMicrotasks();
+
+    expect(service.filter).toEqual({ meta: {}, catalogNamespace: null });
+    expect(apiSpy.getTeamsPage).not.toHaveBeenCalled();
+  }));
+
+  it('(AC11) clearFilter after an ACTIVE filter still issues no fetch, and the next reload is unfiltered', fakeAsync(() => {
+    apiSpy.getTeamsPage.and.returnValue(Promise.resolve(pageOf('t')));
+
+    service.setFilter(filterOf('aze'));
+    tick(FILTER_DEBOUNCE_MS);
+    flushMicrotasks();
+    apiSpy.getTeamsPage.calls.reset();
+
+    service.clearFilter();
+    tick(FILTER_DEBOUNCE_MS);
+    flushMicrotasks();
+
+    expect(apiSpy.getTeamsPage).not.toHaveBeenCalled();
+
+    service.loadTeamsPage(1, 250);
+    flushMicrotasks();
+
+    expect(apiSpy.getTeamsPage).toHaveBeenCalledOnceWith(1, 250, {
+      meta: {},
+      catalogNamespace: null,
+    });
+  }));
+
+  // --- The pipeline survives a rejected fetch -------------------------------
+
+  it('a rejected fetch leaves the pipeline alive for the next filter', fakeAsync(() => {
+    // Built inside `callFake`, not handed to `returnValues`: `returnValues`
+    // evaluates its arguments at spec-setup time, so the rejected promise
+    // would sit unhandled through the debounce window and Zone would report an
+    // uncaught rejection before the pipeline ever subscribed to it.
+    let call = 0;
+    apiSpy.getTeamsPage.and.callFake(() => {
+      call += 1;
+      return call === 1
+        ? Promise.reject(new Error('network'))
+        : Promise.resolve(pageOf('recovered'));
+    });
+
+    service.setFilter(filterOf('aze'));
+    tick(FILTER_DEBOUNCE_MS);
+    flushMicrotasks();
+
+    // Nothing written — the table keeps the last page it actually received.
+    expect(teamNames()).toEqual([]);
+
+    service.setFilter(filterOf('azer'));
+    tick(FILTER_DEBOUNCE_MS);
+    flushMicrotasks();
+
+    expect(teamNames()).toEqual(['recovered']);
+  }));
 });

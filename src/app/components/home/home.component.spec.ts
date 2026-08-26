@@ -11,7 +11,7 @@ import { ApiService } from '../../core/http/api.service';
 import { AuthService } from '../../core/auth/auth.service';
 import { ConfigService } from '../../core/config/config.service';
 import { ContextService } from '../../core/context/context.service';
-import { TeamContext } from '../../core/context/team.interface';
+import { TeamContext, TeamFilter } from '../../core/context/team.interface';
 import { NamespacePanelComponent } from '../catalog/namespace-panel/namespace-panel.component';
 import { HttpError } from '../../core/http/fetch.service';
 import {
@@ -131,6 +131,12 @@ describe('HomeComponent', () => {
         'createTeamAndNavigate',
         'stopTeamAndAwait',
         'setTeamDescription',
+        // 48.1: `ngOnInit` calls `clearFilter()` on EVERY mount, so leaving it
+        // out of this list throws "not a function" in every spec in this file
+        // at once — a failure that reads like something far worse than a
+        // missing spy name.
+        'setFilter',
+        'clearFilter',
       ],
     ) as jasmine.SpyObj<ContextService> & {
       teams$: BehaviorSubject<TeamContext[]>;
@@ -167,6 +173,8 @@ describe('HomeComponent', () => {
     // unchanged team object in teams$ after saveDescription proves the
     // COMPONENT is no longer writing the cache itself (Story 37-3 AC6).
     contextSpy.setTeamDescription.and.stub();
+    contextSpy.setFilter.and.stub();
+    contextSpy.clearFilter.and.stub();
 
     // Anonymous by default (no `roles`), so isAdmin$ resolves
     // false and the toggle is hidden unless a test pushes an admin user.
@@ -1908,6 +1916,526 @@ describe('HomeComponent', () => {
       expect(component.metadataModalVisible).toBeFalse();
       expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
       expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Story 48.1 — the filter bar.
+  //
+  // The service is a spy throughout, so what is asserted here is the FILTER
+  // MODEL the component composes and the input set it renders — never a URL
+  // and never a fetch. The URL is `ApiService`'s contract and the debounce is
+  // `ContextService`'s; each is pinned in its own spec file.
+  // -------------------------------------------------------------------------
+
+  describe('filter bar (48.1)', () => {
+    /** Render, then select through the real seam the dropdown uses. */
+    async function renderThenFilterOn(ns: NamespaceSummary | null): Promise<void> {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      component.onNamespaceSelected(ns);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    function filterInputs(): HTMLInputElement[] {
+      return Array.from(
+        fixture.nativeElement.querySelectorAll('[data-test^="filter-meta-"]'),
+      ) as HTMLInputElement[];
+    }
+
+    function filterInput(key: string): HTMLInputElement | null {
+      return fixture.nativeElement.querySelector(
+        `[data-test="filter-meta-${key}"]`,
+      ) as HTMLInputElement | null;
+    }
+
+    function namespaceToggle(): HTMLElement | null {
+      return fixture.nativeElement.querySelector(
+        '[data-test="filter-namespace-toggle"]',
+      ) as HTMLElement | null;
+    }
+
+    /** The filter most recently handed to the service. */
+    function lastFilter(): TeamFilter {
+      return contextSpy.setFilter.calls.mostRecent().args[0];
+    }
+
+    // --- AC1: the contract decides which inputs exist ----------------------
+
+    it('(AC1) renders one input per INDEXED field, in declaration order', async () => {
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([
+            field('zulu', { index: true }),
+            field('alpha', { index: true }),
+            field('mike', { index: true }),
+          ]),
+        ),
+      );
+
+      expect(
+        filterInputs().map((el) => el.getAttribute('data-test')),
+      ).toEqual([
+        'filter-meta-zulu',
+        'filter-meta-alpha',
+        'filter-meta-mike',
+      ]);
+    });
+
+    it('(AC1) `index` alone gates — a MANDATORY unindexed field gets NO input', async () => {
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([
+            field('tenant', { index: false, mandatory: true }),
+            field('case_id', { index: true, mandatory: false }),
+          ]),
+        ),
+      );
+
+      // The two flags are independent. Reusing the creation modal's
+      // `mandatory` logic would offer neither a subset nor a superset.
+      expect(filterInput('tenant')).toBeNull();
+      expect(filterInput('case_id')).not.toBeNull();
+    });
+
+    it('(AC1) an ABSENT team_metadata key renders NO metadata inputs', async () => {
+      const ns = nsSummary('agent-team-v1', 'Agent Team', 'd');
+      expect('team_metadata' in ns).toBeFalse();
+
+      await renderThenFilterOn(ns);
+
+      expect(filterInputs().length).toBe(0);
+    });
+
+    it('(AC1) a NULL team_metadata renders NO metadata inputs', async () => {
+      await renderThenFilterOn(
+        nsSummary('agent-team-v1', 'Agent Team', 'd', null),
+      );
+
+      expect(filterInputs().length).toBe(0);
+    });
+
+    it('(AC1) a declared contract with an EMPTY fields list renders NO metadata inputs', async () => {
+      await renderThenFilterOn(
+        nsSummary('agent-team-v1', 'Agent Team', 'd', contract([])),
+      );
+
+      expect(filterInputs().length).toBe(0);
+    });
+
+    it('(AC1) a contract whose fields are ALL UNINDEXED renders NO metadata inputs', async () => {
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('tenant'), field('case_id', { mandatory: true })]),
+        ),
+      );
+
+      expect(filterInputs().length).toBe(0);
+    });
+
+    it('(AC1) each input carries a visible label — the description, else the capitalised key', async () => {
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([
+            field('case_id', { index: true, description: 'Case reference.' }),
+            field('tenant', { index: true }),
+          ]),
+        ),
+      );
+
+      const labels: HTMLLabelElement[] = Array.from(
+        fixture.nativeElement.querySelectorAll('.home-filter__field label'),
+      );
+      expect(labels.map((l) => l.textContent?.trim())).toEqual([
+        'Case reference.',
+        'Tenant',
+      ]);
+    });
+
+    it('(AC1) each input names the three-character floor in its placeholder', async () => {
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+
+      expect(filterInput('case_id')!.getAttribute('placeholder')).toContain('3');
+    });
+
+    // --- AC13: free text, always -------------------------------------------
+
+    it('(AC13) an input is plain text even when the field declares a pattern', async () => {
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([
+            field('date', { index: true, pattern: '^\\d{4}-\\d{2}-\\d{2}$' }),
+          ]),
+        ),
+      );
+
+      // No date picker inferred from the key, no select inferred from the
+      // pattern, and no client-side validation attribute either.
+      expect(filterInput('date')!.getAttribute('type')).toBe('text');
+      expect(filterInput('date')!.getAttribute('pattern')).toBeNull();
+    });
+
+    // --- AC5/AC6: below the floor the list is UNFILTERED, never empty -------
+
+    it('(AC6) a two-character term still reaches the filter model VERBATIM', async () => {
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+      contextSpy.setFilter.calls.reset();
+
+      component.onFilterTermChanged('case_id', 'az');
+
+      // The floor lives ONCE, where the URL parameter is composed. A second
+      // check here would be a second thing to keep in step.
+      expect(lastFilter().meta).toEqual({ case_id: 'az' });
+    });
+
+    it('(AC6) a short term filters NO rows client-side — the component never touches teams$', async () => {
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+      const page = [
+        makeTeam({ team_id: 't-1', name: 'Alpha' }),
+        makeTeam({ team_id: 't-2', name: 'Beta' }),
+      ];
+      teams$.next(page);
+      fixture.detectChanges();
+
+      component.onFilterTermChanged('case_id', 'a');
+      fixture.detectChanges();
+
+      // Still the server's unfiltered page — not an emptied table.
+      expect(teams$.value).toBe(page);
+    });
+
+    it('(AC5) clearing a term back below the floor RE-ISSUES, without that term', async () => {
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([
+            field('case_id', { index: true }),
+            field('tenant', { index: true }),
+          ]),
+        ),
+      );
+      component.onFilterTermChanged('tenant', 'acme');
+      component.onFilterTermChanged('case_id', 'aze');
+      contextSpy.setFilter.calls.reset();
+
+      component.onFilterTermChanged('case_id', '');
+
+      expect(contextSpy.setFilter).toHaveBeenCalledTimes(1);
+      expect(lastFilter().meta).toEqual({ tenant: 'acme' });
+    });
+
+    // --- AC7: the narrowing control ----------------------------------------
+
+    it('(AC7, AC14) the narrowing toggle is rendered and carries its data-test', async () => {
+      await renderThenFilterOn(
+        nsSummary('acme-cases', 'Acme Cases', 'd'),
+      );
+
+      expect(namespaceToggle()).not.toBeNull();
+    });
+
+    it('(AC7) ON adds the SELECTED namespace identifier', async () => {
+      await renderThenFilterOn(
+        nsSummary('acme-cases', 'Acme Cases', 'd'),
+      );
+
+      component.onFilterNamespaceToggle(true);
+
+      expect(lastFilter().catalogNamespace).toBe('acme-cases');
+    });
+
+    it('(AC7) OFF leaves it NULL — not empty, not the namespace', async () => {
+      await renderThenFilterOn(
+        nsSummary('acme-cases', 'Acme Cases', 'd'),
+      );
+      component.onFilterNamespaceToggle(true);
+
+      component.onFilterNamespaceToggle(false);
+
+      expect(lastFilter().catalogNamespace).toBeNull();
+    });
+
+    it('(AC7) the toggle defaults OFF', () => {
+      expect(component.filterByNamespace).toBeFalse();
+    });
+
+    // --- AC14: the two namespace controls read as two controls --------------
+
+    it('(AC14) the team-type select and the narrowing toggle are separately labelled', async () => {
+      await renderThenFilterOn(
+        nsSummary('acme-cases', 'Acme Cases', 'd'),
+      );
+
+      const selectLabel = fixture.nativeElement.querySelector(
+        'label[for="namespace-select"]',
+      ) as HTMLLabelElement | null;
+      const toggleLabel = fixture.nativeElement.querySelector(
+        'label[for="filter-namespace-toggle"]',
+      ) as HTMLLabelElement | null;
+
+      expect(selectLabel).not.toBeNull();
+      expect(toggleLabel).not.toBeNull();
+      expect(selectLabel!.textContent?.trim()).not.toBe(
+        toggleLabel!.textContent?.trim(),
+      );
+    });
+
+    // --- AC8: any filter change resets to page 1 ----------------------------
+
+    it('(AC8) a metadata term change resets first and currentPage', async () => {
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+      component.first = 750;
+      component.currentPage = 4;
+
+      component.onFilterTermChanged('case_id', 'aze');
+
+      expect(component.first).toBe(0);
+      expect(component.currentPage).toBe(1);
+    });
+
+    it('(AC8) the narrowing toggle resets first and currentPage too', async () => {
+      await renderThenFilterOn(
+        nsSummary('acme-cases', 'Acme Cases', 'd'),
+      );
+      component.first = 750;
+      component.currentPage = 4;
+
+      component.onFilterNamespaceToggle(true);
+
+      expect(component.first).toBe(0);
+      expect(component.currentPage).toBe(1);
+    });
+
+    it('(AC8) the service is told the new filter BEFORE the paginator is reset', async () => {
+      // Order is load-bearing: `[first]` re-fires (onLazyLoad), and that extra
+      // `loadTeamsPage` must read the NEW filter, not the old one.
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+      component.first = 750;
+      let firstWhenToldTheFilter = -1;
+      contextSpy.setFilter.and.callFake(() => {
+        firstWhenToldTheFilter = component.first;
+      });
+
+      component.onFilterTermChanged('case_id', 'aze');
+
+      expect(firstWhenToldTheFilter).toBe(750);
+      expect(component.first).toBe(0);
+    });
+
+    // --- AC9: changing the namespace clears the terms -----------------------
+
+    it('(AC9) selecting a DIFFERENT namespace clears the terms and re-issues', async () => {
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+      component.onFilterTermChanged('case_id', 'aze');
+      expect(lastFilter().meta).toEqual({ case_id: 'aze' });
+      contextSpy.setFilter.calls.reset();
+
+      component.onNamespaceSelected(
+        nsSummary(
+          'other-ns',
+          'Other',
+          'd',
+          contract([field('ref', { index: true })]),
+        ),
+      );
+      fixture.detectChanges();
+
+      // Re-issued, and with nothing from the previous contract.
+      expect(contextSpy.setFilter).toHaveBeenCalledTimes(1);
+      expect(lastFilter().meta).toEqual({});
+      expect(component.filterTerms).toEqual({});
+    });
+
+    it('(AC9) the input set re-renders from the NEW contract', async () => {
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+      expect(filterInput('case_id')).not.toBeNull();
+
+      component.onNamespaceSelected(
+        nsSummary(
+          'other-ns',
+          'Other',
+          'd',
+          contract([field('ref', { index: true })]),
+        ),
+      );
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(filterInput('case_id')).toBeNull();
+      expect(filterInput('ref')).not.toBeNull();
+    });
+
+    it('(AC9) re-selecting the SAME namespace identifier clears nothing and re-issues nothing', async () => {
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+      component.onFilterTermChanged('case_id', 'aze');
+      contextSpy.setFilter.calls.reset();
+
+      // A FRESH object for the same namespace — what `loadNamespaces()` hands
+      // back on every refresh. Comparing references would clear the terms on
+      // an unrelated refresh.
+      component.onNamespaceSelected(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+
+      expect(contextSpy.setFilter).not.toHaveBeenCalled();
+      expect(component.filterTerms).toEqual({ case_id: 'aze' });
+    });
+
+    it('(AC9) the reconciliation inside loadNamespaces() clears nothing when the selection survives', async () => {
+      apiSpy.getNamespaces.and.returnValue(
+        Promise.resolve([
+          nsSummary(
+            'acme-cases',
+            'Acme Cases',
+            'd',
+            contract([field('case_id', { index: true })]),
+          ),
+        ]),
+      );
+      await component.ngOnInit();
+      component.onFilterTermChanged('case_id', 'aze');
+      contextSpy.setFilter.calls.reset();
+
+      // A refresh — new objects, same namespace.
+      await component.onNamespaceSaved();
+
+      expect(contextSpy.setFilter).not.toHaveBeenCalled();
+      expect(component.filterTerms).toEqual({ case_id: 'aze' });
+    });
+
+    // --- AC11: a stale filter never outlives the page ------------------------
+
+    it('(AC11) ngOnInit clears the service filter and issues NO fetch of its own', async () => {
+      apiSpy.getNamespaces.and.returnValue(
+        Promise.resolve([
+          nsSummary(
+            'acme-cases',
+            'Acme Cases',
+            'd',
+            contract([field('case_id', { index: true })]),
+          ),
+        ]),
+      );
+
+      await component.ngOnInit();
+
+      expect(contextSpy.clearFilter).toHaveBeenCalledTimes(1);
+      // The FIRST selection of the page's lifetime composes the empty filter
+      // that was just cleared — pushing it would race the table's own first
+      // (onLazyLoad) with an identical page-1 request.
+      expect(contextSpy.setFilter).not.toHaveBeenCalled();
+      expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
+    });
+
+    it('(AC11) the clear lands BEFORE the namespaces fetch is awaited', async () => {
+      let clearedBeforeFetch = false;
+      apiSpy.getNamespaces.and.callFake(async () => {
+        clearedBeforeFetch = contextSpy.clearFilter.calls.count() === 1;
+        return [];
+      });
+
+      await component.ngOnInit();
+
+      expect(clearedBeforeFetch).toBeTrue();
+    });
+
+    it('(AC11) a re-mount starts with empty inputs', async () => {
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+      component.onFilterTermChanged('case_id', 'aze');
+
+      const remounted = TestBed.createComponent(HomeComponent);
+      await remounted.componentInstance.ngOnInit();
+
+      expect(remounted.componentInstance.filterTerms).toEqual({});
+      expect(remounted.componentInstance.filterByNamespace).toBeFalse();
     });
   });
 });

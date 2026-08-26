@@ -12,14 +12,15 @@ import { Router } from '@angular/router';
 import { BehaviorSubject, firstValueFrom, Observable } from 'rxjs';
 import { filter, map, take } from 'rxjs/operators';
 
-import { ApiService } from '../../core/http/api.service';
+import { ApiService, MIN_FILTER_TERM_LENGTH } from '../../core/http/api.service';
 import { HttpError } from '../../core/http/fetch.service';
-import { isRunning } from '../../core/context/team.interface';
+import { isRunning, TeamFilter } from '../../core/context/team.interface';
 import {
   TeamMetadataPipe,
   trackMetadataEntry,
 } from '../../core/context/team-metadata.pipe';
 import {
+  MetadataFieldDescriptor,
   NamespaceSummary,
   TeamMetadataContract,
 } from '../../protocol/catalog.interface';
@@ -43,7 +44,10 @@ import { ContextService } from '../../core/context/context.service';
 // loaded only on first opening of the namespace-editor dialog — the initial
 // home-page bundle stays Monaco-free.
 import { NamespacePanelComponent } from '../catalog/namespace-panel/namespace-panel.component';
-import { TeamMetadataModalComponent } from './team-metadata-modal/team-metadata-modal.component';
+import {
+  metadataFieldLabel,
+  TeamMetadataModalComponent,
+} from './team-metadata-modal/team-metadata-modal.component';
 
 // Classic team-list page size (Epic 28, ADR-032 §Decision 3). Bound to the
 // paginator's [rows] and used as the loadTeamsPage size fallback so no magic
@@ -179,7 +183,52 @@ export class HomeComponent {
   // `trackBy` for the Metadata column's chips. See the pipe.
   trackMetadataEntry = trackMetadataEntry;
 
+  // -----------------------------------------------------------------------
+  // The filter bar (Epic 48).
+  //
+  // The selected namespace's contract decides which inputs exist; the terms
+  // typed into them plus the narrowing toggle compose a `TeamFilter` that the
+  // context service debounces and turns into one page-1 request.
+  // -----------------------------------------------------------------------
+
+  /**
+   * The fields the bar currently offers an input for — a FIELD, recomputed
+   * only when the selection changes, never a getter.
+   *
+   * A getter would return a fresh array on every change-detection cycle, which
+   * `NgForOf` reads as "every item replaced" and rebuilds every input each
+   * tick — losing focus and the caret mid-word. That is exactly the churn
+   * Epic 47 removed from the metadata chips; do not reintroduce it here.
+   */
+  filterFields: MetadataFieldDescriptor[] = [];
+
+  /** What is typed into each offered input, keyed by field key. */
+  filterTerms: Record<string, string> = {};
+
+  /** The narrowing control: on, the request carries `catalog_namespace`. */
+  filterByNamespace = false;
+
+  /** Exposed for the inputs' placeholder — one floor, named in one place. */
+  readonly minFilterTermLength = MIN_FILTER_TERM_LENGTH;
+
+  /** Labels a filter input exactly as the creation modal labels its own. */
+  metadataFieldLabel = metadataFieldLabel;
+
+  /** `trackBy` for the filter inputs — the field key is their identity. */
+  trackFilterField = (_index: number, field: MetadataFieldDescriptor): string =>
+    field.key;
+
   async ngOnInit() {
+    // FIRST, and synchronously. `ContextService` is a root singleton, so a
+    // filter set during an earlier visit to this page outlives the component
+    // that set it: without this, navigating to a team and back would re-create
+    // this component with empty inputs while the table's first `(onLazyLoad)`
+    // still carried the previous visit's terms — a filtered set painted under
+    // an empty form. `clearFilter` writes only the value subject, so the reset
+    // itself issues NO fetch and the table's own first lazy load remains the
+    // sole page-1 seed (Story 28.2).
+    this.contextService.clearFilter();
+
     await this.loadNamespaces();
 
     // The list is seeded by the table's first (onLazyLoad) (page 1) — NOT a
@@ -265,7 +314,10 @@ export class HomeComponent {
       const stillExists =
         current != null && namespaces.some((n) => n.namespace === current.namespace);
       if (!stillExists) {
-        this.selectedNamespace$.next(namespaces.length > 0 ? namespaces[0] : null);
+        // Through `applyNamespaceSelection`, not a bare `.next(...)`, so a
+        // re-selection here clears the terms belonging to the contract that
+        // just went away — the same treatment the dropdown gets (Epic 48).
+        this.applyNamespaceSelection(namespaces.length > 0 ? namespaces[0] : null);
       }
     } catch (error) {
       console.error('Failed to load namespaces:', error);
@@ -285,6 +337,136 @@ export class HomeComponent {
   private metadataContractOf(ns: NamespaceSummary): TeamMetadataContract | null {
     const contract = ns.team_metadata;
     return contract && contract.fields.length > 0 ? contract : null;
+  }
+
+  // -----------------------------------------------------------------------
+  // Filter bar behaviour (Epic 48).
+  // -----------------------------------------------------------------------
+
+  /**
+   * Which fields the bar offers an input for, for a given namespace.
+   *
+   * ONE gate, and it is `metadataContractOf`'s — the same collapse of the
+   * three no-ask states (absent key, `null`, a declared contract with an empty
+   * `fields` list) the creation path already makes. Gating on `=== null` alone
+   * is a bug: an older server omits the key entirely.
+   *
+   * Then `index` ALONE decides. `mandatory` is read not at all: the two flags
+   * are independent, so reusing the modal's mandatory logic would offer a set
+   * of inputs that is neither a subset nor a superset of the right one — and
+   * it would look plausible on every namespace whose fields happen to be both.
+   */
+  private offeredFilterFields(
+    ns: NamespaceSummary | null,
+  ): MetadataFieldDescriptor[] {
+    const contract = ns === null ? null : this.metadataContractOf(ns);
+    return contract === null ? [] : contract.fields.filter((f) => f.index);
+  }
+
+  /**
+   * The `(ngModelChange)` handler for the namespace dropdown. The dropdown and
+   * the auto-select inside `loadNamespaces()` are the only two ways the
+   * selection moves, and both route through `applyNamespaceSelection`.
+   */
+  onNamespaceSelected(ns: NamespaceSummary | null): void {
+    this.applyNamespaceSelection(ns);
+  }
+
+  /**
+   * The single seam every namespace change passes through.
+   *
+   * NO-OPS when the `namespace` IDENTIFIER is unchanged. `loadNamespaces()`
+   * re-fetches on every save, clone, delete and refresh, and each fetch
+   * returns NEW objects for the same namespaces — comparing references would
+   * clear the user's terms on an unrelated refresh.
+   *
+   * On a real change the offered fields are recomputed from the new contract
+   * and the terms are dropped: a term belongs to the contract that offered it,
+   * and carrying it across would leave the table showing a set filtered by the
+   * previous contract's keys beneath an empty form.
+   *
+   * The FIRST selection of the page's lifetime deliberately issues no fetch.
+   * There are no terms to drop and the narrowing control is still off, so the
+   * filter it would compose is the empty one `ngOnInit` has just cleared —
+   * emitting it would fetch page 1 a second time, racing the table's own
+   * `(onLazyLoad)` seed with an identical request.
+   */
+  private applyNamespaceSelection(ns: NamespaceSummary | null): void {
+    const previous = this.selectedNamespace$.value;
+    if ((previous?.namespace ?? null) === (ns?.namespace ?? null)) {
+      return;
+    }
+    this.selectedNamespace$.next(ns);
+    this.filterFields = this.offeredFilterFields(ns);
+    this.filterTerms = {};
+    if (previous === null) {
+      return;
+    }
+    this.onFilterChanged();
+  }
+
+  /** A metadata input changed. */
+  onFilterTermChanged(key: string, term: string): void {
+    this.filterTerms[key] = term;
+    this.onFilterChanged();
+  }
+
+  /** The narrowing control was flipped. */
+  onFilterNamespaceToggle(value: boolean): void {
+    this.filterByNamespace = value;
+    this.onFilterChanged();
+  }
+
+  /**
+   * Compose the current filter from the form state.
+   *
+   * An input nobody has typed into contributes no entry — that is ABSENCE, not
+   * a length rule. THE THREE-CHARACTER FLOOR IS NOT APPLIED HERE: it lives at
+   * exactly one point, `ApiService.getTeamsPage`, where the parameter is
+   * composed. A short term therefore travels into the filter model and is
+   * dropped from the URL, which is what keeps the list UNFILTERED rather than
+   * empty while a user is still typing. A second check here would be a second
+   * thing to keep in step, and the two would eventually disagree.
+   */
+  private composeFilter(): TeamFilter {
+    const meta: Record<string, string> = {};
+    for (const field of this.filterFields) {
+      const term = this.filterTerms[field.key] ?? '';
+      if (term !== '') {
+        meta[field.key] = term;
+      }
+    }
+    return {
+      meta,
+      catalogNamespace: this.filterByNamespace
+        ? (this.selectedNamespace$.value?.namespace ?? null)
+        : null,
+    };
+  }
+
+  /**
+   * Push the composed filter at the service, and reset the paginator — a
+   * filtered list has a different length, so page 4 of the old result set is
+   * meaningless.
+   *
+   * ORDER MATTERS. The filter is handed to the service FIRST, then the
+   * paginator is reset, because `p-table`'s `[first]` binding re-fires
+   * `(onLazyLoad)` when the bound value changes — which issues one extra
+   * `loadTeamsPage` alongside the debounced fetch. That extra request is not
+   * WRONG: the service already holds the new filter by the time it runs, so it
+   * asks the same question and carries the same answer. Written the other way
+   * round it would ask the OLD question.
+   *
+   * `first` is written only when it is not already `0`, which keeps that extra
+   * request to at most one per filter session; the common case — already on
+   * page 1 — produces none at all.
+   */
+  private onFilterChanged(): void {
+    this.contextService.setFilter(this.composeFilter());
+    if (this.first !== 0) {
+      this.first = 0;
+    }
+    this.currentPage = 1;
   }
 
   /**

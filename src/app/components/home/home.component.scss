@@ -78,6 +78,43 @@
     background: #fff;
 }
 
+// Filter row (Epic 48). `flex: 0 0 auto` for the same reason .home-controls
+// has it — this is a natural-height block, and .home-table below is the only
+// region allowed to grow and form the scroll area (Story 28.3). Wraps rather
+// than overflowing: a namespace may declare several indexed fields, and a row
+// of inputs that scrolls sideways hides the ones on the right.
+.home-filter {
+    flex: 0 0 auto;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
+
+    label {
+        font-size: 0.85rem;
+        white-space: nowrap;
+    }
+}
+
+.home-filter__field,
+.home-filter__namespace {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.home-filter__input {
+    // Wide enough for a case reference, narrow enough that several fit a row.
+    width: 14rem;
+    max-width: 100%;
+}
+
+.home-controls__label {
+    font-size: 0.85rem;
+    margin-right: 0.5rem;
+}
+
 .show-all-namespaces {
     display: inline-flex;
     align-items: center;
