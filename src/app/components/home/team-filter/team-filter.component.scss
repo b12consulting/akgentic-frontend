@@ -49,11 +49,18 @@
     }
 }
 
-// Pushed to the far right, away from the controls it clears. `margin-left: auto`
-// rather than a spacer element, so it still falls into place when the row wraps
-// onto a second line.
+// Immediately AFTER the last input, not pushed to the far edge.
+//
+// It used to carry `margin-left: auto`, which kept it away from the controls it
+// clears — but that concern was about it sitting BETWEEN inputs, and being last
+// already answers it. Pushed to the edge, the button was a screen-width mouse
+// journey from the field just typed into, on the one control whose whole point
+// is to be quick.
+//
+// Deliberately NOT `width: fit-content` on the panel: the frame reads as a
+// surface, and it would then resize every time this button appears or
+// disappears, and sit ragged against the full-width table below.
 .team-filter__reset {
-    margin-left: auto;
     align-self: flex-end;
     margin-bottom: 0.15rem;
 }
