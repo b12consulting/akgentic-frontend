@@ -8,7 +8,7 @@ import {
   ElementRef,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { BehaviorSubject, firstValueFrom, Observable } from 'rxjs';
 import { filter, map, take } from 'rxjs/operators';
 
@@ -57,6 +57,10 @@ import {
 // 250 literal is duplicated. Server clamps size to [1, 500].
 const PAGE_SIZE = 250;
 
+// Query-string prefix for a metadata term, mirroring the API's own `meta.<key>`
+// so the page URL and the request it produces read the same way.
+const URL_META_PREFIX = 'meta.';
+
 @Component({
   selector: 'app-home',
   imports: [
@@ -80,6 +84,7 @@ export class HomeComponent {
   apiService: ApiService = inject(ApiService);
   contextService: ContextService = inject(ContextService);
   router: Router = inject(Router);
+  private route: ActivatedRoute = inject(ActivatedRoute);
   authService: AuthService = inject(AuthService);
   private config = inject(ConfigService);
 
@@ -270,15 +275,20 @@ export class HomeComponent {
   }
 
   async ngOnInit() {
-    // FIRST, and synchronously. `ContextService` is a root singleton, so a
-    // filter set during an earlier visit to this page outlives the component
-    // that set it: without this, navigating to a team and back would re-create
-    // this component with empty inputs while the table's first `(onLazyLoad)`
-    // still carried the previous visit's terms — a filtered set painted under
-    // an empty form. `clearFilter` writes only the value subject, so the reset
-    // itself issues NO fetch and the table's own first lazy load remains the
-    // sole page-1 seed (Story 28.2).
-    this.contextService.clearFilter();
+    // FIRST, and synchronously — before the template renders and the table
+    // fires its first `(onLazyLoad)`.
+    //
+    // `ContextService` is a root singleton, so a filter set during an earlier
+    // visit outlives the component that set it. The URL is now the authority on
+    // what this page shows: whatever it names is adopted, and anything it does
+    // not name is cleared. Leaving the service's value in place instead would
+    // paint the previous visit's filtered set under a form the URL says is
+    // empty.
+    //
+    // Both paths write the VALUE only, so neither fetches: the table's own
+    // first lazy load stays the sole page-1 seed (Story 28.2) and carries the
+    // restored filter with it, because `loadTeamsPage` reads that value.
+    this.restoreFromUrl();
 
     await this.loadNamespaces();
 
@@ -304,6 +314,7 @@ export class HomeComponent {
     const size = event.rows ?? PAGE_SIZE;
     this.first = event.first ?? 0;
     this.currentPage = Math.floor(this.first / size) + 1;
+    this.writeUrl();
     await this.contextService.loadTeamsPage(this.currentPage, size);
     this.firstPageLoaded$.next(true);
   }
@@ -361,6 +372,29 @@ export class HomeComponent {
         all: this.showAllNamespaces,
       });
       this.namespaces$.next(namespaces);
+      // The URL named a team type: select THAT one rather than defaulting to
+      // the first, and keep the terms restored beside it. An ordinary selection
+      // clears them — correctly, since they belong to the contract being left —
+      // but here the terms and the namespace arrived together and describe each
+      // other. Consumed once: a later refresh reconciles normally.
+      if (this.restoreNamespace !== null) {
+        const named = this.restoreNamespace;
+        this.restoreNamespace = null;
+        const match = namespaces.find((n) => n.namespace === named) ?? null;
+        if (match !== null) {
+          this.selectedNamespace$.next(match);
+          this.filterFields = this.offeredFilterFields(match);
+          return;
+        }
+        // The URL named a namespace this user cannot see, or that no longer
+        // exists. Its terms cannot be offered, so drop the whole filter rather
+        // than leave the list narrowed by something the form cannot show.
+        this.filterTerms = {};
+        this.filterByNamespace = false;
+        this.filtersVisible = false;
+        this.contextService.clearFilter();
+        this.writeUrl();
+      }
       const current = this.selectedNamespace$.value;
       const stillExists =
         current != null && namespaces.some((n) => n.namespace === current.namespace);
@@ -465,6 +499,124 @@ export class HomeComponent {
     this.onFilterChanged();
   }
 
+  // --- URL persistence (query params) ------------------------------------
+  //
+  // The page's filter and page number live in the URL, so a filtered view can
+  // be shared, bookmarked, and survives a refresh or a trip to a team and back.
+  //
+  // Parameter names mirror the API's own (`meta.<key>`, `catalog_namespace`)
+  // rather than inventing a second vocabulary for the same values.
+  //
+  // `type` is the selected team TYPE, and it is written whenever the filter
+  // depends on it — which is whenever any filter is active. It is load-bearing
+  // rather than cosmetic: `composeFilter` only sends terms for fields the
+  // SELECTED namespace declares as indexed, so restoring `meta.case_id` under
+  // the wrong namespace silently drops it. With no filter active the URL stays
+  // clean.
+
+  /** The 1-based page, or `null` for page 1 — which is not written. */
+  private pageParam(): number | null {
+    return this.currentPage > 1 ? this.currentPage : null;
+  }
+
+  /**
+   * Write the current filter and page into the query string.
+   *
+   * `replaceUrl: true` — this runs on every keystroke, and a history entry per
+   * character would make the Back button useless for anything else.
+   *
+   * Every parameter is written on every call, `null` clearing the ones that no
+   * longer apply. A partial write is how a stale `meta.` term outlives the
+   * field it belonged to and reappears on the next reload.
+   */
+  private writeUrl(): void {
+    const filter = this.composeFilter();
+    const queryParams: Record<string, string | number | null> = {
+      page: this.pageParam(),
+      type: null,
+      only: null,
+    };
+    for (const field of this.filterFields) {
+      queryParams[URL_META_PREFIX + field.key] = null;
+    }
+    const active =
+      Object.keys(filter.meta).length > 0 || filter.catalogNamespace !== null;
+    if (active) {
+      queryParams['type'] = this.selectedNamespace$.value?.namespace ?? null;
+      if (filter.catalogNamespace !== null) {
+        queryParams['only'] = '1';
+      }
+      for (const [key, term] of Object.entries(filter.meta)) {
+        queryParams[URL_META_PREFIX + key] = term;
+      }
+    }
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams,
+      queryParamsHandling: 'merge',
+      replaceUrl: true,
+    });
+  }
+
+  /**
+   * Adopt the filter and page named by the URL, once, on mount.
+   *
+   * Reads the SNAPSHOT deliberately: this restores an entry state, it does not
+   * subscribe to later navigations. Subscribing would feed this component its
+   * own `writeUrl` output and loop.
+   *
+   * The filter is built from the parameters DIRECTLY rather than through
+   * `composeFilter`, which would need `filterFields` — and those need the
+   * namespace list, which is still loading. Restoring the value here and the
+   * form later is what lets the table's own first lazy load carry the filter
+   * with no extra request.
+   */
+  private restoreFromUrl(): void {
+    const params = this.route.snapshot.queryParamMap;
+
+    const page = Number(params.get('page') ?? '1');
+    this.currentPage = Number.isFinite(page) && page > 1 ? Math.floor(page) : 1;
+    this.first = (this.currentPage - 1) * this.rows;
+
+    const meta: Record<string, string> = {};
+    for (const name of params.keys) {
+      if (!name.startsWith(URL_META_PREFIX)) {
+        continue;
+      }
+      const key = name.slice(URL_META_PREFIX.length);
+      const term = params.get(name) ?? '';
+      // The same floor the request composition uses. A shorter term would be
+      // dropped on the next keystroke anyway, so honouring it here keeps a
+      // hand-edited URL from showing a form that disagrees with the list.
+      if (key !== '' && term.trim().length >= this.minFilterTermLength) {
+        meta[key] = term;
+      }
+    }
+    this.filterTerms = { ...meta };
+
+    const type = params.get('type');
+    this.restoreNamespace = type !== null && type !== '' ? type : null;
+    this.filterByNamespace = params.get('only') === '1' && this.restoreNamespace !== null;
+
+    const catalogNamespace = this.filterByNamespace ? this.restoreNamespace : null;
+    this.contextService.restoreFilter({ meta, catalogNamespace });
+
+    // The row opens iff it has something to show for itself. Hidden while
+    // filtering is a state the collapse control already warns about, and it
+    // would be the arrival state for every shared link otherwise.
+    this.filtersVisible =
+      Object.keys(meta).length > 0 || this.filterByNamespace;
+  }
+
+  /**
+   * The namespace the URL named, pending the namespace list arriving.
+   *
+   * Consumed once by `loadNamespaces`, which selects it INSTEAD of defaulting
+   * to the first entry — and, unlike an ordinary selection, without clearing
+   * the terms just restored beside it.
+   */
+  private restoreNamespace: string | null = null;
+
   /** A metadata input changed. */
   onFilterTermChanged(key: string, term: string): void {
     this.filterTerms[key] = term;
@@ -527,6 +679,9 @@ export class HomeComponent {
       this.first = 0;
     }
     this.currentPage = 1;
+    // After the page reset, never before: the URL must not advertise a page
+    // the filter change has just abandoned.
+    this.writeUrl();
   }
 
   /**

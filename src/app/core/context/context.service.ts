@@ -200,6 +200,21 @@ export class ContextService {
     this._filter$.next(NO_TEAM_FILTER);
   }
 
+  /**
+   * Adopt a filter WITHOUT fetching. Writes only `_filter$`.
+   *
+   * The restore-from-URL counterpart of `clearFilter`, and value-only for the
+   * same reason: `loadTeamsPage` reads `_filter$.value`, so a filter installed
+   * before the table's first `(onLazyLoad)` is carried by that seed itself.
+   * Going through `setFilter` instead would issue a SECOND page-1 request
+   * racing the seed — and the seed is a direct `loadTeamsPage` call rather than
+   * a trip through the debounced pipeline, so `switchMap` could not order the
+   * two and the loser could land last.
+   */
+  restoreFilter(next: TeamFilter): void {
+    this._filter$.next(next);
+  }
+
   async getTeams(): Promise<TeamContext[]> {
     const teams = await this.apiService.getTeams();
     this._context$.next(teams);

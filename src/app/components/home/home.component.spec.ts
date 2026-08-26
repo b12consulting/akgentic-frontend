@@ -3,7 +3,13 @@ import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
-import { Router } from '@angular/router';
+import {
+  ActivatedRoute,
+  convertToParamMap,
+  NavigationExtras,
+  ParamMap,
+  Router,
+} from '@angular/router';
 import { Table } from 'primeng/table';
 import { BehaviorSubject, of } from 'rxjs';
 
@@ -82,6 +88,28 @@ function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
   };
 }
 
+/**
+ * Minimal `ActivatedRoute` for the query-string restore.
+ *
+ * Only `snapshot.queryParamMap` is provided, because that is all the component
+ * reads: the restore is a one-shot read of the ENTRY state, deliberately not a
+ * subscription — subscribing would feed the component its own `writeUrl`
+ * output and loop. A stub carrying an observable would invite exactly that.
+ *
+ * ONE mutable object rather than a factory, so a spec can name the entry URL
+ * and then create a fresh component from the same TestBed. Rebuilding the
+ * TestBed per URL would mean duplicating its whole provider list, which is how
+ * the copy silently drifts from the one the other specs run against.
+ */
+const routeStub: { snapshot: { queryParamMap: ParamMap } } = {
+  snapshot: { queryParamMap: convertToParamMap({}) },
+};
+
+/** Point the shared stub at an entry URL. Reset in `beforeEach`. */
+function setUrl(params: Record<string, string>): void {
+  routeStub.snapshot.queryParamMap = convertToParamMap(params);
+}
+
 describe('HomeComponent', () => {
   let fixture: ComponentFixture<HomeComponent>;
   let component: HomeComponent;
@@ -131,12 +159,15 @@ describe('HomeComponent', () => {
         'createTeamAndNavigate',
         'stopTeamAndAwait',
         'setTeamDescription',
-        // 48.1: `ngOnInit` calls `clearFilter()` on EVERY mount, so leaving it
+        // 48.1/48.2: `ngOnInit` calls `restoreFilter()` on EVERY mount (and
+        // `clearFilter()` when the URL names a namespace that is gone), so
+        // leaving either
         // out of this list throws "not a function" in every spec in this file
         // at once — a failure that reads like something far worse than a
         // missing spy name.
         'setFilter',
         'clearFilter',
+        'restoreFilter',
       ],
     ) as jasmine.SpyObj<ContextService> & {
       teams$: BehaviorSubject<TeamContext[]>;
@@ -175,6 +206,10 @@ describe('HomeComponent', () => {
     contextSpy.setTeamDescription.and.stub();
     contextSpy.setFilter.and.stub();
     contextSpy.clearFilter.and.stub();
+    contextSpy.restoreFilter.and.stub();
+    // The stub is shared and mutable, so a URL named by one spec must not leak
+    // into the next.
+    setUrl({});
 
     // Anonymous by default (no `roles`), so isAdmin$ resolves
     // false and the toggle is hidden unless a test pushes an admin user.
@@ -204,6 +239,7 @@ describe('HomeComponent', () => {
         { provide: AuthService, useValue: authSpy },
         { provide: ConfigService, useValue: { hideHome: false } },
         { provide: Router, useValue: routerSpy },
+        { provide: ActivatedRoute, useValue: routeStub },
       ],
       schemas: [CUSTOM_ELEMENTS_SCHEMA],
     }).compileComponents();
@@ -1352,6 +1388,7 @@ describe('HomeComponent', () => {
           { provide: AuthService, useValue: authSpy },
           { provide: ConfigService, useValue: { hideHome: true } },
           { provide: Router, useValue: routerSpy },
+          { provide: ActivatedRoute, useValue: routeStub },
         ],
         schemas: [CUSTOM_ELEMENTS_SCHEMA],
       }).compileComponents();
@@ -1836,6 +1873,7 @@ describe('HomeComponent', () => {
           { provide: AuthService, useValue: authSpy },
           { provide: ConfigService, useValue: { hideHome: true } },
           { provide: Router, useValue: routerSpy },
+          { provide: ActivatedRoute, useValue: routeStub },
         ],
         schemas: [CUSTOM_ELEMENTS_SCHEMA],
       }).compileComponents();
@@ -2169,6 +2207,210 @@ describe('HomeComponent', () => {
       // wording this control must never collapse to.
       expect(label.textContent?.trim()).toBe('This team type only');
       expect(label.getAttribute('title')).toContain('selected team type');
+    });
+
+    // --- URL persistence (48.2) -------------------------------------------
+    //
+    // These specs re-create the component against a route stub carrying query
+    // parameters, because the restore reads the route SNAPSHOT once on mount —
+    // setting parameters on the shared fixture afterwards would change nothing.
+
+    async function mountWithUrl(
+      params: Record<string, string>,
+      namespaces: NamespaceSummary[],
+    ): Promise<HomeComponent> {
+      setUrl(params);
+      apiSpy.getNamespaces.and.returnValue(Promise.resolve(namespaces));
+      const f = TestBed.createComponent(HomeComponent);
+      const c = f.componentInstance;
+      // `ngOnInit` is awaited directly and the fixture is deliberately NOT
+      // rendered: `detectChanges()` would run `ngOnInit` a second time (Angular
+      // calls it on first render), and these specs assert component state
+      // rather than markup. A spec here that needs the DOM should render
+      // instead of calling `ngOnInit`, never both.
+      await c.ngOnInit();
+      return c;
+    }
+
+    it('(48.2) restores the metadata terms named by the URL', async () => {
+      const ns = nsSummary(
+        'acme-cases',
+        'Acme Cases',
+        'd',
+        contract([field('case_id', { index: true })]),
+      );
+      const c = await mountWithUrl({ type: 'acme-cases', 'meta.case_id': 'C-1234' }, [ns]);
+
+      expect(c.filterTerms['case_id']).toBe('C-1234');
+      expect(contextSpy.restoreFilter).toHaveBeenCalledWith({
+        meta: { case_id: 'C-1234' },
+        catalogNamespace: null,
+      });
+    });
+
+    it('(48.2) restores through restoreFilter, never setFilter — no second page-1 request', async () => {
+      // The whole reason the service has two write paths. `loadTeamsPage` reads
+      // the filter VALUE, so a value-only restore is carried by the table's own
+      // first lazy load. Going through `setFilter` would issue a second page-1
+      // request racing that seed — and the seed is a direct call rather than a
+      // trip through the debounced pipeline, so switchMap could not order them.
+      const ns = nsSummary(
+        'acme-cases',
+        'Acme Cases',
+        'd',
+        contract([field('case_id', { index: true })]),
+      );
+      contextSpy.setFilter.calls.reset();
+      contextSpy.restoreFilter.calls.reset();
+
+      await mountWithUrl({ type: 'acme-cases', 'meta.case_id': 'C-1234' }, [ns]);
+
+      // `setFilter` is the ONLY writer of the change subject, so proving it was
+      // not called proves no fetch was issued by the restore. Asserting on
+      // `loadTeamsPage` instead would not: this harness drives change detection
+      // itself, so the table's own seed can legitimately appear there and the
+      // assertion would be about the harness rather than the component.
+      expect(contextSpy.restoreFilter).toHaveBeenCalledTimes(1);
+      expect(contextSpy.setFilter).not.toHaveBeenCalled();
+    });
+
+    it('(48.2) selects the team type the URL names, not the first in the list', async () => {
+      // And keeps the terms restored beside it. An ordinary selection clears
+      // them — correctly, since they belong to the contract being left — but
+      // these arrived together and describe each other.
+      const first = nsSummary('aaa-other', 'Other', 'd', contract([]));
+      const named = nsSummary(
+        'acme-cases',
+        'Acme Cases',
+        'd',
+        contract([field('case_id', { index: true })]),
+      );
+      const c = await mountWithUrl(
+        { type: 'acme-cases', 'meta.case_id': 'C-1234' },
+        [first, named],
+      );
+
+      expect(c.selectedNamespace$.value?.namespace).toBe('acme-cases');
+      expect(c.filterTerms['case_id']).toBe('C-1234');
+      expect(c.filterFields.map((f) => f.key)).toEqual(['case_id']);
+    });
+
+    it('(48.2) restores the narrowing toggle and the page', async () => {
+      const ns = nsSummary('acme-cases', 'Acme Cases', 'd', contract([]));
+      const c = await mountWithUrl({ type: 'acme-cases', only: '1', page: '3' }, [ns]);
+
+      expect(c.filterByNamespace).toBeTrue();
+      expect(c.currentPage).toBe(3);
+      expect(c.first).toBe(2 * c.rows);
+      expect(contextSpy.restoreFilter).toHaveBeenCalledWith({
+        meta: {},
+        catalogNamespace: 'acme-cases',
+      });
+    });
+
+    it('(48.2) opens the filter row when the URL carries a filter, and not otherwise', async () => {
+      const ns = nsSummary(
+        'acme-cases',
+        'Acme Cases',
+        'd',
+        contract([field('case_id', { index: true })]),
+      );
+
+      const filtered = await mountWithUrl(
+        { type: 'acme-cases', 'meta.case_id': 'C-1234' },
+        [ns],
+      );
+      expect(filtered.filtersVisible).toBeTrue();
+
+      const plain = await mountWithUrl({}, [ns]);
+      expect(plain.filtersVisible).toBeFalse();
+    });
+
+    it('(48.2) a page number alone does NOT open the filter row', async () => {
+      // Paging is not filtering. Opening the row for it would put an empty
+      // form on screen for every deep link into the list.
+      const ns = nsSummary('acme-cases', 'Acme Cases', 'd', contract([]));
+      const c = await mountWithUrl({ page: '2' }, [ns]);
+
+      expect(c.currentPage).toBe(2);
+      expect(c.filtersVisible).toBeFalse();
+    });
+
+    it('(48.2) drops the whole filter when the URL names a namespace that is gone', async () => {
+      // Its terms cannot be offered, so leaving the list narrowed by something
+      // the form cannot show would be a filtered table with no visible cause.
+      const other = nsSummary('aaa-other', 'Other', 'd', contract([]));
+      const c = await mountWithUrl(
+        { type: 'deleted-ns', 'meta.case_id': 'C-1234', only: '1' },
+        [other],
+      );
+
+      expect(c.filterTerms).toEqual({});
+      expect(c.filterByNamespace).toBeFalse();
+      expect(c.filtersVisible).toBeFalse();
+      expect(contextSpy.clearFilter).toHaveBeenCalled();
+    });
+
+    it('(48.2) honours the three-character floor on a hand-edited URL', async () => {
+      // The same floor the request composition uses, so a hand-typed short
+      // term cannot produce a form that disagrees with the list.
+      const ns = nsSummary(
+        'acme-cases',
+        'Acme Cases',
+        'd',
+        contract([field('case_id', { index: true })]),
+      );
+      const c = await mountWithUrl({ type: 'acme-cases', 'meta.case_id': 'C' }, [ns]);
+
+      expect(c.filterTerms['case_id']).toBeUndefined();
+      expect(c.filtersVisible).toBeFalse();
+    });
+
+    it('(48.2) writes the filter to the URL, replacing rather than stacking history', async () => {
+      // `replaceUrl` because this runs per keystroke: a history entry per
+      // character would make the Back button useless for anything else.
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+      routerSpy.navigate.calls.reset();
+
+      component.onFilterTermChanged('case_id', 'C-1234');
+
+      expect(routerSpy.navigate).toHaveBeenCalled();
+      const args = routerSpy.navigate.calls.mostRecent().args;
+      const extras = args[1] as NavigationExtras;
+      const written = extras.queryParams as Record<string, unknown>;
+      expect(args[0]).toEqual([]);
+      expect(extras.replaceUrl).toBeTrue();
+      expect(written['meta.case_id']).toBe('C-1234');
+      expect(written['type']).toBe('acme-cases');
+      // Page 1 is the default and is not advertised.
+      expect(written['page']).toBeNull();
+    });
+
+    it('(48.2) clears a term from the URL when it is emptied', async () => {
+      // Every parameter is written on every call. A partial write is how a
+      // stale term outlives the field it belonged to and returns on reload.
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+      component.onFilterTermChanged('case_id', 'C-1234');
+      component.onFilterTermChanged('case_id', '');
+
+      const extras = routerSpy.navigate.calls.mostRecent().args[1] as NavigationExtras;
+      const written = extras.queryParams as Record<string, unknown>;
+      expect(written['meta.case_id']).toBeNull();
+      expect(written['type']).toBeNull();
     });
 
     // --- The collapse control --------------------------------------------
@@ -2651,7 +2893,7 @@ describe('HomeComponent', () => {
 
       await component.ngOnInit();
 
-      expect(contextSpy.clearFilter).toHaveBeenCalledTimes(1);
+      expect(contextSpy.restoreFilter).toHaveBeenCalledTimes(1);
       // The FIRST selection of the page's lifetime composes the empty filter
       // that was just cleared — pushing it would race the table's own first
       // (onLazyLoad) with an identical page-1 request.
@@ -2659,16 +2901,20 @@ describe('HomeComponent', () => {
       expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
     });
 
-    it('(AC11) the clear lands BEFORE the namespaces fetch is awaited', async () => {
-      let clearedBeforeFetch = false;
+    it('(AC11) the restore lands BEFORE the namespaces fetch is awaited', async () => {
+      // Ordering, not merely occurrence. The restore must be in place before
+      // the first `await` in `ngOnInit` returns, because the template renders
+      // at that point and the table's `(onLazyLoad)` reads the filter the
+      // service already holds.
+      let restoredBeforeFetch = false;
       apiSpy.getNamespaces.and.callFake(async () => {
-        clearedBeforeFetch = contextSpy.clearFilter.calls.count() === 1;
+        restoredBeforeFetch = contextSpy.restoreFilter.calls.count() === 1;
         return [];
       });
 
       await component.ngOnInit();
 
-      expect(clearedBeforeFetch).toBeTrue();
+      expect(restoredBeforeFetch).toBeTrue();
     });
 
     it('(AC11) a re-mount starts with empty inputs', async () => {
