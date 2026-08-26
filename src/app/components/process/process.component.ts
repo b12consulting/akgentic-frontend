@@ -281,7 +281,8 @@ export class ProcessComponent implements AfterViewInit, OnDestroy {
     }
 
     if (currentProcess === null) {
-      this.router.navigate(['/']);
+      // As the user left it — see ContextService.navigateHome.
+      void this.contextService.navigateHome();
       return;
     }
 

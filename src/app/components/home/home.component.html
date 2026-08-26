@@ -8,11 +8,20 @@
       below is the only flex/scroll region (Story 28.3).
     -->
     <div class="home-controls">
+    <!--
+      The team-TYPE select. It decides which team a Create makes AND which
+      metadata fields the filter bar below offers — it does NOT narrow the
+      list. The narrowing control is the toggle in the filter row; labelled
+      badly, this select reads as a filter that does not work (Epic 48 AC14).
+    -->
+    <span class="home-controls__group">
+    <label for="namespace-select" class="home-controls__label">Team type</label>
     <p-select
       size="small"
+      inputId="namespace-select"
       [options]="(namespaces$ | async) || []"
       [ngModel]="selectedNamespace$ | async"
-      (ngModelChange)="selectedNamespace$.next($event)"
+      (ngModelChange)="onNamespaceSelected($event)"
       optionLabel="name"
       placeholder="Select a team type"
     >
@@ -23,7 +32,7 @@
         <div [attr.title]="ns.description">{{ ns.name }}</div>
       </ng-template>
     </p-select>
-    &nbsp;
+    </span>
     <!--
       Admin-only "show all namespaces" toggle (ADR-028). Admin-gated UX
       affordance only; NOT the security boundary (the infra unscoping of admin
@@ -45,7 +54,6 @@
       ></p-toggleswitch>
       <label for="show-all-namespaces-toggle">Show all namespaces</label>
     </span>
-    &nbsp;
     <button
       pButton
       size="small"
@@ -56,7 +64,6 @@
       (click)="createTeam()"
       class="extra-small-button"
     ></button>
-    &nbsp;
     <!-- Edit Configuration button; opens the Monaco panel in a dialog. -->
     <button
       pButton
@@ -69,7 +76,6 @@
       class="extra-small-button"
       data-test="edit-namespace-yaml-btn"
     ></button>
-    &nbsp;
     <button
       pButton
       size="small"
@@ -80,9 +86,44 @@
       (click)="refreshContext()"
       class="extra-small-button"
     ></button>
-    <br />
-    <br />
+    <!--
+      Show/hide the filter row. Presentation only — it never clears the filter,
+      so a HIDDEN row can still be narrowing the list. `hasActiveFilter` is what
+      stops that being a lie: while the row is hidden AND filtering, the control
+      changes severity and says so in its title, because otherwise the table is
+      filtered with its cause off screen and nothing on the page explains it.
+    -->
+    <button
+      pButton
+      size="small"
+      type="button"
+      [label]="filtersVisible ? 'Hide filters' : 'Filters'"
+      [icon]="filtersVisible ? 'pi pi-filter-slash' : 'pi pi-filter'"
+      [severity]="!filtersVisible && hasActiveFilter ? 'warn' : 'secondary'"
+      [attr.aria-expanded]="filtersVisible"
+      aria-controls="home-filter-row"
+      [attr.title]="
+        !filtersVisible && hasActiveFilter
+          ? 'A filter is active — the list is narrowed. Show the filters to see or clear it.'
+          : (filtersVisible ? 'Hide the filter row' : 'Show the filter row')
+      "
+      (click)="toggleFilters()"
+      class="extra-small-button"
+      data-test="toggle-filters-btn"
+    ></button>
     </div>
+
+    <!--
+      The filter form. Everything it owns — which fields are offered, what is
+      typed into them, the narrowing toggle, Reset — lives inside it; this page
+      supplies the team type and receives the composed filter back.
+    -->
+    <app-team-filter
+      [namespace]="(selectedNamespace$ | async) ?? null"
+      [value]="restoredFilter"
+      [visible]="filtersVisible"
+      (changed)="onFilterChanged($event)"
+    />
 
     <!--
       Table area — the single flex/scroll region (Story 28.3). Grows to fill the

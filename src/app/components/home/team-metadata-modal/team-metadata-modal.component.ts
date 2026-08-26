@@ -77,6 +77,30 @@ function trimmedPattern(regex: RegExp): ValidatorFn {
 }
 
 /**
+ * How a declared field is labelled wherever it is rendered: its `description`,
+ * falling back to `key` so a label is never blank.
+ *
+ * A description is rendered VERBATIM — the model author wrote it as a sentence
+ * and its casing is theirs. Only the fallback is adjusted: a field name is an
+ * identifier, lower-case by Python convention, and `note` sitting under
+ * `Service tier the team runs under.` reads as a rendering bug rather than as
+ * the deliberate absence of a description. Capitalising the first character is
+ * the whole adjustment; the rest of the key is left alone, so a name that is
+ * deliberately cased (`caseRef`, `HTTPProxy`) is not mangled.
+ *
+ * Exported from this file rather than moved to a module of its own: the second
+ * consumer (`HomeComponent`'s filter bar, Epic 48) already imports this
+ * component, so no new edge in the dependency graph is created and no ceremony
+ * file is added.
+ */
+export function metadataFieldLabel(field: MetadataFieldDescriptor): string {
+  if (field.description) {
+    return field.description;
+  }
+  return field.key.charAt(0).toUpperCase() + field.key.slice(1);
+}
+
+/**
  * Asks for the metadata a namespace's team declares, before that team is
  * created.
  *
@@ -170,21 +194,12 @@ export class TeamMetadataModalComponent implements OnChanges {
   }
 
   /**
-   * `description`, falling back to `key` so a label is never blank.
-   *
-   * A description is rendered VERBATIM — the model author wrote it as a
-   * sentence and its casing is theirs. Only the fallback is adjusted: a field
-   * name is an identifier, lower-case by Python convention, and `note` sitting
-   * under `Service tier the team runs under.` reads as a rendering bug rather
-   * than as the deliberate absence of a description. Capitalising the first
-   * character is the whole adjustment; the rest of the key is left alone, so a
-   * name that is deliberately cased (`caseRef`, `HTTPProxy`) is not mangled.
+   * `description`, falling back to `key` so a label is never blank. Delegates
+   * to the exported `metadataFieldLabel` so the filter bar labels a field
+   * exactly as this form does — behaviour unchanged, one rule.
    */
   labelFor(field: MetadataFieldDescriptor): string {
-    if (field.description) {
-      return field.description;
-    }
-    return field.key.charAt(0).toUpperCase() + field.key.slice(1);
+    return metadataFieldLabel(field);
   }
 
   /**

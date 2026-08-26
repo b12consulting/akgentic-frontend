@@ -8,18 +8,29 @@ import {
   ElementRef,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Params, Router } from '@angular/router';
+
+import {
+  fromQueryParams,
+  isFiltering,
+  toQueryParams,
+} from '../../core/context/home-url';
 import { BehaviorSubject, firstValueFrom, Observable } from 'rxjs';
 import { filter, map, take } from 'rxjs/operators';
 
-import { ApiService } from '../../core/http/api.service';
+import { ApiService, MIN_FILTER_TERM_LENGTH } from '../../core/http/api.service';
 import { HttpError } from '../../core/http/fetch.service';
-import { isRunning } from '../../core/context/team.interface';
+import {
+  isRunning,
+  NO_TEAM_FILTER,
+  TeamFilter,
+} from '../../core/context/team.interface';
 import {
   TeamMetadataPipe,
   trackMetadataEntry,
 } from '../../core/context/team-metadata.pipe';
 import {
+  MetadataFieldDescriptor,
   NamespaceSummary,
   TeamMetadataContract,
 } from '../../protocol/catalog.interface';
@@ -43,12 +54,16 @@ import { ContextService } from '../../core/context/context.service';
 // loaded only on first opening of the namespace-editor dialog — the initial
 // home-page bundle stays Monaco-free.
 import { NamespacePanelComponent } from '../catalog/namespace-panel/namespace-panel.component';
-import { TeamMetadataModalComponent } from './team-metadata-modal/team-metadata-modal.component';
+import {
+  TeamMetadataModalComponent,
+} from './team-metadata-modal/team-metadata-modal.component';
+import { TeamFilterComponent } from './team-filter/team-filter.component';
 
 // Classic team-list page size (Epic 28, ADR-032 §Decision 3). Bound to the
 // paginator's [rows] and used as the loadTeamsPage size fallback so no magic
 // 250 literal is duplicated. Server clamps size to [1, 500].
 const PAGE_SIZE = 250;
+
 
 @Component({
   selector: 'app-home',
@@ -65,6 +80,7 @@ const PAGE_SIZE = 250;
     NamespacePanelComponent,
     TeamMetadataModalComponent,
     TeamMetadataPipe,
+    TeamFilterComponent,
   ],
   templateUrl: './home.component.html',
   styleUrl: './home.component.scss',
@@ -73,6 +89,7 @@ export class HomeComponent {
   apiService: ApiService = inject(ApiService);
   contextService: ContextService = inject(ContextService);
   router: Router = inject(Router);
+  private route: ActivatedRoute = inject(ActivatedRoute);
   authService: AuthService = inject(AuthService);
   private config = inject(ConfigService);
 
@@ -179,7 +196,77 @@ export class HomeComponent {
   // `trackBy` for the Metadata column's chips. See the pipe.
   trackMetadataEntry = trackMetadataEntry;
 
+  // -----------------------------------------------------------------------
+  // The filter bar (Epic 48).
+  //
+  // The selected namespace's contract decides which inputs exist; the terms
+  // typed into them plus the narrowing toggle compose a `TeamFilter` that the
+  // context service debounces and turns into one page-1 request.
+  // -----------------------------------------------------------------------
+
+  /**
+   * The filter the form should ADOPT — set once, from the URL, on mount.
+   *
+   * A one-way input to `<app-team-filter>`: the form answers through its
+   * `(changed)` output and this page never writes it again. Two-way binding
+   * would let the page echo the form's own answer back at it.
+   */
+  restoredFilter: TeamFilter = NO_TEAM_FILTER;
+
+  /**
+   * Whether the filter row is on screen. **Closed by default** — the page's job
+   * on arrival is to show the teams, and an empty filter panel above them is a
+   * row of controls asking to be used before the list has been read.
+   *
+   * Showing or hiding is presentation only: it does NOT clear the filter, so a
+   * collapsed row can still be narrowing the list. `hasActiveFilter` exists to
+   * make that visible; see there. The default is safe against that on arrival
+   * for a separate reason — `ngOnInit` clears the filter, so a freshly mounted
+   * page is never both closed and filtering.
+   */
+  filtersVisible = false;
+
+  /** Show or hide the filter row. Never touches the filter itself. */
+  toggleFilters(): void {
+    this.filtersVisible = !this.filtersVisible;
+  }
+
+  /**
+   * Is the list currently narrowed by anything the filter row owns?
+   *
+   * Read by the collapse control so a HIDDEN row that is still filtering says
+   * so. Without it, collapsing the row while a term is typed leaves a filtered
+   * table with its cause off screen and no way to discover it — the same class
+   * of lie as a paginator reporting a total the rows do not match.
+   *
+   * The term test is the SAME floor the request composition uses, not merely
+   * "non-empty": a one- or two-character term contributes nothing to the
+   * request, so reporting it as active would be its own small lie.
+   *
+   * A getter is safe here where it would not be for `filterFields`: it returns
+   * a boolean, and Angular compares primitives by value, so re-evaluating it
+   * each cycle cannot churn the DOM.
+   */
+  get hasActiveFilter(): boolean {
+    return isFiltering(this.contextService.filter);
+  }
+
   async ngOnInit() {
+    // FIRST, and synchronously — before the template renders and the table
+    // fires its first `(onLazyLoad)`.
+    //
+    // `ContextService` is a root singleton, so a filter set during an earlier
+    // visit outlives the component that set it. The URL is now the authority on
+    // what this page shows: whatever it names is adopted, and anything it does
+    // not name is cleared. Leaving the service's value in place instead would
+    // paint the previous visit's filtered set under a form the URL says is
+    // empty.
+    //
+    // Both paths write the VALUE only, so neither fetches: the table's own
+    // first lazy load stays the sole page-1 seed (Story 28.2) and carries the
+    // restored filter with it, because `loadTeamsPage` reads that value.
+    this.restoreFromUrl();
+
     await this.loadNamespaces();
 
     // The list is seeded by the table's first (onLazyLoad) (page 1) — NOT a
@@ -205,6 +292,11 @@ export class HomeComponent {
     this.first = event.first ?? 0;
     this.currentPage = Math.floor(this.first / size) + 1;
     await this.contextService.loadTeamsPage(this.currentPage, size);
+    // Not for the seed: the table's FIRST lazy load is this page arriving, not
+    // the user turning to a page, and the URL already says where we are.
+    if (this.firstPageLoaded$.value) {
+      this.writeUrl();
+    }
     this.firstPageLoaded$.next(true);
   }
 
@@ -261,11 +353,38 @@ export class HomeComponent {
         all: this.showAllNamespaces,
       });
       this.namespaces$.next(namespaces);
+      // The URL named a team type: select THAT one rather than defaulting to
+      // the first, and keep the terms restored beside it. An ordinary selection
+      // clears them — correctly, since they belong to the contract being left —
+      // but here the terms and the namespace arrived together and describe each
+      // other. Consumed once: a later refresh reconciles normally.
+      if (this.restoreNamespace !== null) {
+        const named = this.restoreNamespace;
+        this.restoreNamespace = null;
+        const match = namespaces.find((n) => n.namespace === named) ?? null;
+        if (match !== null) {
+          // The form derives the fields it offers from this input and keeps the
+          // terms restored beside it — an adopted value outranks a namespace
+          // change arriving in the same cycle.
+          this.selectedNamespace$.next(match);
+          return;
+        }
+        // The URL named a namespace this user cannot see, or that no longer
+        // exists. Its terms cannot be offered, so drop the whole filter rather
+        // than leave the list narrowed by something the form cannot show.
+        this.restoredFilter = NO_TEAM_FILTER;
+        this.filtersVisible = false;
+        this.contextService.clearFilter();
+        this.writeUrl();
+      }
       const current = this.selectedNamespace$.value;
       const stillExists =
         current != null && namespaces.some((n) => n.namespace === current.namespace);
       if (!stillExists) {
-        this.selectedNamespace$.next(namespaces.length > 0 ? namespaces[0] : null);
+        // Through `applyNamespaceSelection`, not a bare `.next(...)`, so a
+        // re-selection here clears the terms belonging to the contract that
+        // just went away — the same treatment the dropdown gets (Epic 48).
+        this.applyNamespaceSelection(namespaces.length > 0 ? namespaces[0] : null);
       }
     } catch (error) {
       console.error('Failed to load namespaces:', error);
@@ -286,6 +405,190 @@ export class HomeComponent {
     const contract = ns.team_metadata;
     return contract && contract.fields.length > 0 ? contract : null;
   }
+
+  // -----------------------------------------------------------------------
+  // Filter bar behaviour (Epic 48).
+  // -----------------------------------------------------------------------
+
+  /**
+   * The `(ngModelChange)` handler for the namespace dropdown. The dropdown and
+   * the auto-select inside `loadNamespaces()` are the only two ways the
+   * selection moves, and both route through `applyNamespaceSelection`.
+   */
+  onNamespaceSelected(ns: NamespaceSummary | null): void {
+    this.applyNamespaceSelection(ns);
+  }
+
+  /**
+   * The single seam every namespace change passes through.
+   *
+   * NO-OPS when the `namespace` IDENTIFIER is unchanged. `loadNamespaces()`
+   * re-fetches on every save, clone, delete and refresh, and each fetch
+   * returns NEW objects for the same namespaces — comparing references would
+   * clear the user's terms on an unrelated refresh.
+   *
+   * On a real change the offered fields are recomputed from the new contract
+   * and the terms are dropped: a term belongs to the contract that offered it,
+   * and carrying it across would leave the table showing a set filtered by the
+   * previous contract's keys beneath an empty form.
+   *
+   * The FIRST selection of the page's lifetime issues no fetch — but ONLY
+   * while the narrowing control is off. There are then no terms to drop and
+   * nothing to narrow by, so the filter it would compose is the empty one
+   * `ngOnInit` has just cleared, and emitting it would fetch page 1 a second
+   * time, racing the table's own `(onLazyLoad)` seed with an identical
+   * request.
+   *
+   * The narrowing control is part of that condition and not an assumption.
+   * `catalogNamespace` is composed from the SELECTED namespace, so with no
+   * selection the toggle composes `null` however it is set. A user who lands
+   * on a page with no team types, flips the toggle on, and then gets a
+   * selection — the panel saves one, or a refresh returns one — would
+   * otherwise be left with the toggle reading ON above a list that is not
+   * narrowed, and no further event to reconcile them.
+   */
+  private applyNamespaceSelection(ns: NamespaceSummary | null): void {
+    const previous = this.selectedNamespace$.value;
+    if ((previous?.namespace ?? null) === (ns?.namespace ?? null)) {
+      return;
+    }
+    // Nothing more to do here: `<app-team-filter>` takes the selection as an
+    // input, recomputes the fields it offers, clears the terms belonging to the
+    // contract being left, and answers through `(changed)` — which lands in
+    // `onFilterChanged` like every other filter change.
+    this.selectedNamespace$.next(ns);
+  }
+
+  /**
+   * The filter form answered.
+   *
+   * The single place a user-driven filter change is applied: it installs the
+   * filter, returns to page 1 and mirrors both into the URL. Every route into a
+   * changed filter — a keystroke, the narrowing toggle, Reset, a namespace
+   * switch — arrives here, so none of them can forget one of the three.
+   *
+   * ORDER MATTERS. The filter reaches the service FIRST, then the paginator is
+   * reset, because `p-table`'s `[first]` binding re-fires `(onLazyLoad)` when
+   * the bound value changes — which issues one extra `loadTeamsPage` alongside
+   * the debounced fetch. That extra request is not WRONG: the service already
+   * holds the new filter by the time it runs, so it asks the same question and
+   * carries the same answer. Written the other way round it would ask the OLD
+   * question.
+   *
+   * `first` is written only when it is not already `0`, which keeps that extra
+   * request to at most one per filter session; the common case — already on
+   * page 1 — produces none at all.
+   */
+  onFilterChanged(filter: TeamFilter): void {
+    this.contextService.setFilter(filter);
+    if (this.first !== 0) {
+      this.first = 0;
+    }
+    this.currentPage = 1;
+    // After the page reset, never before: the URL must not advertise a page
+    // the filter change has just abandoned.
+    this.writeUrl();
+  }
+
+  // --- URL persistence (Story 48.2) --------------------------------------
+  //
+  // The filter and page live in the query string, so a filtered view can be
+  // shared, bookmarked, and survives a refresh or a trip to a team and back.
+  // What the parameters MEAN lives in `home-url.ts`; this pair is only the
+  // wiring between that mapping and the page.
+
+  /**
+   * The team type the URL is about.
+   *
+   * Falls back to the type the URL named while the namespace list is still
+   * loading. Without that fallback the seed write below drops `type` during
+   * the restore window, and with it every metadata term on the next visit.
+   */
+  private currentNamespace(): string | null {
+    return this.selectedNamespace$.value?.namespace ?? this.restoreNamespace;
+  }
+
+  /**
+   * Mirror the current state into the URL, and remember it for the navigations
+   * that mean "back to my list".
+   *
+   * Reads the filter from the SERVICE, never from the form. The service value
+   * is authoritative from the first synchronous moment of `ngOnInit`, whereas
+   * the form is empty until the namespace list resolves — so deriving the URL
+   * from the form wrote a blank one during the restore window and threw the
+   * restored filter away. One source of truth is the whole fix.
+   *
+   * `replaceUrl` because this runs on every keystroke: a history entry per
+   * character would make Back useless for anything else.
+   */
+  private rememberQueryParams(): Params {
+    const queryParams = toQueryParams({
+      filter: this.contextService.filter,
+      page: this.currentPage,
+      namespace: this.currentNamespace(),
+    });
+    // Remembered because the navigations that mean "back to my list" run when
+    // this route is no longer active and its parameters are already gone.
+    this.contextService.homeQueryParams = queryParams;
+    return queryParams;
+  }
+
+  private writeUrl(): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: this.rememberQueryParams(),
+      replaceUrl: true,
+    });
+  }
+
+  /**
+   * Adopt the filter and page the URL names, once, on mount.
+   *
+   * Reads the SNAPSHOT deliberately: this restores an entry state rather than
+   * tracking navigations. Subscribing would feed this component its own
+   * `writeUrl` output and loop.
+   *
+   * The filter is installed as a VALUE and does not fetch, so the table's own
+   * first lazy load carries it — `loadTeamsPage` reads that value. Going
+   * through `setFilter` would issue a second page-1 request racing that seed,
+   * and the seed is a direct call rather than a trip through the debounced
+   * pipeline, so nothing could order the two.
+   */
+  private restoreFromUrl(): void {
+    const state = fromQueryParams(
+      this.route.snapshot.queryParamMap,
+      MIN_FILTER_TERM_LENGTH,
+    );
+
+    this.currentPage = state.page;
+    this.first = (state.page - 1) * this.rows;
+    this.restoredFilter = state.filter;
+    this.restoreNamespace = state.namespace;
+    this.contextService.restoreFilter(state.filter);
+
+    // The row opens iff it has something to show for itself. Hidden while
+    // filtering is the state the collapse control warns about, and it would
+    // otherwise be the arrival state of every shared link. A page number alone
+    // does not open it — paging is not filtering.
+    this.filtersVisible = isFiltering(state.filter);
+
+    // Remember without navigating: the address bar already says this. Arriving
+    // and changing nothing is the common case for a shared link, and it is the
+    // one path where no write ever runs — so recording only on write would
+    // leave the logo replaying nothing.
+    this.rememberQueryParams();
+  }
+
+  /**
+   * The team type the URL named, pending the namespace list arriving.
+   *
+   * Consumed once by `loadNamespaces`, which selects it INSTEAD of defaulting
+   * to the first entry — and, unlike an ordinary selection, without clearing
+   * the terms restored beside it.
+   */
+  private restoreNamespace: string | null = null;
+
+
 
   /**
    * Create and go to the new team's process view. EVERY creation path lands

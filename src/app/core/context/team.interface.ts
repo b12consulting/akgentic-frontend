@@ -103,6 +103,61 @@ export interface TeamPage {
   total_count: number;
 }
 
+/**
+ * What the team list is currently filtered by (Epic 48).
+ *
+ * `meta` maps a declared metadata field key to the ONE term typed into its
+ * input; `catalogNamespace` narrows the list to a single namespace's teams, or
+ * is `null` when the narrowing control is off.
+ *
+ * SINGLE TERM PER KEY BY DESIGN. The wire parameter `meta.<key>` is REPEATABLE
+ * — terms within one key OR, distinct keys AND — but this UI renders exactly
+ * one input per indexed field, so it can never produce a multi-term key.
+ * Widening `meta` to `Record<string, string[]>` is therefore a deliberate
+ * future change (it needs UI that can express a second term), not an oversight
+ * to be quietly corrected.
+ *
+ * The term is carried VERBATIM. It is not casefolded here (the server
+ * casefolds at index derivation, which is what keeps the query on an index)
+ * and not regex/`LIKE`-escaped here (that is the server's query seam). The
+ * client's whole contribution is `URLSearchParams` percent-encoding.
+ */
+export interface TeamFilter {
+  meta: Record<string, string>;
+  catalogNamespace: string | null;
+}
+
+/** The unfiltered state — the value the list starts and resets to. */
+export const NO_TEAM_FILTER: TeamFilter = Object.freeze({
+  meta: Object.freeze({}) as Record<string, string>,
+  catalogNamespace: null,
+});
+
+/**
+ * STRUCTURAL equality of two filters — same keys, same terms, same namespace.
+ *
+ * Every keystroke builds a fresh filter object, so an identity comparison
+ * suppresses nothing: this is what `distinctUntilChanged` in the filter
+ * pipeline must be given, and a bare `distinctUntilChanged()` there is the bug
+ * this function exists to prevent.
+ */
+export function teamFilterEquals(a: TeamFilter, b: TeamFilter): boolean {
+  if (a === b) {
+    return true;
+  }
+  if (a.catalogNamespace !== b.catalogNamespace) {
+    return false;
+  }
+  const aKeys = Object.keys(a.meta);
+  if (aKeys.length !== Object.keys(b.meta).length) {
+    return false;
+  }
+  return aKeys.every(
+    (key) =>
+      Object.prototype.hasOwnProperty.call(b.meta, key) && a.meta[key] === b.meta[key],
+  );
+}
+
 /** Check if a team is currently running. */
 export function isRunning(team: TeamContext): boolean {
   return team.status === 'running';
@@ -142,8 +197,15 @@ export interface TeamMetadataEntry {
   value: string;
 }
 
-/** Humanise a metadata key for display: `case_id` -> `Case id`. */
-function metadataLabel(key: string): string {
+/**
+ * Humanise a metadata key for display: `case_id` -> `Case id`.
+ *
+ * Exported because the filter bar labels its inputs with it too. A team's
+ * metadata chip and the input that filters on it must read identically — two
+ * humanisers would let `Case id` sit above a chip saying `CaseId` and nothing
+ * would notice.
+ */
+export function metadataKeyLabel(key: string): string {
   const spaced = key.replace(/[_-]+/g, ' ').trim();
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
@@ -191,7 +253,7 @@ export function metadataEntries(
     .filter(([, value]) => value !== null && value !== undefined)
     .map(([key, value]) => ({
       key,
-      label: metadataLabel(key),
+      label: metadataKeyLabel(key),
       value: metadataValue(value),
     }))
     .filter((entry) => entry.value.trim() !== '');

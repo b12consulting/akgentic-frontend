@@ -452,6 +452,192 @@ describe('ApiService', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Story 48.1 — the metadata filter query.
+  //
+  // The URL is the whole contract here: this method is the ONE place the
+  // three-character floor lives, and the one place `catalog_namespace` is
+  // attached. Every spec asserts on `fetch.calls.first().args[0].url`.
+  // -------------------------------------------------------------------------
+
+  describe('getTeamsPage filter (Story 48.1)', () => {
+    const makeResponse = () => ({ teams: [], total_count: 0 });
+
+    /** The URL the single fetch call was made with. */
+    function requestedUrl(): string {
+      return fetchServiceSpy.fetch.calls.first().args[0].url;
+    }
+
+    /** The query string alone, so a `?`-less URL is unambiguous. */
+    function query(): string {
+      const url = requestedUrl();
+      const index = url.indexOf('?');
+      return index === -1 ? '' : url.slice(index + 1);
+    }
+
+    beforeEach(() => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve(makeResponse()));
+    });
+
+    // --- AC5: the floor, applied once, on the trimmed term ---
+
+    it('(AC5) a 0-, 1- or 2-character term contributes no meta parameter', async () => {
+      await service.getTeamsPage(1, 250, {
+        meta: { empty: '', one: 'a', two: 'az' },
+        catalogNamespace: null,
+      });
+
+      expect(query()).toBe('page=1&size=250');
+    });
+
+    it('(AC5) a 3-character term IS sent', async () => {
+      await service.getTeamsPage(1, 250, {
+        meta: { case_id: 'aze' },
+        catalogNamespace: null,
+      });
+
+      expect(query()).toContain('meta.case_id=aze');
+    });
+
+    it('(AC5) the floor sees the TRIMMED term — "  a  " is one character', async () => {
+      await service.getTeamsPage(1, 250, {
+        meta: { case_id: '  a  ' },
+        catalogNamespace: null,
+      });
+
+      expect(query()).toBe('page=1&size=250');
+    });
+
+    it('(AC5) the TRIMMED term is what is emitted — surrounding space never travels', async () => {
+      await service.getTeamsPage(1, 250, {
+        meta: { case_id: '  C-12  ' },
+        catalogNamespace: null,
+      });
+
+      // The floor check and the emitted parameter see the same value, so the
+      // two can never disagree about what the term is.
+      expect(query()).toContain('meta.case_id=C-12');
+      expect(query()).not.toContain('+C-12');
+    });
+
+    it('(AC5) a term above the floor survives clearing back below it', async () => {
+      // Two calls, so the second one's URL is what is asserted.
+      await service.getTeamsPage(1, 250, {
+        meta: { case_id: 'aze', tenant: 'acme' },
+        catalogNamespace: null,
+      });
+      fetchServiceSpy.fetch.calls.reset();
+
+      await service.getTeamsPage(1, 250, {
+        meta: { case_id: 'az', tenant: 'acme' },
+        catalogNamespace: null,
+      });
+
+      expect(query()).not.toContain('meta.case_id');
+      expect(query()).toContain('meta.tenant=acme');
+    });
+
+    // --- AC1/AC13: one parameter per filtered field, in filter order ---
+
+    it('(AC1) sends one meta parameter per entry, page and size first', async () => {
+      await service.getTeamsPage(1, 250, {
+        meta: { case_id: 'C-12', tenant: 'acme' },
+        catalogNamespace: null,
+      });
+
+      expect(query()).toBe('page=1&size=250&meta.case_id=C-12&meta.tenant=acme');
+    });
+
+    // --- AC7: catalog_namespace, present only when the control is on ---
+
+    it('(AC7) catalog_namespace is appended last when the narrowing control is ON', async () => {
+      await service.getTeamsPage(1, 250, {
+        meta: { case_id: 'C-12' },
+        catalogNamespace: 'acme-support',
+      });
+
+      expect(query()).toBe(
+        'page=1&size=250&meta.case_id=C-12&catalog_namespace=acme-support',
+      );
+    });
+
+    it('(AC7) catalog_namespace is ABSENT from the URL when the control is OFF', async () => {
+      await service.getTeamsPage(1, 250, {
+        meta: { case_id: 'C-12' },
+        catalogNamespace: null,
+      });
+
+      // Absent — not empty, not the string "null".
+      expect(query()).not.toContain('catalog_namespace');
+    });
+
+    it('(AC7) narrowing alone, with no metadata term, still sends the namespace', async () => {
+      await service.getTeamsPage(1, 250, {
+        meta: {},
+        catalogNamespace: 'acme-support',
+      });
+
+      expect(query()).toBe('page=1&size=250&catalog_namespace=acme-support');
+    });
+
+    // --- AC13: the term reaches the URL percent-encoded and otherwise as typed ---
+
+    it('(AC13) a term is percent-encoded and otherwise unaltered — "50%", "a.b"', async () => {
+      await service.getTeamsPage(1, 250, {
+        meta: { pct: '50%', dotted: 'a.b' },
+        catalogNamespace: null,
+      });
+
+      // `%` must be escaped or the URL is malformed; `.` is legal in a query
+      // value and travels as typed. Neither is regex-escaped here — that is
+      // the server's query seam, not this client's job.
+      expect(query()).toContain('meta.pct=50%25');
+      expect(query()).toContain('meta.dotted=a.b');
+    });
+
+    it('(AC13) a term is NOT casefolded — the server casefolds at index derivation', async () => {
+      await service.getTeamsPage(1, 250, {
+        meta: { case_id: 'C-12-ABC' },
+        catalogNamespace: null,
+      });
+
+      expect(query()).toContain('meta.case_id=C-12-ABC');
+    });
+
+    // --- AC12: no filter active means today's request, byte for byte ---
+
+    it('(AC12) an EMPTY filter produces exactly the pre-Epic-48 URL', async () => {
+      await service.getTeamsPage(1, 250, { meta: {}, catalogNamespace: null });
+      const withEmptyFilter = requestedUrl();
+      fetchServiceSpy.fetch.calls.reset();
+
+      await service.getTeamsPage(1, 250);
+
+      expect(withEmptyFilter).toBe(requestedUrl());
+      expect(query()).toBe('page=1&size=250');
+    });
+
+    it('(AC12) NO filter argument still produces the bare /teams with no "?"', async () => {
+      await service.getTeamsPage();
+
+      expect(requestedUrl()).toMatch(/\/teams$/);
+      expect(requestedUrl()).not.toContain('?');
+    });
+
+    it('(AC12) a filter whose only terms are below the floor is also byte-identical', async () => {
+      await service.getTeamsPage(1, 250, {
+        meta: { case_id: 'az' },
+        catalogNamespace: null,
+      });
+      const withSubFloorTerm = requestedUrl();
+      fetchServiceSpy.fetch.calls.reset();
+
+      await service.getTeamsPage(1, 250);
+
+      expect(withSubFloorTerm).toBe(requestedUrl());
+    });
+  });
+
   describe('sendMessage (existing)', () => {
     it('should broadcast when no agentName provided', async () => {
       await service.sendMessage('team-1', 'broadcast msg');

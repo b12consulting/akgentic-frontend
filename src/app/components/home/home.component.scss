@@ -43,6 +43,26 @@
 // takes only its natural height and never grows.
 .home-controls {
     flex: 0 0 auto;
+    // A wrapping flex ROW aligned on its bottom edge. `flex-end` is what lets a
+    // stacked label/control group sit beside bare buttons without the buttons
+    // floating to the middle: every child lines up on the control's baseline,
+    // whatever height its label adds above.
+    //
+    // The spacer `&nbsp;` text nodes and trailing `<br>`s this row used to carry
+    // are gone: in a flex container each would become an anonymous flex item
+    // with a gap of its own.
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.5rem 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+// Label stacked ABOVE its control.
+.home-controls__group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
 }
 
 // The lazy paginated team list area grows to fill the column and bounds the
@@ -76,6 +96,97 @@
 :host ::ng-deep .p-datatable-thead,
 :host ::ng-deep .p-datatable-thead > tr > th {
     background: #fff;
+}
+
+// Filter row (Epic 48). `flex: 0 0 auto` for the same reason .home-controls
+// has it — this is a natural-height block, and .home-table below is the only
+// region allowed to grow and form the scroll area (Story 28.3). Wraps rather
+// than overflowing: a namespace may declare several indexed fields, and a row
+// of inputs that scrolls sideways hides the ones on the right.
+.home-filter {
+    flex: 0 0 auto;
+    // Framed as its own panel. Without the border the row read as a second line
+    // of page controls, and the narrowing toggle in particular looked like it
+    // belonged to the Create/Configuration/Refresh group above it rather than
+    // to the filter. The frame is what makes "these controls narrow the list,
+    // those ones act on it" legible without reading a single label.
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    background: #ffffff;
+    padding: 0.75rem 0.9rem;
+    display: flex;
+    flex-wrap: wrap;
+    // `flex-end`, matching .home-controls: the fields stack their label above
+    // the input, the narrowing toggle does not, and aligning on the bottom edge
+    // is what keeps the toggle level with the inputs rather than with the
+    // labels above them.
+    align-items: flex-end;
+    gap: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
+
+    label {
+        font-size: 0.85rem;
+    }
+}
+
+// A metadata filter field: label ABOVE its input.
+//
+// The label is the field's declared description, which is a sentence rather
+// than a word ("Reference of the case the team was opened for, if any."), so it
+// must NOT be `white-space: nowrap` — stacked, a long description would push
+// the row far wider than the viewport. It wraps instead, and the input below
+// keeps its own fixed width.
+.home-filter__field {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+    max-width: 22rem;
+
+    label {
+        line-height: 1.25;
+    }
+}
+
+// The narrowing toggle keeps its label BESIDE it, unlike the fields next to it.
+// A switch and its caption read as one control — the switch alone says nothing,
+// where an input at least shows what was typed — so splitting them across two
+// lines separates the state from its meaning.
+.home-filter__namespace {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    // Centre against the INPUTS rather than the row's bottom edge: the fields
+    // stack a label above their input, so a bottom-aligned toggle would sit
+    // level with the input while reading as if it belonged to the label above.
+    padding-bottom: 0.4rem;
+
+    label {
+        white-space: nowrap;
+    }
+}
+
+// Pushed to the far right of the row, away from the controls it clears: a
+// destructive action sitting between two inputs is one mis-aimed click from
+// the term you were typing. `margin-left: auto` rather than a spacer element,
+// so it still falls into place when the row wraps onto a second line.
+//
+// Bottom-aligned like everything else in the row, since it has no label of its
+// own to stack above it.
+.home-filter__reset {
+    margin-left: auto;
+    align-self: flex-end;
+    margin-bottom: 0.15rem;
+}
+
+.home-filter__input {
+    // Wide enough for a case reference, narrow enough that several fit a row.
+    width: 14rem;
+    max-width: 100%;
+}
+
+.home-controls__label {
+    font-size: 0.85rem;
 }
 
 .show-all-namespaces {

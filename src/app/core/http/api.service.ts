@@ -5,6 +5,7 @@ import { ConfigService } from '../config/config.service';
 import { FetchService } from './fetch.service';
 import {
   TeamContext,
+  TeamFilter,
   TeamPage,
   TeamResponse,
   TeamListResponse,
@@ -23,6 +24,21 @@ import {
   CLOSED_NOTIFICATION_MODEL,
   EVENT_MESSAGE_MODEL,
 } from '../../protocol/message.types';
+
+/**
+ * How many characters a metadata filter term must have before it is sent
+ * (Epic 48).
+ *
+ * A UX affordance, not a correctness guard: the server already treats an empty
+ * term as no term (its index entry `"key|"` prefix-matches everything for that
+ * key). The floor exists so that a list of thousands is not repainted on the
+ * first letter. It lives at EXACTLY ONE POINT — where the parameter is
+ * composed, just below — and nothing above or below it re-decides whether a
+ * term is meaningful. A second, disagreeing check in the component, the
+ * context service or the template is the bug this constant is placed here to
+ * prevent.
+ */
+export const MIN_FILTER_TERM_LENGTH = 3;
 
 @Injectable({
   providedIn: 'root',
@@ -54,14 +70,54 @@ export class ApiService {
    * page 1 / size 250). A provided arg is appended even if it equals the
    * server default. Maps `teams` via `toTeamContext` and carries `total_count`
    * through; a missing/empty body yields `teams: []`, `total_count: 0`.
+   *
+   * `filter` (Epic 48) appends the metadata query, in a fixed order — `page`,
+   * `size`, then `meta.*`, then `catalog_namespace`:
+   *
+   *   - one `meta.<key>=<term>` per entry of `filter.meta`, via `append` and
+   *     not `set`, because the parameter is repeatable on the wire (terms
+   *     within one key OR, distinct keys AND) even though this client's UI
+   *     never produces a second term for one key;
+   *   - `catalog_namespace=<identifier>` only when `filter.catalogNamespace`
+   *     is non-null — an off narrowing control leaves the parameter ABSENT
+   *     from the URL, never empty and never `null`.
+   *
+   * THE THREE-CHARACTER FLOOR IS APPLIED HERE AND NOWHERE ELSE, on the trimmed
+   * term. The trimmed value is what both the floor check and the emitted
+   * parameter see, so the two cannot disagree: a leading space is never an
+   * intentional prefix, and one rule that cannot contradict itself is worth
+   * more than the trailing-space power user nobody has.
+   *
+   * The term is otherwise untouched — not casefolded (the server casefolds at
+   * index derivation) and not regex/`LIKE`-escaped (the server's query seam
+   * owns that). `URLSearchParams` percent-encoding is this client's whole
+   * contribution, so `50%` and `a.b` travel verbatim to the server's problem.
+   *
+   * An absent or empty filter contributes NOTHING, so `getTeamsPage(1, 250)`
+   * issues byte for byte the URL it issued before Epic 48.
    */
-  async getTeamsPage(page?: number, size?: number): Promise<TeamPage> {
+  async getTeamsPage(
+    page?: number,
+    size?: number,
+    filter?: TeamFilter,
+  ): Promise<TeamPage> {
     const params = new URLSearchParams();
     if (page !== undefined) {
       params.set('page', String(page));
     }
     if (size !== undefined) {
       params.set('size', String(size));
+    }
+    if (filter !== undefined) {
+      for (const [key, term] of Object.entries(filter.meta)) {
+        const trimmed = term.trim();
+        if (trimmed.length >= MIN_FILTER_TERM_LENGTH) {
+          params.append(`meta.${key}`, trimmed);
+        }
+      }
+      if (filter.catalogNamespace !== null) {
+        params.set('catalog_namespace', filter.catalogNamespace);
+      }
     }
     const query = params.toString();
     const url = query ? `${this.apiUrl}/teams?${query}` : `${this.apiUrl}/teams`;

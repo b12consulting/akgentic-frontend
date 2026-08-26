@@ -3,12 +3,16 @@ import { Router } from '@angular/router';
 import {
   BehaviorSubject,
   combineLatest,
+  EMPTY,
   firstValueFrom,
+  from,
   interval,
   Observable,
   Subject,
 } from 'rxjs';
 import {
+  catchError,
+  debounceTime,
   distinctUntilChanged,
   filter,
   map,
@@ -19,10 +23,27 @@ import {
   timeout,
 } from 'rxjs/operators';
 import { ApiService } from '../http/api.service';
-import { isRunning, TeamContext, TeamPage, toTeamContext } from './team.interface';
+import {
+  isRunning,
+  NO_TEAM_FILTER,
+  TeamContext,
+  TeamFilter,
+  teamFilterEquals,
+  TeamPage,
+  toTeamContext,
+} from './team.interface';
 
 /** How long a stop or restore may take to land in the cached team status. */
 const TEAM_STATE_TIMEOUT_MS = 10_000;
+
+/**
+ * How long the filter pipeline waits for typing to stop before it fetches
+ * (Epic 48).
+ *
+ * Sits UPSTREAM of the URL build, so a burst of keystrokes costs one request
+ * and one composed URL — not one URL per keystroke, most of them discarded.
+ */
+const FILTER_DEBOUNCE_MS = 250;
 
 @Injectable({
   providedIn: 'root',
@@ -50,6 +71,43 @@ export class ContextService {
     return this._totalCount$.value;
   }
 
+  // -----------------------------------------------------------------------
+  // The team-list filter (Epic 48).
+  //
+  // TWO SUBJECTS, on purpose, and neither is redundant:
+  //
+  //   `_filter$`        the current VALUE. Single write path, same discipline
+  //                     as `_context$`. `loadTeamsPage` reads it, which is how
+  //                     every reload path (refresh, restore, stop, a paginator
+  //                     page change) carries the filter without naming it.
+  //
+  //   `_filterChanges$` the REQUESTS TO REFETCH. Only `setFilter` writes here,
+  //                     so `clearFilter` can reset the value WITHOUT issuing a
+  //                     fetch — which is what lets `HomeComponent.ngOnInit`
+  //                     drop a filter left behind by a previous visit while
+  //                     leaving the table's own first `(onLazyLoad)` as the
+  //                     sole page-1 seed.
+  //
+  // One subject plus a "suppress the next emission" flag would do the same job
+  // and be a race waiting to happen; two writers, both inside this service, do
+  // not.
+  // -----------------------------------------------------------------------
+
+  private _filter$ = new BehaviorSubject<TeamFilter>(NO_TEAM_FILTER);
+  public filter$: Observable<TeamFilter> = this._filter$.asObservable();
+  public get filter(): TeamFilter {
+    return this._filter$.value;
+  }
+
+  private _filterChanges$ = new Subject<TeamFilter>();
+
+  // The page size the last `loadTeamsPage` was asked for, replayed by the
+  // filter pipeline so a filtered refetch keeps the paginator's size. Left
+  // `undefined` until something asks for a page: `getTeamsPage(1, undefined,
+  // f)` then omits `size=` and the server applies its own default, rather than
+  // this service inventing a second copy of the paginator's 250.
+  private _pageSize: number | undefined = undefined;
+
   /** Derived selector: the team whose id matches `currentProcessId$`, or
    *  `null` if none matches (including the empty-string initial id). The
    *  `shareReplay(1, refCount:false)` gives late-subscriber safety without
@@ -74,6 +132,113 @@ export class ContextService {
         distinctUntilChanged(),
       )
       .subscribe((running) => this.currentTeamRunning$.next(running));
+
+    // The filter pipeline (Epic 48). Same lifetime discipline as above — a
+    // root-scoped singleton, so the subscription lives for the app's lifetime
+    // and needs no teardown.
+    //
+    // WHY THE WRITE IS IN THE SUBSCRIBER AND NOT IN THE INNER OBSERVABLE. The
+    // obvious shape — `switchMap(() => from(this.loadTeamsPage(1, size)))` —
+    // protects nothing: `loadTeamsPage` writes `_context$` INSIDE its own
+    // promise body, and cancelling a subscription does not cancel a promise.
+    // A superseded request would run to completion and repaint the table with
+    // its stale page anyway. So the inner observable calls `apiService`, which
+    // only FETCHES, and the write happens here — downstream of the point
+    // `switchMap` cancels at. `switchMap`, never `mergeMap`: the whole point
+    // is that a superseded response is dropped, not merged.
+    //
+    // `distinctUntilChanged` MUST be given `teamFilterEquals`. Every keystroke
+    // builds a fresh filter object, so the bare form compares references and
+    // suppresses nothing.
+    //
+    // The `catchError` is INSIDE the inner observable so a rejected fetch ends
+    // that request only. Lifted to the outer pipe it would complete the whole
+    // stream and the filter bar would go permanently dead after one network
+    // blip. Nothing is reported here — `FetchService` has already raised the
+    // error toast — and nothing is written, so the table keeps the last page
+    // it successfully received.
+    this._filterChanges$
+      .pipe(
+        debounceTime(FILTER_DEBOUNCE_MS),
+        distinctUntilChanged(teamFilterEquals),
+        switchMap((next) =>
+          from(this.apiService.getTeamsPage(1, this._pageSize, next)).pipe(
+            catchError(() => EMPTY),
+          ),
+        ),
+      )
+      .subscribe((page) => {
+        this._context$.next(page.teams);
+        this._totalCount$.next(page.total_count);
+      });
+  }
+
+  /**
+   * Apply a filter AND refetch (Epic 48). Writes both subjects: the value, so
+   * every later reload path carries it, and the change request, so the
+   * debounced pipeline issues a page-1 fetch.
+   *
+   * Deliberately does NOT suppress a structurally-equal repeat — that job
+   * belongs to the pipeline's `distinctUntilChanged(teamFilterEquals)`, and a
+   * second copy of the rule here would mean neither could be verified alone.
+   */
+  setFilter(next: TeamFilter): void {
+    this._filter$.next(next);
+    this._filterChanges$.next(next);
+  }
+
+  /**
+   * Reset the filter WITHOUT fetching. Writes only `_filter$`.
+   *
+   * This service is a root singleton, so a filter set on one visit to the home
+   * page outlives the component that set it. `HomeComponent.ngOnInit` clears
+   * it on mount, and that clear must not fetch: the table's own first
+   * `(onLazyLoad)` is the sole page-1 seed (Story 28.2), and a second seeding
+   * request racing it is exactly what that story removed.
+   */
+  clearFilter(): void {
+    this._filter$.next(NO_TEAM_FILTER);
+  }
+
+  /**
+   * Adopt a filter WITHOUT fetching. Writes only `_filter$`.
+   *
+   * The restore-from-URL counterpart of `clearFilter`, and value-only for the
+   * same reason: `loadTeamsPage` reads `_filter$.value`, so a filter installed
+   * before the table's first `(onLazyLoad)` is carried by that seed itself.
+   * Going through `setFilter` instead would issue a SECOND page-1 request
+   * racing the seed — and the seed is a direct `loadTeamsPage` call rather than
+   * a trip through the debounced pipeline, so `switchMap` could not order the
+   * two and the loser could land last.
+   */
+  restoreFilter(next: TeamFilter): void {
+    this._filter$.next(next);
+  }
+
+  /**
+   * The query parameters the home page last wrote, so a navigation that means
+   * "back to my list" can land on the list the user actually left.
+   *
+   * The home page's filter and page live in the URL (Story 48.2), and the URL
+   * is the authority on what that page shows: `router.navigate(['/'])` with no
+   * parameters therefore lands on an UNFILTERED list, which is what the logo,
+   * the leave-a-team path and the delete-and-return path all used to do.
+   *
+   * Held here rather than read back off the router because by the time these
+   * navigations run, the home route is no longer active and its parameters are
+   * gone. Written by `HomeComponent.writeUrl` — its single writer — and empty
+   * until that page has been visited, so a first navigation is unaffected.
+   *
+   * A plain record, not an observable: every reader wants the value at the
+   * moment it navigates, and none of them re-renders on a change.
+   */
+  homeQueryParams: Record<string, string | number | null> = {};
+
+  /** Navigate to the teams list as the user left it. */
+  async navigateHome(): Promise<boolean> {
+    return await this.router.navigate([''], {
+      queryParams: this.homeQueryParams,
+    });
   }
 
   async getTeams(): Promise<TeamContext[]> {
@@ -87,9 +252,17 @@ export class ContextService {
    * and REPLACE the team list with it (one page in the DOM at a time — NOT
    * append) while recording `total_count`. Returns the page for awaiting
    * callers. Story 28.2 wires this to the paginator's `(onLazyLoad)`.
+   *
+   * Forwards the ACTIVE FILTER (Epic 48). This one line is the whole of the
+   * "the filter survives every reload path" requirement: `refreshContext`,
+   * `restoreTeam`, `stopTeam`'s reload and the paginator's own page changes all
+   * arrive here, so none of them has to know a filter exists. Recording `size`
+   * is the other half — the filter pipeline replays it so a filtered refetch
+   * keeps the paginator's page size.
    */
   async loadTeamsPage(page?: number, size?: number): Promise<TeamPage> {
-    const result = await this.apiService.getTeamsPage(page, size);
+    this._pageSize = size ?? this._pageSize;
+    const result = await this.apiService.getTeamsPage(page, size, this._filter$.value);
     this._context$.next(result.teams);
     this._totalCount$.next(result.total_count);
     return result;
@@ -132,7 +305,9 @@ export class ContextService {
 
   async clear(teamId: string) {
     await this.deleteTeam(teamId);
-    await this.router.navigate(['/']);
+    // Back to the list as it was: deleting a team you had filtered your way to
+    // should not also discard the filter that found it.
+    await this.navigateHome();
   }
 
   /**

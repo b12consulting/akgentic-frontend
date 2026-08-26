@@ -1,0 +1,73 @@
+// A wrapping flex row aligned on its BOTTOM edge: the fields stack a label
+// above their input while the toggle does not, and aligning on the bottom is
+// what keeps the toggle level with the inputs rather than with the labels above
+// them.
+.team-filter {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    background: #ffffff;
+    padding: 0.75rem 0.9rem;
+    min-height: 55px;
+
+    label {
+        font-size: 0.85rem;
+    }
+}
+
+// A metadata field: label ABOVE its input.
+//
+// The label is the humanised key, but the TITLE it carries is the declared
+// description — a sentence. The label itself must not be `nowrap`: a long key
+// would push the row past the viewport rather than wrapping inside its column.
+.team-filter__field {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+    max-width: 22rem;
+
+    label {
+        line-height: 1.25;
+    }
+}
+
+.team-filter__namespace {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    // Centre against the INPUTS rather than the row's bottom edge: the fields
+    // stack a label above their input, so a bottom-aligned toggle would sit
+    // level with the input while reading as if it belonged to the label above.
+    padding-bottom: 0.3rem;
+
+    label {
+        white-space: nowrap;
+    }
+}
+
+// Immediately AFTER the last input, not pushed to the far edge.
+//
+// It used to carry `margin-left: auto`, which kept it away from the controls it
+// clears — but that concern was about it sitting BETWEEN inputs, and being last
+// already answers it. Pushed to the edge, the button was a screen-width mouse
+// journey from the field just typed into, on the one control whose whole point
+// is to be quick.
+//
+// Deliberately NOT `width: fit-content` on the panel: the frame reads as a
+// surface, and it would then resize every time this button appears or
+// disappears, and sit ragged against the full-width table below.
+.team-filter__reset {
+    align-self: flex-end;
+    margin-bottom: 0.15rem;
+}
+
+.team-filter__input {
+    // Wide enough for a case reference, narrow enough that several fit a row.
+    width: 14rem;
+    max-width: 100%;
+}

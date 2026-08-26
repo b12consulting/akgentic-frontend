@@ -24,6 +24,13 @@ A running team, from a single append-only event log fed by one WebSocket:
 - **Knowledge-graph panel** — reconnected through `ToolStateEvent`
 - **Catalog admin** — templates, tools, agents, teams
 
+And the list you arrive at:
+
+- **Teams list** — the teams you own, server-paginated, each row showing the business metadata its
+  team carries. Filter it by any metadata field the team type declares as searchable, and by team
+  type; the filter and page live in the URL, so a filtered view can be shared, bookmarked, and
+  survives a refresh or a trip into a team and back
+
 Architecture documentation lives in the parent
 [akgentic-framework](https://github.com/b12consulting/akgentic-framework) bundle at
 `_bmad-output/akgentic-frontend/architecture/` (sharded; start at `index.md`). Decision records are in
