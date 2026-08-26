@@ -17,7 +17,11 @@ import { ApiService } from '../../core/http/api.service';
 import { AuthService } from '../../core/auth/auth.service';
 import { ConfigService } from '../../core/config/config.service';
 import { ContextService } from '../../core/context/context.service';
-import { TeamContext, TeamFilter } from '../../core/context/team.interface';
+import {
+  NO_TEAM_FILTER,
+  TeamContext,
+  TeamFilter,
+} from '../../core/context/team.interface';
 import { NamespacePanelComponent } from '../catalog/namespace-panel/namespace-panel.component';
 import { HttpError } from '../../core/http/fetch.service';
 import {
@@ -205,8 +209,17 @@ describe('HomeComponent', () => {
     // COMPONENT is no longer writing the cache itself (Story 37-3 AC6).
     contextSpy.setTeamDescription.and.stub();
     contextSpy.setFilter.and.stub();
-    contextSpy.clearFilter.and.stub();
-    contextSpy.restoreFilter.and.stub();
+    // The component reads `contextService.filter` back when it mirrors the
+    // state into the URL, so the stub has to hold a value the way the real
+    // service does. A spy that accepted a filter and then reported none would
+    // make every URL assertion below vacuous.
+    const holdFilter = (next: TeamFilter): void => {
+      (contextSpy as unknown as { filter: TeamFilter }).filter = next;
+    };
+    holdFilter(NO_TEAM_FILTER);
+    contextSpy.setFilter.and.callFake(holdFilter);
+    contextSpy.restoreFilter.and.callFake(holdFilter);
+    contextSpy.clearFilter.and.callFake(() => holdFilter(NO_TEAM_FILTER));
     // The stub is shared and mutable, so a URL named by one spec must not leak
     // into the next.
     setUrl({});
@@ -2209,6 +2222,46 @@ describe('HomeComponent', () => {
       expect(label.getAttribute('title')).toContain('selected team type');
     });
 
+    it('(48.2) the seed write does NOT wipe the restored filter — the logo bug', async () => {
+      // The reported defect, reproduced with its real INTERLEAVING — which is
+      // the whole bug. The table's first lazy load fires while `ngOnInit` is
+      // still awaiting the namespace list, so `filterFields` is empty at that
+      // moment. When the URL was derived from the FORM, the seed therefore
+      // wrote a blank URL over the restored one and recorded blank parameters
+      // for the logo to replay: the first return showed a filtered list under
+      // an empty address bar, and the second returned unfiltered.
+      //
+      // Awaiting `ngOnInit` before the seed hides it completely — the form is
+      // populated by then and the wipe never happens. The unawaited `init`
+      // below is not ceremony; it is the reproduction.
+      setUrl({ type: 'acme-cases', 'meta.case_id': 'C-1234' });
+      apiSpy.getNamespaces.and.returnValue(
+        Promise.resolve([
+          nsSummary(
+            'acme-cases',
+            'Acme Cases',
+            'd',
+            contract([field('case_id', { index: true })]),
+          ),
+        ]),
+      );
+      const c = TestBed.createComponent(HomeComponent).componentInstance;
+
+      const init = c.ngOnInit();
+      await c.loadPage({ first: 0, rows: 250 });
+      await init;
+
+      // What the logo will replay, and what the address bar says.
+      expect(contextSpy.homeQueryParams).toEqual({
+        type: 'acme-cases',
+        'meta.case_id': 'C-1234',
+      });
+      expect(contextSpy.filter).toEqual({
+        meta: { case_id: 'C-1234' },
+        catalogNamespace: null,
+      });
+    });
+
     // --- Reset ------------------------------------------------------------
 
     it('reset clears every term and the narrowing toggle at once', async () => {
@@ -2489,13 +2542,17 @@ describe('HomeComponent', () => {
       expect(extras.replaceUrl).toBeTrue();
       expect(written['meta.case_id']).toBe('C-1234');
       expect(written['type']).toBe('acme-cases');
-      // Page 1 is the default and is not advertised.
-      expect(written['page']).toBeNull();
+      // Page 1 is the default and is not advertised — ABSENT, not null: the
+      // write replaces the query string rather than merging into it, so
+      // nothing has to be nulled out to disappear.
+      expect('page' in written).toBeFalse();
     });
 
-    it('(48.2) clears a term from the URL when it is emptied', async () => {
-      // Every parameter is written on every call. A partial write is how a
-      // stale term outlives the field it belonged to and returns on reload.
+    it('(48.2) a term emptied again leaves the URL clean', async () => {
+      // The write REPLACES the query string, so a parameter disappears by not
+      // being emitted. Merging instead would need every possible key named on
+      // every write, and a key forgotten there is how a stale term outlives
+      // the field it belonged to.
       await renderThenFilterOn(
         nsSummary(
           'acme-cases',
@@ -2509,8 +2566,10 @@ describe('HomeComponent', () => {
 
       const extras = routerSpy.navigate.calls.mostRecent().args[1] as NavigationExtras;
       const written = extras.queryParams as Record<string, unknown>;
-      expect(written['meta.case_id']).toBeNull();
-      expect(written['type']).toBeNull();
+      expect(written).toEqual({});
+      // And nothing is merged from the previous write, which is what makes the
+      // empty object above a real assertion rather than a coincidence.
+      expect(extras.queryParamsHandling).toBeUndefined();
     });
 
     // --- The collapse control --------------------------------------------
