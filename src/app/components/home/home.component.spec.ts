@@ -1669,6 +1669,20 @@ describe('HomeComponent', () => {
 
     it('(AC8) confirming creates for the namespace the dialog was opened for, not the live selection', async () => {
       await openDialog();
+      // WHAT THIS SPEC ACTUALLY GUARDS, because the title alone oversells it:
+      // capture-at-open is STRUCTURAL here — the gate injects `ContextService`
+      // and nothing else, so it cannot read the live selection even if it tried,
+      // and no mutation of the gate can make this assertion fail for the reason
+      // the title gives. That property is pinned in the gate's own spec
+      // ("uses the namespace CAPTURED at open time"), which a re-pointing
+      // mutation does redden.
+      //
+      // What goes red HERE is the ROUTE and the JOIN: the page reaching the gate
+      // at all, and `(confirmed)` carrying the answer back across the template.
+      // It is kept because it is the spec a reader looks for when they ask "can
+      // a dropdown change behind the dialog steal the create?" — and because it
+      // is the only place that question is asked of the RENDERED page.
+      //
       // The user changes the dropdown while the dialog is up. The header still
       // says Acme Cases and the answers are Acme Cases's.
       component.selectedNamespace$.next(nsSummary('other-ns', 'Other', 'd'));

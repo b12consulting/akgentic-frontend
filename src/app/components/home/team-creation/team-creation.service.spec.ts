@@ -247,7 +247,7 @@ describe('TeamCreationService', () => {
   });
 
   it('(AC7) the gesture-less route absorbs its rejection too, rather than escaping into ngOnInit', async () => {
-    spyOn(console, 'error');
+    const consoleErrorSpy = spyOn(console, 'error');
     contextSpy.createTeamAndNavigate.and.returnValue(
       Promise.reject(new HttpError('Server error', 500, 'boom')),
     );
@@ -255,6 +255,11 @@ describe('TeamCreationService', () => {
     await expectAsync(
       gate.request(nsSummary('agent-team-v1', 'Agent Team'), 'auto'),
     ).toBeResolvedTo('failed');
+    // Asserted on THIS origin as well as on the gesture, because this is the
+    // unwatched path: nobody pressed anything, so a second log or a spinner
+    // left turning on a control nobody touched would surface to no one.
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(1);
+    expect(gate.creatingByGesture).toBeFalse();
   });
 
   // --- AC8 / AC11 / AC12: confirm and cancel ---
