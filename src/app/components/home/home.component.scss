@@ -166,9 +166,15 @@
     }
 }
 
-// Sits on the same bottom edge as the inputs and the toggle beside it, since
-// it has no label of its own to stack.
+// Pushed to the far right of the row, away from the controls it clears: a
+// destructive action sitting between two inputs is one mis-aimed click from
+// the term you were typing. `margin-left: auto` rather than a spacer element,
+// so it still falls into place when the row wraps onto a second line.
+//
+// Bottom-aligned like everything else in the row, since it has no label of its
+// own to stack above it.
 .home-filter__reset {
+    margin-left: auto;
     align-self: flex-end;
     margin-bottom: 0.15rem;
 }

@@ -2264,6 +2264,29 @@ describe('HomeComponent', () => {
 
     // --- Reset ------------------------------------------------------------
 
+    it('the reset control is LAST in the filter row', async () => {
+      // Document order, which is what puts it at the far right. It clears
+      // everything the row owns, and a destructive action sitting between two
+      // inputs is one mis-aimed click away from the term being typed.
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+      component.onFilterTermChanged('case_id', 'C-1234');
+      fixture.detectChanges();
+
+      const row = fixture.nativeElement.querySelector('.home-filter');
+      const children = Array.from(row.children) as HTMLElement[];
+      const resetIndex = children.findIndex((c) =>
+        c.classList.contains('home-filter__reset'),
+      );
+      expect(resetIndex).toBe(children.length - 1);
+    });
+
     it('reset clears every term and the narrowing toggle at once', async () => {
       await renderThenFilterOn(
         nsSummary(
