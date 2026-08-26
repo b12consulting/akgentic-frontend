@@ -2100,6 +2100,37 @@ describe('HomeComponent', () => {
       expect(component.hasActiveFilter).toBe(false);
     });
 
+    it('every control in the filter row puts its label ABOVE it', async () => {
+      // Including the narrowing toggle, which is the odd one out: it is a
+      // switch rather than an input, and it was the last control still reading
+      // left-to-right. Document order is the assertion — a label that follows
+      // its control cannot be rendered above it without absolute positioning,
+      // which nothing here uses.
+      await renderThenFilterOn(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+
+      const groups: HTMLElement[] = Array.from(
+        fixture.nativeElement.querySelectorAll(
+          '.home-filter__namespace, .home-filter__field',
+        ),
+      );
+      expect(groups.length).toBe(2);
+      for (const group of groups) {
+        const children = Array.from(group.children) as HTMLElement[];
+        const labelIndex = children.findIndex((c) => c.tagName === 'LABEL');
+        const controlIndex = children.findIndex((c) => c.tagName !== 'LABEL');
+        expect(labelIndex).toBeGreaterThanOrEqual(0);
+        expect(controlIndex).toBeGreaterThanOrEqual(0);
+        expect(labelIndex).toBeLessThan(controlIndex);
+      }
+    });
+
     it('the narrowing toggle keeps its full meaning in a title', async () => {
       // The visible label is deliberately short — it sits inside the filter
       // panel under the "Team type" select, so the context is already on

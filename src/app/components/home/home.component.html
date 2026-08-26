@@ -142,12 +142,6 @@
         toggleswitch. Behaviour is unchanged either way.
       -->
       <span class="home-filter__namespace">
-        <p-toggleswitch
-          [ngModel]="filterByNamespace"
-          (ngModelChange)="onFilterNamespaceToggle($event)"
-          data-test="filter-namespace-toggle"
-          inputId="filter-namespace-toggle"
-        ></p-toggleswitch>
         <!--
           Short by design. The control sits inside the filter panel, directly
           under the "Team type" select it refers to, so the context is already
@@ -157,8 +151,14 @@
         <label
           for="filter-namespace-toggle"
           title="Show only teams created from the selected team type"
-          >This team type only</label
+          >Team type</label
         >
+        <p-toggleswitch
+          [ngModel]="filterByNamespace"
+          (ngModelChange)="onFilterNamespaceToggle($event)"
+          data-test="filter-namespace-toggle"
+          inputId="filter-namespace-toggle"
+        ></p-toggleswitch>
       </span>
       <span
         class="home-filter__field"

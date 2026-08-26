@@ -148,20 +148,24 @@
     }
 }
 
-// The narrowing toggle keeps its label BESIDE it — a switch reads as a single
-// control with its caption, and stacking it would misalign it against the
-// inputs it sits next to.
+// The narrowing toggle stacks its label above it, like every field beside it.
+// The switch is shorter than an input, so it is pushed down to sit on the same
+// bottom edge — without that it floats near its label with a gap under it,
+// which reads as a control that has come loose from the row.
 .home-filter__namespace {
     display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    // Centre against the INPUTS, not the row baseline: the fields stack a label
-    // above their input, so a bottom-aligned toggle would sit level with the
-    // input while reading as if it belonged to the label above it.
-    padding-bottom: 0.4rem;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
 
     label {
         white-space: nowrap;
+    }
+
+    p-toggleswitch {
+        // Half the height difference between an input and a switch, so the
+        // switch centres in the space the inputs occupy.
+        margin-bottom: 0.35rem;
     }
 }
 
