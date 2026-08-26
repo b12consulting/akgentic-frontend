@@ -22,7 +22,7 @@ import { ApiService, MIN_FILTER_TERM_LENGTH } from '../../core/http/api.service'
 import { HttpError } from '../../core/http/fetch.service';
 import {
   isRunning,
-  metadataKeyLabel,
+  NO_TEAM_FILTER,
   TeamFilter,
 } from '../../core/context/team.interface';
 import {
@@ -57,6 +57,7 @@ import { NamespacePanelComponent } from '../catalog/namespace-panel/namespace-pa
 import {
   TeamMetadataModalComponent,
 } from './team-metadata-modal/team-metadata-modal.component';
+import { TeamFilterComponent } from './team-filter/team-filter.component';
 
 // Classic team-list page size (Epic 28, ADR-032 §Decision 3). Bound to the
 // paginator's [rows] and used as the loadTeamsPage size fallback so no magic
@@ -79,6 +80,7 @@ const PAGE_SIZE = 250;
     NamespacePanelComponent,
     TeamMetadataModalComponent,
     TeamMetadataPipe,
+    TeamFilterComponent,
   ],
   templateUrl: './home.component.html',
   styleUrl: './home.component.scss',
@@ -203,36 +205,13 @@ export class HomeComponent {
   // -----------------------------------------------------------------------
 
   /**
-   * The fields the bar currently offers an input for — a FIELD, recomputed
-   * only when the selection changes, never a getter.
+   * The filter the form should ADOPT — set once, from the URL, on mount.
    *
-   * A getter would return a fresh array on every change-detection cycle, which
-   * `NgForOf` reads as "every item replaced" and rebuilds every input each
-   * tick — losing focus and the caret mid-word. That is exactly the churn
-   * Epic 47 removed from the metadata chips; do not reintroduce it here.
+   * A one-way input to `<app-team-filter>`: the form answers through its
+   * `(changed)` output and this page never writes it again. Two-way binding
+   * would let the page echo the form's own answer back at it.
    */
-  filterFields: MetadataFieldDescriptor[] = [];
-
-  /** What is typed into each offered input, keyed by field key. */
-  filterTerms: Record<string, string> = {};
-
-  /** The narrowing control: on, the request carries `catalog_namespace`. */
-  filterByNamespace = false;
-
-  /** Exposed for the inputs' placeholder — one floor, named in one place. */
-  readonly minFilterTermLength = MIN_FILTER_TERM_LENGTH;
-
-  /**
-   * Labels a filter input with its KEY, humanised the same way the table's
-   * metadata chips humanise it — the chip and the input that filters on it
-   * must read the same word. The field's declared description is a sentence
-   * meant for the creation form, and goes in the input's title instead.
-   */
-  metadataKeyLabel = metadataKeyLabel;
-
-  /** `trackBy` for the filter inputs — the field key is their identity. */
-  trackFilterField = (_index: number, field: MetadataFieldDescriptor): string =>
-    field.key;
+  restoredFilter: TeamFilter = NO_TEAM_FILTER;
 
   /**
    * Whether the filter row is on screen. **Closed by default** — the page's job
@@ -269,12 +248,7 @@ export class HomeComponent {
    * each cycle cannot churn the DOM.
    */
   get hasActiveFilter(): boolean {
-    if (this.filterByNamespace) {
-      return true;
-    }
-    return Object.values(this.filterTerms).some(
-      (term) => term.trim().length >= this.minFilterTermLength,
-    );
+    return isFiltering(this.contextService.filter);
   }
 
   async ngOnInit() {
@@ -389,15 +363,16 @@ export class HomeComponent {
         this.restoreNamespace = null;
         const match = namespaces.find((n) => n.namespace === named) ?? null;
         if (match !== null) {
+          // The form derives the fields it offers from this input and keeps the
+          // terms restored beside it — an adopted value outranks a namespace
+          // change arriving in the same cycle.
           this.selectedNamespace$.next(match);
-          this.filterFields = this.offeredFilterFields(match);
           return;
         }
         // The URL named a namespace this user cannot see, or that no longer
         // exists. Its terms cannot be offered, so drop the whole filter rather
         // than leave the list narrowed by something the form cannot show.
-        this.filterTerms = {};
-        this.filterByNamespace = false;
+        this.restoredFilter = NO_TEAM_FILTER;
         this.filtersVisible = false;
         this.contextService.clearFilter();
         this.writeUrl();
@@ -434,26 +409,6 @@ export class HomeComponent {
   // -----------------------------------------------------------------------
   // Filter bar behaviour (Epic 48).
   // -----------------------------------------------------------------------
-
-  /**
-   * Which fields the bar offers an input for, for a given namespace.
-   *
-   * ONE gate, and it is `metadataContractOf`'s — the same collapse of the
-   * three no-ask states (absent key, `null`, a declared contract with an empty
-   * `fields` list) the creation path already makes. Gating on `=== null` alone
-   * is a bug: an older server omits the key entirely.
-   *
-   * Then `index` ALONE decides. `mandatory` is read not at all: the two flags
-   * are independent, so reusing the modal's mandatory logic would offer a set
-   * of inputs that is neither a subset nor a superset of the right one — and
-   * it would look plausible on every namespace whose fields happen to be both.
-   */
-  private offeredFilterFields(
-    ns: NamespaceSummary | null,
-  ): MetadataFieldDescriptor[] {
-    const contract = ns === null ? null : this.metadataContractOf(ns);
-    return contract === null ? [] : contract.fields.filter((f) => f.index);
-  }
 
   /**
    * The `(ngModelChange)` handler for the namespace dropdown. The dropdown and
@@ -497,13 +452,42 @@ export class HomeComponent {
     if ((previous?.namespace ?? null) === (ns?.namespace ?? null)) {
       return;
     }
+    // Nothing more to do here: `<app-team-filter>` takes the selection as an
+    // input, recomputes the fields it offers, clears the terms belonging to the
+    // contract being left, and answers through `(changed)` — which lands in
+    // `onFilterChanged` like every other filter change.
     this.selectedNamespace$.next(ns);
-    this.filterFields = this.offeredFilterFields(ns);
-    this.filterTerms = {};
-    if (previous === null && !this.filterByNamespace) {
-      return;
+  }
+
+  /**
+   * The filter form answered.
+   *
+   * The single place a user-driven filter change is applied: it installs the
+   * filter, returns to page 1 and mirrors both into the URL. Every route into a
+   * changed filter — a keystroke, the narrowing toggle, Reset, a namespace
+   * switch — arrives here, so none of them can forget one of the three.
+   *
+   * ORDER MATTERS. The filter reaches the service FIRST, then the paginator is
+   * reset, because `p-table`'s `[first]` binding re-fires `(onLazyLoad)` when
+   * the bound value changes — which issues one extra `loadTeamsPage` alongside
+   * the debounced fetch. That extra request is not WRONG: the service already
+   * holds the new filter by the time it runs, so it asks the same question and
+   * carries the same answer. Written the other way round it would ask the OLD
+   * question.
+   *
+   * `first` is written only when it is not already `0`, which keeps that extra
+   * request to at most one per filter session; the common case — already on
+   * page 1 — produces none at all.
+   */
+  onFilterChanged(filter: TeamFilter): void {
+    this.contextService.setFilter(filter);
+    if (this.first !== 0) {
+      this.first = 0;
     }
-    this.onFilterChanged();
+    this.currentPage = 1;
+    // After the page reset, never before: the URL must not advertise a page
+    // the filter change has just abandoned.
+    this.writeUrl();
   }
 
   // --- URL persistence (Story 48.2) --------------------------------------
@@ -573,13 +557,12 @@ export class HomeComponent {
   private restoreFromUrl(): void {
     const state = fromQueryParams(
       this.route.snapshot.queryParamMap,
-      this.minFilterTermLength,
+      MIN_FILTER_TERM_LENGTH,
     );
 
     this.currentPage = state.page;
     this.first = (state.page - 1) * this.rows;
-    this.filterTerms = { ...state.filter.meta };
-    this.filterByNamespace = state.filter.catalogNamespace !== null;
+    this.restoredFilter = state.filter;
     this.restoreNamespace = state.namespace;
     this.contextService.restoreFilter(state.filter);
 
@@ -605,93 +588,7 @@ export class HomeComponent {
    */
   private restoreNamespace: string | null = null;
 
-  /**
-   * Clear every filter this row owns, in one action.
-   *
-   * Goes through the same `onFilterChanged` path a keystroke does, so the reset
-   * fetches, resets to page 1 and rewrites the URL exactly as any other change
-   * would. A reset that wrote the state directly would be a second way to
-   * change the filter, and the two would drift.
-   *
-   * The row STAYS OPEN. Clearing is not dismissing: collapsing here would take
-   * the controls away at the moment the user is most likely to type a different
-   * term, and it would hide the change that had just been made.
-   */
-  resetFilter(): void {
-    if (!this.hasActiveFilter) {
-      return;
-    }
-    this.filterTerms = {};
-    this.filterByNamespace = false;
-    this.onFilterChanged();
-  }
 
-  /** A metadata input changed. */
-  onFilterTermChanged(key: string, term: string): void {
-    this.filterTerms[key] = term;
-    this.onFilterChanged();
-  }
-
-  /** The narrowing control was flipped. */
-  onFilterNamespaceToggle(value: boolean): void {
-    this.filterByNamespace = value;
-    this.onFilterChanged();
-  }
-
-  /**
-   * Compose the current filter from the form state.
-   *
-   * An input nobody has typed into contributes no entry — that is ABSENCE, not
-   * a length rule. THE THREE-CHARACTER FLOOR IS NOT APPLIED HERE: it lives at
-   * exactly one point, `ApiService.getTeamsPage`, where the parameter is
-   * composed. A short term therefore travels into the filter model and is
-   * dropped from the URL, which is what keeps the list UNFILTERED rather than
-   * empty while a user is still typing. A second check here would be a second
-   * thing to keep in step, and the two would eventually disagree.
-   */
-  private composeFilter(): TeamFilter {
-    const meta: Record<string, string> = {};
-    for (const field of this.filterFields) {
-      const term = this.filterTerms[field.key] ?? '';
-      if (term !== '') {
-        meta[field.key] = term;
-      }
-    }
-    return {
-      meta,
-      catalogNamespace: this.filterByNamespace
-        ? (this.selectedNamespace$.value?.namespace ?? null)
-        : null,
-    };
-  }
-
-  /**
-   * Push the composed filter at the service, and reset the paginator — a
-   * filtered list has a different length, so page 4 of the old result set is
-   * meaningless.
-   *
-   * ORDER MATTERS. The filter is handed to the service FIRST, then the
-   * paginator is reset, because `p-table`'s `[first]` binding re-fires
-   * `(onLazyLoad)` when the bound value changes — which issues one extra
-   * `loadTeamsPage` alongside the debounced fetch. That extra request is not
-   * WRONG: the service already holds the new filter by the time it runs, so it
-   * asks the same question and carries the same answer. Written the other way
-   * round it would ask the OLD question.
-   *
-   * `first` is written only when it is not already `0`, which keeps that extra
-   * request to at most one per filter session; the common case — already on
-   * page 1 — produces none at all.
-   */
-  private onFilterChanged(): void {
-    this.contextService.setFilter(this.composeFilter());
-    if (this.first !== 0) {
-      this.first = 0;
-    }
-    this.currentPage = 1;
-    // After the page reset, never before: the URL must not advertise a page
-    // the filter change has just abandoned.
-    this.writeUrl();
-  }
 
   /**
    * Create and go to the new team's process view. EVERY creation path lands

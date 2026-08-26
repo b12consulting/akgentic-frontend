@@ -1,0 +1,65 @@
+// A wrapping flex row aligned on its BOTTOM edge: the fields stack a label
+// above their input while the toggle does not, and aligning on the bottom is
+// what keeps the toggle level with the inputs rather than with the labels above
+// them.
+.team-filter {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 0.75rem 1rem;
+    margin-bottom: 0.75rem;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    background: #ffffff;
+    padding: 0.75rem 0.9rem;
+
+    label {
+        font-size: 0.85rem;
+    }
+}
+
+// A metadata field: label ABOVE its input.
+//
+// The label is the humanised key, but the TITLE it carries is the declared
+// description — a sentence. The label itself must not be `nowrap`: a long key
+// would push the row past the viewport rather than wrapping inside its column.
+.team-filter__field {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+    max-width: 22rem;
+
+    label {
+        line-height: 1.25;
+    }
+}
+
+.team-filter__namespace {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    // Centre against the INPUTS rather than the row's bottom edge: the fields
+    // stack a label above their input, so a bottom-aligned toggle would sit
+    // level with the input while reading as if it belonged to the label above.
+    padding-bottom: 0.4rem;
+
+    label {
+        white-space: nowrap;
+    }
+}
+
+// Pushed to the far right, away from the controls it clears. `margin-left: auto`
+// rather than a spacer element, so it still falls into place when the row wraps
+// onto a second line.
+.team-filter__reset {
+    margin-left: auto;
+    align-self: flex-end;
+    margin-bottom: 0.15rem;
+}
+
+.team-filter__input {
+    // Wide enough for a case reference, narrow enough that several fit a row.
+    width: 14rem;
+    max-width: 100%;
+}

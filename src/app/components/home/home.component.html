@@ -114,102 +114,16 @@
     </div>
 
     <!--
-      Filter row (Epic 48). Sits in normal flow like .home-controls above it —
-      the .home-table region below is the only flex/scroll area (Story 28.3).
-
-      ONE INPUT PER FIELD THE SELECTED NAMESPACE DECLARES WITH `index: true`,
-      in the contract's declaration order, and NOTHING when it declares none:
-      no empty container and no placeholder row, which is why the *ngFor sits
-      directly here rather than inside a wrapper of its own. `filterFields` is
-      a component FIELD recomputed on selection change — never a getter, which
-      would hand NgForOf a fresh array every tick and rebuild the inputs
-      mid-keystroke.
-
-      Every input is PLAIN TEXT regardless of the field's key name or its
-      declared `pattern`: no date picker, no select, no client-side pattern
-      check, no casefolding and no escaping. The three-character floor is NOT
-      here either — it lives once, where the URL parameter is composed.
+      The filter form. Everything it owns — which fields are offered, what is
+      typed into them, the narrowing toggle, Reset — lives inside it; this page
+      supplies the team type and receives the composed filter back.
     -->
-    <div class="home-filter" id="home-filter-row" *ngIf="filtersVisible">
-      <!--
-        The narrowing control — the ONLY control on this page that filters the
-        list. It sits FIRST because it applies to the whole row: it narrows to
-        the selected team type, while the inputs after it narrow within that.
-        Reading left to right therefore matches how the terms compose.
-
-        A p-toggleswitch and not a checkbox: no p-checkbox exists in this
-        codebase, while "Show all namespaces" in the row above is already a
-        toggleswitch. Behaviour is unchanged either way.
-      -->
-      <span class="home-filter__namespace">
-        <p-toggleswitch
-          [ngModel]="filterByNamespace"
-          (ngModelChange)="onFilterNamespaceToggle($event)"
-          data-test="filter-namespace-toggle"
-          inputId="filter-namespace-toggle"
-        ></p-toggleswitch>
-        <!--
-          Short by design. The control sits inside the filter panel, directly
-          under the "Team type" select it refers to, so the context is already
-          on screen — the long form spent a third of the row restating it. The
-          full sentence stays in the title for anyone who needs it.
-        -->
-        <label
-          for="filter-namespace-toggle"
-          title="Show only teams created from the selected team type"
-          >This team type only</label
-        >
-      </span>
-      <span
-        class="home-filter__field"
-        *ngFor="let f of filterFields; trackBy: trackFilterField"
-      >
-        <!--
-          The KEY, humanised exactly as the table's metadata chips humanise it,
-          so a chip and the input that filters on it read the same word.
-
-          NOT the declared description, which the creation modal uses: a
-          description is a sentence written to be answered once in a form
-          ("Reference of the case the team was opened for, if any."), and above
-          a filter input it is a paragraph where a word is wanted. It moves to
-          the title, so nothing is lost.
-        -->
-        <label
-          [attr.for]="'filter-meta-' + f.key"
-          [attr.title]="f.description || null"
-          >{{ metadataKeyLabel(f.key) }}</label
-        >
-        <input
-          type="text"
-          pInputText
-          class="home-filter__input"
-          [id]="'filter-meta-' + f.key"
-          [attr.data-test]="'filter-meta-' + f.key"
-          [ngModel]="filterTerms[f.key] || ''"
-          (ngModelChange)="onFilterTermChanged(f.key, $event)"
-          [placeholder]="minFilterTermLength + '+ characters to filter'"
-        />
-      </span>
-      <!--
-        Clear everything the row owns. Rendered only while there IS something to
-        clear: a permanently visible reset on an empty form is a control that
-        does nothing on most of the visits it is seen.
-      -->
-      <button
-        *ngIf="hasActiveFilter"
-        pButton
-        size="small"
-        type="button"
-        label="Reset"
-        icon="pi pi-filter-slash"
-        severity="secondary"
-        [text]="true"
-        title="Clear every filter"
-        (click)="resetFilter()"
-        class="extra-small-button home-filter__reset"
-        data-test="reset-filter-btn"
-      ></button>
-    </div>
+    <app-team-filter
+      [namespace]="(selectedNamespace$ | async) ?? null"
+      [value]="restoredFilter"
+      [visible]="filtersVisible"
+      (changed)="onFilterChanged($event)"
+    />
 
     <!--
       Table area — the single flex/scroll region (Story 28.3). Grows to fill the

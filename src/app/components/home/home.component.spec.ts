@@ -1979,1115 +1979,197 @@ describe('HomeComponent', () => {
   // `ContextService`'s; each is pinned in its own spec file.
   // -------------------------------------------------------------------------
 
-  describe('filter bar (48.1)', () => {
-    /** Render, then select through the real seam the dropdown uses. */
+  // -------------------------------------------------------------------------
+  // The filter, from the PAGE's side (Stories 48.1 / 48.2).
+  //
+  // What the form itself does — which fields it offers, how it labels them,
+  // what it composes, Reset — is `team-filter.component.spec.ts`. Everything
+  // here is the page's half of the contract: the filter reaching the service,
+  // the page resetting, the URL, and coming back to a list as it was left.
+  //
+  // These specs drive `onFilterChanged(filter)` directly, which is the seam the
+  // form reports through. Rendering the real form and typing into it would be
+  // testing the child twice, and would say nothing extra about the page.
+  // -------------------------------------------------------------------------
+
+  describe('filter (48.1 / 48.2)', () => {
+    const NS_WITH_CASE_ID = nsSummary(
+      'acme-cases',
+      'Acme Cases',
+      'd',
+      contract([field('case_id', { index: true })]),
+    );
+
+    function filterOf(meta: Record<string, string>, ns: string | null = null) {
+      return { meta, catalogNamespace: ns };
+    }
+
     /**
-     * Render, select a namespace, and OPEN the filter row.
+     * Mount at a given entry URL and await `ngOnInit`.
      *
-     * The row is closed by default (see `filtersVisible`), so every DOM
-     * assertion below would otherwise be querying a row that is not in the
-     * document — and would fail as "element not found", which reads like a
-     * markup bug rather than a closed panel. Opening it here keeps each spec
-     * about the thing it names. The default itself is pinned separately.
+     * The fixture is deliberately NOT rendered: `detectChanges()` would run
+     * `ngOnInit` a second time (Angular calls it on first render), and these
+     * specs assert component state rather than markup.
      */
-    async function renderThenFilterOn(ns: NamespaceSummary | null): Promise<void> {
-      fixture.detectChanges();
-      await fixture.whenStable();
-      component.onNamespaceSelected(ns);
-      component.filtersVisible = true;
-      fixture.detectChanges();
-      await fixture.whenStable();
-      fixture.detectChanges();
-    }
-
-    function filterInputs(): HTMLInputElement[] {
-      return Array.from(
-        fixture.nativeElement.querySelectorAll('[data-test^="filter-meta-"]'),
-      ) as HTMLInputElement[];
-    }
-
-    function filterInput(key: string): HTMLInputElement | null {
-      return fixture.nativeElement.querySelector(
-        `[data-test="filter-meta-${key}"]`,
-      ) as HTMLInputElement | null;
-    }
-
-    function namespaceToggle(): HTMLElement | null {
-      return fixture.nativeElement.querySelector(
-        '[data-test="filter-namespace-toggle"]',
-      ) as HTMLElement | null;
-    }
-
-    /** The filter most recently handed to the service. */
-    function lastFilter(): TeamFilter {
-      return contextSpy.setFilter.calls.mostRecent().args[0];
-    }
-
-    // --- AC1: the contract decides which inputs exist ----------------------
-
-    it('(AC1) renders one input per INDEXED field, in declaration order', async () => {
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([
-            field('zulu', { index: true }),
-            field('alpha', { index: true }),
-            field('mike', { index: true }),
-          ]),
-        ),
-      );
-
-      expect(
-        filterInputs().map((el) => el.getAttribute('data-test')),
-      ).toEqual([
-        'filter-meta-zulu',
-        'filter-meta-alpha',
-        'filter-meta-mike',
-      ]);
-    });
-
-    it('(AC1) `index` alone gates — a MANDATORY unindexed field gets NO input', async () => {
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([
-            field('tenant', { index: false, mandatory: true }),
-            field('case_id', { index: true, mandatory: false }),
-          ]),
-        ),
-      );
-
-      // The two flags are independent. Reusing the creation modal's
-      // `mandatory` logic would offer neither a subset nor a superset.
-      expect(filterInput('tenant')).toBeNull();
-      expect(filterInput('case_id')).not.toBeNull();
-    });
-
-    it('(AC1) an ABSENT team_metadata key renders NO metadata inputs', async () => {
-      const ns = nsSummary('agent-team-v1', 'Agent Team', 'd');
-      expect('team_metadata' in ns).toBeFalse();
-
-      await renderThenFilterOn(ns);
-
-      expect(filterInputs().length).toBe(0);
-    });
-
-    it('(AC1) a NULL team_metadata renders NO metadata inputs', async () => {
-      await renderThenFilterOn(
-        nsSummary('agent-team-v1', 'Agent Team', 'd', null),
-      );
-
-      expect(filterInputs().length).toBe(0);
-    });
-
-    it('(AC1) a declared contract with an EMPTY fields list renders NO metadata inputs', async () => {
-      await renderThenFilterOn(
-        nsSummary('agent-team-v1', 'Agent Team', 'd', contract([])),
-      );
-
-      expect(filterInputs().length).toBe(0);
-    });
-
-    it('(AC1) a contract whose fields are ALL UNINDEXED renders NO metadata inputs', async () => {
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('tenant'), field('case_id', { mandatory: true })]),
-        ),
-      );
-
-      expect(filterInputs().length).toBe(0);
-    });
-
-    it('(AC1) each input carries a visible label — the description, else the capitalised key', async () => {
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([
-            field('case_id', { index: true, description: 'Case reference.' }),
-            field('tenant', { index: true }),
-          ]),
-        ),
-      );
-
-      const labels: HTMLLabelElement[] = Array.from(
-        fixture.nativeElement.querySelectorAll('.home-filter__field label'),
-      );
-      // The humanised KEY, not the declared description — the same word the
-      // table's metadata chip shows for that field, so the two agree.
-      expect(labels.map((l) => l.textContent?.trim())).toEqual([
-        'Case id',
-        'Tenant',
-      ]);
-      // The description is not lost; it moves to the title. A field that
-      // declares none gets no title rather than an empty one.
-      expect(labels[0].getAttribute('title')).toBe('Case reference.');
-      expect(labels[1].getAttribute('title')).toBeNull();
-    });
-
-    it('the filter row is CLOSED on arrival', async () => {
-      // The page's job on arrival is to show the teams. Note this spec does NOT
-      // use `renderThenFilterOn`, which opens the row on purpose.
-      fixture.detectChanges();
-      await fixture.whenStable();
-      component.onNamespaceSelected(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-      fixture.detectChanges();
-      await fixture.whenStable();
-      fixture.detectChanges();
-
-      expect(component.filtersVisible).toBe(false);
-      expect(fixture.nativeElement.querySelector('.home-filter')).toBeNull();
-      // Closed and NOT filtering — ngOnInit clears the filter, so arrival can
-      // never be the state the collapse indicator exists to warn about.
-      expect(component.hasActiveFilter).toBe(false);
-    });
-
-    it('the metadata fields stack their label, the narrowing toggle does not', async () => {
-      // Two deliberate and different layouts, so both are pinned together —
-      // asserting only one would let the other drift silently.
-      //
-      // A field's label is its declared DESCRIPTION, a sentence, so inline it
-      // would push the input far to the right; stacked it wraps in a bounded
-      // column. The toggle is the opposite case: a switch alone shows nothing,
-      // where an input at least displays what was typed, so its caption has to
-      // stay beside it or the state is separated from its meaning.
-      //
-      // Document order is the assertion. A label that follows its control
-      // cannot render above it without absolute positioning, which nothing
-      // here uses.
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-
-      const fieldChildren = Array.from(
-        (fixture.nativeElement.querySelector('.home-filter__field') as HTMLElement)
-          .children,
-      ) as HTMLElement[];
-      expect(fieldChildren[0].tagName).toBe('LABEL');
-
-      const toggleChildren = Array.from(
-        (
-          fixture.nativeElement.querySelector(
-            '.home-filter__namespace',
-          ) as HTMLElement
-        ).children,
-      ) as HTMLElement[];
-      const toggleLabelIndex = toggleChildren.findIndex(
-        (c) => c.tagName === 'LABEL',
-      );
-      const switchIndex = toggleChildren.findIndex(
-        (c) => c.tagName !== 'LABEL',
-      );
-      expect(switchIndex).toBeGreaterThanOrEqual(0);
-      expect(toggleLabelIndex).toBeGreaterThan(switchIndex);
-    });
-
-    it('the narrowing toggle keeps its full meaning in a title', async () => {
-      // The visible label is deliberately short — it sits inside the filter
-      // panel under the "Team type" select, so the context is already on
-      // screen. The title is where the unabbreviated sentence lives, so the
-      // control never depends on that context being noticed.
-      await renderThenFilterOn(
-        nsSummary('acme-cases', 'Acme Cases', 'd', contract([])),
-      );
-
-      const label = fixture.nativeElement.querySelector(
-        'label[for="filter-namespace-toggle"]',
-      ) as HTMLLabelElement;
-      expect(label).not.toBeNull();
-      // Exact, not `toContain`: a weaker assertion here would still pass if the
-      // label degraded to "Team type", which is the SELECT's label and the one
-      // wording this control must never collapse to.
-      expect(label.textContent?.trim()).toBe('This team type only');
-      expect(label.getAttribute('title')).toContain('selected team type');
-    });
-
-    it('(48.2) the seed write does NOT wipe the restored filter — the logo bug', async () => {
-      // The reported defect, reproduced with its real INTERLEAVING — which is
-      // the whole bug. The table's first lazy load fires while `ngOnInit` is
-      // still awaiting the namespace list, so `filterFields` is empty at that
-      // moment. When the URL was derived from the FORM, the seed therefore
-      // wrote a blank URL over the restored one and recorded blank parameters
-      // for the logo to replay: the first return showed a filtered list under
-      // an empty address bar, and the second returned unfiltered.
-      //
-      // Awaiting `ngOnInit` before the seed hides it completely — the form is
-      // populated by then and the wipe never happens. The unawaited `init`
-      // below is not ceremony; it is the reproduction.
-      setUrl({ type: 'acme-cases', 'meta.case_id': 'C-1234' });
-      apiSpy.getNamespaces.and.returnValue(
-        Promise.resolve([
-          nsSummary(
-            'acme-cases',
-            'Acme Cases',
-            'd',
-            contract([field('case_id', { index: true })]),
-          ),
-        ]),
-      );
-      const c = TestBed.createComponent(HomeComponent).componentInstance;
-
-      const init = c.ngOnInit();
-      await c.loadPage({ first: 0, rows: 250 });
-      await init;
-
-      // What the logo will replay, and what the address bar says.
-      expect(contextSpy.homeQueryParams).toEqual({
-        type: 'acme-cases',
-        'meta.case_id': 'C-1234',
-      });
-      expect(contextSpy.filter).toEqual({
-        meta: { case_id: 'C-1234' },
-        catalogNamespace: null,
-      });
-    });
-
-    // --- Reset ------------------------------------------------------------
-
-    it('the reset control is LAST in the filter row', async () => {
-      // Document order, which is what puts it at the far right. It clears
-      // everything the row owns, and a destructive action sitting between two
-      // inputs is one mis-aimed click away from the term being typed.
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-      component.onFilterTermChanged('case_id', 'C-1234');
-      fixture.detectChanges();
-
-      const row = fixture.nativeElement.querySelector('.home-filter');
-      const children = Array.from(row.children) as HTMLElement[];
-      const resetIndex = children.findIndex((c) =>
-        c.classList.contains('home-filter__reset'),
-      );
-      expect(resetIndex).toBe(children.length - 1);
-    });
-
-    it('reset clears every term and the narrowing toggle at once', async () => {
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([
-            field('case_id', { index: true }),
-            field('tenant', { index: true }),
-          ]),
-        ),
-      );
-      component.onFilterTermChanged('case_id', 'C-1234');
-      component.onFilterTermChanged('tenant', 'acme');
-      component.onFilterNamespaceToggle(true);
-
-      component.resetFilter();
-
-      expect(component.filterTerms).toEqual({});
-      expect(component.filterByNamespace).toBeFalse();
-      expect(component.hasActiveFilter).toBeFalse();
-    });
-
-    it('reset goes through the normal change path — it fetches and resets the page', async () => {
-      // Not a direct state write. A second way to change the filter is a second
-      // way for the URL, the page and the request to disagree.
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-      component.onFilterTermChanged('case_id', 'C-1234');
-      component.first = 500;
-      component.currentPage = 3;
-      contextSpy.setFilter.calls.reset();
-
-      component.resetFilter();
-
-      expect(contextSpy.setFilter).toHaveBeenCalledWith({
-        meta: {},
-        catalogNamespace: null,
-      });
-      expect(component.first).toBe(0);
-      expect(component.currentPage).toBe(1);
-    });
-
-    it('reset leaves the filter row OPEN', async () => {
-      // Clearing is not dismissing: collapsing here would take the controls
-      // away exactly when a different term is most likely to be typed.
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-      component.onFilterTermChanged('case_id', 'C-1234');
-
-      component.resetFilter();
-
-      expect(component.filtersVisible).toBeTrue();
-    });
-
-    it('reset is a no-op when nothing is filtered — no fetch', async () => {
-      await renderThenFilterOn(
-        nsSummary('acme-cases', 'Acme Cases', 'd', contract([])),
-      );
-      contextSpy.setFilter.calls.reset();
-
-      component.resetFilter();
-
-      expect(contextSpy.setFilter).not.toHaveBeenCalled();
-    });
-
-    it('the reset control is rendered only while something is filtered', async () => {
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-      expect(
-        fixture.nativeElement.querySelector('[data-test="reset-filter-btn"]'),
-      ).toBeNull();
-
-      component.onFilterTermChanged('case_id', 'C-1234');
-      fixture.detectChanges();
-      expect(
-        fixture.nativeElement.querySelector('[data-test="reset-filter-btn"]'),
-      ).not.toBeNull();
-    });
-
-    // --- URL persistence (48.2) -------------------------------------------
-    //
-    // These specs re-create the component against a route stub carrying query
-    // parameters, because the restore reads the route SNAPSHOT once on mount —
-    // setting parameters on the shared fixture afterwards would change nothing.
-
     async function mountWithUrl(
       params: Record<string, string>,
       namespaces: NamespaceSummary[],
     ): Promise<HomeComponent> {
       setUrl(params);
       apiSpy.getNamespaces.and.returnValue(Promise.resolve(namespaces));
-      const f = TestBed.createComponent(HomeComponent);
-      const c = f.componentInstance;
-      // `ngOnInit` is awaited directly and the fixture is deliberately NOT
-      // rendered: `detectChanges()` would run `ngOnInit` a second time (Angular
-      // calls it on first render), and these specs assert component state
-      // rather than markup. A spec here that needs the DOM should render
-      // instead of calling `ngOnInit`, never both.
+      const c = TestBed.createComponent(HomeComponent).componentInstance;
       await c.ngOnInit();
       return c;
     }
 
-    it('(48.2) restores the metadata terms named by the URL', async () => {
-      const ns = nsSummary(
-        'acme-cases',
-        'Acme Cases',
-        'd',
-        contract([field('case_id', { index: true })]),
-      );
-      const c = await mountWithUrl({ type: 'acme-cases', 'meta.case_id': 'C-1234' }, [ns]);
+    // --- A filter change is applied in one place ---------------------------
 
-      expect(c.filterTerms['case_id']).toBe('C-1234');
-      expect(contextSpy.restoreFilter).toHaveBeenCalledWith({
-        meta: { case_id: 'C-1234' },
-        catalogNamespace: null,
+    it('(AC8) hands the filter to the service and returns to page 1', async () => {
+      await component.ngOnInit();
+      component.first = 500;
+      component.currentPage = 3;
+
+      component.onFilterChanged(filterOf({ case_id: 'C-1234' }));
+
+      expect(contextSpy.setFilter).toHaveBeenCalledWith(
+        filterOf({ case_id: 'C-1234' }),
+      );
+      expect(component.first).toBe(0);
+      expect(component.currentPage).toBe(1);
+    });
+
+    it('(AC8) the service is told BEFORE the paginator is reset', async () => {
+      // `p-table`'s `[first]` binding re-fires `(onLazyLoad)` when it changes,
+      // which issues one extra `loadTeamsPage` alongside the debounced fetch.
+      // That request is not wrong — the service already holds the new filter,
+      // so it asks the same question. Written the other way round it would ask
+      // the OLD one.
+      await component.ngOnInit();
+      component.first = 500;
+      let firstWhenTold = -1;
+      contextSpy.setFilter.and.callFake(() => {
+        firstWhenTold = component.first;
       });
+
+      component.onFilterChanged(filterOf({ case_id: 'C-1234' }));
+
+      expect(firstWhenTold).toBe(500);
+      expect(component.first).toBe(0);
     });
 
-    it('(48.2) restores through restoreFilter, never setFilter — no second page-1 request', async () => {
-      // The whole reason the service has two write paths. `loadTeamsPage` reads
-      // the filter VALUE, so a value-only restore is carried by the table's own
-      // first lazy load. Going through `setFilter` would issue a second page-1
-      // request racing that seed — and the seed is a direct call rather than a
-      // trip through the debounced pipeline, so switchMap could not order them.
-      const ns = nsSummary(
-        'acme-cases',
-        'Acme Cases',
-        'd',
-        contract([field('case_id', { index: true })]),
-      );
-      contextSpy.setFilter.calls.reset();
-      contextSpy.restoreFilter.calls.reset();
+    it('(AC8) already on page 1, the paginator is not written at all', async () => {
+      // Which keeps the extra request above to at most one per filter session,
+      // and to none in the common case.
+      await component.ngOnInit();
+      component.first = 0;
+      const before = component.first;
 
-      await mountWithUrl({ type: 'acme-cases', 'meta.case_id': 'C-1234' }, [ns]);
+      component.onFilterChanged(filterOf({ case_id: 'C-1234' }));
 
-      // `setFilter` is the ONLY writer of the change subject, so proving it was
-      // not called proves no fetch was issued by the restore. Asserting on
-      // `loadTeamsPage` instead would not: this harness drives change detection
-      // itself, so the table's own seed can legitimately appear there and the
-      // assertion would be about the harness rather than the component.
-      expect(contextSpy.restoreFilter).toHaveBeenCalledTimes(1);
-      expect(contextSpy.setFilter).not.toHaveBeenCalled();
+      expect(component.first).toBe(before);
     });
 
-    it('(48.2) selects the team type the URL names, not the first in the list', async () => {
-      // And keeps the terms restored beside it. An ordinary selection clears
-      // them — correctly, since they belong to the contract being left — but
-      // these arrived together and describe each other.
-      const first = nsSummary('aaa-other', 'Other', 'd', contract([]));
-      const named = nsSummary(
-        'acme-cases',
-        'Acme Cases',
-        'd',
-        contract([field('case_id', { index: true })]),
-      );
-      const c = await mountWithUrl(
-        { type: 'acme-cases', 'meta.case_id': 'C-1234' },
-        [first, named],
-      );
-
-      expect(c.selectedNamespace$.value?.namespace).toBe('acme-cases');
-      expect(c.filterTerms['case_id']).toBe('C-1234');
-      expect(c.filterFields.map((f) => f.key)).toEqual(['case_id']);
-    });
-
-    it('(48.2) restores the narrowing toggle and the page', async () => {
-      const ns = nsSummary('acme-cases', 'Acme Cases', 'd', contract([]));
-      const c = await mountWithUrl({ type: 'acme-cases', only: '1', page: '3' }, [ns]);
-
-      expect(c.filterByNamespace).toBeTrue();
-      expect(c.currentPage).toBe(3);
-      expect(c.first).toBe(2 * c.rows);
-      expect(contextSpy.restoreFilter).toHaveBeenCalledWith({
-        meta: {},
-        catalogNamespace: 'acme-cases',
-      });
-    });
-
-    it('(48.2) opens the filter row when the URL carries a filter, and not otherwise', async () => {
-      const ns = nsSummary(
-        'acme-cases',
-        'Acme Cases',
-        'd',
-        contract([field('case_id', { index: true })]),
-      );
-
-      const filtered = await mountWithUrl(
-        { type: 'acme-cases', 'meta.case_id': 'C-1234' },
-        [ns],
-      );
-      expect(filtered.filtersVisible).toBeTrue();
-
-      const plain = await mountWithUrl({}, [ns]);
-      expect(plain.filtersVisible).toBeFalse();
-    });
-
-    it('(48.2) a page number alone does NOT open the filter row', async () => {
-      // Paging is not filtering. Opening the row for it would put an empty
-      // form on screen for every deep link into the list.
-      const ns = nsSummary('acme-cases', 'Acme Cases', 'd', contract([]));
-      const c = await mountWithUrl({ page: '2' }, [ns]);
-
-      expect(c.currentPage).toBe(2);
-      expect(c.filtersVisible).toBeFalse();
-    });
-
-    it('(48.2) drops the whole filter when the URL names a namespace that is gone', async () => {
-      // Its terms cannot be offered, so leaving the list narrowed by something
-      // the form cannot show would be a filtered table with no visible cause.
-      const other = nsSummary('aaa-other', 'Other', 'd', contract([]));
-      const c = await mountWithUrl(
-        { type: 'deleted-ns', 'meta.case_id': 'C-1234', only: '1' },
-        [other],
-      );
-
-      expect(c.filterTerms).toEqual({});
-      expect(c.filterByNamespace).toBeFalse();
-      expect(c.filtersVisible).toBeFalse();
-      expect(contextSpy.clearFilter).toHaveBeenCalled();
-    });
-
-    it('(48.2) honours the three-character floor on a hand-edited URL', async () => {
-      // The same floor the request composition uses, so a hand-typed short
-      // term cannot produce a form that disagrees with the list.
-      const ns = nsSummary(
-        'acme-cases',
-        'Acme Cases',
-        'd',
-        contract([field('case_id', { index: true })]),
-      );
-      const c = await mountWithUrl({ type: 'acme-cases', 'meta.case_id': 'C' }, [ns]);
-
-      expect(c.filterTerms['case_id']).toBeUndefined();
-      expect(c.filtersVisible).toBeFalse();
-    });
-
-    it('(48.2) writes the filter to the URL, replacing rather than stacking history', async () => {
-      // `replaceUrl` because this runs per keystroke: a history entry per
-      // character would make the Back button useless for anything else.
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-      routerSpy.navigate.calls.reset();
-
-      component.onFilterTermChanged('case_id', 'C-1234');
-
-      expect(routerSpy.navigate).toHaveBeenCalled();
-      const args = routerSpy.navigate.calls.mostRecent().args;
-      const extras = args[1] as NavigationExtras;
-      const written = extras.queryParams as Record<string, unknown>;
-      expect(args[0]).toEqual([]);
-      expect(extras.replaceUrl).toBeTrue();
-      expect(written['meta.case_id']).toBe('C-1234');
-      expect(written['type']).toBe('acme-cases');
-      // Page 1 is the default and is not advertised — ABSENT, not null: the
-      // write replaces the query string rather than merging into it, so
-      // nothing has to be nulled out to disappear.
-      expect('page' in written).toBeFalse();
-    });
-
-    it('(48.2) a term emptied again leaves the URL clean', async () => {
-      // The write REPLACES the query string, so a parameter disappears by not
-      // being emitted. Merging instead would need every possible key named on
-      // every write, and a key forgotten there is how a stale term outlives
-      // the field it belonged to.
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-      component.onFilterTermChanged('case_id', 'C-1234');
-      component.onFilterTermChanged('case_id', '');
-
-      const extras = routerSpy.navigate.calls.mostRecent().args[1] as NavigationExtras;
-      const written = extras.queryParams as Record<string, unknown>;
-      expect(written).toEqual({});
-      // And nothing is merged from the previous write, which is what makes the
-      // empty object above a real assertion rather than a coincidence.
-      expect(extras.queryParamsHandling).toBeUndefined();
-    });
-
-    // --- The collapse control --------------------------------------------
-
-    it('the narrowing toggle is rendered BEFORE the metadata inputs', async () => {
-      // Document order, not styling: the toggle narrows to the team type and
-      // the inputs narrow within it, so reading left to right should match how
-      // the terms compose.
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-
-      const row = fixture.nativeElement.querySelector('.home-filter');
-      const children: HTMLElement[] = Array.from(row.children);
-      const toggleIndex = children.findIndex((c) =>
-        c.classList.contains('home-filter__namespace'),
-      );
-      const firstFieldIndex = children.findIndex((c) =>
-        c.classList.contains('home-filter__field'),
-      );
-      expect(toggleIndex).toBeGreaterThanOrEqual(0);
-      expect(firstFieldIndex).toBeGreaterThanOrEqual(0);
-      expect(toggleIndex).toBeLessThan(firstFieldIndex);
-    });
-
-    it('the collapse control hides the filter row and shows it again', async () => {
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-      expect(fixture.nativeElement.querySelector('.home-filter')).not.toBeNull();
-
-      component.toggleFilters();
-      fixture.detectChanges();
-      expect(fixture.nativeElement.querySelector('.home-filter')).toBeNull();
-
-      component.toggleFilters();
-      fixture.detectChanges();
-      expect(fixture.nativeElement.querySelector('.home-filter')).not.toBeNull();
-    });
-
-    it('collapsing does NOT clear the filter — the terms survive', async () => {
-      // Presentation only. A collapse that silently cleared the filter would
-      // repaint the table, which is a data change disguised as a layout one.
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-      component.onFilterTermChanged('case_id', 'C-1234');
-      contextSpy.setFilter.calls.reset();
-
-      component.toggleFilters();
-      fixture.detectChanges();
-
-      expect(component.filterTerms['case_id']).toBe('C-1234');
-      expect(contextSpy.setFilter).not.toHaveBeenCalled();
-    });
-
-    it('hasActiveFilter reports a HIDDEN row that is still narrowing the list', async () => {
-      // The reason the control changes appearance when collapsed. Without it a
-      // hidden row leaves a filtered table with its cause off screen.
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-      expect(component.hasActiveFilter).toBe(false);
-
-      component.onFilterTermChanged('case_id', 'C-1234');
-      expect(component.hasActiveFilter).toBe(true);
-    });
-
-    it('hasActiveFilter uses the SAME floor as the request, not merely non-empty', async () => {
-      // A one- or two-character term contributes nothing to the request, so
-      // reporting it as active would be its own small lie.
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-
-      component.onFilterTermChanged('case_id', 'C');
-      expect(component.hasActiveFilter).toBe(false);
-      component.onFilterTermChanged('case_id', 'C-1');
-      expect(component.hasActiveFilter).toBe(true);
-    });
-
-    it('hasActiveFilter is true on the narrowing toggle alone', async () => {
-      await renderThenFilterOn(
-        nsSummary('acme-cases', 'Acme Cases', 'd', contract([])),
-      );
-      expect(component.hasActiveFilter).toBe(false);
-
-      component.onFilterNamespaceToggle(true);
-      expect(component.hasActiveFilter).toBe(true);
-    });
-
-    it('(AC1) each input names the three-character floor in its placeholder', async () => {
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-
-      expect(filterInput('case_id')!.getAttribute('placeholder')).toContain('3');
-    });
-
-    // --- AC13: free text, always -------------------------------------------
-
-    it('(AC13) an input is plain text even when the field declares a pattern', async () => {
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([
-            field('date', { index: true, pattern: '^\\d{4}-\\d{2}-\\d{2}$' }),
-          ]),
-        ),
-      );
-
-      // No date picker inferred from the key, no select inferred from the
-      // pattern, and no client-side validation attribute either.
-      expect(filterInput('date')!.getAttribute('type')).toBe('text');
-      expect(filterInput('date')!.getAttribute('pattern')).toBeNull();
-    });
-
-    // --- AC5/AC6: below the floor the list is UNFILTERED, never empty -------
-
-    it('(AC6) a two-character term still reaches the filter model VERBATIM', async () => {
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-      contextSpy.setFilter.calls.reset();
-
-      component.onFilterTermChanged('case_id', 'az');
-
-      // The floor lives ONCE, where the URL parameter is composed. A second
-      // check here would be a second thing to keep in step.
-      expect(lastFilter().meta).toEqual({ case_id: 'az' });
-    });
-
-    it('(AC6) a short term filters NO rows client-side — the component never touches teams$', async () => {
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
+    it('(AC6) the page never filters rows itself — teams$ is untouched', async () => {
+      // Filtering is the server's answer. A client-side pass over the loaded
+      // page would disagree with a `total_count` counted server-side.
+      await component.ngOnInit();
       const page = [
         makeTeam({ team_id: 't-1', name: 'Alpha' }),
         makeTeam({ team_id: 't-2', name: 'Beta' }),
       ];
       teams$.next(page);
-      fixture.detectChanges();
 
-      component.onFilterTermChanged('case_id', 'a');
-      fixture.detectChanges();
+      component.onFilterChanged(filterOf({ case_id: 'zzz' }));
 
-      // Still the server's unfiltered page — not an emptied table.
-      expect(teams$.value).toBe(page);
+      expect(teams$.value).toEqual(page);
     });
 
-    it('(AC5) clearing a term back below the floor RE-ISSUES, without that term', async () => {
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([
-            field('case_id', { index: true }),
-            field('tenant', { index: true }),
-          ]),
-        ),
-      );
-      component.onFilterTermChanged('tenant', 'acme');
-      component.onFilterTermChanged('case_id', 'aze');
-      contextSpy.setFilter.calls.reset();
+    // --- The collapse control ----------------------------------------------
 
-      component.onFilterTermChanged('case_id', '');
+    it('the filter form is CLOSED on arrival', async () => {
+      // The page's job on arrival is to show the teams. An empty panel above
+      // them is a row of controls asking to be used before the list is read.
+      const c = await mountWithUrl({}, [NS_WITH_CASE_ID]);
 
-      expect(contextSpy.setFilter).toHaveBeenCalledTimes(1);
-      expect(lastFilter().meta).toEqual({ tenant: 'acme' });
+      expect(c.filtersVisible).toBeFalse();
     });
 
-    // --- AC7: the narrowing control ----------------------------------------
-
-    it('(AC7, AC14) the narrowing toggle is rendered and carries its data-test', async () => {
-      await renderThenFilterOn(
-        nsSummary('acme-cases', 'Acme Cases', 'd'),
-      );
-
-      expect(namespaceToggle()).not.toBeNull();
-    });
-
-    it('(AC7) ON adds the SELECTED namespace identifier', async () => {
-      await renderThenFilterOn(
-        nsSummary('acme-cases', 'Acme Cases', 'd'),
-      );
-
-      component.onFilterNamespaceToggle(true);
-
-      expect(lastFilter().catalogNamespace).toBe('acme-cases');
-    });
-
-    it('(AC7) OFF leaves it NULL — not empty, not the namespace', async () => {
-      await renderThenFilterOn(
-        nsSummary('acme-cases', 'Acme Cases', 'd'),
-      );
-      component.onFilterNamespaceToggle(true);
-
-      component.onFilterNamespaceToggle(false);
-
-      expect(lastFilter().catalogNamespace).toBeNull();
-    });
-
-    it('(AC7) the toggle defaults OFF', () => {
-      expect(component.filterByNamespace).toBeFalse();
-    });
-
-    it('(AC7) a toggle flipped ON with NO selection is honoured once a selection arrives', async () => {
-      // `catalogNamespace` is composed from the SELECTED namespace, so while
-      // there is none the toggle composes `null` however it is set. The FIRST
-      // selection of the page's lifetime normally issues no fetch — but if it
-      // did so unconditionally, the toggle would be left reading ON above a
-      // list that is not narrowed, with no further event to reconcile them.
-      apiSpy.getNamespaces.and.returnValue(Promise.resolve([]));
+    it('toggling visibility never touches the filter', async () => {
+      // Clearing and dismissing are different actions. A collapse that also
+      // cleared would repaint the table — a data change disguised as a layout
+      // one.
       await component.ngOnInit();
-
-      component.onFilterNamespaceToggle(true);
-      expect(lastFilter().catalogNamespace).toBeNull();
+      component.onFilterChanged(filterOf({ case_id: 'C-1234' }));
       contextSpy.setFilter.calls.reset();
 
-      // A team type appears — the panel saved one, or a refresh returned one.
-      component.onNamespaceSelected(nsSummary('acme-cases', 'Acme Cases', 'd'));
-
-      expect(contextSpy.setFilter).toHaveBeenCalledTimes(1);
-      expect(lastFilter().catalogNamespace).toBe('acme-cases');
-    });
-
-    it('(AC11) the first selection with the toggle OFF still issues nothing', async () => {
-      // The other half of the condition: the init path is unchanged, so the
-      // table's own first (onLazyLoad) remains the sole page-1 seed.
-      apiSpy.getNamespaces.and.returnValue(Promise.resolve([]));
-      await component.ngOnInit();
-      contextSpy.setFilter.calls.reset();
-
-      component.onNamespaceSelected(nsSummary('acme-cases', 'Acme Cases', 'd'));
+      component.toggleFilters();
+      component.toggleFilters();
 
       expect(contextSpy.setFilter).not.toHaveBeenCalled();
     });
 
-    // --- AC14: the two namespace controls read as two controls --------------
-
-    it('(AC14) the team-type select and the narrowing toggle are separately labelled', async () => {
-      await renderThenFilterOn(
-        nsSummary('acme-cases', 'Acme Cases', 'd'),
-      );
-
-      const selectLabel = fixture.nativeElement.querySelector(
-        'label[for="namespace-select"]',
-      ) as HTMLLabelElement | null;
-      const toggleLabel = fixture.nativeElement.querySelector(
-        'label[for="filter-namespace-toggle"]',
-      ) as HTMLLabelElement | null;
-
-      expect(selectLabel).not.toBeNull();
-      expect(toggleLabel).not.toBeNull();
-      expect(selectLabel!.textContent?.trim()).not.toBe(
-        toggleLabel!.textContent?.trim(),
-      );
-    });
-
-    // --- AC8: any filter change resets to page 1 ----------------------------
-
-    it('(AC8) a metadata term change resets first and currentPage', async () => {
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-      component.first = 750;
-      component.currentPage = 4;
-
-      component.onFilterTermChanged('case_id', 'aze');
-
-      expect(component.first).toBe(0);
-      expect(component.currentPage).toBe(1);
-    });
-
-    it('(AC8) the narrowing toggle resets first and currentPage too', async () => {
-      await renderThenFilterOn(
-        nsSummary('acme-cases', 'Acme Cases', 'd'),
-      );
-      component.first = 750;
-      component.currentPage = 4;
-
-      component.onFilterNamespaceToggle(true);
-
-      expect(component.first).toBe(0);
-      expect(component.currentPage).toBe(1);
-    });
-
-    it('(AC8) the service is told the new filter BEFORE the paginator is reset', async () => {
-      // Order is load-bearing: `[first]` re-fires (onLazyLoad), and that extra
-      // `loadTeamsPage` must read the NEW filter, not the old one.
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-      component.first = 750;
-      let firstWhenToldTheFilter = -1;
-      contextSpy.setFilter.and.callFake(() => {
-        firstWhenToldTheFilter = component.first;
-      });
-
-      component.onFilterTermChanged('case_id', 'aze');
-
-      expect(firstWhenToldTheFilter).toBe(750);
-      expect(component.first).toBe(0);
-    });
-
-    // --- AC9: changing the namespace clears the terms -----------------------
-
-    it('(AC9) selecting a DIFFERENT namespace clears the terms and re-issues', async () => {
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-      component.onFilterTermChanged('case_id', 'aze');
-      expect(lastFilter().meta).toEqual({ case_id: 'aze' });
-      contextSpy.setFilter.calls.reset();
-
-      component.onNamespaceSelected(
-        nsSummary(
-          'other-ns',
-          'Other',
-          'd',
-          contract([field('ref', { index: true })]),
-        ),
-      );
-      fixture.detectChanges();
-
-      // Re-issued, and with nothing from the previous contract.
-      expect(contextSpy.setFilter).toHaveBeenCalledTimes(1);
-      expect(lastFilter().meta).toEqual({});
-      expect(component.filterTerms).toEqual({});
-    });
-
-    it('(AC9) the input set re-renders from the NEW contract', async () => {
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-      expect(filterInput('case_id')).not.toBeNull();
-
-      component.onNamespaceSelected(
-        nsSummary(
-          'other-ns',
-          'Other',
-          'd',
-          contract([field('ref', { index: true })]),
-        ),
-      );
-      fixture.detectChanges();
-      await fixture.whenStable();
-      fixture.detectChanges();
-
-      expect(filterInput('case_id')).toBeNull();
-      expect(filterInput('ref')).not.toBeNull();
-    });
-
-    it('(AC9) re-selecting the SAME namespace identifier clears nothing and re-issues nothing', async () => {
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-      component.onFilterTermChanged('case_id', 'aze');
-      contextSpy.setFilter.calls.reset();
-
-      // A FRESH object for the same namespace — what `loadNamespaces()` hands
-      // back on every refresh. Comparing references would clear the terms on
-      // an unrelated refresh.
-      component.onNamespaceSelected(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
-      );
-
-      expect(contextSpy.setFilter).not.toHaveBeenCalled();
-      expect(component.filterTerms).toEqual({ case_id: 'aze' });
-    });
-
-    it('(AC9) the reconciliation inside loadNamespaces() clears nothing when the selection survives', async () => {
-      apiSpy.getNamespaces.and.returnValue(
-        Promise.resolve([
-          nsSummary(
-            'acme-cases',
-            'Acme Cases',
-            'd',
-            contract([field('case_id', { index: true })]),
-          ),
-        ]),
-      );
+    it('hasActiveFilter reports a HIDDEN form that is still narrowing', async () => {
+      // Why the control changes appearance when collapsed: otherwise the table
+      // is filtered with its cause off screen.
       await component.ngOnInit();
-      component.onFilterTermChanged('case_id', 'aze');
-      contextSpy.setFilter.calls.reset();
+      expect(component.hasActiveFilter).toBeFalse();
 
-      // A refresh — new objects, same namespace.
-      await component.onNamespaceSaved();
+      component.onFilterChanged(filterOf({ case_id: 'C-1234' }));
+      component.toggleFilters();
 
-      expect(contextSpy.setFilter).not.toHaveBeenCalled();
-      expect(component.filterTerms).toEqual({ case_id: 'aze' });
+      expect(component.filtersVisible).toBeTrue();
+      expect(component.hasActiveFilter).toBeTrue();
     });
 
-    // --- AC11: a stale filter never outlives the page ------------------------
+    it('hasActiveFilter asks the SERVICE, so it cannot disagree with the request', async () => {
+      // The service holds the composed filter, which already has the term floor
+      // applied. Reading the form's raw terms instead would report a
+      // below-floor term as active when nothing was actually narrowed.
+      await component.ngOnInit();
 
-    it('(AC11) ngOnInit clears the service filter and issues NO fetch of its own', async () => {
-      apiSpy.getNamespaces.and.returnValue(
-        Promise.resolve([
-          nsSummary(
-            'acme-cases',
-            'Acme Cases',
-            'd',
-            contract([field('case_id', { index: true })]),
-          ),
-        ]),
+      component.onFilterChanged(filterOf({}, 'acme-cases'));
+      expect(component.hasActiveFilter).toBeTrue();
+
+      component.onFilterChanged(filterOf({}));
+      expect(component.hasActiveFilter).toBeFalse();
+    });
+
+    // --- Restoring from the URL --------------------------------------------
+
+    it('(48.2) hands the URL filter to the form and to the service', async () => {
+      const c = await mountWithUrl(
+        { type: 'acme-cases', 'meta.case_id': 'C-1234' },
+        [NS_WITH_CASE_ID],
       );
 
-      await component.ngOnInit();
+      expect(c.restoredFilter).toEqual(filterOf({ case_id: 'C-1234' }));
+      expect(contextSpy.restoreFilter).toHaveBeenCalledWith(
+        filterOf({ case_id: 'C-1234' }),
+      );
+    });
+
+    it('(48.2) restores through restoreFilter, never setFilter', async () => {
+      // `setFilter` is the only writer of the change subject, so proving it was
+      // not called proves the restore issued no request. `loadTeamsPage` reads
+      // the VALUE, so the table's own first lazy load carries the filter — a
+      // second page-1 request would race that seed, and the seed is a direct
+      // call rather than a trip through the debounced pipeline, so nothing
+      // could order the two.
+      contextSpy.setFilter.calls.reset();
+      contextSpy.restoreFilter.calls.reset();
+
+      await mountWithUrl({ type: 'acme-cases', 'meta.case_id': 'C-1234' }, [
+        NS_WITH_CASE_ID,
+      ]);
 
       expect(contextSpy.restoreFilter).toHaveBeenCalledTimes(1);
-      // The FIRST selection of the page's lifetime composes the empty filter
-      // that was just cleared — pushing it would race the table's own first
-      // (onLazyLoad) with an identical page-1 request.
       expect(contextSpy.setFilter).not.toHaveBeenCalled();
-      expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
     });
 
-    it('(AC11) the restore lands BEFORE the namespaces fetch is awaited', async () => {
-      // Ordering, not merely occurrence. The restore must be in place before
-      // the first `await` in `ngOnInit` returns, because the template renders
-      // at that point and the table's `(onLazyLoad)` reads the filter the
-      // service already holds.
+    it('(48.2) the restore lands BEFORE the namespaces fetch is awaited', async () => {
+      // Ordering, not merely occurrence: the template renders when `ngOnInit`
+      // reaches its first `await`, and the table's `(onLazyLoad)` reads the
+      // filter the service already holds.
       let restoredBeforeFetch = false;
       apiSpy.getNamespaces.and.callFake(async () => {
         restoredBeforeFetch = contextSpy.restoreFilter.calls.count() === 1;
@@ -3099,22 +2181,208 @@ describe('HomeComponent', () => {
       expect(restoredBeforeFetch).toBeTrue();
     });
 
-    it('(AC11) a re-mount starts with empty inputs', async () => {
-      await renderThenFilterOn(
-        nsSummary(
-          'acme-cases',
-          'Acme Cases',
-          'd',
-          contract([field('case_id', { index: true })]),
-        ),
+    it('(48.2) selects the team type the URL names, not the first in the list', async () => {
+      const first = nsSummary('aaa-other', 'Other', 'd', contract([]));
+      const c = await mountWithUrl(
+        { type: 'acme-cases', 'meta.case_id': 'C-1234' },
+        [first, NS_WITH_CASE_ID],
       );
-      component.onFilterTermChanged('case_id', 'aze');
 
-      const remounted = TestBed.createComponent(HomeComponent);
-      await remounted.componentInstance.ngOnInit();
+      expect(c.selectedNamespace$.value?.namespace).toBe('acme-cases');
+      // And the terms travel with it: the form adopts them as a `value`, which
+      // outranks the namespace arriving in the same cycle.
+      expect(c.restoredFilter.meta).toEqual({ case_id: 'C-1234' });
+    });
 
-      expect(remounted.componentInstance.filterTerms).toEqual({});
-      expect(remounted.componentInstance.filterByNamespace).toBeFalse();
+    it('(48.2) restores the narrowing toggle and the page', async () => {
+      const c = await mountWithUrl(
+        { type: 'acme-cases', only: '1', page: '3' },
+        [nsSummary('acme-cases', 'Acme Cases', 'd', contract([]))],
+      );
+
+      expect(c.currentPage).toBe(3);
+      expect(c.first).toBe(2 * c.rows);
+      expect(c.restoredFilter).toEqual(filterOf({}, 'acme-cases'));
+    });
+
+    it('(48.2) opens the form iff the URL carries a filter', async () => {
+      const filtered = await mountWithUrl(
+        { type: 'acme-cases', 'meta.case_id': 'C-1234' },
+        [NS_WITH_CASE_ID],
+      );
+      expect(filtered.filtersVisible).toBeTrue();
+
+      const plain = await mountWithUrl({}, [NS_WITH_CASE_ID]);
+      expect(plain.filtersVisible).toBeFalse();
+    });
+
+    it('(48.2) a page number alone does NOT open the form', async () => {
+      // Paging is not filtering. Opening for it would put an empty form on
+      // screen for every deep link into the list.
+      const c = await mountWithUrl({ page: '2' }, [NS_WITH_CASE_ID]);
+
+      expect(c.currentPage).toBe(2);
+      expect(c.filtersVisible).toBeFalse();
+    });
+
+    it('(48.2) drops the whole filter when the URL names a type that is gone', async () => {
+      // Its terms cannot be offered, so leaving the list narrowed by something
+      // the form cannot show would be a filtered table with no visible cause.
+      const c = await mountWithUrl(
+        { type: 'deleted-ns', 'meta.case_id': 'C-1234', only: '1' },
+        [nsSummary('aaa-other', 'Other', 'd', contract([]))],
+      );
+
+      expect(c.restoredFilter).toEqual(filterOf({}));
+      expect(c.filtersVisible).toBeFalse();
+      expect(contextSpy.clearFilter).toHaveBeenCalled();
+    });
+
+    it('(48.2) honours the floor on a hand-edited URL', async () => {
+      const c = await mountWithUrl(
+        { type: 'acme-cases', 'meta.case_id': 'C' },
+        [NS_WITH_CASE_ID],
+      );
+
+      expect(c.restoredFilter.meta).toEqual({});
+      expect(c.filtersVisible).toBeFalse();
+    });
+
+    it('(48.2) a re-mount with a bare URL starts clean', async () => {
+      const c = await mountWithUrl({}, [NS_WITH_CASE_ID]);
+
+      expect(c.restoredFilter).toEqual(filterOf({}));
+      expect(contextSpy.restoreFilter).toHaveBeenCalledWith(filterOf({}));
+    });
+
+    // --- Writing the URL ----------------------------------------------------
+
+    it('(48.2) writes the filter, replacing rather than stacking history', async () => {
+      // `replaceUrl` because a filter change arrives per keystroke: a history
+      // entry per character would make Back useless for anything else.
+      await component.ngOnInit();
+      routerSpy.navigate.calls.reset();
+
+      component.onFilterChanged(filterOf({ case_id: 'C-1234' }, 'acme-cases'));
+
+      const args = routerSpy.navigate.calls.mostRecent().args;
+      const extras = args[1] as NavigationExtras;
+      const written = extras.queryParams as Record<string, unknown>;
+      expect(args[0]).toEqual([]);
+      expect(extras.replaceUrl).toBeTrue();
+      expect(written['meta.case_id']).toBe('C-1234');
+      expect(written['only']).toBe('1');
+      // Page 1 is the default and is ABSENT, not null: the write replaces the
+      // query string, so nothing has to be nulled out to disappear.
+      expect('page' in written).toBeFalse();
+    });
+
+    it('(48.2) a filter cleared again leaves the URL clean', async () => {
+      await component.ngOnInit();
+      component.onFilterChanged(filterOf({ case_id: 'C-1234' }));
+
+      component.onFilterChanged(filterOf({}));
+
+      const extras = routerSpy.navigate.calls.mostRecent()
+        .args[1] as NavigationExtras;
+      expect(extras.queryParams).toEqual({});
+      // Nothing is merged from the previous write, which is what makes the
+      // empty object above a real assertion rather than a coincidence.
+      expect(extras.queryParamsHandling).toBeUndefined();
+    });
+
+    it('(48.2) the seed write does NOT wipe the restored filter — the logo bug', async () => {
+      // The reported defect, reproduced with its real INTERLEAVING, which is
+      // the whole bug: the table's first lazy load fires while `ngOnInit` is
+      // still awaiting the namespace list. When the URL was derived from the
+      // FORM, the form was empty at that moment, so the seed wrote a blank URL
+      // over the restored one and recorded blank parameters for the logo to
+      // replay — the first return showed a filtered list under an empty address
+      // bar, and the second returned unfiltered.
+      //
+      // Awaiting `ngOnInit` before the seed hides it completely. The unawaited
+      // `init` below is not ceremony; it is the reproduction.
+      setUrl({ type: 'acme-cases', 'meta.case_id': 'C-1234' });
+      apiSpy.getNamespaces.and.returnValue(Promise.resolve([NS_WITH_CASE_ID]));
+      const c = TestBed.createComponent(HomeComponent).componentInstance;
+
+      const init = c.ngOnInit();
+      await c.loadPage({ first: 0, rows: 250 });
+      await init;
+
+      expect(contextSpy.homeQueryParams).toEqual({
+        type: 'acme-cases',
+        'meta.case_id': 'C-1234',
+      });
+      expect(contextSpy.filter).toEqual(filterOf({ case_id: 'C-1234' }));
+    });
+
+    // --- Selecting a team type ----------------------------------------------
+
+    it('(AC9) re-selecting the SAME type identifier does nothing at all', async () => {
+      // Compared on the stable identifier, not object identity: every fetch
+      // returns new objects, so a reference test would re-select on each one
+      // and clear the terms under the user.
+      await component.ngOnInit();
+      const same = nsSummary('acme-cases', 'Acme Cases', 'd', contract([]));
+      component.onNamespaceSelected(same);
+      contextSpy.setFilter.calls.reset();
+
+      component.onNamespaceSelected(
+        nsSummary('acme-cases', 'Acme Cases', 'd', contract([])),
+      );
+
+      expect(contextSpy.setFilter).not.toHaveBeenCalled();
+    });
+
+    it('(AC9) a refresh that returns the SAME type re-selects nothing', async () => {
+      // The reconciliation inside `loadNamespaces` compares on the stable
+      // identifier, not object identity — every fetch returns new objects. A
+      // reference test would re-select on each refresh and clear the terms
+      // under the user, mid-typing.
+      apiSpy.getNamespaces.and.returnValue(
+        Promise.resolve([NS_WITH_CASE_ID]),
+      );
+      await component.ngOnInit();
+      component.onFilterChanged(filterOf({ case_id: 'aze' }));
+      const selected = component.selectedNamespace$.value;
+      contextSpy.setFilter.calls.reset();
+
+      // A refresh: new objects, same namespace.
+      await component.onNamespaceSaved();
+
+      expect(contextSpy.setFilter).not.toHaveBeenCalled();
+      expect(component.selectedNamespace$.value).toBe(selected);
+    });
+
+    it('(AC14) the team-type select and the narrowing toggle are labelled differently', async () => {
+      // Two controls that both mention the team type, one selecting it and one
+      // narrowing to it. Sharing a caption is how the select starts reading as
+      // a filter that does not work.
+      const c = await mountWithUrl({}, [NS_WITH_CASE_ID]);
+      c.filtersVisible = true;
+      fixture.detectChanges();
+
+      const selectLabel = fixture.nativeElement.querySelector(
+        'label[for="namespace-select"]',
+      ) as HTMLLabelElement | null;
+      expect(selectLabel).not.toBeNull();
+      // The toggle's own caption is asserted exactly in the form's spec; here
+      // the point is only that the two differ.
+      expect(selectLabel!.textContent?.trim()).toBe('Team type');
+    });
+
+    it('(AC9) selecting a DIFFERENT type moves the selection', async () => {
+      // Clearing the terms and answering is the FORM's half — it takes this
+      // selection as an input. The page's half is only that the selection moved.
+      await component.ngOnInit();
+      component.onNamespaceSelected(NS_WITH_CASE_ID);
+
+      component.onNamespaceSelected(
+        nsSummary('other', 'Other', 'd', contract([field('tenant', { index: true })])),
+      );
+
+      expect(component.selectedNamespace$.value?.namespace).toBe('other');
     });
   });
 });

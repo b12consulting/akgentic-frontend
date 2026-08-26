@@ -1,0 +1,91 @@
+<!--
+  The filter panel. Framed as its own surface: unframed it read as a second line
+  of page controls, and the narrowing toggle in particular looked like it
+  belonged to the Create/Configuration/Refresh group above rather than to the
+  filter.
+
+  ONE INPUT PER FIELD the selected team type declares with `index: true`, in the
+  contract's declaration order, and NOTHING when it declares none — no empty
+  container and no placeholder row, which is why the *ngFor sits directly here
+  rather than inside a wrapper of its own.
+-->
+<div class="team-filter" id="home-filter-row" *ngIf="visible">
+  <!--
+    The narrowing control — the only one here that acts on the whole row. It
+    comes FIRST because it narrows to the selected team type while the inputs
+    after it narrow within that, so reading left to right matches how the terms
+    compose.
+
+    A toggleswitch and not a checkbox: no p-checkbox exists in this codebase,
+    while "Show all namespaces" in the row above is already a toggleswitch. Its
+    caption stays BESIDE it, unlike the stacked fields — a switch alone shows
+    nothing, where an input at least displays what was typed, so splitting the
+    two would separate the state from its meaning.
+  -->
+  <span class="team-filter__namespace">
+    <p-toggleswitch
+      [ngModel]="narrowToNamespace"
+      (ngModelChange)="onNarrowToggle($event)"
+      data-test="filter-namespace-toggle"
+      inputId="filter-namespace-toggle"
+    ></p-toggleswitch>
+    <label
+      for="filter-namespace-toggle"
+      title="Show only teams created from the selected team type"
+      >This team type only</label
+    >
+  </span>
+
+  <span class="team-filter__field" *ngFor="let f of fields; trackBy: trackField">
+    <!--
+      The KEY, humanised exactly as the table's metadata chips humanise it, so a
+      chip and the input that filters on it read the same word. The declared
+      description is a sentence meant to be answered once in a form; above a
+      filter input it is a paragraph where a word is wanted, so it moves to the
+      title. A field declaring none gets no title rather than an empty one.
+    -->
+    <label
+      [attr.for]="'filter-meta-' + f.key"
+      [attr.title]="f.description || null"
+      >{{ metadataKeyLabel(f.key) }}</label
+    >
+    <!--
+      PLAIN TEXT regardless of the field's key name or declared pattern: no date
+      picker, no select, no client-side pattern check, no casefolding and no
+      escaping. The term travels verbatim — the store escapes for its own
+      dialect, and escaping here would compose with that and match nothing.
+    -->
+    <input
+      type="text"
+      pInputText
+      class="team-filter__input"
+      [id]="'filter-meta-' + f.key"
+      [attr.data-test]="'filter-meta-' + f.key"
+      [ngModel]="terms[f.key] || ''"
+      (ngModelChange)="onTermChanged(f.key, $event)"
+      [placeholder]="minTermLength + '+ characters to filter'"
+    />
+  </span>
+
+  <!--
+    Clear everything the form owns. LAST, so it sits at the far right: a
+    destructive action between two inputs is one mis-aimed click away from the
+    term being typed. Rendered only while there IS something to clear — a
+    permanently visible reset on an empty form is a control that does nothing on
+    most of the visits it is seen.
+  -->
+  <button
+    *ngIf="isNarrowing"
+    pButton
+    size="small"
+    type="button"
+    label="Reset"
+    icon="pi pi-filter-slash"
+    severity="secondary"
+    [text]="true"
+    title="Clear every filter"
+    (click)="reset()"
+    class="extra-small-button team-filter__reset"
+    data-test="reset-filter-btn"
+  ></button>
+</div>
