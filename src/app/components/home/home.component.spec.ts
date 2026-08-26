@@ -1930,10 +1930,20 @@ describe('HomeComponent', () => {
 
   describe('filter bar (48.1)', () => {
     /** Render, then select through the real seam the dropdown uses. */
+    /**
+     * Render, select a namespace, and OPEN the filter row.
+     *
+     * The row is closed by default (see `filtersVisible`), so every DOM
+     * assertion below would otherwise be querying a row that is not in the
+     * document — and would fail as "element not found", which reads like a
+     * markup bug rather than a closed panel. Opening it here keeps each spec
+     * about the thing it names. The default itself is pinned separately.
+     */
     async function renderThenFilterOn(ns: NamespaceSummary | null): Promise<void> {
       fixture.detectChanges();
       await fixture.whenStable();
       component.onNamespaceSelected(ns);
+      component.filtersVisible = true;
       fixture.detectChanges();
       await fixture.whenStable();
       fixture.detectChanges();
@@ -2064,6 +2074,30 @@ describe('HomeComponent', () => {
         'Case reference.',
         'Tenant',
       ]);
+    });
+
+    it('the filter row is CLOSED on arrival', async () => {
+      // The page's job on arrival is to show the teams. Note this spec does NOT
+      // use `renderThenFilterOn`, which opens the row on purpose.
+      fixture.detectChanges();
+      await fixture.whenStable();
+      component.onNamespaceSelected(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id', { index: true })]),
+        ),
+      );
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(component.filtersVisible).toBe(false);
+      expect(fixture.nativeElement.querySelector('.home-filter')).toBeNull();
+      // Closed and NOT filtering — ngOnInit clears the filter, so arrival can
+      // never be the state the collapse indicator exists to warn about.
+      expect(component.hasActiveFilter).toBe(false);
     });
 
     it('the narrowing toggle keeps its full meaning in a title', async () => {

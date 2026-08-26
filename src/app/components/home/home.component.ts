@@ -219,11 +219,17 @@ export class HomeComponent {
     field.key;
 
   /**
-   * Whether the filter row is on screen. Collapsing it is presentation only —
-   * it does NOT clear the filter, so a collapsed row can still be narrowing the
-   * list. `hasActiveFilter` exists to make that visible; see there.
+   * Whether the filter row is on screen. **Closed by default** — the page's job
+   * on arrival is to show the teams, and an empty filter panel above them is a
+   * row of controls asking to be used before the list has been read.
+   *
+   * Showing or hiding is presentation only: it does NOT clear the filter, so a
+   * collapsed row can still be narrowing the list. `hasActiveFilter` exists to
+   * make that visible; see there. The default is safe against that on arrival
+   * for a separate reason — `ngOnInit` clears the filter, so a freshly mounted
+   * page is never both closed and filtering.
    */
-  filtersVisible = true;
+  filtersVisible = false;
 
   /** Show or hide the filter row. Never touches the filter itself. */
   toggleFilters(): void {
