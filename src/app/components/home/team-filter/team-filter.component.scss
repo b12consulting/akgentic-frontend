@@ -12,6 +12,7 @@
     border-radius: 6px;
     background: #ffffff;
     padding: 0.75rem 0.9rem;
+    min-height: 55px;
 
     label {
         font-size: 0.85rem;
@@ -42,7 +43,7 @@
     // Centre against the INPUTS rather than the row's bottom edge: the fields
     // stack a label above their input, so a bottom-aligned toggle would sit
     // level with the input while reading as if it belonged to the label above.
-    padding-bottom: 0.4rem;
+    padding-bottom: 0.3rem;
 
     label {
         white-space: nowrap;
