@@ -1,12 +1,4 @@
-import {
-  Component,
-  HostListener,
-  inject,
-  ViewChild,
-  ViewChildren,
-  QueryList,
-  ElementRef,
-} from '@angular/core';
+import { Component, HostListener, inject, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ActivatedRoute, Params, Router } from '@angular/router';
 
@@ -20,15 +12,7 @@ import { filter, map, take } from 'rxjs/operators';
 
 import { ApiService, MIN_FILTER_TERM_LENGTH } from '../../core/http/api.service';
 import { HttpError } from '../../core/http/fetch.service';
-import {
-  isRunning,
-  NO_TEAM_FILTER,
-  TeamFilter,
-} from '../../core/context/team.interface';
-import {
-  TeamMetadataPipe,
-  trackMetadataEntry,
-} from '../../core/context/team-metadata.pipe';
+import { NO_TEAM_FILTER, TeamFilter } from '../../core/context/team.interface';
 import {
   MetadataFieldDescriptor,
   NamespaceSummary,
@@ -38,10 +22,8 @@ import {
 import { CommonModule } from '@angular/common';
 import { ButtonModule } from 'primeng/button';
 import { SelectModule } from 'primeng/select';
-import { TableModule, TableLazyLoadEvent } from 'primeng/table';
-import { TagModule } from 'primeng/tag';
+import { TableLazyLoadEvent } from 'primeng/table';
 import { DialogModule } from 'primeng/dialog';
-import { InputTextModule } from 'primeng/inputtext';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 
 import { AuthService } from '../../core/auth/auth.service';
@@ -58,6 +40,11 @@ import {
   TeamMetadataModalComponent,
 } from './team-metadata-modal/team-metadata-modal.component';
 import { TeamFilterComponent } from './team-filter/team-filter.component';
+import {
+  TeamDescriptionSave,
+  TeamRowAction,
+  TeamTableComponent,
+} from './team-table/team-table.component';
 
 // Classic team-list page size (Epic 28, ADR-032 §Decision 3). Bound to the
 // paginator's [rows] and used as the loadTeamsPage size fallback so no magic
@@ -69,18 +56,15 @@ const PAGE_SIZE = 250;
   selector: 'app-home',
   imports: [
     FormsModule,
-    TableModule,
     SelectModule,
     ButtonModule,
-    TagModule,
     CommonModule,
     DialogModule,
-    InputTextModule,
     ToggleSwitchModule,
     NamespacePanelComponent,
     TeamMetadataModalComponent,
-    TeamMetadataPipe,
     TeamFilterComponent,
+    TeamTableComponent,
   ],
   templateUrl: './home.component.html',
   styleUrl: './home.component.scss',
@@ -98,10 +82,6 @@ export class HomeComponent {
   selectedNamespace$ = new BehaviorSubject<NamespaceSummary | null>(null);
   isCreatingTeam = false;
   isRefreshing = false;
-  stoppingTeams = new Set<string>();
-  restoringTeams = new Set<string>();
-  editingDescriptionFor: string | null = null;
-  descriptionDrafts = new Map<string, string>();
 
   // Classic paginator state (Epic 28). `rows` feeds [rows]; `first` is the
   // row offset the paginator is parked on; `currentPage` (1-based) is tracked
@@ -146,8 +126,6 @@ export class HomeComponent {
     map((u) => u?.roles?.includes('admin') === true),
   );
 
-  @ViewChildren('descriptionInput') descriptionInputs!: QueryList<ElementRef>;
-
   // @ViewChild on the @defer-rendered panel. The reference is `undefined`
   // until the user opens the dialog (the @defer block only mounts the child
   // when `namespacePanelVisible` flips true), so the close handler MUST
@@ -189,12 +167,6 @@ export class HomeComponent {
   // A modal confirm is only meaningful while a namespace is captured; the
   // destination is always the new team's process view, so no mode is kept.
   private pendingCreation = false;
-
-  // Expose isRunning to template
-  isRunning = isRunning;
-
-  // `trackBy` for the Metadata column's chips. See the pipe.
-  trackMetadataEntry = trackMetadataEntry;
 
   // -----------------------------------------------------------------------
   // The filter bar (Epic 48).
@@ -761,34 +733,33 @@ export class HomeComponent {
     await this.contextService.deleteTeam(teamId);
   }
 
-  async restoreTeam(teamId: string) {
-    this.restoringTeams.add(teamId);
-    try {
-      await this.apiService.restoreTeam(teamId);
-      // Reload the current page (REPLACE — no empty flash); no page jump.
-      await this.contextService.loadTeamsPage(this.currentPage, PAGE_SIZE);
-    } finally {
-      this.restoringTeams.delete(teamId);
-    }
+  /**
+   * `(restoreRequested)` handler. The table asked; the page performs, and hands
+   * the work straight back so the row it came from stays busy for exactly as
+   * long as it runs — rejection included. Nothing here knows which row is
+   * marked; that is the table's business.
+   */
+  onRestoreRequested(action: TeamRowAction): void {
+    action.track(this.restoreTeam(action.teamId));
   }
 
-  isRestoring(teamId: string): boolean {
-    return this.restoringTeams.has(teamId);
+  /** `(stopRequested)` handler. As `onRestoreRequested`. */
+  onStopRequested(action: TeamRowAction): void {
+    action.track(this.stopTeam(action.teamId));
+  }
+
+  async restoreTeam(teamId: string) {
+    await this.apiService.restoreTeam(teamId);
+    // Reload the current page (REPLACE — no empty flash); no page jump.
+    await this.contextService.loadTeamsPage(this.currentPage, PAGE_SIZE);
   }
 
   async stopTeam(teamId: string) {
-    this.stoppingTeams.add(teamId);
     try {
       await this.contextService.stopTeamAndAwait(teamId);
     } catch (error) {
       console.error(`Failed to stop team ${teamId}:`, error);
-    } finally {
-      this.stoppingTeams.delete(teamId);
     }
-  }
-
-  isStopping(teamId: string): boolean {
-    return this.stoppingTeams.has(teamId);
   }
 
   async refreshContext() {
@@ -801,49 +772,45 @@ export class HomeComponent {
     }
   }
 
-  onRowSelect(event: any) {
-    const teamId = event.data.team_id;
+  /** `(rowSelected)` handler. A row was picked; this page decides that means go. */
+  onRowSelect(teamId: string) {
     this.router.navigate(['/process', teamId]);
   }
 
-  startEditDescription(teamId: string, currentDescription: string | null) {
-    this.editingDescriptionFor = teamId;
-    this.descriptionDrafts.set(teamId, currentDescription || '');
-
-    // Focus the input field after the view updates
-    setTimeout(() => {
-      const input = this.descriptionInputs?.first?.nativeElement;
-      if (input) {
-        input.focus();
-        input.select();
-      }
-    }, 0);
+  /**
+   * `(descriptionSaved)` handler. The table has already trimmed the draft and
+   * turned an empty one into `null`; the page performs the write and hands the
+   * work back, so the editor closes on success and stays open — with the typed
+   * text — on failure.
+   */
+  onDescriptionSaved(save: TeamDescriptionSave): void {
+    save.track(this.saveDescription(save.teamId, save.description));
   }
 
-  cancelEditDescription() {
-    this.editingDescriptionFor = null;
-  }
-
-  async saveDescription(teamId: string) {
-    const description = this.descriptionDrafts.get(teamId) || null;
-    const trimmed = description?.trim() || null;
-
+  /**
+   * Persist a description, already trimmed by the caller.
+   *
+   * RE-THROWS after logging rather than swallowing. The failure is not this
+   * page's alone to absorb any more: the table is holding an open editor with
+   * the user's text in it, and a resolved promise would tell it the save
+   * succeeded and take the text away.
+   */
+  async saveDescription(teamId: string, description: string | null) {
     try {
       // Note: updateTeamDescription is a no-op in V2 (no equivalent endpoint).
       // Description changes will not persist. This is a known limitation.
       console.warn(
         'Description editing is not available in V2 -- changes will not persist.'
       );
-      await this.apiService.updateTeamDescription(teamId, trimmed);
+      await this.apiService.updateTeamDescription(teamId, description);
 
       // Update local context optimistically. The service owns its cache and
       // writes a NEW team object through its single write path — an in-place
       // write here re-emitted nothing and left the screen stale (story 37-3).
-      this.contextService.setTeamDescription(teamId, trimmed);
-
-      this.editingDescriptionFor = null;
+      this.contextService.setTeamDescription(teamId, description);
     } catch (error) {
       console.error('Failed to update description:', error);
+      throw error;
     }
   }
 

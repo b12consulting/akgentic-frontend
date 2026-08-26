@@ -10,7 +10,6 @@ import {
   ParamMap,
   Router,
 } from '@angular/router';
-import { Table } from 'primeng/table';
 import { BehaviorSubject, of } from 'rxjs';
 
 import { ApiService } from '../../core/http/api.service';
@@ -31,6 +30,11 @@ import {
 } from '../../protocol/catalog.interface';
 import { HomeComponent } from './home.component';
 import { TeamMetadataModalComponent } from './team-metadata-modal/team-metadata-modal.component';
+import {
+  TeamDescriptionSave,
+  TeamRowAction,
+  TeamTableComponent,
+} from './team-table/team-table.component';
 
 /**
  * A `NamespaceSummary` fixture carrying neutral values for every field these
@@ -265,7 +269,13 @@ describe('HomeComponent', () => {
     expect((component as any).context).toBeUndefined();
   });
 
-  it('(AC6) template renders one row per team emitted on teams$', async () => {
+  it('(AC6) teams$ reaches the table through [teams] and renders a row each', async () => {
+    // The page's half of the row-rendering contract after the extraction: what
+    // the service emits arrives at `<app-team-table [teams]>` and comes out as
+    // rows. The REAL child renders here — stubbing it would leave this spec
+    // asserting that a stub does nothing. What a row LOOKS like (its six
+    // columns, its chips, its status tag) is the child's own spec.
+    //
     // Render first so the lazy table's initial (onLazyLoad) seed fires; then
     // push the page into teams$ (mirrors a real page arrival — REPLACE).
     fixture.detectChanges();
@@ -292,44 +302,9 @@ describe('HomeComponent', () => {
     void rows;
   });
 
-  // --- Metadata column -------------------------------------------------
-
-  it('renders one metadata chip per answered field, label and value', async () => {
-    fixture.detectChanges();
-    await fixture.whenStable();
-    teams$.next([
-      makeTeam({ team_id: 't-1', metadata: { case_id: 'C-1234', tenant: 'acme' } }),
-    ]);
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    const chips = Array.from(
-      fixture.nativeElement.querySelectorAll('.team-metadata-chip'),
-    ) as HTMLElement[];
-    expect(chips.length).toBe(2);
-    expect(chips[0].textContent).toContain('Case id');
-    expect(chips[0].textContent).toContain('C-1234');
-    expect(chips[1].textContent).toContain('Tenant');
-    expect(chips[1].textContent).toContain('acme');
-  });
-
-  it('leaves the metadata cell EMPTY for a team carrying none', async () => {
-    // No dash, no "None" — every team predating a namespace contract is in
-    // this state, and a placeholder repeated down the page reads as a load
-    // failure rather than as an absent contract.
-    fixture.detectChanges();
-    await fixture.whenStable();
-    teams$.next([makeTeam({ team_id: 't-1', metadata: null })]);
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    const cell = fixture.nativeElement.querySelector('.team-metadata-cell');
-    expect(cell).not.toBeNull();
-    expect(cell.querySelectorAll('.team-metadata-chip').length).toBe(0);
-    expect((cell.textContent as string).trim()).toBe('');
-  });
+  // The Metadata column's own specs — one chip per answered field, and an
+  // EMPTY cell for a team carrying none — moved with the markup into
+  // team-table.component.spec.ts.
 
   it('(AC6, AC9) pushing a new list into teams$ triggers a re-render', async () => {
     fixture.detectChanges();
@@ -441,26 +416,51 @@ describe('HomeComponent', () => {
     expect(contextSpy.getTeams).not.toHaveBeenCalled();
   });
 
-  it('(AC5 10.5) stopTeam tracks the teamId in stoppingTeams across the await boundary', async () => {
-    let resolveStop: (() => void) | null = null;
-    const pending = new Promise<void>((resolve) => {
-      resolveStop = resolve;
-    });
-    contextSpy.stopTeamAndAwait.and.returnValue(pending);
+  // The in-flight MARK is no longer the page's: `stoppingTeams` /
+  // `restoringTeams` live in the table, where "this row is busy" is per-row
+  // view state. What the page still owns is performing the work and handing it
+  // straight back, which is what these two assert. The mark's own behaviour —
+  // set on request, cleared when the work settles INCLUDING on rejection, and
+  // independent per row — is asserted in team-table.component.spec.ts.
 
-    const stopPromise = component.stopTeam('team-A');
+  /** Collects whatever the page hands back through a `TeamRowAction.track`. */
+  function trackingAction(teamId: string): {
+    action: TeamRowAction;
+    tracked: Promise<unknown>[];
+  } {
+    const tracked: Promise<unknown>[] = [];
+    return {
+      action: { teamId, track: (work) => tracked.push(work) },
+      tracked,
+    };
+  }
 
-    expect(component.isStopping('team-A')).toBe(true);
-    expect(component.stoppingTeams.has('team-A')).toBe(true);
+  it('(AC5 10.5) onStopRequested performs the stop and hands the work back to track', async () => {
+    const { action, tracked } = trackingAction('team-A');
 
-    resolveStop!();
-    await stopPromise;
+    component.onStopRequested(action);
 
-    expect(component.isStopping('team-A')).toBe(false);
-    expect(component.stoppingTeams.has('team-A')).toBe(false);
+    expect(contextSpy.stopTeamAndAwait).toHaveBeenCalledOnceWith('team-A');
+    // The row is told about the SAME work the page started, so its spinner
+    // lasts exactly as long as the stop does.
+    expect(tracked.length).toBe(1);
+    await expectAsync(tracked[0]).toBeResolved();
   });
 
-  it('(AC6 10.5) stopTeam catches timeout/error and clears the stoppingTeams entry', async () => {
+  it('(AC5 10.5) onRestoreRequested performs the restore and hands the work back', async () => {
+    const { action, tracked } = trackingAction('team-A');
+
+    component.onRestoreRequested(action);
+
+    expect(tracked.length).toBe(1);
+    await tracked[0];
+    expect(apiSpy.restoreTeam).toHaveBeenCalledOnceWith('team-A');
+  });
+
+  it('(AC6 10.5) stopTeam catches a timeout/error, logs it, and still resolves', async () => {
+    // The page absorbs the failure and logs it. It must still RESOLVE: the row
+    // clears its mark on either outcome, but a page that re-threw here would
+    // add an unhandled rejection to a failure it has already reported.
     const timeoutErr = Object.assign(new Error('timeout'), {
       name: 'TimeoutError',
     });
@@ -470,42 +470,7 @@ describe('HomeComponent', () => {
 
     await expectAsync(component.stopTeam('team-A')).toBeResolved();
 
-    expect(component.stoppingTeams.has('team-A')).toBe(false);
-    expect(component.isStopping('team-A')).toBe(false);
     expect(consoleErrorSpy).toHaveBeenCalled();
-  });
-
-  it('(AC7 10.5) stopTeam is safe to call concurrently for different teams', async () => {
-    let resolveA: (() => void) | null = null;
-    let resolveB: (() => void) | null = null;
-    contextSpy.stopTeamAndAwait.and.callFake((teamId: string) => {
-      if (teamId === 'team-A')
-        return new Promise<void>((r) => {
-          resolveA = r;
-        });
-      if (teamId === 'team-B')
-        return new Promise<void>((r) => {
-          resolveB = r;
-        });
-      return Promise.resolve();
-    });
-
-    const pA = component.stopTeam('team-A');
-    const pB = component.stopTeam('team-B');
-
-    expect(component.stoppingTeams.has('team-A')).toBe(true);
-    expect(component.stoppingTeams.has('team-B')).toBe(true);
-
-    resolveA!();
-    await pA;
-
-    expect(component.stoppingTeams.has('team-A')).toBe(false);
-    expect(component.stoppingTeams.has('team-B')).toBe(true);
-
-    resolveB!();
-    await pB;
-
-    expect(component.stoppingTeams.has('team-B')).toBe(false);
   });
 
   function editButton(): HTMLButtonElement | null {
@@ -1123,40 +1088,18 @@ describe('HomeComponent', () => {
 
   // --- Epic 28: classic lazy paginated table (view layer) ---
 
-  function paginatorEl(): HTMLElement | null {
-    return fixture.nativeElement.querySelector('p-paginator, .p-paginator');
+  /** The rendered child component instance. */
+  function teamTable(): TeamTableComponent {
+    return fixture.debugElement.query(By.directive(TeamTableComponent))
+      .componentInstance;
   }
 
-  // Reads the rendered PrimeNG Table instance to assert the scroll-contract
-  // inputs (28.3 AC #6a). The scroll body's p-scroller rows may not
-  // materialise deterministically in a detached fixture, so we assert the
-  // binding/configuration, not scraped viewport geometry.
-  function tableInstance(): Table {
-    return fixture.debugElement.query(By.directive(Table)).componentInstance;
-  }
+  // The scroll contract itself — [scrollable], scrollHeight="flex", no virtual
+  // scroll, the page-report template — moved with the <p-table> into
+  // team-table.component.spec.ts. What is left here is the page's half: the
+  // paging state it owns reaches the child's inputs.
 
-  it('(28.3 AC2/AC6a) table is configured scrollable with a flex scroll height and the paginator is present', async () => {
-    contextSpy.totalCount = 1000;
-    totalCount$.next(1000);
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    const table = tableInstance();
-    // The body scrolls within the bounded flex parent (sticky header + bottom
-    // paginator follow); the pager is always reachable without scrolling rows.
-    expect(table.scrollable).toBeTrue();
-    expect(table.scrollHeight).toBe('flex');
-    expect(paginatorEl()).withContext('paginator must render below the scroll body').not.toBeNull();
-  });
-
-  it('(28.3 AC4) table does NOT enable virtual scroll', () => {
-    fixture.detectChanges();
-    const table = tableInstance();
-    expect(table.virtualScroll).toBeFalsy();
-  });
-
-  it('(28.2 AC8a) table renders with a paginator and totalRecords driven by totalCount', async () => {
+  it('(28.2 AC8a) the page feeds totalCount, rows and first into the table', async () => {
     contextSpy.totalCount = 1000;
     totalCount$.next(1000);
     fixture.detectChanges();
@@ -1165,10 +1108,21 @@ describe('HomeComponent', () => {
 
     // The lazy table seeds page 1 on init (loadPage → loadTeamsPage).
     expect(contextSpy.loadTeamsPage).toHaveBeenCalled();
-    // Paginator chrome present; totalRecords reflects the 28.1 totalCount.
-    expect(paginatorEl()).withContext('paginator must render').not.toBeNull();
-    const text = fixture.nativeElement.textContent as string;
-    expect(text).toContain('1000');
+
+    // Turn a page. `first` is set AFTER the seed on purpose: `ngOnInit`'s
+    // restore writes it from the URL, so a value planted before the first
+    // render is overwritten and the assertion would be vacuous.
+    component.first = 250;
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const table = teamTable();
+    expect(table.totalRecords).toBe(1000);
+    expect(table.rows).toBe(component.rows);
+    expect(table.first).toBe(250);
+    // Rendered, not merely bound: the "X–Y of N" report is on screen.
+    expect(fixture.nativeElement.textContent as string).toContain('1000');
   });
 
   it('(28.2 AC8b) loadPage computes page = first / rows + 1 and delegates to loadTeamsPage', async () => {
@@ -1275,10 +1229,18 @@ describe('HomeComponent', () => {
     expect(contextSpy.resetTeams).not.toHaveBeenCalled();
   });
 
-  it('(28.2 AC8f) cell templates work on a paged row: select navigates, status tag, action handlers, inline edit', async () => {
-    spyOn(component, 'stopTeam').and.callThrough();
-    spyOn(component, 'deleteTeam').and.callThrough();
+  // -------------------------------------------------------------------------
+  // What the child asks for, the page performs (28.2 AC8f, split).
+  //
+  // The single spec these replace asserted FIVE behaviours at once — row
+  // select, the status tag, two action handlers and the inline editor. Split
+  // carelessly into one child spec it would have dropped four of them, so each
+  // is now its own `it` on the side that owns it: the page's four delegations
+  // here, the status tag and the editor's open/cancel in
+  // team-table.component.spec.ts.
+  // -------------------------------------------------------------------------
 
+  it('(28.2 AC8f) a paged row still renders, and (rowSelected) navigates to it', async () => {
     fixture.detectChanges();
     await fixture.whenStable();
     // Render a known running row (REPLACE the seed page).
@@ -1289,31 +1251,54 @@ describe('HomeComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    const text = fixture.nativeElement.textContent as string;
-    expect(text).toContain('row-1');
-    // Status tag reflects running state.
-    expect(text).toContain('Running');
+    expect(fixture.nativeElement.textContent as string).toContain('row-1');
 
-    // Row select → navigate to /process/{team_id}.
-    component.onRowSelect({ data: { team_id: 'row-1' } });
+    // The child emits the team_id; navigating is this page's decision.
+    component.onRowSelect('row-1');
+
     expect(routerSpy.navigate).toHaveBeenCalledWith(['/process', 'row-1']);
+  });
 
-    // Action handlers invoke the right delegations on a paged row.
+  it('(28.2 AC8f) (deleteRequested) delegates to contextService.deleteTeam', async () => {
     await component.deleteTeam('row-1');
-    expect(contextSpy.deleteTeam).toHaveBeenCalledWith('row-1');
-    await component.stopTeam('row-1');
-    expect(contextSpy.stopTeamAndAwait).toHaveBeenCalledWith('row-1');
 
-    // Inline description edit: open / save / cancel.
-    component.startEditDescription('row-1', 'old');
-    expect(component.editingDescriptionFor).toBe('row-1');
-    expect(component.descriptionDrafts.get('row-1')).toBe('old');
-    await component.saveDescription('row-1');
-    expect(apiSpy.updateTeamDescription).toHaveBeenCalled();
-    expect(component.editingDescriptionFor).toBeNull();
-    component.startEditDescription('row-1', 'again');
-    component.cancelEditDescription();
-    expect(component.editingDescriptionFor).toBeNull();
+    expect(contextSpy.deleteTeam).toHaveBeenCalledWith('row-1');
+  });
+
+  it('(28.2 AC8f) (stopRequested) delegates to contextService.stopTeamAndAwait', async () => {
+    await component.stopTeam('row-1');
+
+    expect(contextSpy.stopTeamAndAwait).toHaveBeenCalledWith('row-1');
+  });
+
+  it('(28.2 AC8f) (descriptionSaved) reaches the API', async () => {
+    await component.saveDescription('row-1', 'old');
+
+    expect(apiSpy.updateTeamDescription).toHaveBeenCalledWith('row-1', 'old');
+  });
+
+  it('(AC17) the page no longer owns any of the table\'s row state', () => {
+    // Not tidiness: each of these left behind on the page is a second place the
+    // same state can be written, and the two would drift the moment one of them
+    // is updated. `descriptionInputs` in particular resolves to nothing here —
+    // its markup is in the child — so it would be a silently dead query.
+    for (const member of [
+      'stoppingTeams',
+      'restoringTeams',
+      'isStopping',
+      'isRestoring',
+      'editingDescriptionFor',
+      'descriptionDrafts',
+      'startEditDescription',
+      'cancelEditDescription',
+      'descriptionInputs',
+      'trackMetadataEntry',
+      'isRunning',
+    ]) {
+      expect((component as unknown as Record<string, unknown>)[member])
+        .withContext(`HomeComponent must no longer declare ${member}`)
+        .toBeUndefined();
+    }
   });
 
   // -------------------------------------------------------------------------
@@ -1328,16 +1313,24 @@ describe('HomeComponent', () => {
   // -------------------------------------------------------------------------
 
   describe('saveDescription delegation (Story 37-3 AC6)', () => {
-    it('delegates the trimmed description to ContextService', async () => {
+    it('forwards the description it is given, VERBATIM', async () => {
+      // The trim-and-null rule travels with the draft: the table applies it and
+      // emits the finished value. The page applying it a SECOND time would be a
+      // second place the rule lives, and the two would drift. Passed a value
+      // that is still padded, the page must forward the padding rather than
+      // quietly repair it.
       const team = makeTeam({ team_id: 'row-1', description: 'before' });
       teams$.next([team]);
 
-      component.startEditDescription('row-1', '  spaced out  ');
-      await component.saveDescription('row-1');
+      await component.saveDescription('row-1', '  spaced out  ');
 
       expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith(
         'row-1',
-        'spaced out',
+        '  spaced out  ',
+      );
+      expect(apiSpy.updateTeamDescription).toHaveBeenCalledWith(
+        'row-1',
+        '  spaced out  ',
       );
     });
 
@@ -1345,8 +1338,7 @@ describe('HomeComponent', () => {
       const team = makeTeam({ team_id: 'row-1', description: 'before' });
       teams$.next([team]);
 
-      component.startEditDescription('row-1', 'after');
-      await component.saveDescription('row-1');
+      await component.saveDescription('row-1', 'after');
 
       // `setTeamDescription` is a stub here, so the only way this object could
       // have changed is the component mutating it — which is the defect.
@@ -1354,38 +1346,61 @@ describe('HomeComponent', () => {
       expect(teams$.value[0].description).toBe('before');
     });
 
-    it('sends null for an empty draft rather than an empty string', async () => {
+    it('forwards a null description as null', async () => {
+      // The empty-draft case, arriving already resolved to `null` by the table.
       teams$.next([makeTeam({ team_id: 'row-1', description: 'before' })]);
 
-      component.startEditDescription('row-1', '   ');
-      await component.saveDescription('row-1');
+      await component.saveDescription('row-1', null);
 
       expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith('row-1', null);
     });
 
-    it('still calls the API and clears the editing row on success', async () => {
+    it('calls the API BEFORE the cache, and resolves on success', async () => {
       teams$.next([makeTeam({ team_id: 'row-1' })]);
 
-      component.startEditDescription('row-1', 'fresh');
-      await component.saveDescription('row-1');
+      await expectAsync(
+        component.saveDescription('row-1', 'fresh'),
+      ).toBeResolved();
 
       expect(apiSpy.updateTeamDescription).toHaveBeenCalledWith('row-1', 'fresh');
-      expect(component.editingDescriptionFor).toBeNull();
+      expect(contextSpy.setTeamDescription).toHaveBeenCalledWith('row-1', 'fresh');
     });
 
-    it('swallows an API failure, leaving the editing row open and the cache alone', async () => {
+    it('LOGS AND RE-THROWS an API failure, leaving the cache alone', async () => {
+      // It used to swallow, and cleared the editing row itself. Neither is
+      // possible now: the editor belongs to the table, and the only way to tell
+      // it a save failed — so it can keep the typed text on screen — is to
+      // reject the work it is tracking. A resolved promise here would close the
+      // editor and throw the user's text away on every failed save.
       apiSpy.updateTeamDescription.and.returnValue(
         Promise.reject(new Error('boom')),
       );
+      const consoleErrorSpy = spyOn(console, 'error');
       teams$.next([makeTeam({ team_id: 'row-1' })]);
 
-      component.startEditDescription('row-1', 'fresh');
-      await component.saveDescription('row-1');
+      await expectAsync(
+        component.saveDescription('row-1', 'fresh'),
+      ).toBeRejected();
 
       // The API call is awaited BEFORE the delegation, so a rejection means the
-      // cache is never touched and the row stays in edit mode.
+      // cache is never touched.
       expect(contextSpy.setTeamDescription).not.toHaveBeenCalled();
-      expect(component.editingDescriptionFor).toBe('row-1');
+      expect(consoleErrorSpy).toHaveBeenCalled();
+    });
+
+    it('onDescriptionSaved hands the write back to the row that asked for it', async () => {
+      const tracked: Promise<unknown>[] = [];
+      const save: TeamDescriptionSave = {
+        teamId: 'row-1',
+        description: 'fresh',
+        track: (work) => tracked.push(work),
+      };
+
+      component.onDescriptionSaved(save);
+
+      expect(tracked.length).toBe(1);
+      await tracked[0];
+      expect(apiSpy.updateTeamDescription).toHaveBeenCalledWith('row-1', 'fresh');
     });
   });
 

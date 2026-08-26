@@ -1,0 +1,189 @@
+<!--
+  Classic numbered paginator (Epic 28, ADR-032 §Decision 3). [lazy] +
+  (onLazyLoad) drive a server-paged fetch (250/page); [totalRecords] feeds the
+  "X–Y of N" report. All three of [rows], [first] and [totalRecords] are this
+  component's INPUTS — the page owns the paging state, this component only
+  renders it. The client cross-page sort (former [sortField]/[sortOrder] +
+  pSortableColumn/p-sortIcon) is removed — the server returns each page already
+  ordered created_at desc.
+
+  [scrollable]="true" + scrollHeight="flex" (Epic 28, Story 28.3) make the body
+  scroll within the height-constrained flex parent so the sticky header and the
+  bottom paginator stay pinned — the pager is reachable without scrolling past
+  250 rows. That chain now runs through this component's HOST element, which is
+  why the stylesheet gives :host a display of its own. This is plain PrimeNG
+  table scrolling, NOT virtual scroll: no [virtualScroll]/@angular/cdk
+  (forbidden by ADR-032 §"What we will not do"; [scrollable] is explicitly
+  allowed).
+-->
+<p-table
+  [value]="teams"
+  selectionMode="single"
+  (onRowSelect)="onRowSelect($event)"
+  [tableStyle]="{ 'min-width': '50rem' }"
+  [scrollable]="true"
+  scrollHeight="flex"
+  [lazy]="true"
+  (onLazyLoad)="onLazyLoad($event)"
+  [paginator]="true"
+  [rows]="rows"
+  [first]="first"
+  [totalRecords]="totalRecords"
+  [showCurrentPageReport]="true"
+  currentPageReportTemplate="{first}–{last} of {totalRecords}"
+  paginatorPosition="bottom"
+>
+  <ng-template #header>
+    <tr>
+      <th>Name</th>
+      <th>Metadata</th>
+      <th>Creation Date</th>
+      <th>Status</th>
+      <th>Team ID</th>
+      <th></th>
+    </tr>
+  </ng-template>
+  <ng-template #body let-ctx>
+    <tr [pSelectableRow]="ctx">
+      <td>
+        <div class="team-info">
+          <div class="team-name">
+            {{ ctx.name }}
+          </div>
+
+          <!-- Display mode -->
+          <div
+            *ngIf="editingDescriptionFor !== ctx.team_id"
+            class="team-description"
+            (click)="
+              startEditDescription(ctx.team_id, ctx.description);
+              $event.stopPropagation()
+            "
+          >
+            <span *ngIf="ctx.description" class="description-text">
+              {{ ctx.description }}
+            </span>
+            <span *ngIf="!ctx.description" class="description-placeholder">
+              Click to add description...
+            </span>
+          </div>
+
+          <!-- Edit mode -->
+          <div
+            *ngIf="editingDescriptionFor === ctx.team_id"
+            class="description-editor"
+            (click)="$event.stopPropagation()"
+          >
+            <input
+              #descriptionInput
+              type="text"
+              pInputText
+              [ngModel]="descriptionDrafts.get(ctx.team_id)"
+              (ngModelChange)="descriptionDrafts.set(ctx.team_id, $event)"
+              placeholder="Enter team description"
+              (keyup.enter)="saveDescription(ctx.team_id)"
+              (keyup.escape)="cancelEditDescription()"
+              class="description-input"
+              maxlength="500"
+              [autofocus]="true"
+            />
+            <button
+              pButton
+              icon="pi pi-check"
+              (click)="saveDescription(ctx.team_id)"
+              class="description-save-btn"
+              rounded
+            ></button>
+            <button
+              pButton
+              icon="pi pi-times"
+              (click)="cancelEditDescription()"
+              severity="secondary"
+              class="description-cancel-btn"
+              rounded
+            ></button>
+          </div>
+        </div>
+      </td>
+      <!--
+        The team's business metadata, one chip per answered field.
+
+        Deliberately EMPTY when the team carries none — no dash, no
+        "None". Every team created before a namespace declared a contract
+        is in that state, and a placeholder repeated down a 250-row page
+        reads as missing data rather than as an absent contract.
+
+        Through the PIPE, never a bare `metadataEntries(ctx)` call: a
+        function in a binding re-runs every change-detection cycle and
+        returns new object identities, so `NgForOf` would rebuild every
+        chip in every row each tick. See TeamMetadataPipe.
+      -->
+      <td class="team-metadata-cell">
+        <span
+          *ngFor="
+            let entry of ctx.metadata | teamMetadata;
+            trackBy: trackMetadataEntry
+          "
+          class="team-metadata-chip"
+          [attr.data-test]="'row-metadata-' + entry.key"
+          ><span class="team-metadata-chip__label">{{ entry.label }}</span
+          >{{ entry.value }}</span
+        >
+      </td>
+      <td>{{ ctx.created_at | date: "short" }}</td>
+      <td>
+        <p-tag
+          *ngIf="!isRunning(ctx)"
+          value="Stopped"
+          severity="info"
+        >
+        </p-tag>
+        <p-tag
+          *ngIf="isRunning(ctx)"
+          value="Running"
+          severity="success"
+        >
+        </p-tag>
+      </td>
+      <td>{{ ctx.team_id }}</td>
+      <td>
+        <p-button
+          *ngIf="isRunning(ctx)"
+          [icon]="
+            isStopping(ctx.team_id)
+              ? 'pi pi-spinner pi-spin'
+              : 'pi pi-stop-circle'
+          "
+          (click)="onStop(ctx.team_id)"
+          severity="secondary"
+          rounded
+          [style]="{ 'margin-right': '0.5rem' }"
+          title="Stop Team"
+          [disabled]="isStopping(ctx.team_id)"
+        />
+        <p-button
+          *ngIf="!isRunning(ctx)"
+          [icon]="
+            isRestoring(ctx.team_id)
+              ? 'pi pi-spinner pi-spin'
+              : 'pi pi-replay'
+          "
+          (click)="onRestore(ctx.team_id)"
+          severity="secondary"
+          rounded
+          [style]="{ 'margin-right': '0.5rem' }"
+          title="Restore Team"
+          [disabled]="isRestoring(ctx.team_id)"
+        />
+        &nbsp;
+        <p-button
+          icon="pi pi-times"
+          (click)="onDelete(ctx.team_id)"
+          severity="secondary"
+          rounded
+          title="Delete Team"
+        />
+      </td>
+    </tr>
+  </ng-template>
+</p-table>
