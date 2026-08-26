@@ -2199,6 +2199,38 @@ describe('HomeComponent', () => {
       expect(component.filterByNamespace).toBeFalse();
     });
 
+    it('(AC7) a toggle flipped ON with NO selection is honoured once a selection arrives', async () => {
+      // `catalogNamespace` is composed from the SELECTED namespace, so while
+      // there is none the toggle composes `null` however it is set. The FIRST
+      // selection of the page's lifetime normally issues no fetch — but if it
+      // did so unconditionally, the toggle would be left reading ON above a
+      // list that is not narrowed, with no further event to reconcile them.
+      apiSpy.getNamespaces.and.returnValue(Promise.resolve([]));
+      await component.ngOnInit();
+
+      component.onFilterNamespaceToggle(true);
+      expect(lastFilter().catalogNamespace).toBeNull();
+      contextSpy.setFilter.calls.reset();
+
+      // A team type appears — the panel saved one, or a refresh returned one.
+      component.onNamespaceSelected(nsSummary('acme-cases', 'Acme Cases', 'd'));
+
+      expect(contextSpy.setFilter).toHaveBeenCalledTimes(1);
+      expect(lastFilter().catalogNamespace).toBe('acme-cases');
+    });
+
+    it('(AC11) the first selection with the toggle OFF still issues nothing', async () => {
+      // The other half of the condition: the init path is unchanged, so the
+      // table's own first (onLazyLoad) remains the sole page-1 seed.
+      apiSpy.getNamespaces.and.returnValue(Promise.resolve([]));
+      await component.ngOnInit();
+      contextSpy.setFilter.calls.reset();
+
+      component.onNamespaceSelected(nsSummary('acme-cases', 'Acme Cases', 'd'));
+
+      expect(contextSpy.setFilter).not.toHaveBeenCalled();
+    });
+
     // --- AC14: the two namespace controls read as two controls --------------
 
     it('(AC14) the team-type select and the narrowing toggle are separately labelled', async () => {

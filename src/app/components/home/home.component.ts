@@ -385,11 +385,20 @@ export class HomeComponent {
    * and carrying it across would leave the table showing a set filtered by the
    * previous contract's keys beneath an empty form.
    *
-   * The FIRST selection of the page's lifetime deliberately issues no fetch.
-   * There are no terms to drop and the narrowing control is still off, so the
-   * filter it would compose is the empty one `ngOnInit` has just cleared —
-   * emitting it would fetch page 1 a second time, racing the table's own
-   * `(onLazyLoad)` seed with an identical request.
+   * The FIRST selection of the page's lifetime issues no fetch — but ONLY
+   * while the narrowing control is off. There are then no terms to drop and
+   * nothing to narrow by, so the filter it would compose is the empty one
+   * `ngOnInit` has just cleared, and emitting it would fetch page 1 a second
+   * time, racing the table's own `(onLazyLoad)` seed with an identical
+   * request.
+   *
+   * The narrowing control is part of that condition and not an assumption.
+   * `catalogNamespace` is composed from the SELECTED namespace, so with no
+   * selection the toggle composes `null` however it is set. A user who lands
+   * on a page with no team types, flips the toggle on, and then gets a
+   * selection — the panel saves one, or a refresh returns one — would
+   * otherwise be left with the toggle reading ON above a list that is not
+   * narrowed, and no further event to reconcile them.
    */
   private applyNamespaceSelection(ns: NamespaceSummary | null): void {
     const previous = this.selectedNamespace$.value;
@@ -399,7 +408,7 @@ export class HomeComponent {
     this.selectedNamespace$.next(ns);
     this.filterFields = this.offeredFilterFields(ns);
     this.filterTerms = {};
-    if (previous === null) {
+    if (previous === null && !this.filterByNamespace) {
       return;
     }
     this.onFilterChanged();
