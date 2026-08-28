@@ -48,9 +48,43 @@
     <tr [pSelectableRow]="ctx">
       <td>
         <div class="team-info">
-          <div class="team-name">
-            {{ ctx.name }}
-          </div>
+          <!--
+            The row's headline (Epic 53).
+
+            `ctx.name` is the team TYPE — every team created from one namespace
+            carries the same one — so a list of twenty reads as twenty copies
+            of a row. When the namespace nominates a title field and this team
+            answered it, that value is the headline and the type drops to a
+            quiet second line: nothing is lost, and the line a person scans is
+            the one that differs between rows.
+
+            When there is no title — no nomination, no metadata, an unanswered
+            key, or a generation that returned "" — the `else` arm renders
+            EXACTLY what this cell rendered before Epic 53. That is the whole
+            of FR3: an existing deployment sees no change at all.
+
+            Interpolated, never bound as markup: the value is generated and
+            therefore untrusted. `[title]` carries the full string so the CSS
+            ellipsis below truncates the DISPLAY without losing the value.
+          -->
+          <ng-container
+            *ngIf="
+              ctx.metadata | teamTitle: titleKey as rowTitle;
+              else teamTypeAsHeadline
+            "
+          >
+            <div class="team-name team-title" [title]="rowTitle" data-test="row-title">
+              {{ rowTitle }}
+            </div>
+            <div class="team-type" data-test="row-team-type">
+              {{ ctx.name }}
+            </div>
+          </ng-container>
+          <ng-template #teamTypeAsHeadline>
+            <div class="team-name">
+              {{ ctx.name }}
+            </div>
+          </ng-template>
 
           <!-- Display mode -->
           <div
@@ -118,11 +152,17 @@
         function in a binding re-runs every change-detection cycle and
         returns new object identities, so `NgForOf` would rebuild every
         chip in every row each tick. See TeamMetadataPipe.
+
+        `titleKey` is passed so the title field LEAVES the chip set. It is
+        already rendered as the row's headline in the Name cell; left in
+        here as well it would appear twice in one row, which reads as a
+        data bug rather than as a layout choice. When no field is
+        nominated the argument is `null` and every key stays.
       -->
       <td class="team-metadata-cell">
         <span
           *ngFor="
-            let entry of ctx.metadata | teamMetadata;
+            let entry of ctx.metadata | teamMetadata: titleKey;
             trackBy: trackMetadataEntry
           "
           class="team-metadata-chip"

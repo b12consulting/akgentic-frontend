@@ -11,7 +11,11 @@ import { BehaviorSubject, firstValueFrom, Observable } from 'rxjs';
 import { filter, map, take } from 'rxjs/operators';
 
 import { ApiService, MIN_FILTER_TERM_LENGTH } from '../../core/http/api.service';
-import { NO_TEAM_FILTER, TeamFilter } from '../../core/context/team.interface';
+import {
+  NO_TEAM_FILTER,
+  TeamFilter,
+  titleFieldKey,
+} from '../../core/context/team.interface';
 import { NamespaceSummary } from '../../protocol/catalog.interface';
 
 import { CommonModule } from '@angular/common';
@@ -89,6 +93,21 @@ export class HomeComponent {
   namespaces$ = new BehaviorSubject<NamespaceSummary[]>([]);
   selectedNamespace$ = new BehaviorSubject<NamespaceSummary | null>(null);
   isRefreshing = false;
+
+  /**
+   * Which metadata key the selected namespace nominates as a team's TITLE, or
+   * `null` when it nominates none (Epic 53). Handed to `<app-team-table>`,
+   * which asks each ROW for its own value under that key.
+   *
+   * DERIVED, never stored. A stored copy is a second thing to keep in step
+   * with the selection, and the moment it would fall out of step — the
+   * namespace panel saving a changed contract, which re-fetches and re-selects
+   * — is the moment the key matters. `titleFieldKey` resolves a malformed
+   * two-title contract in declaration order, so the answer is deterministic.
+   */
+  titleKey$: Observable<string | null> = this.selectedNamespace$.pipe(
+    map((ns) => titleFieldKey(ns?.team_metadata)),
+  );
 
   // Classic paginator state (Epic 28). `rows` feeds [rows]; `first` is the
   // row offset the paginator is parked on; `currentPage` (1-based) is tracked

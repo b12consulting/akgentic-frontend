@@ -1,6 +1,6 @@
 import { Pipe, PipeTransform } from '@angular/core';
 
-import { metadataEntries, TeamMetadataEntry } from './team.interface';
+import { metadataEntries, teamTitle, TeamMetadataEntry } from './team.interface';
 
 /**
  * A team's metadata as render-ready pairs, memoised.
@@ -23,11 +23,43 @@ import { metadataEntries, TeamMetadataEntry } from './team.interface';
  *
  * Each embedded view gets its own pipe instance, so a table row memoises
  * independently of its neighbours.
+ *
+ * `titleKey` is the SECOND argument rather than a separate pipe because the
+ * exclusion and the list are one decision: a surface that promotes the title
+ * field to a heading must drop it here in the same breath, or the row shows it
+ * twice. A pure pipe re-runs when ANY argument changes, so passing it costs
+ * nothing while the namespace stays put — which is most of the time.
  */
 @Pipe({ name: 'teamMetadata' })
 export class TeamMetadataPipe implements PipeTransform {
-  transform(metadata: Record<string, unknown> | null | undefined): TeamMetadataEntry[] {
-    return metadataEntries(metadata);
+  transform(
+    metadata: Record<string, unknown> | null | undefined,
+    titleKey?: string | null,
+  ): TeamMetadataEntry[] {
+    return metadataEntries(metadata, titleKey);
+  }
+}
+
+/**
+ * A team's title as one line of text, or `null` when it has none.
+ *
+ * A pipe rather than a component method for the same reason as above: a method
+ * in a binding re-runs on every change-detection cycle. The consequence is
+ * milder here — the result is a string, so nothing is torn down and rebuilt —
+ * but the row template already uses `*ngIf … as` on this value, and re-running
+ * the whole resolution per row per tick to produce a string that never changed
+ * is work nobody asked for.
+ *
+ * Pure, and both inputs are references or primitives, so a row recomputes only
+ * when its metadata object is replaced or the namespace's contract changes.
+ */
+@Pipe({ name: 'teamTitle' })
+export class TeamTitlePipe implements PipeTransform {
+  transform(
+    metadata: Record<string, unknown> | null | undefined,
+    titleKey: string | null | undefined,
+  ): string | null {
+    return teamTitle(metadata, titleKey);
   }
 }
 

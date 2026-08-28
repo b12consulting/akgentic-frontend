@@ -144,6 +144,7 @@
       [totalRecords]="contextService.totalCount"
       [rows]="rows"
       [first]="first"
+      [titleKey]="(titleKey$ | async) ?? null"
       (lazyLoad)="loadPage($event)"
       (rowSelected)="onRowSelect($event)"
       (stopRequested)="onStopRequested($event)"

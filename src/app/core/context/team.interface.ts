@@ -3,6 +3,8 @@
  * Maps to Python TeamResponse, EventResponse from akgentic.infra.server.models.
  */
 
+import { TeamMetadataContract } from '../../protocol/catalog.interface';
+
 // Maps to Python TeamResponse (from akgentic.infra.server.models)
 export interface TeamResponse {
   team_id: string;
@@ -317,14 +319,23 @@ function metadataValue(value: unknown): string {
  * on every change-detection cycle and returns a fresh array of fresh objects,
  * which `NgForOf` reads as "every item replaced" — it destroys and rebuilds
  * every chip each tick. Go through the pipe.
+ *
+ * `excludeKey` REMOVES one key from the result, and exists for exactly one
+ * caller: a surface that renders the title field somewhere of its own (Epic
+ * 53). The title is an ordinary metadata key, so a surface that promotes it to
+ * a heading and does NOT exclude it here shows the same value twice in the
+ * same row — which reads as duplicated data rather than as a layout slip. A
+ * surface that renders no title passes nothing and sees today's behaviour.
  */
 export function metadataEntries(
   metadata: Record<string, unknown> | null | undefined,
+  excludeKey?: string | null,
 ): TeamMetadataEntry[] {
   if (!metadata) {
     return [];
   }
   return Object.entries(metadata)
+    .filter(([key]) => key !== excludeKey)
     .filter(([, value]) => value !== null && value !== undefined)
     .map(([key, value]) => ({
       key,
@@ -332,4 +343,64 @@ export function metadataEntries(
       value: metadataValue(value),
     }))
     .filter((entry) => entry.value.trim() !== '');
+}
+
+/**
+ * Which metadata key a namespace's contract nominates as the team's TITLE, or
+ * `null` when it nominates none.
+ *
+ * THE SINGLE PLACE that question is answered. `is_title` is documented as "at
+ * most one field", but that is a server-side rule and a malformed contract can
+ * declare two. Resolving in DECLARATION ORDER — `fields` arrives in the order
+ * the model declares them, always, and `Array.prototype.find` walks it in that
+ * order — makes the malformed case DETERMINISTIC: the same contract yields the
+ * same title on every render, on every machine, in every browser. Resolving it
+ * by walking the metadata object's own keys instead would make the answer
+ * depend on the shape of one team's data rather than on the contract.
+ *
+ * Takes the CONTRACT rather than the `NamespaceSummary` that holds it, so the
+ * two spellings of "this namespace declares nothing" — an absent key and an
+ * explicit `null` — collapse at the one boundary that has to know about them.
+ */
+export function titleFieldKey(
+  contract: TeamMetadataContract | null | undefined,
+): string | null {
+  const field = contract?.fields.find((f) => f.is_title === true);
+  return field?.key ?? null;
+}
+
+/**
+ * One team's title: the value its metadata carries under `titleKey`, rendered
+ * as a single line of text — or `null` when there is no title to show.
+ *
+ * `null` covers every "no title" state, and they are not the same thing:
+ * the namespace nominates no field (`titleKey` is `null`), the team predates
+ * the contract and carries no metadata at all, the key is simply unanswered,
+ * or — the one that is easy to miss — GENERATION RAN AND RETURNED `""`. An
+ * empty string is not a title; a blank heading over a row is strictly worse
+ * than the team type, because it looks like a value that failed to load. Every
+ * one of those falls back, by the same rule `metadataEntries` already applies
+ * to a chip.
+ *
+ * The value is TEXT and is rendered as text. It is generated, which makes it
+ * untrusted: it goes through interpolation, never `innerHTML`, and nothing
+ * here builds markup for a caller to hand to a sanitiser bypass.
+ *
+ * Truncation is NOT applied here. Where to cut depends on the width of the
+ * surface, which only the surface knows; the display layer ellipsises in CSS
+ * and keeps the full string in a tooltip, so nothing is silently lost.
+ */
+export function teamTitle(
+  metadata: Record<string, unknown> | null | undefined,
+  titleKey: string | null | undefined,
+): string | null {
+  if (!metadata || !titleKey) {
+    return null;
+  }
+  const raw = metadata[titleKey];
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+  const text = metadataValue(raw);
+  return text.trim() === '' ? null : text;
 }

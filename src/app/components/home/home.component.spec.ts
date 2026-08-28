@@ -10,7 +10,7 @@ import {
   ParamMap,
   Router,
 } from '@angular/router';
-import { BehaviorSubject, of } from 'rxjs';
+import { BehaviorSubject, firstValueFrom, of } from 'rxjs';
 
 import { ApiService } from '../../core/http/api.service';
 import { AuthService } from '../../core/auth/auth.service';
@@ -2017,6 +2017,86 @@ describe('HomeComponent', () => {
   // form reports through. Rendering the real form and typing into it would be
   // testing the child twice, and would say nothing extra about the page.
   // -------------------------------------------------------------------------
+
+  describe('the row title key (53-1)', () => {
+    /** Read whatever `titleKey$` currently holds. It is a derived stream. */
+    async function currentTitleKey(c: HomeComponent): Promise<string | null> {
+      return await firstValueFrom(c.titleKey$);
+    }
+
+    it('derives the key from the selected namespace contract', async () => {
+      component.selectedNamespace$.next(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('case_id'), field('subject', { is_title: true })]),
+        ),
+      );
+
+      expect(await currentTitleKey(component)).toBe('subject');
+    });
+
+    it('is null when the namespace nominates none, and when none is selected', async () => {
+      // FR3 — the state of every deployment today. The table takes `null` and
+      // renders the row exactly as it did before this epic.
+      expect(await currentTitleKey(component)).toBeNull();
+
+      component.selectedNamespace$.next(
+        nsSummary('acme-cases', 'Acme Cases', 'd', contract([field('case_id')])),
+      );
+      expect(await currentTitleKey(component)).toBeNull();
+
+      component.selectedNamespace$.next(nsSummary('plain', 'Plain', 'd'));
+      expect(await currentTitleKey(component)).toBeNull();
+    });
+
+    it('follows the selection rather than caching the first answer', async () => {
+      // DERIVED, not stored. The moment a stored copy would go stale is the
+      // namespace panel saving a changed contract, which re-fetches and
+      // re-selects — the exact moment the key matters.
+      component.selectedNamespace$.next(
+        nsSummary(
+          'a',
+          'A',
+          'd',
+          contract([field('subject', { is_title: true })]),
+        ),
+      );
+      expect(await currentTitleKey(component)).toBe('subject');
+
+      component.selectedNamespace$.next(
+        nsSummary(
+          'b',
+          'B',
+          'd',
+          contract([field('headline', { is_title: true })]),
+        ),
+      );
+      expect(await currentTitleKey(component)).toBe('headline');
+    });
+
+    it('passes the key down to the table', async () => {
+      // Rendered FIRST and settled, so `ngOnInit`'s namespace load (which
+      // resolves to an empty list and would re-select `null`) is done before
+      // the selection under test is pushed. Otherwise this spec races it.
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      component.selectedNamespace$.next(
+        nsSummary(
+          'acme-cases',
+          'Acme Cases',
+          'd',
+          contract([field('subject', { is_title: true })]),
+        ),
+      );
+      fixture.detectChanges();
+
+      const table = fixture.debugElement.query(By.directive(TeamTableComponent));
+      expect(table.componentInstance.titleKey).toBe('subject');
+    });
+  });
 
   describe('filter (48.1 / 48.2)', () => {
     const NS_WITH_CASE_ID = nsSummary(

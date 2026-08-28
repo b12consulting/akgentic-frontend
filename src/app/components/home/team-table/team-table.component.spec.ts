@@ -329,6 +329,154 @@ describe('TeamTableComponent', () => {
     expect((cell.textContent as string).trim()).toBe('');
   });
 
+  // --- The row's title (Epic 53) -------------------------------------------
+
+  it('renders the nominated metadata field as the row title, type beneath it', async () => {
+    // `name` is the team TYPE, identical on every team of a namespace, so a
+    // filtered list of twenty reads as twenty copies of a row. The title is
+    // what differs; it goes where a title belongs, and the type stays as a
+    // quiet second line rather than being thrown away.
+    component.titleKey = 'subject';
+    await render([
+      makeTeam({
+        team_id: 't-1',
+        name: 'Invoice Dispute',
+        metadata: { subject: 'Late invoice for ACME', case_id: 'C-1234' },
+      }),
+    ]);
+
+    const title = fixture.nativeElement.querySelector('[data-test="row-title"]');
+    const type = fixture.nativeElement.querySelector('[data-test="row-team-type"]');
+    expect(title.textContent.trim()).toBe('Late invoice for ACME');
+    expect(type.textContent.trim()).toBe('Invoice Dispute');
+  });
+
+  it('(T2) takes the title OUT of the metadata chips — it is not shown twice', async () => {
+    // The title is an ordinary metadata key. Promoted to a heading and left in
+    // the chip set as well, it appears twice in one row, which reads as
+    // duplicated data rather than as a layout choice.
+    component.titleKey = 'subject';
+    await render([
+      makeTeam({
+        team_id: 't-1',
+        metadata: { subject: 'Late invoice', case_id: 'C-1234', tenant: 'acme' },
+      }),
+    ]);
+
+    const chips = Array.from(
+      fixture.nativeElement.querySelectorAll('.team-metadata-chip'),
+    ) as HTMLElement[];
+    expect(chips.length).toBe(2);
+    expect(chips.some((c) => (c.textContent ?? '').includes('Late invoice'))).toBeFalse();
+    expect(
+      fixture.nativeElement.querySelector('[data-test="row-metadata-subject"]'),
+    ).toBeNull();
+  });
+
+  it('(FR3) renders exactly as before when no field is nominated', async () => {
+    // The default state of every deployment today, and the one this epic
+    // promised not to disturb: the name cell is the team type and nothing
+    // else, and the metadata key that would have been a title is a chip.
+    await render([
+      makeTeam({
+        team_id: 't-1',
+        name: 'Invoice Dispute',
+        metadata: { subject: 'Late invoice', case_id: 'C-1234' },
+      }),
+    ]);
+
+    expect(component.titleKey).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-test="row-title"]')).toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('[data-test="row-team-type"]'),
+    ).toBeNull();
+    const name = fixture.nativeElement.querySelector('.team-name');
+    expect(name.textContent.trim()).toBe('Invoice Dispute');
+    expect(
+      fixture.nativeElement.querySelectorAll('.team-metadata-chip').length,
+    ).toBe(2);
+  });
+
+  it('(FR3) falls back to the team type for a team that answered no title', async () => {
+    // A nomination is per NAMESPACE; answering it is per TEAM. Every team
+    // created before the field existed is in this state.
+    component.titleKey = 'subject';
+    await render([
+      makeTeam({ team_id: 't-1', name: 'Invoice Dispute', metadata: { case_id: 'C-1' } }),
+    ]);
+
+    expect(fixture.nativeElement.querySelector('[data-test="row-title"]')).toBeNull();
+    expect(
+      (fixture.nativeElement.querySelector('.team-name').textContent as string).trim(),
+    ).toBe('Invoice Dispute');
+  });
+
+  it('(T5) falls back to the team type when generation returned an empty title', async () => {
+    // The trap: `""` is a present key, so a truthiness check on the KEY passes
+    // and the row gets a blank heading and no fallback — which reads as a
+    // value that failed to load, and is strictly worse than the team type.
+    component.titleKey = 'subject';
+    await render([
+      makeTeam({
+        team_id: 't-1',
+        name: 'Invoice Dispute',
+        metadata: { subject: '   ' },
+      }),
+    ]);
+
+    expect(fixture.nativeElement.querySelector('[data-test="row-title"]')).toBeNull();
+    expect(
+      (fixture.nativeElement.querySelector('.team-name').textContent as string).trim(),
+    ).toBe('Invoice Dispute');
+  });
+
+  it('decides per ROW, so a titled and an untitled team can sit side by side', async () => {
+    component.titleKey = 'subject';
+    await render([
+      makeTeam({ team_id: 't-1', name: 'Type A', metadata: { subject: 'Titled' } }),
+      makeTeam({ team_id: 't-2', name: 'Type A', metadata: { case_id: 'C-2' } }),
+    ]);
+
+    const [first, second] = rows();
+    expect(
+      (first.querySelector('[data-test="row-title"]') as HTMLElement).textContent!.trim(),
+    ).toBe('Titled');
+    expect(second.querySelector('[data-test="row-title"]')).toBeNull();
+    expect((second.querySelector('.team-name') as HTMLElement).textContent!.trim()).toBe(
+      'Type A',
+    );
+  });
+
+  it('(FR6) keeps the FULL title in a tooltip while the display truncates', async () => {
+    // A generated line has no length contract. Truncation is CSS — nothing in
+    // a unit suite can measure it — so what is pinned here is the part that
+    // would silently lose data: the untruncated string stays reachable.
+    const long = 'A generated title that runs on well past the width of any column';
+    component.titleKey = 'subject';
+    await render([makeTeam({ team_id: 't-1', metadata: { subject: long } })]);
+
+    const title = fixture.nativeElement.querySelector(
+      '[data-test="row-title"]',
+    ) as HTMLElement;
+    expect(title.getAttribute('title')).toBe(long);
+    expect(title.classList).toContain('team-title');
+  });
+
+  it('(T4) renders a title containing markup as TEXT, never as markup', async () => {
+    // The title is generated and therefore untrusted. The bar in a list row is
+    // lower than in a chat bubble; the consequence is the same.
+    const injected = '<img src="x" onerror="alert(1)">';
+    component.titleKey = 'subject';
+    await render([makeTeam({ team_id: 't-1', metadata: { subject: injected } })]);
+
+    const title = fixture.nativeElement.querySelector(
+      '[data-test="row-title"]',
+    ) as HTMLElement;
+    expect(title.textContent!.trim()).toBe(injected);
+    expect(title.querySelector('img')).toBeNull();
+    expect(title.children.length).toBe(0);
+  });
+
   // --- The paginator contract ----------------------------------------------
 
   it('(AC14, 28.3 AC2/AC6a) is scrollable with a flex scroll height, lazy, and paginated', async () => {

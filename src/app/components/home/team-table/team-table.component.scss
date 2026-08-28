@@ -55,6 +55,33 @@ p-table {
     font-size: 1rem;
 }
 
+// The generated title (Epic 53, FR6).
+//
+// A generated line has NO LENGTH CONTRACT — nothing on either side of the wire
+// caps it — so it is truncated for DISPLAY rather than allowed to widen the
+// column until the row breaks. One line, ellipsised, with the full string kept
+// in the element's `title` attribute so nothing is actually lost.
+//
+// `max-width` in ch, not a percentage: this sits in a table whose column widths
+// are content-derived, so a percentage would be a percentage of a width the
+// long title had already inflated and the truncation would never fire.
+//
+// `overflow: hidden` is what makes `text-overflow` do anything at all. All
+// three declarations are needed; none works alone.
+.team-title {
+    max-width: 44ch;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+// The team TYPE, demoted to a second line once a title sits above it. Present
+// and readable, and plainly not the line being scanned.
+.team-type {
+    font-size: 0.8125rem;
+    color: #6c757d;
+}
+
 .team-description {
     font-size: 0.875rem;
     color: #666;
