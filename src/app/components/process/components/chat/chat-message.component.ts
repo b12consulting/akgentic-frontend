@@ -34,6 +34,19 @@ export class ChatMessageComponent {
   @Output() rule3Clicked = new EventEmitter<ChatMessage>();
   message = input.required<ChatMessage>();
   selected = input<boolean>(false);
+  /**
+   * May a turn be rated HERE?
+   *
+   * Separate from `isRateable`, which answers whether the MESSAGE is the kind of
+   * thing that can be rated at all. This answers whether the SURFACE offers it,
+   * and the two are genuinely different questions: the sub-agent reader (Epic
+   * 51) renders this same component and is specified read-only — no reply, no
+   * edit, no send — and submitting a rating is a send.
+   *
+   * Defaults to true, so the main conversation is unaffected and a new surface
+   * has to opt out deliberately rather than inherit a write path by accident.
+   */
+  ratingEnabled = input<boolean>(true);
   notification = input<boolean>(false);
 
   private readonly config = inject(ConfigService);

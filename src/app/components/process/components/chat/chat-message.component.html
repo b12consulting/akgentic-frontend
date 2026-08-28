@@ -116,7 +116,7 @@
          (selection for rules 1/2, collapse for 3/4): without it, rating an
          answer would also select it. -->
     <app-feedback
-      *ngIf="rateable()"
+      *ngIf="rateable() && ratingEnabled()"
       class="turn-feedback"
       [message]="message()"
       (click)="$event.stopPropagation()"

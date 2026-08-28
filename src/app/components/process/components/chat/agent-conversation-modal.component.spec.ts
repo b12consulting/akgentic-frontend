@@ -239,6 +239,25 @@ describe('AgentConversationModalComponent', () => {
       expect(reply?.disabled).withContext('Reply must be inert in the reader').toBe(true);
     });
 
+    it('offers no RATING control — submitting a rating is a send', () => {
+      // Cross-epic: Epic 57 embedded a rating control inside
+      // `ChatMessageComponent`, which this reader renders. Rating submits, and
+      // NFR1 says this surface sends nothing — so the reader opts out with
+      // `[ratingEnabled]="false"`.
+      //
+      // Neither epic could see the other: 57 was written against the main
+      // conversation and 51 against a component that did not yet rate. This
+      // spec is the only thing standing between the reader and a write path it
+      // would otherwise inherit silently the next time the shared component
+      // grows one.
+      const answer = makeChatMessage({ id: 'a1', rule: 2, collapsed: false });
+      open([answer], 'manager');
+
+      expect(document.querySelector('.conversation-column app-feedback'))
+        .withContext('the reader must not offer a rating')
+        .toBeNull();
+    });
+
     it('expands a folded line without touching the main conversation', () => {
       // FR7: closing the reader must return the user to the conversation
       // exactly as they left it, so the reader renders copies and keeps its own
