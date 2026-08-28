@@ -107,5 +107,19 @@
     <div class="markdown-content">
       <markdown [data]="message().content"></markdown>
     </div>
+    <!-- Epic 57: the rating control, on the turns the rule allows and no
+         others. `rateable()` delegates to the single predicate — the answer is
+         NOT restated here, so a message kind added later cannot become
+         rateable by a template nobody reread.
+
+         `stopPropagation` because the bubble itself is a click target
+         (selection for rules 1/2, collapse for 3/4): without it, rating an
+         answer would also select it. -->
+    <app-feedback
+      *ngIf="rateable()"
+      class="turn-feedback"
+      [message]="message()"
+      (click)="$event.stopPropagation()"
+    ></app-feedback>
   </div>
 </div>

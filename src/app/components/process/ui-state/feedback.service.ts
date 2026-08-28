@@ -82,22 +82,62 @@ export class FeedbackService {
     };
   }
 
-  async loadFeedback() {
-    // Feedback loading is deferred — derived chat state may be empty until
-    // feedback integration is wired in a future story.
+  /**
+   * The one in-flight (or completed) load, or `null` if none has started.
+   *
+   * `loadFeedback` used to be called from nowhere at all. It is now called by
+   * every rating control that mounts — one per rateable turn — and each call
+   * walks the WHOLE message list issuing a request per message. Left
+   * unguarded that is quadratic: a forty-turn conversation would open with
+   * sixteen hundred requests for the same forty answers.
+   *
+   * Sharing the promise is not merely cheaper, it is also right: a message
+   * that arrives after the load cannot already carry a rating from an earlier
+   * visit, and the rating the user gives it in this session is pushed onto
+   * `feedbacks$` by `setFeedback`.
+   *
+   * The scope is one process view — this service is provided by
+   * `ProcessComponent`, so opening another team constructs a new instance and
+   * loads again.
+   */
+  private pendingLoad: Promise<void> | null = null;
+
+  async loadFeedback(): Promise<void> {
+    if (this.pendingLoad) return this.pendingLoad;
+
+    // Nothing derived yet: do NOT latch. Latching an empty load would let the
+    // first control to mount win a race against the log and leave every
+    // previously-given rating invisible for the rest of the session (FR8).
     const messages = this.currentMessages();
     if (messages.length === 0) return;
 
-    const feedbacks = await Promise.all(
-      messages.map(async (message) => {
-        const feedback: FeedbackBackend = await this.getFeedback(message.id);
-        if (!feedback?.score) return null;
-        return this.backendFeedbackToFrontendFeedback(message.id, feedback);
-      })
-    );
+    this.pendingLoad = this.fetchAllFeedback(messages);
+    return this.pendingLoad;
+  }
 
-    const filteredFeedbacks = feedbacks.filter((feedback) => feedback !== null);
+  private async fetchAllFeedback(messages: ChatMessage[]): Promise<void> {
+    try {
+      const feedbacks = await Promise.all(
+        messages.map(async (message) => {
+          const feedback: FeedbackBackend = await this.getFeedback(message.id);
+          if (!feedback?.score) return null;
+          return this.backendFeedbackToFrontendFeedback(message.id, feedback);
+        })
+      );
 
-    this.feedbacks$.next(filteredFeedbacks);
+      const filteredFeedbacks = feedbacks.filter(
+        (feedback) => feedback !== null
+      );
+
+      this.feedbacks$.next(filteredFeedbacks);
+    } catch (err) {
+      // Release the latch so a later mount can retry. `FetchService` has
+      // already raised the toast, and a conversation whose ratings failed to
+      // load is still a usable conversation — so nothing is rethrown into the
+      // controls' `ngOnInit`, where it would surface as an unhandled rejection
+      // once per rateable turn.
+      this.pendingLoad = null;
+      console.debug('[FeedbackService.loadFeedback] load failed', err);
+    }
   }
 }

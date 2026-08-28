@@ -1,10 +1,27 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideMarkdown } from 'ngx-markdown';
+import { BehaviorSubject } from 'rxjs';
 import { ConfigService } from '../../../../core/config/config.service';
 import { ChatMessageComponent } from './chat-message.component';
 import { ChatMessage } from '../../selectors/chat-message.model';
+import { isRateable } from '../../selectors/rateable';
+import { Feedback, FeedbackService } from '../../ui-state/feedback.service';
 import { ActorAddress } from '../../../../protocol/message.types';
+
+/**
+ * Epic 57: the turn now embeds the rating control, which reaches for
+ * `FeedbackService`. A double rather than the real thing — the real service
+ * pulls in `MessageLogService` and `FetchService`, and none of the assertions
+ * in this file are about feedback.
+ */
+function makeFeedbackServiceStub(feedbacks: Feedback[] = []) {
+  return {
+    feedbacks$: new BehaviorSubject<Feedback[]>(feedbacks),
+    loadFeedback: () => Promise.resolve(),
+    setFeedback: () => Promise.resolve(),
+  } as unknown as FeedbackService;
+}
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {
@@ -44,7 +61,10 @@ describe('ChatMessageComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [ChatMessageComponent, NoopAnimationsModule],
-      providers: [provideMarkdown()],
+      providers: [
+        provideMarkdown(),
+        { provide: FeedbackService, useValue: makeFeedbackServiceStub() },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(ChatMessageComponent);
@@ -923,6 +943,7 @@ describe('ChatMessageComponent', () => {
         providers: [
           provideMarkdown(),
           { provide: ConfigService, useValue: { hideAgentNames } },
+          { provide: FeedbackService, useValue: makeFeedbackServiceStub() },
         ],
       }).compileComponents();
       const f = TestBed.createComponent(ChatMessageComponent);
@@ -1059,4 +1080,84 @@ describe('ChatMessageComponent', () => {
     });
   });
 
+
+  // --- the rating control (Epic 57) ------------------------------------------
+  //
+  // These specs pin the WIRING, not the rule: which turns get a control, and
+  // that the control does not hijack the click the bubble already owned. The
+  // rule itself is pinned case-by-case in `selectors/rateable.spec.ts` — asked
+  // here rather than restated, exactly as the template asks rather than
+  // restates it.
+  describe('rating control', () => {
+    function renderRule(rule: ChatMessage['rule']) {
+      fixture.componentRef.setInput(
+        'message',
+        makeChatMessage({ rule, collapsed: false }),
+      );
+      fixture.detectChanges();
+      return fixture.nativeElement.querySelector('app-feedback');
+    }
+
+    it('renders the control on an agent turn', () => {
+      for (const rule of [2, 3, 4] as const) {
+        expect(renderRule(rule))
+          .withContext(`rule ${rule} is an answer and must be rateable`)
+          .not.toBeNull();
+      }
+    });
+
+    it('renders NO control on a turn the rule excludes', () => {
+      for (const rule of [1, 5, 6, 7] as const) {
+        expect(renderRule(rule))
+          .withContext(`rule ${rule} must carry no rating control`)
+          .toBeNull();
+      }
+    });
+
+    it('agrees with the predicate for every message rule', () => {
+      // The point of FR1: one answer, not two that drift. If this ever fails,
+      // the template has started deciding for itself.
+      for (const rule of [1, 2, 3, 4, 5, 6, 7] as const) {
+        const rendered = renderRule(rule) !== null;
+        expect(rendered)
+          .withContext(`rule ${rule}`)
+          .toBe(isRateable(makeChatMessage({ rule })));
+      }
+    });
+
+    it('does not select the turn when the control is clicked', () => {
+      // The bubble is itself a click target. Without stopPropagation, opening
+      // the feedback dialog would also select the message behind it.
+      const spy = jasmine.createSpy('bubbleClicked');
+      component.bubbleClicked.subscribe(spy);
+      const control = renderRule(2);
+
+      control.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      fixture.detectChanges();
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('keeps the control inside the turn it rates', () => {
+      // Not a cosmetic assertion: a control rendered as a sibling of the
+      // bubble would sit outside the hover target that reveals it, and would
+      // be permanently invisible.
+      renderRule(2);
+      const bubble = fixture.nativeElement.querySelector('.message-bubble');
+      expect(bubble.querySelector('app-feedback')).not.toBeNull();
+    });
+
+    it('gives the collapsed line no control', () => {
+      // A rule 4 line that has not been expanded is one row of grey preview
+      // text; a pair of thumbs on it would be most of the row.
+      fixture.componentRef.setInput(
+        'message',
+        makeChatMessage({ rule: 4, collapsed: true }),
+      );
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('.collapsed-line')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('app-feedback')).toBeNull();
+    });
+  });
 });
