@@ -67,6 +67,7 @@
 >
   <div
     class="message-bubble"
+    [class.own-turn]="message().rule === 1"
     [class.selected]="selected()"
     [style.background-color]="message().color"
   >

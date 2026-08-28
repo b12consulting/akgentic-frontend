@@ -3,18 +3,40 @@
   flex-direction: column;
   flex: 1;
   overflow: hidden;
-  background-color: #f2f7f9;
+  /* One surface. The pane was tinted to separate it from the bubbles; with the
+     bubbles gone there is nothing left to separate it from. */
+  background-color: #ffffff;
   height: 100%;
   position: relative;
   padding: 1rem;
 
+  /*
+   * The reading column.
+   *
+   * Turns are centred in a bounded column rather than filling the pane. On a
+   * wide monitor a full-width conversation runs to 200+ characters a line,
+   * which is where the eye loses the start of the next one.
+   *
+   * The horizontal padding is SYMMETRIC on purpose. The messages and the input
+   * beneath them are both centred columns, so padding one side only — to clear
+   * a rail, say — slides the messages off the input's axis and the two stop
+   * looking related.
+   */
   .message-list {
     flex: 1;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    padding-bottom: 0.5rem;
+    gap: var(--akg-turn-gap);
+    padding: var(--akg-conversation-padding-top) var(--akg-conversation-padding-x)
+      var(--akg-conversation-padding-bottom);
+
+    > * {
+      width: 100%;
+      max-width: var(--akg-conversation-max-width);
+      margin-left: auto;
+      margin-right: auto;
+    }
   }
 
   // Story 19-1 (ADR-016 §Decision 2): trailing spacer — visually inert flex

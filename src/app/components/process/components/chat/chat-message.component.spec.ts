@@ -987,4 +987,38 @@ describe('ChatMessageComponent', () => {
       expect(f.nativeElement.querySelector('.right')).not.toBeNull();
     });
   });
+
+  // --- The conversation surface --------------------------------------------
+  //
+  // The agent's turns carry no bubble; the user's own turn does. That contrast
+  // is the whole design, and it is invisible to every other spec in this file —
+  // they assert content and structure, never fill. Without these, re-tinting
+  // rules 2-4 would pass the suite and silently undo it.
+  describe('turn surface', () => {
+    it('gives the USER\'s own turn a fill and a radius', () => {
+      fixture.componentRef.setInput(
+        'message',
+        makeChatMessage({ rule: 1, alignment: 'right', color: 'var(--akg-surface)' }),
+      );
+      fixture.detectChanges();
+
+      const bubble = fixture.nativeElement.querySelector('.message-bubble');
+      expect(bubble.classList).withContext('own turn is marked').toContain('own-turn');
+    });
+
+    it('leaves an AGENT turn unmarked, so it renders flat', () => {
+      for (const rule of [2, 3, 4] as const) {
+        fixture.componentRef.setInput(
+          'message',
+          makeChatMessage({ rule, collapsed: false, color: 'transparent' }),
+        );
+        fixture.detectChanges();
+
+        const bubble = fixture.nativeElement.querySelector('.message-bubble');
+        expect(bubble.classList)
+          .withContext(`rule ${rule} must not be an own turn`)
+          .not.toContain('own-turn');
+      }
+    });
+  });
 });

@@ -1,0 +1,50 @@
+// Conversation surface tokens.
+//
+// SEMANTIC, NOT BRAND. Every name here says what a thing IS — the surface a
+// turn sits on, the width of the reading column, the muted step of the type
+// scale — so a deployment can re-point a value without reading the CSS that
+// consumes it.
+//
+// The defaults are a neutral slate, and are meant to look finished on their
+// own rather than act as a placeholder: a framework that ships obviously
+// unstyled defaults pushes every consumer into forking the stylesheet, which is
+// the outcome these tokens exist to avoid.
+//
+// To rebrand, re-declare any of these in your own global stylesheet AFTER this
+// file. Nothing here is `!important` and nothing is nested, so a plain `:root`
+// block wins.
+
+:root {
+  // --- The reading column -------------------------------------------------
+  // The message list and the input box both read this, so the input always
+  // lines up with the messages it belongs to.
+  --akg-conversation-max-width: 1100px;
+
+  // Reserves the panel-toggle rail's lane. Kept SYMMETRIC on purpose: the
+  // messages and the input below them are both centred columns, so padding one
+  // side only would slide the messages off the input's axis.
+  --akg-conversation-padding-x: 72px;
+  --akg-conversation-padding-top: 24px;
+  --akg-conversation-padding-bottom: 24px;
+
+  // --- Surfaces -----------------------------------------------------------
+  --akg-surface: #f1f4f8;
+  --akg-surface-border: #e3e6ef;
+  --akg-surface-muted: #f8f9fb;
+
+  // --- Type ---------------------------------------------------------------
+  --akg-text: #303642;
+  --akg-text-muted: #7f8594;
+  --akg-text-faint: #c8cdd9;
+
+  // --- Accent -------------------------------------------------------------
+  // The label badge and the selected state. One accent, three steps.
+  --akg-accent-bg: #e7f3ff;
+  --akg-accent-border: #d0e8ff;
+  --akg-accent-fg: #005eba;
+
+  // --- Turn geometry ------------------------------------------------------
+  --akg-turn-radius: 12px;
+  --akg-turn-padding: 10px 14px;
+  --akg-turn-gap: 8px;
+}
