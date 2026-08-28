@@ -106,6 +106,33 @@
   &.selected {
     border: 2px solid var(--primary-color);
   }
+
+  /*
+   * THE RATING CONTROL IS QUIET.
+   *
+   * Epic 50 spent its whole budget making an exchange read as prose. Forty
+   * turns each wearing a permanent pair of thumbs is eighty pieces of
+   * furniture in a document that had none — worse than a transcript with no
+   * feedback mechanism at all, because the noise lands on every line and the
+   * mechanism gets used on almost none of them.
+   *
+   * So the control is revealed by the turn it belongs to: hover it, or reach
+   * it with the keyboard, and it appears. It holds its space either way, so
+   * nothing reflows on the way in. A turn that has ALREADY been rated keeps it
+   * visible — that is FR8, and it is decided in the child, which is the only
+   * thing that knows.
+   *
+   * The handover is a CUSTOM PROPERTY rather than a selector reaching into the
+   * child. `opacity` cannot go on `<app-feedback>` itself: the host also
+   * contains the feedback dialog, which would fade out with it. So the
+   * decision is published here and the child applies it to the icons alone.
+   */
+  --akg-feedback-opacity: 0;
+
+  &:hover,
+  &:focus-within {
+    --akg-feedback-opacity: 1;
+  }
 }
 
 .bubble-header {

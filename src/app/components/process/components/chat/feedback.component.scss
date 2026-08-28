@@ -1,64 +1,99 @@
+/*
+ * The rating control.
+ *
+ * QUIET BY DEFAULT, AND THE DEFAULT IS NOT DECIDED HERE.
+ * `--akg-feedback-opacity` is published by the turn this control sits in
+ * (`chat-message.component.scss`), which is the only thing that knows whether
+ * the reader is looking at it. The fallback is `1`: a host that says nothing
+ * gets a visible control, so an unwired parent fails obviously rather than
+ * silently rendering an invisible button.
+ *
+ * The opacity applies to the ICONS, never to `:host` — the host also carries
+ * the feedback dialog, and fading the host would fade the open dialog with it
+ * the moment the pointer left the turn.
+ *
+ * Colours moved onto the epic-50 conversation tokens; the hard-coded blue this
+ * file was written with predates them and would have been the only untokenised
+ * accent left on the surface.
+ */
 .feedback-icons {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 6px;
+
+  opacity: var(--akg-feedback-opacity, 1);
+  transition: opacity 120ms ease-in-out;
+
+  i {
+    cursor: pointer;
+    margin-left: 10px;
+    font-size: 0.95rem;
+    color: var(--akg-text-faint);
+    transition: color 120ms ease-in-out;
+
+    &:hover {
+      color: var(--akg-accent-fg);
+    }
+
+    /* The thumb the user actually chose. */
+    &.selected {
+      color: var(--akg-accent-fg);
+    }
+  }
+}
+
+/*
+ * FR8 — a rating already given stays visible.
+ *
+ * Hover-to-reveal is right for an unrated turn and wrong for a rated one. If
+ * the control vanished with the pointer, a returning user would have no way to
+ * see they had already judged an answer, and would rate it a second time
+ * believing it was the first. `.rated` is set on the host by the component
+ * whenever a rating exists for this message, and it overrides whatever the
+ * turn published.
+ */
+:host(.rated) .feedback-icons {
+  opacity: 1;
+}
+
+p-dialog {
+  .modal-selected-thumb {
+    i {
+      font-size: 1.2rem;
+      color: var(--akg-accent-fg);
+    }
+  }
+
+  .modal-header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .p-dialog-header {
+    background-color: var(--akg-surface-muted);
+    border-bottom: 1px solid var(--akg-surface-border);
+    padding: 1rem;
+    font-weight: bold;
+  }
+
+  .p-dialog-content {
+    padding: 1rem;
+  }
+
+  textarea {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid var(--akg-surface-border);
+    border-radius: 4px;
+    resize: vertical;
+  }
+
+  .p-dialog-footer {
     display: flex;
     justify-content: flex-end;
-    margin-top: 10px;
-  
-    i {
-      cursor: pointer;
-      margin-left: 10px;
-      font-size: 1.2rem;
-      transition: color 0.3s ease;
-  
-      &:hover {
-        color: #007bff;
-      }
-  
-      &.selected {
-        color: #007bff; // Highlight selected thumb
-      }
-    }
+    padding: 1rem;
+    border-top: 1px solid var(--akg-surface-border);
   }
-
-  
-  
-  p-dialog {
-    .modal-selected-thumb {
-        i{
-            font-size: 1.2rem;
-            color: #007bff;
-        }
-    }
-    .modal-header {
-        display: flex;
-        flex-direction: row;
-        align-items: center;
-        gap: 10px;
-    }
-
-    .p-dialog-header {
-      background-color: #f0f0f0;
-      border-bottom: 1px solid #ddd;
-      padding: 1rem;
-      font-weight: bold;
-    }
-  
-    .p-dialog-content {
-      padding: 1rem;
-    }
-  
-    textarea {
-      width: 100%;
-      padding: 0.5rem;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      resize: vertical;
-    }
-  
-    .p-dialog-footer {
-      display: flex;
-      justify-content: flex-end;
-      padding: 1rem;
-      border-top: 1px solid #ddd;
-    }
-  }
-
+}

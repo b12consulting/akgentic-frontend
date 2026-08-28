@@ -11,11 +11,19 @@ import { ButtonModule } from 'primeng/button';
 import { MarkdownModule } from 'ngx-markdown';
 import { ConfigService } from '../../../../core/config/config.service';
 import { buildPreview, ChatMessage } from '../../selectors/chat-message.model';
+import { isRateable } from '../../selectors/rateable';
+import { FeedbackComponent } from './feedback.component';
 
 @Component({
   selector: 'app-chat-message',
   standalone: true,
-  imports: [CommonModule, MarkdownModule, DatePipe, ButtonModule],
+  imports: [
+    CommonModule,
+    MarkdownModule,
+    DatePipe,
+    ButtonModule,
+    FeedbackComponent,
+  ],
   templateUrl: './chat-message.component.html',
   styleUrl: './chat-message.component.scss',
 })
@@ -55,6 +63,17 @@ export class ChatMessageComponent {
   );
 
   readonly preview = computed(() => buildPreview(this.message().content));
+
+  /**
+   * Can this turn be rated?
+   *
+   * Delegated, never decided here. The rule is a list of exclusions and
+   * exclusions rot in silence, so it lives in exactly one place
+   * (`selectors/rateable.ts`, Epic 57 FR1) and this template asks rather than
+   * re-derives. Inlining even the easy half of it — "not the user's own turn"
+   * — is how the answer starts differing between surfaces.
+   */
+  readonly rateable = computed(() => isRateable(this.message()));
 
   /** True for the synthetic context-management markers (Epic 29 / ADR-010):
    *  rule 6 = compaction fold, rule 7 = clear line. */

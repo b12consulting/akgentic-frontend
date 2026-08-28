@@ -27,6 +27,21 @@ import { AkgentService } from '../../../../core/ui/akgent.service';
 import { GraphDataService } from '../../selectors/graph.selector';
 import { ContextService } from '../../../../core/context/context.service';
 import { IngestionService } from '../../event/ingestion.service';
+import { Feedback, FeedbackService } from '../../ui-state/feedback.service';
+
+/**
+ * Epic 57: each rendered turn now embeds the rating control, which reaches for
+ * `FeedbackService`. A double rather than the real thing — the real service
+ * pulls in `MessageLogService` and `FetchService`, and nothing in this file
+ * asserts on feedback.
+ */
+function makeFeedbackServiceStub(): FeedbackService {
+  return {
+    feedbacks$: new BehaviorSubject<Feedback[]>([]),
+    loadFeedback: () => Promise.resolve(),
+    setFeedback: () => Promise.resolve(),
+  } as unknown as FeedbackService;
+}
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {
@@ -145,6 +160,7 @@ describe('ChatPanelComponent', () => {
       imports: [ChatPanelComponent, NoopAnimationsModule],
       providers: [
         provideMarkdown(),
+        { provide: FeedbackService, useValue: makeFeedbackServiceStub() },
         { provide: ChatService, useValue: chatService },
         { provide: SelectionService, useValue: selectionService },
         { provide: ApiService, useValue: apiService },
@@ -1530,6 +1546,7 @@ describe('ChatPanelComponent — HandledMessage split, end to end (Story 44-1)',
       imports: [ChatPanelComponent, NoopAnimationsModule],
       providers: [
         provideMarkdown(),
+        { provide: FeedbackService, useValue: makeFeedbackServiceStub() },
         { provide: ChatService, useValue: chatService },
         {
           provide: SelectionService,
