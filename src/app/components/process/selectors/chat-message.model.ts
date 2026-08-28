@@ -22,6 +22,14 @@ export type ChatBubbleRule = 1 | 2 | 3 | 4 | 5;
  *  (a non-collapsible "Conversation cleared" line). Markers carry no real
  *  sender/recipient and are not aligned bubbles. */
 export type MarkerRule = 6 | 7;
+/**
+ * ADDING A RULE? Classify its rateability in `./rateable.ts` in the same
+ * change. `isRateable` switches exhaustively over this union with no `default`
+ * arm, so widening `MessageRule` here stops that file compiling until the new
+ * kind is stated to be an answer or excluded (Epic 57 FR1 / T1). That compile
+ * error is deliberate — it is the only thing standing between a new message
+ * kind and being silently rateable.
+ */
 export type MessageRule = ChatBubbleRule | MarkerRule;
 
 export const COMPACTION_MARKER_RULE: MarkerRule = 6;
