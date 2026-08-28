@@ -5,13 +5,13 @@
   gap: 0.5rem;
   padding: 4px 8px;
   cursor: pointer;
-  color: #334155;
+  color: var(--akg-text);
   font-size: 0.9rem;
   border-radius: 6px;
-  border: 1px solid rgba(158, 187, 203, 0.5);
+  border: 1px solid var(--akg-collapsed-border);
 
   &:hover {
-    background-color: rgba(0, 0, 0, 0.02);
+    background-color: var(--akg-collapsed-hover);
   }
 }
 
@@ -23,12 +23,12 @@
 }
 
 .collapsed-preview {
-  color: #64748b;
+  color: var(--akg-text-muted);
 }
 
 .collapsed-timestamp {
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: var(--akg-text-faint);
   white-space: nowrap;
 }
 
@@ -117,7 +117,7 @@
   .bubble-timestamp {
     margin-left: auto;
     font-size: 0.8rem;
-    color: #94a3b8;
+    color: var(--akg-text-faint);
     white-space: nowrap;
   }
 }
@@ -158,7 +158,7 @@
 }
 
 .notification-icon {
-  color: #38bdf8;
+  color: var(--akg-notify-fg);
   font-size: 0.9rem;
   animation: bell-pulse 2s ease-in-out infinite;
 }
@@ -183,18 +183,18 @@
   align-items: center;
   gap: 0.5rem;
   padding: 4px 10px;
-  color: #64748b;
+  color: var(--akg-text-muted);
   font-size: 0.85rem;
   font-style: italic;
   border-radius: 6px;
-  border: 1px dashed rgba(100, 116, 139, 0.4);
-  background-color: rgba(100, 116, 139, 0.04);
+  border: 1px dashed var(--akg-marker-border);
+  background-color: var(--akg-marker-bg);
 
   &.expandable {
     cursor: pointer;
 
     &:hover {
-      background-color: rgba(100, 116, 139, 0.08);
+      background-color: var(--akg-marker-hover);
     }
   }
 }
@@ -218,7 +218,7 @@
 
 .system-marker-timestamp {
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: var(--akg-text-faint);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -232,7 +232,7 @@
   overflow-y: auto;
   font-size: 0.9rem;
   line-height: 1.5;
-  color: #334155;
-  border-left: 2px solid rgba(100, 116, 139, 0.3);
-  background-color: rgba(100, 116, 139, 0.03);
+  color: var(--akg-text);
+  border-left: 2px solid var(--akg-marker-border);
+  background-color: var(--akg-marker-bg);
 }

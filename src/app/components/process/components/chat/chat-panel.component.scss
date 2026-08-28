@@ -5,7 +5,7 @@
   overflow: hidden;
   /* One surface. The pane was tinted to separate it from the bubbles; with the
      bubbles gone there is nothing left to separate it from. */
-  background-color: #ffffff;
+  background-color: var(--akg-overlay-bg);
   height: 100%;
   position: relative;
   padding: 1rem;
@@ -58,8 +58,8 @@
   app-user-input {
     display: block;
     padding: 0.5rem 1.2rem;
-    background-color: #fff;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    background-color: var(--akg-overlay-bg);
+    box-shadow: var(--akg-overlay-shadow);
     border-bottom-left-radius: 6px;
     border-bottom-right-radius: 6px;
   }
@@ -80,19 +80,19 @@
     padding: 0.35rem 0.9rem;
     border: none;
     border-radius: 999px;
-    background-color: #fff;
-    color: #475569;
+    background-color: var(--akg-overlay-bg);
+    color: var(--akg-text);
     font-size: 0.85rem;
     font-weight: 600;
     cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+    box-shadow: var(--akg-overlay-shadow-strong);
 
     .pi {
       font-size: 0.85rem;
     }
 
     &:hover {
-      background-color: #f2f7f9;
+      background-color: var(--akg-surface);
     }
   }
 }
@@ -112,18 +112,18 @@
 
 .chat-placeholder-icon {
   font-size: 4rem;
-  color: #cbd5e1;
+  color: var(--akg-text-faint);
   margin-bottom: 1rem;
 }
 
 .chat-placeholder-title {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #475569;
+  color: var(--akg-text);
   margin-bottom: 0.5rem;
 }
 
 .chat-placeholder-desc {
   font-size: 0.95rem;
-  color: #94a3b8;
+  color: var(--akg-text-faint);
 }

@@ -47,4 +47,25 @@
   --akg-turn-radius: 12px;
   --akg-turn-padding: 10px 14px;
   --akg-turn-gap: 8px;
+
+  // --- Collapsed rows and markers -----------------------------------------
+  // The agent-to-agent lines the conversation folds away, and the synthetic
+  // context-management markers. Quieter than a turn by design: they are what
+  // happened, not what was said.
+  --akg-collapsed-border: rgb(158 187 203 / 50%);
+  --akg-collapsed-hover: rgb(0 0 0 / 2%);
+  --akg-marker-border: rgb(100 116 139 / 40%);
+  --akg-marker-bg: rgb(100 116 139 / 3%);
+  --akg-marker-hover: rgb(100 116 139 / 8%);
+
+  // --- Overlays -----------------------------------------------------------
+  // The scroll-to-bottom control and the "new messages" pill float over the
+  // conversation, so they need a ground of their own and a lift off it.
+  --akg-overlay-bg: #ffffff;
+  --akg-overlay-shadow: 0 2px 8px rgb(15 23 42 / 10%);
+  --akg-overlay-shadow-strong: 0 2px 8px rgb(0 0 0 / 18%);
+
+  // --- Status -------------------------------------------------------------
+  // One hue for "something arrived": the notification glyph.
+  --akg-notify-fg: #38bdf8;
 }
