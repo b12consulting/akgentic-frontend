@@ -1,5 +1,15 @@
 import { AsyncPipe, CommonModule } from '@angular/common';
-import { AfterViewInit, Component, inject, OnDestroy } from '@angular/core';
+import {
+  AfterViewInit,
+  Component,
+  EventEmitter,
+  inject,
+  Input,
+  OnChanges,
+  OnDestroy,
+  Output,
+  SimpleChanges,
+} from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 
 import { isRunning } from '../../core/context/team.interface';
@@ -160,7 +170,7 @@ interface VisualizationOption {
   templateUrl: './process.component.html',
   styleUrl: './process.component.scss',
 })
-export class ProcessComponent implements AfterViewInit, OnDestroy {
+export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
   route: ActivatedRoute = inject(ActivatedRoute);
   router: Router = inject(Router);
 
@@ -172,7 +182,68 @@ export class ProcessComponent implements AfterViewInit, OnDestroy {
   toolPresenceService: ToolPresenceService = inject(ToolPresenceService);
   private readonly workspaceRegistry = inject(WorkspaceRegistryService);
 
+  /**
+   * Story 52-1 (FR1): the team this view should show, supplied by whoever
+   * HOSTS it.
+   *
+   * `null` is "nobody told me", NOT "no team" — the route parameter answers
+   * instead, which is the whole of NFR1: `/process/:id` has no host and binds
+   * nothing, so it lands on exactly the behaviour it had before this input
+   * existed.
+   *
+   * It is an input and never written from inside. `processId` below is the
+   * resolved answer, and the two are deliberately different fields: an input
+   * the component also assigns to cannot be told apart from one the host set,
+   * and `resolveTeamId()` would then have no way to know which source is live.
+   */
+  @Input() teamId: string | null = null;
+
+  /**
+   * Story 52-1: the team that was asked for does not exist.
+   *
+   * A host cannot discover this any other way — the fetch happens in here — and
+   * it must, because it is holding a selection that points at nothing. On the
+   * standalone route there is no host to tell, so that path keeps its own
+   * answer (`navigateHome`); see `openTeam`.
+   */
+  @Output() teamUnavailable = new EventEmitter<string>();
+
+  /**
+   * The team that is OPEN: the id every child is bound to and the id the
+   * ingestion pipeline is running for.
+   *
+   * Written by `openTeam()` and by nothing else, so it cannot drift from the
+   * pipeline. It is NOT read from `route.snapshot` any more (trap T1): a
+   * snapshot is read once, and this view now outlives the selection.
+   */
   processId: string = '';
+
+  /**
+   * The route's `:id`, kept current by a subscription rather than a snapshot.
+   *
+   * Only meaningful in route mode; in host mode nothing subscribes and this
+   * stays `''`, which is correct because `teamId` is then the answer.
+   */
+  private routeTeamId: string = '';
+  private routeSub: Subscription | null = null;
+
+  /**
+   * Whether `openTeam()` has run at all. Distinguishes "not opened yet" from
+   * "opened, and the id has not changed", which the plain `id === processId`
+   * test cannot do while `processId` is still `''`.
+   */
+  private opened = false;
+
+  /**
+   * The generation of the current open.
+   *
+   * `openTeam()` awaits `getCurrentTeam` before it touches the ingestion
+   * layer. Two selections in quick succession therefore have two awaits in
+   * flight, and the SLOWER one must not be allowed to finish the job: it would
+   * initialise the pipeline for a team the user has already moved off, leaving
+   * the previous team's conversation under the current team's name.
+   */
+  private openEpoch = 0;
 
   /**
    * Reactive presence observable for the `#KnowledgeGraphTool` actor.
@@ -265,15 +336,87 @@ export class ProcessComponent implements AfterViewInit, OnDestroy {
     });
   }
 
-  async ngOnInit(): Promise<void> {
-    this.processId = this.route.snapshot.params['id'];
-    this.contextService.currentProcessId$.next(this.processId);
+  /**
+   * Story 52-1 (FR2): the host moved the selection.
+   *
+   * The FIRST change is deliberately ignored. Angular runs `ngOnChanges`
+   * before `ngOnInit`, and `ngOnInit` is what the standalone route depends on;
+   * acting on both would open the same team twice, and the second open would
+   * tear down the first's socket mid-replay.
+   */
+  ngOnChanges(changes: SimpleChanges): void {
+    const change = changes['teamId'];
+    if (change === undefined || change.isFirstChange()) {
+      return;
+    }
+    void this.openTeam();
+  }
+
+  ngOnInit(): void {
+    if (this.teamId !== null) {
+      // Hosted: the input is the source and `ngOnChanges` carries every later
+      // change. Nothing here may touch the route — the host's URL is its own.
+      void this.openTeam();
+      return;
+    }
+
+    // Route mode. A SUBSCRIPTION rather than `route.snapshot.params['id']`,
+    // which is trap T1: the router REUSES this component when only `:id`
+    // changes, so a snapshot read serves the first team for ever and shows it
+    // under the second team's URL. `params` replays its current value
+    // synchronously, so this both opens the team and keeps it current.
+    this.routeSub = this.route.params.subscribe((params) => {
+      this.routeTeamId = (params['id'] as string | undefined) ?? '';
+      void this.openTeam();
+    });
+  }
+
+  /** The id in force: the host's answer, or the route's when there is no host. */
+  private resolveTeamId(): string {
+    return this.teamId ?? this.routeTeamId;
+  }
+
+  /**
+   * Close whatever is open and open the team the current id names.
+   *
+   * The teardown happens HERE and up front, not inside the next
+   * `ingestionService.init()`: `getCurrentTeam` is awaited below, and across
+   * that await the previous team's socket would otherwise still be writing
+   * into the log the new team is about to inherit (FR2, trap T2).
+   */
+  private async openTeam(): Promise<void> {
+    const teamId = this.resolveTeamId();
+    if (this.opened && teamId === this.processId) {
+      return;
+    }
+    this.opened = true;
+    const epoch = ++this.openEpoch;
+
+    this.closeOpenTeam();
+
+    this.processId = teamId;
+    // Trap T3: this view is the ONLY writer of a team id on the global
+    // subject. The host selects by binding `teamId` and reads the id back from
+    // here — a host that also wrote here would make the agent tabs and the
+    // workspace follow whichever of the two wrote last.
+    this.contextService.currentProcessId$.next(teamId);
+
+    if (teamId === '') {
+      return;
+    }
 
     const useCache = false;
     const currentProcess = await this.contextService.getCurrentTeam(
-      this.processId,
+      teamId,
       useCache
     );
+
+    // A newer selection won the race while this fetch was in flight. It has
+    // already published its own id and torn this one down; finishing here
+    // would initialise the pipeline for a team nobody is looking at.
+    if (epoch !== this.openEpoch) {
+      return;
+    }
 
     // Ensure we always have a visualization mode selected
     if (!this.visualizationMode$.value) {
@@ -281,8 +424,13 @@ export class ProcessComponent implements AfterViewInit, OnDestroy {
     }
 
     if (currentProcess === null) {
-      // As the user left it — see ContextService.navigateHome.
-      void this.contextService.navigateHome();
+      // Hosted, the host owns the selection and has to be told it is dangling.
+      // Standalone, there is no host: leave as the user left it — see
+      // ContextService.navigateHome.
+      this.teamUnavailable.emit(teamId);
+      if (this.teamId === null) {
+        void this.contextService.navigateHome();
+      }
       return;
     }
 
@@ -291,7 +439,29 @@ export class ProcessComponent implements AfterViewInit, OnDestroy {
     // `StartMessage` / `StopMessage` on the replay + live streams. Workspace
     // presence remains static until a future story reactivates it.
 
-    await this.ingestionService.init(this.processId, isRunning(currentProcess));
+    await this.ingestionService.init(teamId, isRunning(currentProcess));
+  }
+
+  /**
+   * Release everything that belongs to the team currently open.
+   *
+   * Two things outlive a team switch and so have to be named here. The
+   * ingestion pipeline is one — `close()` disposes the cycle AND empties the
+   * log, which is what unmounts the knowledge-graph and workspace panels,
+   * because their presence is a fold over that log. `AkgentService` is the
+   * other: it is root-scoped, so the previous team's selected agent survives
+   * a switch that destroys nothing.
+   *
+   * The visualization mode is deliberately NOT reset. It is a view preference,
+   * not team state, and the presence guards in the constructor already snap it
+   * back to `team` when the tab it names does not exist for the new team.
+   */
+  private closeOpenTeam(): void {
+    if (this.processId === '') {
+      return;
+    }
+    this.akgentService.unselect();
+    this.ingestionService.close();
   }
 
   ngAfterViewInit(): void {
@@ -310,6 +480,14 @@ export class ProcessComponent implements AfterViewInit, OnDestroy {
     this.presenceSub = null;
     this.workspaceSub?.unsubscribe();
     this.workspaceSub = null;
+    this.routeSub?.unsubscribe();
+    this.routeSub = null;
+    // Story 52-1 (trap T3): the single writer retracts its own value. Nothing
+    // is open once this view is gone, and the header's team name, its Clear
+    // action and its details toggle all read that subject. Before the split it
+    // was `AppComponent`'s navigation handlers that cleared it, which worked
+    // only because leaving the view was always a navigation.
+    this.contextService.currentProcessId$.next('');
   }
 
   setVisualizationMode(mode: string): void {

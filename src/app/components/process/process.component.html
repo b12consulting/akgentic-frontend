@@ -38,8 +38,15 @@
           *ngIf="hasWorkspace$ | async"
           [class.moved-offscreen]="isHidden('workspace')"
         ></app-workspace-tabs>
+        <!--
+          Story 52-1: `[processId]` is BOUND rather than left to the child's
+          `route.snapshot.params['id']` fallback. Hosted on the teams list
+          there is no `:id` in the URL at all, so the fallback resolves to
+          `undefined` and the graph would ask the API about a team of that name.
+        -->
         <app-knowledge-graph
           *ngIf="hasKnowledgeGraph$ | async"
+          [processId]="processId"
           [class.moved-offscreen]="isHidden('knowledge-graph')"
         ></app-knowledge-graph>
         <app-message-list

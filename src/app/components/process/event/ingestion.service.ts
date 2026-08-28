@@ -180,6 +180,29 @@ export class IngestionService {
   private cycle: Subscription | null = null;
 
   /**
+   * Story 52-1 (FR2): which cycle is the CURRENT one.
+   *
+   * `init()` is `async` and awaits two REST calls in step (c). Until Epic 52
+   * that await could not be raced: a team switch was a route change, which
+   * destroyed `ProcessComponent` and with it this service and its log, so an
+   * abandoned `init()` resumed against objects nobody was reading any more.
+   *
+   * A `ProcessComponent` that stays MOUNTED while its id changes removes that
+   * protection — one `MessageLogService` now serves every team the view opens.
+   * Without this token, switching from a stopped team A to team B while A's
+   * `getEvents` is in flight resumes A's `appendAll` AFTER B's `log.reset()`,
+   * and A's history lands in B's log: exactly the "two pipelines writing one
+   * log" the epic's trap T2 names, arriving by promise rather than by socket.
+   * Step (a) cannot prevent it — it disposes SUBSCRIPTIONS, and a pending
+   * promise is not one.
+   *
+   * Every `await` inside `init()` is therefore followed by a token check, and
+   * `close()` / `ngOnDestroy` bump it too: a superseded cycle must WRITE
+   * nothing, not merely stop listening.
+   */
+  private cycleToken = 0;
+
+  /**
    * ADR-005 §Decision 6 — the four ordered steps, in the order that ADR and
    * architecture shard 02 §4 fix them. The order is load-bearing: it closes the
    * team-switch race, and the failure it prevents is INVISIBLE in single-team
@@ -204,6 +227,9 @@ export class IngestionService {
    * before the socket opens.
    */
   async init(processId: string, running: boolean): Promise<void> {
+    // Story 52-1: claim the cycle FIRST. Everything below belongs to `token`,
+    // and a later `init()` / `close()` invalidates it by bumping the field.
+    const token = ++this.cycleToken;
     this.processId = processId;
 
     // --- (a) dispose the prior cycle ---------------------------------
@@ -270,10 +296,16 @@ export class IngestionService {
       // a `getAgentStates` rejection today means `getEvents` is never issued and
       // `init()` rejects before the socket opens.
       const seeds: AkgenticMessage[] = await this.replay.seedMessages(processId);
+      // Story 52-1: another team was opened while that request was in flight.
+      // The log below is now ITS log — writing this team's seed into it is the
+      // duplication trap T2 describes, and the appended ids would be
+      // attributed to the team on screen.
+      if (token !== this.cycleToken) return;
       this.log.appendAll(seeds);
 
       const replayMessages: AkgenticMessage[] =
         await this.replay.replayMessages(processId);
+      if (token !== this.cycleToken) return;
       this.log.appendAll(replayMessages);
 
       // Story 4-10 (AC2): replay state is populated — flip the spinner off
@@ -355,7 +387,35 @@ export class IngestionService {
     this.teamStatusReactor.stop();
   }
 
+  /**
+   * Story 52-1 (FR2): close the team this service is currently running,
+   * WITHOUT destroying the units the next team needs.
+   *
+   * The difference from `ngOnDestroy` is one line — `socket.destroy()` — and it
+   * is the whole point: destroy COMPLETES the transport's streams, which ends
+   * them for good, so a view that outlives one team could never open another.
+   * The difference from step (a) of `init()` is the log: `close()` empties it,
+   * because after it there is no team, and every selector and per-agent store
+   * is a fold over that log.
+   *
+   * Called by `ProcessComponent` at the MOMENT the id changes, not left to the
+   * next `init()`'s step (a). `init()` awaits `getCurrentTeam` before it runs,
+   * and the previous team's socket must not still be feeding the log across
+   * that await.
+   */
+  close(): void {
+    // Supersede any `init()` still waiting on a REST replay: it must not write.
+    this.cycleToken++;
+    this.disposePriorSubscriptions();
+    this.log.reset();
+    this.messageService.clear();
+    this.processId = '';
+  }
+
   ngOnDestroy(): void {
+    // Story 52-1: no in-flight cycle may write after this point either.
+    this.cycleToken++;
+
     // FIRST, and load-bearing: closing the socket below completes its stream,
     // whose `complete` reaches `connectionToast.show()`. Moving this line after
     // it raises a "Connection Lost" toast on every intentional navigation. The
