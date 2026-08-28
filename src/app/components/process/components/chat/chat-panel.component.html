@@ -72,6 +72,16 @@
     </button>
     <app-user-input [processId]="processId"></app-user-input>
   </div>
+  <!-- Epic 51: the sub-agent conversation reader. Read-only, no fetch — every
+       message it shows is already in `chatMessages`. -->
+  <app-agent-conversation-modal
+    [visible]="readerVisible"
+    [agents]="readerAgents"
+    [messages]="chatMessages"
+    [selectedAgentId]="readerSelectedAgentId"
+    (visibleChange)="onReaderVisibleChange($event)"
+    (agentSelected)="onReaderAgentSelected($event)"
+  ></app-agent-conversation-modal>
   <app-chat-human-modal
     [visible]="modalVisible"
     [agentPair]="modalAgentPair"

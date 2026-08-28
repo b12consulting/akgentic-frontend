@@ -25,6 +25,7 @@ import { ChatMessage, classifyMessage } from '../../selectors/chat-message.model
 import { ApiService } from '../../../../core/http/api.service';
 import { AkgentService } from '../../../../core/ui/akgent.service';
 import { GraphDataService } from '../../selectors/graph.selector';
+import { NodeInterface } from '../../models/types';
 import { ContextService } from '../../../../core/context/context.service';
 import { IngestionService } from '../../event/ingestion.service';
 
@@ -82,10 +83,16 @@ describe('ChatPanelComponent', () => {
   let messagesSubject: BehaviorSubject<AkgenticMessage[]>;
   // Story 19-1 (ADR-016): just-sent side channel feed.
   let justSentSubject: Subject<string>;
+  /** Graph nodes feed — the reader's agent list is this list (Epic 51). */
+  let nodesSubject: BehaviorSubject<NodeInterface[]>;
+  /** The app-wide selected agent, which the reader follows (Epic 51). */
+  let selectedAkgentSubject: BehaviorSubject<any>;
 
   beforeEach(async () => {
     messagesSubject = new BehaviorSubject<AkgenticMessage[]>([]);
     justSentSubject = new Subject<string>();
+    nodesSubject = new BehaviorSubject<NodeInterface[]>([]);
+    selectedAkgentSubject = new BehaviorSubject<any>(null);
 
     // Story 6.4 (AC3): `ChatPanelComponent` no longer injects
     // `IngestionService`. The spec feeds SentMessages via
@@ -121,11 +128,11 @@ describe('ChatPanelComponent', () => {
     apiService.processHumanInput.and.returnValue(Promise.resolve());
 
     const akgentService = {
-      selectedAkgent$: new BehaviorSubject<any>(null),
+      selectedAkgent$: selectedAkgentSubject,
     };
 
     const graphDataService = {
-      nodes$: of([]),
+      nodes$: nodesSubject,
     };
 
     // Story 15-1 (ADR-013) / Epic 17 (ADR-014): the embedded <app-user-input>
@@ -275,6 +282,112 @@ describe('ChatPanelComponent', () => {
         name: 'mgr-1',
         actorName: '@Manager',
       },
+    });
+  });
+
+  // --- the sub-agent conversation reader (Epic 51) ---------------------------
+  //
+  // The panel is the reader's HOST, not its implementation: it opens it, feeds
+  // it the log and the team it already has, and routes every agent choice
+  // through the app's one selection path.
+  describe('sub-agent conversation reader', () => {
+    function makeAgentTurn(): ChatMessage {
+      return {
+        id: 'msg-1',
+        message_id: 'msg-1',
+        parent_id: null,
+        content: 'test',
+        sender: makeAddress({ name: '@Manager', agent_id: 'mgr-1' }),
+        recipient: makeAddress({ name: '@Human' }),
+        timestamp: new Date(),
+        rule: 2,
+        alignment: 'left',
+        color: 'transparent',
+        collapsed: false,
+        label: 'Manager ⇒ You',
+      };
+    }
+
+    it('opens on the agent whose identity badge was clicked', () => {
+      expect(component.readerVisible).toBe(false);
+      component.onMessageSelected(makeAgentTurn());
+      expect(component.readerVisible).toBe(true);
+    });
+
+    it('takes its agent list from the graph nodes, not a list of its own', () => {
+      const nodes: NodeInterface[] = [
+        {
+          name: 'mgr-1',
+          role: 'Manager',
+          actorName: '@Manager',
+          parentId: '',
+          squadId: 'squad-1',
+          symbol: 'roundRect',
+          category: 0,
+          userMessage: false,
+        },
+      ];
+      nodesSubject.next(nodes);
+      expect(component.readerAgents).toBe(nodes);
+    });
+
+    it('follows the app selection rather than keeping its own', () => {
+      // T3: `SelectionService` already drives the agent tabs. A reader with a
+      // second notion of "selected" would leave the two disagreeing the moment
+      // it closes.
+      selectedAkgentSubject.next({ agentId: 'worker-1', name: '@Worker' });
+      expect(component.readerSelectedAgentId).toBe('worker-1');
+      selectedAkgentSubject.next(null);
+      expect(component.readerSelectedAgentId).toBeNull();
+    });
+
+    it('routes a pick from the reader through the ONE selection path', () => {
+      component.onReaderAgentSelected({
+        agentId: 'worker-1',
+        actorName: '@Worker',
+      });
+      const selSvc = TestBed.inject(SelectionService);
+      expect(selSvc.handleSelection).toHaveBeenCalledWith({
+        type: 'message',
+        data: { name: 'worker-1', actorName: '@Worker' },
+      });
+    });
+
+    it('carries no graph node into the selection, so no reply box can open', () => {
+      // NFR1: `SelectionService` opens the human-input dialog for a selectable
+      // that carries `humanRequests`. Reading an agent must never be a write.
+      component.onReaderAgentSelected({
+        agentId: 'worker-1',
+        actorName: '@Worker',
+      });
+      const selSvc = TestBed.inject(SelectionService);
+      const arg = (selSvc.handleSelection as jasmine.Spy).calls.mostRecent()
+        .args[0];
+      expect(arg.data.humanRequests).toBeUndefined();
+    });
+
+    it('leaves the conversation untouched when it closes', () => {
+      const sent = makeSentMessage(
+        { name: '@Manager', role: 'Manager', agent_id: 'mgr-1' },
+        { name: '@Worker', role: 'Worker', agent_id: 'worker-1' },
+        'agent to agent',
+        'm-1',
+      );
+      messagesSubject.next([sent]);
+      fixture.detectChanges();
+      const before = component.chatMessages.map((m) => ({
+        id: m.id,
+        collapsed: m.collapsed,
+      }));
+
+      component.onMessageSelected(makeAgentTurn());
+      component.onReaderVisibleChange(false);
+      fixture.detectChanges();
+
+      expect(component.readerVisible).toBe(false);
+      expect(
+        component.chatMessages.map((m) => ({ id: m.id, collapsed: m.collapsed })),
+      ).toEqual(before);
     });
   });
 

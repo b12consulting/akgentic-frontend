@@ -18,12 +18,19 @@ import { ApiService } from '../../../../core/http/api.service';
 import { ChatService, ThinkingState } from '../../selectors/chat.selector';
 import { IngestionService } from '../../event/ingestion.service';
 import { ContextService } from '../../../../core/context/context.service';
+import { AkgentService } from '../../../../core/ui/akgent.service';
+import { GraphDataService } from '../../selectors/graph.selector';
+import { NodeInterface } from '../../models/types';
 import { Selectable, SelectionService } from '../../ui-state/selection.service';
 import {
   AnsweredRequest,
   ChatHumanModalComponent,
   HumanModalReply,
 } from './chat-human-modal.component';
+import {
+  AgentConversationModalComponent,
+  AgentRef,
+} from './agent-conversation-modal.component';
 import { ChatMessageComponent } from './chat-message.component';
 import { ChatThinkingComponent } from './chat-thinking.component';
 import { ProcessUserInputComponent } from '../user-input/user-input.component';
@@ -70,6 +77,7 @@ export type DisplayItem =
     ChatMessageComponent,
     ChatThinkingComponent,
     ChatHumanModalComponent,
+    AgentConversationModalComponent,
     ProcessUserInputComponent,
   ],
   templateUrl: './chat-panel.component.html',
@@ -90,6 +98,8 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   selectionService: SelectionService = inject(SelectionService);
   apiService: ApiService = inject(ApiService);
   private contextService: ContextService = inject(ContextService);
+  private akgentService: AkgentService = inject(AkgentService);
+  private graphDataService: GraphDataService = inject(GraphDataService);
 
   chatMessages: ChatMessage[] = [];
   thinkingStates: ThinkingState[] = [];
@@ -103,7 +113,17 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   modalPendingMessages: ChatMessage[] = [];
   modalAnsweredMessages: AnsweredRequest[] = [];
 
+  // --- sub-agent conversation reader (Epic 51) --------------------------------
+  // The reader owns ONLY its own visibility. Which agent it shows is the app's
+  // selection, read back off `AkgentService` — the same value that drives the
+  // agent tabs — so opening the reader on one agent and closing it can never
+  // leave the right-hand panel pointing at another.
+  readerVisible = false;
+  readerAgents: NodeInterface[] = [];
+  readerSelectedAgentId: string | null = null;
+
   private subscription!: Subscription;
+  private readerSubscriptions = new Subscription();
   private notificationSubscription!: Subscription;
   private justSentSubscription!: Subscription;
   private runningSubscription!: Subscription;
@@ -152,6 +172,19 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   private readonly TOP_PAD = 8;
 
   ngOnInit(): void {
+    // The reader's agent list IS the graph's node list (no second source of
+    // truth about who is on the team), and its selected agent IS the app's.
+    this.readerSubscriptions.add(
+      this.graphDataService.nodes$.subscribe((nodes) => {
+        this.readerAgents = nodes;
+      }),
+    );
+    this.readerSubscriptions.add(
+      this.akgentService.selectedAkgent$.subscribe((akgent) => {
+        this.readerSelectedAgentId = akgent?.agentId ?? null;
+      }),
+    );
+
     this.notificationSubscription = this.chatService.pendingNotifications$.subscribe(
       (pending) => {
         this.pendingNotifications = pending;
@@ -193,6 +226,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.notificationSubscription?.unsubscribe();
     this.justSentSubscription?.unsubscribe();
     this.runningSubscription?.unsubscribe();
+    this.readerSubscriptions.unsubscribe();
   }
 
   // ---------------------------------------------------------------------------
@@ -556,13 +590,41 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.selectedMessageId = null;
   }
 
+  /**
+   * The identity badge on a turn was clicked.
+   *
+   * It selects the agent, as it always has — and now also opens the reader on
+   * it, which is the only place in the app where that agent's own two-sided
+   * conversation can be read as a conversation. `ChatMessageComponent` refuses
+   * to emit for the user's own turn and for the system announcement, so the
+   * reader can never open on an actor that is not an agent.
+   */
   onMessageSelected(chatMsg: ChatMessage): void {
+    this.selectAgent(chatMsg.sender.agent_id, chatMsg.sender.name);
+    this.readerVisible = true;
+  }
+
+  /** An agent was picked from the reader's own list. */
+  onReaderAgentSelected(agent: AgentRef): void {
+    this.selectAgent(agent.agentId, agent.actorName);
+  }
+
+  onReaderVisibleChange(visible: boolean): void {
+    this.readerVisible = visible;
+  }
+
+  /**
+   * Route an agent choice through the app's ONE selection path.
+   *
+   * The `Selectable` deliberately carries the identity only, never the graph
+   * node: a node drags its `humanRequests` along, and `SelectionService` opens
+   * the human-input dialog for those. The reader is read-only, and picking an
+   * agent to read must not put a reply box on the screen.
+   */
+  private selectAgent(agentId: string, actorName: string): void {
     const selectable: Selectable = {
       type: 'message',
-      data: {
-        name: chatMsg.sender.agent_id,
-        actorName: chatMsg.sender.name,
-      },
+      data: { name: agentId, actorName },
     };
     this.selectionService.handleSelection(selectable);
   }
