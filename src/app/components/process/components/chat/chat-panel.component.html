@@ -18,6 +18,13 @@
           (bubbleClicked)="onBubbleClicked($event)"
           (rule3Clicked)="onRule3Clicked($event)"
         ></app-chat-message>
+        <!-- Epic 54: the calendar-day rule. Chrome, not a message — a plain
+             element with no sender, no selection, no collapse and no reply
+             routing (NFR1). It inherits the reading column from
+             `.message-list > *` like every other row. -->
+        <div *ngIf="item.kind === 'day'" class="day-separator" role="separator">
+          <span class="day-separator-label">{{ item.data.label }}</span>
+        </div>
         <app-chat-thinking
           *ngIf="item.kind === 'thinking'"
           [state]="item.data"

@@ -24,7 +24,7 @@
     class="open-button"
   ></p-button>
   <span class="collapsed-timestamp">{{
-    message().timestamp | date : "HH:mm"
+    timestampOrNull() | date : "HH:mm"
   }}</span>
 </div>
 
@@ -45,7 +45,7 @@
       [ngClass]="message().collapsed ? 'pi-chevron-right' : 'pi-chevron-down'"
     ></i>
     <span class="system-marker-timestamp">{{
-      message().timestamp | date : "HH:mm"
+      timestampOrNull() | date : "HH:mm"
     }}</span>
   </div>
   <div
@@ -101,7 +101,7 @@
         class="open-button"
       ></p-button>
       <span class="bubble-timestamp">{{
-        message().timestamp | date : "HH:mm"
+        timestampOrNull() | date : "HH:mm"
       }}</span>
     </div>
     <div class="markdown-content">
