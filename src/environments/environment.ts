@@ -12,5 +12,9 @@ export const environment = {
   initRightPanelCollapsed: false,
   userInputEnterKeySubmit: false,
   favicon: 'favicon.png',
+  // Only the built-in language, on purpose: an existing deployment that
+  // configures nothing must keep rendering English even on a French browser.
+  languages: ['en'],
+  defaultLanguage: 'en',
   loginProviders: ['google', 'apikey'] as AuthProvider[] // Array, ordered by preference
 };

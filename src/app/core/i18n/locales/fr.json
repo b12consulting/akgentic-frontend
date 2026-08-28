@@ -1,0 +1,21 @@
+{
+  "common": {
+    "actions": "Actions",
+    "cancel": "Annuler",
+    "close": "Fermer",
+    "confirm": "Confirmer",
+    "create": "Créer",
+    "delete": "Supprimer",
+    "description": "Description",
+    "error": "Erreur",
+    "loading": "Chargement",
+    "name": "Nom",
+    "no": "Non",
+    "refresh": "Actualiser",
+    "retry": "Réessayer",
+    "save": "Enregistrer",
+    "search": "Rechercher",
+    "status": "Statut",
+    "yes": "Oui"
+  }
+}

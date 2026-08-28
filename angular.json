@@ -47,6 +47,11 @@
               {
                 "glob": "**/*",
                 "input": "public"
+              },
+              {
+                "glob": "*.json",
+                "input": "src/app/core/i18n/locales",
+                "output": "/i18n"
               }
             ],
             "browser": "src/main.ts",
@@ -98,6 +103,11 @@
               {
                 "glob": "**/*",
                 "input": "public"
+              },
+              {
+                "glob": "*.json",
+                "input": "src/app/core/i18n/locales",
+                "output": "/i18n"
               }
             ],
             "inlineStyleLanguage": "scss",

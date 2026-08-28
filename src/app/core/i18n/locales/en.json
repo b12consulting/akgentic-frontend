@@ -1,0 +1,21 @@
+{
+  "common": {
+    "actions": "Actions",
+    "cancel": "Cancel",
+    "close": "Close",
+    "confirm": "Confirm",
+    "create": "Create",
+    "delete": "Delete",
+    "description": "Description",
+    "error": "Error",
+    "loading": "Loading",
+    "name": "Name",
+    "no": "No",
+    "refresh": "Refresh",
+    "retry": "Retry",
+    "save": "Save",
+    "search": "Search",
+    "status": "Status",
+    "yes": "Yes"
+  }
+}

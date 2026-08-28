@@ -70,7 +70,8 @@ Inject `ConfigService` to read configuration. Do **not** import `environment` di
 the runtime layer and silently ignores whatever the deployment set.
 
 Recognised keys: `api`, `logo`, `favicon`, `welcomeMessage`, `autoRedirectContext`, `hideHome`,
-`hideLogin`, `initRightPanelCollapsed`, `userInputEnterKeySubmit`, `loginProviders`, `production`.
+`hideLogin`, `initRightPanelCollapsed`, `userInputEnterKeySubmit`, `loginProviders`, `production`,
+`languages`, `defaultLanguage`.
 
 ### Using config.json
 
@@ -103,6 +104,49 @@ The file is fetched once, before the app renders, relative to the document base 
 non-root `--base-href` deployment. A malformed or missing file is not an error: the build-time
 defaults stand. Verify what a running deployment resolved by fetching `<app-url>/config.json`
 directly in a browser.
+
+## Language
+
+The UI is translated through a key lookup, not through per-deployment template edits. English is
+**compiled into the bundle**, so a deployment that configures nothing renders exactly as it always
+did and makes no extra request before first paint. Every other language is a static asset.
+
+Two configuration keys, both `config.json`:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `languages` | `["en"]` | The languages this deployment offers. A language not listed here cannot be selected, however it is asked for. |
+| `defaultLanguage` | `"en"` | The language a key falls back to when the active one does not define it — **per key**, not per file. |
+
+### Adding a language
+
+1. Copy `src/app/core/i18n/locales/en.json` — the canonical key list, also published at
+   `<app-url>/i18n/en.json` so you can fetch it off a running deployment — and translate the values.
+2. Drop it in the web root as `i18n/<lang>.json`, the same way you place `config.json`.
+3. Add the tag to `languages`.
+
+No rebuild. A key you leave untranslated falls back to `defaultLanguage`; a key that exists in no
+locale at all renders as the key itself, which is deliberately ugly so it shows up in review.
+
+The repository ships `fr.json` as a worked example. It is **not** offered by default — widening
+`languages` is what makes a language reachable, so a half-finished locale cannot be selected by
+accident.
+
+### Which language a visitor gets
+
+First match wins, and every candidate must appear in `languages`:
+
+```
+?language=  /  ?lang=   →   the last choice made here   →   the browser's language   →   defaultLanguage
+```
+
+A region-qualified tag resolves to its base, so a browser reporting `fr-BE` gets `fr`.
+
+### What is not translated
+
+Text the **backend** produced — an agent's answer, a tool name, an error `detail`. It arrives in
+whatever language the backend generated it in; it has no key, and putting a key lookup in front of it
+would only produce a miss.
 
 ## Building
 

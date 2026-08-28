@@ -26,4 +26,21 @@ export interface Environment {
   initRightPanelCollapsed: boolean;
   userInputEnterKeySubmit: boolean;
   favicon: string;
+  /**
+   * The languages this deployment offers, as bare language tags ('en', 'fr').
+   *
+   * Defaults to the built-in language alone. Widening it is what makes another
+   * language reachable: a candidate the browser or a link asks for is only
+   * honoured if it appears here, so a half-shipped locale cannot be selected by
+   * accident.
+   */
+  languages: string[];
+  /**
+   * The language a key falls back to when the active one does not define it.
+   *
+   * Not the same thing as the active language: this is the safety net, and it
+   * is per key, not per file. A locale that translates 80% of the app renders
+   * the other 20% in this language rather than blank.
+   */
+  defaultLanguage: string;
 }
