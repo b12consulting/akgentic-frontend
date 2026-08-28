@@ -7,7 +7,12 @@ import {
   isFiltering,
   toQueryParams,
 } from '../../core/context/home-url';
-import { BehaviorSubject, firstValueFrom, Observable } from 'rxjs';
+import {
+  BehaviorSubject,
+  firstValueFrom,
+  Observable,
+  Subscription,
+} from 'rxjs';
 import { filter, map, take } from 'rxjs/operators';
 
 import { ApiService, MIN_FILTER_TERM_LENGTH } from '../../core/http/api.service';
@@ -28,6 +33,21 @@ import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { AuthService } from '../../core/auth/auth.service';
 import { ConfigService } from '../../core/config/config.service';
 import { ContextService } from '../../core/context/context.service';
+import { SplitDividerComponent } from '../../shared/components/split-divider/split-divider.component';
+import {
+  clampSplitPercent,
+  formatSplitPercent,
+  parseSplitPercent,
+  SPLIT_DEFAULT_PERCENT,
+  SPLIT_STORAGE_KEY,
+} from '../../shared/util/split-width';
+
+// Epic 52: the process view is EMBEDDED here, beside the teams list, so that
+// opening a team no longer means leaving them. NOT deferred like
+// <app-namespace-panel> above: `/process/:id` in app.routes.ts imports this
+// component eagerly, so it is in the initial bundle whatever this page does,
+// and a defer block would only look like it was earning something.
+import { ProcessComponent } from '../process/process.component';
 
 // Listed in @Component.imports so Angular's @defer block can resolve
 // <app-namespace-panel>. The `@defer (when ...)` block in the template keeps
@@ -65,6 +85,8 @@ const PAGE_SIZE = 250;
     TeamMetadataModalComponent,
     TeamFilterComponent,
     TeamTableComponent,
+    SplitDividerComponent,
+    ProcessComponent,
   ],
   templateUrl: './home.component.html',
   styleUrl: './home.component.scss',
@@ -195,6 +217,34 @@ export class HomeComponent {
    */
   filtersVisible = false;
 
+  // -----------------------------------------------------------------------
+  // The split (Epic 52).
+  //
+  // The list keeps the page; opening a team puts it BESIDE the list instead of
+  // navigating away from it. Two pieces of state, and they are independent:
+  // WHICH team is open, and how wide the list is.
+  // -----------------------------------------------------------------------
+
+  /**
+   * The team open beside the list, or `null` for a list on its own (FR7).
+   *
+   * The page owns the SELECTION; the embedded view owns everything about the
+   * team itself. In particular this page never writes
+   * `ContextService.currentProcessId$` — `ProcessComponent` publishes the id it
+   * has actually opened, and two writers on that subject would leave the agent
+   * tabs and the workspace following whichever wrote last (Epic 52 trap T3).
+   */
+  selectedTeamId: string | null = null;
+
+  /**
+   * The list's share of the width, as a percentage (FR5).
+   *
+   * A percentage rather than pixels so the split survives a window resize with
+   * its proportions intact, and so a width stored on a wide monitor does not
+   * come back as the whole of a narrow one.
+   */
+  splitPercent: number = SPLIT_DEFAULT_PERCENT;
+
   /** Show or hide the filter row. Never touches the filter itself. */
   toggleFilters(): void {
     this.filtersVisible = !this.filtersVisible;
@@ -235,6 +285,12 @@ export class HomeComponent {
     // first lazy load stays the sole page-1 seed (Story 28.2) and carries the
     // restored filter with it, because `loadTeamsPage` reads that value.
     this.restoreFromUrl();
+    this.trackUrlSelection();
+
+    // Not from the URL: a pane width is a preference of THIS browser, not a
+    // property of the view being shared. Putting it in the query string would
+    // impose the sender's monitor on the recipient's.
+    this.restoreSplitPercent();
 
     await this.loadNamespaces();
 
@@ -475,6 +531,7 @@ export class HomeComponent {
       filter: this.contextService.filter,
       page: this.currentPage,
       namespace: this.currentNamespace(),
+      team: this.selectedTeamId,
     });
     // Remembered because the navigations that mean "back to my list" run when
     // this route is no longer active and its parameters are already gone.
@@ -513,6 +570,13 @@ export class HomeComponent {
     this.first = (state.page - 1) * this.rows;
     this.restoredFilter = state.filter;
     this.restoreNamespace = state.namespace;
+    // Epic 52: the open team is part of the entry state, so a shared link, a
+    // bookmark and a reload all come back to the view that was actually on
+    // screen. A team the URL names but that no longer exists is not resolved
+    // here — the embedded view fetches it and reports back through
+    // `(teamUnavailable)`, so there is exactly one place that decides whether a
+    // team can be shown.
+    this.selectedTeamId = state.team;
     this.contextService.restoreFilter(state.filter);
 
     // The row opens iff it has something to show for itself. Hidden while
@@ -526,6 +590,43 @@ export class HomeComponent {
     // one path where no write ever runs — so recording only on write would
     // leave the logo replaying nothing.
     this.rememberQueryParams();
+  }
+
+  /**
+   * Keep the open team in step with the URL, for as long as this page lives
+   * (Epic 52).
+   *
+   * The filter and the page above are restored from the SNAPSHOT and never
+   * tracked — subscribing would feed this component its own `writeUrl` output.
+   * The open team is tracked, and the difference is not an inconsistency:
+   *
+   *  - It CANNOT loop. `writeUrl` composes `team` from `selectedTeamId`, so
+   *    every emission this page causes arrives holding the value it already
+   *    has, and the guard below returns. There is no such guard available for
+   *    the filter, whose restore has to rebuild a form.
+   *
+   *  - It has to be tracked, or the URL becomes write-only for the selection.
+   *    Query-string changes on THIS route do not rebuild this component, so
+   *    `router.navigate(['/'])` — the Home menu item — would drop `?team` while
+   *    the pane went on showing it. A URL that disagrees with the screen is
+   *    worse than one that says less, and this page's URL is the thing Epic 48
+   *    built for sharing.
+   */
+  private urlSub: Subscription | null = null;
+
+  private trackUrlSelection(): void {
+    this.urlSub = this.route.queryParamMap.subscribe((params) => {
+      const team = params.get('team') || null;
+      if (team === this.selectedTeamId) {
+        return;
+      }
+      this.selectedTeamId = team;
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.urlSub?.unsubscribe();
+    this.urlSub = null;
   }
 
   /**
@@ -620,9 +721,92 @@ export class HomeComponent {
     }
   }
 
-  /** `(rowSelected)` handler. A row was picked; this page decides that means go. */
+  /**
+   * `(rowSelected)` handler. A row was picked; this page decides that means
+   * OPEN IT BESIDE THE LIST (Epic 52 FR3) rather than navigate to it.
+   *
+   * The router call this replaced is the whole problem the epic exists for:
+   * working a list of teams — the thing the filter bar was built to make
+   * possible — meant a round trip through the router per team and losing the
+   * filtered list each time.
+   */
   onRowSelect(teamId: string) {
-    this.router.navigate(['/process', teamId]);
+    if (this.selectedTeamId === teamId) {
+      return;
+    }
+    this.selectedTeamId = teamId;
+    this.writeUrl();
+  }
+
+  /** Close the open team; the list takes the full width again (FR7). */
+  closeTeam(): void {
+    if (this.selectedTeamId === null) {
+      return;
+    }
+    this.selectedTeamId = null;
+    this.writeUrl();
+  }
+
+  /**
+   * `(teamUnavailable)` handler: the embedded view fetched the selected team
+   * and there was none.
+   *
+   * A URL naming a deleted team is the ordinary way to arrive here — a
+   * bookmark, or a link from someone who cleaned up afterwards — and the only
+   * honest answer is to drop the selection. Leaving it would show an empty
+   * pane with no way to tell it from a team that has simply said nothing yet.
+   */
+  onTeamUnavailable(): void {
+    this.closeTeam();
+  }
+
+  /**
+   * `(percentChange)` from the divider: move the panes, do not persist yet.
+   *
+   * Clamped HERE as well as inside the divider. That is not belt-and-braces: it
+   * is what makes "`splitPercent` is always a width this page would lay out"
+   * true of the field itself, rather than a property of whoever last wrote to
+   * it. The value reaches the DOM as a `flex-basis` and the storage as a
+   * string, and neither has an opinion about 1000%.
+   */
+  onSplitPercent(percent: number): void {
+    this.splitPercent = clampSplitPercent(percent);
+  }
+
+  /**
+   * `(commit)` from the divider: the drag ended, or a key was pressed. THIS is
+   * what persists, so one drag costs one write instead of one per frame.
+   */
+  onSplitCommit(percent: number): void {
+    this.onSplitPercent(percent);
+    this.storeSplitPercent(this.splitPercent);
+  }
+
+  /**
+   * Adopt the stored split width, or the default when there is none.
+   *
+   * Wrapped, because `localStorage` is not merely a map: reading it throws
+   * outright when the browser blocks storage for the origin. A remembered pane
+   * width is not worth a page that fails to render, so a refusal reads as "no
+   * preference stored".
+   */
+  private restoreSplitPercent(): void {
+    let raw: string | null = null;
+    try {
+      raw = localStorage.getItem(SPLIT_STORAGE_KEY);
+    } catch {
+      raw = null;
+    }
+    this.splitPercent = parseSplitPercent(raw) ?? SPLIT_DEFAULT_PERCENT;
+  }
+
+  /** As `restoreSplitPercent`: a refused write costs the preference, nothing more. */
+  private storeSplitPercent(percent: number): void {
+    try {
+      localStorage.setItem(SPLIT_STORAGE_KEY, formatSplitPercent(percent));
+    } catch {
+      /* storage unavailable — the width still applies for this visit */
+    }
   }
 
   /**

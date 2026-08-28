@@ -94,9 +94,13 @@ export class AppComponent {
             icon: 'pi pi-home',
             label: 'Home',
             route: ['/'],
-            command: () => {
-              this.contextService.currentProcessId$.next('');
-            },
+            // Epic 52 (trap T3): NO `currentProcessId$.next('')` here any
+            // more. `ProcessComponent` is the single owner of that subject and
+            // retracts its own value on destroy, which this navigation causes.
+            // Writing it from here too was harmless only while leaving the
+            // process view was always a route change; now that the view can be
+            // HOSTED on the page being navigated to, a write from here blanks
+            // the header's team name while that team is still on screen.
           },
           {
             icon: 'pi pi-eraser',
@@ -182,12 +186,16 @@ export class AppComponent {
       });
   }
 
-  // Navigate to home page and clear current process context
+  // Navigate to the home page, as the user left it.
+  //
+  // Epic 52 (trap T3): the `currentProcessId$.next('')` that used to open this
+  // method is gone, for the reason recorded on the Home menu item above — the
+  // teams list can now be hosting the open team, and "as the user left it"
+  // includes it.
   navigateToHome() {
-    this.contextService.currentProcessId$.next('');
     // Through the service, so the teams list comes back filtered as the user
     // left it. A bare `navigate(['/'])` lands on an unfiltered list, because
-    // the home page's filter and page live in its query string.
+    // the home page's filter, page and open team live in its query string.
     void this.contextService.navigateHome();
   }
 }

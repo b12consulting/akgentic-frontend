@@ -132,6 +132,35 @@ export class TeamTableComponent {
   @Input() loading = false;
 
   /**
+   * The team that is OPEN beside the list, or `null` (Epic 52).
+   *
+   * One-way, and the page owns it. Before the split the table could keep its
+   * own selection to itself, because selecting a row navigated away and the
+   * highlight died with the page. Now the highlight has to answer a question
+   * that outlives the click — "which of these am I looking at?" — and only the
+   * page knows. Re-asserting it every cycle is also what stops PrimeNG's own
+   * click-to-unselect quietly clearing the highlight while the team it named is
+   * still open in the pane beside it.
+   */
+  @Input() selectedTeamId: string | null = null;
+
+  /**
+   * The row `p-table` should draw as selected: the loaded team whose id the
+   * page named, or `null` while it is on another page (or gone).
+   *
+   * A getter and not a stored field, because `teams` is REPLACED on every page
+   * load and the previous page's object would be a selection PrimeNG can no
+   * longer find. `find` over the current array returns the same reference on
+   * every change-detection pass, so re-evaluating it churns nothing.
+   */
+  get selectedRow(): TeamContext | null {
+    if (this.selectedTeamId === null) {
+      return null;
+    }
+    return this.teams.find((t) => t.team_id === this.selectedTeamId) ?? null;
+  }
+
+  /**
    * The `p-table`'s own lazy-load event, re-emitted VERBATIM.
    *
    * Not a page number: the page owns the arithmetic (`first / rows + 1`) and

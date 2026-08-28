@@ -3,7 +3,7 @@ import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
-import { BehaviorSubject } from 'rxjs';
+import { BehaviorSubject, of } from 'rxjs';
 
 import { StartMessage, StopMessage } from '../../protocol/message.types';
 import { AkgentService } from '../../core/ui/akgent.service';
@@ -137,6 +137,9 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
     // component template — collapsed into the two-exceptions invariant purity).
     const ingestionService = {
       init: jasmine.createSpy('init').and.returnValue(Promise.resolve()),
+      // Story 52-1: the component tears the previous team down explicitly
+      // before it opens the next one, so the stub has to answer `close()`.
+      close: jasmine.createSpy('close'),
     };
 
     const akgentService = {
@@ -169,8 +172,11 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
         .and.returnValue(Promise.resolve(true)),
     };
 
+    // Story 52-1: `params` is an OBSERVABLE now, not a snapshot read — the
+    // route mode subscribes so a `:id` change on a reused component is seen.
     const activatedRoute = {
       snapshot: { params: { id: 'team-1' } },
+      params: of({ id: 'team-1' }),
     };
 
     await TestBed.configureTestingModule({
@@ -371,7 +377,7 @@ describe('ProcessComponent (Story 10-2 — single-fetch navigation)', () => {
     component: ProcessComponent;
     fixture: ComponentFixture<ProcessComponent>;
     contextSpy: { getCurrentTeam: jasmine.Spy; navigateHome: jasmine.Spy };
-    messageSpy: { init: jasmine.Spy };
+    messageSpy: { init: jasmine.Spy; close: jasmine.Spy };
     routerSpy: { navigate: jasmine.Spy };
   }> {
     const contextService = {
@@ -384,6 +390,9 @@ describe('ProcessComponent (Story 10-2 — single-fetch navigation)', () => {
 
     const ingestionService = {
       init: jasmine.createSpy('init').and.returnValue(Promise.resolve()),
+      // Story 52-1: the component tears the previous team down explicitly
+      // before it opens the next one, so the stub has to answer `close()`.
+      close: jasmine.createSpy('close'),
     };
 
     const akgentService = {
@@ -408,7 +417,10 @@ describe('ProcessComponent (Story 10-2 — single-fetch navigation)', () => {
     const router = {
       navigate: jasmine.createSpy('navigate').and.returnValue(Promise.resolve(true)),
     };
-    const activatedRoute = { snapshot: { params: { id: 'team-1' } } };
+    const activatedRoute = {
+      snapshot: { params: { id: 'team-1' } },
+      params: of({ id: 'team-1' }),
+    };
 
     await TestBed.configureTestingModule({
       imports: [ProcessComponent, NoopAnimationsModule],
@@ -485,4 +497,268 @@ describe('ProcessComponent (Story 10-2 — single-fetch navigation)', () => {
     expect(messageSpy.init).not.toHaveBeenCalled();
   });
 
+});
+
+// =====================================================================
+// Story 52-1 — the id comes from OUTSIDE, and it can change
+// =====================================================================
+
+describe('ProcessComponent (Story 52-1 — team id as an input)', () => {
+  interface Harness {
+    component: ProcessComponent;
+    fixture: ComponentFixture<ProcessComponent>;
+    context: {
+      currentProcessId$: BehaviorSubject<string>;
+      getCurrentTeam: jasmine.Spy;
+      navigateHome: jasmine.Spy;
+    };
+    ingestion: { init: jasmine.Spy; close: jasmine.Spy };
+    akgent: { unselect: jasmine.Spy };
+    routeParams$: BehaviorSubject<{ id?: string }>;
+  }
+
+  /**
+   * Builds the component WITHOUT rendering it, so a spec can set `teamId`
+   * before the first change detection — which is what a host binding does, and
+   * the only way to exercise the "input wins over the route" branch.
+   */
+  async function build(options: {
+    routeId?: string;
+    team?: (id: string) => TeamContext | null;
+  }): Promise<Harness> {
+    const resolve = options.team ?? (() => makeTeam());
+    const context = {
+      currentProcessId$: new BehaviorSubject<string>(''),
+      getCurrentTeam: jasmine
+        .createSpy('getCurrentTeam')
+        .and.callFake(async (id: string) => resolve(id)),
+      navigateHome: jasmine.createSpy('navigateHome').and.resolveTo(true),
+    };
+    const ingestion = {
+      init: jasmine.createSpy('init').and.returnValue(Promise.resolve()),
+      close: jasmine.createSpy('close'),
+    };
+    const akgent = {
+      unselect: jasmine.createSpy('unselect'),
+      selectedAkgent$: new BehaviorSubject<any>(null),
+    };
+    const routeParams$ = new BehaviorSubject<{ id?: string }>(
+      options.routeId === undefined ? {} : { id: options.routeId },
+    );
+
+    await TestBed.configureTestingModule({
+      imports: [ProcessComponent, NoopAnimationsModule],
+      providers: [
+        MessageLogService,
+        ToolPresenceService,
+        KGStateReducer,
+        WorkspaceRegistryService,
+        { provide: ContextService, useValue: context },
+        { provide: IngestionService, useValue: ingestion },
+        { provide: AkgentService, useValue: akgent },
+        {
+          provide: GraphDataService,
+          useValue: {
+            isLoading$: new BehaviorSubject<boolean>(false),
+            nodes$: new BehaviorSubject<any[]>([]),
+          },
+        },
+        { provide: ChatService, useValue: { messages$: new BehaviorSubject<any[]>([]) } },
+        { provide: SelectionService, useValue: { handleSelection: () => undefined } },
+        { provide: FeedbackService, useValue: {} },
+        {
+          provide: ViewService,
+          useValue: { isRightColumnCollapsed$: new BehaviorSubject<boolean>(false) },
+        },
+        {
+          provide: Router,
+          useValue: { navigate: jasmine.createSpy('navigate').and.resolveTo(true) },
+        },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: { params: options.routeId === undefined ? {} : { id: options.routeId } },
+            params: routeParams$,
+          },
+        },
+      ],
+    })
+      .overrideComponent(ProcessComponent, {
+        set: { imports: [CommonModule], providers: [], schemas: [CUSTOM_ELEMENTS_SCHEMA] },
+      })
+      .compileComponents();
+
+    const fixture = TestBed.createComponent(ProcessComponent);
+    return {
+      component: fixture.componentInstance,
+      fixture,
+      context,
+      ingestion,
+      akgent,
+      routeParams$,
+    };
+  }
+
+  /** One render + settle cycle, the shape every spec in this file uses. */
+  async function settle(fixture: ComponentFixture<ProcessComponent>): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  beforeEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('(FR1) opens the team the INPUT names, and never asks the route', async () => {
+    const h = await build({ routeId: 'from-route' });
+    h.fixture.componentRef.setInput('teamId', 'from-input');
+    await settle(h.fixture);
+
+    expect(h.context.getCurrentTeam).toHaveBeenCalledOnceWith('from-input', false);
+    expect(h.ingestion.init).toHaveBeenCalledOnceWith('from-input', true);
+    expect(h.component.processId).toBe('from-input');
+  });
+
+  it('(FR1, NFR1) with no input bound it falls back to the route parameter', async () => {
+    const h = await build({ routeId: 'from-route' });
+    await settle(h.fixture);
+
+    expect(h.context.getCurrentTeam).toHaveBeenCalledOnceWith('from-route', false);
+    expect(h.ingestion.init).toHaveBeenCalledOnceWith('from-route', true);
+  });
+
+  it('(FR2, T1) a CHANGED input opens the new team — the id is not read once', async () => {
+    const h = await build({ routeId: 'from-route' });
+    h.fixture.componentRef.setInput('teamId', 'team-a');
+    await settle(h.fixture);
+    expect(h.ingestion.init).toHaveBeenCalledOnceWith('team-a', true);
+
+    h.fixture.componentRef.setInput('teamId', 'team-b');
+    await settle(h.fixture);
+
+    expect(h.component.processId).toBe('team-b');
+    expect(h.ingestion.init).toHaveBeenCalledTimes(2);
+    expect(h.ingestion.init.calls.mostRecent().args).toEqual(['team-b', true]);
+  });
+
+  it('(FR2, T2) the previous team is torn down BEFORE the new one is fetched', async () => {
+    const order: string[] = [];
+    const h = await build({ routeId: undefined });
+    h.ingestion.close.and.callFake(() => order.push('close'));
+    h.context.getCurrentTeam.and.callFake(async (id: string) => {
+      order.push('fetch:' + id);
+      return makeTeam({ team_id: id });
+    });
+    h.ingestion.init.and.callFake(async (id: string) => {
+      order.push('init:' + id);
+    });
+
+    h.fixture.componentRef.setInput('teamId', 'team-a');
+    await settle(h.fixture);
+    h.fixture.componentRef.setInput('teamId', 'team-b');
+    await settle(h.fixture);
+
+    // `close` sits between team A's init and team B's fetch: the old socket is
+    // gone before the network call that precedes the new one, not after it.
+    expect(order).toEqual(['fetch:team-a', 'init:team-a', 'close', 'fetch:team-b', 'init:team-b']);
+  });
+
+  it('(FR2) the root-scoped agent selection does not survive a team switch', async () => {
+    const h = await build({ routeId: undefined });
+    h.fixture.componentRef.setInput('teamId', 'team-a');
+    await settle(h.fixture);
+    h.akgent.unselect.calls.reset();
+
+    h.fixture.componentRef.setInput('teamId', 'team-b');
+    await settle(h.fixture);
+
+    expect(h.akgent.unselect).toHaveBeenCalled();
+  });
+
+  it('(FR2) re-announcing the SAME id opens nothing a second time', async () => {
+    // Driven through the route, because that is the channel that really does
+    // re-emit an unchanged value (a `queryParams` write on the hosting page
+    // re-emits `params` too). A teardown here would drop a live socket and
+    // replay the whole conversation for no reason at all.
+    const h = await build({ routeId: 'team-a' });
+    await settle(h.fixture);
+    h.routeParams$.next({ id: 'team-a' });
+    await settle(h.fixture);
+
+    expect(h.ingestion.init).toHaveBeenCalledTimes(1);
+    expect(h.ingestion.close).not.toHaveBeenCalled();
+  });
+
+  it('(FR2) a slow fetch that resolves after a newer selection initialises nothing', async () => {
+    let releaseA: (team: TeamContext) => void = () => undefined;
+    const h = await build({ routeId: undefined });
+    h.context.getCurrentTeam.and.callFake((id: string) => {
+      if (id === 'team-a') {
+        return new Promise<TeamContext>((r) => {
+          releaseA = r;
+        });
+      }
+      return Promise.resolve(makeTeam({ team_id: id }));
+    });
+
+    h.fixture.componentRef.setInput('teamId', 'team-a');
+    await settle(h.fixture);
+    // A is still in flight; B is chosen and completes.
+    h.fixture.componentRef.setInput('teamId', 'team-b');
+    await settle(h.fixture);
+    releaseA(makeTeam({ team_id: 'team-a' }));
+    await settle(h.fixture);
+
+    expect(h.ingestion.init).toHaveBeenCalledOnceWith('team-b', true);
+    expect(h.component.processId).toBe('team-b');
+  });
+
+  it('(T1) in route mode a `:id` change on the SAME instance opens the new team', async () => {
+    const h = await build({ routeId: 'team-a' });
+    await settle(h.fixture);
+    expect(h.ingestion.init).toHaveBeenCalledOnceWith('team-a', true);
+
+    h.routeParams$.next({ id: 'team-b' });
+    await settle(h.fixture);
+
+    expect(h.ingestion.init).toHaveBeenCalledTimes(2);
+    expect(h.component.processId).toBe('team-b');
+  });
+
+  it('(T3) it is the only writer: currentProcessId$ follows the input, and empties on destroy', async () => {
+    const h = await build({ routeId: undefined });
+    h.fixture.componentRef.setInput('teamId', 'team-a');
+    await settle(h.fixture);
+    expect(h.context.currentProcessId$.value).toBe('team-a');
+
+    h.fixture.componentRef.setInput('teamId', 'team-b');
+    await settle(h.fixture);
+    expect(h.context.currentProcessId$.value).toBe('team-b');
+
+    h.fixture.destroy();
+    expect(h.context.currentProcessId$.value).toBe('');
+  });
+
+  it('(FR3) a dangling selection is REPORTED to the host, not navigated away from', async () => {
+    const h = await build({ routeId: undefined, team: () => null });
+    const reported: string[] = [];
+    h.component.teamUnavailable.subscribe((id) => reported.push(id));
+
+    h.fixture.componentRef.setInput('teamId', 'gone');
+    await settle(h.fixture);
+
+    expect(reported).toEqual(['gone']);
+    expect(h.ingestion.init).not.toHaveBeenCalled();
+    // Hosted, the host owns the selection — this view must not move the page.
+    expect(h.context.navigateHome).not.toHaveBeenCalled();
+  });
+
+  it('(NFR1) standalone, a dangling team still navigates home', async () => {
+    const h = await build({ routeId: 'gone', team: () => null });
+    await settle(h.fixture);
+
+    expect(h.context.navigateHome).toHaveBeenCalled();
+  });
 });

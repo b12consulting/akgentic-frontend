@@ -1,5 +1,11 @@
 import { CommonModule } from '@angular/common';
-import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
+import {
+  Component,
+  CUSTOM_ELEMENTS_SCHEMA,
+  EventEmitter,
+  Input,
+  Output,
+} from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
@@ -28,6 +34,14 @@ import {
   NamespaceSummary,
   TeamMetadataContract,
 } from '../../protocol/catalog.interface';
+import { ProcessComponent } from '../process/process.component';
+import {
+  SPLIT_COARSE_STEP_PERCENT,
+  SPLIT_DEFAULT_PERCENT,
+  SPLIT_MAX_PERCENT,
+  SPLIT_MIN_PERCENT,
+  SPLIT_STORAGE_KEY,
+} from '../../shared/util/split-width';
 import { HomeComponent } from './home.component';
 import { TeamCreationService } from './team-creation/team-creation.service';
 import { TeamMetadataModalComponent } from './team-metadata-modal/team-metadata-modal.component';
@@ -98,25 +112,48 @@ function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
 }
 
 /**
- * Minimal `ActivatedRoute` for the query-string restore.
+ * Minimal `ActivatedRoute` for the query string.
  *
- * Only `snapshot.queryParamMap` is provided, because that is all the component
- * reads: the restore is a one-shot read of the ENTRY state, deliberately not a
- * subscription — subscribing would feed the component its own `writeUrl`
- * output and loop. A stub carrying an observable would invite exactly that.
+ * BOTH halves are provided, and they are read by different things for
+ * different reasons. The filter and the page are restored from
+ * `snapshot.queryParamMap` — a one-shot read of the ENTRY state, deliberately
+ * not a subscription, since tracking would feed the component its own
+ * `writeUrl` output. The open TEAM is tracked through `queryParamMap`, because
+ * a query-string change on this route does not rebuild the page and the URL
+ * would otherwise be write-only for the selection (Epic 52).
  *
  * ONE mutable object rather than a factory, so a spec can name the entry URL
  * and then create a fresh component from the same TestBed. Rebuilding the
  * TestBed per URL would mean duplicating its whole provider list, which is how
  * the copy silently drifts from the one the other specs run against.
  */
-const routeStub: { snapshot: { queryParamMap: ParamMap } } = {
+const queryParamMap$ = new BehaviorSubject<ParamMap>(convertToParamMap({}));
+const routeStub: {
+  snapshot: { queryParamMap: ParamMap };
+  queryParamMap: BehaviorSubject<ParamMap>;
+} = {
   snapshot: { queryParamMap: convertToParamMap({}) },
+  queryParamMap: queryParamMap$,
 };
 
 /** Point the shared stub at an entry URL. Reset in `beforeEach`. */
 function setUrl(params: Record<string, string>): void {
-  routeStub.snapshot.queryParamMap = convertToParamMap(params);
+  const map = convertToParamMap(params);
+  routeStub.snapshot.queryParamMap = map;
+  queryParamMap$.next(map);
+}
+
+/**
+ * Stands in for `<app-process>` (Epic 52). Same selector, same surface, none of
+ * the ingestion layer — see the `overrideComponent` call below for why.
+ */
+@Component({
+  selector: 'app-process',
+  template: '',
+})
+class ProcessStubComponent {
+  @Input() teamId: string | null = null;
+  @Output() teamUnavailable = new EventEmitter<string>();
 }
 
 describe('HomeComponent', () => {
@@ -260,7 +297,24 @@ describe('HomeComponent', () => {
         { provide: ActivatedRoute, useValue: routeStub },
       ],
       schemas: [CUSTOM_ELEMENTS_SCHEMA],
-    }).compileComponents();
+    })
+      // Epic 52: the page now HOSTS the process view. Bootstrapping the real
+      // one would drag its whole ingestion layer — a socket, a REST replay and
+      // a dozen component-scoped providers — into every spec in this file, to
+      // assert nothing about any of them: what belongs here is whether the pane
+      // is on screen and what the page put in it.
+      //
+      // A STUB with the same selector rather than `CUSTOM_ELEMENTS_SCHEMA`.
+      // The schema on the TestBed does not reach a standalone component's own
+      // template, and adding it to HomeComponent's would silence any other
+      // element typo in the whole file. The stub keeps the two things these
+      // specs care about — the id going in, the "team is gone" answer coming
+      // back — as real, checked bindings.
+      .overrideComponent(HomeComponent, {
+        remove: { imports: [ProcessComponent] },
+        add: { imports: [ProcessStubComponent] },
+      })
+      .compileComponents();
 
     fixture = TestBed.createComponent(HomeComponent);
     component = fixture.componentInstance;
@@ -1257,7 +1311,7 @@ describe('HomeComponent', () => {
   // team-table.component.spec.ts.
   // -------------------------------------------------------------------------
 
-  it('(28.2 AC8f) a paged row still renders, and (rowSelected) navigates to it', async () => {
+  it('(28.2 AC8f, Epic 52) a paged row still renders, and (rowSelected) opens it beside the list', async () => {
     fixture.detectChanges();
     await fixture.whenStable();
     // Render a known running row (REPLACE the seed page).
@@ -1270,10 +1324,14 @@ describe('HomeComponent', () => {
 
     expect(fixture.nativeElement.textContent as string).toContain('row-1');
 
-    // The child emits the team_id; navigating is this page's decision.
+    // The child emits the team_id; what that MEANS is this page's decision, and
+    // Epic 52 changed the answer. It used to be `navigate(['/process', id])`,
+    // which is the whole problem the epic exists for: working a list of teams
+    // cost a router round trip per team and the filtered list each time.
     component.onRowSelect('row-1');
 
-    expect(routerSpy.navigate).toHaveBeenCalledWith(['/process', 'row-1']);
+    expect(component.selectedTeamId).toBe('row-1');
+    expect(routerSpy.navigate).not.toHaveBeenCalledWith(['/process', 'row-1']);
   });
 
   it('(28.2 AC8f) (deleteRequested) delegates to contextService.deleteTeam', async () => {
@@ -1320,12 +1378,12 @@ describe('HomeComponent', () => {
     return teamTable();
   }
 
-  it('(AC3) the child\'s (rowSelected) is bound to the page\'s navigation', async () => {
+  it('(AC3, Epic 52) the child\'s (rowSelected) is bound to the page\'s selection', async () => {
     const table = await renderedTable();
 
     table.rowSelected.emit('row-1');
 
-    expect(routerSpy.navigate).toHaveBeenCalledWith(['/process', 'row-1']);
+    expect(component.selectedTeamId).toBe('row-1');
   });
 
   it('(AC7) the child\'s (deleteRequested) is bound to deleteTeam', async () => {
@@ -2489,6 +2547,296 @@ describe('HomeComponent', () => {
       );
 
       expect(component.selectedNamespace$.value?.namespace).toBe('other');
+    });
+  });
+
+  // =======================================================================
+  // The split (Epic 52)
+  //
+  // The arithmetic of the divider is tested in `split-width.spec.ts` without
+  // a browser, and the divider's own ARIA and keys in its component spec.
+  // What is left here is the PAGE's half: when the second pane exists, what
+  // the page puts in it, and what the URL says about it.
+  // =======================================================================
+
+  describe('the list and the open team, side by side (52.2)', () => {
+    /** Render the page and settle its two async ngOnInit awaits. */
+    async function render(): Promise<void> {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    function processPane(): HTMLElement | null {
+      return fixture.nativeElement.querySelector('app-process');
+    }
+
+    function processStub(): ProcessStubComponent | null {
+      return (
+        fixture.debugElement.query(By.directive(ProcessStubComponent))
+          ?.componentInstance ?? null
+      );
+    }
+
+    function divider(): HTMLElement | null {
+      return fixture.nativeElement.querySelector('app-split-divider');
+    }
+
+    function listPane(): HTMLElement {
+      return fixture.nativeElement.querySelector('.home-split__list');
+    }
+
+    beforeEach(() => {
+      localStorage.removeItem(SPLIT_STORAGE_KEY);
+    });
+
+    afterEach(() => {
+      localStorage.removeItem(SPLIT_STORAGE_KEY);
+    });
+
+    it('(FR7) with no team selected there is no divider and no second pane', async () => {
+      await render();
+
+      expect(component.selectedTeamId).toBeNull();
+      expect(processPane()).toBeNull();
+      expect(divider()).toBeNull();
+      // No `flex-basis` either: the list is the only child and takes the width
+      // it would have taken before this epic existed.
+      expect(listPane().style.flexBasis).toBe('');
+    });
+
+    it('(FR3) selecting a team puts the divider and the open team beside the list', async () => {
+      await render();
+      component.onRowSelect('team-9');
+      fixture.detectChanges();
+
+      expect(divider()).not.toBeNull();
+      expect(processPane()).not.toBeNull();
+      // The id reaches the embedded view through the input; the page never
+      // writes `currentProcessId$` itself (trap T3).
+      expect(processStub()!.teamId).toBe('team-9');
+    });
+
+    it('(FR4, FR5) the list pane is sized as a PERCENTAGE, not in pixels', async () => {
+      await render();
+      component.onRowSelect('team-9');
+      fixture.detectChanges();
+
+      expect(listPane().style.flexBasis).toBe(`${SPLIT_DEFAULT_PERCENT}%`);
+    });
+
+    it('(FR5) a stored width is adopted on arrival', async () => {
+      localStorage.setItem(SPLIT_STORAGE_KEY, '55');
+      await render();
+      component.onRowSelect('team-9');
+      fixture.detectChanges();
+
+      expect(component.splitPercent).toBe(55);
+      expect(listPane().style.flexBasis).toBe('55%');
+    });
+
+    it('(FR4, FR5) a stored width outside the bounds comes back at the nearest one', async () => {
+      localStorage.setItem(SPLIT_STORAGE_KEY, '99');
+      await render();
+
+      expect(component.splitPercent).toBe(SPLIT_MAX_PERCENT);
+    });
+
+    it('(FR5) a corrupt stored width falls back to the default rather than laying out from it', async () => {
+      localStorage.setItem(SPLIT_STORAGE_KEY, 'forty');
+      await render();
+
+      expect(component.splitPercent).toBe(SPLIT_DEFAULT_PERCENT);
+    });
+
+    it('a drag moves the panes without writing storage; the drop persists once', async () => {
+      await render();
+      component.onRowSelect('team-9');
+
+      component.onSplitPercent(51);
+      component.onSplitPercent(52);
+      expect(component.splitPercent).toBe(52);
+      expect(localStorage.getItem(SPLIT_STORAGE_KEY)).toBeNull();
+
+      component.onSplitCommit(52);
+      expect(localStorage.getItem(SPLIT_STORAGE_KEY)).toBe('52');
+    });
+
+    it('(FR4) the page never stores a width it would refuse to read back', async () => {
+      await render();
+      component.onSplitCommit(1000);
+
+      expect(localStorage.getItem(SPLIT_STORAGE_KEY)).toBe(String(SPLIT_MAX_PERCENT));
+      expect(component.splitPercent).toBe(SPLIT_MAX_PERCENT);
+    });
+
+    it('(FR6) the rendered divider carries the width it is bound to', async () => {
+      await render();
+      component.onRowSelect('team-9');
+      component.onSplitCommit(SPLIT_MIN_PERCENT + SPLIT_COARSE_STEP_PERCENT);
+      fixture.detectChanges();
+
+      expect(divider()!.getAttribute('aria-valuenow')).toBe(
+        String(SPLIT_MIN_PERCENT + SPLIT_COARSE_STEP_PERCENT),
+      );
+    });
+
+    it('(FR7) closing the team removes the split and gives the list the width back', async () => {
+      await render();
+      component.onRowSelect('team-9');
+      fixture.detectChanges();
+      expect(processPane()).not.toBeNull();
+
+      component.closeTeam();
+      fixture.detectChanges();
+
+      expect(component.selectedTeamId).toBeNull();
+      expect(processPane()).toBeNull();
+      expect(divider()).toBeNull();
+      expect(listPane().style.flexBasis).toBe('');
+    });
+
+    it('the Close control in the pane is what closes it', async () => {
+      await render();
+      component.onRowSelect('team-9');
+      fixture.detectChanges();
+
+      const close = fixture.nativeElement.querySelector(
+        '[data-test="close-open-team-btn"]',
+      ) as HTMLElement;
+      expect(close).not.toBeNull();
+      close.click();
+      fixture.detectChanges();
+
+      expect(component.selectedTeamId).toBeNull();
+    });
+
+    it('a dangling team reported by the embedded view drops the selection', async () => {
+      await render();
+      component.onRowSelect('deleted-team');
+      fixture.detectChanges();
+
+      // Through the real binding, so an `(teamUnavailable)` lost in a rename
+      // fails here rather than passing on a direct method call.
+      processStub()!.teamUnavailable.emit('deleted-team');
+      fixture.detectChanges();
+
+      expect(component.selectedTeamId).toBeNull();
+      expect(processPane()).toBeNull();
+    });
+
+    it('re-selecting the team already open changes nothing and writes no URL', async () => {
+      await render();
+      component.onRowSelect('team-9');
+      routerSpy.navigate.calls.reset();
+
+      component.onRowSelect('team-9');
+
+      expect(routerSpy.navigate).not.toHaveBeenCalled();
+    });
+
+    it('the open row is told to the table, so the highlight says which one it is', async () => {
+      await render();
+      component.onRowSelect('team-9');
+      fixture.detectChanges();
+
+      expect(teamTable().selectedTeamId).toBe('team-9');
+    });
+
+    // --- the URL decision (trap T5) ---------------------------------------
+
+    it('(T5) the selected team joins the filter and the page in the URL', async () => {
+      await render();
+      routerSpy.navigate.calls.reset();
+
+      component.onRowSelect('team-9');
+
+      const extras = routerSpy.navigate.calls.mostRecent()
+        .args[1] as NavigationExtras;
+      expect(extras.queryParams).toEqual({ team: 'team-9' });
+      // `replaceUrl`, like every other write on this page. `restoreFromUrl`
+      // reads the ENTRY state and deliberately does not subscribe, so a pushed
+      // history entry would change the address bar on Back and leave the pane
+      // showing the team it named — a URL that lies rather than a Back that
+      // works.
+      expect(extras.replaceUrl).toBeTrue();
+    });
+
+    it('(T5) closing the team takes it back out of the URL', async () => {
+      await render();
+      component.onRowSelect('team-9');
+      routerSpy.navigate.calls.reset();
+
+      component.closeTeam();
+
+      const extras = routerSpy.navigate.calls.mostRecent()
+        .args[1] as NavigationExtras;
+      expect(extras.queryParams).toEqual({});
+    });
+
+    it('(T5) the team survives beside a filter, and the filter beside it', async () => {
+      setUrl({ team: 'team-9', type: 'acme', 'meta.case_id': 'C-1' });
+      apiSpy.getNamespaces.and.returnValue(
+        Promise.resolve([nsSummary('acme', 'Acme', 'd', contract([field('case_id', { index: true })]))]),
+      );
+      await render();
+
+      expect(component.selectedTeamId).toBe('team-9');
+      expect(component.restoredFilter.meta).toEqual({ case_id: 'C-1' });
+    });
+
+    it('(T5) a URL naming a team opens it on arrival — a shared link shows what was sent', async () => {
+      setUrl({ team: 'team-9' });
+      await render();
+
+      expect(component.selectedTeamId).toBe('team-9');
+      expect(processPane()).not.toBeNull();
+    });
+
+    it('(T5) an empty ?team= is not a selection', async () => {
+      setUrl({ team: '' });
+      await render();
+
+      expect(component.selectedTeamId).toBeNull();
+      expect(processPane()).toBeNull();
+    });
+
+    it('(T5) the remembered "back to my list" params carry the open team too', async () => {
+      await render();
+      component.onRowSelect('team-9');
+
+      expect(contextSpy.homeQueryParams).toEqual({ team: 'team-9' });
+    });
+
+    it('(T5) the URL governs the selection for as long as the page lives', async () => {
+      setUrl({ team: 'team-9' });
+      await render();
+      expect(component.selectedTeamId).toBe('team-9');
+
+      // A query-string change on THIS route — `navigate(['/'])` from the Home
+      // menu item, a hand-edited address, a Back. None of them rebuilds this
+      // page, so without tracking the pane would go on showing a team the URL
+      // no longer names.
+      setUrl({});
+      fixture.detectChanges();
+
+      expect(component.selectedTeamId).toBeNull();
+      expect(processPane()).toBeNull();
+    });
+
+    it('(T5) tracking the URL cannot loop: the page\'s own write is a no-op', async () => {
+      await render();
+      component.onRowSelect('team-9');
+
+      // Replay exactly what `writeUrl` composed, the way the router would.
+      queryParamMap$.next(convertToParamMap({ team: 'team-9' }));
+      routerSpy.navigate.calls.reset();
+      fixture.detectChanges();
+
+      expect(component.selectedTeamId).toBe('team-9');
+      expect(routerSpy.navigate).not.toHaveBeenCalled();
     });
   });
 });

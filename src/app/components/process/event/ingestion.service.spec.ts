@@ -3457,3 +3457,166 @@ describe('IngestionService — Story 37-2 (team-stopping reactor wiring)', () =>
     socketB.complete();
   });
 });
+
+// =====================================================================
+// Story 52-1 — a superseded cycle writes NOTHING
+//
+// Before Epic 52 a team switch was a route change: the component, this
+// service and its log were all destroyed together, so an `init()` still
+// waiting on a REST replay resumed against objects nobody read. A
+// `ProcessComponent` that stays mounted while its id changes keeps ONE log
+// across every team it opens, and the in-flight promise becomes a second
+// writer into it — trap T2 arriving by promise rather than by socket, which
+// step (a)'s subscription teardown cannot see.
+// =====================================================================
+
+describe('IngestionService — Story 52-1 (superseded cycles)', () => {
+  let service: IngestionService;
+  let log: MessageLogService;
+  let api: any;
+  let fakeSocket: Subject<any>;
+
+  /** A minimal replayed event: an id the log can dedup on, and a model. */
+  function replayed(id: string): any {
+    return {
+      event: {
+        id,
+        parent_id: null,
+        team_id: 'team-A',
+        timestamp: '2026-08-27T10:00:00Z',
+        sender: makeAddress(),
+        display_type: 'other',
+        content: null,
+        __model__: EVENT_MESSAGE_MODEL,
+        event: { __model__: 'x' },
+      },
+    };
+  }
+
+  beforeEach(() => {
+    fakeSocket = new Subject<any>();
+    api = {
+      getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+      getAgentStates: jasmine.createSpy('getAgentStates').and.resolveTo([]),
+    };
+
+    TestBed.configureTestingModule({
+      providers: [
+        MessageLogService,
+        PerAgentStoreRegistry,
+        ProcessStores,
+        ReplaySeeder,
+        LoadingIndicator,
+        ConnectionToast,
+        NotificationToasts,
+        TeamSocket,
+        LogFeeder,
+        TeamStatusReactor,
+        IngestionService,
+        { provide: ContextService, useValue: contextServiceDouble() },
+        ChatService,
+        { provide: ApiService, useValue: api },
+        {
+          provide: MessageService,
+          useValue: {
+            add: jasmine.createSpy('add'),
+            clear: jasmine.createSpy('clear'),
+          },
+        },
+      ],
+    });
+    service = TestBed.inject(IngestionService);
+    log = TestBed.inject(MessageLogService);
+    spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
+      fakeSocket as unknown as WebSocketSubject<any>,
+    );
+  });
+
+  afterEach(() => {
+    try {
+      fakeSocket.complete();
+    } catch {
+      /* already closed */
+    }
+  });
+
+  it('a replay that resolves after close() never reaches the log', async () => {
+    let release: (events: any[]) => void = () => undefined;
+    api.getEvents.and.returnValue(
+      new Promise<any[]>((r) => {
+        release = r;
+      }),
+    );
+
+    const pending = service.init('team-A', false);
+    // Let `getAgentStates` settle so `init()` is parked on `getEvents`.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    service.close();
+    release([replayed('evt-A-1')]);
+    await pending;
+
+    expect(log.snapshot()).toEqual([]);
+  });
+
+  it("a replay that resolves after a NEWER init never reaches the new team's log", async () => {
+    let release: (events: any[]) => void = () => undefined;
+    api.getEvents.and.returnValue(
+      new Promise<any[]>((r) => {
+        release = r;
+      }),
+    );
+
+    const pending = service.init('team-A', false);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    // Team B is opened while A's history is still in flight.
+    await service.init('team-B', true);
+    release([replayed('evt-A-1')]);
+    await pending;
+
+    expect(log.snapshot()).toEqual([]);
+  });
+
+  it('the state seed of a superseded cycle never issues its event replay', async () => {
+    let release: (states: any[]) => void = () => undefined;
+    api.getAgentStates.and.returnValue(
+      new Promise<any[]>((r) => {
+        release = r;
+      }),
+    );
+
+    const pending = service.init('team-A', false);
+    await Promise.resolve();
+
+    service.close();
+    release([{ agent_id: 'a-1', name: '@A', state: {}, updated_at: '2026-08-27T10:00:00Z' }]);
+    await pending;
+
+    expect(log.snapshot()).toEqual([]);
+    // The second half of the replay belongs to a cycle that no longer exists.
+    expect(api.getEvents).not.toHaveBeenCalled();
+  });
+
+  it('close() empties the log and leaves the transport reusable for the next team', async () => {
+    await service.init('team-A', true);
+    log.append(replayed('evt-A-1').event);
+    expect(log.snapshot().length).toBe(1);
+
+    service.close();
+    expect(log.snapshot()).toEqual([]);
+
+    // The socket streams survive `close()` — only `ngOnDestroy` completes them
+    // — so the same service can open the next team.
+    const socketB = new Subject<any>();
+    (teamSocket() as any).createWebSocket = jasmine
+      .createSpy('createWebSocket')
+      .and.returnValue(socketB as unknown as WebSocketSubject<any>);
+    await service.init('team-B', true);
+    socketB.next(replayed('evt-B-1').event);
+    expect(service.processId).toBe('team-B');
+    socketB.complete();
+  });
+});

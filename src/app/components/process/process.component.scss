@@ -7,17 +7,40 @@ body {
   overflow: hidden; /* so the entire page won't scroll */
 }
 
-/* Flex container for the layout */
+/* Where this view's height comes from (Epic 52).
+   Standalone, on `/process/:id`, it owns the page and there is nothing above it
+   to inherit a height from, so it measures off the viewport as it always has.
+   Embedded beside the teams list it owns a PANE, and the host overrides the
+   variable to `auto` and sizes it with flex instead — a view that kept
+   measuring off the viewport there would be taller than the pane holding it by
+   however much of the page sits above, and both its scroll regions would run
+   off the bottom. */
+:host {
+  --process-height: calc(100vh - 80px);
+  display: flex;
+  flex-direction: column;
+  height: var(--process-height);
+  min-height: 0;
+}
+
+/* Flex container for the layout. Takes its height from the host rather than
+   naming the viewport a second time — one place decides how tall this view is. */
 .main-container {
   display: flex;
-  height: calc(100vh - 80px);
+  flex: 1;
+  min-height: 0;
   background-color: #f2f7f9;
   border-radius: 6px;
 }
 
-/* Left Column Styling */
+/* Left Column Styling.
+   `min-width: 0` (Epic 52 trap T4): at full width these columns never hit
+   their content's intrinsic minimum, so the flex ratios above were the whole
+   story. In a narrow pane they do, and without the unlock a column refuses to
+   shrink past its widest child and pushes the other one off the edge. */
 .left-column {
   flex: 2.1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -41,6 +64,7 @@ body {
 /* Right Column Styling */
 .right-column {
   flex: 2; /* Initial flex value when expanded */
+  min-width: 0; /* see .left-column — Epic 52 trap T4 */
   padding: 1rem;
   display: flex;
   flex-direction: column;
