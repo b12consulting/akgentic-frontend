@@ -9,6 +9,7 @@ import {
   ViewChildren,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import {
@@ -78,6 +79,7 @@ export interface TeamDescriptionSave {
     InputTextModule,
     TeamMetadataPipe,
     TeamTitlePipe,
+    TranslatePipe,
   ],
   templateUrl: './team-table.component.html',
   styleUrl: './team-table.component.scss',

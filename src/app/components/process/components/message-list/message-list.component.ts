@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, inject, ViewChild } from '@angular/core';
 
+import { TranslatePipe } from '@ngx-translate/core';
 import { ButtonModule } from 'primeng/button';
 import { FieldsetModule } from 'primeng/fieldset';
 import { Table, TableModule } from 'primeng/table';
@@ -36,6 +37,7 @@ const LEGEND_FALLBACK: Record<NotificationSeverity, string | null> = {
     FieldsetModule,
     ButtonModule,
     CopyButtonComponent,
+    TranslatePipe,
   ],
   templateUrl: './message-list.component.html',
   styleUrl: './message-list.component.scss',

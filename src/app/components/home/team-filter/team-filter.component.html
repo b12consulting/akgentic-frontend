@@ -31,8 +31,8 @@
     ></p-toggleswitch>
     <label
       for="filter-namespace-toggle"
-      title="Show only teams created from the selected team type"
-      >This team type only</label
+      [title]="'home.filter.thisTeamTypeOnlyTitle' | translate"
+      >{{ "home.filter.thisTeamTypeOnly" | translate }}</label
     >
   </span>
 
@@ -50,6 +50,11 @@
       >{{ metadataKeyLabel(f.key) }}</label
     >
     <!--
+      The minimum term length travels as a translation PARAMETER, not as a
+      number concatenated onto a phrase. Whether the digit leads the sentence is
+      grammar, and grammar differs per language; the concatenation this replaced
+      pinned English word order into the binding itself.
+
       PLAIN TEXT regardless of the field's key name or declared pattern: no date
       picker, no select, no client-side pattern check, no casefolding and no
       escaping. The term travels verbatim — the store escapes for its own
@@ -63,7 +68,7 @@
       [attr.data-test]="'filter-meta-' + f.key"
       [ngModel]="terms[f.key] || ''"
       (ngModelChange)="onTermChanged(f.key, $event)"
-      [placeholder]="minTermLength + '+ characters to filter'"
+      [placeholder]="'home.filter.termPlaceholder' | translate: { count: minTermLength }"
     />
   </span>
 
@@ -79,11 +84,11 @@
     pButton
     size="small"
     type="button"
-    label="Reset"
+    [label]="'home.filter.reset' | translate"
     icon="pi pi-filter-slash"
     severity="secondary"
     [text]="true"
-    title="Clear every filter"
+    [title]="'home.filter.resetTitle' | translate"
     (click)="reset()"
     class="extra-small-button team-filter__reset"
     data-test="reset-filter-btn"

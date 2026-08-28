@@ -10,6 +10,8 @@ import {
 import { ChatMessage } from '../../selectors/chat-message.model';
 import { ActorAddress } from '../../../../protocol/message.types';
 
+import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
+
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {
     __actor_address__: true,
@@ -67,7 +69,7 @@ describe('ChatHumanModalComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [ChatHumanModalComponent, NoopAnimationsModule],
-      providers: [provideMarkdown()],
+      providers: [provideMarkdown(), provideTranslateTesting()],
     }).compileComponents();
 
     fixture = TestBed.createComponent(ChatHumanModalComponent);
@@ -80,9 +82,20 @@ describe('ChatHumanModalComponent', () => {
   });
 
   describe('headerText', () => {
-    it('should return default header when no agentPair', () => {
+    it('yields no header of its own when there is no agentPair', () => {
+      // `null`, not a default sentence: the fallback is COPY and belongs to the
+      // template, which is where the translation layer is. Everything this
+      // property does return is a backend-authored agent name (T6).
       fixture.detectChanges();
-      expect(component.headerText).toBe('Human Input');
+      expect(component.headerText).toBeNull();
+    });
+
+    it('falls back to the translated header key when there is no agentPair', () => {
+      fixture.componentRef.setInput('visible', true);
+      fixture.detectChanges();
+
+      const dialog = document.querySelector('.p-dialog-title');
+      expect(dialog?.textContent?.trim()).toBe('chat.human.header');
     });
 
     it('should format header with agent names', () => {

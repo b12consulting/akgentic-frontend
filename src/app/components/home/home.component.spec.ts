@@ -37,6 +37,8 @@ import {
   TeamTableComponent,
 } from './team-table/team-table.component';
 
+import { provideTranslateTesting, setTestTranslations } from '../../../testing/i18n-testing';
+
 /**
  * A `NamespaceSummary` fixture carrying neutral values for every field these
  * specs do not exercise. Only `namespace` / `name` / `description` and the
@@ -252,6 +254,7 @@ describe('HomeComponent', () => {
     await TestBed.configureTestingModule({
       imports: [HomeComponent, CommonModule, NoopAnimationsModule],
       providers: [
+        provideTranslateTesting(),
         { provide: ApiService, useValue: apiSpy },
         { provide: ContextService, useValue: contextSpy },
         { provide: AuthService, useValue: authSpy },
@@ -1117,6 +1120,9 @@ describe('HomeComponent', () => {
   // paging state it owns reaches the child's inputs.
 
   it('(28.2 AC8a) the page feeds totalCount, rows and first into the table', async () => {
+    setTestTranslations({
+      team: { table: { currentPageReport: '<<{first}|{last}|{totalRecords}>>' } },
+    });
     contextSpy.totalCount = 1000;
     totalCount$.next(1000);
     fixture.detectChanges();
@@ -1138,7 +1144,10 @@ describe('HomeComponent', () => {
     expect(table.totalRecords).toBe(1000);
     expect(table.rows).toBe(component.rows);
     expect(table.first).toBe(250);
-    // Rendered, not merely bound: the "X–Y of N" report is on screen.
+    // Rendered, not merely bound: the "X–Y of N" report is on screen. T3 — the
+    // report is a translated template and the key-echoing test loader would
+    // otherwise leave `{totalRecords}` unsubstituted, so this would pass on a
+    // page that shows no count at all. The registered template is synthetic.
     expect(fixture.nativeElement.textContent as string).toContain('1000');
   });
 
@@ -1510,6 +1519,7 @@ describe('HomeComponent', () => {
       await TestBed.configureTestingModule({
         imports: [HomeComponent, CommonModule, NoopAnimationsModule],
         providers: [
+          provideTranslateTesting(),
           { provide: ApiService, useValue: apiSpy },
           { provide: ContextService, useValue: contextSpy },
           { provide: AuthService, useValue: authSpy },
@@ -1844,6 +1854,7 @@ describe('HomeComponent', () => {
       await TestBed.configureTestingModule({
         imports: [HomeComponent, CommonModule, NoopAnimationsModule],
         providers: [
+          provideTranslateTesting(),
           { provide: ApiService, useValue: apiSpy },
           { provide: ContextService, useValue: contextSpy },
           { provide: AuthService, useValue: authSpy },
@@ -2475,7 +2486,7 @@ describe('HomeComponent', () => {
       expect(selectLabel).not.toBeNull();
       // The toggle's own caption is asserted exactly in the form's spec; here
       // the point is only that the two differ.
-      expect(selectLabel!.textContent?.trim()).toBe('Team type');
+      expect(selectLabel!.textContent?.trim()).toBe('home.teamType');
     });
 
     it('(AC9) selecting a DIFFERENT type moves the selection', async () => {

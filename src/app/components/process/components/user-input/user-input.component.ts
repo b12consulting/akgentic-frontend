@@ -9,6 +9,7 @@ import { DropdownModule } from 'primeng/dropdown';
 import { FloatLabelModule } from 'primeng/floatlabel';
 import { MultiSelectModule } from 'primeng/multiselect';
 import { TextareaModule } from 'primeng/textarea';
+import { TranslatePipe } from '@ngx-translate/core';
 import { MentionModule } from 'angular-mentions';
 
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
@@ -43,6 +44,7 @@ type SubmitPhase = 'idle' | 'restarting' | 'sending';
     DropdownModule,
     MultiSelectModule,
     MentionModule,
+    TranslatePipe,
   ],
   templateUrl: './user-input.component.html',
   styleUrl: './user-input.component.scss',
@@ -69,8 +71,8 @@ export class ProcessUserInputComponent implements OnInit {
    * come from one value they cannot disagree.
    */
   phase: SubmitPhase = 'idle';
-  /** Submit-control label while the phase is `'restarting'`. */
-  readonly restoreLabel: string = 'Restarting team…';
+  /** Submit-control label KEY while the phase is `'restarting'`. */
+  readonly restoreLabelKey: string = 'chat.input.restarting';
 
   /**
    * The one predicate the re-entrancy guard and the template's `[loading]` /

@@ -15,6 +15,7 @@ import {
   WorkspaceRegistryService,
 } from '../../selectors/workspace-registry.selector';
 import { WorkspaceExplorerComponent } from '../workspace-explorer/workspace-explorer.component';
+import { TranslatePipe } from '@ngx-translate/core';
 
 /** One resolved member row rendered as a chip (name + role). */
 interface MemberRow {
@@ -64,6 +65,7 @@ interface WorkspaceTabsVm {
     AvatarModule,
     TooltipModule,
     WorkspaceExplorerComponent,
+    TranslatePipe,
   ],
   templateUrl: './workspace-tabs.component.html',
   styleUrl: './workspace-tabs.component.scss',

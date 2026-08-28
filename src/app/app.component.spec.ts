@@ -20,6 +20,10 @@ import { FaviconService } from './core/config/favicon.service';
 import { NotificationToastService } from './core/ui/notification-toast.service';
 import { ViewService } from './core/ui/view.service';
 
+import { TranslatePipe } from '@ngx-translate/core';
+
+import { provideTranslateTesting } from '../testing/i18n-testing';
+
 function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
   return {
     team_id: 'team-1',
@@ -86,6 +90,7 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
     await TestBed.configureTestingModule({
       imports: [AppComponent, NoopAnimationsModule, RouterTestingModule],
       providers: [
+        provideTranslateTesting(),
         { provide: ContextService, useValue: contextStub },
         { provide: ViewService, useValue: viewStub },
         { provide: AuthService, useValue: authStub },
@@ -96,15 +101,17 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
     })
       .overrideComponent(AppComponent, {
         set: {
-          // TeamMetadataPipe belongs in EVERY override list that keeps the
-          // real template: the override REPLACES the component's own imports,
-          // so a missing pipe is an NG0302 at render, not a silent no-op.
+          // TeamMetadataPipe and TranslatePipe belong in EVERY override list
+          // that keeps the real template: the override REPLACES the component's
+          // own imports, so a missing pipe is an NG0302 at render, not a silent
+          // no-op.
           imports: [
             CommonModule,
             MenubarModule,
             TagModule,
             RouterModule,
             TeamMetadataPipe,
+            TranslatePipe,
           ],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
@@ -133,11 +140,17 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
     fixture.detectChanges();
   }
 
+  /**
+   * The status tags' RENDERED text.
+   *
+   * Read from the DOM, not from a `value` attribute: the tag's value is a
+   * property binding now (it goes through the translation pipe), so there is no
+   * attribute to read and `getAttribute('value')` returns '' for every tag —
+   * which every assertion here would have reported as "no tag rendered".
+   */
   function headerTagValues(): string[] {
     const nodes = fixture.nativeElement.querySelectorAll('p-tag');
-    return Array.from(nodes).map(
-      (n: any) => n.getAttribute('value') || '',
-    );
+    return Array.from(nodes).map((n: any) => (n.textContent ?? '').trim());
   }
 
   // --- AC5 — AppComponent drops getCurrentTeam fetch -------------------
@@ -161,8 +174,8 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Alpha');
     const tags = headerTagValues();
-    expect(tags).toContain('Running');
-    expect(tags).not.toContain('Stopped');
+    expect(tags).toContain('team.status.running');
+    expect(tags).not.toContain('team.status.stopped');
   });
 
   it('(AC9 10.6) header renders Stopped tag when currentTeam$ emits a stopped team', async () => {
@@ -172,8 +185,8 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Beta');
     const tags = headerTagValues();
-    expect(tags).toContain('Stopped');
-    expect(tags).not.toContain('Running');
+    expect(tags).toContain('team.status.stopped');
+    expect(tags).not.toContain('team.status.running');
   });
 
   // --- Header identity + metadata --------------------------------------
@@ -330,24 +343,48 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
   });
 
   it('(AC2) right-column toggle rebuilds items with a new Hide/Show details label', async () => {
+    // Found by `id`, not by the caption it renders. The item is the same item in
+    // both states, so matching on its label — which used to be the only handle it
+    // had — meant the lookup and the assertion tested the same string.
+    const detailsLabel = () => component.items?.find((i) => i.id === 'details')?.label;
+
     contextStub.currentProcessId$.next('team-A');
     await fixture.whenStable();
     fixture.detectChanges();
     viewStub.isRightColumnCollapsed$.next(false);
     await fixture.whenStable();
     fixture.detectChanges();
-    const expandedLabel = component.items?.find(
-      (i) => i.label === 'Hide details' || i.label === 'Show details',
-    )?.label;
-    expect(expandedLabel).toBe('Hide details');
+    expect(detailsLabel()).toBe('chrome.hideDetails');
 
     viewStub.isRightColumnCollapsed$.next(true);
     await fixture.whenStable();
     fixture.detectChanges();
-    const collapsedLabel = component.items?.find(
-      (i) => i.label === 'Hide details' || i.label === 'Show details',
-    )?.label;
-    expect(collapsedLabel).toBe('Show details');
+    expect(detailsLabel()).toBe('chrome.showDetails');
+  });
+
+  // The `hideHome` filter used to be `item.label != 'Home'` — a rule that reads
+  // the rendered CAPTION to decide what a control is. Translating the menubar
+  // would have made it match nothing and quietly stopped hiding the entry, in
+  // every language but English, with nothing failing to say so. It matches on
+  // `id` now, and these two are what stop it drifting back.
+  it('hides the Home entry when the deployment asks for it', async () => {
+    configStub.hideHome = true;
+    contextStub.currentProcessId$.next('team-A');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.items?.map((i) => i.id)).not.toContain('home');
+    // And nothing else went with it.
+    expect(component.items?.map((i) => i.id)).toContain('clear');
+  });
+
+  it('keeps the Home entry when the deployment does not', async () => {
+    configStub.hideHome = false;
+    contextStub.currentProcessId$.next('team-A');
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.items?.map((i) => i.id)).toContain('home');
   });
 
   it('(AC3) currentUser$ change does not call getCurrentTeam or getTeam', async () => {
@@ -417,7 +454,7 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
 
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('Alpha');
-    expect(headerTagValues()).toContain('Running');
+    expect(headerTagValues()).toContain('team.status.running');
     expect(contextStub.getCurrentTeam).not.toHaveBeenCalled();
     expect(apiStub.getTeam).not.toHaveBeenCalled();
   });
@@ -468,6 +505,7 @@ describe('AppComponent — notification toast rendering (Story 31-3)', () => {
     await TestBed.configureTestingModule({
       imports: [AppComponent, NoopAnimationsModule, RouterTestingModule],
       providers: [
+        provideTranslateTesting(),
         MessageService,
         { provide: ContextService, useValue: contextStub },
         {
@@ -796,6 +834,7 @@ describe('AppComponent — single-toast removal (Story 31-5)', () => {
     await TestBed.configureTestingModule({
       imports: [AppComponent, NoopAnimationsModule, RouterTestingModule],
       providers: [
+        provideTranslateTesting(),
         MessageService,
         { provide: ContextService, useValue: contextStub },
         {

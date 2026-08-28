@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { TextareaModule } from 'primeng/textarea';
+import { TranslatePipe } from '@ngx-translate/core';
 import { MarkdownModule } from 'ngx-markdown';
 
 import { ChatMessage } from '../../selectors/chat-message.model';
@@ -35,6 +36,7 @@ export interface AnsweredRequest {
     ButtonModule,
     MarkdownModule,
     DatePipe,
+    TranslatePipe,
   ],
   templateUrl: './chat-human-modal.component.html',
   styleUrl: './chat-human-modal.component.scss',
@@ -52,9 +54,19 @@ export class ChatHumanModalComponent {
    *  (ADR-027 Decision 2) — the id the backend resolves human-input by. */
   replyBuffers: Map<string, string> = new Map();
 
-  get headerText(): string {
+  /**
+   * The header the AGENTS give this dialog, or `null` when there is no pair.
+   *
+   * `null` rather than a default sentence, and this is the whole of T6 in one
+   * property: the two names are the backend's, they have no translation key and
+   * they never will. Only the no-pair fallback is copy, so only it goes through
+   * the layer — in the template, where the boundary is visible. Piping this
+   * string through a lookup instead would "work" (a miss echoes its input) while
+   * quietly making every agent name a candidate for accidental translation.
+   */
+  get headerText(): string | null {
     const pair = this.agentPair();
-    if (!pair) return 'Human Input';
+    if (!pair) return null;
     const sender = makeAgentNameUserFriendly(pair.sender.name);
     const recipient = makeAgentNameUserFriendly(pair.recipient.name);
     return `${sender} ⇒ ${recipient}`;

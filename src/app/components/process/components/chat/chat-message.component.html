@@ -7,7 +7,7 @@
   <span class="collapsed-label">
     [<span *ngIf="showAgentNames">{{ message().label }}</span><span
       *ngIf="!showAgentNames"
-    >{{ collapsedFallback() }}</span><span
+    >{{ collapsedFallback() | translate }}</span><span
       *ngIf="message().rule === 3 && notification()"
       class="notification-icon collapsed-notification-icon"
     > (<span class="hand-raised">🙋</span>)</span>]<span
@@ -18,7 +18,7 @@
   <p-button
     *ngIf="message().rule === 3"
     size="small"
-    label="Reply"
+    [label]="'chat.reply' | translate"
     [disabled]="!notification()"
     (click)="onOpenModal($event)"
     class="open-button"
@@ -95,7 +95,7 @@
       <p-button
         *ngIf="message().rule === 3"
         size="small"
-        label="Reply"
+        [label]="'chat.reply' | translate"
         [disabled]="!notification()"
         (click)="onOpenModal($event)"
         class="open-button"

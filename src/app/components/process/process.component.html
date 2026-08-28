@@ -15,7 +15,7 @@
       <div class="right-header">
         <p-selectbutton
           [options]="(visualizationOptions$ | async) ?? []"
-          optionLabel="label"
+          optionLabel="labelKey"
           optionValue="value"
           aria-labelledby="basic"
           [ngModel]="currentVisualizationMode"
@@ -23,7 +23,7 @@
           style="background-color: #ffffff"
           ><ng-template #item let-item>
             <i [class]="item.icon"></i>
-            <span>{{ item.label }}</span>
+            <span>{{ item.labelKey | translate }}</span>
           </ng-template></p-selectbutton
         >
       </div>

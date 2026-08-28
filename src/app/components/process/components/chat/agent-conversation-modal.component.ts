@@ -13,6 +13,8 @@ import { agentConversation } from '../../selectors/agent-conversation.selector';
 import { ChatMessage } from '../../selectors/chat-message.model';
 import { NodeInterface } from '../../models/types';
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
+import { TranslatePipe } from '@ngx-translate/core';
+
 import { ChatMessageComponent } from './chat-message.component';
 
 /** The identity a caller needs to move the app's selection to an agent. */
@@ -54,7 +56,7 @@ const COLLAPSIBLE_RULES: ReadonlySet<number> = new Set([3, 4, 6]);
 @Component({
   selector: 'app-agent-conversation-modal',
   standalone: true,
-  imports: [CommonModule, DialogModule, ChatMessageComponent],
+  imports: [CommonModule, DialogModule, ChatMessageComponent, TranslatePipe],
   templateUrl: './agent-conversation-modal.component.html',
   styleUrl: './agent-conversation-modal.component.scss',
 })
@@ -86,11 +88,16 @@ export class AgentConversationModalComponent {
     () => this.agents().find((a) => a.name === this.selectedAgentId()) ?? null,
   );
 
-  readonly headerText = computed(() => {
+  /**
+   * The header the SELECTED AGENT gives this dialog, or `null` when none is.
+   *
+   * `null` rather than a default sentence: the name is the backend's and has no
+   * translation key (T6), so only the fallback is copy and only the fallback
+   * goes through the layer — in the template, where the boundary shows.
+   */
+  readonly headerText = computed<string | null>(() => {
     const agent = this.selectedAgent();
-    return agent
-      ? makeAgentNameUserFriendly(agent.actorName)
-      : 'Agent conversation';
+    return agent ? makeAgentNameUserFriendly(agent.actorName) : null;
   });
 
   /** The selected agent's turns, with this reader's expansion applied. */

@@ -10,6 +10,7 @@ import {
   OnInit,
   ViewChild,
 } from '@angular/core';
+import { TranslatePipe } from '@ngx-translate/core';
 import { combineLatest, Subscription } from 'rxjs';
 
 import { ChatMessage, ENTRY_POINT_NAME } from '../../selectors/chat-message.model';
@@ -83,6 +84,15 @@ export type DisplayItem = TurnDisplayItem | { kind: 'day'; data: DaySeparator };
  * The per-agent `akgent-chat` trace keeps its own stick-to-bottom autoscroll —
  * the two surfaces diverge on purpose (see `akgent-chat.component.ts#scroll()`).
  */
+/**
+ * The status pill's key while the view is following the newest turn.
+ *
+ * A named constant because TWO rules read it: the pill's own label and the glyph
+ * `indicatorIcon` picks. A literal repeated in both is a rename away from an
+ * icon that quietly stops matching its label.
+ */
+const AUTO_SCROLLING_KEY = 'chat.autoScrolling';
+
 @Component({
   selector: 'app-chat-panel',
   standalone: true,
@@ -93,6 +103,7 @@ export type DisplayItem = TurnDisplayItem | { kind: 'day'; data: DaySeparator };
     ChatHumanModalComponent,
     AgentConversationModalComponent,
     ProcessUserInputComponent,
+    TranslatePipe,
   ],
   templateUrl: './chat-panel.component.html',
   styleUrl: './chat-panel.component.scss',
@@ -355,7 +366,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   onJumpToLatest(): void {
     this.following = true;
     this.unseen = false;
-    this.indicatorLabel = 'Auto scrolling';
+    this.indicatorLabel = AUTO_SCROLLING_KEY;
     this.anchorId = null;
     this.clearSpacer();
     this.scrollToBottom();
@@ -450,21 +461,29 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     return messagesBottom > c.scrollTop + c.clientHeight + 4;
   }
 
-  /** The status-pill label for the current state (pure). */
+  /**
+   * The status pill's translation KEY for the current state (pure).
+   *
+   * A key rather than a sentence, and not only because the template needs one:
+   * `indicatorIcon` below picks the glyph by comparing against this value. Held
+   * as copy, that comparison would have broken the moment the pill was
+   * translated — the icon would silently fall through to the down-arrow in every
+   * language but English, and nothing would have failed to say so.
+   */
   private computeIndicatorLabel(belowFold = this.newestMessageBelowFold()): string | null {
-    // "Auto scrolling" only while the process is RUNNING — a stopped team has
+    // Auto-scrolling only while the process is RUNNING — a stopped team has
     // nothing to follow.
     if (this.following && this.contextService.currentTeamRunning$.value) {
-      return 'Auto scrolling';
+      return AUTO_SCROLLING_KEY;
     }
     if (!belowFold) return null;
-    return this.unseen ? 'New messages' : 'Messages';
+    return this.unseen ? 'chat.newMessages' : 'chat.messages';
   }
 
   /** Icon class for the status pill — a "following" glyph while auto scrolling,
-   *  a down-arrow for the jump-to-latest states (keyed off the shown label). */
+   *  a down-arrow for the jump-to-latest states (keyed off the shown state). */
   get indicatorIcon(): string {
-    return this.indicatorLabel === 'Auto scrolling' ? 'pi-sync' : 'pi-arrow-down';
+    return this.indicatorLabel === AUTO_SCROLLING_KEY ? 'pi-sync' : 'pi-arrow-down';
   }
 
   /** Apply the pill label; clears `unseen` once the user is at the bottom

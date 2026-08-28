@@ -115,7 +115,7 @@
         [id]="'metadata-index-' + field.key"
         class="team-metadata-modal__index"
         [attr.data-test]="'metadata-index-' + field.key"
-      >filterable</small>
+      >{{ "home.metadata.filterable" | translate }}</small>
 
       <!-- The client-side pattern complaint — shown on `invalid && touched`,
            the framework's own display idiom: silent until the field is first
@@ -128,7 +128,7 @@
         [id]="'metadata-pattern-error-' + field.key"
         class="team-metadata-modal__error"
         [attr.data-test]="'metadata-pattern-error-' + field.key"
-      >{{ patternMessageFor(field) }}</small>
+      >{{ patternMessageKey(field) | translate: { pattern: field.pattern } }}</small>
     </div>
 
     <!-- The server's rejection message. Kept inside the dialog with the input
@@ -165,13 +165,15 @@
       id="metadata-blocked-hint"
       class="team-metadata-modal__blocked-hint"
       data-test="metadata-blocked-hint"
-    >Required: {{ missingMandatoryLabels.join(', ') }}</small>
+    >{{
+      "home.metadata.required" | translate: { fields: missingMandatoryLabels.join(", ") }
+    }}</small>
     <button
       pButton
       type="button"
       size="small"
       severity="secondary"
-      label="Cancel"
+      [label]="'common.cancel' | translate"
       [disabled]="pending"
       (click)="onCancel()"
       data-test="metadata-cancel"
@@ -180,7 +182,7 @@
       pButton
       type="button"
       size="small"
-      label="Create"
+      [label]="'common.create' | translate"
       [icon]="pending ? 'pi pi-spinner pi-spin' : 'pi pi-plus'"
       [disabled]="!canConfirm || pending"
       [attr.aria-describedby]="missingMandatoryLabels.length > 0 ? 'metadata-blocked-hint' : null"

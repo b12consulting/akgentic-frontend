@@ -104,14 +104,14 @@ describe('I18nService', () => {
 
       // Any key from the compiled-in dictionary would do; asserting it differs
       // from the key is the point, not what it says.
-      expect(translate.instant('common.save')).not.toBe('common.save');
+      expect(translate.instant('common.create')).not.toBe('common.create');
     });
 
     it('ignores a language it does not offer, however it was asked for', async () => {
-      spyOn(i18n, 'readQueryParam').and.returnValue('fr');
       localStorage.setItem(LANGUAGE_STORAGE_KEY, 'de');
       overrideNavigatorLanguage('nl-BE');
       configure();
+      spyOn(i18n, 'readQueryParam').and.returnValue('fr');
 
       await expectAsync(i18n.init()).toBeResolvedTo(BUILT_IN_LANGUAGE);
     });

@@ -1,21 +1,127 @@
 {
   "common": {
-    "actions": "Actions",
     "cancel": "Annuler",
-    "close": "Fermer",
-    "confirm": "Confirmer",
     "create": "Créer",
-    "delete": "Supprimer",
-    "description": "Description",
-    "error": "Erreur",
-    "loading": "Chargement",
-    "name": "Nom",
-    "no": "Non",
-    "refresh": "Actualiser",
-    "retry": "Réessayer",
-    "save": "Enregistrer",
-    "search": "Rechercher",
-    "status": "Statut",
-    "yes": "Oui"
+    "refresh": "Actualiser"
+  },
+  "home": {
+    "teamType": "Type d'équipe",
+    "teamTypePlaceholder": "Sélectionnez un type d'équipe",
+    "showAllNamespaces": "Afficher tous les espaces de noms",
+    "configuration": "Configuration",
+    "filters": "Filtres",
+    "hideFilters": "Masquer les filtres",
+    "filtersActiveTitle": "Un filtre est actif — la liste est restreinte. Affichez les filtres pour le voir ou l’effacer.",
+    "hideFiltersTitle": "Masquer la ligne de filtres",
+    "showFiltersTitle": "Afficher la ligne de filtres",
+    "unsavedChanges": "Modifications non enregistrées",
+    "filter": {
+      "thisTeamTypeOnly": "Ce type d'équipe uniquement",
+      "thisTeamTypeOnlyTitle": "N'afficher que les équipes créées à partir du type sélectionné",
+      "termPlaceholder": "{{count}} caractères minimum pour filtrer",
+      "reset": "Réinitialiser",
+      "resetTitle": "Effacer tous les filtres"
+    },
+    "metadata": {
+      "filterable": "filtrable",
+      "patternMismatch": "Doit correspondre à {{pattern}}",
+      "formatInvalid": "La valeur n'est pas au format attendu",
+      "required": "Requis : {{fields}}"
+    }
+  },
+  "team": {
+    "table": {
+      "name": "Nom",
+      "metadata": "Métadonnées",
+      "createdAt": "Date de création",
+      "status": "Statut",
+      "id": "Identifiant d'équipe",
+      "currentPageReport": "{first}–{last} sur {totalRecords}",
+      "descriptionPrompt": "Cliquez pour ajouter une description...",
+      "descriptionPlaceholder": "Saisissez une description d'équipe"
+    },
+    "status": {
+      "stopped": "Arrêtée",
+      "running": "En cours",
+      "working": "Active",
+      "idle": "Inactive",
+      "workingTitle": "Active lors du dernier rafraîchissement",
+      "idleTitle": "Inactive lors du dernier rafraîchissement"
+    },
+    "action": {
+      "stop": "Arrêter l'équipe",
+      "restore": "Redémarrer l'équipe",
+      "delete": "Supprimer l'équipe"
+    }
+  },
+  "chat": {
+    "loadingTitle": "Chargement du processus...",
+    "loadingDesc": "Veuillez patienter pendant la récupération de la conversation.",
+    "emptyTitle": "Aucun message",
+    "emptyDesc": "Démarrez une conversation en envoyant un message ci-dessous.",
+    "autoScrolling": "Défilement automatique",
+    "newMessages": "Nouveaux messages",
+    "messages": "Messages",
+    "reply": "Répondre",
+    "messageForYou": "Message pour vous",
+    "teamMessage": "Message d'équipe",
+    "input": {
+      "sendToPrefix": "Envoyer à {{agents}}",
+      "clearSendTo": "Effacer la sélection des destinataires",
+      "processInput": "Message",
+      "sendAs": "Envoyer en tant que",
+      "sendTo": "Envoyer à",
+      "allSupervisors": "Tous (superviseurs)",
+      "submit": "Envoyer",
+      "restarting": "Redémarrage de l'équipe…"
+    },
+    "human": {
+      "header": "Intervention humaine",
+      "noRequests": "Aucune demande pour cette paire.",
+      "answered": "Traitées",
+      "pending": "En attente",
+      "yourReply": "Votre réponse :",
+      "replyPlaceholder": "Saisissez votre réponse...",
+      "send": "Envoyer"
+    },
+    "reader": {
+      "header": "Conversation de l’agent",
+      "agentList": "Agents de l'équipe",
+      "noAgents": "Cette équipe n'a encore aucun agent.",
+      "noTurns": "{{agent}} n'a encore envoyé ni reçu aucun message.",
+      "selectAgent": "Sélectionnez un agent pour lire sa conversation."
+    }
+  },
+  "messageList": {
+    "broadcast": "Tous",
+    "relaunch": "Relancer (N/D)",
+    "emptyTitle": "Aucun message à afficher",
+    "emptyDesc": "Les messages échangés entre agents apparaîtront ici."
+  },
+  "chrome": {
+    "logoAlt": "Logo",
+    "goHome": "Aller à l'accueil",
+    "home": "Accueil",
+    "clear": "Effacer",
+    "showDetails": "Afficher les détails",
+    "hideDetails": "Masquer les détails",
+    "logout": "Déconnexion"
+  },
+  "visualization": {
+    "team": "Équipe",
+    "member": "Membre",
+    "knowledgeGraph": "Graphe de connaissances",
+    "workspaces": "Espaces de travail",
+    "messages": "Messages"
+  },
+  "panels": {
+    "listView": "Vue liste",
+    "graphView": "Vue graphe",
+    "chatWith": "Discuter avec « {{agent}} »",
+    "selectAgent": "Sélectionner un agent",
+    "noAgentsTitle": "Aucun agent disponible",
+    "noAgentsDesc": "L'interface de discussion et l'état des agents apparaîtront ici.",
+    "accessibleBy": "Accessible par :",
+    "noMembers": "Aucun membre ne peut accéder à cet espace de travail"
   }
 }

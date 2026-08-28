@@ -24,6 +24,7 @@ import { SelectModule } from 'primeng/select';
 import { TableLazyLoadEvent } from 'primeng/table';
 import { DialogModule } from 'primeng/dialog';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { ConfigService } from '../../core/config/config.service';
@@ -65,6 +66,7 @@ const PAGE_SIZE = 250;
     TeamMetadataModalComponent,
     TeamFilterComponent,
     TeamTableComponent,
+    TranslatePipe,
   ],
   templateUrl: './home.component.html',
   styleUrl: './home.component.scss',

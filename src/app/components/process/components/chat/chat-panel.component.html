@@ -43,9 +43,9 @@
       <div class="empty-section">
         <div class="empty-section-box">
           <i class="pi pi-spin pi-spinner chat-placeholder-icon"></i>
-          <div class="chat-placeholder-title">Loading process...</div>
+          <div class="chat-placeholder-title">{{ "chat.loadingTitle" | translate }}</div>
           <div class="chat-placeholder-desc">
-            Please wait while we fetch the conversation.
+            {{ "chat.loadingDesc" | translate }}
           </div>
         </div>
       </div>
@@ -54,9 +54,9 @@
       <div class="empty-section">
         <div class="empty-section-box">
           <i class="pi pi-comment chat-placeholder-icon"></i>
-          <div class="chat-placeholder-title">No messages yet</div>
+          <div class="chat-placeholder-title">{{ "chat.emptyTitle" | translate }}</div>
           <div class="chat-placeholder-desc">
-            Start a conversation by sending a message below.
+            {{ "chat.emptyDesc" | translate }}
           </div>
         </div>
       </div>
@@ -75,7 +75,7 @@
       (click)="onJumpToLatest()"
     >
       <i class="pi" [ngClass]="indicatorIcon"></i>
-      <span>{{ indicatorLabel }}</span>
+      <span>{{ indicatorLabel | translate }}</span>
     </button>
     <app-user-input [processId]="processId"></app-user-input>
   </div>

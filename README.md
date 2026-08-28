@@ -142,11 +142,24 @@ First match wins, and every candidate must appear in `languages`:
 
 A region-qualified tag resolves to its base, so a browser reporting `fr-BE` gets `fr`.
 
+### What is translated
+
+The screens a user reads: the teams list (page controls, filters, the table and the create dialog),
+the conversation (the transcript, the composer, the human-input and sub-agent-reader dialogs, the
+message log) and the process chrome (the menubar, the status tags, the visualisation switcher and the
+team / agent / workspace panels).
+
+**Not yet:** the catalog admin, the login page, the workspace explorer and its upload dialog, the
+knowledge-graph panel, and the agent chat/state panels. They still carry English literals and are
+each a file drop away from the layer — the layer does not need to change for them.
+
 ### What is not translated
 
-Text the **backend** produced — an agent's answer, a tool name, an error `detail`. It arrives in
-whatever language the backend generated it in; it has no key, and putting a key lookup in front of it
-would only produce a miss.
+Text the **backend** produced — an agent's answer, a tool name, an agent's own name, an error
+`detail`, a notification's `content_type`. It arrives in whatever language the backend generated it
+in; it has no key, and putting a key lookup in front of it would only produce a miss — while making
+every one of those strings a candidate for accidental translation the day one happens to collide with
+a key.
 
 ## Building
 

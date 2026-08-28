@@ -15,6 +15,11 @@ import { ActorAddress, CommandDescriptor } from '../../../../protocol/message.ty
 import { NodeInterface } from '../../models/types';
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 
+import {
+  provideTranslateTesting,
+  setTestTranslations,
+} from '../../../../../testing/i18n-testing';
+
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {
     __actor_address__: true,
@@ -115,6 +120,7 @@ describe('ProcessUserInputComponent', () => {
     await TestBed.configureTestingModule({
       imports: [FormsModule, ProcessUserInputComponent],
       providers: [
+        provideTranslateTesting(),
         { provide: ApiService, useValue: apiServiceSpy },
         { provide: ChatService, useValue: chatServiceMock },
         { provide: ContextService, useValue: contextServiceStub },
@@ -325,17 +331,24 @@ describe('ProcessUserInputComponent', () => {
       expect(indicator).toBeNull();
     });
 
+    // T3. The recipients are a PARAMETER of this string, and the key-echoing
+    // test loader substitutes nothing — so an assertion that the names reached
+    // the indicator would pass on an empty indicator. These two register a
+    // synthetic template so the parameter is what is actually being read.
+    // `<< >>` marks it as not-the-shipped-copy.
     it('should render the indicator with a single-agent label when one is selected', () => {
+      setTestTranslations({ chat: { input: { sendToPrefix: '<<to:{{agents}}>>' } } });
       component.selectedAgents = ['@Manager'];
       fixture.detectChanges();
 
       const indicator = fixture.nativeElement.querySelector('.reply-indicator');
       expect(indicator).toBeTruthy();
-      expect(indicator.textContent).toContain('Send to');
+      expect(indicator.textContent).toContain('<<to:');
       expect(indicator.textContent).toContain('Manager');
     });
 
     it('should render the indicator with a comma-joined label when multiple are selected', () => {
+      setTestTranslations({ chat: { input: { sendToPrefix: '<<to:{{agents}}>>' } } });
       component.selectedAgents = ['@Manager', '@Developer'];
       fixture.detectChanges();
 
@@ -345,7 +358,9 @@ describe('ProcessUserInputComponent', () => {
 
       const indicator = fixture.nativeElement.querySelector('.reply-indicator');
       expect(indicator).toBeTruthy();
-      expect(indicator.textContent).toContain('Send to');
+      // The joined list reached the template through the parameter, not by the
+      // component building a sentence around it.
+      expect(indicator.textContent).toContain('<<to:@Manager, @Developer>>');
     });
 
     it('clearSendTo() should empty selectedAgents', () => {
@@ -1207,7 +1222,7 @@ describe('ProcessUserInputComponent', () => {
 
     // --- AC #9 — busy state and re-entry ----------------------------------
 
-    it('(AC9) shows the "Restarting team…" busy state while restoring, then reverts', async () => {
+    it('(AC9) shows the restarting busy state while restoring, then reverts', async () => {
       const { release } = deferredRestore();
       runningSubject.next(false);
       component.userInput = 'busy while restoring';
@@ -1216,7 +1231,7 @@ describe('ProcessUserInputComponent', () => {
       fixture.detectChanges();
 
       expect(component.phase).toBe('restarting');
-      expect(submitButton().label).toBe('Restarting team…');
+      expect(submitButton().label).toBe('chat.input.restarting');
       expect(submitButton().loading).toBeTrue();
       expect(submitButton().disabled).toBeTruthy();
 
@@ -1229,7 +1244,7 @@ describe('ProcessUserInputComponent', () => {
       fixture.detectChanges();
 
       expect(component.phase).toBe('idle');
-      expect(submitButton().label).toBe('Submit');
+      expect(submitButton().label).toBe('chat.input.submit');
       expect(submitButton().loading).toBeFalse();
     });
 
@@ -1553,7 +1568,7 @@ describe('ProcessUserInputComponent', () => {
       fixture.detectChanges();
 
       expect(component.phase).toBe('restarting');
-      expect(submitButton().label).toBe('Restarting team…');
+      expect(submitButton().label).toBe('chat.input.restarting');
       expect(submitButton().loading).toBeTrue();
       expect(submitButton().disabled).toBeTruthy();
 
@@ -1572,7 +1587,7 @@ describe('ProcessUserInputComponent', () => {
       fixture.detectChanges();
 
       expect(component.phase).toBe('sending');
-      expect(submitButton().label).toBe('Submit');
+      expect(submitButton().label).toBe('chat.input.submit');
       expect(submitButton().loading).toBeTrue();
       expect(submitButton().disabled).toBeTruthy();
 
@@ -1585,7 +1600,7 @@ describe('ProcessUserInputComponent', () => {
       fixture.detectChanges();
 
       expect(component.phase).toBe('idle');
-      expect(submitButton().label).toBe('Submit');
+      expect(submitButton().label).toBe('chat.input.submit');
       expect(submitButton().loading).toBeFalse();
       expect(submitButton().disabled).toBeFalsy();
     });
