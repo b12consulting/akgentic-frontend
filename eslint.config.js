@@ -131,6 +131,22 @@ module.exports = tseslint.config(
               allow: { to: { type: ['core', 'shared', 'protocol', 'feature-catalog'] } },
             },
 
+            // Epic 52: the home page HOSTS the process view beside the teams
+            // list, so it may import that view. `proc-components` and nothing
+            // below it — the page embeds the presentation tier and knows
+            // nothing of the ingestion layer, the selectors or the ui-state
+            // underneath it. That is the same shape as the feature-catalog edge
+            // above, where a page embeds the namespace panel without reaching
+            // into the catalog's internals.
+            //
+            // Still acyclic: no rule anywhere below permits `proc-*` ->
+            // `page-home`, and the default is disallow, so this edge can only
+            // ever run in the direction written here.
+            {
+              from: { type: ['page-home'] },
+              allow: { to: { type: ['proc-components'] } },
+            },
+
             // catalog feature -> core, shared, protocol (its own intra-feature
             // imports — e.g. namespace-panel -> validation-report — are same-type
             // and allowed by default).

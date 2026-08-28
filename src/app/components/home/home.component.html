@@ -1,5 +1,26 @@
 <section class="content">
   <br />
+  <!--
+    The split (Epic 52). The list on the left, the open team on the right, and
+    a divider between them. `#splitRow` is handed to the divider as the element
+    the percentage is measured AGAINST — passed rather than discovered, so the
+    maths never depends on how this markup happens to be wrapped.
+
+    With no team selected there is no divider and no second pane at all (FR7):
+    the list is the only child and takes the whole width, exactly as it did
+    before this epic.
+  -->
+  <div class="home-split" #splitRow>
+  <!--
+    `flex-basis` carries the width, and only while the split is on. The bound
+    percentage is the LIST's share; the team pane takes whatever is left, so the
+    two can never disagree about what adds up to 100.
+  -->
+  <div
+    class="home-split__list"
+    [class.home-split__list--split]="selectedTeamId !== null"
+    [style.flex-basis.%]="selectedTeamId !== null ? splitPercent : null"
+  >
   <div class="main-container">
     <!--
       Controls row (dropdown + Create/Configuration/Refresh + "Show all" toggle).
@@ -144,6 +165,7 @@
       [totalRecords]="contextService.totalCount"
       [rows]="rows"
       [first]="first"
+      [selectedTeamId]="selectedTeamId"
       (lazyLoad)="loadPage($event)"
       (rowSelected)="onRowSelect($event)"
       (stopRequested)="onStopRequested($event)"
@@ -152,6 +174,57 @@
       (descriptionSaved)="onDescriptionSaved($event)"
     />
     </div>
+  </div>
+  </div>
+
+  @if (selectedTeamId !== null) {
+    <app-split-divider
+      [track]="splitRow"
+      [percent]="splitPercent"
+      label="Teams list width"
+      (percentChange)="onSplitPercent($event)"
+      (commit)="onSplitCommit($event)"
+    />
+    <div class="home-split__team">
+      <!--
+        The pane's only chrome. The team's name, its metadata and its status
+        chip are already in the app header, so this bar carries exactly one
+        thing: the way back to a full-width list. Without it the split is a
+        state the user can enter and not leave.
+      -->
+      <div class="home-split__team-bar">
+        <button
+          pButton
+          size="small"
+          type="button"
+          label="Close"
+          icon="pi pi-times"
+          severity="secondary"
+          [text]="true"
+          title="Close the team and give the list the full width"
+          (click)="closeTeam()"
+          class="extra-small-button"
+          data-test="close-open-team-btn"
+        ></button>
+      </div>
+      <!--
+        Mounted by the enclosing `@if` and NOT `@defer`-ed, unlike
+        <app-namespace-panel> above. The panel is deferred because it drags
+        Monaco in and nothing else references it; this view is already in the
+        initial bundle either way, because `/process/:id` in app.routes.ts
+        imports it eagerly. A defer block here would buy nothing today and
+        would read as though it did.
+
+        The `@if` also does the work `@defer` could not: a defer block renders
+        its content once triggered and does not go back, so closing a team
+        would have left the previous one mounted behind an empty pane.
+      -->
+      <app-process
+        [teamId]="selectedTeamId"
+        (teamUnavailable)="onTeamUnavailable()"
+      />
+    </div>
+  }
   </div>
 </section>
 

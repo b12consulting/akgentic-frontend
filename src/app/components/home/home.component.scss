@@ -23,6 +23,71 @@
     min-height: 0;
 }
 
+// The split row (Epic 52). A flex ROW whose children are the list, the divider
+// and the team pane; the column chain above it (`:host` -> `.content`) already
+// bounds the height, and `min-height: 0` is what passes that bound down instead
+// of letting the row grow to its tallest child. Trap T6 is exactly this: two
+// panes with their own scroll regions, nested in a container sized in
+// percentages, is where a `height: 100%` chain breaks and BOTH panes stop
+// scrolling at once.
+.home-split {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    min-height: 0;
+    min-width: 0;
+}
+
+// The list pane. `min-width: 0` is the flex unlock that lets it be narrower
+// than the table inside it — without it the table's `min-width: 50rem` becomes
+// the pane's floor and the divider stops responding somewhere in the middle of
+// its range, which reads as a broken drag rather than as a layout constraint.
+.home-split__list {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+}
+
+// Only while a team is open. `flex-basis` carries the width, so growing AND
+// shrinking must both be off: with either left on, the basis is a suggestion
+// the table's content can argue with, and the pane settles where its contents
+// want rather than where the divider was left.
+.home-split__list--split {
+    flex-grow: 0;
+    flex-shrink: 0;
+}
+
+// The team pane takes what is left — `flex-basis: 0` and not `auto`, so the
+// process view's own content has no say in how wide it is.
+.home-split__team {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 0;
+    min-height: 0;
+    min-width: 0;
+    padding-left: 0.35rem;
+}
+
+// Natural height, like .home-controls: the pane below it is the only child
+// allowed to grow, and the only one that forms a scroll region.
+.home-split__team-bar {
+    flex: 0 0 auto;
+    display: flex;
+    justify-content: flex-end;
+}
+
+// The process view sizes itself off the VIEWPORT when it owns the page
+// (`/process/:id`). Here it owns a PANE, so its height variable is switched to
+// `auto` and flex decides instead — bounded by the pane it is in, rather than
+// by a second guess at where the app header ends.
+.home-split__team app-process {
+    --process-height: auto;
+    flex: 1 1 0;
+    min-height: 0;
+}
+
 .main-container {
     background-color: #F2F7F9;
     border-radius: 6px;
