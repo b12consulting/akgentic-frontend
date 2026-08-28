@@ -94,12 +94,24 @@ export function buildLabel(msg: SentMessage, rule: ChatBubbleRule): string {
   }
 }
 
+/**
+ * The fill behind a turn.
+ *
+ * ONLY RULE 1 HAS ONE. An agent's turn sits directly on the page so the
+ * conversation reads as a document; the user's own turn keeps a bubble, which
+ * is what carries the left/right rhythm now that nothing else is tinted.
+ *
+ * The remaining rules are `transparent` rather than removed: `color` is part of
+ * `ChatMessage` and is bound in the template, so a value has to be there. A
+ * deployment that wants the old tinted look re-points these and the geometry
+ * follows from `.own-turn` in the stylesheet.
+ */
 const RULE_COLORS: Record<ChatBubbleRule, string> = {
-  1: '#efeeee',
-  2: '#9ebbcb',
-  3: '#9ebbcb',
-  4: '#9ebbcb',
-  5: '#9ebbcb', // reuses the Rule 4 blue (ADR-011 Decision 3)
+  1: 'var(--akg-surface)',
+  2: 'transparent',
+  3: 'transparent',
+  4: 'transparent',
+  5: 'transparent',
 };
 
 /**

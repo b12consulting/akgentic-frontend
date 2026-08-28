@@ -350,7 +350,8 @@ describe('classifyMessage', () => {
     expect(result.content).toBe('test content');
     expect(result.rule).toBe(1);
     expect(result.alignment).toBe('right');
-    expect(result.color).toBe('#efeeee');
+    // The user's own turn is the ONLY filled one (conversation surface).
+    expect(result.color).toBe('var(--akg-surface)');
     expect(result.collapsed).toBe(false);
     expect(result.label).toContain('You ⇒');
   });
@@ -364,7 +365,8 @@ describe('classifyMessage', () => {
 
     expect(result.rule).toBe(4);
     expect(result.alignment).toBe('left');
-    expect(result.color).toBe('#9ebbcb');
+    // Agent turns carry no fill — they sit on the page as a document.
+    expect(result.color).toBe('transparent');
     expect(result.collapsed).toBe(true);
   });
 
@@ -461,7 +463,8 @@ describe('classifyMessage', () => {
     const result = classifyMessage(makeWelcomeSent());
     expect(result.rule).toBe(5);
     expect(result.alignment).toBe('left');
-    expect(result.color).toBe('#9ebbcb');
+    // Agent turns carry no fill — they sit on the page as a document.
+    expect(result.color).toBe('transparent');
     expect(result.collapsed).toBe(false);
     expect(result.label).toBe(SYSTEM_MESSAGE_LABEL);
   });
@@ -605,5 +608,34 @@ describe('buildClearMarker (Rule 7)', () => {
     expect(marker.id).toBe('evt-1');
     expect(marker.parent_id).toBeNull();
     expect(marker.timestamp.getTime()).toBe(new Date(evt.timestamp).getTime());
+  });
+});
+
+describe('turn fill (conversation surface)', () => {
+  // Pins the design contract at the model layer: exactly ONE rule is filled.
+  // A future rule given a colour copied from its neighbour would restore the
+  // tinted-boxes look one bubble at a time, and no other spec would notice.
+  it("fills the user's own turn", () => {
+    const own = makeSentMessage({
+      sender: makeAddress({ name: ENTRY_POINT_NAME, role: 'Human' }),
+    });
+    expect(classifyMessage(own).rule).toBe(1);
+    expect(classifyMessage(own).color).not.toBe('transparent');
+  });
+
+  it('leaves every AGENT turn transparent, so it reads as a document', () => {
+    const toHuman = makeSentMessage({
+      sender: makeAddress({ name: '@Manager', role: 'Manager' }),
+      recipient: makeAddress({ name: ENTRY_POINT_NAME, role: 'Human' }),
+    });
+    expect(classifyMessage(toHuman).rule).toBe(2);
+    expect(classifyMessage(toHuman).color).toBe('transparent');
+
+    const agentToAgent = makeSentMessage({
+      sender: makeAddress({ name: '@Manager', role: 'Manager' }),
+      recipient: makeAddress({ name: '@Worker', role: 'Worker' }),
+    });
+    expect(classifyMessage(agentToAgent).rule).toBe(4);
+    expect(classifyMessage(agentToAgent).color).toBe('transparent');
   });
 });

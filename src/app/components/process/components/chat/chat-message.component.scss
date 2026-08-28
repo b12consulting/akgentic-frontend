@@ -5,13 +5,13 @@
   gap: 0.5rem;
   padding: 4px 8px;
   cursor: pointer;
-  color: #334155;
+  color: var(--akg-text);
   font-size: 0.9rem;
   border-radius: 6px;
-  border: 1px solid rgba(158, 187, 203, 0.5);
+  border: 1px solid var(--akg-collapsed-border);
 
   &:hover {
-    background-color: rgba(0, 0, 0, 0.02);
+    background-color: var(--akg-collapsed-hover);
   }
 }
 
@@ -23,12 +23,12 @@
 }
 
 .collapsed-preview {
-  color: #64748b;
+  color: var(--akg-text-muted);
 }
 
 .collapsed-timestamp {
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: var(--akg-text-faint);
   white-space: nowrap;
 }
 
@@ -69,22 +69,38 @@
   }
 }
 
+/*
+ * A turn.
+ *
+ * THE AGENT'S TURNS CARRY NO BUBBLE. They sit directly on the page —
+ * transparent, unbordered, unpadded — so a long exchange reads as a document
+ * rather than as a column of tinted boxes. At three or four agents talking to
+ * each other, the boxes were the thing you saw and the words were not.
+ *
+ * The user's OWN turn keeps its bubble, right-aligned. That is what carries the
+ * left/right rhythm now that the fill is gone everywhere else: one shape on the
+ * right, plain text on the left, which is legible at a glance without reading a
+ * single label.
+ */
 .message-bubble {
   max-width: 80%;
-  padding: 10px 15px 2px;
   font-size: 1rem;
-  line-height: 1.5;
-  border-radius: 10px;
-  border: 2px solid transparent;
+  line-height: 1.6;
   word-wrap: break-word;
-  color: black;
+  color: var(--akg-text);
 
-  .right & {
-    border-bottom-right-radius: 0;
-  }
+  /* The default: no bubble. */
+  background-color: transparent;
+  border: 2px solid transparent;
+  padding: 0 0 2px;
 
-  .left & {
-    border-bottom-left-radius: 0;
+  /* The exception: the user's own turn. `own-turn` rather than `.right` because
+     alignment is presentation and authorship is not — a deployment that
+     centres its conversation must not lose the distinction with it. */
+  &.own-turn {
+    padding: var(--akg-turn-padding);
+    border-radius: var(--akg-turn-radius);
+    border-color: var(--akg-surface-border);
   }
 
   &.selected {
@@ -101,27 +117,37 @@
   .bubble-timestamp {
     margin-left: auto;
     font-size: 0.8rem;
-    color: #94a3b8;
+    color: var(--akg-text-faint);
     white-space: nowrap;
   }
 }
 
+/*
+ * The sender, as a BADGE rather than a filled header bar.
+ *
+ * It was a solid pill at body-text size, which made the loudest thing in every
+ * turn the name of whoever was speaking rather than what they said. Now that
+ * the turn itself has no fill, a quiet badge is enough to attribute it — and
+ * the badge is the only tinted thing left in an agent's turn, so it reads as a
+ * label instead of competing with the prose.
+ */
 .label-pill {
-  background-color: #6a9bb6;
-  border: none;
-  padding: 4px 8px;
-  border-radius: 10px;
-  font-size: 1rem;
-  color: white;
+  background-color: var(--akg-accent-bg);
+  border: 1px solid var(--akg-accent-border);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--akg-accent-fg);
   cursor: pointer;
   align-self: flex-start;
 
   &:hover:not(:disabled) {
-    background-color: #075985;
+    background-color: var(--akg-accent-border);
   }
 
   &:disabled {
-    background-color: #6a9bb6;
     cursor: default;
     opacity: 1;
   }
@@ -132,7 +158,7 @@
 }
 
 .notification-icon {
-  color: #38bdf8;
+  color: var(--akg-notify-fg);
   font-size: 0.9rem;
   animation: bell-pulse 2s ease-in-out infinite;
 }
@@ -157,18 +183,18 @@
   align-items: center;
   gap: 0.5rem;
   padding: 4px 10px;
-  color: #64748b;
+  color: var(--akg-text-muted);
   font-size: 0.85rem;
   font-style: italic;
   border-radius: 6px;
-  border: 1px dashed rgba(100, 116, 139, 0.4);
-  background-color: rgba(100, 116, 139, 0.04);
+  border: 1px dashed var(--akg-marker-border);
+  background-color: var(--akg-marker-bg);
 
   &.expandable {
     cursor: pointer;
 
     &:hover {
-      background-color: rgba(100, 116, 139, 0.08);
+      background-color: var(--akg-marker-hover);
     }
   }
 }
@@ -192,7 +218,7 @@
 
 .system-marker-timestamp {
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: var(--akg-text-faint);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -206,7 +232,7 @@
   overflow-y: auto;
   font-size: 0.9rem;
   line-height: 1.5;
-  color: #334155;
-  border-left: 2px solid rgba(100, 116, 139, 0.3);
-  background-color: rgba(100, 116, 139, 0.03);
+  color: var(--akg-text);
+  border-left: 2px solid var(--akg-marker-border);
+  background-color: var(--akg-marker-bg);
 }
