@@ -22,7 +22,11 @@ import {
   TeamMetadataPipe,
   trackMetadataEntry,
 } from '../../../core/context/team-metadata.pipe';
-import { isRunning, TeamContext } from '../../../core/context/team.interface';
+import {
+  isRunning,
+  teamActivity,
+  TeamContext,
+} from '../../../core/context/team.interface';
 
 /** A row action the user asked for. The page performs it; the row shows it running. */
 export interface TeamRowAction {
@@ -152,6 +156,22 @@ export class TeamTableComponent {
 
   /** Exposed to the row template. */
   isRunning = isRunning;
+
+  /**
+   * Exposed to the row template, which renders the status column from it.
+   *
+   * A PURE function of the row's status and activity flag, defined beside the
+   * model rather than here: the six-row truth table is the part of this
+   * feature that can be got wrong silently, and it is testable without a DOM
+   * only while it stays out of the component.
+   *
+   * Safe in a binding despite the rule the metadata column follows — this
+   * returns one of four string literals, so a re-run each change-detection
+   * cycle yields an identical primitive and re-renders nothing. The metadata
+   * pipe exists because `metadataEntries` returns fresh OBJECTS; there is no
+   * such identity to churn here.
+   */
+  teamActivity = teamActivity;
 
   /** `trackBy` for the Metadata column's chips. See the pipe. */
   trackMetadataEntry = trackMetadataEntry;

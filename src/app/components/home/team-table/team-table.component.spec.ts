@@ -194,6 +194,112 @@ describe('TeamTableComponent', () => {
     expect(rows()[1].textContent).toContain('Stopped');
   });
 
+  // --- The status column: working / idle / unknown (55.1) ------------------
+
+  /** The status cell of one row — the fourth column. */
+  function statusCell(row: HTMLTableRowElement): HTMLElement {
+    return Array.from(row.querySelectorAll('td'))[3];
+  }
+
+  /** The `data-test` marker of whichever status tag a row rendered. */
+  function statusMarker(row: HTMLTableRowElement): string | null {
+    const tag = statusCell(row).querySelector('[data-test^="row-status-"]');
+    return tag?.getAttribute('data-test') ?? null;
+  }
+
+  it('renders a running team with the flag TRUE as Working', async () => {
+    await render([makeTeam({ status: 'running', working: true })]);
+
+    expect(statusMarker(rows()[0])).toBe('row-status-working');
+    expect(statusCell(rows()[0]).textContent).toContain('Working');
+  });
+
+  it('renders a running team with the flag FALSE as Idle', async () => {
+    await render([makeTeam({ status: 'running', working: false })]);
+
+    expect(statusMarker(rows()[0])).toBe('row-status-idle');
+    expect(statusCell(rows()[0]).textContent).toContain('Idle');
+  });
+
+  it('renders UNKNOWN — null or absent — exactly as today: Running', async () => {
+    // The regression this file exists to catch. A server predating the field
+    // sends no key; one that cannot reach the signal sends null. Neither is
+    // idle, and neither may change what the column has always said.
+    await render([
+      makeTeam({ team_id: 'null-1', status: 'running', working: null }),
+      makeTeam({ team_id: 'absent-1', status: 'running' }),
+    ]);
+
+    expect(statusMarker(rows()[0])).toBe('row-status-running');
+    expect(statusMarker(rows()[1])).toBe('row-status-running');
+    expect(rows()[0].textContent).not.toContain('Idle');
+    expect(rows()[1].textContent).not.toContain('Idle');
+  });
+
+  it('renders a NOT-running team as Stopped whatever the flag says', async () => {
+    // Stopped is a lifecycle state; idle is a momentary one. A flag left on a
+    // stopped team is noise, not a third reading.
+    await render([
+      makeTeam({ team_id: 's-1', status: 'stopped', working: true }),
+      makeTeam({ team_id: 's-2', status: 'stopped', working: false }),
+      makeTeam({ team_id: 's-3', status: 'stopped', working: null }),
+    ]);
+
+    for (const row of rows()) {
+      expect(statusMarker(row)).toBe('row-status-stopped');
+      expect(row.textContent).not.toContain('Working');
+      expect(row.textContent).not.toContain('Idle');
+    }
+  });
+
+  it('renders EXACTLY ONE status tag per row', async () => {
+    await render([
+      makeTeam({ team_id: 'a', status: 'running', working: true }),
+      makeTeam({ team_id: 'b', status: 'running', working: false }),
+      makeTeam({ team_id: 'c', status: 'running', working: null }),
+      makeTeam({ team_id: 'd', status: 'stopped', working: true }),
+    ]);
+
+    for (const row of rows()) {
+      expect(
+        statusCell(row).querySelectorAll('[data-test^="row-status-"]').length,
+      ).toBe(1);
+    }
+  });
+
+  it('separates working from idle by TEXT and ICON, not by colour alone', async () => {
+    await render([
+      makeTeam({ team_id: 'w', status: 'running', working: true }),
+      makeTeam({ team_id: 'i', status: 'running', working: false }),
+    ]);
+
+    const working = statusCell(rows()[0]);
+    const idle = statusCell(rows()[1]);
+
+    expect(working.textContent?.trim()).toBe('Working');
+    expect(idle.textContent?.trim()).toBe('Idle');
+    const workingIcon = working.querySelector('.p-tag-icon');
+    const idleIcon = idle.querySelector('.p-tag-icon');
+    expect(workingIcon).not.toBeNull();
+    expect(idleIcon).not.toBeNull();
+    expect(workingIcon?.className).not.toBe(idleIcon?.className);
+  });
+
+  it('labels the activity as OF THE LAST REFRESH, not as live', async () => {
+    // The flag describes one instant and travels in a page fetched at another.
+    // Nothing polls it, so the rendering must not claim it is current.
+    await render([
+      makeTeam({ team_id: 'w', status: 'running', working: true }),
+      makeTeam({ team_id: 'i', status: 'running', working: false }),
+    ]);
+
+    for (const row of rows()) {
+      const tag = statusCell(row).querySelector('[data-test^="row-status-"]');
+      expect(tag?.getAttribute('title')).toContain('as of the last refresh');
+      expect(statusCell(row).textContent?.toLowerCase()).not.toContain('now');
+    }
+  });
+
   // --- The metadata column -------------------------------------------------
 
   it('renders one metadata chip per answered field, label and value', async () => {
