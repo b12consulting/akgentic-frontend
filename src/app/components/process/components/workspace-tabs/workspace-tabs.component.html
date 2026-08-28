@@ -45,7 +45,7 @@
   <ng-container *ngIf="resolveMembers(d, agents) as members">
     <div class="workspace-header-strip">
       <ng-container *ngIf="members.length > 0; else noMembers">
-        <span class="ws-access-label">Accessible by:</span>
+        <span class="ws-access-label">{{ "panels.accessibleBy" | translate }}</span>
         <p-chip
           *ngFor="let m of members"
           class="ws-member-chip"
@@ -53,7 +53,7 @@
         ></p-chip>
       </ng-container>
       <ng-template #noMembers>
-        <span class="ws-access-label">No members can access this workspace</span>
+        <span class="ws-access-label">{{ "panels.noMembers" | translate }}</span>
       </ng-template>
     </div>
   </ng-container>

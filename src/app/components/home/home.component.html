@@ -36,7 +36,7 @@
       badly, this select reads as a filter that does not work (Epic 48 AC14).
     -->
     <span class="home-controls__group">
-    <label for="namespace-select" class="home-controls__label">Team type</label>
+    <label for="namespace-select" class="home-controls__label">{{ "home.teamType" | translate }}</label>
     <p-select
       size="small"
       inputId="namespace-select"
@@ -44,7 +44,7 @@
       [ngModel]="selectedNamespace$ | async"
       (ngModelChange)="onNamespaceSelected($event)"
       optionLabel="name"
-      placeholder="Select a team type"
+      [placeholder]="'home.teamTypePlaceholder' | translate"
     >
       <ng-template let-ns pTemplate="item">
         <div [attr.title]="ns.description">{{ ns.name }}</div>
@@ -73,13 +73,13 @@
         data-test="show-all-namespaces-toggle"
         inputId="show-all-namespaces-toggle"
       ></p-toggleswitch>
-      <label for="show-all-namespaces-toggle">Show all namespaces</label>
+      <label for="show-all-namespaces-toggle">{{ "home.showAllNamespaces" | translate }}</label>
     </span>
     <button
       pButton
       size="small"
       type="button"
-      label="Create"
+      [label]="'common.create' | translate"
       [icon]="creation.creatingByGesture ? 'pi pi-spinner pi-spin' : 'pi pi-plus'"
       [disabled]="creation.creatingByGesture || ((namespaces$ | async) || []).length === 0"
       (click)="createTeam()"
@@ -90,7 +90,7 @@
       pButton
       size="small"
       type="button"
-      label="Configuration"
+      [label]="'home.configuration' | translate"
       icon="pi pi-pencil"
       [disabled]="!(selectedNamespace$ | async)"
       (click)="namespacePanelVisible = true"
@@ -101,7 +101,7 @@
       pButton
       size="small"
       type="button"
-      label="Refresh"
+      [label]="'common.refresh' | translate"
       [icon]="isRefreshing ? 'pi pi-spinner pi-spin' : 'pi pi-refresh'"
       [disabled]="isRefreshing"
       (click)="refreshContext()"
@@ -118,15 +118,16 @@
       pButton
       size="small"
       type="button"
-      [label]="filtersVisible ? 'Hide filters' : 'Filters'"
+      [label]="(filtersVisible ? 'home.hideFilters' : 'home.filters') | translate"
       [icon]="filtersVisible ? 'pi pi-filter-slash' : 'pi pi-filter'"
       [severity]="!filtersVisible && hasActiveFilter ? 'warn' : 'secondary'"
       [attr.aria-expanded]="filtersVisible"
       aria-controls="home-filter-row"
       [attr.title]="
-        !filtersVisible && hasActiveFilter
-          ? 'A filter is active — the list is narrowed. Show the filters to see or clear it.'
-          : (filtersVisible ? 'Hide the filter row' : 'Show the filter row')
+        (!filtersVisible && hasActiveFilter
+          ? 'home.filtersActiveTitle'
+          : (filtersVisible ? 'home.hideFiltersTitle' : 'home.showFiltersTitle')
+        ) | translate
       "
       (click)="toggleFilters()"
       class="extra-small-button"
@@ -271,7 +272,7 @@
       <span
         *ngIf="namespacePanel?.hasUnsavedChanges() === true"
         class="namespace-panel__dirty-indicator"
-        aria-label="Unsaved changes"
+        [attr.aria-label]="'home.unsavedChanges' | translate"
         data-test="dirty-indicator-dialog"
       >●</span>
     </span>

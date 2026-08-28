@@ -9,6 +9,8 @@ import { isRateable } from '../../selectors/rateable';
 import { Feedback, FeedbackService } from '../../ui-state/feedback.service';
 import { ActorAddress } from '../../../../protocol/message.types';
 
+import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
+
 /**
  * Epic 57: the turn now embeds the rating control, which reaches for
  * `FeedbackService`. A double rather than the real thing — the real service
@@ -62,6 +64,7 @@ describe('ChatMessageComponent', () => {
     await TestBed.configureTestingModule({
       imports: [ChatMessageComponent, NoopAnimationsModule],
       providers: [
+        provideTranslateTesting(),
         provideMarkdown(),
         { provide: FeedbackService, useValue: makeFeedbackServiceStub() },
       ],
@@ -218,7 +221,7 @@ describe('ChatMessageComponent', () => {
 
       const btn = fixture.nativeElement.querySelector('.open-button');
       expect(btn).toBeTruthy();
-      expect(btn.textContent).toContain('Reply');
+      expect(btn.textContent).toContain('chat.reply');
     });
 
     it('should render Reply button on expanded Rule 3 bubble header', () => {
@@ -230,7 +233,7 @@ describe('ChatMessageComponent', () => {
       const header = fixture.nativeElement.querySelector('.bubble-header');
       const btn = header.querySelector('.open-button');
       expect(btn).toBeTruthy();
-      expect(btn.textContent).toContain('Reply');
+      expect(btn.textContent).toContain('chat.reply');
     });
 
     it('bubble body click on expanded Rule 3 should emit toggleCollapse and NOT rule3Clicked', () => {
@@ -941,6 +944,7 @@ describe('ChatMessageComponent', () => {
       await TestBed.configureTestingModule({
         imports: [ChatMessageComponent, NoopAnimationsModule],
         providers: [
+          provideTranslateTesting(),
           provideMarkdown(),
           { provide: ConfigService, useValue: { hideAgentNames } },
           { provide: FeedbackService, useValue: makeFeedbackServiceStub() },
@@ -993,7 +997,7 @@ describe('ChatMessageComponent', () => {
       expect(text).not.toContain('@Manager');
       // `[] : preview` reads as a rendering fault, so the row still says what
       // it is — just not who.
-      expect(text).toContain('Team message');
+      expect(text).toContain('chat.teamMessage');
       expect(text).toContain('some body');
     });
 

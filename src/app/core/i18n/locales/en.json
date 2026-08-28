@@ -1,0 +1,127 @@
+{
+  "common": {
+    "cancel": "Cancel",
+    "create": "Create",
+    "refresh": "Refresh"
+  },
+  "home": {
+    "teamType": "Team type",
+    "teamTypePlaceholder": "Select a team type",
+    "showAllNamespaces": "Show all namespaces",
+    "configuration": "Configuration",
+    "filters": "Filters",
+    "hideFilters": "Hide filters",
+    "filtersActiveTitle": "A filter is active — the list is narrowed. Show the filters to see or clear it.",
+    "hideFiltersTitle": "Hide the filter row",
+    "showFiltersTitle": "Show the filter row",
+    "unsavedChanges": "Unsaved changes",
+    "filter": {
+      "thisTeamTypeOnly": "This team type only",
+      "thisTeamTypeOnlyTitle": "Show only teams created from the selected team type",
+      "termPlaceholder": "{{count}}+ characters to filter",
+      "reset": "Reset",
+      "resetTitle": "Clear every filter"
+    },
+    "metadata": {
+      "filterable": "filterable",
+      "patternMismatch": "Must match {{pattern}}",
+      "formatInvalid": "Value is not in the expected format",
+      "required": "Required: {{fields}}"
+    }
+  },
+  "team": {
+    "table": {
+      "name": "Name",
+      "metadata": "Metadata",
+      "createdAt": "Creation Date",
+      "status": "Status",
+      "id": "Team ID",
+      "currentPageReport": "{first}–{last} of {totalRecords}",
+      "descriptionPrompt": "Click to add description...",
+      "descriptionPlaceholder": "Enter team description"
+    },
+    "status": {
+      "stopped": "Stopped",
+      "running": "Running",
+      "working": "Working",
+      "idle": "Idle",
+      "workingTitle": "Working as of the last refresh",
+      "idleTitle": "Idle as of the last refresh"
+    },
+    "action": {
+      "stop": "Stop Team",
+      "restore": "Restore Team",
+      "delete": "Delete Team"
+    }
+  },
+  "chat": {
+    "loadingTitle": "Loading process...",
+    "loadingDesc": "Please wait while we fetch the conversation.",
+    "emptyTitle": "No messages yet",
+    "emptyDesc": "Start a conversation by sending a message below.",
+    "autoScrolling": "Auto scrolling",
+    "newMessages": "New messages",
+    "messages": "Messages",
+    "reply": "Reply",
+    "messageForYou": "Message for you",
+    "teamMessage": "Team message",
+    "input": {
+      "sendToPrefix": "Send to {{agents}}",
+      "clearSendTo": "Clear Send-to selection",
+      "processInput": "Process input",
+      "sendAs": "Send as",
+      "sendTo": "Send to",
+      "allSupervisors": "All (supervisors)",
+      "submit": "Submit",
+      "restarting": "Restarting team…"
+    },
+    "human": {
+      "header": "Human Input",
+      "noRequests": "No requests for this pair.",
+      "answered": "Answered",
+      "pending": "Pending",
+      "yourReply": "Your reply:",
+      "replyPlaceholder": "Type your reply...",
+      "send": "Send"
+    },
+    "reader": {
+      "header": "Agent conversation",
+      "agentList": "Team agents",
+      "noAgents": "This team has no agents yet.",
+      "noTurns": "{{agent}} has not sent or received any messages yet.",
+      "selectAgent": "Select an agent to read its conversation."
+    }
+  },
+  "messageList": {
+    "broadcast": "All",
+    "relaunch": "Relaunch (N/A)",
+    "emptyTitle": "No messages to display",
+    "emptyDesc": "Messages exchanged between agents will appear here."
+  },
+  "chrome": {
+    "logoAlt": "Logo",
+    "goHome": "Go to Home",
+    "home": "Home",
+    "clear": "Clear",
+    "showDetails": "Show details",
+    "hideDetails": "Hide details",
+    "logout": "Logout"
+  },
+  "visualization": {
+    "team": "Team",
+    "member": "Member",
+    "knowledgeGraph": "Knowledge graph",
+    "workspaces": "Workspaces",
+    "messages": "Messages"
+  },
+  "panels": {
+    "listView": "List view",
+    "graphView": "Graph view",
+    "chatWith": "Chat with \"{{agent}}\"",
+    "selectAgent": "Select agent",
+    "noAgentsTitle": "No agents available",
+    "noAgentsDesc": "Agent chat interface and state management will appear here.",
+    "accessibleBy": "Accessible by:",
+    "noMembers": "No members can access this workspace"
+  }
+}

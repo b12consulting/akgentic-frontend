@@ -1,5 +1,5 @@
 <p-dialog
-  [header]="headerText()"
+  [header]="headerText() ?? ('chat.reader.header' | translate)"
   [modal]="true"
   [visible]="visible()"
   (visibleChange)="onVisibleChange($event)"
@@ -9,7 +9,7 @@
   <div class="reader">
     <!-- The team. Always usable, and the only way through the conversation in a
          deployment that hides agent names in the chat itself. -->
-    <nav class="agent-list" aria-label="Team agents">
+    <nav class="agent-list" [attr.aria-label]="'chat.reader.agentList' | translate">
       <button
         *ngFor="let agent of agents(); trackBy: trackByAgentId"
         type="button"
@@ -23,7 +23,7 @@
         <span class="agent-role">{{ agent.role }}</span>
       </button>
       <div *ngIf="agents().length === 0" class="empty-state">
-        This team has no agents yet.
+        {{ "chat.reader.noAgents" | translate }}
       </div>
     </nav>
 
@@ -45,11 +45,13 @@
           <ng-container *ngIf="selectedAgent(); else noAgent">
             <!-- A team lists agents that have not spoken. Saying so is the
                  difference between an empty conversation and a broken one. -->
-            {{ agentLabel(selectedAgent()!) }} has not sent or received any
-            messages yet.
+            {{
+              "chat.reader.noTurns"
+                | translate: { agent: agentLabel(selectedAgent()!) }
+            }}
           </ng-container>
           <ng-template #noAgent>
-            Select an agent to read its conversation.
+            {{ "chat.reader.selectAgent" | translate }}
           </ng-template>
         </div>
       </ng-template>

@@ -1,6 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
+import { provideTranslateTesting, setTestTranslations } from '../../../../testing/i18n-testing';
+
 import {
   MetadataFieldDescriptor,
   TeamMetadataContract,
@@ -35,7 +37,26 @@ describe('TeamMetadataModalComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [TeamMetadataModalComponent, NoopAnimationsModule],
+      providers: [provideTranslateTesting()],
     }).compileComponents();
+
+    // T3. Two of this dialog's strings carry a PARAMETER — the missing-field
+    // list and the violated pattern — and with the key-echoing test loader they
+    // would come back as bare keys with nothing substituted. Every assertion
+    // below that reads a label or a regex out of the DOM would then pass or fail
+    // for reasons that have nothing to do with this component.
+    //
+    // These templates are deliberately NOT the shipped English. `<<...>>` is
+    // unmistakably synthetic, so nobody mistakes this for a copy assertion, and
+    // what is being pinned is that the parameter reached the template at all.
+    setTestTranslations({
+      home: {
+        metadata: {
+          patternMismatch: '<<pattern={{pattern}}>>',
+          required: '<<fields={{fields}}>>',
+        },
+      },
+    });
 
     fixture = TestBed.createComponent(TeamMetadataModalComponent);
     component = fixture.componentInstance;
@@ -249,7 +270,7 @@ describe('TeamMetadataModalComponent', () => {
     const hint = document.getElementById(describedBy!);
     expect(hint).not.toBeNull();
     expect(hint).toBe(el('metadata-index-tenant'));
-    expect(hint?.textContent).toContain('filterable');
+    expect(hint?.textContent).toContain('home.metadata.filterable');
 
     // The null branch. A non-indexed field renders no hint, so it must name
     // none: an aria-describedby pointing at an element that is not in the
@@ -837,9 +858,9 @@ describe('TeamMetadataModalComponent', () => {
     // Defensive: this path is unreachable while a recorded failure implies a
     // compiled pattern, so it is pinned on the method rather than the DOM.
     const component = fixture.componentInstance;
-    expect(component.patternMessageFor({
+    expect(component.patternMessageKey({
       key: 'tenant', description: '', index: false, mandatory: false, pattern: null,
-    })).toContain('not in the expected format');
+    })).toBe('home.metadata.formatInvalid');
   });
 
   it('(43.4 AC13) the input names the message among its describedby tokens, and the name resolves', async () => {

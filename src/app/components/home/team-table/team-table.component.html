@@ -7,6 +7,13 @@
   pSortableColumn/p-sortIcon) is removed — the server returns each page already
   ordered created_at desc.
 
+  currentPageReportTemplate goes through the translation layer. Its {first} /
+  {last} / {totalRecords} are the PAGINATOR's own tokens and are SINGLE-braced;
+  the translation parser substitutes double braces only, so they survive the
+  lookup untouched and PrimeNG fills them in as it always did. That is what lets
+  the report be one translated template string rather than three concatenated
+  fragments with English word order baked in.
+
   [scrollable]="true" + scrollHeight="flex" (Epic 28, Story 28.3) make the body
   scroll within the height-constrained flex parent so the sticky header and the
   bottom paginator stay pinned — the pager is reachable without scrolling past
@@ -32,16 +39,16 @@
   [first]="first"
   [totalRecords]="totalRecords"
   [showCurrentPageReport]="true"
-  currentPageReportTemplate="{first}–{last} of {totalRecords}"
+  [currentPageReportTemplate]="'team.table.currentPageReport' | translate"
   paginatorPosition="bottom"
 >
   <ng-template #header>
     <tr>
-      <th>Name</th>
-      <th>Metadata</th>
-      <th>Creation Date</th>
-      <th>Status</th>
-      <th>Team ID</th>
+      <th>{{ "team.table.name" | translate }}</th>
+      <th>{{ "team.table.metadata" | translate }}</th>
+      <th>{{ "team.table.createdAt" | translate }}</th>
+      <th>{{ "team.table.status" | translate }}</th>
+      <th>{{ "team.table.id" | translate }}</th>
       <th></th>
     </tr>
   </ng-template>
@@ -100,7 +107,7 @@
               {{ ctx.description }}
             </span>
             <span *ngIf="!ctx.description" class="description-placeholder">
-              Click to add description...
+              {{ "team.table.descriptionPrompt" | translate }}
             </span>
           </div>
 
@@ -116,7 +123,7 @@
               pInputText
               [ngModel]="descriptionDrafts.get(ctx.team_id)"
               (ngModelChange)="descriptionDrafts.set(ctx.team_id, $event)"
-              placeholder="Enter team description"
+              [placeholder]="'team.table.descriptionPlaceholder' | translate"
               (keyup.enter)="saveDescription(ctx.team_id)"
               (keyup.escape)="cancelEditDescription()"
               class="description-input"
@@ -200,22 +207,22 @@
           <p-tag
             *ngIf="state === 'stopped'"
             data-test="row-status-stopped"
-            value="Stopped"
+            [value]="'team.status.stopped' | translate"
             severity="info"
           >
           </p-tag>
           <p-tag
             *ngIf="state === 'running'"
             data-test="row-status-running"
-            value="Running"
+            [value]="'team.status.running' | translate"
             severity="success"
           >
           </p-tag>
           <p-tag
             *ngIf="state === 'working'"
             data-test="row-status-working"
-            title="Working as of the last refresh"
-            value="Working"
+            [title]="'team.status.workingTitle' | translate"
+            [value]="'team.status.working' | translate"
             icon="pi pi-bolt"
             severity="success"
           >
@@ -223,8 +230,8 @@
           <p-tag
             *ngIf="state === 'idle'"
             data-test="row-status-idle"
-            title="Idle as of the last refresh"
-            value="Idle"
+            [title]="'team.status.idleTitle' | translate"
+            [value]="'team.status.idle' | translate"
             icon="pi pi-hourglass"
             severity="success"
           >
@@ -244,7 +251,7 @@
           severity="secondary"
           rounded
           [style]="{ 'margin-right': '0.5rem' }"
-          title="Stop Team"
+          [title]="'team.action.stop' | translate"
           [disabled]="isStopping(ctx.team_id)"
         />
         <p-button
@@ -258,7 +265,7 @@
           severity="secondary"
           rounded
           [style]="{ 'margin-right': '0.5rem' }"
-          title="Restore Team"
+          [title]="'team.action.restore' | translate"
           [disabled]="isRestoring(ctx.team_id)"
         />
         &nbsp;
@@ -267,7 +274,7 @@
           (click)="onDelete(ctx.team_id)"
           severity="secondary"
           rounded
-          title="Delete Team"
+          [title]="'team.action.delete' | translate"
         />
       </td>
     </tr>

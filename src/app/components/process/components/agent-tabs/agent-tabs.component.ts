@@ -18,6 +18,7 @@ import {
 import { IngestionService } from '../../event/ingestion.service';
 
 import { AkgentChatComponent } from './akgent-chat/akgent-chat.component';
+import { TranslatePipe } from '@ngx-translate/core';
 
 @Component({
   selector: 'app-agent-tabs',
@@ -28,6 +29,7 @@ import { AkgentChatComponent } from './akgent-chat/akgent-chat.component';
     TabsModule,
     DropdownModule,
     AkgentChatComponent,
+    TranslatePipe,
   ],
   templateUrl: './agent-tabs.component.html',
   styleUrl: './agent-tabs.component.scss',

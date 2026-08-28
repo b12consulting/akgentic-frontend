@@ -17,6 +17,8 @@ import {
   TeamTableComponent,
 } from './team-table.component';
 
+import { provideTranslateTesting, setTestTranslations } from '../../../../testing/i18n-testing';
+
 function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
   return {
     team_id: 'team-1',
@@ -70,7 +72,7 @@ describe('TeamTableComponent', () => {
     // the table testable without standing up a page that loads namespaces.
     await TestBed.configureTestingModule({
       imports: [TeamTableComponent, FormsModule, NoopAnimationsModule],
-      providers: [],
+      providers: [provideTranslateTesting()],
       schemas: [CUSTOM_ELEMENTS_SCHEMA],
     }).compileComponents();
 
@@ -141,12 +143,15 @@ describe('TeamTableComponent', () => {
     ]);
 
     expect(rows().length).toBe(2);
+    // KEYS, not words (NFR3). The last cell is the actions column, which has no
+    // heading and therefore no key — the empty string is still load-bearing:
+    // it is what says the column is there.
     expect(headerCells().map((th) => th.textContent?.trim())).toEqual([
-      'Name',
-      'Metadata',
-      'Creation Date',
-      'Status',
-      'Team ID',
+      'team.table.name',
+      'team.table.metadata',
+      'team.table.createdAt',
+      'team.table.status',
+      'team.table.id',
       '',
     ]);
     const text = fixture.nativeElement.textContent as string;
@@ -190,8 +195,8 @@ describe('TeamTableComponent', () => {
       makeTeam({ team_id: 'stop-1', status: 'stopped' }),
     ]);
 
-    expect(rows()[0].textContent).toContain('Running');
-    expect(rows()[1].textContent).toContain('Stopped');
+    expect(rows()[0].textContent).toContain('team.status.running');
+    expect(rows()[1].textContent).toContain('team.status.stopped');
   });
 
   // --- The status column: working / idle / unknown (55.1) ------------------
@@ -211,14 +216,14 @@ describe('TeamTableComponent', () => {
     await render([makeTeam({ status: 'running', working: true })]);
 
     expect(statusMarker(rows()[0])).toBe('row-status-working');
-    expect(statusCell(rows()[0]).textContent).toContain('Working');
+    expect(statusCell(rows()[0]).textContent).toContain('team.status.working');
   });
 
   it('renders a running team with the flag FALSE as Idle', async () => {
     await render([makeTeam({ status: 'running', working: false })]);
 
     expect(statusMarker(rows()[0])).toBe('row-status-idle');
-    expect(statusCell(rows()[0]).textContent).toContain('Idle');
+    expect(statusCell(rows()[0]).textContent).toContain('team.status.idle');
   });
 
   it('renders UNKNOWN — null or absent — exactly as today: Running', async () => {
@@ -232,8 +237,8 @@ describe('TeamTableComponent', () => {
 
     expect(statusMarker(rows()[0])).toBe('row-status-running');
     expect(statusMarker(rows()[1])).toBe('row-status-running');
-    expect(rows()[0].textContent).not.toContain('Idle');
-    expect(rows()[1].textContent).not.toContain('Idle');
+    expect(rows()[0].textContent).not.toContain('team.status.idle');
+    expect(rows()[1].textContent).not.toContain('team.status.idle');
   });
 
   it('renders a NOT-running team as Stopped whatever the flag says', async () => {
@@ -247,8 +252,8 @@ describe('TeamTableComponent', () => {
 
     for (const row of rows()) {
       expect(statusMarker(row)).toBe('row-status-stopped');
-      expect(row.textContent).not.toContain('Working');
-      expect(row.textContent).not.toContain('Idle');
+      expect(row.textContent).not.toContain('team.status.working');
+      expect(row.textContent).not.toContain('team.status.idle');
     }
   });
 
@@ -276,8 +281,10 @@ describe('TeamTableComponent', () => {
     const working = statusCell(rows()[0]);
     const idle = statusCell(rows()[1]);
 
-    expect(working.textContent?.trim()).toBe('Working');
-    expect(idle.textContent?.trim()).toBe('Idle');
+    // The two must be DIFFERENT strings, and each must be the state's own key —
+    // asserting only that they differ would pass on two wrong keys.
+    expect(working.textContent?.trim()).toBe('team.status.working');
+    expect(idle.textContent?.trim()).toBe('team.status.idle');
     const workingIcon = working.querySelector('.p-tag-icon');
     const idleIcon = idle.querySelector('.p-tag-icon');
     expect(workingIcon).not.toBeNull();
@@ -285,19 +292,23 @@ describe('TeamTableComponent', () => {
     expect(workingIcon?.className).not.toBe(idleIcon?.className);
   });
 
-  it('labels the activity as OF THE LAST REFRESH, not as live', async () => {
-    // The flag describes one instant and travels in a page fetched at another.
-    // Nothing polls it, so the rendering must not claim it is current.
+  it('gives each activity tag a title of its own, separate from its label', async () => {
+    // The flag describes one instant and travels in a page fetched at another,
+    // so the title has to qualify it rather than claim it is current. THE
+    // WORDING is no longer asserted here — it lives in the locale file and is
+    // pinned in the i18n area, next to the strings themselves. What this owns is
+    // the binding: each state carries its OWN title key, and the title is not
+    // the label repeated.
     await render([
       makeTeam({ team_id: 'w', status: 'running', working: true }),
       makeTeam({ team_id: 'i', status: 'running', working: false }),
     ]);
 
-    for (const row of rows()) {
-      const tag = statusCell(row).querySelector('[data-test^="row-status-"]');
-      expect(tag?.getAttribute('title')).toContain('as of the last refresh');
-      expect(statusCell(row).textContent?.toLowerCase()).not.toContain('now');
-    }
+    const working = statusCell(rows()[0]).querySelector('[data-test^="row-status-"]');
+    const idle = statusCell(rows()[1]).querySelector('[data-test^="row-status-"]');
+
+    expect(working?.getAttribute('title')).toBe('team.status.workingTitle');
+    expect(idle?.getAttribute('title')).toBe('team.status.idleTitle');
   });
 
   // --- The metadata column -------------------------------------------------
@@ -514,14 +525,23 @@ describe('TeamTableComponent', () => {
     expect(table.totalRecords).toBe(1000);
   });
 
-  it('(AC14) reports the page as "{first}–{last} of {totalRecords}"', () => {
+  it('(AC14) reports the page through the layer, with the paginator\'s tokens intact', () => {
+    // T3. The report is a TEMPLATE, and the interesting question is not which
+    // key it uses but whether the translation lookup leaves PrimeNG's own
+    // single-braced tokens alone — `{first}` is the paginator's, `{{first}}`
+    // would be the translator's, and eating one would silently produce a report
+    // that says "–  of ".
+    //
+    // The registered string is deliberately not shipped copy; the `<< >>` is
+    // there so nobody reads this as an assertion about English.
+    setTestTranslations({
+      team: { table: { currentPageReport: '<<{first}|{last}|{totalRecords}>>' } },
+    });
     fixture.detectChanges();
 
     const table = tableInstance();
     expect(table.showCurrentPageReport).toBeTrue();
-    expect(table.currentPageReportTemplate).toBe(
-      '{first}–{last} of {totalRecords}',
-    );
+    expect(table.currentPageReportTemplate).toBe('<<{first}|{last}|{totalRecords}>>');
   });
 
   it('(AC14) re-emits (onLazyLoad) VERBATIM through (lazyLoad)', async () => {

@@ -30,6 +30,8 @@ import { ContextService } from '../../../../core/context/context.service';
 import { IngestionService } from '../../event/ingestion.service';
 import { Feedback, FeedbackService } from '../../ui-state/feedback.service';
 
+import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
+
 /**
  * Epic 57: each rendered turn now embeds the rating control, which reaches for
  * `FeedbackService`. A double rather than the real thing — the real service
@@ -166,6 +168,7 @@ describe('ChatPanelComponent', () => {
     await TestBed.configureTestingModule({
       imports: [ChatPanelComponent, NoopAnimationsModule],
       providers: [
+        provideTranslateTesting(),
         provideMarkdown(),
         { provide: FeedbackService, useValue: makeFeedbackServiceStub() },
         { provide: ChatService, useValue: chatService },
@@ -1495,7 +1498,7 @@ describe('ChatPanelComponent', () => {
 
     // --- status pill: New messages / Messages / Auto scrolling --------
 
-    it('shows "New messages" when a NEW reply arrives below the fold', fakeAsync(() => {
+    it('shows the new-messages pill when a NEW reply arrives below the fold', fakeAsync(() => {
       (component.chatService as any).emitJustSent('k');
       messagesSubject.next([humanTurn('u1')]);
       const { spacerEl } = installClamping(20, 40, 500); // small user message
@@ -1508,32 +1511,32 @@ describe('ChatPanelComponent', () => {
       messagesSubject.next([humanTurn('u1'), agentMsg('a1')]);
       component.ngAfterViewChecked();
       flushMicrotasks(); // the pill update is deferred to a microtask
-      expect(component.indicatorLabel).toBe('New messages');
+      expect(component.indicatorLabel).toBe('chat.newMessages');
     }));
 
-    it('shows "Messages" when merely scrolled up (nothing new)', () => {
+    it('shows the plain messages pill when merely scrolled up (nothing new)', () => {
       installSimple(2000, 500, 1500); // spacer.offsetTop = 2000
       const c = (component as any).scrollContainer.nativeElement;
       c.scrollTop = 200; // user scrolled up, no new message
       component.onScroll();
-      expect(component.indicatorLabel).toBe('Messages');
+      expect(component.indicatorLabel).toBe('chat.messages');
     });
 
-    it('treats the initial history load as "Messages", not "New messages"', () => {
+    it('treats the initial history load as plain messages, not new messages', () => {
       // First non-empty emission = the loaded backlog — it is NOT "new".
       messagesSubject.next([agentMsg('h1'), agentMsg('h2')]);
       const container = installSimple(2000, 500, 0); // at top, backlog below the fold
       container.scrollTop = 0;
       component.onScroll();
       expect((component as any).unseen).toBe(false);
-      expect(component.indicatorLabel).toBe('Messages');
+      expect(component.indicatorLabel).toBe('chat.messages');
     });
 
-    it('shows "Auto scrolling" while following', () => {
+    it('shows the following pill while following', () => {
       installSimple(2000, 500, 1500);
       (component as any).following = true;
       component.onScroll();
-      expect(component.indicatorLabel).toBe('Auto scrolling');
+      expect(component.indicatorLabel).toBe('chat.autoScrolling');
     });
 
     it('does NOT show "Auto scrolling" when the process is stopped', () => {
@@ -1541,26 +1544,26 @@ describe('ChatPanelComponent', () => {
       installSimple(2000, 500, 1500); // at bottom
       (component as any).following = true;
       component.onScroll();
-      expect(component.indicatorLabel).not.toBe('Auto scrolling');
+      expect(component.indicatorLabel).not.toBe('chat.autoScrolling');
     });
 
-    it('reaching the bottom activates follow ("Auto scrolling") and clears "unseen"', () => {
+    it('reaching the bottom activates follow and clears "unseen"', () => {
       const container = installSimple(2000, 500, 200);
       (component as any).unseen = true;
       container.scrollTop = 1500; // distance 2000-1500-500 = 0 → at bottom
       component.onScroll();
       expect((component as any).following).toBe(true);
-      expect(component.indicatorLabel).toBe('Auto scrolling');
+      expect(component.indicatorLabel).toBe('chat.autoScrolling');
       expect((component as any).unseen).toBe(false);
     });
 
     // --- follow mode ---------------------------------------------------------
 
-    it('clicking the pill enters follow mode, scrolls to bottom, shows "Auto scrolling"', () => {
+    it('clicking the pill enters follow mode, scrolls to bottom, shows the following pill', () => {
       const container = installSimple(2000, 500, 100);
       component.onJumpToLatest();
       expect((component as any).following).toBe(true);
-      expect(component.indicatorLabel).toBe('Auto scrolling');
+      expect(component.indicatorLabel).toBe('chat.autoScrolling');
       expect(container.scrollTop).toBe(container.scrollHeight); // jumped to bottom
     });
 
@@ -1579,17 +1582,17 @@ describe('ChatPanelComponent', () => {
       (component as any).lastScrollTop = 1000; // tail animated down the page
       component.onScroll(); // a frame of our own smooth tail (moved down, not up)
       expect((component as any).following).toBe(true);
-      expect(component.indicatorLabel).toBe('Auto scrolling');
+      expect(component.indicatorLabel).toBe('chat.autoScrolling');
     });
 
-    it('a manual upward scroll exits follow mode → "Messages"', () => {
+    it('a manual upward scroll exits follow mode → the plain messages pill', () => {
       const container = installSimple(2000, 500, 1500);
       (component as any).following = true;
       (component as any).lastScrollTop = 1500; // was at the bottom
       container.scrollTop = 200; // user scrolled UP (distance 1300 > 100)
       component.onScroll();
       expect((component as any).following).toBe(false);
-      expect(component.indicatorLabel).toBe('Messages'); // no new msg since
+      expect(component.indicatorLabel).toBe('chat.messages'); // no new msg since
     });
 
     // --- smooth scrolling ----------------------------------------------------
@@ -1806,6 +1809,7 @@ describe('ChatPanelComponent — HandledMessage split, end to end (Story 44-1)',
     await TestBed.configureTestingModule({
       imports: [ChatPanelComponent, NoopAnimationsModule],
       providers: [
+        provideTranslateTesting(),
         provideMarkdown(),
         { provide: FeedbackService, useValue: makeFeedbackServiceStub() },
         { provide: ChatService, useValue: chatService },

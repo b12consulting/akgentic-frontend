@@ -1,7 +1,7 @@
 <div class="input-container">
   <div *ngIf="selectedAgents.length > 0" class="reply-indicator">
-    <span>Send to {{ selectedAgentsDisplay }}</span>
-    <i class="pi pi-times reply-indicator-close" role="button" aria-label="Clear Send-to selection" (click)="clearSendTo()"></i>
+    <span>{{ "chat.input.sendToPrefix" | translate: { agents: selectedAgentsDisplay } }}</span>
+    <i class="pi pi-times reply-indicator-close" role="button" [attr.aria-label]="'chat.input.clearSendTo' | translate" (click)="clearSendTo()"></i>
   </div>
   <p-floatlabel variant="in">
     <div class="input-row">
@@ -18,7 +18,7 @@
         [mentionConfig]="mentionConfig"
         [mentionListTemplate]="mentionItemTemplate"
       ></textarea>
-      <label for="on_label">Process input</label>
+      <label for="on_label">{{ "chat.input.processInput" | translate }}</label>
     </div>
   </p-floatlabel>
 
@@ -39,13 +39,13 @@
   <div class="button-group">
     @if (humanAgents.length > 1) {
       <div class="send-as-group">
-        <label class="send-as-label">Send as</label>
+        <label class="send-as-label">{{ "chat.input.sendAs" | translate }}</label>
         <p-dropdown
           [options]="humanAgentOptions"
           [(ngModel)]="selectedSender"
           optionLabel="label"
           optionValue="value"
-          placeholder="Send as"
+          [placeholder]="'chat.input.sendAs' | translate"
           [showClear]="true"
           size="small"
           appendTo="body"
@@ -53,13 +53,13 @@
         ></p-dropdown>
       </div>
     }
-    <label class="send-to-label">Send to</label>
+    <label class="send-to-label">{{ "chat.input.sendTo" | translate }}</label>
     <p-multiSelect
       [options]="dropdownAgents"
       [(ngModel)]="selectedAgents"
       optionLabel="label"
       optionValue="value"
-      placeholder="All (supervisors)"
+      [placeholder]="'chat.input.allSupervisors' | translate"
       [showClear]="true"
       size="small"
       display="chip"
@@ -75,7 +75,7 @@
     <p-button
       size="small"
       icon="pi pi-send"
-      [label]="phase === 'restarting' ? restoreLabel : 'Submit'"
+      [label]="(phase === 'restarting' ? restoreLabelKey : 'chat.input.submit') | translate"
       [loading]="busy"
       (click)="sendMessage()"
       [disabled]="!userInput || busy"

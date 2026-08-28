@@ -9,9 +9,9 @@
           [src]="logo"
           class="logo clickable-logo"
           style="height: 40px; cursor: pointer"
-          alt="Logo"
+          [alt]="'chrome.logoAlt' | translate"
           (click)="navigateToHome()"
-          title="Go to Home"
+          [title]="'chrome.goHome' | translate"
         />
         <div>
           <ng-container
@@ -43,14 +43,14 @@
               >
               <p-tag
                 *ngIf="(contextService.currentTeamRunning$ | async) === false"
-                value="Stopped"
+                [value]="'team.status.stopped' | translate"
                 severity="info"
                 [style]="{ 'margin-left': '8px' }"
               >
               </p-tag>
               <p-tag
                 *ngIf="(contextService.currentTeamRunning$ | async)"
-                value="Running"
+                [value]="'team.status.running' | translate"
                 severity="success"
                 [style]="{ 'margin-left': '8px' }"
               >

@@ -10,6 +10,11 @@ import { ChatMessage } from '../../selectors/chat-message.model';
 import { NodeInterface } from '../../models/types';
 import { ActorAddress } from '../../../../protocol/message.types';
 
+import {
+  provideTranslateTesting,
+  setTestTranslations,
+} from '../../../../../testing/i18n-testing';
+
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {
     __actor_address__: true,
@@ -74,7 +79,7 @@ describe('AgentConversationModalComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [AgentConversationModalComponent, NoopAnimationsModule],
-      providers: [provideMarkdown()],
+      providers: [provideMarkdown(), provideTranslateTesting()],
     }).compileComponents();
 
     fixture = TestBed.createComponent(AgentConversationModalComponent);
@@ -208,18 +213,24 @@ describe('AgentConversationModalComponent', () => {
     it('says an agent that never ran has nothing to show', () => {
       // T6: a team lists agents that have not spoken. Silence has to read as
       // silence, not as a load that failed.
+      // T3: the agent's NAME is a parameter of this sentence, and the
+      // key-echoing test loader substitutes nothing — so `toContain('Reviewer')`
+      // would fail whether or not the component threaded it. The registered
+      // template is deliberately synthetic; what is pinned is that the name
+      // arrives, not the English around it.
+      setTestTranslations({ chat: { reader: { noTurns: '<<silent:{{agent}}>>' } } });
       open([makeChatMessage()], 'silent');
       const empty = document.querySelector('.conversation-column .empty-state');
       expect(empty).not.toBeNull();
+      expect(empty!.textContent).toContain('<<silent:');
       expect(empty!.textContent).toContain('Reviewer');
-      expect(empty!.textContent).toContain('not sent or received');
       expect(document.querySelectorAll('app-chat-message').length).toBe(0);
     });
 
     it('asks for an agent when none is selected', () => {
       open([makeChatMessage()], null);
       const empty = document.querySelector('.conversation-column .empty-state');
-      expect(empty!.textContent).toContain('Select an agent');
+      expect(empty!.textContent).toContain('chat.reader.selectAgent');
     });
   });
 

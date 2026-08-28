@@ -1,5 +1,5 @@
 <p-dialog
-  [header]="headerText"
+  [header]="headerText ?? ('chat.human.header' | translate)"
   [modal]="true"
   [visible]="visible()"
   (visibleChange)="onVisibleChange($event)"
@@ -9,11 +9,11 @@
   <ng-container
     *ngIf="answeredMessages().length === 0 && pendingMessages().length === 0"
   >
-    <div class="empty-state">No requests for this pair.</div>
+    <div class="empty-state">{{ "chat.human.noRequests" | translate }}</div>
   </ng-container>
 
   <div *ngIf="answeredMessages().length > 0" class="answered-list">
-    <div class="section-label">Answered</div>
+    <div class="section-label">{{ "chat.human.answered" | translate }}</div>
     <div
       *ngFor="let a of answeredMessages(); trackBy: trackByAnsweredId"
       class="answered-request"
@@ -25,7 +25,7 @@
         </div>
       </div>
       <div class="answered-reply">
-        <span class="reply-marker">↳ Your reply:</span>
+        <span class="reply-marker">↳ {{ "chat.human.yourReply" | translate }}</span>
         <div class="message-content">
           <markdown [data]="a.reply.content"></markdown>
         </div>
@@ -34,7 +34,7 @@
   </div>
 
   <div *ngIf="pendingMessages().length > 0" class="pending-list">
-    <div class="section-label" *ngIf="answeredMessages().length > 0">Pending</div>
+    <div class="section-label" *ngIf="answeredMessages().length > 0">{{ "chat.human.pending" | translate }}</div>
     <div
       *ngFor="let msg of pendingMessages(); trackBy: trackByRequestId"
       class="pending-request"
@@ -52,13 +52,13 @@
           [autoResize]="true"
           [ngModel]="getReplyBuffer(msg.message_id)"
           (ngModelChange)="setReplyBuffer(msg.message_id, $event)"
-          placeholder="Type your reply..."
+          [placeholder]="'chat.human.replyPlaceholder' | translate"
           (keydown.meta.enter)="onSendForRequest(msg.message_id)"
           (keydown.control.enter)="onSendForRequest(msg.message_id)"
         ></textarea>
         <div class="reply-actions">
           <p-button
-            label="Send"
+            [label]="'chat.human.send' | translate"
             size="small"
             [disabled]="!getReplyBuffer(msg.message_id).trim()"
             (click)="onSendForRequest(msg.message_id)"

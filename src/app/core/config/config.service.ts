@@ -78,4 +78,14 @@ export class ConfigService {
   get production(): boolean {
     return this.config.production;
   }
+
+  /** The languages this deployment offers. See `Environment.languages`. */
+  get languages(): string[] {
+    return this.config.languages;
+  }
+
+  /** The per-key fallback language. See `Environment.defaultLanguage`. */
+  get defaultLanguage(): string {
+    return this.config.defaultLanguage;
+  }
 }

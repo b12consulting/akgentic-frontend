@@ -8,6 +8,8 @@ import { MessageListComponent } from './message-list.component';
 import { MessageLogService } from '../../event/message-log.service';
 import { AkgenticMessage, SentMessage } from '../../../../protocol/message.types';
 
+import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
+
 // ---------------------------------------------------------------------------
 // Fixture helpers
 // ---------------------------------------------------------------------------
@@ -158,6 +160,7 @@ describe('MessageListComponent (Story 2.6, AC8)', () => {
     await TestBed.configureTestingModule({
       imports: [MessageListComponent, NoopAnimationsModule],
       providers: [
+        provideTranslateTesting(),
         provideHttpClient(),
         provideHttpClientTesting(),
         MessageService,
@@ -209,6 +212,7 @@ describe('MessageListComponent notification rendering (Story 31-2)', () => {
     await TestBed.configureTestingModule({
       imports: [MessageListComponent, NoopAnimationsModule],
       providers: [
+        provideTranslateTesting(),
         provideHttpClient(),
         provideHttpClientTesting(),
         MessageService,
@@ -352,7 +356,7 @@ describe('MessageListComponent notification rendering (Story 31-2)', () => {
 
   function relaunchButton(host: HTMLElement): HTMLElement | null {
     return Array.from(host.querySelectorAll<HTMLElement>('button')).find((b) =>
-      (b.textContent ?? '').includes('Relaunch'),
+      (b.textContent ?? '').includes('messageList.relaunch'),
     ) ?? null;
   }
 
@@ -427,6 +431,7 @@ describe('MessageListComponent row padding (Story 31-6)', () => {
     await TestBed.configureTestingModule({
       imports: [MessageListComponent, NoopAnimationsModule],
       providers: [
+        provideTranslateTesting(),
         provideHttpClient(),
         provideHttpClientTesting(),
         MessageService,
@@ -497,7 +502,7 @@ describe('MessageListComponent row padding (Story 31-6)', () => {
     const host = fixture.nativeElement as HTMLElement;
     const actions = host.querySelector<HTMLElement>('.notification-actions');
     expect(actions).withContext('no button row').toBeTruthy();
-    expect(actions!.textContent).toContain('Relaunch');
+    expect(actions!.textContent).toContain('messageList.relaunch');
 
     // The gap moved HERE from the body div. Asserted as "non-zero on the button
     // row while the body has none", not as a pixel literal: the rule is `1rem`,

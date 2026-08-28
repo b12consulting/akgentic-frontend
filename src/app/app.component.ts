@@ -6,6 +6,7 @@ import { MenuItem } from 'primeng/api';
 import { MenubarModule } from 'primeng/menubar';
 import { TagModule } from 'primeng/tag';
 import { Toast, ToastModule } from 'primeng/toast';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { Subject, takeUntil } from 'rxjs';
 import { emptyableCombineLatest } from './shared/util/util';
 import { AkgentService } from './core/ui/akgent.service';
@@ -31,6 +32,7 @@ import {
     TagModule,
     CommonModule,
     TeamMetadataPipe,
+    TranslatePipe,
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
@@ -53,6 +55,7 @@ export class AppComponent {
   faviconService = inject(FaviconService);
   apiService = inject(ApiService);
   router = inject(Router);
+  private translate = inject(TranslateService);
 
   /**
    * Story 31-5: the app's one and only toast container. Handed to
@@ -89,60 +92,99 @@ export class AppComponent {
     ])
       .pipe(takeUntil(destroyed))
       .subscribe(([processId, currentUser, isRightColumnCollapsed]) => {
-        this.items = [
-          {
-            icon: 'pi pi-home',
-            label: 'Home',
-            route: ['/'],
-            // Epic 52 (trap T3): NO `currentProcessId$.next('')` here any
-            // more. `ProcessComponent` is the single owner of that subject and
-            // retracts its own value on destroy, which this navigation causes.
-            // Writing it from here too was harmless only while leaving the
-            // process view was always a route change; now that the view can be
-            // HOSTED on the page being navigated to, a write from here blanks
-            // the header's team name while that team is still on screen.
-          },
-          {
-            icon: 'pi pi-eraser',
-            label: 'Clear',
-            command: () => {
-              this.clear();
-            },
-            disabled: processId === '',
-          },
-          {
-            icon: isRightColumnCollapsed
-              ? 'pi pi-arrow-left'
-              : 'pi pi-arrow-right',
-            label: isRightColumnCollapsed ? 'Show details' : 'Hide details',
-            command: () => {
-              this.viewService.toggleRightColumn();
-            },
-            visible: processId !== '',
-          },
-          // Username dropdown menu at end (only when authenticated)
-          ...(currentUser && currentUser.name
-            ? [
-                {
-                  label: currentUser.name,
-                  icon: 'pi pi-user',
-                  styleClass: 'username-menu',
-                  items: [
-                    {
-                      label: 'Logout',
-                      icon: 'pi pi-power-off',
-                      command: () => {
-                        this.authService.logout();
-                      },
-                    },
-                  ],
-                },
-              ]
-            : []),
-        ].filter((item) =>
-          this.configService.hideHome ? item.label != 'Home' : true,
-        );
+        this.menuInputs = { processId, currentUser, isRightColumnCollapsed };
+        this.items = this.buildMenu();
       });
+
+    // PrimeNG's menubar takes resolved strings, not keys, so the menu is built
+    // with `instant()` — which means it is a SNAPSHOT of one language. Rebuild
+    // it when the language moves, or a switch after boot leaves the whole
+    // navigation in the previous one while the rest of the page changes.
+    this.translate.onLangChange.pipe(takeUntil(destroyed)).subscribe(() => {
+      if (this.menuInputs) {
+        this.items = this.buildMenu();
+      }
+    });
+  }
+
+  /** The last values the menu was built from, so a language change can rebuild it. */
+  private menuInputs: {
+    processId: string;
+    currentUser: { name?: string } | null;
+    isRightColumnCollapsed: boolean;
+  } | null = null;
+
+  /**
+   * The menubar's items for the current inputs and the current language.
+   *
+   * `id` carries the identity, `label` only the words. The Home entry used to be
+   * hidden by comparing `item.label != 'Home'` — a filter that reads the COPY to
+   * decide what a control is, and therefore one that stops hiding anything the
+   * first time Home is translated. Nothing here matches on a rendered string.
+   */
+  private buildMenu(): MenuItem[] {
+    const { processId, currentUser, isRightColumnCollapsed } = this.menuInputs!;
+    return [
+      {
+        id: 'home',
+        icon: 'pi pi-home',
+        label: this.translate.instant('chrome.home'),
+        route: ['/'],
+        // Epic 52 (trap T3): NO `currentProcessId$.next('')` here.
+        // `ProcessComponent` is the single owner of that subject and retracts
+        // its own value on destroy, which this navigation causes. Writing it
+        // from here too was harmless only while leaving the process view was
+        // always a route change; now that the view can be HOSTED on the page
+        // being navigated to, a write from here blanks the header's team name
+        // while that team is still on screen.
+        //
+        // Epic 56 branched before 52 and carried the old `command` forward into
+        // this refactor, so it is removed again here rather than at the merge
+        // by accident.
+      },
+      {
+        id: 'clear',
+        icon: 'pi pi-eraser',
+        label: this.translate.instant('chrome.clear'),
+        command: () => {
+          this.clear();
+        },
+        disabled: processId === '',
+      },
+      {
+        id: 'details',
+        icon: isRightColumnCollapsed ? 'pi pi-arrow-left' : 'pi pi-arrow-right',
+        label: this.translate.instant(
+          isRightColumnCollapsed ? 'chrome.showDetails' : 'chrome.hideDetails',
+        ),
+        command: () => {
+          this.viewService.toggleRightColumn();
+        },
+        visible: processId !== '',
+      },
+      // Username dropdown menu at end (only when authenticated). The user's own
+      // name is NOT translated — it is not copy.
+      ...(currentUser && currentUser.name
+        ? [
+            {
+              id: 'user',
+              label: currentUser.name,
+              icon: 'pi pi-user',
+              styleClass: 'username-menu',
+              items: [
+                {
+                  id: 'logout',
+                  label: this.translate.instant('chrome.logout'),
+                  icon: 'pi pi-power-off',
+                  command: () => {
+                    this.authService.logout();
+                  },
+                },
+              ],
+            },
+          ]
+        : []),
+    ].filter((item) => (this.configService.hideHome ? item.id !== 'home' : true));
   }
 
   // Clear the current process and create a new one of the same type

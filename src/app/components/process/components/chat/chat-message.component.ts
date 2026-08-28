@@ -8,6 +8,7 @@ import {
   Output,
 } from '@angular/core';
 import { ButtonModule } from 'primeng/button';
+import { TranslatePipe } from '@ngx-translate/core';
 import { MarkdownModule } from 'ngx-markdown';
 import { ConfigService } from '../../../../core/config/config.service';
 import { buildPreview, ChatMessage } from '../../selectors/chat-message.model';
@@ -23,6 +24,7 @@ import { FeedbackComponent } from './feedback.component';
     DatePipe,
     ButtonModule,
     FeedbackComponent,
+    TranslatePipe,
   ],
   templateUrl: './chat-message.component.html',
   styleUrl: './chat-message.component.scss',
@@ -68,11 +70,15 @@ export class ChatMessageComponent {
    * What stands in for the identity on a COLLAPSED line when names are hidden.
    *
    * The collapsed row is `[label] : preview`, and an empty bracket pair reads
-   * like a rendering fault. A message count is the honest substitute: it says
-   * what the row is without saying who.
+   * like a rendering fault. Naming the KIND of message is the honest substitute:
+   * it says what the row is without saying who.
+   *
+   * A translation KEY, not a sentence — the template resolves it. The agent
+   * `label` beside it is deliberately NOT translated: it is a name the backend
+   * chose and it has no key.
    */
   readonly collapsedFallback = computed(() =>
-    this.message().rule === 3 ? 'Message for you' : 'Team message',
+    this.message().rule === 3 ? 'chat.messageForYou' : 'chat.teamMessage',
   );
 
   readonly preview = computed(() => buildPreview(this.message().content));

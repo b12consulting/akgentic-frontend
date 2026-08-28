@@ -17,6 +17,8 @@ import customPreset from './app.theme';
 import { CredentialsInterceptor } from './core/auth/credentials.interceptor';
 import { markedOptionsFactory } from './shared/util/util';
 import { ConfigService } from './core/config/config.service';
+import { I18nService } from './core/i18n/i18n.service';
+import { provideI18n } from './core/i18n/i18n.providers';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -45,11 +47,20 @@ export const appConfig: ApplicationConfig = {
       useClass: CredentialsInterceptor,
       multi: true,
     },
-    // Load runtime config before app renders
+    provideI18n(),
+    // Load runtime config, then resolve the language, before the app renders.
+    //
+    // One initializer rather than two, because the order matters and
+    // APP_INITIALIZER gives no ordering guarantee: I18nService reads the offered
+    // languages and the default off ConfigService, which are only right after
+    // config.json has landed. Split into two initializers this works by luck.
     {
       provide: APP_INITIALIZER,
-      useFactory: (config: ConfigService) => () => config.load(),
-      deps: [ConfigService],
+      useFactory: (config: ConfigService, i18n: I18nService) => async () => {
+        await config.load();
+        await i18n.init();
+      },
+      deps: [ConfigService, I18nService],
       multi: true,
     },
   ],

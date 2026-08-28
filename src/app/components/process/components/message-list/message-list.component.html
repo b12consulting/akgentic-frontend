@@ -22,7 +22,7 @@
             <span [ngStyle]="getRecipientColor(message)">◼︎</span>
             {{ message.recipient.name }}
           </ng-container>
-          <ng-template #broacasted> All </ng-template>
+          <ng-template #broacasted> {{ "messageList.broadcast" | translate }} </ng-template>
         </div>
         <!-- Story 31-2: one branch for all three notification severities.
              `*ngIf="… as severity"` binds once per row and is falsy for `null`,
@@ -47,7 +47,7 @@
               <div class="notification-actions" *ngIf="severity === 'error'">
                 <p-button
                   size="small"
-                  label="Relaunch (N/A)"
+                  [label]="'messageList.relaunch' | translate"
                   (click)="relaunch($event, message)"
                   [disabled]="true"
                 />
@@ -83,9 +83,9 @@
   <div class="empty-section message-placeholder">
     <div class="empty-section-box">
       <i class="pi pi-comments message-placeholder-icon"></i>
-      <div class="message-placeholder-title">No messages to display</div>
+      <div class="message-placeholder-title">{{ "messageList.emptyTitle" | translate }}</div>
       <div class="message-placeholder-desc">
-        Messages exchanged between agents will appear here.
+        {{ "messageList.emptyDesc" | translate }}
       </div>
     </div>
   </div>

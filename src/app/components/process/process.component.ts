@@ -52,9 +52,18 @@ import { FeedbackService } from './ui-state/feedback.service';
 import { GraphDataService } from './selectors/graph.selector';
 import { SelectionService } from './ui-state/selection.service';
 import { ViewService } from '../../core/ui/view.service';
+import { TranslatePipe } from '@ngx-translate/core';
 
 interface VisualizationOption {
-  label: string;
+  /**
+   * A translation KEY, not a caption.
+   *
+   * The switcher's template resolves it. Held as copy it would be an English
+   * string travelling through a `[options]` binding into PrimeNG, where nothing
+   * downstream knows a translation layer exists — and `value` below is the
+   * identity every rule keys off, so the caption never has to be matched on.
+   */
+  labelKey: string;
   value: string;
   icon: string;
 }
@@ -73,6 +82,7 @@ interface VisualizationOption {
     ChatPanelComponent,
     SelectButtonModule,
     FormsModule,
+    TranslatePipe,
   ],
   providers: [
     AsyncPipe,
@@ -268,15 +278,15 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
   visualizationMode$ = new BehaviorSubject<string>('team');
 
   private readonly allVisualizationOptions: VisualizationOption[] = [
-    { label: 'Team', value: 'team', icon: 'pi pi-users' },
-    { label: 'Member', value: 'member', icon: 'pi pi-user' },
+    { labelKey: 'visualization.team', value: 'team', icon: 'pi pi-users' },
+    { labelKey: 'visualization.member', value: 'member', icon: 'pi pi-user' },
     {
-      label: 'Knowledge graph',
+      labelKey: 'visualization.knowledgeGraph',
       value: 'knowledge-graph',
       icon: 'pi pi-sitemap',
     },
-    { label: 'Workspaces', value: 'workspace', icon: 'pi pi-folder-open' },
-    { label: 'Messages', value: 'messages', icon: 'pi pi-envelope' },
+    { labelKey: 'visualization.workspaces', value: 'workspace', icon: 'pi pi-folder-open' },
+    { labelKey: 'visualization.messages', value: 'messages', icon: 'pi pi-envelope' },
   ];
 
   /**

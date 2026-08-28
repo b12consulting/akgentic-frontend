@@ -15,6 +15,7 @@ import {
   ValidationErrors,
   ValidatorFn,
 } from '@angular/forms';
+import { TranslatePipe } from '@ngx-translate/core';
 import { AutoFocusModule } from 'primeng/autofocus';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
@@ -129,7 +130,15 @@ export function metadataFieldLabel(field: MetadataFieldDescriptor): string {
  */
 @Component({
   selector: 'app-team-metadata-modal',
-  imports: [CommonModule, ReactiveFormsModule, DialogModule, ButtonModule, InputTextModule, AutoFocusModule],
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    DialogModule,
+    ButtonModule,
+    InputTextModule,
+    AutoFocusModule,
+    TranslatePipe,
+  ],
   templateUrl: './team-metadata-modal.component.html',
   styleUrl: './team-metadata-modal.component.scss',
 })
@@ -265,11 +274,15 @@ export class TeamMetadataModalComponent implements OnChanges {
    * labelled input, so a `key:` prefix repeated the identification the label
    * already carries — and repeated it in the raw identifier form the label
    * deliberately avoids.
+   *
+   * Returns a translation KEY, and the pattern travels beside it as a template
+   * parameter (FR7). The pattern itself is never translated: it is a regex the
+   * backend declared and it says the same thing in every language. Only the
+   * sentence around it is copy — and building that sentence here by
+   * concatenation would pin English word order into the component.
    */
-  patternMessageFor(field: MetadataFieldDescriptor): string {
-    return field.pattern
-      ? `Must match ${field.pattern}`
-      : 'Value is not in the expected format';
+  patternMessageKey(field: MetadataFieldDescriptor): string {
+    return field.pattern ? 'home.metadata.patternMismatch' : 'home.metadata.formatInvalid';
   }
 
   /**
