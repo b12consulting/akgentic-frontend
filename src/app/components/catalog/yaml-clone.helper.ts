@@ -210,12 +210,11 @@ export function extractYamlUserId(input: string): string | null {
 
 /**
  * Best-effort extraction of a top-level boolean key from a bundle YAML
- * string. Shared implementation behind {@link extractYamlShareable} and
- * {@link extractYamlPublic}. Returns `null` when the input cannot be parsed,
- * the root is not a mapping, the key is missing, or the value is not a
- * boolean (a string `"yes"` or a number all yield `null` — only a genuine
- * YAML boolean is honoured). Mirrors the `extractYamlName` / `extractYamlNamespace`
- * defer-to-server contract.
+ * string. Implementation behind {@link extractYamlShareable}. Returns `null`
+ * when the input cannot be parsed, the root is not a mapping, the key is
+ * missing, or the value is not a boolean (a string `"yes"` or a number all
+ * yield `null` — only a genuine YAML boolean is honoured). Mirrors the
+ * `extractYamlName` / `extractYamlNamespace` defer-to-server contract.
  */
 function extractYamlRootBool(input: string, key: string): boolean | null {
   let parsed: unknown;
@@ -240,17 +239,6 @@ function extractYamlRootBool(input: string, key: string): boolean | null {
  */
 export function extractYamlShareable(input: string): boolean | null {
   return extractYamlRootBool(input, 'shareable');
-}
-
-/**
- * Best-effort extraction of the top-level `public:` boolean (the meta
- * header's listability/cloneability flag) from a bundle YAML string. Returns
- * `null` when the input cannot be parsed, the root is not a mapping, the
- * `public` key is missing, or the value is not a boolean. Used by the Clone
- * modal to pre-fill the Public toggle from the source bundle.
- */
-export function extractYamlPublic(input: string): boolean | null {
-  return extractYamlRootBool(input, 'public');
 }
 
 const RANDOM_SUFFIX_RE = /_[A-Za-z0-9]{5}$/;
