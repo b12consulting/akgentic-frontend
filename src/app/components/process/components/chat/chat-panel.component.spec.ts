@@ -1036,6 +1036,155 @@ describe('ChatPanelComponent', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Epic 54 — the transcript gets day separators.
+  //
+  // The arithmetic itself is proved in `day-separator.spec.ts` without a
+  // fixture (NFR2). What is worth a fixture — and only what is worth one — is
+  // the wiring: that the separator reaches the DOM, that it is NOT a message,
+  // and that its track key is its day.
+  //
+  // Every timestamp here is built from LOCAL components and serialised, so
+  // these expectations hold in any time zone the suite runs in.
+  // -------------------------------------------------------------------------
+  describe('day separators (Epic 54)', () => {
+    function turnOn(
+      id: string,
+      year: number,
+      month1: number,
+      day: number,
+      hour = 10,
+    ): SentMessage {
+      const sent = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        id,
+        id,
+      );
+      sent.timestamp = new Date(year, month1 - 1, day, hour, 0, 0).toISOString();
+      return sent;
+    }
+
+    function separatorTexts(): string[] {
+      const el: HTMLElement = fixture.nativeElement;
+      return Array.from(el.querySelectorAll('.day-separator')).map((n) =>
+        (n.textContent ?? '').trim(),
+      );
+    }
+
+    it('renders a rule where the calendar day changes (FR1)', () => {
+      messagesSubject.next([turnOn('d1', 2026, 4, 8), turnOn('d2', 2026, 4, 9)]);
+      fixture.detectChanges();
+
+      expect(component.displayItems.map((i) => i.kind)).toEqual([
+        'message',
+        'day',
+        'message',
+      ]);
+      expect(separatorTexts()).toEqual(['2026-04-09']);
+    });
+
+    it('puts no rule above the first turn (FR2)', () => {
+      messagesSubject.next([turnOn('only', 2026, 4, 8)]);
+      fixture.detectChanges();
+
+      expect(component.displayItems.map((i) => i.kind)).toEqual(['message']);
+      expect(separatorTexts()).toEqual([]);
+    });
+
+    it('does not repeat the rule within one day (FR3)', () => {
+      messagesSubject.next([
+        turnOn('a', 2026, 4, 8, 9),
+        turnOn('b', 2026, 4, 9, 9),
+        turnOn('c', 2026, 4, 9, 17),
+      ]);
+      fixture.detectChanges();
+
+      expect(separatorTexts()).toEqual(['2026-04-09']);
+    });
+
+    it('does not let one undated turn split a day in two (FR4/FR5)', () => {
+      const undated = turnOn('mid', 2026, 4, 8, 12);
+      undated.timestamp = 'not a date';
+      messagesSubject.next([
+        turnOn('a', 2026, 4, 8, 9),
+        undated,
+        turnOn('c', 2026, 4, 8, 15),
+      ]);
+      fixture.detectChanges();
+
+      expect(separatorTexts()).toEqual([]);
+      expect(component.displayItems.length).toBe(3);
+    });
+
+    it('is not a message (NFR1)', () => {
+      messagesSubject.next([turnOn('d1', 2026, 4, 8), turnOn('d2', 2026, 4, 9)]);
+      fixture.detectChanges();
+
+      // The classified stream — everything the scroll model, the pill and the
+      // modal read — never sees it.
+      expect(component.chatMessages.length).toBe(2);
+
+      const el: HTMLElement = fixture.nativeElement;
+      const separator = el.querySelector('.day-separator');
+      expect(separator).not.toBeNull();
+      // No sender pill, no collapse affordance, no bubble, no message id.
+      expect(separator!.querySelector('app-chat-message')).toBeNull();
+      expect(separator!.querySelector('.label-pill')).toBeNull();
+      expect(separator!.querySelector('.message-bubble')).toBeNull();
+      expect(separator!.getAttribute('data-message-id')).toBeNull();
+      expect(el.querySelectorAll('app-chat-message').length).toBe(2);
+    });
+
+    it('keys the separator on its day, stably and without collision (T4)', () => {
+      const key = component.trackByDisplayItem(0, {
+        kind: 'day',
+        data: { day: '2026-04-09', label: '2026-04-09' },
+      });
+      const again = component.trackByDisplayItem(7, {
+        kind: 'day',
+        data: { day: '2026-04-09', label: '2026-04-09' },
+      });
+      expect(key).toBe(again);
+      expect(key).toBe('day:2026-04-09');
+      expect(key).not.toBe(
+        component.trackByDisplayItem(0, {
+          kind: 'thinking',
+          data: {
+            agent_id: 'a',
+            agent_name: '@A',
+            start_time: new Date(),
+            tools: [],
+            anchor_message_id: '2026-04-09',
+            final: false,
+          },
+        }),
+      );
+    });
+
+    it('holds the separator key steady as the transcript re-emits (T4)', () => {
+      messagesSubject.next([turnOn('d1', 2026, 4, 8), turnOn('d2', 2026, 4, 9)]);
+      fixture.detectChanges();
+      const before = component.displayItems.map((item, i) =>
+        component.trackByDisplayItem(i, item),
+      );
+
+      messagesSubject.next([
+        turnOn('d1', 2026, 4, 8),
+        turnOn('d2', 2026, 4, 9),
+        turnOn('d3', 2026, 4, 9, 18),
+      ]);
+      fixture.detectChanges();
+      const after = component.displayItems.map((item, i) =>
+        component.trackByDisplayItem(i, item),
+      );
+
+      // Every key that existed before still exists, unchanged and in order —
+      // so Angular re-uses the rows instead of rebuilding the list.
+      expect(after.slice(0, before.length)).toEqual(before);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // ADR-016 (simplified) — anchor-on-send + opt-in follow mode.
   // Mocks model the REAL browser: scrollTo/scrollTop clamps, scrollHeight clamps
   // UP to clientHeight, and the spacer's min-height feeds scrollHeight.
@@ -1506,13 +1655,12 @@ describe('ChatPanelComponent — HandledMessage split, end to end (Story 44-1)',
     agentSent('msg-answer', 'here they are', '2026-04-12T10:00:09Z'),
   ];
 
-  /** `kind:id` for a message, `kind:anchor` for a bubble — the same shape
-   *  `trackByDisplayItem` builds, so the assertion reads as the rendered list. */
+  /** `kind:id` for a message, `kind:anchor` for a bubble, `day:<date>` for a
+   *  day rule — the component's own track key, so the assertion reads as the
+   *  rendered list. (Every message in LOG is on one day, so no rule appears.) */
   function describeItems(): string[] {
-    return component.displayItems.map((item) =>
-      item.kind === 'message'
-        ? 'message:' + item.data.id
-        : 'thinking:' + item.data.anchor_message_id,
+    return component.displayItems.map((item, i) =>
+      component.trackByDisplayItem(i, item),
     );
   }
 

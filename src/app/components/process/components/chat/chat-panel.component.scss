@@ -39,6 +39,48 @@
     }
   }
 
+  /*
+   * Epic 54 — the day separator.
+   *
+   * A hairline with the date sitting in it. Deliberately QUIETER than a turn
+   * (NFR3): smaller than the collapsed line's 0.85rem, muted text, and the
+   * marker border rather than the surface border — it is the page telling you
+   * where you are, not something anybody said. All colours come from the Epic 50
+   * conversation tokens; nothing new is introduced.
+   *
+   * Side margins are left to `.message-list > *` (which centres every row in the
+   * reading column) — setting `margin` shorthand here would win on source order
+   * and knock the separator off that axis.
+   */
+  .day-separator {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 10px;
+    margin-bottom: 2px;
+    color: var(--akg-text-muted);
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    /* Chrome, not content: it is not a selectable item of the transcript. */
+    user-select: none;
+    /* Never let the browser's scroll anchoring pin to it — the anchored-send
+       scroll model (ADR-016) measures against messages and the spacer. */
+    overflow-anchor: none;
+
+    &::before,
+    &::after {
+      content: '';
+      flex: 1 1 auto;
+      height: 1px;
+      background-color: var(--akg-marker-border);
+    }
+  }
+
+  .day-separator-label {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
   // Story 19-1 (ADR-016 §Decision 2): trailing spacer — visually inert flex
   // child that reserves scroll room below the anchored turn. No background /
   // border; `overflow-anchor: none` so the browser's scroll-anchoring never

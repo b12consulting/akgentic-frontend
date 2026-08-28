@@ -1021,4 +1021,42 @@ describe('ChatMessageComponent', () => {
       }
     });
   });
+
+  describe('unparseable timestamp (Epic 54 FR5)', () => {
+    it('renders the turn instead of throwing', () => {
+      // `classifyMessage` builds `timestamp` with `new Date(...)`, so a
+      // malformed backend string arrives here as an Invalid Date. DatePipe
+      // throws on one; a single bad row must not take the transcript with it.
+      fixture.componentRef.setInput(
+        'message',
+        makeChatMessage({ timestamp: new Date('not a date'), content: 'still here' }),
+      );
+      expect(() => fixture.detectChanges()).not.toThrow();
+
+      const el: HTMLElement = fixture.nativeElement;
+      expect(el.querySelector('.message-bubble')).not.toBeNull();
+      expect(el.querySelector('.bubble-timestamp')!.textContent!.trim()).toBe('');
+    });
+
+    it('renders a collapsed row with an unparseable timestamp', () => {
+      fixture.componentRef.setInput(
+        'message',
+        makeChatMessage({ rule: 4, collapsed: true, timestamp: new Date(NaN) }),
+      );
+      expect(() => fixture.detectChanges()).not.toThrow();
+
+      const el: HTMLElement = fixture.nativeElement;
+      expect(el.querySelector('.collapsed-line')).not.toBeNull();
+      expect(el.querySelector('.collapsed-timestamp')!.textContent!.trim()).toBe('');
+    });
+
+    it('still shows the time for a parseable one', () => {
+      fixture.componentRef.setInput('message', makeChatMessage());
+      fixture.detectChanges();
+
+      const el: HTMLElement = fixture.nativeElement;
+      expect(el.querySelector('.bubble-timestamp')!.textContent!.trim()).not.toBe('');
+    });
+  });
+
 });

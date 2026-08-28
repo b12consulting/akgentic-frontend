@@ -56,6 +56,23 @@ export class ChatMessageComponent {
 
   readonly preview = computed(() => buildPreview(this.message().content));
 
+  /**
+   * The turn's timestamp, or `null` when the backend sent one that could not be
+   * parsed.
+   *
+   * Angular's `DatePipe` THROWS `InvalidPipeArgumentError` on an `Invalid Date`
+   * — and `classifyMessage` builds `timestamp` with `new Date(...)`, which
+   * yields exactly that for a malformed string. Bound directly, one bad row
+   * therefore takes down the whole transcript render, not just its own clock.
+   * The pipe returns `null` for `null`, so funnelling it through here degrades
+   * to "no time shown" instead (Epic 54 FR5: a malformed date from a backend is
+   * a rendering question, never an error).
+   */
+  readonly timestampOrNull = computed(() => {
+    const timestamp = this.message().timestamp;
+    return Number.isFinite(timestamp?.getTime()) ? timestamp : null;
+  });
+
   /** True for the synthetic context-management markers (Epic 29 / ADR-010):
    *  rule 6 = compaction fold, rule 7 = clear line. */
   readonly isMarker = computed(
