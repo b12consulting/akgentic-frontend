@@ -5,7 +5,9 @@
   (click)="onToggleCollapse()"
 >
   <span class="collapsed-label">
-    [{{ message().label }}<span
+    [<span *ngIf="showAgentNames">{{ message().label }}</span><span
+      *ngIf="!showAgentNames"
+    >{{ collapsedFallback() }}</span><span
       *ngIf="message().rule === 3 && notification()"
       class="notification-icon collapsed-notification-icon"
     > (<span class="hand-raised">🙋</span>)</span>]<span
@@ -70,6 +72,7 @@
   >
     <div class="bubble-header">
       <button
+        *ngIf="showAgentNames || message().rule === 5"
         class="label-pill"
         [disabled]="message().rule === 1 || message().rule === 5"
         (click)="onLabelClick(); $event.stopPropagation()"

@@ -58,6 +58,11 @@ export class ConfigService {
     return this.config.hideLogin;
   }
 
+  /** Hide the agent identity on chat bubbles. Defaults to showing it. */
+  get hideAgentNames(): boolean {
+    return this.config.hideAgentNames;
+  }
+
   get initRightPanelCollapsed(): boolean {
     return this.config.initRightPanelCollapsed;
   }

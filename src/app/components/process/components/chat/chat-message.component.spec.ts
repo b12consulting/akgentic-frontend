@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideMarkdown } from 'ngx-markdown';
+import { ConfigService } from '../../../../core/config/config.service';
 import { ChatMessageComponent } from './chat-message.component';
 import { ChatMessage } from '../../selectors/chat-message.model';
 import { ActorAddress } from '../../../../protocol/message.types';
@@ -900,6 +901,90 @@ describe('ChatMessageComponent', () => {
       const el = fixture.nativeElement;
       expect(el.querySelector('.label-pill')).toBeNull();
       expect(el.querySelector('.open-button')).toBeNull();
+    });
+  });
+  // --- hideAgentNames -------------------------------------------------------
+  //
+  // A deployment can present the team as ONE assistant rather than a cast. The
+  // framework shows the identity by default; this hides it and nothing else.
+  describe('hideAgentNames', () => {
+    /**
+     * Rebuild the bed with the flag set.
+     *
+     * `showAgentNames` is read once in a field initialiser, so the config has to
+     * be in place BEFORE the component is constructed — setting it on an
+     * existing fixture would change nothing and the spec would pass for the
+     * wrong reason.
+     */
+    async function renderWith(hideAgentNames: boolean, message: ChatMessage) {
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [ChatMessageComponent, NoopAnimationsModule],
+        providers: [
+          provideMarkdown(),
+          { provide: ConfigService, useValue: { hideAgentNames } },
+        ],
+      }).compileComponents();
+      const f = TestBed.createComponent(ChatMessageComponent);
+      f.componentRef.setInput('message', message);
+      f.detectChanges();
+      return f;
+    }
+
+    it('shows the identity pill by DEFAULT — the framework names its agents', async () => {
+      const f = await renderWith(false, makeChatMessage({ label: 'Manager ⇒ You' }));
+      const pill = f.nativeElement.querySelector('.label-pill');
+      expect(pill).withContext('label pill must render by default').not.toBeNull();
+      expect(pill.textContent.trim()).toBe('Manager ⇒ You');
+    });
+
+    it('removes the identity pill when hidden', async () => {
+      const f = await renderWith(true, makeChatMessage({ label: 'Manager ⇒ You' }));
+      expect(f.nativeElement.querySelector('.label-pill')).toBeNull();
+      // The identity must not survive anywhere else in the bubble either.
+      expect(f.nativeElement.textContent).not.toContain('Manager');
+    });
+
+    it('KEEPS the system label, which names no agent', async () => {
+      // Rule 5 says "this came from the system". Hiding it would remove
+      // information without hiding an identity, so the flag does not apply.
+      const f = await renderWith(
+        true,
+        makeChatMessage({ rule: 5, label: 'SYSTEM', alignment: 'left' }),
+      );
+      const pill = f.nativeElement.querySelector('.label-pill');
+      expect(pill).withContext('system label is not an agent name').not.toBeNull();
+      expect(pill.textContent.trim()).toBe('SYSTEM');
+    });
+
+    it('substitutes a collapsed line rather than leaving empty brackets', async () => {
+      const collapsed = makeChatMessage({
+        rule: 4,
+        collapsed: true,
+        label: '@Manager ⇒ @Worker',
+        content: 'some body',
+      });
+      const shown = await renderWith(false, collapsed);
+      expect(shown.nativeElement.textContent).toContain('@Manager ⇒ @Worker');
+
+      const hidden = await renderWith(true, collapsed);
+      const text = hidden.nativeElement.textContent as string;
+      expect(text).not.toContain('@Manager');
+      // `[] : preview` reads as a rendering fault, so the row still says what
+      // it is — just not who.
+      expect(text).toContain('Team message');
+      expect(text).toContain('some body');
+    });
+
+    it('leaves alignment and colour alone — only the identity goes', async () => {
+      const msg = makeChatMessage({ rule: 1, alignment: 'right', color: '#efeeee' });
+      const f = await renderWith(true, msg);
+      const bubble = f.nativeElement.querySelector('.message-bubble');
+      expect(bubble).withContext('a bubble still renders').not.toBeNull();
+      // Hiding WHO said it must not change WHERE or HOW it is drawn: the
+      // conversation stays readable without the identity.
+      expect(bubble.style.backgroundColor).toBe('rgb(239, 238, 238)');
+      expect(f.nativeElement.querySelector('.right')).not.toBeNull();
     });
   });
 });
