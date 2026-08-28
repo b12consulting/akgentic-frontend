@@ -118,6 +118,30 @@ export class AgentConversationModalComponent {
     });
   }
 
+  /**
+   * An agent named inside the conversation was clicked — move the reader to it,
+   * IN PLACE. No second dialog on top of this one, and no route change: the
+   * user is following a thread, not navigating away from it.
+   *
+   * `ChatMessageComponent` has already refused the two rules that name no agent
+   * before emitting — the user's own turn and the system announcement. What is
+   * left to refuse here is an actor that appears on an envelope without being a
+   * member of the team (a transport listener, say): selecting one would point
+   * the reader, and with it the whole app, at something the left-hand list
+   * cannot even show.
+   *
+   * The badge reads "@Sender ⇒ @Recipient" but is one control, and it moves to
+   * the SENDER — the same agent the identical click selects in the main chat.
+   * Two clickable halves would be a change to the shared message component, and
+   * that component is shared precisely so the two surfaces cannot diverge.
+   */
+  onMessageAgentClick(message: ChatMessage): void {
+    const agentId = message.sender.agent_id;
+    if (!agentId || agentId === this.selectedAgentId()) return;
+    if (!this.agents().some((a) => a.name === agentId)) return;
+    this.agentSelected.emit({ agentId, actorName: message.sender.name });
+  }
+
   onToggleCollapse(message: ChatMessage): void {
     const next = new Set(this.expandedIds());
     if (next.has(message.id)) {

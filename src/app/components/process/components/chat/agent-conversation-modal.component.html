@@ -35,6 +35,7 @@
           *ngFor="let message of conversation(); trackBy: trackByMessageId"
           [attr.data-message-id]="message.id"
           [message]="message"
+          (messageSelected)="onMessageAgentClick($event)"
           (toggleCollapse)="onToggleCollapse($event)"
         ></app-chat-message>
       </ng-container>

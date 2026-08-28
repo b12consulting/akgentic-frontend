@@ -268,6 +268,100 @@ describe('AgentConversationModalComponent', () => {
     });
   });
 
+  // --- following a mention (Story 51-2) --------------------------------------
+  //
+  // The reader is a place you read FROM, not just a place you land: an agent
+  // named in the conversation is the natural next thing to want, and clicking
+  // it should move the reader rather than send you back to the chat to start
+  // again.
+  describe('following a mention', () => {
+    function emitted(): AgentRef[] {
+      const seen: AgentRef[] = [];
+      component.agentSelected.subscribe((a) => seen.push(a));
+      return seen;
+    }
+
+    it('moves to the agent whose badge was clicked, in place', () => {
+      const turn = makeChatMessage({
+        id: 'm1',
+        rule: 2,
+        collapsed: false,
+        sender: makeAddress({ name: '@Worker-worker', agent_id: 'worker' }),
+        recipient: makeAddress({ name: '@Manager-manager', agent_id: 'manager' }),
+      });
+      open([turn], 'manager');
+      const seen = emitted();
+
+      const pill = document.querySelector<HTMLElement>(
+        '.conversation-column .label-pill',
+      );
+      pill!.click();
+
+      expect(seen).toEqual([{ agentId: 'worker', actorName: '@Worker-worker' }]);
+      // In place: one dialog, and it did not move itself — the host owns
+      // selection and hands the new agent back down.
+      expect(document.querySelectorAll('.reader').length).toBe(1);
+      expect(component.selectedAgentId()).toBe('manager');
+    });
+
+    it('ignores the agent it is already showing', () => {
+      const turn = makeChatMessage({ id: 'm1', rule: 2, collapsed: false });
+      open([turn], 'manager');
+      const seen = emitted();
+
+      component.onMessageAgentClick(turn);
+
+      expect(seen).toEqual([]);
+    });
+
+    it('refuses an actor that is not on the team', () => {
+      // An envelope can name a transport listener. Selecting one would point
+      // the app at something the agent list cannot show.
+      const turn = makeChatMessage({
+        id: 'm1',
+        sender: makeAddress({ name: '@ActorSystem', agent_id: 'actor-system' }),
+      });
+      open([turn], 'manager');
+      const seen = emitted();
+
+      component.onMessageAgentClick(turn);
+
+      expect(seen).toEqual([]);
+    });
+
+    it('never fires for the turns that name no agent', () => {
+      // T5: the user's own turn and the system announcement are not agents.
+      // The shared message component already refuses to emit for either, and
+      // the reader inherits that guard by reusing it rather than re-deriving
+      // the rule.
+      for (const rule of [1, 5] as const) {
+        open(
+          [
+            makeChatMessage({
+              id: 'm-' + rule,
+              rule,
+              collapsed: false,
+              sender: makeAddress({ name: '@Worker-worker', agent_id: 'worker' }),
+              recipient: makeAddress({
+                name: '@Manager-manager',
+                agent_id: 'manager',
+              }),
+            }),
+          ],
+          'manager',
+        );
+        const seen = emitted();
+
+        const pill = document.querySelector<HTMLElement>(
+          '.conversation-column .label-pill',
+        );
+        pill!.click();
+
+        expect(seen).withContext('rule ' + rule + ' names no agent').toEqual([]);
+      }
+    });
+  });
+
   it('reports its own close so the host can hide it', () => {
     open([], 'manager');
     const seen: boolean[] = [];
