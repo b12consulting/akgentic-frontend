@@ -8,6 +8,7 @@ export const environment = {
   welcomeMessage: 'Welcome to the Akgentic Framework',
   hideHome: false,
   hideLogin: true,
+  hideAgentNames: false,
   initRightPanelCollapsed: false,
   userInputEnterKeySubmit: false,
   favicon: 'favicon.png',

@@ -1,7 +1,15 @@
 import { CommonModule, DatePipe } from '@angular/common';
-import { Component, computed, EventEmitter, input, Output } from '@angular/core';
+import {
+  Component,
+  computed,
+  EventEmitter,
+  inject,
+  input,
+  Output,
+} from '@angular/core';
 import { ButtonModule } from 'primeng/button';
 import { MarkdownModule } from 'ngx-markdown';
+import { ConfigService } from '../../../../core/config/config.service';
 import { buildPreview, ChatMessage } from '../../selectors/chat-message.model';
 
 @Component({
@@ -19,6 +27,32 @@ export class ChatMessageComponent {
   message = input.required<ChatMessage>();
   selected = input<boolean>(false);
   notification = input<boolean>(false);
+
+  private readonly config = inject(ConfigService);
+
+  /**
+   * Show the "@Sender ⇒ @Recipient" identity?
+   *
+   * A plain field, not a computed: `ConfigService` is resolved once before the
+   * app renders and cannot change afterwards, so recomputing it per message
+   * would cost work for a value that is fixed for the session.
+   *
+   * The SYSTEM label (rule 5) is deliberately NOT covered by this. It names no
+   * agent — it says a message came from the system — so hiding it would remove
+   * information without hiding an identity.
+   */
+  readonly showAgentNames = !this.config.hideAgentNames;
+
+  /**
+   * What stands in for the identity on a COLLAPSED line when names are hidden.
+   *
+   * The collapsed row is `[label] : preview`, and an empty bracket pair reads
+   * like a rendering fault. A message count is the honest substitute: it says
+   * what the row is without saying who.
+   */
+  readonly collapsedFallback = computed(() =>
+    this.message().rule === 3 ? 'Message for you' : 'Team message',
+  );
 
   readonly preview = computed(() => buildPreview(this.message().content));
 
