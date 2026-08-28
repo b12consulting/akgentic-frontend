@@ -1,0 +1,57 @@
+<p-dialog
+  [header]="headerText()"
+  [modal]="true"
+  [visible]="visible()"
+  (visibleChange)="onVisibleChange($event)"
+  [style]="{ width: '68rem', maxWidth: '92vw' }"
+  [contentStyle]="{ height: '70vh', padding: '0', overflow: 'hidden' }"
+>
+  <div class="reader">
+    <!-- The team. Always usable, and the only way through the conversation in a
+         deployment that hides agent names in the chat itself. -->
+    <nav class="agent-list" aria-label="Team agents">
+      <button
+        *ngFor="let agent of agents(); trackBy: trackByAgentId"
+        type="button"
+        class="agent-item"
+        [class.selected]="isSelected(agent)"
+        [attr.aria-current]="isSelected(agent) ? 'true' : null"
+        [attr.data-agent-id]="agent.name"
+        (click)="onAgentClick(agent)"
+      >
+        <span class="agent-name">{{ agentLabel(agent) }}</span>
+        <span class="agent-role">{{ agent.role }}</span>
+      </button>
+      <div *ngIf="agents().length === 0" class="empty-state">
+        This team has no agents yet.
+      </div>
+    </nav>
+
+    <!-- The dialogue. Rendered by the SAME message component as the main
+         conversation — see the class docstring. -->
+    <div class="conversation-column">
+      <ng-container *ngIf="conversation().length > 0; else noTurns">
+        <app-chat-message
+          *ngFor="let message of conversation(); trackBy: trackByMessageId"
+          [attr.data-message-id]="message.id"
+          [message]="message"
+          (messageSelected)="onMessageAgentClick($event)"
+          (toggleCollapse)="onToggleCollapse($event)"
+        ></app-chat-message>
+      </ng-container>
+      <ng-template #noTurns>
+        <div class="empty-state">
+          <ng-container *ngIf="selectedAgent(); else noAgent">
+            <!-- A team lists agents that have not spoken. Saying so is the
+                 difference between an empty conversation and a broken one. -->
+            {{ agentLabel(selectedAgent()!) }} has not sent or received any
+            messages yet.
+          </ng-container>
+          <ng-template #noAgent>
+            Select an agent to read its conversation.
+          </ng-template>
+        </div>
+      </ng-template>
+    </div>
+  </div>
+</p-dialog>
