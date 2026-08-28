@@ -22,6 +22,23 @@ export interface TeamResponse {
    * same thing to every consumer — NO METADATA — so gate on falsiness.
    */
   metadata?: Record<string, unknown> | null;
+  /**
+   * Whether the team was doing something at the instant the server answered:
+   * `true` working, `false` idle, `null` NOT KNOWN.
+   *
+   * OPTIONAL *and* nullable, and unlike `metadata` the three states are NOT
+   * interchangeable: a server predating this field omits the key, and a
+   * current server that cannot reach whatever produces the signal sends
+   * `null`. Both mean UNKNOWN — which is not `false`. Gating on falsiness
+   * here (`if (response.working)`) collapses absent, `null` and `false` into
+   * one branch and labels every team on an older server idle. Compare
+   * against `true` / `false` explicitly, or go through `teamActivity`.
+   *
+   * A STATUS, NOT A HEARTBEAT. It describes one instant and travels in a page
+   * fetched at another, so it is already stale by the time it renders. It
+   * rides the list response the page fetches anyway; nothing polls it.
+   */
+  working?: boolean | null;
 }
 
 // Maps to Python TeamListResponse (classic offset+total pagination, Epic 28).
@@ -91,6 +108,11 @@ export interface TeamContext {
   description?: string | null;
   /** Carried through verbatim from `TeamResponse.metadata`. See there. */
   metadata?: Record<string, unknown> | null;
+  /**
+   * Carried through verbatim from `TeamResponse.working`. See there —
+   * especially that `null` and absent both mean UNKNOWN, not idle.
+   */
+  working?: boolean | null;
 }
 
 /**
@@ -159,8 +181,58 @@ export function teamFilterEquals(a: TeamFilter, b: TeamFilter): boolean {
 }
 
 /** Check if a team is currently running. */
-export function isRunning(team: TeamContext): boolean {
+export function isRunning(team: Pick<TeamContext, 'status'>): boolean {
   return team.status === 'running';
+}
+
+/**
+ * What the status column says about a team.
+ *
+ * `'stopped'` and `'running'` are the two states the list has always had;
+ * `'working'` and `'idle'` split `'running'` when — and only when — the server
+ * told us which. `'running'` is therefore not a fallback that lost
+ * information: it is the honest rendering of a team whose activity is UNKNOWN.
+ */
+export type TeamActivity = 'stopped' | 'running' | 'working' | 'idle';
+
+/**
+ * Derive the status column's state from a team's status and activity flag.
+ *
+ * A PURE function of exactly those two fields — the whole truth table, in one
+ * place, so it can be tested without a DOM. Six rows, and the three that
+ * matter most are the ones where the flag is absent or `null`:
+ *
+ * | status      | working   | -> state    |
+ * |-------------|-----------|-------------|
+ * | not running | anything  | `stopped`   |
+ * | running     | `true`    | `working`   |
+ * | running     | `false`   | `idle`      |
+ * | running     | `null`    | `running`   |
+ * | running     | absent    | `running`   |
+ *
+ * STOPPED IGNORES THE FLAG (FR4). Stopped is a lifecycle state and idle is a
+ * momentary one; a team goes idle and busy repeatedly without ever stopping,
+ * and an activity flag left on a stopped team is noise, not a third reading.
+ *
+ * UNKNOWN RENDERS AS TODAY (FR3). `working === true` and `=== false` are
+ * matched explicitly rather than by truthiness precisely so that a server
+ * predating the field cannot quietly relabel every running team `idle` — a
+ * failure that would look like the whole fleet going idle at once, most
+ * visibly right after a deploy.
+ */
+export function teamActivity(
+  team: Pick<TeamContext, 'status'> & { working?: boolean | null },
+): TeamActivity {
+  if (!isRunning(team)) {
+    return 'stopped';
+  }
+  if (team.working === true) {
+    return 'working';
+  }
+  if (team.working === false) {
+    return 'idle';
+  }
+  return 'running';
 }
 
 /**
@@ -178,6 +250,9 @@ export function toTeamContext(response: TeamResponse): TeamContext {
     config_name: response.name,
     description: null,
     metadata: response.metadata ?? null,
+    // `??`, not `||`: `false` is a REAL answer here (idle) and must survive
+    // the mapping. Absent normalises to `null` because both spell UNKNOWN.
+    working: response.working ?? null,
   };
 }
 

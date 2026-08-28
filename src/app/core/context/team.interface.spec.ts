@@ -1,6 +1,8 @@
 import {
   metadataEntries,
   NO_TEAM_FILTER,
+  teamActivity,
+  TeamActivity,
   teamFilterEquals,
   TeamResponse,
   toTeamContext,
@@ -31,6 +33,70 @@ describe('toTeamContext — metadata carry-through', () => {
     // declares no contract. Consumers must not have to tell them apart.
     expect(toTeamContext(makeResponse({ metadata: null })).metadata).toBeNull();
     expect(toTeamContext(makeResponse()).metadata).toBeNull();
+  });
+});
+
+describe('toTeamContext — activity carry-through (55.1 FR1)', () => {
+  it('carries `true` and `false` through as themselves', () => {
+    // `false` is a REAL answer (idle), not an absent one. A `||` in the
+    // mapping would turn it into `null` and lose the idle state entirely.
+    expect(toTeamContext(makeResponse({ working: true })).working).toBeTrue();
+    expect(toTeamContext(makeResponse({ working: false })).working).toBeFalse();
+  });
+
+  it('maps BOTH wire spellings of UNKNOWN to null — and NOT to false', () => {
+    // An explicit null (the server cannot reach the signal) and an absent key
+    // (a server predating the field) mean the same thing, and it is not idle.
+    expect(toTeamContext(makeResponse({ working: null })).working).toBeNull();
+    expect(toTeamContext(makeResponse()).working).toBeNull();
+    expect(toTeamContext(makeResponse()).working).not.toBeFalse();
+  });
+});
+
+describe('teamActivity — the whole truth table (55.1 NFR1)', () => {
+  // status x flag, exhaustively. A hole in this table is where the feature
+  // goes wrong, so every combination is named rather than looped over.
+  const cases: ReadonlyArray<
+    readonly [string, string, boolean | null | undefined, TeamActivity]
+  > = [
+    ['running + true  -> working', 'running', true, 'working'],
+    ['running + false -> idle', 'running', false, 'idle'],
+    ['running + null  -> running (unknown)', 'running', null, 'running'],
+    ['running + absent-> running (unknown)', 'running', undefined, 'running'],
+    ['stopped + true  -> stopped', 'stopped', true, 'stopped'],
+    ['stopped + false -> stopped', 'stopped', false, 'stopped'],
+    ['stopped + null  -> stopped', 'stopped', null, 'stopped'],
+    ['stopped + absent-> stopped', 'stopped', undefined, 'stopped'],
+  ];
+
+  for (const [name, status, working, expected] of cases) {
+    it(name, () => {
+      expect(teamActivity({ status, working })).toBe(expected);
+    });
+  }
+
+  it('never reports idle for an UNKNOWN flag (55.1 FR3)', () => {
+    // The failure this guards is silent and fleet-wide: right after a deploy,
+    // a server that does not send the field would relabel every running team
+    // idle if the derivation gated on truthiness.
+    expect(teamActivity({ status: 'running', working: null })).not.toBe('idle');
+    expect(teamActivity({ status: 'running' })).not.toBe('idle');
+  });
+
+  it('treats a status the frontend does not know as not-running', () => {
+    // `isRunning` is an equality against one literal; anything else — archived,
+    // failed, a state added later — is a lifecycle state, so the flag on it is
+    // noise (FR4), not a third reading.
+    expect(teamActivity({ status: 'archived', working: true })).toBe('stopped');
+    expect(teamActivity({ status: 'failed', working: false })).toBe('stopped');
+  });
+
+  it('is pure — the same input answers the same, and the input is untouched', () => {
+    const team = { status: 'running', working: false };
+
+    expect(teamActivity(team)).toBe('idle');
+    expect(teamActivity(team)).toBe('idle');
+    expect(team).toEqual({ status: 'running', working: false });
   });
 });
 

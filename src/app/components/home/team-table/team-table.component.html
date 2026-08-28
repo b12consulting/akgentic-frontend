@@ -132,19 +132,63 @@
         >
       </td>
       <td>{{ ctx.created_at | date: "short" }}</td>
+      <!--
+        The status column — four renderings from ONE derivation.
+
+        `teamActivity(ctx)` is resolved once per row into `state` and the tags
+        read that, rather than each re-deriving it: the truth table lives in
+        `team.interface.ts` and this template only picks a tag for its answer.
+
+        `Stopped` and `Running` are UNTOUCHED, deliberately. A running team
+        whose activity is unknown — an older server, or one that could not
+        reach whatever produces the signal — renders exactly as it did before
+        this column knew about activity at all.
+
+        DISTINGUISHABLE WITHOUT COLOUR: the four differ by label, and working
+        and idle carry an icon each. Both keep `success`, the running colour,
+        because they ARE running — recolouring idle towards `Stopped`'s
+        neutral would read as a lesser stopped, which it is not.
+
+        The titles say "as of the last refresh" on purpose. The flag describes
+        one instant and arrived inside a page fetched at another, so a label
+        promising live truth would over-promise; nothing polls to keep it
+        fresh.
+      -->
       <td>
-        <p-tag
-          *ngIf="!isRunning(ctx)"
-          value="Stopped"
-          severity="info"
-        >
-        </p-tag>
-        <p-tag
-          *ngIf="isRunning(ctx)"
-          value="Running"
-          severity="success"
-        >
-        </p-tag>
+        <ng-container *ngIf="teamActivity(ctx) as state">
+          <p-tag
+            *ngIf="state === 'stopped'"
+            data-test="row-status-stopped"
+            value="Stopped"
+            severity="info"
+          >
+          </p-tag>
+          <p-tag
+            *ngIf="state === 'running'"
+            data-test="row-status-running"
+            value="Running"
+            severity="success"
+          >
+          </p-tag>
+          <p-tag
+            *ngIf="state === 'working'"
+            data-test="row-status-working"
+            title="Working as of the last refresh"
+            value="Working"
+            icon="pi pi-bolt"
+            severity="success"
+          >
+          </p-tag>
+          <p-tag
+            *ngIf="state === 'idle'"
+            data-test="row-status-idle"
+            title="Idle as of the last refresh"
+            value="Idle"
+            icon="pi pi-hourglass"
+            severity="success"
+          >
+          </p-tag>
+        </ng-container>
       </td>
       <td>{{ ctx.team_id }}</td>
       <td>
