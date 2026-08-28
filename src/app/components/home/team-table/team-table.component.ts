@@ -20,6 +20,7 @@ import { TagModule } from 'primeng/tag';
 
 import {
   TeamMetadataPipe,
+  TeamTitlePipe,
   trackMetadataEntry,
 } from '../../../core/context/team-metadata.pipe';
 import { isRunning, TeamContext } from '../../../core/context/team.interface';
@@ -72,6 +73,7 @@ export interface TeamDescriptionSave {
     ButtonModule,
     InputTextModule,
     TeamMetadataPipe,
+    TeamTitlePipe,
   ],
   templateUrl: './team-table.component.html',
   styleUrl: './team-table.component.scss',
@@ -88,6 +90,28 @@ export class TeamTableComponent {
 
   /** The row offset the paginator is parked on. */
   @Input() first = 0;
+
+  /**
+   * Which metadata key holds a row's TITLE, or `null` when none does.
+   *
+   * A KEY, not a title. Each row reads its own value out of its own metadata
+   * under this key; the table is told which question to ask, not the answers.
+   *
+   * The page resolves it from the selected namespace's contract
+   * (`titleFieldKey`), because a `TeamContext` carries no namespace of its own
+   * — the same limitation `metadataEntries` documents for chip labels. So on
+   * an UNNARROWED list, where rows from several namespaces are on screen at
+   * once, this is the selected namespace's key applied to all of them. That
+   * degrades safely rather than wrongly: a row from another namespace either
+   * has no value under that key and falls back to its team type, or has one
+   * and the key means the same thing to both contracts. Fixing it properly
+   * needs the namespace on the row, which is a wire change this epic does not
+   * make.
+   *
+   * `null` — the state of every deployment whose catalog nominates no title —
+   * renders the row exactly as it did before this input existed.
+   */
+  @Input() titleKey: string | null = null;
 
   /**
    * Whether the list is being fetched.
