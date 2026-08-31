@@ -438,7 +438,7 @@ describe('AppComponent (Story 10-2 — reactive currentTeam$ subscription)', () 
     contextStub.getCurrentTeam.calls.reset();
     apiStub.getTeam.calls.reset();
 
-    // Simulate the exact sequence produced by createTeamAndNavigate followed by
+    // Simulate the exact sequence produced by createTeam followed by
     // ProcessComponent.ngOnInit: _context$ mutation (driving currentTeam$) then
     // currentProcessId$ flipping to the new id.
     const newTeam = makeTeam({

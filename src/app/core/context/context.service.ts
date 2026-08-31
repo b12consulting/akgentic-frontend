@@ -392,11 +392,31 @@ export class ContextService {
     await this.deleteTeam(teamId);
     // Back to the list as it was: deleting a team you had filtered your way to
     // should not also discard the filter that found it.
+    //
+    // EXCEPT the open team, which is the one thing that must not survive: since
+    // Epic 52 `homeQueryParams` carries `team=`, and the team just deleted is
+    // usually exactly the one it names. Replaying it would send the home page
+    // straight back into a pane for a team that no longer exists. The filter and
+    // the page are kept; only the selection is dropped.
+    if (this.homeQueryParams['team'] === teamId) {
+      this.homeQueryParams = { ...this.homeQueryParams, team: null };
+    }
     await this.navigateHome();
   }
 
   /**
-   * Create a team from a catalog namespace, cache it, and navigate to it.
+   * Create a team from a catalog namespace, cache it, and RETURN ITS ID.
+   *
+   * DOES NOT NAVIGATE, and that is the point. This was `createTeam`
+   * and it ended in `router.navigate(['/process', id])` — the same full-page
+   * round trip Epic 52 removed from row selection, left behind on the creation
+   * path. So selecting a team kept the list while creating one threw it away;
+   * the inconsistency is what made it read as a bug.
+   *
+   * WHERE a new team is shown is the PAGE's decision, not this service's: the
+   * home page opens it beside the list, and the `hideHome` route — which has no
+   * list to sit beside — still routes to the full-page view. Returning the id
+   * is what lets both answers exist without this service knowing either.
    *
    * `metadata` is forwarded to `apiService.createTeam` UNCONDITIONALLY —
    * including when it is `undefined` or `{}`. This method applies no gate of
@@ -405,15 +425,15 @@ export class ContextService {
    * `createTeam(ns)` produce the same request body by construction. A second
    * copy of that rule here would be a second thing to keep in step.
    */
-  async createTeamAndNavigate(
+  async createTeam(
     namespace: string,
     metadata?: Record<string, string>,
-  ) {
+  ): Promise<string> {
     const response = await this.apiService.createTeam(namespace, metadata);
     const newTeam = toTeamContext(response);
     const prev = this._context$.value;
     this._context$.next([...prev, newTeam]);
-    await this.router.navigate(['/process', response.team_id]);
+    return response.team_id;
   }
 
   private async refreshOneTeam(teamId: string): Promise<TeamContext | null> {

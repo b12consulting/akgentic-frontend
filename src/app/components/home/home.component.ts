@@ -288,6 +288,7 @@ export class HomeComponent {
     // restored filter with it, because `loadTeamsPage` reads that value.
     this.restoreFromUrl();
     this.trackUrlSelection();
+    this.trackCreations();
 
     // Not from the URL: a pane width is a preference of THIS browser, not a
     // property of the view being shared. Putting it in the query string would
@@ -626,9 +627,27 @@ export class HomeComponent {
     });
   }
 
+  /**
+   * Listen for creations, wherever they were asked for (Create button, the
+   * metadata dialog's confirm, or the gesture-less `hideHome` route).
+   *
+   * Subscribed rather than awaited because the dialog's confirm is a template
+   * binding whose promise nobody holds — see `TeamCreationService.created$`.
+   * One subscription is what keeps the destination decision in one place.
+   */
+  private createdSub: Subscription | null = null;
+
+  private trackCreations(): void {
+    this.createdSub = this.creation.created$.subscribe((teamId) => {
+      void this.onTeamCreated(teamId);
+    });
+  }
+
   ngOnDestroy(): void {
     this.urlSub?.unsubscribe();
     this.urlSub = null;
+    this.createdSub?.unsubscribe();
+    this.createdSub = null;
   }
 
   /**
@@ -656,7 +675,29 @@ export class HomeComponent {
     await this.creation.request(selected, 'gesture');
   }
 
+  /**
+   * `(deleteRequested)` handler. Deletes the team — and CLOSES IT FIRST if it
+   * is the one open beside the list (Epic 52).
+   *
+   * Before this, deleting the open team left its pane mounted over a team that
+   * no longer existed: still polling it, still holding `?team=` in a URL that
+   * was now unshareable. The pane recovers on its own through
+   * `onTeamUnavailable`, but only after a fetch has come back empty, so the
+   * user watched a live conversation turn into an error first.
+   *
+   * CLOSED BEFORE THE DELETE, not after, because the pane is what makes the
+   * requests: tearing it down first means the delete lands with nothing reading
+   * that team, instead of racing a view that is still asking for its events.
+   *
+   * The cost, stated because it is a real one: a delete that FAILS leaves the
+   * team closed though it still exists. That is one click to reopen from a row
+   * that never went away, against a guaranteed burst of errors on every
+   * successful delete — which is the common case, not the rare one.
+   */
   async deleteTeam(teamId: string) {
+    if (this.selectedTeamId === teamId) {
+      this.closeTeam();
+    }
     await this.contextService.deleteTeam(teamId);
   }
 
@@ -733,11 +774,50 @@ export class HomeComponent {
    * filtered list each time.
    */
   onRowSelect(teamId: string) {
+    this.openBeside(teamId);
+  }
+
+  /**
+   * Show `teamId` in the pane beside the list, and say so in the URL.
+   *
+   * Shared by the two ways a team becomes the open one — a row click and a
+   * creation — so they cannot drift into two different notions of "open".
+   */
+  private openBeside(teamId: string): void {
     if (this.selectedTeamId === teamId) {
       return;
     }
     this.selectedTeamId = teamId;
     this.writeUrl();
+  }
+
+  /**
+   * A team was just created. Show it — and, on this page, that means BESIDE
+   * THE LIST, the same as clicking its row (Epic 52 FR3).
+   *
+   * Creating used to route to `/process/:id`. Epic 52 changed what selecting a
+   * team means but not what creating one means, so the Create button still
+   * threw the list away — the one round trip the epic exists to remove, on the
+   * one path most likely to be followed by "and now show me the others".
+   *
+   * `hideHome` KEEPS ROUTING, and that is not an exception to the rule but the
+   * rule applied: there is no list to sit beside on that route, so the
+   * full-page view is the only place the new team can be shown.
+   *
+   * The list is reloaded because the page no longer unmounts. The new team is
+   * already in `_context$` (the gate seeds it, so the pane can render before
+   * any fetch returns), but the table shows a SERVER-PAGED slice, and a create
+   * changes which teams belong on the current page. Without this the user would
+   * be talking to a team that does not appear in the list beside it. Selection
+   * first, so the pane opens immediately rather than after a round trip.
+   */
+  private async onTeamCreated(teamId: string): Promise<void> {
+    if (this.config.hideHome) {
+      await this.router.navigate(['/process', teamId]);
+      return;
+    }
+    this.openBeside(teamId);
+    await this.refreshContext();
   }
 
   /** Close the open team; the list takes the full width again (FR7). */

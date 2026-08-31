@@ -204,7 +204,7 @@ describe('HomeComponent', () => {
         'loadTeamsPage',
         'resetTeams',
         'deleteTeam',
-        'createTeamAndNavigate',
+        'createTeam',
         'stopTeamAndAwait',
         'setTeamDescription',
         // 48.1/48.2: `ngOnInit` calls `restoreFilter()` on EVERY mount (and
@@ -246,7 +246,7 @@ describe('HomeComponent', () => {
     );
     contextSpy.resetTeams.and.stub();
     contextSpy.deleteTeam.and.returnValue(Promise.resolve());
-    contextSpy.createTeamAndNavigate.and.returnValue(Promise.resolve());
+    contextSpy.createTeam.and.returnValue(Promise.resolve('team-created-1'));
     contextSpy.stopTeamAndAwait.and.returnValue(Promise.resolve());
     // Stubbed deliberately: with the real write path replaced by a no-op, an
     // unchanged team object in teams$ after saveDescription proves the
@@ -398,7 +398,7 @@ describe('HomeComponent', () => {
     expect((component as any).context).toBeUndefined();
   });
 
-  it('(AC4 10.4) createTeam reaches createTeamAndNavigate through the gate, with no reload compensation', async () => {
+  it('(AC4 10.4) createTeam reaches createTeam through the gate, with no reload compensation', async () => {
     const ns = nsSummary('cat-1', 'Cat One', 'first cat');
     component.selectedNamespace$.next(ns);
     // The component has not invoked ngOnInit yet (no detectChanges in this
@@ -406,7 +406,7 @@ describe('HomeComponent', () => {
     // guard against any spurious prior invocation.
     contextSpy.getTeams.calls.reset();
     await component.createTeam();
-    expect(contextSpy.createTeamAndNavigate).toHaveBeenCalledOnceWith(
+    expect(contextSpy.createTeam).toHaveBeenCalledOnceWith(
       'cat-1',
       undefined,
     );
@@ -419,7 +419,7 @@ describe('HomeComponent', () => {
   it('(AC4 10.4) createTeam no-entry guard returns cleanly', async () => {
     component.selectedNamespace$.next(null);
     await component.createTeam();
-    expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
+    expect(contextSpy.createTeam).not.toHaveBeenCalled();
   });
 
   it('(AC1 1.9) ngOnInit loads namespaces via getNamespaces and selects the first', async () => {
@@ -439,9 +439,9 @@ describe('HomeComponent', () => {
     component.selectedNamespace$.next(
       nsSummary('rag-team-v1', 'RAG Team', 'With RAG'),
     );
-    contextSpy.createTeamAndNavigate.calls.reset();
+    contextSpy.createTeam.calls.reset();
     await component.createTeam();
-    expect(contextSpy.createTeamAndNavigate).toHaveBeenCalledOnceWith(
+    expect(contextSpy.createTeam).toHaveBeenCalledOnceWith(
       'rag-team-v1',
       undefined,
     );
@@ -1257,27 +1257,42 @@ describe('HomeComponent', () => {
     expect(text).not.toContain('team-page-1');
   });
 
-  it('(28.2 AC8e, superseded) createTeam leaves — no reload, no paginator jump, no blanked list', async () => {
-    // Superseded behaviour: create used to stay on the home page and reload
-    // page 1. Every creation path now navigates to the new team's process
-    // view, so the paginator is left exactly where it was and NOTHING is
-    // reloaded — the page is being unmounted, and a reload here would be a
-    // wasted request racing the navigation.
+  it('(Epic 52) createTeam STAYS: the new team opens beside the list, on the page the user was on', async () => {
+    // Twice-superseded, and the history is the point. Create first reloaded
+    // page 1 (28.2), then navigated to `/process/:id` and reloaded nothing —
+    // correct while the page was being unmounted. Epic 52 stopped unmounting it
+    // for a row click but left the creation path routing, so creating threw the
+    // list away on the one page built to keep it.
+    //
+    // Now: the team opens in the pane, the paginator does NOT jump, and the list
+    // IS reloaded — the page stays mounted, and a create changes which teams
+    // belong on the current server-paged slice.
+    fixture.detectChanges();
+    await fixture.whenStable();
+
     component.selectedNamespace$.next(
       nsSummary('agent-team-v1', 'Agent Team', 'd'),
     );
     component.currentPage = 4;
     component.first = 750;
     contextSpy.loadTeamsPage.calls.reset();
-    contextSpy.createTeamAndNavigate.calls.reset();
+    contextSpy.createTeam.calls.reset();
+    routerSpy.navigate.calls.reset();
 
     await component.createTeam();
 
-    expect(contextSpy.createTeamAndNavigate).toHaveBeenCalledOnceWith(
+    expect(contextSpy.createTeam).toHaveBeenCalledOnceWith(
       'agent-team-v1',
       undefined,
     );
-    expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
+    expect(component.selectedTeamId).toBe('team-created-1');
+    expect(routerSpy.navigate).not.toHaveBeenCalledWith([
+      '/process',
+      'team-created-1',
+    ]);
+    // The current page, not page 1: a create must not also send the user back
+    // to the top of a list they had paged through.
+    expect(contextSpy.loadTeamsPage).toHaveBeenCalledOnceWith(4, 250);
     expect(component.currentPage).toBe(4);
     expect(component.first).toBe(750);
     expect(contextSpy.resetTeams).not.toHaveBeenCalled();
@@ -1347,6 +1362,34 @@ describe('HomeComponent', () => {
     await component.deleteTeam('row-1');
 
     expect(contextSpy.deleteTeam).toHaveBeenCalledWith('row-1');
+  });
+
+  // --- Deleting the OPEN team closes it (Epic 52) --------------------------
+
+  it('deleting the open team closes the pane, and closes it BEFORE the delete', async () => {
+    component.selectedTeamId = 'row-1';
+    const order: string[] = [];
+    contextSpy.deleteTeam.and.callFake(() => {
+      // Read from INSIDE the delete: the pane must already be gone by the time
+      // the request goes out, or a mounted view keeps asking for a team the
+      // server is removing and the user watches it error instead of close.
+      order.push(`delete:selected=${String(component.selectedTeamId)}`);
+      return Promise.resolve();
+    });
+
+    await component.deleteTeam('row-1');
+
+    expect(order).toEqual(['delete:selected=null']);
+    expect(component.selectedTeamId).toBeNull();
+  });
+
+  it('deleting a DIFFERENT team leaves the open one alone', async () => {
+    component.selectedTeamId = 'row-1';
+
+    await component.deleteTeam('row-2');
+
+    expect(contextSpy.deleteTeam).toHaveBeenCalledWith('row-2');
+    expect(component.selectedTeamId).toBe('row-1');
   });
 
   it('(28.2 AC8f) (stopRequested) delegates to contextService.stopTeamAndAwait', async () => {
@@ -1625,10 +1668,37 @@ describe('HomeComponent', () => {
       await component.loadPage({ first: 0, rows: 250 });
       await init;
 
-      expect(contextSpy.createTeamAndNavigate).toHaveBeenCalledOnceWith(
+      expect(contextSpy.createTeam).toHaveBeenCalledOnceWith(
         'agent-team-v1',
         undefined,
       );
+    });
+
+    it('(Epic 52) hideHome STILL ROUTES a created team to the full-page view', async () => {
+      // Not an exception to "open beside the list" but the same rule applied:
+      // with `hideHome` on there IS no list to sit beside, so the full-page view
+      // is the only place the new team can appear. Dropping this branch would
+      // leave the auto-create route selecting a team on a page nobody sees.
+      apiSpy.getNamespaces.and.returnValue(
+        Promise.resolve([nsSummary('agent-team-v1', 'Agent Team', 'd')]),
+      );
+      component.selectedNamespace$.next(
+        nsSummary('agent-team-v1', 'Agent Team', 'd'),
+      );
+      contextSpy.loadTeamsPage.and.callFake(async () => {
+        teams$.next([]);
+        return { teams: [], total_count: 0 };
+      });
+
+      const init = component.ngOnInit();
+      await component.loadPage({ first: 0, rows: 250 });
+      await init;
+
+      expect(routerSpy.navigate).toHaveBeenCalledWith([
+        '/process',
+        'team-created-1',
+      ]);
+      expect(component.selectedTeamId).toBeNull();
     });
   });
 
@@ -1701,24 +1771,24 @@ describe('HomeComponent', () => {
 
     it('(AC14) the Create button opens the REAL modal on a selection that asks, and creates nothing', async () => {
       await renderThenSelect(nsSummary('acme-cases', 'Acme Cases', 'd', asking));
-      contextSpy.createTeamAndNavigate.calls.reset();
+      contextSpy.createTeam.calls.reset();
       expect(modal().visible).toBeFalse();
 
       await component.createTeam();
       fixture.detectChanges();
 
       expect(modal().visible).toBeTrue();
-      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
+      expect(contextSpy.createTeam).not.toHaveBeenCalled();
     });
 
     it('(AC14) the Create button creates with the two-argument form when nothing is asked', async () => {
       await renderThenSelect(nsSummary('agent-team-v1', 'Agent Team', 'd'));
-      contextSpy.createTeamAndNavigate.calls.reset();
+      contextSpy.createTeam.calls.reset();
 
       await component.createTeam();
       fixture.detectChanges();
 
-      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args).toEqual([
+      expect(contextSpy.createTeam.calls.mostRecent().args).toEqual([
         'agent-team-v1',
         undefined,
       ]);
@@ -1730,7 +1800,7 @@ describe('HomeComponent', () => {
 
       await component.createTeam();
 
-      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
+      expect(contextSpy.createTeam).not.toHaveBeenCalled();
     });
 
     // --- AC8, from the page: the dropdown stays live behind the dialog ---
@@ -1755,12 +1825,12 @@ describe('HomeComponent', () => {
       // says Acme Cases and the answers are Acme Cases's.
       component.selectedNamespace$.next(nsSummary('other-ns', 'Other', 'd'));
       fixture.detectChanges();
-      contextSpy.createTeamAndNavigate.calls.reset();
+      contextSpy.createTeam.calls.reset();
 
       modal().confirmed.emit({ tenant: 'acme' });
       await fixture.whenStable();
 
-      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args[0]).toBe('acme-cases');
+      expect(contextSpy.createTeam.calls.mostRecent().args[0]).toBe('acme-cases');
     });
 
     // --- AC16: the seven bindings, one spec each ---
@@ -1796,7 +1866,7 @@ describe('HomeComponent', () => {
     it('(AC16) [errorMessage] — the server\'s 422 reaches the modal', async () => {
       await openDialog();
       expect(modal().errorMessage).toBeNull();
-      contextSpy.createTeamAndNavigate.and.returnValue(
+      contextSpy.createTeam.and.returnValue(
         Promise.reject(
           new HttpError('Unprocessable', 422, { detail: 'tenant is required' }),
         ),
@@ -1813,9 +1883,9 @@ describe('HomeComponent', () => {
       await openDialog();
       expect(modal().pending).toBeFalse();
       let release: () => void = () => undefined;
-      contextSpy.createTeamAndNavigate.and.returnValue(
-        new Promise<void>((resolve) => {
-          release = () => resolve();
+      contextSpy.createTeam.and.returnValue(
+        new Promise<string>((resolve) => {
+          release = () => resolve('team-created-1');
         }),
       );
 
@@ -1830,12 +1900,12 @@ describe('HomeComponent', () => {
 
     it('(AC16) (confirmed) — the modal\'s answers reach the gate through the template', async () => {
       await openDialog();
-      contextSpy.createTeamAndNavigate.calls.reset();
+      contextSpy.createTeam.calls.reset();
 
       // The POST is issued synchronously by the handler the binding names.
       modal().confirmed.emit({ tenant: 'acme' });
 
-      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args).toEqual([
+      expect(contextSpy.createTeam.calls.mostRecent().args).toEqual([
         'acme-cases',
         { tenant: 'acme' },
       ]);
@@ -1843,14 +1913,14 @@ describe('HomeComponent', () => {
 
     it('(AC16) (cancelled) — a dismissal reaches the gate through the template', async () => {
       await openDialog();
-      contextSpy.createTeamAndNavigate.calls.reset();
+      contextSpy.createTeam.calls.reset();
 
       modal().cancelled.emit();
       fixture.detectChanges();
 
       expect(component.creation.modalVisible).toBeFalse();
       expect(modal().visible).toBeFalse();
-      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
+      expect(contextSpy.createTeam).not.toHaveBeenCalled();
     });
 
     // --- AC17: none of it is left behind on the page ---
@@ -1961,26 +2031,26 @@ describe('HomeComponent', () => {
       apiSpy.getNamespaces.and.returnValue(
         Promise.resolve([nsSummary('acme-cases', 'Acme Cases', 'd', asking)]),
       );
-      contextSpy.createTeamAndNavigate.calls.reset();
+      contextSpy.createTeam.calls.reset();
 
       await arriveOnTheRoute();
 
       expect(component.creation.modalVisible).toBeTrue();
       expect(modal().visible).toBeTrue();
       expect(modal().contract).toBe(asking);
-      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
+      expect(contextSpy.createTeam).not.toHaveBeenCalled();
     });
 
     it('(AC15) a selection that asks NOTHING creates and navigates with (namespace, undefined)', async () => {
       apiSpy.getNamespaces.and.returnValue(
         Promise.resolve([nsSummary('agent-team-v1', 'Agent Team', 'd')]),
       );
-      contextSpy.createTeamAndNavigate.calls.reset();
+      contextSpy.createTeam.calls.reset();
 
       await arriveOnTheRoute();
 
       expect(component.creation.modalVisible).toBeFalse();
-      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args).toEqual([
+      expect(contextSpy.createTeam.calls.mostRecent().args).toEqual([
         'agent-team-v1',
         undefined,
       ]);
@@ -1995,9 +2065,9 @@ describe('HomeComponent', () => {
         Promise.resolve([nsSummary('agent-team-v1', 'Agent Team', 'd')]),
       );
       let release: () => void = () => undefined;
-      contextSpy.createTeamAndNavigate.and.returnValue(
-        new Promise<void>((resolve) => {
-          release = () => resolve();
+      contextSpy.createTeam.and.returnValue(
+        new Promise<string>((resolve) => {
+          release = () => resolve('team-created-1');
         }),
       );
 
@@ -2005,7 +2075,7 @@ describe('HomeComponent', () => {
       await component.loadPage({ first: 0, rows: 250 });
       await settleMicrotasks();
 
-      expect(contextSpy.createTeamAndNavigate).toHaveBeenCalled();
+      expect(contextSpy.createTeam).toHaveBeenCalled();
       expect(component.creation.creatingByGesture).toBeFalse();
 
       release();
@@ -2031,7 +2101,7 @@ describe('HomeComponent', () => {
       );
 
       await arriveOnTheRoute();
-      contextSpy.createTeamAndNavigate.calls.reset();
+      contextSpy.createTeam.calls.reset();
 
       // Through the real modal's output, so the join is exercised on this route
       // too — the confirm that follows an AUTO open was never actually covered
@@ -2042,7 +2112,7 @@ describe('HomeComponent', () => {
       // before reading the state it leaves behind.
       await settleMicrotasks();
 
-      expect(contextSpy.createTeamAndNavigate.calls.mostRecent().args).toEqual([
+      expect(contextSpy.createTeam.calls.mostRecent().args).toEqual([
         'acme-cases',
         { tenant: 'acme' },
       ]);
@@ -2055,13 +2125,13 @@ describe('HomeComponent', () => {
       );
 
       await arriveOnTheRoute();
-      contextSpy.createTeamAndNavigate.calls.reset();
+      contextSpy.createTeam.calls.reset();
 
       modal().cancelled.emit();
       fixture.detectChanges();
 
       expect(component.creation.modalVisible).toBeFalse();
-      expect(contextSpy.createTeamAndNavigate).not.toHaveBeenCalled();
+      expect(contextSpy.createTeam).not.toHaveBeenCalled();
     });
   });
 
