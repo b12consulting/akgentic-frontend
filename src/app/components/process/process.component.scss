@@ -23,6 +23,25 @@ body {
   min-height: 0;
 }
 
+/* The template's outer <section>, and the reason the height chain reaches the
+   columns at all.
+
+   It is the host's ONLY flex child, and it had no styles whatsoever — so it took
+   the flex default, `flex: 0 1 auto`, and sized itself to its content. Every
+   `flex: 1` below it was then measured against a parent that was already only as
+   tall as what it held, which is why the conversation and the details panel
+   stopped partway down the pane and left grey space beneath them. The host knew
+   how tall this view should be and nothing carried that answer inward.
+
+   A chain is only as good as its weakest link, and an element with no rule at
+   all is easy to miss precisely because there is nothing to read. */
+section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 /* Flex container for the layout. Takes its height from the host rather than
    naming the viewport a second time — one place decides how tall this view is. */
 .main-container {
@@ -43,7 +62,11 @@ body {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  /* NOT `align-items: center`. Centering a capped chat surface inside the column
+     left a band of the container's tint down each side of it — which read as the
+     conversation failing to fill its pane rather than as a deliberate margin,
+     most visibly with the details column collapsed. The surface now stretches
+     and the reading column is centred WITHIN it (see `.chat-app`). */
   overflow: hidden;
 }
 
@@ -53,12 +76,13 @@ body {
   overflow: hidden;
   border-radius: 6px;
   width: 100%;
-  /* Readability cap — with the right column collapsed the chat would otherwise
-     stretch across the whole viewport. Deliberately unconditional: the rendered
-     width is min(column, 1000px), so it stays monotone through the column's
-     0.3s collapse/expand. Toggling the cap in step with that animation makes
-     the two race and the width overshoots before settling. */
-  max-width: 1000px;
+  /* NO readability cap here, deliberately.
+     There were two, and this was the one doing visible harm. Line length is
+     already bounded where it belongs — `--akg-conversation-max-width` caps and
+     centres each turn INSIDE the message list — so capping the surface as well
+     bounded nothing extra and merely stopped the white ground reaching the edge
+     of the pane. Removing it also removes the collapse/expand race the old cap
+     had to be unconditional to avoid: there is nothing left to toggle. */
 }
 
 /* Right Column Styling */

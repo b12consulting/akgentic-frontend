@@ -230,6 +230,50 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
     expect(component).toBeTruthy();
   });
 
+  /**
+   * The height chain, measured rather than inspected.
+   *
+   * Every element between the host and the two columns carries `flex: 1` and
+   * `min-height: 0` — except the template's outer `<section>`, which carried NO
+   * RULE AT ALL and so took the flex default, `flex: 0 1 auto`, and sized itself
+   * to its content. The columns' `flex: 1` was then a share of a parent that had
+   * already collapsed, and the conversation and the details panel both stopped
+   * partway down the pane with grey space beneath them.
+   *
+   * Nothing caught it, because reading the stylesheet shows a chain that looks
+   * complete: the broken link was an element with nothing written about it. So
+   * this asserts the OUTCOME — a height put on the host arrives at the columns —
+   * which is true of the fix and false of any future change that breaks the
+   * chain again, wherever in it that happens.
+   */
+  it('(Epic 52) a height on the host reaches the columns, not just the section', () => {
+    const host = fixture.nativeElement as HTMLElement;
+    // Pinned rather than inherited: the default is `calc(100vh - 80px)`, which
+    // would make the expected number depend on the karma runner's viewport.
+    host.style.setProperty('--process-height', '600px');
+    fixture.detectChanges();
+
+    const heightOf = (selector: string): number => {
+      const element = host.querySelector(selector);
+      expect(element).withContext(selector).toBeTruthy();
+      return (element as HTMLElement).getBoundingClientRect().height;
+    };
+
+    expect(host.getBoundingClientRect().height).toBeCloseTo(600, 0);
+    // `<section>` is the link that was missing, and `.main-container` is the
+    // first thing downstream of it that a `flex: 1` was being wasted on.
+    expect(heightOf('section')).toBeCloseTo(600, 0);
+    expect(heightOf('.main-container')).toBeCloseTo(600, 0);
+
+    // The columns are asserted as a PAIR rather than individually, because a
+    // media query decides whether they sit side by side or stacked, and the
+    // karma runner's viewport is narrow enough to stack them. Either way they
+    // must between them account for the container's height — which is what
+    // fails when the chain above them has collapsed, in both layouts.
+    const columns = heightOf('.left-column') + heightOf('.right-column');
+    expect(columns).toBeGreaterThanOrEqual(600);
+  });
+
   it('scenario 1 — empty log: KG option absent, <app-knowledge-graph> not in DOM', async () => {
     const options = await firstValue(component.visualizationOptions$);
     expect(options.some((o) => o.value === 'knowledge-graph')).toBe(false);
