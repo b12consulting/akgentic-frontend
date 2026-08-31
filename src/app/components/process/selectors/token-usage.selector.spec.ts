@@ -278,6 +278,48 @@ describe('TokenUsageSelector.teamByModel$', () => {
     sub.unsubscribe();
   });
 
+  it('splits ONE agent across every model it ran on, not just its current one', () => {
+    const { log, selector } = configureBed();
+    let received: ModelTokenTotals[] | undefined;
+    const sub = selector.teamByModel$.subscribe((v) => (received = v));
+
+    // A single agent that switched model mid-session (ADR-018). Before the
+    // per-model split this produced ONE row — the agent's whole cumulative total
+    // credited to gpt-5.4, the model it happened to end on — and gpt-5.2's 5_844
+    // sent tokens disappeared from the breakdown entirely. Reproduces the live
+    // report on team e01f37d1 (@Manager, gpt-5.2 -> gpt-5.4).
+    log.appendAll([
+      makeUsageEnvelope('A', 5_844, 54, 0, 0, 'gpt-5.2'),
+      makeUsageEnvelope('A', 6_037, 40, 0, 0, 'gpt-5.4'),
+    ]);
+
+    expect(received).toEqual([
+      {
+        modelName: 'gpt-5.4',
+        totalSent: 6_037,
+        totalReceived: 40,
+        totalCacheRead: 0,
+        totalCacheWrite: 0,
+      },
+      {
+        modelName: 'gpt-5.2',
+        totalSent: 5_844,
+        totalReceived: 54,
+        totalCacheRead: 0,
+        totalCacheWrite: 0,
+      },
+    ]);
+
+    // The split must reconcile with the header the user reads beside it: the
+    // per-model rows sum to the team total. This is the half that catches a
+    // regression which merely mis-attributes rather than losing tokens.
+    const sent = (received ?? []).reduce((n, r) => n + r.totalSent, 0);
+    const received_ = (received ?? []).reduce((n, r) => n + r.totalReceived, 0);
+    expect(sent).toBe(11_881);
+    expect(received_).toBe(94);
+    sub.unsubscribe();
+  });
+
   it('de-dupes: a log frame that changes no per-model total produces no new emission', () => {
     const { log, selector } = configureBed();
     const emissions: ModelTokenTotals[][] = [];
