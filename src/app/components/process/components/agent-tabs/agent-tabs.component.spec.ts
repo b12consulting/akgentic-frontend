@@ -116,10 +116,14 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
           provide: ApiService,
           useValue: {
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
-            // Story 25-1 (!running gate): init() seeds the state store from
-            // getAgentStates ONLY for stopped teams. This spec inits with
-            // running=true (live WS), so getAgentStates is never called — no
-            // stub needed.
+            // akgentic-core ADR-020 §4: init() seeds the state store from
+            // getAgentStates for EVERY team, running included — the stream
+            // subscribers no longer carry StateChangedMessage, so this is the
+            // only source. This spec drives the state store through the log
+            // directly, so the seed resolves empty.
+            getAgentStates: jasmine
+              .createSpy('getAgentStates')
+              .and.resolveTo([]),
           },
         },
         {

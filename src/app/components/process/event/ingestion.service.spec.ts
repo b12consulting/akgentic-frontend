@@ -1636,22 +1636,31 @@ describe('IngestionService — seed agent state on init (Story 25-1)', () => {
     expect(service.state.snapshot(NAME)).toBeUndefined();
   });
 
-  it('AC3: running-team init does NOT call getAgentStates and does NOT seed (state arrives via the live WS)', async () => {
-    // Post Story 23-3 (restore stream-parity), a running/restored team receives
-    // its StateChangedMessage(s) on the cursor-0 WS replay, so the REST seed is
-    // redundant and MUST NOT run. These unit tests do not exercise the live WS,
-    // so the state store stays empty — the seed simply never fires.
+  it('AC3: running-team init DOES call getAgentStates and seeds the state store', async () => {
+    // The `!running` gate is gone (akgentic-core ADR-020 §4 option (a)): the
+    // stream subscribers now suppress StateChangedMessage, so the cursor-0 WS
+    // replay is no longer a source of agent state and a running team would
+    // otherwise have none — a blank backstory head-block, and no Member chat tab
+    // at all once /clear has emptied `context`.
     apiService.getAgentStates.and.resolveTo([
-      snapshot({ backstory: 'Never seeded for a running team.' }),
+      snapshot({ backstory: 'Seeded for a running team too.' }),
     ]);
 
     await service.init('team-1', true);
 
-    // getAgentStates is gated on !running — not called for a running team.
-    expect(apiService.getAgentStates).not.toHaveBeenCalled();
-    // No REST seed applied; the running team's state comes from the WS (not
-    // exercised here), so the store has no entry for this UUID.
-    expect(service.state.snapshot(UUID)).toBeUndefined();
+    expect(apiService.getAgentStates).toHaveBeenCalledWith('team-1');
+    expect(service.state.snapshot(UUID)).toEqual({
+      schema: {},
+      state: { backstory: 'Seeded for a running team too.' },
+    });
+  });
+
+  it('AC3: the durable event replay stays stopped-team-only', async () => {
+    // Only the state seed was lifted out of the `!running` gate. A running team
+    // still gets its history from the cursor-0 WS replay, never from getEvents.
+    await service.init('team-1', true);
+
+    expect(apiService.getEvents).not.toHaveBeenCalled();
   });
 
   it('AC6: the synthesized seed does NOT render as a chat bubble (messageList$ excludes it)', async () => {
@@ -3440,8 +3449,9 @@ describe('IngestionService — Story 37-2 (team-stopping reactor wiring)', () =>
     expect(api.getAgentStates).toHaveBeenCalledTimes(1);
     expect(api.getEvents).toHaveBeenCalledTimes(1);
 
-    // A running team still issues no replay at all — the `!running` gate is
-    // untouched, which is why a restored team never re-reads its own stop event.
+    // A running team still issues no EVENT replay — the `!running` gate around
+    // getEvents is untouched, which is why a restored team never re-reads its
+    // own stop event. It does take the state seed (ADR-020 §4).
     api.getAgentStates.calls.reset();
     api.getEvents.calls.reset();
     const socketB = new Subject<any>();
@@ -3452,7 +3462,7 @@ describe('IngestionService — Story 37-2 (team-stopping reactor wiring)', () =>
     await service.init('team-B', true);
     jasmine.clock().tick(600);
 
-    expect(api.getAgentStates).not.toHaveBeenCalled();
+    expect(api.getAgentStates).toHaveBeenCalledTimes(1);
     expect(api.getEvents).not.toHaveBeenCalled();
     socketB.complete();
   });
