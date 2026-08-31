@@ -47,32 +47,38 @@ export interface ModelTokenTotals extends TeamTokenTotals {
   modelName: string;
 }
 
-/** Group the team's usage by model and sum each group. Approximation note: the
- *  store keeps only each agent's LATEST `model_name`, so an agent's cumulative
- *  totals attribute to its current model — exact when an agent stays on one
- *  model (the normal case), approximate if it switched mid-session. Agents that
- *  have not run a model yet (`lastModelName === ''`) contribute nothing. Sorted
- *  by sent desc (then name) for a stable, deterministic render order. */
+/** Group the team's usage by model and sum each group, reading each agent's
+ *  `perModel` split so an agent that switched model mid-session (ADR-018)
+ *  contributes to EVERY model it ran on, in the right proportion.
+ *
+ *  This used to group each agent's cumulative totals under its `lastModelName`,
+ *  which credited all of an agent's earlier tokens to whatever model it happened
+ *  to be on now — exact only while an agent kept one model for life, which
+ *  runtime model switching ended. Agents that have not run a model yet have an
+ *  empty `perModel` and contribute nothing. Sorted by sent desc (then name) for
+ *  a stable, deterministic render order. */
 function groupByModel(
   all: ReadonlyMap<string, AgentTokenUsage>,
 ): ModelTokenTotals[] {
   const byModel = new Map<string, ModelTokenTotals>();
   for (const usage of all.values()) {
-    if (usage.lastModelName === '') continue;
-    const g = byModel.get(usage.lastModelName);
-    if (g) {
-      g.totalSent += usage.totalSent;
-      g.totalReceived += usage.totalReceived;
-      g.totalCacheRead += usage.totalCacheRead;
-      g.totalCacheWrite += usage.totalCacheWrite;
-    } else {
-      byModel.set(usage.lastModelName, {
-        modelName: usage.lastModelName,
-        totalSent: usage.totalSent,
-        totalReceived: usage.totalReceived,
-        totalCacheRead: usage.totalCacheRead,
-        totalCacheWrite: usage.totalCacheWrite,
-      });
+    for (const [modelName, share] of usage.perModel) {
+      if (modelName === '') continue;
+      const g = byModel.get(modelName);
+      if (g) {
+        g.totalSent += share.totalSent;
+        g.totalReceived += share.totalReceived;
+        g.totalCacheRead += share.totalCacheRead;
+        g.totalCacheWrite += share.totalCacheWrite;
+      } else {
+        byModel.set(modelName, {
+          modelName,
+          totalSent: share.totalSent,
+          totalReceived: share.totalReceived,
+          totalCacheRead: share.totalCacheRead,
+          totalCacheWrite: share.totalCacheWrite,
+        });
+      }
     }
   }
   return Array.from(byModel.values()).sort(
