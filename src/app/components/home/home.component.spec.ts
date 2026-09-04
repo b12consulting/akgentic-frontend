@@ -10,7 +10,7 @@ import {
   ParamMap,
   Router,
 } from '@angular/router';
-import { BehaviorSubject, of } from 'rxjs';
+import { BehaviorSubject, firstValueFrom, of } from 'rxjs';
 
 import { ApiService } from '../../core/http/api.service';
 import { AuthService } from '../../core/auth/auth.service';
@@ -376,6 +376,89 @@ describe('HomeComponent', () => {
     expect(apiSpy.getNamespaces).toHaveBeenCalledTimes(1);
     expect(component.namespaces$.value.length).toBe(2);
     expect(component.selectedNamespace$.value?.namespace).toBe('agent-team-v1');
+  });
+
+  // ---------------------------------------------------------------------
+  // Dropdown ordering and sectioning.
+  //
+  // The server returns the namespace list in no order the page can rely on,
+  // so these drive `loadNamespaces` with a DELIBERATELY scrambled list —
+  // team/library interleaved and names out of order — and assert on what the
+  // page holds afterwards. A fixture that arrived already sorted would pass
+  // against a component that does no sorting at all.
+  // ---------------------------------------------------------------------
+
+  /** A namespace that declares a team; `nsSummary` alone yields `team: false`. */
+  function teamNs(namespace: string, name: string): NamespaceSummary {
+    return { ...nsSummary(namespace, name, ''), team: true };
+  }
+
+  it('orders team namespaces first, then the library, each alphabetical by name', async () => {
+    apiSpy.getNamespaces.and.returnValue(
+      Promise.resolve([
+        nsSummary('zeta-lib', 'Zeta Library', ''),
+        teamNs('rag-team-v1', 'RAG Team'),
+        nsSummary('alpha-lib', 'Alpha Library', ''),
+        teamNs('agent-team-v1', 'Agent Team'),
+      ]),
+    );
+
+    await component.ngOnInit();
+
+    expect(component.namespaces$.value.map((n) => n.namespace)).toEqual([
+      'agent-team-v1',
+      'rag-team-v1',
+      'alpha-lib',
+      'zeta-lib',
+    ]);
+  });
+
+  it('auto-selects a TEAM namespace even when the server returns a library entry first', async () => {
+    apiSpy.getNamespaces.and.returnValue(
+      Promise.resolve([
+        nsSummary('alpha-lib', 'Alpha Library', ''),
+        teamNs('rag-team-v1', 'RAG Team'),
+      ]),
+    );
+
+    await component.ngOnInit();
+
+    expect(component.selectedNamespace$.value?.namespace).toBe('rag-team-v1');
+  });
+
+  it('sections the dropdown into Teams then Library', async () => {
+    apiSpy.getNamespaces.and.returnValue(
+      Promise.resolve([
+        nsSummary('zeta-lib', 'Zeta Library', ''),
+        teamNs('rag-team-v1', 'RAG Team'),
+        nsSummary('alpha-lib', 'Alpha Library', ''),
+        teamNs('agent-team-v1', 'Agent Team'),
+      ]),
+    );
+
+    await component.ngOnInit();
+    const groups = await firstValueFrom(component.namespaceGroups$);
+
+    expect(groups.map((g) => g.label)).toEqual(['Teams', 'Library']);
+    expect(groups[0].items.map((n) => n.namespace)).toEqual([
+      'agent-team-v1',
+      'rag-team-v1',
+    ]);
+    expect(groups[1].items.map((n) => n.namespace)).toEqual([
+      'alpha-lib',
+      'zeta-lib',
+    ]);
+  });
+
+  it('drops an empty section rather than rendering a bare header', async () => {
+    apiSpy.getNamespaces.and.returnValue(
+      Promise.resolve([teamNs('agent-team-v1', 'Agent Team')]),
+    );
+
+    await component.ngOnInit();
+    const groups = await firstValueFrom(component.namespaceGroups$);
+
+    expect(groups.map((g) => g.label)).toEqual(['Teams']);
   });
 
   it('(AC3 1.9) createTeam hands the gate the SELECTED summary, whose namespace is created (not an id lookup)', async () => {

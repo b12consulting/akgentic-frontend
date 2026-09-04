@@ -13,13 +13,21 @@
       metadata fields the filter bar below offers — it does NOT narrow the
       list. The narrowing control is the toggle in the filter row; labelled
       badly, this select reads as a filter that does not work (Epic 48 AC14).
+
+      Sectioned into "Teams" (namespaces that declare a team) and "Library"
+      (everything else), each alphabetical. `[options]` binds the SECTIONED
+      projection `namespaceGroups$`; every other consumer on this page still
+      reads the flat `namespaces$`, which carries the same order.
     -->
     <span class="home-controls__group">
     <label for="namespace-select" class="home-controls__label">Team type</label>
     <p-select
       size="small"
       inputId="namespace-select"
-      [options]="(namespaces$ | async) || []"
+      [options]="(namespaceGroups$ | async) || []"
+      [group]="true"
+      optionGroupLabel="label"
+      optionGroupChildren="items"
       [ngModel]="selectedNamespace$ | async"
       (ngModelChange)="onNamespaceSelected($event)"
       optionLabel="name"
