@@ -47,6 +47,37 @@ import {
 // 250 literal is duplicated. Server clamps size to [1, 500].
 const PAGE_SIZE = 250;
 
+/**
+ * One section of the team-type dropdown: a header and the namespaces under it.
+ *
+ * `label`/`items` are p-select's DEFAULT group keys, but the template names
+ * both explicitly — a rename here must not silently fall back to the defaults.
+ */
+export interface NamespaceGroup {
+  label: string;
+  items: NamespaceSummary[];
+}
+
+/**
+ * The dropdown's order: team-declaring namespaces first, then the library
+ * entries (`team: false`), each half alphabetical by display `name`.
+ *
+ * The two halves are ordered, not merely grouped, because the auto-selection
+ * in `loadNamespaces()` takes `[0]` — so the default landing selection is a
+ * team type whenever one exists, never a library entry that Create cannot act
+ * on. Sorting the flat list and grouping it are therefore ONE decision; the
+ * groups below are a re-projection of this order, not a second one.
+ *
+ * `localeCompare` rather than `<`, so accented and mixed-case names sort where
+ * a reader expects instead of by UTF-16 code point. Copies rather than sorting
+ * in place — the argument is the array the API layer just returned.
+ */
+function sortNamespaces(namespaces: NamespaceSummary[]): NamespaceSummary[] {
+  return [...namespaces].sort(
+    (a, b) => Number(b.team) - Number(a.team) || a.name.localeCompare(b.name),
+  );
+}
+
 
 @Component({
   selector: 'app-home',
@@ -85,9 +116,31 @@ export class HomeComponent {
    */
   creation = inject(TeamCreationService);
 
-  // Catalog namespaces for the team creation dropdown
+  // Catalog namespaces for the team creation dropdown. Held sorted by
+  // `sortNamespaces` (teams first, then library, each alphabetical) — the list
+  // is written in exactly one place, `loadNamespaces()`.
   namespaces$ = new BehaviorSubject<NamespaceSummary[]>([]);
   selectedNamespace$ = new BehaviorSubject<NamespaceSummary | null>(null);
+
+  /**
+   * The same namespaces, sectioned for the dropdown — `[options]` binds to
+   * THIS, while every other consumer keeps reading the flat `namespaces$`.
+   *
+   * DERIVED, never a second subject: a parallel BehaviorSubject would be one
+   * more thing `loadNamespaces()` has to remember to write, and the day it
+   * forgets, the dropdown shows a list nothing else agrees with.
+   *
+   * An empty section is dropped rather than rendered as a bare header, so a
+   * catalog holding only team types shows no "Library" heading at all.
+   */
+  namespaceGroups$: Observable<NamespaceGroup[]> = this.namespaces$.pipe(
+    map((namespaces) =>
+      [
+        { label: 'Teams', items: namespaces.filter((n) => n.team) },
+        { label: 'Library', items: namespaces.filter((n) => !n.team) },
+      ].filter((group) => group.items.length > 0),
+    ),
+  );
   isRefreshing = false;
 
   // Classic paginator state (Epic 28). `rows` feeds [rows]; `first` is the
@@ -275,7 +328,8 @@ export class HomeComponent {
 
   /**
    * Load catalog namespaces for the dropdown. Shared by initial load and the
-   * 2xx save branch so the fetch and error handling live in one place.
+   * 2xx save branch so the fetch, the ORDER and the error handling live in one
+   * place — see `sortNamespaces`.
    *
    * Reconciles the current selection against the freshly-fetched list,
    * comparing on the stable `namespace` identifier (NOT object reference —
@@ -294,9 +348,12 @@ export class HomeComponent {
       // consistent and the selection reconciliation below runs on every
       // re-fetch. `all=true` is honoured server-side only for admins; for
       // everyone else it is a no-op (normal owner+public list).
-      const namespaces = await this.apiService.getNamespaces({
-        all: this.showAllNamespaces,
-      });
+      //
+      // Sorted HERE, at the single write, so the order the dropdown renders
+      // and the order `[0]` auto-selects from below are the same order.
+      const namespaces = sortNamespaces(
+        await this.apiService.getNamespaces({ all: this.showAllNamespaces }),
+      );
       this.namespaces$.next(namespaces);
       // The URL named a team type: select THAT one rather than defaulting to
       // the first, and keep the terms restored beside it. An ordinary selection
