@@ -28,10 +28,10 @@
       <ng-container *ngFor="let provider of loginProviders">
         <div *ngIf="isOAuthProvider(provider) && isProviderActive(provider)" class="provider-panel">
           <button (click)="loginOAuth(provider)" class="login-button oauth-button">
-            <img *ngIf="provider === 'azure'" src="microsoft_auth_button.svg" alt="Azure AD" class="icon" />
+            <img *ngIf="provider === 'azure_ad'" src="microsoft_auth_button.svg" alt="Azure AD" class="icon" />
             <img *ngIf="provider === 'google'" src="google_auth_button.svg" alt="Google" class="icon" />
-            <span *ngIf="provider !== 'azure' && provider !== 'google'" class="pi pi-sign-in"></span>
-            <span *ngIf="provider !== 'azure' && provider !== 'google'">{{ getProviderLabel(provider) }}</span>
+            <span *ngIf="provider !== 'azure_ad' && provider !== 'google'" class="pi pi-sign-in"></span>
+            <span *ngIf="provider !== 'azure_ad' && provider !== 'google'">{{ getProviderLabel(provider) }}</span>
           </button>
         </div>
       </ng-container>

@@ -1,4 +1,4 @@
-export type AuthProvider = 'azure' | 'google' | 'apikey' | 'default' | (string & {});
+export type AuthProvider = 'azure_ad' | 'google' | 'apikey' | 'default' | (string & {});
 
 export interface Environment {
   production: boolean;
