@@ -64,7 +64,7 @@ export class LoginComponent {
 
   getProviderLabel(provider: AuthProvider): string {
     const labels: Record<string, string> = {
-      azure: 'Azure AD',
+      azure_ad: 'Azure AD',
       google: 'Google',
       apikey: 'API Key',
       default: 'Sign In',
