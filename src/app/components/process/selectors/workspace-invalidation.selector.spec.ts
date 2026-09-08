@@ -55,6 +55,50 @@ function workspaceTool(workspaceId?: string | null): ToolCardLite {
   return { __model__: WORKSPACE_MODEL, workspace_id: workspaceId };
 }
 
+/** A metadata-layout card: `workspace_id` is NULL on the wire, so this is the
+ *  shape that used to attribute a mutation to the team id (Story 51-1). */
+function metadataTool(keys: string[]): ToolCardLite {
+  return {
+    __model__: WORKSPACE_MODEL,
+    workspace_id: null,
+    workspace_metadata_keys: keys,
+  };
+}
+
+/** The `#Workspace` actor's own StartMessage — the frame carrying the backend's
+ *  resolved path (ADR-048 §Decision 8). `metadataKeys` is omitted when not
+ *  passed: `config.metadata_keys` reaches the wire with akgentic-tool 48-4. */
+function workspaceActorStart(
+  path: string,
+  metadataKeys?: string[],
+): StartMessage {
+  const config: Record<string, unknown> = {
+    __model__: 'akgentic.tool.workspace.models.WorkspaceConfig',
+    name: '#Workspace-' + path,
+    workspace_path: path,
+  };
+  if (metadataKeys !== undefined) config['metadata_keys'] = metadataKeys;
+  return {
+    id: 'start-ws-' + path,
+    parent_id: null,
+    team_id: TEAM_ID,
+    timestamp: new Date().toISOString(),
+    sender: {
+      __actor_address__: true as const,
+      agent_id: 'actor-ws-' + path,
+      name: '#Workspace-' + path,
+      role: 'Tool',
+      squad_id: 's1',
+      user_message: false,
+    },
+    display_type: 'other',
+    content: null,
+    __model__: 'akgentic.core.messages.orchestrator.StartMessage',
+    config: config as unknown as BaseConfig,
+    parent: null,
+  };
+}
+
 // NOTE: no `team_id` in config — the backend AgentConfig does not serialise it.
 // The effective id resolves against the MESSAGE-level team_id.
 function makeConfig(tools?: ToolCardLite[]): BaseConfig {
@@ -646,6 +690,58 @@ describe('WorkspaceInvalidationService — attribution (FR6)', () => {
       makeToolReturn('A', 'workspace_write', 'call-1', true),
     ]);
     expect(result).toEqual([]);
+  });
+
+  // ---- Story 51-1: the metadata layout resolves the same way as the picker --
+
+  it('(51-1 AC9) a mutation by a metadata card attributes to the _meta LEAF, not the team id', () => {
+    const result = collectFromLog([
+      workspaceActorStart('_meta/tenant-azerty', ['tenant']),
+      makeStartMessage('A', [metadataTool(['tenant'])]),
+      makeToolCall('A', 'workspace_write', writeArgs, 'call-1'),
+      makeToolReturn('A', 'workspace_write', 'call-1', true),
+    ]);
+    expect(result.length).toBe(1);
+    expect(result[0].workspaceId).toBe('tenant-azerty');
+  });
+
+  it('(51-1 AC9) a metadata card matching no announced workspace yields NO instruction', () => {
+    const result = collectFromLog([
+      workspaceActorStart('_meta/tenant-azerty', ['tenant']),
+      makeStartMessage('A', [metadataTool(['customer_id'])]),
+      makeToolCall('A', 'workspace_write', writeArgs, 'call-1'),
+      makeToolReturn('A', 'workspace_write', 'call-1', true),
+    ]);
+    // No phantom id, and above all no fallback to the team id.
+    expect(result).toEqual([]);
+  });
+
+  it('(51-1 AC9) two key sets in one team attribute to their own leaf each', () => {
+    const result = collectFromLog([
+      workspaceActorStart('_meta/customer_id-ACME', ['customer_id']),
+      workspaceActorStart('_meta/customer_id-ACME__case_id-42', [
+        'customer_id',
+        'case_id',
+      ]),
+      makeStartMessage('Fine', [metadataTool(['customer_id', 'case_id'])]),
+      makeToolCall('Fine', 'workspace_write', writeArgs, 'call-1'),
+      makeToolReturn('Fine', 'workspace_write', 'call-1', true),
+    ]);
+    expect(result.map((i) => i.workspaceId)).toEqual([
+      'customer_id-ACME__case_id-42',
+    ]);
+  });
+
+  it('(51-1 AC9) the metadata leaf is resolved at CALL time and survives a StopMessage', () => {
+    const result = collectFromLog([
+      workspaceActorStart('_meta/tenant-azerty', ['tenant']),
+      makeStartMessage('A', [metadataTool(['tenant'])]),
+      makeToolCall('A', 'workspace_write', writeArgs, 'call-1'),
+      makeStopMessage('A'),
+      makeToolReturn('A', 'workspace_write', 'call-1', true),
+    ]);
+    expect(result.length).toBe(1);
+    expect(result[0].workspaceId).toBe('tenant-azerty');
   });
 });
 
