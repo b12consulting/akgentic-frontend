@@ -489,6 +489,25 @@ describe('resolveJoinKeys (join, no normalisation)', () => {
     );
     expect([...resolved]).toEqual([]);
   });
+
+  it('an EMPTY key list joins NOTHING, not every keyless identity', () => {
+    // `listEquals([], [])` is TRUE, and a named workspace, a default one and a
+    // pre-48-4 metadata one ALL announce `metadataKeys: []`. Without the guard
+    // in `resolveJoinKeys` an empty declaration would join all three at once —
+    // the cross-contamination AC4 forbids, reached from the one direction
+    // `startContribution`'s own non-empty check does not cover.
+    const identities = identityMap(
+      { leaf: 'notes', metadataKeys: [] },
+      { leaf: TEAM_ID, metadataKeys: [] },
+      { leaf: 'customer_id-ACME', metadataKeys: [] },
+    );
+    const resolved = resolveJoinKeys(
+      [{ kind: 'metadata', metadataKeys: [] }],
+      identities,
+      TEAM_ID,
+    );
+    expect([...resolved]).toEqual([]);
+  });
 });
 
 describe('workspaceRegistryReduce — metadata workspaces (Story 51-1)', () => {
