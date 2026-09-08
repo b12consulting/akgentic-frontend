@@ -168,6 +168,29 @@ describe('WorkspaceService', () => {
       );
     });
 
+    it('encodes a leaf containing a percent escape EXACTLY once (Story 51-1)', async () => {
+      // A metadata leaf is percent-encoded by the backend (ADR-048 §Decision 3),
+      // so a `%` can appear inside the id the picker forwards. The client
+      // encodes once and the server decodes once: `%2D` must reach the wire as
+      // `%252D`, so the round trip is byte-identical. Encoding twice, or not at
+      // all, silently addresses a different directory.
+      const response: WorkspaceTreeResponse = {
+        team_id: 't1',
+        path: '',
+        entries: [],
+      };
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve(response));
+
+      await service.getWorkspaceTree('p1', '', 'case_id-2026%2D42');
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.url).toBe(
+        `${environment.api}/workspace/p1/tree?path=&workspace_id=case_id-2026%252D42`
+      );
+      const sent = new URL(callArgs.url).searchParams.get('workspace_id');
+      expect(sent).toBe('case_id-2026%2D42');
+    });
+
     it('leaves the URL byte-for-byte unchanged when workspaceId is omitted', async () => {
       const response: WorkspaceTreeResponse = {
         team_id: 't1',

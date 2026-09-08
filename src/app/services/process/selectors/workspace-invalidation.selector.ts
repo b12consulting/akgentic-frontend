@@ -21,7 +21,13 @@ import {
   WorkspaceToolArguments,
 } from '../../../protocol/message.types';
 import { MessageLogService } from '../event/message-log.service';
-import { startContribution } from './workspace-registry.selector';
+import {
+  resolveJoinKeys,
+  startContribution,
+  workspaceIdentity,
+  WorkspaceIdentity,
+  WorkspaceJoinKey,
+} from './workspace-registry.selector';
 
 /**
  * The six workspace tools that CHANGE the tree (Epic 39 / ADR-031 §D2), written
@@ -172,15 +178,12 @@ interface InFlightCall {
 function recordCall(
   inFlight: Map<string, InFlightCall>,
   event: ToolCallEvent,
-  workspaceIds: Set<string> | undefined,
+  workspaceIds: Set<string>,
 ): void {
   if (!isMutatingWorkspaceTool(event.tool_name)) return;
   const args = parseToolCallArguments(event);
   if (args === null) return;
-  inFlight.set(event.tool_call_id, {
-    workspaceIds: [...(workspaceIds ?? [])],
-    args,
-  });
+  inFlight.set(event.tool_call_id, { workspaceIds: [...workspaceIds], args });
 }
 
 /**
@@ -192,10 +195,11 @@ function recordCall(
  * nothing — `success: false` is a retry prompt, not a mutation.
  *
  * An agent mapping to two workspaces yields two instructions, one per workspace
- * (ADR-031 §D4): `startContribution` returns a `Set` and both cards expose
- * identical `workspace_*` tool names, so the tool name cannot disambiguate.
- * Correct, merely coarser. An agent with no `WorkspaceTool` contribution yields
- * none, and no phantom workspace id is invented for it.
+ * (ADR-031 §D4): its join keys resolve to a `Set` of leaves and both cards
+ * expose identical `workspace_*` tool names, so the tool name cannot
+ * disambiguate. Correct, merely coarser. An agent with no `WorkspaceTool`
+ * contribution — or with a metadata card that matches no announced workspace —
+ * yields none, and no phantom workspace id is invented for it.
  */
 function resolveReturn(
   inFlight: Map<string, InFlightCall>,
@@ -217,17 +221,23 @@ function resolveReturn(
  * unit's memory: no workspace cache, no "last invalidated at" stamp, no dirty
  * flag, no cursor and no announced-so-far count.
  *
- * - `contributions` — the effective workspace ids each agent's `WorkspaceTool`s
- *   resolve to. A `StartMessage` sets an agent's entry (last-wins), a
- *   `StopMessage` deletes it. Read at CALL time and never at return time, so a
+ * - `identities` — every workspace a `#Workspace` actor announced, keyed by leaf
+ *   (ADR-048 §Decision 8). MONOTONIC, exactly as in the registry: a
+ *   `StopMessage` deletes a contribution, never an identity.
+ * - `contributions` — the join keys each agent's `WorkspaceTool`s declare. A
+ *   `StartMessage` sets an agent's entry (last-wins), a `StopMessage` deletes
+ *   it. Read and RESOLVED at CALL time, never at return time, so a
  *   `StopMessage` landing between a call and its return cannot retroactively
- *   erase the instruction (ADR-031 §D4).
+ *   erase the instruction (ADR-031 §D4). Resolving at call time is safe with no
+ *   ordering care: the `#Workspace` actor must exist before it can serve a call,
+ *   so its identity is always already folded.
  * - `inFlight` — the mutating calls still awaiting a return, keyed by
  *   `tool_call_id`. The return frame names no path, so everything an
  *   instruction needs is captured here from the call frame.
  */
 interface InvalidationState {
-  contributions: Map<string, Set<string>>;
+  identities: Map<string, WorkspaceIdentity>;
+  contributions: Map<string, WorkspaceJoinKey[]>;
   inFlight: Map<string, InFlightCall>;
 }
 
@@ -263,6 +273,10 @@ function absorb(
     // one keys the empty agent id, which no well-formed frame ever claims.
     const agentId = m.sender?.agent_id ?? '';
     if (isStartMessage(m)) {
+      // The identity is folded BEFORE the contribution, so a `#Workspace`
+      // actor's own frame can never be shadowed by the agent frame beside it.
+      const identity = workspaceIdentity(m);
+      if (identity !== null) state.identities.set(identity.leaf, identity);
       state.contributions.set(agentId, startContribution(m));
       continue;
     }
@@ -277,7 +291,14 @@ function absorb(
     // `any` from propagating into this module.
     const inner: { __model__?: string } | null | undefined = m.event;
     if (isToolCallEvent(inner)) {
-      recordCall(state.inFlight, inner, state.contributions.get(agentId));
+      // The team id comes from the message being absorbed, the same source
+      // `startContribution` used before the resolution moved out of it.
+      const keys = state.contributions.get(agentId) ?? [];
+      recordCall(
+        state.inFlight,
+        inner,
+        resolveJoinKeys(keys, state.identities, m.team_id),
+      );
     } else if (isToolReturnEvent(inner)) {
       instructions.push(
         ...resolveReturn(state.inFlight, inner.tool_call_id, inner.success),
@@ -348,7 +369,7 @@ function seedFrom(
  * (nothing in this layer subscribes in a constructor).
  *
  * `log$` is still watched, but ONLY for `reset()` — an O(1) length check per
- * emission, not the derivation that was deleted. It is what empties the two maps
+ * emission, not the derivation that was deleted. It is what empties the three maps
  * on a team switch: `IngestionService.init()` runs several times per component
  * lifetime, the `ProcessComponent` and this service survive it, `reset()` emits
  * on `log$` and deliberately NOT on `appended$`, and a subscriber that watched
@@ -369,7 +390,8 @@ export class WorkspaceInvalidationService {
 
   readonly invalidations$: Observable<WorkspaceInvalidation> = defer(() => {
     const state: InvalidationState = {
-      contributions: new Map<string, Set<string>>(),
+      identities: new Map<string, WorkspaceIdentity>(),
+      contributions: new Map<string, WorkspaceJoinKey[]>(),
       inFlight: new Map<string, InFlightCall>(),
     };
     seedFrom(state, this.log.snapshot());
@@ -379,6 +401,7 @@ export class WorkspaceInvalidationService {
     const cleared$ = this.log.log$.pipe(
       filter((log) => log.length === 0),
       tap(() => {
+        state.identities.clear();
         state.contributions.clear();
         state.inFlight.clear();
       }),
