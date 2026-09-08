@@ -155,6 +155,14 @@ function listEquals(a: string[], b: string[]): boolean {
  * cross-contamination. A metadata card that matches no identity resolves to
  * NOTHING: no phantom id is invented for it, and in particular it never falls
  * back to the team id.
+ *
+ * An EMPTY key list is not a scope and joins nothing. It cannot arrive from
+ * `startContribution`, which only emits `metadata` for a non-empty declaration
+ * — but this function is exported, and `listEquals([], [])` is TRUE, so the
+ * invariant is enforced HERE, where it is relied on, rather than one function
+ * away. Without it an empty list joins every identity carrying no keys: every
+ * named and default workspace (whose identities always carry `[]`), and every
+ * metadata workspace until akgentic-tool 48-4 puts `metadata_keys` on the wire.
  */
 export function resolveJoinKeys(
   keys: WorkspaceJoinKey[],
@@ -167,7 +175,7 @@ export function resolveJoinKeys(
       ids.add(key.workspaceId);
     } else if (key.kind === 'default') {
       ids.add(teamId);
-    } else {
+    } else if (key.metadataKeys.length > 0) {
       for (const identity of identities.values()) {
         if (listEquals(identity.metadataKeys, key.metadataKeys)) {
           ids.add(identity.leaf);
