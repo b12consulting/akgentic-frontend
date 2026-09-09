@@ -45,7 +45,8 @@ export interface BaseConfig {
   orchestrator: ActorAddress;
   /** Tools bound to this agent, serialised in full on the start config
    *  (Epic 23 / ADR-019). Optional: older payloads / agents without tools
-   *  omit it. The WorkspaceRegistry fold reads `WorkspaceTool` entries here. */
+   *  omit it. Since Story 52-1 no production code reads it for workspace
+   *  identity or attribution; see the `ToolCardLite` note above. */
   tools?: ToolCardLite[];
 }
 

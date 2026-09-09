@@ -88,7 +88,7 @@ function makeKgStop(id: string): StopMessage {
 // workspace (Story 52-1). The picker is discovered from THIS frame, not from an
 // agent's card: the sender is the orchestrator and the binding agent is the
 // event's own top-level `agent_id`.
-function makeWorkspaceStart(id: string, agentName: string): ResourceAttached {
+function makeResourceAttached(id: string, agentName: string): ResourceAttached {
   return {
     id,
     parent_id: null,
@@ -281,11 +281,11 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
   });
 
   it('scenario 5 — no regression: Team / Member / Messages entries remain present under both KG presence states (order preserved)', async () => {
-    // Workspace presence is reactive (ADR-020): declare a WorkspaceTool so the
+    // Workspace presence is reactive (ADR-020): attach a workspace so the
     // Workspaces tab is present, then verify the order holds without KG —
     // `[team, member, workspace, messages]` — and with KG —
     // `[team, member, knowledge-graph, workspace, messages]`.
-    log.append(makeWorkspaceStart('ws-start-1', 'Worker'));
+    log.append(makeResourceAttached('ws-start-1', 'Worker'));
     let options = await firstValue(component.visualizationOptions$);
     let labels = options.map((o) => o.value);
     expect(labels).toEqual(['team', 'member', 'workspace', 'messages']);
@@ -302,10 +302,10 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
     ]);
   });
 
-  it('scenario 6 — Workspaces appears between KG and Messages once a WorkspaceTool exists', async () => {
-    // With a WorkspaceTool but no KG, the order is [team, member, workspace,
-    // messages].
-    log.append(makeWorkspaceStart('ws-start-1', 'Worker'));
+  it('scenario 6 — Workspaces appears between KG and Messages once an attach event arrives', async () => {
+    // With an attached workspace but no KG, the order is [team, member,
+    // workspace, messages].
+    log.append(makeResourceAttached('ws-start-1', 'Worker'));
     let options = await firstValue(component.visualizationOptions$);
     expect(options.map((o) => o.value)).toEqual([
       'team',
@@ -334,8 +334,8 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
     ).toBeNull();
   });
 
-  it('scenario 8 — WorkspaceTool appears; sticky: Stop keeps the Workspaces tab', async () => {
-    log.append(makeWorkspaceStart('ws-start-1', 'Worker'));
+  it('scenario 8 — an attach event appears; sticky: Stop keeps the Workspaces tab', async () => {
+    log.append(makeResourceAttached('ws-start-1', 'Worker'));
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
