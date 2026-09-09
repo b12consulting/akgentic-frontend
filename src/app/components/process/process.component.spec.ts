@@ -6,7 +6,7 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { BehaviorSubject } from 'rxjs';
 
 import {
-  ResourceAttached,
+  EventMessage,
   StartMessage,
   StopMessage,
 } from '../../protocol/message.types';
@@ -84,11 +84,13 @@ function makeKgStop(id: string): StopMessage {
   };
 }
 
-// The orchestrator's attach event binding one agent to the team-default
-// workspace (Story 52-1). The picker is discovered from THIS frame, not from an
-// agent's card: the sender is the orchestrator and the binding agent is the
-// event's own top-level `agent_id`.
-function makeResourceAttached(id: string, agentName: string): ResourceAttached {
+// The orchestrator's `EventMessage` envelope carrying a `WorkspaceAttached`
+// payload that binds one agent to the team-default workspace (Story 52-2). The
+// picker is discovered from THIS payload, not from an agent's card: the
+// envelope's sender is the orchestrator and the binding agent is the PAYLOAD's
+// `agent_id`. The payload's module segment is a placeholder — the tool slice
+// that declares the dataclass is unwritten — and the guard never reads it.
+function makeWorkspaceAttached(id: string, agentName: string): EventMessage {
   return {
     id,
     parent_id: null,
@@ -105,9 +107,12 @@ function makeResourceAttached(id: string, agentName: string): ResourceAttached {
     },
     display_type: 'other',
     content: null,
-    __model__: 'akgentic.core.messages.orchestrator.ResourceAttached',
-    agent_id: baseSender(agentName).agent_id,
-    workspace_path: 'users/u1/team-1',
+    __model__: 'akgentic.core.messages.orchestrator.EventMessage',
+    event: {
+      __model__: 'akgentic.tool.workspace.event.WorkspaceAttached',
+      agent_id: baseSender(agentName).agent_id,
+      workspace_path: 'users/u1/team-1',
+    },
   };
 }
 
@@ -285,7 +290,7 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
     // Workspaces tab is present, then verify the order holds without KG —
     // `[team, member, workspace, messages]` — and with KG —
     // `[team, member, knowledge-graph, workspace, messages]`.
-    log.append(makeResourceAttached('ws-start-1', 'Worker'));
+    log.append(makeWorkspaceAttached('ws-start-1', 'Worker'));
     let options = await firstValue(component.visualizationOptions$);
     let labels = options.map((o) => o.value);
     expect(labels).toEqual(['team', 'member', 'workspace', 'messages']);
@@ -302,10 +307,10 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
     ]);
   });
 
-  it('scenario 6 — Workspaces appears between KG and Messages once an attach event arrives', async () => {
+  it('scenario 6 — Workspaces appears between KG and Messages once a WorkspaceAttached envelope arrives', async () => {
     // With an attached workspace but no KG, the order is [team, member,
     // workspace, messages].
-    log.append(makeResourceAttached('ws-start-1', 'Worker'));
+    log.append(makeWorkspaceAttached('ws-start-1', 'Worker'));
     let options = await firstValue(component.visualizationOptions$);
     expect(options.map((o) => o.value)).toEqual([
       'team',
@@ -334,8 +339,8 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
     ).toBeNull();
   });
 
-  it('scenario 8 — an attach event appears; sticky: Stop keeps the Workspaces tab', async () => {
-    log.append(makeResourceAttached('ws-start-1', 'Worker'));
+  it('scenario 8 — a WorkspaceAttached envelope appears; sticky: Stop keeps the Workspaces tab', async () => {
+    log.append(makeWorkspaceAttached('ws-start-1', 'Worker'));
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();

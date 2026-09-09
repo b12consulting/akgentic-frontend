@@ -86,6 +86,29 @@ function welcomeSent(id: string): SentMessage {
   };
 }
 
+/**
+ * Wire tag of the `WorkspaceAttached` payload (Story 52-2). The MODULE segment
+ * is a placeholder — the tool slice that declares the dataclass is unwritten —
+ * and only the class-name segment is anchored; the guard is a substring match
+ * on that segment, so the module does not affect it.
+ */
+const WORKSPACE_ATTACHED_MODEL =
+  'akgentic.tool.workspace.event.WorkspaceAttached';
+
+/** The orchestrator's `EventMessage` envelope carrying a `WorkspaceAttached`
+ *  payload (Story 52-2). Sender is the ORCHESTRATOR; the binding agent is the
+ *  payload's own `agent_id`. */
+function workspaceAttached(id: string): AkgenticMessage {
+  return {
+    ...msg(id, 'EventMessage', 'Orchestrator'),
+    event: {
+      __model__: WORKSPACE_ATTACHED_MODEL,
+      agent_id: 'agent-a',
+      workspace_path: 'users/u1/notes',
+    },
+  } as AkgenticMessage;
+}
+
 describe('MessageLogService (Story 6.1)', () => {
   let service: MessageLogService;
 
@@ -115,16 +138,20 @@ describe('MessageLogService (Story 6.1)', () => {
     sub.unsubscribe();
   });
 
-  // Story 52-1 (AC #9) — the log itself has NO allowlist: it stores every frame
-  // and dedups by id. The workspace registry can only fold an attach event if
-  // the log admits it, so the admission is pinned here, at the layer that owns
-  // it, rather than assumed by the selector's specs.
-  it('append: a ResourceAttached is stored like any other frame', () => {
-    service.append(msg('r1', 'ResourceAttached'));
+  // Story 52-2 (AC #9) — the log itself has NO allowlist: it stores every frame
+  // and dedups by id. The workspace registry can only fold an attach envelope
+  // if the log admits it, so the admission is pinned here, at the layer that
+  // owns it, rather than assumed by the selector's specs.
+  it('append: an EventMessage carrying a WorkspaceAttached is stored like any other frame', () => {
+    service.append(workspaceAttached('r1'));
     expect(service.snapshot().map((m) => m.id)).toEqual(['r1']);
     expect(service.snapshot()[0].__model__).toBe(
-      'akgentic.core.messages.orchestrator.ResourceAttached',
+      'akgentic.core.messages.orchestrator.EventMessage',
     );
+    expect(
+      (service.snapshot()[0] as { event?: { __model__?: string } }).event
+        ?.__model__,
+    ).toBe(WORKSPACE_ATTACHED_MODEL);
   });
 
   it('appendAll: batch of N produces ONE emission with N messages in arrival order', () => {
@@ -445,21 +472,21 @@ describe('messageListFold (Story 6.4, AC4)', () => {
     expect(messageListFold(log).map((m) => m.id)).toEqual(['a', 'b']);
   });
 
-  // Story 52-1 (AC #9) — a deliberate NON-change, pinned for the same reason as
+  // Story 52-2 (AC #9) — a deliberate NON-change, pinned for the same reason as
   // `HandledMessage` above.
   //
-  // `ResourceAttached` is orchestrator telemetry, not a transcript entry. It is
-  // excluded by OMISSION from `MESSAGE_LIST_MODELS`, and the exclusion is
-  // asserted rather than assumed: admitting it would push a frame that carries
-  // NO `content` at all into the component's `SentMessage` branch.
-  it('excludes a ResourceAttached — attach telemetry never enters the message list', () => {
-    expect(messageListFold([msg('r1', 'ResourceAttached')])).toEqual([]);
+  // The `WorkspaceAttached` payload rides an `EventMessage` envelope, and
+  // `EventMessage` is excluded by OMISSION from `MESSAGE_LIST_MODELS`. The
+  // exclusion is asserted rather than assumed: admitting it would push a frame
+  // that carries NO `content` at all into the component's `SentMessage` branch.
+  it('excludes a WorkspaceAttached envelope — attach telemetry never enters the message list', () => {
+    expect(messageListFold([workspaceAttached('r1')])).toEqual([]);
   });
 
-  it('a ResourceAttached interleaved in a real log changes nothing else', () => {
+  it('a WorkspaceAttached envelope interleaved in a real log changes nothing else', () => {
     const log: AkgenticMessage[] = [
       msg('a', 'SentMessage'),
-      msg('r1', 'ResourceAttached'),
+      workspaceAttached('r1'),
       msg('b', 'ErrorMessage'),
     ];
     expect(messageListFold(log).map((m) => m.id)).toEqual(['a', 'b']);
@@ -593,6 +620,18 @@ describe('closedNotificationIdsFold (Story 31-4, AC #7/#8)', () => {
       closedNotification('e3', 'w-2'),
     ]);
     expect(Array.from(out).sort()).toEqual(['w-1', 'w-2']);
+  });
+
+  // Story 52-2 (AC #9) — the `WorkspaceAttached` payload rides the same
+  // envelope as `ClosedNotification`; the fold keys on the INNER model, so it
+  // contributes nothing, alone or beside a real dismissal.
+  it('an EventMessage carrying a WorkspaceAttached contributes nothing', () => {
+    expect(closedNotificationIdsFold([workspaceAttached('r1')]).size).toBe(0);
+    const out = closedNotificationIdsFold([
+      workspaceAttached('r1'),
+      closedNotification('e1', 'w-1'),
+    ]);
+    expect(Array.from(out)).toEqual(['w-1']);
   });
 });
 

@@ -3,11 +3,12 @@ import { TestBed } from '@angular/core/testing';
 import {
   AkgenticMessage,
   BaseConfig,
-  isResourceAttached,
-  ResourceAttached,
+  EventMessage,
+  isWorkspaceAttached,
   StartMessage,
   StopMessage,
   ToolCardLite,
+  WorkspaceAttached,
 } from '../../../protocol/message.types';
 import { MessageLogService } from '../event/message-log.service';
 import {
@@ -24,7 +25,35 @@ import {
 
 const TEAM_ID = 'team-1';
 const WORKSPACE_MODEL = 'akgentic.tool.workspace.tool.WorkspaceTool';
-const ATTACHED_MODEL = 'akgentic.core.messages.orchestrator.ResourceAttached';
+const EVENT_MODEL = 'akgentic.core.messages.orchestrator.EventMessage';
+/**
+ * Wire tag of the `WorkspaceAttached` payload. The MODULE segment is a
+ * PLACEHOLDER — the tool slice that declares the dataclass is unwritten — and
+ * only the class-name segment is anchored. The guard is a substring match on
+ * that segment, so the module does not affect it. A derived fixture, not a
+ * capture.
+ */
+const ATTACHED_MODEL = 'akgentic.tool.workspace.event.WorkspaceAttached';
+/** The 52-1 top-level tag. Nothing released ever read it; it appears here only
+ *  so the trap specs can prove the old read is gone. */
+const OLD_TOP_LEVEL_MODEL =
+  'akgentic.core.messages.orchestrator.ResourceAttached';
+
+/** Every inner payload `__model__` this package discriminates (AC #3). */
+const OTHER_INNER_MODELS = [
+  'akgentic.core.messages.orchestrator.ClosedNotification',
+  'akgentic.core.messages.orchestrator.TeamStoppingEvent',
+  'akgentic.llm.event.ToolCallEvent',
+  'akgentic.llm.event.ToolReturnEvent',
+  'akgentic.llm.event.ToolStateEvent',
+  'akgentic.tool.knowledge_graph.event.KnowledgeGraphStateEvent',
+  'akgentic.llm.event.LlmMessageEvent',
+  'akgentic.llm.event.LlmUsageEvent',
+  'akgentic.llm.event.LlmSystemPromptEvent',
+  'akgentic.llm.event.LlmContextCompactedEvent',
+  'akgentic.llm.event.LlmContextClearedEvent',
+  'akgentic.tool.command.event.CommandsAnnouncedEvent',
+] as const;
 
 function baseSender(agentName: string) {
   return {
@@ -37,8 +66,8 @@ function baseSender(agentName: string) {
   };
 }
 
-/** The ORCHESTRATOR's address — the sender of every attach event, and never the
- *  binding agent. */
+/** The ORCHESTRATOR's address — the sender of every attach envelope, and never
+ *  the binding agent. */
 function orchestratorSender() {
   return {
     __actor_address__: true as const,
@@ -50,35 +79,99 @@ function orchestratorSender() {
   };
 }
 
-let attachSeq = 0;
+let frameSeq = 0;
 
 /**
- * A `ResourceAttached` as the orchestrator emits it (ADR-022 §Decision 8).
- *
- * The sender is ALWAYS the orchestrator; the binding agent is the top-level
- * `agent_id`. The two are deliberately different ids in every fixture so no spec
- * can pass by keying on the wrong one.
+ * An `EventMessage` envelope sent by the ORCHESTRATOR around an arbitrary
+ * payload. The AC #5 trap frames are built through THIS, never through
+ * `workspaceAttached`, so a trap cannot accidentally carry the real payload.
  */
-function resourceAttached(
-  agentName: string,
-  workspacePath: string,
-  metadataKeys?: string[],
-): ResourceAttached {
-  attachSeq += 1;
-  const frame: ResourceAttached = {
-    id: 'attach-' + attachSeq,
+function orchestratorEnvelope(payload: unknown): EventMessage {
+  frameSeq += 1;
+  return {
+    id: 'env-' + frameSeq,
     parent_id: null,
     team_id: TEAM_ID,
     timestamp: new Date().toISOString(),
     sender: orchestratorSender(),
     display_type: 'other',
     content: null,
+    __model__: EVENT_MODEL,
+    event: payload,
+  };
+}
+
+/**
+ * The orchestrator's `EventMessage` carrying a `WorkspaceAttached` payload
+ * (ADR-022 §Decision 8, final form).
+ *
+ * The envelope's sender is ALWAYS the orchestrator; the binding agent is the
+ * PAYLOAD's `agent_id`. The two are deliberately different ids in every fixture
+ * so no spec can pass by keying on the wrong one.
+ */
+function workspaceAttached(
+  agentName: string,
+  workspacePath: string,
+): EventMessage {
+  return orchestratorEnvelope({
     __model__: ATTACHED_MODEL,
     agent_id: 'agent-' + agentName,
     workspace_path: workspacePath,
-  };
-  if (metadataKeys !== undefined) frame.metadata_keys = metadataKeys;
-  return frame;
+  });
+}
+
+/** The payload of an attach envelope, typed for the two extractors. */
+function payloadOf(frame: EventMessage): WorkspaceAttached {
+  return frame.event as WorkspaceAttached;
+}
+
+/** A TOP-LEVEL frame (no envelope) carrying `agent_id` / `workspace_path` on
+ *  the message itself — the 52-1 shape, and the payload unwrapped. Neither is
+ *  a workspace binding any more. */
+function topLevelFrame(
+  model: string,
+  agentName: string,
+  workspacePath: string,
+): AkgenticMessage {
+  frameSeq += 1;
+  return {
+    id: 'top-' + frameSeq,
+    parent_id: null,
+    team_id: TEAM_ID,
+    timestamp: new Date().toISOString(),
+    sender: orchestratorSender(),
+    display_type: 'other',
+    content: null,
+    __model__: model,
+    agent_id: 'agent-' + agentName,
+    workspace_path: workspacePath,
+  } as unknown as AkgenticMessage;
+}
+
+/**
+ * The four frames of AC #5, all naming agent A on `users/u1/notes`: each one
+ * carries a plausible `workspace_path`, and none is a workspace binding.
+ */
+function trapFrames(): AkgenticMessage[] {
+  return [
+    // A ClosedNotification that happens to carry a path.
+    orchestratorEnvelope({
+      __model__: 'akgentic.core.messages.orchestrator.ClosedNotification',
+      message_id: 'n-1',
+      agent_id: 'agent-A',
+      workspace_path: 'users/u1/notes',
+    }),
+    // A sibling kind's attach event.
+    orchestratorEnvelope({
+      __model__: 'akgentic.tool.memory.event.MemoryAttached',
+      agent_id: 'agent-A',
+      workspace_path: 'users/u1/notes',
+    }),
+    // The 52-1 top-level frame.
+    topLevelFrame(OLD_TOP_LEVEL_MODEL, 'A', 'users/u1/notes'),
+    // The payload UNWRAPPED — the name on the outer frame, no envelope.
+    topLevelFrame(ATTACHED_MODEL, 'A', 'users/u1/notes'),
+  ];
 }
 
 function workspaceTool(workspaceId?: string | null): ToolCardLite {
@@ -140,104 +233,131 @@ function findById(
 }
 
 // ---------------------------------------------------------------------
-// The guard (AC9/AC11)
+// The guard (AC2, AC3)
 // ---------------------------------------------------------------------
 
-describe('isResourceAttached (guard)', () => {
-  it('matches the fully-qualified attach discriminator', () => {
-    expect(isResourceAttached(resourceAttached('A', 'users/u1/notes'))).toBe(
-      true,
+describe('isWorkspaceAttached (inner-event guard)', () => {
+  it('(AC2) matches a payload whose __model__ contains the class name', () => {
+    expect(isWorkspaceAttached(payloadOf(workspaceAttached('A', 'users/u1/notes'))))
+      .toBe(true);
+    // The module segment is never read: a different module, same verdict.
+    expect(
+      isWorkspaceAttached({ __model__: 'some.other.module.WorkspaceAttached' }),
+    ).toBe(true);
+  });
+
+  it('(AC3) rejects every other inner payload model — checked in BOTH directions', () => {
+    for (const model of OTHER_INNER_MODELS) {
+      expect(isWorkspaceAttached({ __model__: model }))
+        .withContext(model)
+        .toBe(false);
+      // And the reverse: the class name contains none of theirs, so no sibling
+      // guard can claim an attach payload either.
+      const className = model.slice(model.lastIndexOf('.') + 1);
+      expect('WorkspaceAttached'.includes(className))
+        .withContext(className)
+        .toBe(false);
+    }
+  });
+
+  it('(AC3) applied to the ENVELOPE it never matches — silently dead, never over-admitting', () => {
+    expect(isWorkspaceAttached({ __model__: EVENT_MODEL })).toBe(false);
+    // The real envelope, passed whole instead of its payload.
+    expect(isWorkspaceAttached(workspaceAttached('A', 'users/u1/notes'))).toBe(
+      false,
     );
   });
 
-  it('rejects every other message model reaching a team stream', () => {
-    // The substring check, exercised in the admitting direction: none of the
-    // lifecycle or telemetry models this package folds contains
-    // 'ResourceAttached'.
-    for (const model of [
-      'akgentic.core.messages.orchestrator.StartMessage',
-      'akgentic.core.messages.orchestrator.StopMessage',
-      'akgentic.core.messages.orchestrator.SentMessage',
-      'akgentic.core.messages.orchestrator.EventMessage',
-      'akgentic.core.messages.orchestrator.ErrorMessage',
-      'akgentic.core.messages.orchestrator.StateChangedMessage',
-      '',
-    ]) {
-      const frame = { __model__: model } as unknown as StartMessage;
-      expect(isResourceAttached(frame)).toBe(false);
-    }
+  it('(AC5) rejects the old top-level tag and a shape-alike with a path', () => {
+    expect(isWorkspaceAttached({ __model__: OLD_TOP_LEVEL_MODEL })).toBe(false);
+    expect(
+      isWorkspaceAttached({
+        __model__: 'akgentic.tool.memory.event.MemoryAttached',
+        workspace_path: 'users/u1/notes',
+      } as { __model__: string }),
+    ).toBe(false);
+  });
+
+  it('(AC7) tolerates null, undefined, a string and a payload with no __model__', () => {
+    expect(isWorkspaceAttached(null)).toBe(false);
+    expect(isWorkspaceAttached(undefined)).toBe(false);
+    expect(isWorkspaceAttached({})).toBe(false);
+    expect(
+      isWorkspaceAttached(
+        ATTACHED_MODEL as unknown as { __model__?: string },
+      ),
+    ).toBe(false);
   });
 });
 
 // ---------------------------------------------------------------------
-// Leaf and binding-agent extraction (AC2, AC4, AC7)
+// Leaf and binding-agent extraction (AC4, AC6, AC7)
 // ---------------------------------------------------------------------
 
 describe('attachedLeaf (the id is READ, never parsed)', () => {
-  it('(AC2) reads the LAST path segment of the resolved path', () => {
-    expect(attachedLeaf(resourceAttached('A', '_meta/tenant-azerty'))).toBe(
-      'tenant-azerty',
-    );
+  it('(AC4) reads the LAST path segment of the resolved path', () => {
+    expect(attachedLeaf(payloadOf(workspaceAttached('A', '_meta/tenant-azerty'))))
+      .toBe('tenant-azerty');
   });
 
-  it('(AC2) the encoded metadata leaf is carried verbatim', () => {
+  it('(AC4) the encoded metadata leaf is carried verbatim', () => {
     // Nothing splits it on `__` or `-`, and nothing percent-decodes it.
     expect(
       attachedLeaf(
-        resourceAttached('A', '_meta/customer_id-ACME__case_id-42'),
+        payloadOf(workspaceAttached('A', '_meta/customer_id-ACME__case_id-42')),
       ),
     ).toBe('customer_id-ACME__case_id-42');
     expect(
-      attachedLeaf(resourceAttached('A', '_meta/case_id-2026%2D42')),
+      attachedLeaf(payloadOf(workspaceAttached('A', '_meta/case_id-2026%2D42'))),
     ).toBe('case_id-2026%2D42');
   });
 
   it('(AC7) an empty last segment is not an id', () => {
-    expect(attachedLeaf(resourceAttached('A', 'users/u1/'))).toBe(null);
-    expect(attachedLeaf(resourceAttached('A', ''))).toBe(null);
+    expect(attachedLeaf(payloadOf(workspaceAttached('A', 'users/u1/')))).toBe(null);
+    expect(attachedLeaf(payloadOf(workspaceAttached('A', '')))).toBe(null);
   });
 
   it('(AC7) a non-string workspace_path degrades to null instead of throwing', () => {
-    const frame = resourceAttached('A', 'users/u1/notes');
-    (frame as unknown as Record<string, unknown>)['workspace_path'] = 42;
-    expect(() => attachedLeaf(frame)).not.toThrow();
-    expect(attachedLeaf(frame)).toBe(null);
+    const frame = workspaceAttached('A', 'users/u1/notes');
+    (frame.event as Record<string, unknown>)['workspace_path'] = 42;
+    expect(() => attachedLeaf(payloadOf(frame))).not.toThrow();
+    expect(attachedLeaf(payloadOf(frame))).toBe(null);
   });
 
   it('(AC7) an absent workspace_path degrades to null instead of throwing', () => {
-    const frame = resourceAttached('A', 'users/u1/notes');
-    delete (frame as unknown as Record<string, unknown>)['workspace_path'];
-    expect(() => attachedLeaf(frame)).not.toThrow();
-    expect(attachedLeaf(frame)).toBe(null);
+    const frame = workspaceAttached('A', 'users/u1/notes');
+    delete (frame.event as Record<string, unknown>)['workspace_path'];
+    expect(() => attachedLeaf(payloadOf(frame))).not.toThrow();
+    expect(attachedLeaf(payloadOf(frame))).toBe(null);
   });
 });
 
-describe('attachedAgentId (the BINDING agent, never the sender)', () => {
-  it('(AC4) reads the top-level agent_id, which is NOT the sender', () => {
-    const frame = resourceAttached('A', 'users/u1/notes');
-    expect(attachedAgentId(frame)).toBe('agent-A');
-    // The sender of this frame is the orchestrator, and the two differ.
+describe('attachedAgentId (the BINDING agent, never the envelope sender)', () => {
+  it('(AC6) reads the payload agent_id, which is NOT the envelope sender', () => {
+    const frame = workspaceAttached('A', 'users/u1/notes');
+    expect(attachedAgentId(payloadOf(frame))).toBe('agent-A');
+    // The sender of the envelope is the orchestrator, and the two differ.
     expect(frame.sender.agent_id).toBe('agent-orchestrator');
-    expect(attachedAgentId(frame)).not.toBe(frame.sender.agent_id);
+    expect(attachedAgentId(payloadOf(frame))).not.toBe(frame.sender.agent_id);
   });
 
   it('(AC7) a missing or non-string agent_id degrades to null', () => {
-    const missing = resourceAttached('A', 'users/u1/notes');
-    delete (missing as unknown as Record<string, unknown>)['agent_id'];
-    expect(attachedAgentId(missing)).toBe(null);
+    const missing = workspaceAttached('A', 'users/u1/notes');
+    delete (missing.event as Record<string, unknown>)['agent_id'];
+    expect(attachedAgentId(payloadOf(missing))).toBe(null);
 
-    const wrongType = resourceAttached('A', 'users/u1/notes');
-    (wrongType as unknown as Record<string, unknown>)['agent_id'] = 7;
-    expect(attachedAgentId(wrongType)).toBe(null);
+    const wrongType = workspaceAttached('A', 'users/u1/notes');
+    (wrongType.event as Record<string, unknown>)['agent_id'] = 7;
+    expect(attachedAgentId(payloadOf(wrongType))).toBe(null);
 
-    const empty = resourceAttached('A', 'users/u1/notes');
-    empty.agent_id = '';
-    expect(attachedAgentId(empty)).toBe(null);
+    const empty = workspaceAttached('A', 'users/u1/notes');
+    payloadOf(empty).agent_id = '';
+    expect(attachedAgentId(payloadOf(empty))).toBe(null);
   });
 });
 
 // ---------------------------------------------------------------------
-// The fold (AC1-AC7)
+// The fold (AC1, AC4-AC7)
 // ---------------------------------------------------------------------
 
 describe('workspaceRegistryReduce (pure function)', () => {
@@ -245,9 +365,9 @@ describe('workspaceRegistryReduce (pure function)', () => {
     expect(workspaceRegistryReduce([], TEAM_ID)).toEqual([]);
   });
 
-  it('(AC2) the three ADR-048 layouts — default: <user_segment>/<team_id>', () => {
+  it('(AC4) the three ADR-048 layouts — default: <user_segment>/<team_id>', () => {
     const result = workspaceRegistryReduce(
-      [resourceAttached('A', 'users/u1/' + TEAM_ID)],
+      [workspaceAttached('A', 'users/u1/' + TEAM_ID)],
       TEAM_ID,
     );
     expect(result.length).toBe(1);
@@ -256,9 +376,9 @@ describe('workspaceRegistryReduce (pure function)', () => {
     expect(result[0].label).toBe('Default workspace');
   });
 
-  it('(AC2) the three ADR-048 layouts — named: <user_segment>/notes', () => {
+  it('(AC4) the three ADR-048 layouts — named: <user_segment>/notes', () => {
     const result = workspaceRegistryReduce(
-      [resourceAttached('A', 'users/u1/notes')],
+      [workspaceAttached('A', 'users/u1/notes')],
       TEAM_ID,
     );
     expect(result.length).toBe(1);
@@ -267,14 +387,9 @@ describe('workspaceRegistryReduce (pure function)', () => {
     expect(result[0].label).toBe('notes');
   });
 
-  it('(AC2) the three ADR-048 layouts — metadata: the encoded leaf', () => {
+  it('(AC4) the three ADR-048 layouts — metadata: the encoded leaf', () => {
     const result = workspaceRegistryReduce(
-      [
-        resourceAttached('A', '_meta/customer_id-ACME__case_id-42', [
-          'customer_id',
-          'case_id',
-        ]),
-      ],
+      [workspaceAttached('A', '_meta/customer_id-ACME__case_id-42')],
       TEAM_ID,
     );
     expect(result.map((d) => d.workspaceId)).toEqual([
@@ -286,12 +401,12 @@ describe('workspaceRegistryReduce (pure function)', () => {
     expect(findById(result, TEAM_ID)).toBeUndefined();
   });
 
-  it('(AC4) the member is the BINDING agent and NOT the sender', () => {
-    // The trap of this epic, asserted in BOTH directions against ONE event with
-    // two different ids. Keying on `sender.agent_id` renders a plausible chip
-    // rather than throwing, so "a chip exists" would not catch it.
-    const frame = resourceAttached('A', 'users/u1/notes');
-    expect(frame.agent_id).not.toBe(frame.sender.agent_id);
+  it('(AC6) the member is the BINDING agent and NOT the envelope sender', () => {
+    // The trap of this epic, asserted in BOTH directions against ONE envelope
+    // with two different ids. Keying on `sender.agent_id` renders a plausible
+    // chip rather than throwing, so "a chip exists" would not catch it.
+    const frame = workspaceAttached('A', 'users/u1/notes');
+    expect(payloadOf(frame).agent_id).not.toBe(frame.sender.agent_id);
 
     const result = workspaceRegistryReduce([frame], TEAM_ID);
     expect(result.length).toBe(1);
@@ -300,13 +415,13 @@ describe('workspaceRegistryReduce (pure function)', () => {
     expect(result[0].agentIds).not.toContain(frame.sender.agent_id);
   });
 
-  it('(AC5) two agents on one workspace → two events, one descriptor, two members', () => {
+  it('(AC6) two agents on one workspace → two envelopes, one descriptor, two members', () => {
     // Core emits one event per successful forward INCLUDING a cache hit, which
     // is what makes membership a field read rather than a reconstruction.
     const result = workspaceRegistryReduce(
       [
-        resourceAttached('B', 'users/u1/shared'),
-        resourceAttached('A', 'users/u1/shared'),
+        workspaceAttached('B', 'users/u1/shared'),
+        workspaceAttached('A', 'users/u1/shared'),
       ],
       TEAM_ID,
     );
@@ -315,12 +430,12 @@ describe('workspaceRegistryReduce (pure function)', () => {
     expect(result[0].agentIds).toEqual(['agent-A', 'agent-B']);
   });
 
-  it('(AC3) Stop removes the member from EVERY workspace and removes NO workspace', () => {
+  it('(AC6) Stop removes the member from EVERY workspace and removes NO workspace', () => {
     // The non-empty state is asserted FIRST, so the empty one below is not
     // vacuous: without the first fold, "agentIds is []" would pass on a fold
     // that never added a member at all.
-    const attachOne = resourceAttached('A', 'users/u1/notes');
-    const attachTwo = resourceAttached('A', '_meta/tenant-azerty', ['tenant']);
+    const attachOne = workspaceAttached('A', 'users/u1/notes');
+    const attachTwo = workspaceAttached('A', '_meta/tenant-azerty');
     const before = workspaceRegistryReduce([attachOne, attachTwo], TEAM_ID);
     expect(before.map((d) => d.workspaceId).sort()).toEqual([
       'notes',
@@ -342,11 +457,11 @@ describe('workspaceRegistryReduce (pure function)', () => {
     expect(findById(after, 'tenant-azerty')?.agentIds).toEqual([]);
   });
 
-  it('(AC3) Stop is keyed by sender.agent_id — another agent keeps its membership', () => {
+  it('(AC6) Stop is keyed by sender.agent_id — another agent keeps its membership', () => {
     const result = workspaceRegistryReduce(
       [
-        resourceAttached('A', 'users/u1/shared'),
-        resourceAttached('B', 'users/u1/shared'),
+        workspaceAttached('A', 'users/u1/shared'),
+        workspaceAttached('B', 'users/u1/shared'),
         makeStopMessage('A'),
       ],
       TEAM_ID,
@@ -354,8 +469,8 @@ describe('workspaceRegistryReduce (pure function)', () => {
     expect(findById(result, 'shared')?.agentIds).toEqual(['agent-B']);
   });
 
-  it('(AC3) a workspace stays listed after EVERY contributing agent stopped', () => {
-    const attach = resourceAttached('A', 'users/u1/notes');
+  it('(AC6) a workspace stays listed after EVERY contributing agent stopped', () => {
+    const attach = workspaceAttached('A', 'users/u1/notes');
     const before = workspaceRegistryReduce([attach], TEAM_ID);
     expect(before[0].agentIds).toEqual(['agent-A']);
 
@@ -368,12 +483,12 @@ describe('workspaceRegistryReduce (pure function)', () => {
     expect(after[0].agentIds).toEqual([]);
   });
 
-  it('(AC3) ordered last-wins — attach → stop → attach ends with the member present', () => {
+  it('(AC6) ordered last-wins — attach → stop → attach ends with the member present', () => {
     const result = workspaceRegistryReduce(
       [
-        resourceAttached('A', 'users/u1/notes'),
+        workspaceAttached('A', 'users/u1/notes'),
         makeStopMessage('A'),
-        resourceAttached('A', 'users/u1/notes'),
+        workspaceAttached('A', 'users/u1/notes'),
       ],
       TEAM_ID,
     );
@@ -393,33 +508,80 @@ describe('workspaceRegistryReduce (pure function)', () => {
   it('(AC6) a declared card beside a real attach adds no second descriptor', () => {
     const log: AkgenticMessage[] = [
       makeStartMessage('A', [workspaceTool('ws-declared')]),
-      resourceAttached('A', 'users/u1/notes'),
+      workspaceAttached('A', 'users/u1/notes'),
     ];
     const result = workspaceRegistryReduce(log, TEAM_ID);
     expect(result.map((d) => d.workspaceId)).toEqual(['notes']);
     expect(findById(result, 'ws-declared')).toBeUndefined();
   });
 
-  it('(AC7) a malformed frame contributes nothing and does not throw', () => {
-    const emptyLeaf = resourceAttached('A', 'users/u1/');
-    const nonString = resourceAttached('B', 'users/u1/x');
-    (nonString as unknown as Record<string, unknown>)['workspace_path'] = null;
-    const noKeys = resourceAttached('C', 'users/u1/good');
-    (noKeys as unknown as Record<string, unknown>)['metadata_keys'] = 'tenant';
+  it('(AC5) another payload carrying a workspace_path contributes NOTHING — the guard reads the NAME', () => {
+    // A ClosedNotification with a path, a MemoryAttached, the 52-1 top-level
+    // frame, and the payload unwrapped: four frames, each with a plausible
+    // `workspace_path`, none a workspace binding. A guard matching on SHAPE
+    // (`typeof event.workspace_path === 'string'`) lists the first two; one
+    // broadened to `includes('Attached')` lists the second; the old top-level
+    // read lists the third; a guard on the ENVELOPE's `__model__` lists the
+    // fourth.
+    expect(workspaceRegistryReduce(trapFrames(), TEAM_ID)).toEqual([]);
+
+    // Not vacuous: the same four frames beside ONE real attach for the SAME
+    // agent yield exactly one workspace with exactly one member — the real
+    // one, on a different leaf, so an admitted trap is visible as a second
+    // descriptor rather than merged into the first.
+    const result = workspaceRegistryReduce(
+      [...trapFrames(), workspaceAttached('A', 'users/u1/real')],
+      TEAM_ID,
+    );
+    expect(result.map((d) => d.workspaceId)).toEqual(['real']);
+    expect(result[0].agentIds).toEqual(['agent-A']);
+    expect(findById(result, 'notes')).toBeUndefined();
+  });
+
+  it('(AC7) a malformed payload contributes nothing and does not throw', () => {
+    const emptyLeaf = workspaceAttached('A', 'users/u1/');
+    const emptyPath = workspaceAttached('E', '');
+    const nonString = workspaceAttached('B', 'users/u1/x');
+    (nonString.event as Record<string, unknown>)['workspace_path'] = null;
+    const absent = workspaceAttached('D', 'users/u1/y');
+    delete (absent.event as Record<string, unknown>)['workspace_path'];
+    const good = workspaceAttached('C', 'users/u1/good');
 
     let result: WorkspaceDescriptor[] = [];
     expect(() => {
-      result = workspaceRegistryReduce([emptyLeaf, nonString, noKeys], TEAM_ID);
+      result = workspaceRegistryReduce(
+        [emptyLeaf, emptyPath, nonString, absent, good],
+        TEAM_ID,
+      );
     }).not.toThrow();
-    // Only the well-formed frame produced a workspace; a non-array
-    // `metadata_keys` is tolerated because nothing joins on it.
+    // Only the well-formed payload produced a workspace.
+    expect(result.map((d) => d.workspaceId)).toEqual(['good']);
+    expect(result[0].agentIds).toEqual(['agent-C']);
+  });
+
+  it('(AC7) an envelope whose event is null, undefined or a string contributes nothing and does not throw', () => {
+    // The invalidation unit already tolerates these inside a live
+    // subscription; the registry branch must too, or one bad frame on the
+    // stream blanks the picker for the rest of the session.
+    const nullEvent = orchestratorEnvelope(null);
+    const undefinedEvent = orchestratorEnvelope(undefined);
+    const stringEvent = orchestratorEnvelope(ATTACHED_MODEL);
+    const good = workspaceAttached('C', 'users/u1/good');
+
+    let result: WorkspaceDescriptor[] = [];
+    expect(() => {
+      result = workspaceRegistryReduce(
+        [nullEvent, undefinedEvent, stringEvent, good],
+        TEAM_ID,
+      );
+    }).not.toThrow();
     expect(result.map((d) => d.workspaceId)).toEqual(['good']);
     expect(result[0].agentIds).toEqual(['agent-C']);
   });
 
   it('(AC7) an attach with a good leaf but no agent_id lists the workspace with no member', () => {
-    const frame = resourceAttached('A', 'users/u1/notes');
-    delete (frame as unknown as Record<string, unknown>)['agent_id'];
+    const frame = workspaceAttached('A', 'users/u1/notes');
+    delete (frame.event as Record<string, unknown>)['agent_id'];
     const result = workspaceRegistryReduce([frame], TEAM_ID);
     expect(result.map((d) => d.workspaceId)).toEqual(['notes']);
     expect(result[0].agentIds).toEqual([]);
@@ -428,9 +590,9 @@ describe('workspaceRegistryReduce (pure function)', () => {
   it('(AC1) order — default first, named workspaces alphabetically', () => {
     const result = workspaceRegistryReduce(
       [
-        resourceAttached('A', 'users/u1/shared_workspace'),
-        resourceAttached('B', 'users/u1/' + TEAM_ID),
-        resourceAttached('C', 'users/u1/alpha'),
+        workspaceAttached('A', 'users/u1/shared_workspace'),
+        workspaceAttached('B', 'users/u1/' + TEAM_ID),
+        workspaceAttached('C', 'users/u1/alpha'),
       ],
       TEAM_ID,
     );
@@ -445,23 +607,20 @@ describe('workspaceRegistryReduce (pure function)', () => {
   it('(AC1) agentIds is sorted regardless of arrival order', () => {
     const result = workspaceRegistryReduce(
       [
-        resourceAttached('C', 'users/u1/shared'),
-        resourceAttached('A', 'users/u1/shared'),
-        resourceAttached('B', 'users/u1/shared'),
+        workspaceAttached('C', 'users/u1/shared'),
+        workspaceAttached('A', 'users/u1/shared'),
+        workspaceAttached('B', 'users/u1/shared'),
       ],
       TEAM_ID,
     );
     expect(result[0].agentIds).toEqual(['agent-A', 'agent-B', 'agent-C']);
   });
 
-  it('(AC5) two key sets in one team → two descriptors, no cross-contamination', () => {
+  it('(AC6) two key sets in one team → two descriptors, no cross-contamination', () => {
     const result = workspaceRegistryReduce(
       [
-        resourceAttached('Coarse', '_meta/customer_id-ACME', ['customer_id']),
-        resourceAttached('Fine', '_meta/customer_id-ACME__case_id-42', [
-          'customer_id',
-          'case_id',
-        ]),
+        workspaceAttached('Coarse', '_meta/customer_id-ACME'),
+        workspaceAttached('Fine', '_meta/customer_id-ACME__case_id-42'),
       ],
       TEAM_ID,
     );
@@ -476,24 +635,30 @@ describe('workspaceRegistryReduce (pure function)', () => {
 });
 
 // ---------------------------------------------------------------------
-// AC11 — one guard anchored to the SERIALISER's output
+// AC10 — one guard anchored to the SERIALISER's output
 // ---------------------------------------------------------------------
 
-describe('workspaceRegistryReduce — the wire shape (AC11)', () => {
-  it('folds a frame written to the serialiser output, content key absent', () => {
-    // DERIVED fixture, not a capture. It is written to what
-    // `event.model_dump_json()` produces for
-    // `akgentic.core.messages.orchestrator.ResourceAttached`: the
-    // fully-qualified discriminator injected by `serialize_type`, `agent_id`
-    // serialised by `str(uuid)` as a canonical lowercase hyphenated string, an
-    // ORCHESTRATOR sender whose own `agent_id` is a different uuid in the same
-    // form, `metadata_keys` present as a list, and NO `content` key at all —
-    // the Python `Message` base declares none, exactly as for `StartMessage`.
+describe('workspaceRegistryReduce — the wire shape (AC10)', () => {
+  it('folds an envelope written to the serialiser output: tagged payload, no content, no key list', () => {
+    // DERIVED fixture, not a capture — the producer does not exist in source
+    // yet. It is written to what `event.model_dump_json()` produces for an
+    // `EventMessage` whose `event` is the tool package's `WorkspaceAttached`
+    // frozen dataclass (ADR-022 §Decision 8, final form): the envelope's
+    // fully-qualified tag; an ORCHESTRATOR sender whose `agent_id` is a
+    // canonical lowercase hyphenated uuid; `recipient: null`; NO `content` key
+    // at all (the Python `Message` base declares none); and the payload
+    // serialised field by field with the serialiser's `module.ClassName` tag,
+    // `agent_id` as `str(uuid)` — a DIFFERENT canonical uuid — and the resolved
+    // `workspace_path`. No `metadata_keys`: the amendment dropped it.
+    //
+    // The MODULE segment of the payload tag is a PLACEHOLDER. Only the
+    // class-name segment is anchored; the guard is a substring match on that
+    // segment, so the module does not affect the verdict.
     const wire = {
       id: '0c7f6d3a-1b6e-4a41-9c2e-5a7e3f0b1d24',
       parent_id: null,
       team_id: '8f14e45f-ceea-467a-9f0e-4b2d1a3c7e91',
-      timestamp: '2026-09-09T10:15:30.123456Z',
+      timestamp: '2026-09-10T10:15:30.123456Z',
       sender: {
         __actor_address__: true,
         __actor_type__: 'akgentic.core.orchestrator.Orchestrator',
@@ -506,17 +671,20 @@ describe('workspaceRegistryReduce — the wire shape (AC11)', () => {
       },
       recipient: null,
       display_type: 'other',
-      __model__: 'akgentic.core.messages.orchestrator.ResourceAttached',
-      agent_id: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
-      workspace_path: '_meta/customer_id-ACME__case_id-42',
-      metadata_keys: ['customer_id', 'case_id'],
+      __model__: 'akgentic.core.messages.orchestrator.EventMessage',
+      event: {
+        __model__: 'akgentic.tool.workspace.event.WorkspaceAttached',
+        agent_id: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
+        workspace_path: '_meta/customer_id-ACME__case_id-42',
+      },
     };
 
-    // The frame really does carry no `content` — this is the structural claim
-    // the interface encodes, and it is checked rather than assumed.
+    // The envelope really does carry no `content`, and the payload no
+    // `metadata_keys` — both structural claims are checked, not assumed.
     expect('content' in wire).toBe(false);
+    expect('metadata_keys' in wire.event).toBe(false);
     // The two ids are both canonical, both lowercase-hyphenated, and DIFFERENT.
-    expect(wire.agent_id).not.toBe(wire.sender.agent_id);
+    expect(wire.event.agent_id).not.toBe(wire.sender.agent_id);
 
     const result = workspaceRegistryReduce(
       [wire as unknown as AkgenticMessage],
@@ -525,7 +693,7 @@ describe('workspaceRegistryReduce — the wire shape (AC11)', () => {
     expect(result.length).toBe(1);
     expect(result[0].workspaceId).toBe('customer_id-ACME__case_id-42');
     expect(result[0].isDefault).toBe(false);
-    // Membership is the top-level uuid, byte-identical, un-normalised — the
+    // Membership is the PAYLOAD's uuid, byte-identical, un-normalised — the
     // same id space `AgentsByIdService` keys its map by.
     expect(result[0].agentIds).toEqual([
       'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
@@ -561,8 +729,8 @@ describe('WorkspaceRegistryService (selector over MessageLogService.log$)', () =
     expect(currentValue()).toEqual([]);
   });
 
-  it('(2) live append of an attach event → one named descriptor', () => {
-    log.append(resourceAttached('A', 'users/u1/ws-named'));
+  it('(2) live append of an attach envelope → one named descriptor', () => {
+    log.append(workspaceAttached('A', 'users/u1/ws-named'));
     const result = currentValue();
     expect(result.length).toBe(1);
     expect(findById(result, 'ws-named')?.agentIds).toEqual(['agent-A']);
@@ -573,18 +741,18 @@ describe('WorkspaceRegistryService (selector over MessageLogService.log$)', () =
     const emissions: WorkspaceDescriptor[][] = [];
     const sub = service.workspaces$.subscribe((v) => emissions.push(v));
 
-    // Two DIFFERENT frames (unique ids, so neither is dropped by the log's
+    // Two DIFFERENT envelopes (unique ids, so neither is dropped by the log's
     // id-dedup) announcing the same agent on the same workspace: the second
     // yields a structurally identical fold, so no third emission.
-    log.append(resourceAttached('A', 'users/u1/ws-named'));
-    log.append(resourceAttached('A', 'users/u1/ws-named'));
+    log.append(workspaceAttached('A', 'users/u1/ws-named'));
+    log.append(workspaceAttached('A', 'users/u1/ws-named'));
 
     expect(emissions.length).toBe(2);
     sub.unsubscribe();
   });
 
   it('(4) log.reset() clears the registry on team switch', () => {
-    log.append(resourceAttached('A', 'users/u1/ws-named'));
+    log.append(workspaceAttached('A', 'users/u1/ws-named'));
     expect(currentValue().length).toBe(1);
     log.reset();
     expect(currentValue()).toEqual([]);

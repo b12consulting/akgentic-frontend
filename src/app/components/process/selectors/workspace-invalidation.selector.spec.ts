@@ -4,7 +4,6 @@ import {
   AkgenticMessage,
   BaseConfig,
   EventMessage,
-  ResourceAttached,
   StartMessage,
   StopMessage,
   ToolCardLite,
@@ -56,8 +55,8 @@ function workspaceTool(workspaceId?: string | null): ToolCardLite {
   return { __model__: WORKSPACE_MODEL, workspace_id: workspaceId };
 }
 
-/** The ORCHESTRATOR's address — the sender of every attach event, and never the
- *  binding agent. */
+/** The ORCHESTRATOR's address — the sender of every attach envelope, and never
+ *  the binding agent. */
 function orchestratorSender() {
   return {
     __actor_address__: true as const,
@@ -69,38 +68,63 @@ function orchestratorSender() {
   };
 }
 
-let attachSeq = 0;
+/**
+ * Wire tag of the `WorkspaceAttached` payload. The MODULE segment is a
+ * PLACEHOLDER — the tool slice that declares the dataclass is unwritten — and
+ * only the class-name segment is anchored. The guard is a substring match on
+ * that segment, so the module does not affect it. A derived fixture, not a
+ * capture.
+ */
+const ATTACHED_MODEL = 'akgentic.tool.workspace.event.WorkspaceAttached';
 
 /**
- * A `ResourceAttached` as the orchestrator emits it (ADR-022 §Decision 8) — the
- * frame carrying the backend's resolved path AND the agent→workspace
- * attribution.
- *
- * The sender is ALWAYS the orchestrator and the binding agent is the top-level
- * `agent_id`, deliberately different ids, so no spec here can pass by keying on
- * the wrong one. Ids are unique per call: `MessageLogService.append` dedups by
- * `id`, so a fixture reusing one would be silently dropped.
+ * An `EventMessage` envelope sent by the ORCHESTRATOR around an arbitrary
+ * payload. `makeEventMessage` below keys its sender by agent name; the attach
+ * envelope must carry the orchestrator's own address instead, or the
+ * sender-versus-payload distinction every attribution spec rests on collapses.
+ * The AC #5 trap frames are built through THIS, never through
+ * `workspaceAttached`, so a trap cannot accidentally carry the real payload.
  */
-function resourceAttached(
+function orchestratorEnvelope(payload: unknown): EventMessage {
+  return { ...makeEventMessage('orchestrator', payload), sender: orchestratorSender() };
+}
+
+/**
+ * The orchestrator's `EventMessage` carrying a `WorkspaceAttached` payload
+ * (ADR-022 §Decision 8, final form) — the frame carrying the backend's resolved
+ * path AND the agent→workspace attribution.
+ *
+ * The envelope's sender is ALWAYS the orchestrator and the binding agent is the
+ * PAYLOAD's `agent_id`, deliberately different ids, so no spec here can pass by
+ * keying on the wrong one. Ids are unique per call: `MessageLogService.append`
+ * dedups by `id`, so a fixture reusing one would be silently dropped.
+ */
+function workspaceAttached(
   agentName: string,
   workspacePath: string,
-  metadataKeys?: string[],
-): ResourceAttached {
-  attachSeq += 1;
-  const frame: ResourceAttached = {
-    id: 'attach-' + attachSeq,
-    parent_id: null,
-    team_id: TEAM_ID,
-    timestamp: new Date().toISOString(),
-    sender: orchestratorSender(),
-    display_type: 'other',
-    content: null,
-    __model__: 'akgentic.core.messages.orchestrator.ResourceAttached',
+): EventMessage {
+  return orchestratorEnvelope({
+    __model__: ATTACHED_MODEL,
     agent_id: 'agent-' + agentName,
     workspace_path: workspacePath,
-  };
-  if (metadataKeys !== undefined) frame.metadata_keys = metadataKeys;
-  return frame;
+  });
+}
+
+/** A TOP-LEVEL frame (no envelope) carrying `agent_id` / `workspace_path` on
+ *  the message itself — the 52-1 shape, and the payload unwrapped. Neither is
+ *  a workspace binding any more. */
+function topLevelFrame(
+  model: string,
+  agentName: string,
+  workspacePath: string,
+): AkgenticMessage {
+  return {
+    ...makeEventMessage('orchestrator', undefined),
+    sender: orchestratorSender(),
+    __model__: model,
+    agent_id: 'agent-' + agentName,
+    workspace_path: workspacePath,
+  } as unknown as AkgenticMessage;
 }
 
 // NOTE: no `team_id` in config — the backend AgentConfig does not serialise it.
@@ -230,9 +254,10 @@ function collectFromLog(messages: AkgenticMessage[]): WorkspaceInvalidation[] {
 /**
  * An agent bound to exactly one named workspace, plus a completed mutation.
  *
- * `paths` are RESOLVED workspace paths, one attach event each — the binding is
- * now a field the orchestrator states, not a card shape this package re-derives.
- * An empty list means no attach event arrived for the agent at all.
+ * `paths` are RESOLVED workspace paths, one attach envelope each — the binding
+ * is a field on the payload the orchestrator emits, not a card shape this
+ * package re-derives. An empty list means no attach envelope arrived for the
+ * agent at all.
  */
 function mutationLog(
   toolName: string,
@@ -240,7 +265,7 @@ function mutationLog(
   paths: string[] = ['users/u1/ws-1'],
 ): AkgenticMessage[] {
   return [
-    ...paths.map((path) => resourceAttached('A', path)),
+    ...paths.map((path) => workspaceAttached('A', path)),
     makeToolCall('A', toolName, argsJson, 'call-1'),
     makeToolReturn('A', toolName, 'call-1', true),
   ];
@@ -334,7 +359,7 @@ describe('WorkspaceInvalidationService — correlation (FR7)', () => {
 
   it('(AC5) a success:false return produces no instruction', () => {
     const result = collectFromLog([
-      resourceAttached('A', 'users/u1/ws-1'),
+      workspaceAttached('A', 'users/u1/ws-1'),
       makeToolCall('A', 'workspace_edit', editArgs, 'call-1'),
       makeToolReturn('A', 'workspace_edit', 'call-1', false),
     ]);
@@ -345,7 +370,7 @@ describe('WorkspaceInvalidationService — correlation (FR7)', () => {
     let result: WorkspaceInvalidation[] = [];
     expect(() => {
       result = collectFromLog([
-        resourceAttached('A', 'users/u1/ws-1'),
+        workspaceAttached('A', 'users/u1/ws-1'),
         makeToolReturn('A', 'workspace_edit', 'never-called', true),
       ]);
     }).not.toThrow();
@@ -354,7 +379,7 @@ describe('WorkspaceInvalidationService — correlation (FR7)', () => {
 
   it('(AC7) the same tool_call_id returning twice fires exactly once', () => {
     const result = collectFromLog([
-      resourceAttached('A', 'users/u1/ws-1'),
+      workspaceAttached('A', 'users/u1/ws-1'),
       makeToolCall('A', 'workspace_edit', editArgs, 'call-1'),
       makeToolReturn('A', 'workspace_edit', 'call-1', true),
       makeToolReturn('A', 'workspace_edit', 'call-1', true),
@@ -364,7 +389,7 @@ describe('WorkspaceInvalidationService — correlation (FR7)', () => {
 
   it('(AC8) a false return consumes the entry: a later true return fires nothing', () => {
     const result = collectFromLog([
-      resourceAttached('A', 'users/u1/ws-1'),
+      workspaceAttached('A', 'users/u1/ws-1'),
       makeToolCall('A', 'workspace_edit', editArgs, 'call-1'),
       makeToolReturn('A', 'workspace_edit', 'call-1', false),
       makeToolReturn('A', 'workspace_edit', 'call-1', true),
@@ -374,7 +399,7 @@ describe('WorkspaceInvalidationService — correlation (FR7)', () => {
 
   it('(AC9) a call with no return never fires on its own', () => {
     const result = collectFromLog([
-      resourceAttached('A', 'users/u1/ws-1'),
+      workspaceAttached('A', 'users/u1/ws-1'),
       makeToolCall('A', 'workspace_edit', editArgs, 'call-1'),
     ]);
     expect(result).toEqual([]);
@@ -418,7 +443,7 @@ describe('WorkspaceInvalidationService — correlation (FR7)', () => {
 
     // No `__model__` at all: every guard below reads it, so the fold must skip
     // the frame before any of them runs. Drop the `!m.__model__` line in the
-    // fold and this frame makes `isResourceAttached` throw.
+    // fold and this frame makes `isStopMessage` throw.
     const noModelAtAll = {
       id: 'weird-2',
       parent_id: null,
@@ -443,7 +468,7 @@ describe('WorkspaceInvalidationService — correlation (FR7)', () => {
     } as unknown as AkgenticMessage;
 
     const log: AkgenticMessage[] = [
-      resourceAttached('A', 'users/u1/ws-1'),
+      workspaceAttached('A', 'users/u1/ws-1'),
       makeToolCall('A', 'workspace_write', '{', 'bad-json'),
       makeToolReturn('A', 'workspace_write', 'bad-json', true),
       makeEventMessage('A', null),
@@ -469,7 +494,7 @@ describe('WorkspaceInvalidationService — correlation (FR7)', () => {
     // a guard applied to the envelope would fire for every EventMessage on the
     // log and invalidate the workspace on every LLM message.
     const result = collectFromLog([
-      resourceAttached('A', 'users/u1/ws-1'),
+      workspaceAttached('A', 'users/u1/ws-1'),
       makeEventMessage('A', { __model__: 'akgentic.llm.event.ToolStateEvent' }),
       makeEventMessage('A', { __model__: EVENT_MODEL }),
     ]);
@@ -600,8 +625,8 @@ describe('WorkspaceInvalidationService — attribution (FR6)', () => {
 
   it('(AC16) the workspace comes from the CALL envelope sender', () => {
     const result = collectFromLog([
-      resourceAttached('A', 'users/u1/ws-a'),
-      resourceAttached('B', 'users/u1/ws-b'),
+      workspaceAttached('A', 'users/u1/ws-a'),
+      workspaceAttached('B', 'users/u1/ws-b'),
       makeToolCall('B', 'workspace_write', writeArgs, 'call-1'),
       makeToolReturn('B', 'workspace_write', 'call-1', true),
     ]);
@@ -655,11 +680,58 @@ describe('WorkspaceInvalidationService — attribution (FR6)', () => {
     expect(result[0].directories).not.toBe(result[1].directories);
   });
 
-  it('(AC8) an agent with no attach event yields no instruction and no phantom id', () => {
+  it('(AC8) an agent with no attach envelope yields no instruction and no phantom id', () => {
     const result = collectFromLog(
       mutationLog('workspace_write', writeArgs, []),
     );
     expect(result).toEqual([]);
+  });
+
+  it('(AC5) another payload carrying a workspace_path attributes NOTHING — the guard reads the NAME', () => {
+    // Story 52-2's trap at the invalidation seam. Four frames, each naming
+    // agent A on `users/u1/notes` with a plausible `workspace_path`, none a
+    // workspace binding: a ClosedNotification with a path, a sibling kind's
+    // MemoryAttached, the 52-1 top-level frame, and the payload unwrapped.
+    // A guard matching on SHAPE admits the first two; one broadened to
+    // `includes('Attached')` admits the second; the old top-level read admits
+    // the third; a guard on the ENVELOPE's `__model__` admits the fourth.
+    const traps = (): AkgenticMessage[] => [
+      orchestratorEnvelope({
+        __model__: 'akgentic.core.messages.orchestrator.ClosedNotification',
+        message_id: 'n-1',
+        agent_id: 'agent-A',
+        workspace_path: 'users/u1/notes',
+      }),
+      orchestratorEnvelope({
+        __model__: 'akgentic.tool.memory.event.MemoryAttached',
+        agent_id: 'agent-A',
+        workspace_path: 'users/u1/notes',
+      }),
+      topLevelFrame(
+        'akgentic.core.messages.orchestrator.ResourceAttached',
+        'A',
+        'users/u1/notes',
+      ),
+      topLevelFrame(ATTACHED_MODEL, 'A', 'users/u1/notes'),
+    ];
+
+    const alone = collectFromLog([
+      ...traps(),
+      makeToolCall('A', 'workspace_write', writeArgs, 'call-1'),
+      makeToolReturn('A', 'workspace_write', 'call-1', true),
+    ]);
+    expect(alone).toEqual([]);
+
+    // Not vacuous: the same four frames beside ONE real attach for the SAME
+    // agent yield exactly one instruction — for the real leaf, so an admitted
+    // trap shows up as a second instruction rather than merging into it.
+    const beside = collectFromLog([
+      ...traps(),
+      workspaceAttached('A', 'users/u1/real'),
+      makeToolCall('A', 'workspace_write', writeArgs, 'call-2'),
+      makeToolReturn('A', 'workspace_write', 'call-2', true),
+    ]);
+    expect(beside.map((i) => i.workspaceId)).toEqual(['real']);
   });
 
   it('(AC6) a StartMessage declaring a WorkspaceTool is NOT read for attribution', () => {
@@ -695,7 +767,7 @@ describe('WorkspaceInvalidationService — attribution (FR6)', () => {
     // erase the instruction — the workspace ids are captured at call time and
     // held with the in-flight entry, so nothing later can rewrite them.
     const result = collectFromLog([
-      resourceAttached('A', 'users/u1/ws-1'),
+      workspaceAttached('A', 'users/u1/ws-1'),
       makeToolCall('A', 'workspace_write', writeArgs, 'call-1'),
       makeStopMessage('A'),
       makeToolReturn('A', 'workspace_write', 'call-1', true),
@@ -706,7 +778,7 @@ describe('WorkspaceInvalidationService — attribution (FR6)', () => {
 
   it('(AC16) a call placed after the agent stopped attributes to nothing', () => {
     const result = collectFromLog([
-      resourceAttached('A', 'users/u1/ws-1'),
+      workspaceAttached('A', 'users/u1/ws-1'),
       makeStopMessage('A'),
       makeToolCall('A', 'workspace_write', writeArgs, 'call-1'),
       makeToolReturn('A', 'workspace_write', 'call-1', true),
@@ -718,7 +790,7 @@ describe('WorkspaceInvalidationService — attribution (FR6)', () => {
 
   it('(AC8) a mutation in a _meta workspace attributes to the LEAF, not the team id', () => {
     const result = collectFromLog([
-      resourceAttached('A', '_meta/tenant-azerty', ['tenant']),
+      workspaceAttached('A', '_meta/tenant-azerty'),
       makeToolCall('A', 'workspace_write', writeArgs, 'call-1'),
       makeToolReturn('A', 'workspace_write', 'call-1', true),
     ]);
@@ -727,12 +799,12 @@ describe('WorkspaceInvalidationService — attribution (FR6)', () => {
     expect(result[0].workspaceId).not.toBe(TEAM_ID);
   });
 
-  it('(AC8) an agent for whom NO attach event arrived yields NO instruction', () => {
+  it('(AC8) an agent for whom NO attach envelope arrived yields NO instruction', () => {
     // A different agent bound a workspace, so the state is non-empty — the
     // assertion below is about THIS agent having no binding, not about an
     // empty attribution map.
     const result = collectFromLog([
-      resourceAttached('Other', '_meta/tenant-azerty', ['tenant']),
+      workspaceAttached('Other', '_meta/tenant-azerty'),
       makeToolCall('A', 'workspace_write', writeArgs, 'call-1'),
       makeToolReturn('A', 'workspace_write', 'call-1', true),
     ]);
@@ -742,11 +814,8 @@ describe('WorkspaceInvalidationService — attribution (FR6)', () => {
 
   it('(AC8) two _meta scopes in one team attribute to their own leaf each', () => {
     const result = collectFromLog([
-      resourceAttached('Coarse', '_meta/customer_id-ACME', ['customer_id']),
-      resourceAttached('Fine', '_meta/customer_id-ACME__case_id-42', [
-        'customer_id',
-        'case_id',
-      ]),
+      workspaceAttached('Coarse', '_meta/customer_id-ACME'),
+      workspaceAttached('Fine', '_meta/customer_id-ACME__case_id-42'),
       makeToolCall('Fine', 'workspace_write', writeArgs, 'call-1'),
       makeToolReturn('Fine', 'workspace_write', 'call-1', true),
     ]);
@@ -757,7 +826,7 @@ describe('WorkspaceInvalidationService — attribution (FR6)', () => {
 
   it('(AC8) the _meta leaf is resolved at CALL time and survives a StopMessage', () => {
     const result = collectFromLog([
-      resourceAttached('A', '_meta/tenant-azerty', ['tenant']),
+      workspaceAttached('A', '_meta/tenant-azerty'),
       makeToolCall('A', 'workspace_write', writeArgs, 'call-1'),
       makeStopMessage('A'),
       makeToolReturn('A', 'workspace_write', 'call-1', true),
@@ -766,14 +835,15 @@ describe('WorkspaceInvalidationService — attribution (FR6)', () => {
     expect(result[0].workspaceId).toBe('tenant-azerty');
   });
 
-  it('(AC4) attribution is the BINDING agent, never the attach event sender', () => {
+  it('(AC4) attribution is the BINDING agent, never the attach envelope sender', () => {
     // The trap, at the invalidation seam: the orchestrator SENDS every attach
-    // event. If this unit keyed on `sender.agent_id`, the binding would land
+    // envelope. If this unit keyed on `sender.agent_id`, the binding would land
     // under the orchestrator and agent A's own call would resolve to nothing —
     // while an orchestrator call (which never happens) would resolve to A's
-    // workspace. Both halves are asserted, with two different ids.
-    const attach = resourceAttached('A', 'users/u1/ws-1');
-    expect(attach.agent_id).not.toBe(attach.sender.agent_id);
+    // workspace. Both halves are asserted, with two different ids: the
+    // PAYLOAD's `agent_id` against the ENVELOPE's `sender.agent_id`.
+    const attach = workspaceAttached('A', 'users/u1/ws-1');
+    expect(attach.event.agent_id).not.toBe(attach.sender.agent_id);
 
     const bound = collectFromLog([
       attach,
@@ -783,7 +853,7 @@ describe('WorkspaceInvalidationService — attribution (FR6)', () => {
     expect(bound.map((i) => i.workspaceId)).toEqual(['ws-1']);
 
     const senderKeyed = collectFromLog([
-      resourceAttached('A', 'users/u1/ws-1'),
+      workspaceAttached('A', 'users/u1/ws-1'),
       makeToolCall('orchestrator', 'workspace_write', writeArgs, 'call-2'),
       makeToolReturn('orchestrator', 'workspace_write', 'call-2', true),
     ]);
@@ -824,7 +894,7 @@ describe('WorkspaceInvalidationService (reads MessageLogService.appended$; log$ 
   });
 
   it('(AC22) a call+return appended after subscribe emits exactly one instruction', () => {
-    log.append(resourceAttached('A', 'users/u1/ws-1'));
+    log.append(workspaceAttached('A', 'users/u1/ws-1'));
     const seen = collect();
     log.append(makeToolCall('A', 'workspace_write', writeArgs, 'call-1'));
     log.append(makeToolReturn('A', 'workspace_write', 'call-1', true));
@@ -835,18 +905,18 @@ describe('WorkspaceInvalidationService (reads MessageLogService.appended$; log$ 
   });
 
   it('(AC22) further unrelated appends do not re-announce it', () => {
-    log.append(resourceAttached('A', 'users/u1/ws-1'));
+    log.append(workspaceAttached('A', 'users/u1/ws-1'));
     const seen = collect();
     log.append(makeToolCall('A', 'workspace_write', writeArgs, 'call-1'));
     log.append(makeToolReturn('A', 'workspace_write', 'call-1', true));
-    log.append(resourceAttached('B', 'users/u1/ws-2'));
+    log.append(workspaceAttached('B', 'users/u1/ws-2'));
     log.append(makeStopMessage('B'));
 
     expect(seen.length).toBe(1);
   });
 
   it('(AC22) a second completed mutation emits only the new instruction', () => {
-    log.append(resourceAttached('A', 'users/u1/ws-1'));
+    log.append(workspaceAttached('A', 'users/u1/ws-1'));
     const seen = collect();
     log.append(makeToolCall('A', 'workspace_write', writeArgs, 'call-1'));
     log.append(makeToolReturn('A', 'workspace_write', 'call-1', true));
@@ -866,7 +936,7 @@ describe('WorkspaceInvalidationService (reads MessageLogService.appended$; log$ 
 
   it('(AC23) subscribing to a log that already holds a completed mutation emits nothing', () => {
     log.appendAll([
-      resourceAttached('A', 'users/u1/ws-1'),
+      workspaceAttached('A', 'users/u1/ws-1'),
       makeToolCall('A', 'workspace_write', writeArgs, 'call-1'),
       makeToolReturn('A', 'workspace_write', 'call-1', true),
     ]);
@@ -877,7 +947,7 @@ describe('WorkspaceInvalidationService (reads MessageLogService.appended$; log$ 
 
   it('(AC23) after the baseline, a NEW mutation on the pre-seeded log still fires', () => {
     log.appendAll([
-      resourceAttached('A', 'users/u1/ws-1'),
+      workspaceAttached('A', 'users/u1/ws-1'),
       makeToolCall('A', 'workspace_write', writeArgs, 'call-1'),
       makeToolReturn('A', 'workspace_write', 'call-1', true),
     ]);
@@ -894,7 +964,7 @@ describe('WorkspaceInvalidationService (reads MessageLogService.appended$; log$ 
 
     expect(seen.length).toBe(1);
     expect(seen[0].files).toEqual(['later.md']);
-    // (AC8) The attach event PREDATES the subscription, so this workspace id
+    // (AC8) The attach envelope PREDATES the subscription, so this workspace id
     // can only have come from the seed. `appended$` has no replay buffer, so
     // dropping the seed leaves the attribution empty and emits nothing at all.
     // That is the production ordering: the explorer subscribes from its
@@ -903,7 +973,7 @@ describe('WorkspaceInvalidationService (reads MessageLogService.appended$; log$ 
   });
 
   it('(AC21) reset() between a call and its return leaves the in-flight map empty', () => {
-    log.append(resourceAttached('A', 'users/u1/ws-1'));
+    log.append(workspaceAttached('A', 'users/u1/ws-1'));
     const seen = collect();
     log.append(makeToolCall('A', 'workspace_write', writeArgs, 'call-1'));
     log.reset();
@@ -913,14 +983,14 @@ describe('WorkspaceInvalidationService (reads MessageLogService.appended$; log$ 
   });
 
   it('(AC21) reset() clears the state: a full mutation after it still fires once', () => {
-    log.append(resourceAttached('A', 'users/u1/ws-1'));
+    log.append(workspaceAttached('A', 'users/u1/ws-1'));
     const seen = collect();
     log.append(makeToolCall('A', 'workspace_write', writeArgs, 'call-1'));
     log.append(makeToolReturn('A', 'workspace_write', 'call-1', true));
     expect(seen.length).toBe(1);
 
     log.reset();
-    log.append(resourceAttached('A', 'users/u1/ws-1'));
+    log.append(workspaceAttached('A', 'users/u1/ws-1'));
     log.append(
       makeToolCall(
         'A',
@@ -936,7 +1006,7 @@ describe('WorkspaceInvalidationService (reads MessageLogService.appended$; log$ 
   });
 
   it('(AC24) the stream is not shareReplay-ed: a late subscriber gets no history', () => {
-    log.append(resourceAttached('A', 'users/u1/ws-1'));
+    log.append(workspaceAttached('A', 'users/u1/ws-1'));
     const first = collect();
     log.append(makeToolCall('A', 'workspace_write', writeArgs, 'call-1'));
     log.append(makeToolReturn('A', 'workspace_write', 'call-1', true));
@@ -947,7 +1017,7 @@ describe('WorkspaceInvalidationService (reads MessageLogService.appended$; log$ 
   });
 
   it('(AC20) two independent subscribers each hold their own state and seed', () => {
-    log.append(resourceAttached('A', 'users/u1/ws-1'));
+    log.append(workspaceAttached('A', 'users/u1/ws-1'));
     const early = collect();
     log.append(makeToolCall('A', 'workspace_write', writeArgs, 'call-1'));
     log.append(makeToolReturn('A', 'workspace_write', 'call-1', true));
@@ -1027,7 +1097,7 @@ describe('WorkspaceInvalidationService — incremental reading (Epic 42)', () =>
       JSON.stringify({ path: 'a/b.md', content: 'a whole file body' }),
     );
 
-    log.append(resourceAttached('A', 'users/u1/ws-1'));
+    log.append(workspaceAttached('A', 'users/u1/ws-1'));
     const seen = collect();
     log.append(counted.message);
     log.append(makeToolReturn('A', 'workspace_write', 'counted-1', true));
@@ -1054,7 +1124,7 @@ describe('WorkspaceInvalidationService — incremental reading (Epic 42)', () =>
     // burst having arrived by the time that microtask runs. An asynchronous
     // scheduler here turns one coalesced listing per directory back into one
     // listing per event — and every other spec in this file would still pass.
-    log.append(resourceAttached('A', 'users/u1/ws-1'));
+    log.append(workspaceAttached('A', 'users/u1/ws-1'));
     const seen = collect();
 
     log.appendAll([
@@ -1087,7 +1157,7 @@ describe('WorkspaceInvalidationService — incremental reading (Epic 42)', () =>
     // empty array; a subscriber that only reads what was just appended has to do
     // it explicitly. A surviving contribution would attribute the NEXT team's
     // mutation to the PREVIOUS team's workspace.
-    log.append(resourceAttached('A', 'users/u1/ws-old'));
+    log.append(workspaceAttached('A', 'users/u1/ws-old'));
     const seen = collect();
 
     log.reset();
@@ -1120,7 +1190,7 @@ describe('WorkspaceInvalidationService — incremental reading (Epic 42)', () =>
     log.reset(); // (b)
     log.appendAll([
       // (c) the REST replay
-      resourceAttached('A', 'users/u1/ws-1'),
+      workspaceAttached('A', 'users/u1/ws-1'),
       makeToolCall('A', 'workspace_write', writeArgs, 'replay-1'),
       makeToolReturn('A', 'workspace_write', 'replay-1', true),
       makeToolCall(
@@ -1136,7 +1206,8 @@ describe('WorkspaceInvalidationService — incremental reading (Epic 42)', () =>
     expect(seen).toEqual([]);
 
     // And it does not pass by the stream being dead: a live mutation after the
-    // replay still fires exactly once, attributed to the replayed attach event.
+    // replay still fires exactly once, attributed to the replayed attach
+    // envelope.
     log.append(
       makeToolCall(
         'A',

@@ -25,11 +25,12 @@ export interface ActorAddress {
  * intentionally ignored.
  *
  * NOTE (Story 52-1): NOTHING in this package reads a card for workspace
- * identity or attribution any more — both come from the orchestrator's
- * `ResourceAttached` event. `workspace_id` is kept only because the specs that
- * prove the card is no longer read must be able to CONSTRUCT a card that
- * declares a workspace; drop it and that guard degenerates into asserting over
- * a card with nothing to declare. It is not read by production code.
+ * identity or attribution any more — both come from the `WorkspaceAttached`
+ * payload the orchestrator emits inside an `EventMessage` (Story 52-2).
+ * `workspace_id` is kept only because the specs that prove the card is no
+ * longer read must be able to CONSTRUCT a card that declares a workspace; drop
+ * it and that guard degenerates into asserting over a card with nothing to
+ * declare. It is not read by production code.
  */
 export interface ToolCardLite {
   __model__: string;
@@ -113,43 +114,6 @@ export interface StartMessage extends BaseMessage {
 
 export interface StopMessage extends BaseMessage {
   __model__: 'akgentic.core.messages.orchestrator.StopMessage';
-}
-
-/**
- * The orchestrator's attach telemetry (core ADR-022 §Decision 8): emitted on the
- * team's own stream as the orchestrator forwards a successful get-or-create for
- * a resource-scoped actor — including a cache hit, so two agents binding one
- * workspace produce two events and one actor.
- *
- * It replaces the `#Workspace` actor's `StartMessage` as this package's source
- * of workspace identity AND of agent→workspace attribution. A hosted actor is
- * created with `orchestrator=None` and emits no lifecycle frame at all, so there
- * is no `StartMessage` left to read.
- *
- * There is deliberately NO detach event. Membership therefore shrinks only via
- * `StopMessage`, and a workspace is never removed once announced.
- *
- * NOTE: no `content` field is declared, because the frame carries none — the
- * Python `Message` base does not define one. `BaseMessage` declaring `content`
- * required is a pre-existing structural inaccuracy that `StartMessage` already
- * lives with; it is not repaired here.
- */
-export interface ResourceAttached extends BaseMessage {
-  __model__: 'akgentic.core.messages.orchestrator.ResourceAttached';
-  /** The BINDING agent — NOT `sender.agent_id`, which is the ORCHESTRATOR's id
-   *  because the orchestrator is what emits this frame. Every other fold in this
-   *  package keys an agent off `sender.agent_id`; doing so here attributes every
-   *  workspace to the orchestrator, and renders a plausible-looking wrong chip
-   *  rather than throwing. Serialised as `str(uuid)` — the canonical lowercase
-   *  hyphenated form, the same space `sender.agent_id` and `AgentsByIdService`
-   *  use, so no normalisation belongs on this side. */
-  agent_id: string;
-  /** The backend's resolved `<scope>/<leaf>`. Read, never derived: the client
-   *  consumes the server's answer and never recomputes an encoding. */
-  workspace_path: string;
-  /** Informational only. The attribution join is `agent_id`; nothing in this
-   *  package may join on this list. */
-  metadata_keys?: string[];
 }
 
 export interface ErrorMessage extends BaseMessage {
@@ -427,6 +391,45 @@ export interface TeamStoppingEvent {
 }
 
 /**
+ * Inner event payload announcing that an agent was bound to a workspace,
+ * mirroring the akgentic-tool `WorkspaceAttached` frozen dataclass (core
+ * ADR-022 §Decision 8, final form). Carried by `EventMessage.event` like every
+ * other domain event — `ClosedNotification`, `TeamStoppingEvent` — and
+ * discriminated by the inner `__model__`. There is NO dedicated top-level
+ * message type for it: the workspace kind declares its own event in its own
+ * package, and core wraps it in the envelope unread.
+ *
+ * The orchestrator emits one envelope per successful get-or-create forward,
+ * INCLUDING a cache hit, so two agents binding one workspace produce two
+ * events and one actor. It replaces the `#Workspace` actor's `StartMessage` as
+ * this package's source of workspace identity AND of agent→workspace
+ * attribution: a hosted actor is created with `orchestrator=None` and emits no
+ * lifecycle frame at all, so there is no `StartMessage` left to read.
+ *
+ * There is deliberately NO detach event. Membership therefore shrinks only via
+ * `StopMessage`, and a workspace is never removed once announced.
+ *
+ * Read-only on this side, so — like `TeamStoppingEvent` — it gets no exported
+ * wire-tag constant; the `CLOSED_NOTIFICATION_MODEL` exception does not apply.
+ * The tag's module segment belongs to the tool package and is never read here:
+ * `isWorkspaceAttached` matches the class-name segment only.
+ */
+export interface WorkspaceAttached {
+  __model__: string; // contains 'WorkspaceAttached'
+  /** The BINDING agent — NOT the envelope's `sender.agent_id`, which is the
+   *  ORCHESTRATOR's because the orchestrator emits the envelope. Every other
+   *  fold in this package keys an agent off the sender; doing so here
+   *  attributes every workspace to the orchestrator and renders a
+   *  plausible-looking wrong chip rather than throwing. `str(uuid)` on the
+   *  wire — the canonical lowercase hyphenated form, the same id space
+   *  `AgentsByIdService` keys by, so no normalisation belongs on this side. */
+  agent_id: string;
+  /** The backend's resolved `<scope>/<leaf>`. Read, never derived: the client
+   *  consumes the server's answer and never recomputes an encoding. */
+  workspace_path: string;
+}
+
+/**
  * Inner event payload announcing that the model asked for one tool call,
  * mirroring the akgentic-llm `ToolCallEvent` frozen dataclass (ADR-031
  * §Context). Carried by `EventMessage.event` like every other domain event and
@@ -566,7 +569,6 @@ export type AkgenticMessage =
   | HandledMessage
   | StartMessage
   | StopMessage
-  | ResourceAttached
   | ErrorMessage
   | WarningMessage
   | NotificationMessage
@@ -606,24 +608,6 @@ export function isStartMessage(msg: BaseMessage): msg is StartMessage {
 
 export function isStopMessage(msg: BaseMessage): msg is StopMessage {
   return msg.__model__.includes('StopMessage');
-}
-
-/**
- * True for the orchestrator's resource-attach telemetry (core ADR-022
- * §Decision 8). A bare `.includes()` like its lifecycle siblings, and the
- * substring check was verified in BOTH directions against the `AkgenticMessage`
- * union above rather than assumed:
- *
- * - no other `__model__` in the union contains `'ResourceAttached'`, so this
- *   guard admits nothing else. (`ResourceStopped` is an actor-to-actor frame
- *   that never reaches a team stream, and does not contain the substring
- *   either.)
- * - no other guard's substring is contained by
- *   `'akgentic.core.messages.orchestrator.ResourceAttached'`, so this frame is
- *   claimed by no sibling guard and guard order is free.
- */
-export function isResourceAttached(msg: BaseMessage): msg is ResourceAttached {
-  return msg.__model__.includes('ResourceAttached');
 }
 
 export function isErrorMessage(msg: BaseMessage): msg is ErrorMessage {
@@ -807,6 +791,38 @@ export function isTeamStoppingEvent(
   event: { __model__?: string } | null | undefined,
 ): event is TeamStoppingEvent {
   return !!event?.__model__?.includes('TeamStoppingEvent');
+}
+
+/**
+ * Inner-event check (Story 52-2): true when the inner event carried by an
+ * `EventMessage` is a `WorkspaceAttached`. Matches on the inner `__model__`,
+ * the same discrimination used for `ClosedNotification` / `TeamStoppingEvent`.
+ *
+ * The argument is `EventMessage.event`, NEVER the envelope. Applied to the
+ * envelope this never matches — `'…orchestrator.EventMessage'` does not
+ * contain `'WorkspaceAttached'` — and the caller is then silently dead with
+ * every other spec still green, rather than over-admitting.
+ *
+ * It matches on the payload's NAME, never on its shape. A `ClosedNotification`
+ * or a sibling kind's `MemoryAttached` that happens to carry a plausible
+ * `workspace_path` field is not a workspace binding, and a guard reading
+ * `typeof event.workspace_path` would list both. The module segment of the tag
+ * is not read either, so a move of the dataclass between tool modules changes
+ * nothing here.
+ *
+ * Substring check verified in BOTH directions against every inner `__model__`
+ * this package discriminates — `ClosedNotification`, `TeamStoppingEvent`,
+ * `ToolCallEvent`, `ToolReturnEvent`, `ToolStateEvent`,
+ * `KnowledgeGraphStateEvent`, `LlmMessageEvent`, `LlmUsageEvent`,
+ * `LlmSystemPromptEvent`, `LlmContextCompactedEvent`,
+ * `LlmContextClearedEvent`, `CommandsAnnouncedEvent`: none contains
+ * `'WorkspaceAttached'`, and `'WorkspaceAttached'` contains none of them, so
+ * guard order is free and no sibling guard can claim this payload.
+ */
+export function isWorkspaceAttached(
+  event: { __model__?: string } | null | undefined,
+): event is WorkspaceAttached {
+  return !!event?.__model__?.includes('WorkspaceAttached');
 }
 
 /**
