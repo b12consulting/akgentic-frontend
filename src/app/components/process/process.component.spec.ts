@@ -5,7 +5,11 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { BehaviorSubject } from 'rxjs';
 
-import { StartMessage, StopMessage } from '../../protocol/message.types';
+import {
+  EventMessage,
+  StartMessage,
+  StopMessage,
+} from '../../protocol/message.types';
 import { AkgentService } from '../../core/ui/akgent.service';
 import { ChatService } from './selectors/chat.selector';
 import { ContextService } from '../../core/context/context.service';
@@ -80,26 +84,35 @@ function makeKgStop(id: string): StopMessage {
   };
 }
 
-// A normal agent declaring a WorkspaceTool with no workspace_id (→ default).
-function makeWorkspaceStart(id: string, agentName: string): StartMessage {
+// The orchestrator's `EventMessage` envelope carrying a `WorkspaceAttached`
+// payload that binds one agent to the team-default workspace (Story 52-2). The
+// picker is discovered from THIS payload, not from an agent's card: the
+// envelope's sender is the orchestrator and the binding agent is the PAYLOAD's
+// `agent_id`. The payload's module segment is a placeholder — the tool slice
+// that declares the dataclass is unwritten — and the guard never reads it.
+function makeWorkspaceAttached(id: string, agentName: string): EventMessage {
   return {
     id,
     parent_id: null,
     team_id: 'team-1',
     timestamp: new Date().toISOString(),
-    sender: baseSender(agentName),
+    sender: {
+      __actor_address__: true,
+      agent_id: 'agent-orchestrator',
+      name: 'orchestrator',
+      role: 'Orchestrator',
+      team_id: 'team-1',
+      squad_id: 's1',
+      user_message: false,
+    },
     display_type: 'other',
     content: null,
-    __model__: 'akgentic.core.messages.orchestrator.StartMessage',
-    config: {
-      tools: [
-        {
-          __model__: 'akgentic.tool.workspace.tool.WorkspaceTool',
-          workspace_id: null,
-        },
-      ],
-    } as any,
-    parent: null,
+    __model__: 'akgentic.core.messages.orchestrator.EventMessage',
+    event: {
+      __model__: 'akgentic.tool.workspace.event.WorkspaceAttached',
+      agent_id: baseSender(agentName).agent_id,
+      workspace_path: 'users/u1/team-1',
+    },
   };
 }
 
@@ -273,11 +286,11 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
   });
 
   it('scenario 5 — no regression: Team / Member / Messages entries remain present under both KG presence states (order preserved)', async () => {
-    // Workspace presence is reactive (ADR-020): declare a WorkspaceTool so the
+    // Workspace presence is reactive (ADR-020): attach a workspace so the
     // Workspaces tab is present, then verify the order holds without KG —
     // `[team, member, workspace, messages]` — and with KG —
     // `[team, member, knowledge-graph, workspace, messages]`.
-    log.append(makeWorkspaceStart('ws-start-1', 'Worker'));
+    log.append(makeWorkspaceAttached('ws-start-1', 'Worker'));
     let options = await firstValue(component.visualizationOptions$);
     let labels = options.map((o) => o.value);
     expect(labels).toEqual(['team', 'member', 'workspace', 'messages']);
@@ -294,10 +307,10 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
     ]);
   });
 
-  it('scenario 6 — Workspaces appears between KG and Messages once a WorkspaceTool exists', async () => {
-    // With a WorkspaceTool but no KG, the order is [team, member, workspace,
-    // messages].
-    log.append(makeWorkspaceStart('ws-start-1', 'Worker'));
+  it('scenario 6 — Workspaces appears between KG and Messages once a WorkspaceAttached envelope arrives', async () => {
+    // With an attached workspace but no KG, the order is [team, member,
+    // workspace, messages].
+    log.append(makeWorkspaceAttached('ws-start-1', 'Worker'));
     let options = await firstValue(component.visualizationOptions$);
     expect(options.map((o) => o.value)).toEqual([
       'team',
@@ -326,8 +339,8 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
     ).toBeNull();
   });
 
-  it('scenario 8 — WorkspaceTool appears; sticky: Stop keeps the Workspaces tab', async () => {
-    log.append(makeWorkspaceStart('ws-start-1', 'Worker'));
+  it('scenario 8 — a WorkspaceAttached envelope appears; sticky: Stop keeps the Workspaces tab', async () => {
+    log.append(makeWorkspaceAttached('ws-start-1', 'Worker'));
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();

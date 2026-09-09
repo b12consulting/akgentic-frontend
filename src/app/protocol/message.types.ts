@@ -21,38 +21,20 @@ export interface ActorAddress {
  * inside `StartMessage.config.tools` (Epic 23 / ADR-019). The config is
  * serialised in full (`msg.model_dump(mode="json")`, no projection), so each
  * tool carries at least its recursive `__model__` discriminator (e.g.
- * `"akgentic.tool.workspace.tool.WorkspaceTool"`) and, for a `WorkspaceTool`,
- * an optional `workspace_id`. We only type the fields the registry fold reads;
- * every other tool field is intentionally ignored.
+ * `"akgentic.tool.workspace.tool.WorkspaceTool"`). Every other tool field is
+ * intentionally ignored.
+ *
+ * NOTE (Story 52-1): NOTHING in this package reads a card for workspace
+ * identity or attribution any more — both come from the `WorkspaceAttached`
+ * payload the orchestrator emits inside an `EventMessage` (Story 52-2).
+ * `workspace_id` is kept only because the specs that prove the card is no
+ * longer read must be able to CONSTRUCT a card that declares a workspace; drop
+ * it and that guard degenerates into asserting over a card with nothing to
+ * declare. It is not read by production code.
  */
 export interface ToolCardLite {
   __model__: string;
   workspace_id?: string | null;
-  /** The metadata layout's card declaration (ADR-048 §Decision 2/3): the keys
-   *  whose values name a shared `_meta/…` workspace, in DECLARATION order.
-   *  Mutually exclusive with `workspace_id` by a backend `model_validator`.
-   *  Already on the wire — `WorkspaceTool.workspace_metadata_keys` is a plain
-   *  Pydantic field serialised into `StartMessage.config.tools`. The registry
-   *  joins on this list by plain equality and never derives an id from it. */
-  workspace_metadata_keys?: string[];
-}
-
-/**
- * The `#Workspace` ACTOR's config, as it arrives inside that actor's own
- * `StartMessage` (ADR-048 §Decision 8). It is not an agent config: the actor is
- * a child of the orchestrator, so this frame carries workspace IDENTITY, never
- * attribution.
- *
- * `workspace_path` is the backend's resolved `<scope>/<leaf>` — the whole point
- * of reading it is that the client consumes the server's answer instead of
- * recomputing one. `metadata_keys` is OPTIONAL: it does not exist on the wire
- * until akgentic-tool story 48-4 lands, and its absence must degrade to "listed
- * with no members", never to a leaf parser.
- */
-export interface WorkspaceActorConfig {
-  __model__: string;
-  workspace_path: string;
-  metadata_keys?: string[];
 }
 
 export interface BaseConfig {
@@ -64,7 +46,8 @@ export interface BaseConfig {
   orchestrator: ActorAddress;
   /** Tools bound to this agent, serialised in full on the start config
    *  (Epic 23 / ADR-019). Optional: older payloads / agents without tools
-   *  omit it. The WorkspaceRegistry fold reads `WorkspaceTool` entries here. */
+   *  omit it. Since Story 52-1 no production code reads it for workspace
+   *  identity or attribution; see the `ToolCardLite` note above. */
   tools?: ToolCardLite[];
 }
 
@@ -408,6 +391,45 @@ export interface TeamStoppingEvent {
 }
 
 /**
+ * Inner event payload announcing that an agent was bound to a workspace,
+ * mirroring the akgentic-tool `WorkspaceAttached` frozen dataclass (core
+ * ADR-022 §Decision 8, final form). Carried by `EventMessage.event` like every
+ * other domain event — `ClosedNotification`, `TeamStoppingEvent` — and
+ * discriminated by the inner `__model__`. There is NO dedicated top-level
+ * message type for it: the workspace kind declares its own event in its own
+ * package, and core wraps it in the envelope unread.
+ *
+ * The orchestrator emits one envelope per successful get-or-create forward,
+ * INCLUDING a cache hit, so two agents binding one workspace produce two
+ * events and one actor. It replaces the `#Workspace` actor's `StartMessage` as
+ * this package's source of workspace identity AND of agent→workspace
+ * attribution: a hosted actor is created with `orchestrator=None` and emits no
+ * lifecycle frame at all, so there is no `StartMessage` left to read.
+ *
+ * There is deliberately NO detach event. Membership therefore shrinks only via
+ * `StopMessage`, and a workspace is never removed once announced.
+ *
+ * Read-only on this side, so — like `TeamStoppingEvent` — it gets no exported
+ * wire-tag constant; the `CLOSED_NOTIFICATION_MODEL` exception does not apply.
+ * The tag's module segment belongs to the tool package and is never read here:
+ * `isWorkspaceAttached` matches the class-name segment only.
+ */
+export interface WorkspaceAttached {
+  __model__: string; // contains 'WorkspaceAttached'
+  /** The BINDING agent — NOT the envelope's `sender.agent_id`, which is the
+   *  ORCHESTRATOR's because the orchestrator emits the envelope. Every other
+   *  fold in this package keys an agent off the sender; doing so here
+   *  attributes every workspace to the orchestrator and renders a
+   *  plausible-looking wrong chip rather than throwing. `str(uuid)` on the
+   *  wire — the canonical lowercase hyphenated form, the same id space
+   *  `AgentsByIdService` keys by, so no normalisation belongs on this side. */
+  agent_id: string;
+  /** The backend's resolved `<scope>/<leaf>`. Read, never derived: the client
+   *  consumes the server's answer and never recomputes an encoding. */
+  workspace_path: string;
+}
+
+/**
  * Inner event payload announcing that the model asked for one tool call,
  * mirroring the akgentic-llm `ToolCallEvent` frozen dataclass (ADR-031
  * §Context). Carried by `EventMessage.event` like every other domain event and
@@ -598,8 +620,8 @@ export function isWarningMessage(msg: BaseMessage): msg is WarningMessage {
 
 /**
  * True ONLY for the bare `NotificationMessage` base. Deliberately stricter than
- * the `.includes()` siblings (same precedent as `isWorkspaceTool` above):
- * `ErrorMessage` and `WarningMessage` ARE `NotificationMessage` subclasses
+ * the `.includes()` siblings: `ErrorMessage` and `WarningMessage` ARE
+ * `NotificationMessage` subclasses
  * upstream, but each takes its own render branch here, so a guard that admitted
  * them would make the three branches ambiguous. The leading dot also rejects a
  * hypothetical `FooNotificationMessage`.
@@ -661,50 +683,6 @@ export function isUserMessage(msg: BaseMessage): msg is UserMessage {
 
 export function isResultMessage(msg: BaseMessage): msg is ResultMessage {
   return msg.__model__.includes('ResultMessage');
-}
-
-/**
- * ToolCard discriminator check (Epic 23 / ADR-019): true when `t` is a
- * `WorkspaceTool`. Matches on the recursive `__model__` *ending in*
- * `WorkspaceTool` (so `"akgentic.tool.workspace.tool.WorkspaceTool"` matches),
- * deliberately stricter than the `.includes()` used by the message guards: a
- * `__model__` that merely contains `WorkspaceTool` mid-string (or a different
- * tool such as `...KnowledgeGraphTool`, or the empty string) is rejected.
- */
-export function isWorkspaceTool(t: ToolCardLite): t is ToolCardLite {
-  return t.__model__.endsWith('WorkspaceTool');
-}
-
-/**
- * Workspace-actor config check (ADR-048 §Decision 8): true when a
- * `StartMessage.config` is the `#Workspace` actor's own `WorkspaceConfig`.
- *
- * `endsWith('WorkspaceConfig')` for the same reason as `isWorkspaceTool` above,
- * and not `.includes(...)`: a mid-string match would also claim a future
- * `…SandboxWorkspaceConfigFactory`.
- *
- * The parameter is `unknown`, narrowed by explicit predicates the way
- * `parseToolCallArguments` narrows its body below — NOT the
- * `{ __model__?: string }` shape the inner-event guards take. That shape is a
- * weak type, and `StartMessage.config` is typed `BaseConfig`, which declares no
- * `__model__` and so has no property in common with it: the call would not
- * compile without a cast at every site. `unknown` is the stricter answer, and
- * the guard has to be defensive at both ends anyway — a TOOL actor's config
- * carries fields `BaseConfig` does not declare, and the existing
- * `team-with-kg.json` fixture is a `#KnowledgeGraphTool` `StartMessage` whose
- * `config` is `{}`. `BaseConfig` must NOT be widened to accommodate this: a tool
- * actor's config is not an agent config with optional fields.
- */
-export function isWorkspaceActorConfig(
-  config: unknown,
-): config is WorkspaceActorConfig {
-  if (!isJsonObject(config)) return false;
-  const model = config['__model__'];
-  return (
-    typeof model === 'string' &&
-    model.endsWith('WorkspaceConfig') &&
-    typeof config['workspace_path'] === 'string'
-  );
 }
 
 /**
@@ -813,6 +791,38 @@ export function isTeamStoppingEvent(
   event: { __model__?: string } | null | undefined,
 ): event is TeamStoppingEvent {
   return !!event?.__model__?.includes('TeamStoppingEvent');
+}
+
+/**
+ * Inner-event check (Story 52-2): true when the inner event carried by an
+ * `EventMessage` is a `WorkspaceAttached`. Matches on the inner `__model__`,
+ * the same discrimination used for `ClosedNotification` / `TeamStoppingEvent`.
+ *
+ * The argument is `EventMessage.event`, NEVER the envelope. Applied to the
+ * envelope this never matches — `'…orchestrator.EventMessage'` does not
+ * contain `'WorkspaceAttached'` — and the caller is then silently dead with
+ * every other spec still green, rather than over-admitting.
+ *
+ * It matches on the payload's NAME, never on its shape. A `ClosedNotification`
+ * or a sibling kind's `MemoryAttached` that happens to carry a plausible
+ * `workspace_path` field is not a workspace binding, and a guard reading
+ * `typeof event.workspace_path` would list both. The module segment of the tag
+ * is not read either, so a move of the dataclass between tool modules changes
+ * nothing here.
+ *
+ * Substring check verified in BOTH directions against every inner `__model__`
+ * this package discriminates — `ClosedNotification`, `TeamStoppingEvent`,
+ * `ToolCallEvent`, `ToolReturnEvent`, `ToolStateEvent`,
+ * `KnowledgeGraphStateEvent`, `LlmMessageEvent`, `LlmUsageEvent`,
+ * `LlmSystemPromptEvent`, `LlmContextCompactedEvent`,
+ * `LlmContextClearedEvent`, `CommandsAnnouncedEvent`: none contains
+ * `'WorkspaceAttached'`, and `'WorkspaceAttached'` contains none of them, so
+ * guard order is free and no sibling guard can claim this payload.
+ */
+export function isWorkspaceAttached(
+  event: { __model__?: string } | null | undefined,
+): event is WorkspaceAttached {
+  return !!event?.__model__?.includes('WorkspaceAttached');
 }
 
 /**

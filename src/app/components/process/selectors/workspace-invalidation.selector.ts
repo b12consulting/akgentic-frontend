@@ -12,21 +12,18 @@ import {
 import {
   AkgenticMessage,
   isEventMessage,
-  isStartMessage,
   isStopMessage,
   isToolCallEvent,
   isToolReturnEvent,
+  isWorkspaceAttached,
   parseToolCallArguments,
   ToolCallEvent,
   WorkspaceToolArguments,
 } from '../../../protocol/message.types';
 import { MessageLogService } from '../event/message-log.service';
 import {
-  resolveJoinKeys,
-  startContribution,
-  workspaceIdentity,
-  WorkspaceIdentity,
-  WorkspaceJoinKey,
+  attachedAgentId,
+  attachedLeaf,
 } from './workspace-registry.selector';
 
 /**
@@ -195,11 +192,10 @@ function recordCall(
  * nothing — `success: false` is a retry prompt, not a mutation.
  *
  * An agent mapping to two workspaces yields two instructions, one per workspace
- * (ADR-031 §D4): its join keys resolve to a `Set` of leaves and both cards
- * expose identical `workspace_*` tool names, so the tool name cannot
- * disambiguate. Correct, merely coarser. An agent with no `WorkspaceTool`
- * contribution — or with a metadata card that matches no announced workspace —
- * yields none, and no phantom workspace id is invented for it.
+ * (ADR-031 §D4): it is bound to a `Set` of leaves and every workspace exposes
+ * identical `workspace_*` tool names, so the tool name cannot disambiguate.
+ * Correct, merely coarser. An agent for which no attach envelope arrived yields
+ * none, and no phantom workspace id is invented for it.
  */
 function resolveReturn(
   inFlight: Map<string, InFlightCall>,
@@ -221,23 +217,23 @@ function resolveReturn(
  * unit's memory: no workspace cache, no "last invalidated at" stamp, no dirty
  * flag, no cursor and no announced-so-far count.
  *
- * - `identities` — every workspace a `#Workspace` actor announced, keyed by leaf
- *   (ADR-048 §Decision 8). MONOTONIC, exactly as in the registry: a
- *   `StopMessage` deletes a contribution, never an identity.
- * - `contributions` — the join keys each agent's `WorkspaceTool`s declare. A
- *   `StartMessage` sets an agent's entry (last-wins), a `StopMessage` deletes
- *   it. Read and RESOLVED at CALL time, never at return time, so a
+ * - `attribution` — agent id → the workspace leaves that agent is bound to, the
+ *   SAME resolution the picker's *Accessible by* chips render, taken from the
+ *   same source rather than encoded a second time. A `WorkspaceAttached`
+ *   payload inside an `EventMessage` ADDS a leaf under the PAYLOAD's own
+ *   `agent_id`; a `StopMessage` deletes the agent's whole entry, keyed by
+ *   `sender.agent_id`. Read at CALL time, never at return time, so a
  *   `StopMessage` landing between a call and its return cannot retroactively
- *   erase the instruction (ADR-031 §D4). Resolving at call time is safe with no
- *   ordering care: the `#Workspace` actor must exist before it can serve a call,
- *   so its identity is always already folded.
+ *   erase the instruction (ADR-031 §D4). Reading at call time is safe with no
+ *   ordering care: the resource actor must exist before it can serve a call,
+ *   and the orchestrator emits the attach envelope as it forwards the
+ *   get-or-create, so the binding always precedes the call.
  * - `inFlight` — the mutating calls still awaiting a return, keyed by
  *   `tool_call_id`. The return frame names no path, so everything an
  *   instruction needs is captured here from the call frame.
  */
 interface InvalidationState {
-  identities: Map<string, WorkspaceIdentity>;
-  contributions: Map<string, WorkspaceJoinKey[]>;
+  attribution: Map<string, Set<string>>;
   inFlight: Map<string, InFlightCall>;
 }
 
@@ -252,14 +248,15 @@ interface InvalidationState {
  *
  * No field it reads can throw: `__model__` and `sender` are both reached
  * defensively (`messageListFold` reaches `sender?.role` the same way), the inner
- * guards accept `null`/`undefined`, and the argument parser returns `null`
- * rather than raising. Those reads matter MORE here than they did under a fold:
- * a fold that threw spoiled one emission's derivation, whereas a throw out of a
- * live subscription tears the subscription down for good and nothing
- * re-subscribes. The one frame that could still raise is a `StartMessage`
- * carrying no `config` at all, which `startContribution` dereferences — shared
- * with `workspaceRegistryReduce`, and carried as a deferred finding rather than
- * hardened here.
+ * guards — `isWorkspaceAttached` included — accept `null`/`undefined`,
+ * `attachedLeaf` type-checks the attach payload's `workspace_path` before
+ * splitting it, and the argument parser returns `null` rather than raising.
+ * Those reads matter MORE here than they did under a fold: a fold that threw
+ * spoiled one emission's derivation, whereas a throw out of a live
+ * subscription tears the subscription down for good and nothing re-subscribes.
+ * Nothing dereferences `StartMessage.config` any more, so the one
+ * frame that could previously still raise — a `StartMessage` carrying no
+ * `config` at all — no longer reaches a dereference on this path.
  */
 function absorb(
   state: InvalidationState,
@@ -272,32 +269,36 @@ function absorb(
     // `sender` is typed as required but arrives off the wire. A frame without
     // one keys the empty agent id, which no well-formed frame ever claims.
     const agentId = m.sender?.agent_id ?? '';
-    if (isStartMessage(m)) {
-      // The identity is folded BEFORE the contribution, so a `#Workspace`
-      // actor's own frame can never be shadowed by the agent frame beside it.
-      const identity = workspaceIdentity(m);
-      if (identity !== null) state.identities.set(identity.leaf, identity);
-      state.contributions.set(agentId, startContribution(m));
-      continue;
-    }
     if (isStopMessage(m)) {
-      state.contributions.delete(agentId);
+      state.attribution.delete(agentId);
       continue;
     }
     if (!isEventMessage(m)) continue;
     // The guards key on the INNER `__model__`: an `EventMessage` envelope tag
-    // contains neither 'ToolCallEvent' nor 'ToolReturnEvent'. Binding the
-    // payload to the guards' loose parameter type keeps `EventMessage.event`'s
-    // `any` from propagating into this module.
+    // contains none of 'WorkspaceAttached', 'ToolCallEvent' or
+    // 'ToolReturnEvent'. Binding the payload to the guards' loose parameter
+    // type keeps `EventMessage.event`'s `any` from propagating into this
+    // module. Each envelope is handled by exactly ONE branch.
     const inner: { __model__?: string } | null | undefined = m.event;
+    if (isWorkspaceAttached(inner)) {
+      // The BINDING agent is the payload's `agent_id`. `agentId` above is the
+      // envelope sender — the ORCHESTRATOR here — and this payload is the one
+      // exception to the sender-keyed rule every other branch follows: using
+      // it would attribute every mutation to the orchestrator.
+      const leaf = attachedLeaf(inner);
+      const boundAgentId = attachedAgentId(inner);
+      if (leaf !== null && boundAgentId !== null) {
+        const bucket = state.attribution.get(boundAgentId) ?? new Set<string>();
+        bucket.add(leaf);
+        state.attribution.set(boundAgentId, bucket);
+      }
+      continue;
+    }
     if (isToolCallEvent(inner)) {
-      // The team id comes from the message being absorbed, the same source
-      // `startContribution` used before the resolution moved out of it.
-      const keys = state.contributions.get(agentId) ?? [];
       recordCall(
         state.inFlight,
         inner,
-        resolveJoinKeys(keys, state.identities, m.team_id),
+        state.attribution.get(agentId) ?? new Set<string>(),
       );
     } else if (isToolReturnEvent(inner)) {
       instructions.push(
@@ -319,12 +320,12 @@ function absorb(
  *
  * It cannot be dropped in favour of reading `appended$` alone. `appended$` is a
  * plain `Subject` with no replay buffer, so every message that predates the
- * subscription is invisible to it — the `StartMessage`s that carry the
- * agent→workspace attribution above all. That is the PRODUCTION ordering, not
- * an artefact of tests: a workspace tab only exists once a `StartMessage` has
- * announced the `WorkspaceTool` that created it, and the explorer subscribes
- * from its constructor, so the attribution always predates the subscription.
- * Without this, every live instruction would resolve to no workspace at all and
+ * subscription is invisible to it — the `WorkspaceAttached` envelopes that
+ * carry the agent→workspace attribution above all. That is the PRODUCTION
+ * ordering, not an artefact of tests: a workspace tab only exists once an
+ * attach envelope has announced it, and the explorer subscribes from its
+ * constructor, so the attribution always predates the subscription. Without
+ * this, every live instruction would resolve to no workspace at all and
  * nothing would ever refresh.
  *
  * Discarding what it returns is the old baseline, and for the same reason:
@@ -369,7 +370,7 @@ function seedFrom(
  * (nothing in this layer subscribes in a constructor).
  *
  * `log$` is still watched, but ONLY for `reset()` — an O(1) length check per
- * emission, not the derivation that was deleted. It is what empties the three maps
+ * emission, not the derivation that was deleted. It is what empties both maps
  * on a team switch: `IngestionService.init()` runs several times per component
  * lifetime, the `ProcessComponent` and this service survive it, `reset()` emits
  * on `log$` and deliberately NOT on `appended$`, and a subscriber that watched
@@ -390,8 +391,7 @@ export class WorkspaceInvalidationService {
 
   readonly invalidations$: Observable<WorkspaceInvalidation> = defer(() => {
     const state: InvalidationState = {
-      identities: new Map<string, WorkspaceIdentity>(),
-      contributions: new Map<string, WorkspaceJoinKey[]>(),
+      attribution: new Map<string, Set<string>>(),
       inFlight: new Map<string, InFlightCall>(),
     };
     seedFrom(state, this.log.snapshot());
@@ -401,8 +401,7 @@ export class WorkspaceInvalidationService {
     const cleared$ = this.log.log$.pipe(
       filter((log) => log.length === 0),
       tap(() => {
-        state.identities.clear();
-        state.contributions.clear();
+        state.attribution.clear();
         state.inFlight.clear();
       }),
       ignoreElements(),
