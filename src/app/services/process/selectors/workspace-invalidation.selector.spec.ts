@@ -418,7 +418,7 @@ describe('WorkspaceInvalidationService — correlation (FR7)', () => {
 
     // No `__model__` at all: every guard below reads it, so the fold must skip
     // the frame before any of them runs. Drop the `!m.__model__` line in the
-    // fold and this frame makes `isStartMessage` throw.
+    // fold and this frame makes `isResourceAttached` throw.
     const noModelAtAll = {
       id: 'weird-2',
       parent_id: null,
@@ -1136,7 +1136,7 @@ describe('WorkspaceInvalidationService — incremental reading (Epic 42)', () =>
     expect(seen).toEqual([]);
 
     // And it does not pass by the stream being dead: a live mutation after the
-    // replay still fires exactly once, attributed to the replayed StartMessage.
+    // replay still fires exactly once, attributed to the replayed attach event.
     log.append(
       makeToolCall(
         'A',
