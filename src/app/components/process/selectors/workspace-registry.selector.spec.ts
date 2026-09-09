@@ -3,18 +3,17 @@ import { TestBed } from '@angular/core/testing';
 import {
   AkgenticMessage,
   BaseConfig,
-  isWorkspaceTool,
+  isResourceAttached,
+  ResourceAttached,
   StartMessage,
   StopMessage,
   ToolCardLite,
 } from '../../../protocol/message.types';
 import { MessageLogService } from '../event/message-log.service';
 import {
-  resolveJoinKeys,
-  startContribution,
+  attachedAgentId,
+  attachedLeaf,
   WorkspaceDescriptor,
-  WorkspaceIdentity,
-  workspaceIdentity,
   WorkspaceRegistryService,
   workspaceRegistryReduce,
 } from './workspace-registry.selector';
@@ -25,7 +24,7 @@ import {
 
 const TEAM_ID = 'team-1';
 const WORKSPACE_MODEL = 'akgentic.tool.workspace.tool.WorkspaceTool';
-const WORKSPACE_CONFIG_MODEL = 'akgentic.tool.workspace.models.WorkspaceConfig';
+const ATTACHED_MODEL = 'akgentic.core.messages.orchestrator.ResourceAttached';
 
 function baseSender(agentName: string) {
   return {
@@ -38,58 +37,52 @@ function baseSender(agentName: string) {
   };
 }
 
-function workspaceTool(workspaceId?: string | null): ToolCardLite {
-  return { __model__: WORKSPACE_MODEL, workspace_id: workspaceId };
-}
-
-/** A metadata-layout `WorkspaceTool` card: `workspace_id` is NULL on the wire
- *  (the backend `model_validator` makes the two fields mutually exclusive), so
- *  this is exactly the shape that used to fall back to the team id. */
-function metadataTool(keys: string[]): ToolCardLite {
+/** The ORCHESTRATOR's address — the sender of every attach event, and never the
+ *  binding agent. */
+function orchestratorSender() {
   return {
-    __model__: WORKSPACE_MODEL,
-    workspace_id: null,
-    workspace_metadata_keys: keys,
+    __actor_address__: true as const,
+    agent_id: 'agent-orchestrator',
+    name: 'orchestrator',
+    role: 'Orchestrator',
+    squad_id: 's1',
+    user_message: false,
   };
 }
+
+let attachSeq = 0;
 
 /**
- * The `#Workspace` ACTOR's own `StartMessage` — a child of the orchestrator,
- * `role: 'Tool'`, whose config is a `WorkspaceConfig` rather than an
- * `AgentConfig`. This is the frame that carries the backend's resolved path.
+ * A `ResourceAttached` as the orchestrator emits it (ADR-022 §Decision 8).
  *
- * `metadataKeys` is omitted deliberately when not passed: `config.metadata_keys`
- * does not exist on the wire until akgentic-tool story 48-4 lands.
+ * The sender is ALWAYS the orchestrator; the binding agent is the top-level
+ * `agent_id`. The two are deliberately different ids in every fixture so no spec
+ * can pass by keying on the wrong one.
  */
-function workspaceActorStart(
-  path: string,
+function resourceAttached(
+  agentName: string,
+  workspacePath: string,
   metadataKeys?: string[],
-): StartMessage {
-  const config: Record<string, unknown> = {
-    __model__: WORKSPACE_CONFIG_MODEL,
-    name: '#Workspace-' + path,
-    workspace_path: path,
-  };
-  if (metadataKeys !== undefined) config['metadata_keys'] = metadataKeys;
-  return {
-    id: 'start-ws-' + path,
+): ResourceAttached {
+  attachSeq += 1;
+  const frame: ResourceAttached = {
+    id: 'attach-' + attachSeq,
     parent_id: null,
     team_id: TEAM_ID,
     timestamp: new Date().toISOString(),
-    sender: {
-      __actor_address__: true as const,
-      agent_id: 'actor-ws-' + path,
-      name: '#Workspace-' + path,
-      role: 'Tool',
-      squad_id: 's1',
-      user_message: false,
-    },
+    sender: orchestratorSender(),
     display_type: 'other',
     content: null,
-    __model__: 'akgentic.core.messages.orchestrator.StartMessage',
-    config: config as unknown as BaseConfig,
-    parent: null,
+    __model__: ATTACHED_MODEL,
+    agent_id: 'agent-' + agentName,
+    workspace_path: workspacePath,
   };
+  if (metadataKeys !== undefined) frame.metadata_keys = metadataKeys;
+  return frame;
+}
+
+function workspaceTool(workspaceId?: string | null): ToolCardLite {
+  return { __model__: WORKSPACE_MODEL, workspace_id: workspaceId };
 }
 
 // NOTE: the backend AgentConfig does NOT serialise `team_id` — it is absent
@@ -146,71 +139,301 @@ function findById(
   return result.find((d) => d.workspaceId === workspaceId);
 }
 
-describe('isWorkspaceTool (guard)', () => {
-  it('matches a __model__ ending in WorkspaceTool', () => {
-    expect(isWorkspaceTool(workspaceTool('w1'))).toBe(true);
+// ---------------------------------------------------------------------
+// The guard (AC9/AC11)
+// ---------------------------------------------------------------------
+
+describe('isResourceAttached (guard)', () => {
+  it('matches the fully-qualified attach discriminator', () => {
+    expect(isResourceAttached(resourceAttached('A', 'users/u1/notes'))).toBe(
+      true,
+    );
   });
 
-  it('rejects other tools, empty, and mid-string WorkspaceTool', () => {
-    expect(
-      isWorkspaceTool({ __model__: 'akgentic.tool.kg.tool.KnowledgeGraphTool' }),
-    ).toBe(false);
-    expect(
-      isWorkspaceTool({ __model__: 'akgentic.tool.vector.VectorStoreTool' }),
-    ).toBe(false);
-    expect(isWorkspaceTool({ __model__: '' })).toBe(false);
-    // Contains WorkspaceTool mid-string but does NOT end in it → rejected.
-    expect(isWorkspaceTool({ __model__: 'WorkspaceToolFactory' })).toBe(false);
+  it('rejects every other message model reaching a team stream', () => {
+    // The substring check, exercised in the admitting direction: none of the
+    // lifecycle or telemetry models this package folds contains
+    // 'ResourceAttached'.
+    for (const model of [
+      'akgentic.core.messages.orchestrator.StartMessage',
+      'akgentic.core.messages.orchestrator.StopMessage',
+      'akgentic.core.messages.orchestrator.SentMessage',
+      'akgentic.core.messages.orchestrator.EventMessage',
+      'akgentic.core.messages.orchestrator.ErrorMessage',
+      'akgentic.core.messages.orchestrator.StateChangedMessage',
+      '',
+    ]) {
+      const frame = { __model__: model } as unknown as StartMessage;
+      expect(isResourceAttached(frame)).toBe(false);
+    }
   });
 });
 
-describe('workspaceRegistryReduce (pure function)', () => {
-  it('(AC6) empty log → no descriptors (no always-present default)', () => {
-    const result = workspaceRegistryReduce([], TEAM_ID);
-    expect(result).toEqual([]);
+// ---------------------------------------------------------------------
+// Leaf and binding-agent extraction (AC2, AC4, AC7)
+// ---------------------------------------------------------------------
+
+describe('attachedLeaf (the id is READ, never parsed)', () => {
+  it('(AC2) reads the LAST path segment of the resolved path', () => {
+    expect(attachedLeaf(resourceAttached('A', '_meta/tenant-azerty'))).toBe(
+      'tenant-azerty',
+    );
   });
 
-  it('(AC3) StartMessage with a named WorkspaceTool only → one named descriptor, no default', () => {
-    const log: AkgenticMessage[] = [
-      makeStartMessage('A', [workspaceTool('ws-named')]),
-    ];
-    const result = workspaceRegistryReduce(log, TEAM_ID);
+  it('(AC2) the encoded metadata leaf is carried verbatim', () => {
+    // Nothing splits it on `__` or `-`, and nothing percent-decodes it.
+    expect(
+      attachedLeaf(
+        resourceAttached('A', '_meta/customer_id-ACME__case_id-42'),
+      ),
+    ).toBe('customer_id-ACME__case_id-42');
+    expect(
+      attachedLeaf(resourceAttached('A', '_meta/case_id-2026%2D42')),
+    ).toBe('case_id-2026%2D42');
+  });
+
+  it('(AC7) an empty last segment is not an id', () => {
+    expect(attachedLeaf(resourceAttached('A', 'users/u1/'))).toBe(null);
+    expect(attachedLeaf(resourceAttached('A', ''))).toBe(null);
+  });
+
+  it('(AC7) a non-string workspace_path degrades to null instead of throwing', () => {
+    const frame = resourceAttached('A', 'users/u1/notes');
+    (frame as unknown as Record<string, unknown>)['workspace_path'] = 42;
+    expect(() => attachedLeaf(frame)).not.toThrow();
+    expect(attachedLeaf(frame)).toBe(null);
+  });
+
+  it('(AC7) an absent workspace_path degrades to null instead of throwing', () => {
+    const frame = resourceAttached('A', 'users/u1/notes');
+    delete (frame as unknown as Record<string, unknown>)['workspace_path'];
+    expect(() => attachedLeaf(frame)).not.toThrow();
+    expect(attachedLeaf(frame)).toBe(null);
+  });
+});
+
+describe('attachedAgentId (the BINDING agent, never the sender)', () => {
+  it('(AC4) reads the top-level agent_id, which is NOT the sender', () => {
+    const frame = resourceAttached('A', 'users/u1/notes');
+    expect(attachedAgentId(frame)).toBe('agent-A');
+    // The sender of this frame is the orchestrator, and the two differ.
+    expect(frame.sender.agent_id).toBe('agent-orchestrator');
+    expect(attachedAgentId(frame)).not.toBe(frame.sender.agent_id);
+  });
+
+  it('(AC7) a missing or non-string agent_id degrades to null', () => {
+    const missing = resourceAttached('A', 'users/u1/notes');
+    delete (missing as unknown as Record<string, unknown>)['agent_id'];
+    expect(attachedAgentId(missing)).toBe(null);
+
+    const wrongType = resourceAttached('A', 'users/u1/notes');
+    (wrongType as unknown as Record<string, unknown>)['agent_id'] = 7;
+    expect(attachedAgentId(wrongType)).toBe(null);
+
+    const empty = resourceAttached('A', 'users/u1/notes');
+    empty.agent_id = '';
+    expect(attachedAgentId(empty)).toBe(null);
+  });
+});
+
+// ---------------------------------------------------------------------
+// The fold (AC1-AC7)
+// ---------------------------------------------------------------------
+
+describe('workspaceRegistryReduce (pure function)', () => {
+  it('(AC1) empty log → no descriptors (no always-present default)', () => {
+    expect(workspaceRegistryReduce([], TEAM_ID)).toEqual([]);
+  });
+
+  it('(AC2) the three ADR-048 layouts — default: <user_segment>/<team_id>', () => {
+    const result = workspaceRegistryReduce(
+      [resourceAttached('A', 'users/u1/' + TEAM_ID)],
+      TEAM_ID,
+    );
     expect(result.length).toBe(1);
-    const named = findById(result, 'ws-named');
-    expect(named?.isDefault).toBe(false);
-    expect(named?.agentIds).toEqual(['agent-A']);
-    // No agent declared a no-workspace_id tool → there is NO default descriptor.
+    expect(result[0].workspaceId).toBe(TEAM_ID);
+    expect(result[0].isDefault).toBe(true);
+    expect(result[0].label).toBe('Default workspace');
+  });
+
+  it('(AC2) the three ADR-048 layouts — named: <user_segment>/notes', () => {
+    const result = workspaceRegistryReduce(
+      [resourceAttached('A', 'users/u1/notes')],
+      TEAM_ID,
+    );
+    expect(result.length).toBe(1);
+    expect(result[0].workspaceId).toBe('notes');
+    expect(result[0].isDefault).toBe(false);
+    expect(result[0].label).toBe('notes');
+  });
+
+  it('(AC2) the three ADR-048 layouts — metadata: the encoded leaf', () => {
+    const result = workspaceRegistryReduce(
+      [
+        resourceAttached('A', '_meta/customer_id-ACME__case_id-42', [
+          'customer_id',
+          'case_id',
+        ]),
+      ],
+      TEAM_ID,
+    );
+    expect(result.map((d) => d.workspaceId)).toEqual([
+      'customer_id-ACME__case_id-42',
+    ]);
+    expect(result[0].isDefault).toBe(false);
+    // The bug epic 51 removed and this story must not reintroduce: the metadata
+    // workspace collapsing into the team default.
     expect(findById(result, TEAM_ID)).toBeUndefined();
   });
 
-  it('(AC4) no workspace_id → creates the default descriptor keyed by the team id', () => {
-    const log: AkgenticMessage[] = [
-      makeStartMessage('A', [workspaceTool(null)]),
-    ];
-    const result = workspaceRegistryReduce(log, TEAM_ID);
-    // A no-workspace_id tool resolves to the team id → the (only) default.
+  it('(AC4) the member is the BINDING agent and NOT the sender', () => {
+    // The trap of this epic, asserted in BOTH directions against ONE event with
+    // two different ids. Keying on `sender.agent_id` renders a plausible chip
+    // rather than throwing, so "a chip exists" would not catch it.
+    const frame = resourceAttached('A', 'users/u1/notes');
+    expect(frame.agent_id).not.toBe(frame.sender.agent_id);
+
+    const result = workspaceRegistryReduce([frame], TEAM_ID);
     expect(result.length).toBe(1);
-    expect(findById(result, TEAM_ID)?.isDefault).toBe(true);
-    expect(findById(result, TEAM_ID)?.agentIds).toEqual(['agent-A']);
+    expect(result[0].agentIds).toEqual(['agent-A']);
+    expect(result[0].agentIds).not.toContain('agent-orchestrator');
+    expect(result[0].agentIds).not.toContain(frame.sender.agent_id);
   });
 
-  it('(AC4) effective-id — explicit workspace_id resolves to that id', () => {
-    const log: AkgenticMessage[] = [
-      makeStartMessage('A', [workspaceTool('ws-x')]),
-    ];
-    const result = workspaceRegistryReduce(log, TEAM_ID);
-    expect(findById(result, 'ws-x')).toBeDefined();
-    expect(findById(result, 'ws-x')?.agentIds).toEqual(['agent-A']);
+  it('(AC5) two agents on one workspace → two events, one descriptor, two members', () => {
+    // Core emits one event per successful forward INCLUDING a cache hit, which
+    // is what makes membership a field read rather than a reconstruction.
+    const result = workspaceRegistryReduce(
+      [
+        resourceAttached('B', 'users/u1/shared'),
+        resourceAttached('A', 'users/u1/shared'),
+      ],
+      TEAM_ID,
+    );
+    expect(result.length).toBe(1);
+    expect(result[0].workspaceId).toBe('shared');
+    expect(result[0].agentIds).toEqual(['agent-A', 'agent-B']);
   });
 
-  it('(order) default sorts first, named workspaces follow alphabetically', () => {
+  it('(AC3) Stop removes the member from EVERY workspace and removes NO workspace', () => {
+    // The non-empty state is asserted FIRST, so the empty one below is not
+    // vacuous: without the first fold, "agentIds is []" would pass on a fold
+    // that never added a member at all.
+    const attachOne = resourceAttached('A', 'users/u1/notes');
+    const attachTwo = resourceAttached('A', '_meta/tenant-azerty', ['tenant']);
+    const before = workspaceRegistryReduce([attachOne, attachTwo], TEAM_ID);
+    expect(before.map((d) => d.workspaceId).sort()).toEqual([
+      'notes',
+      'tenant-azerty',
+    ]);
+    expect(findById(before, 'notes')?.agentIds).toEqual(['agent-A']);
+    expect(findById(before, 'tenant-azerty')?.agentIds).toEqual(['agent-A']);
+
+    const after = workspaceRegistryReduce(
+      [attachOne, attachTwo, makeStopMessage('A')],
+      TEAM_ID,
+    );
+    // Both workspaces survive; the member is gone from both.
+    expect(after.map((d) => d.workspaceId).sort()).toEqual([
+      'notes',
+      'tenant-azerty',
+    ]);
+    expect(findById(after, 'notes')?.agentIds).toEqual([]);
+    expect(findById(after, 'tenant-azerty')?.agentIds).toEqual([]);
+  });
+
+  it('(AC3) Stop is keyed by sender.agent_id — another agent keeps its membership', () => {
+    const result = workspaceRegistryReduce(
+      [
+        resourceAttached('A', 'users/u1/shared'),
+        resourceAttached('B', 'users/u1/shared'),
+        makeStopMessage('A'),
+      ],
+      TEAM_ID,
+    );
+    expect(findById(result, 'shared')?.agentIds).toEqual(['agent-B']);
+  });
+
+  it('(AC3) a workspace stays listed after EVERY contributing agent stopped', () => {
+    const attach = resourceAttached('A', 'users/u1/notes');
+    const before = workspaceRegistryReduce([attach], TEAM_ID);
+    expect(before[0].agentIds).toEqual(['agent-A']);
+
+    const after = workspaceRegistryReduce(
+      [attach, makeStopMessage('A')],
+      TEAM_ID,
+    );
+    expect(after.length).toBe(1);
+    expect(after[0].workspaceId).toBe('notes');
+    expect(after[0].agentIds).toEqual([]);
+  });
+
+  it('(AC3) ordered last-wins — attach → stop → attach ends with the member present', () => {
+    const result = workspaceRegistryReduce(
+      [
+        resourceAttached('A', 'users/u1/notes'),
+        makeStopMessage('A'),
+        resourceAttached('A', 'users/u1/notes'),
+      ],
+      TEAM_ID,
+    );
+    expect(findById(result, 'notes')?.agentIds).toEqual(['agent-A']);
+  });
+
+  it('(AC6) an agent that never bound contributes NOTHING, not even a team-id fallback', () => {
+    // The StartMessage declares a WorkspaceTool, so "the card is not read" is
+    // actually exercised rather than passing on an empty log.
     const log: AkgenticMessage[] = [
-      makeStartMessage('A', [workspaceTool('shared_workspace')]),
-      makeStartMessage('B', [workspaceTool(null)]), // default, declared later
-      makeStartMessage('C', [workspaceTool('alpha')]),
+      makeStartMessage('A', [workspaceTool('ws-declared'), workspaceTool(null)]),
+      makeStopMessage('B'),
+    ];
+    expect(workspaceRegistryReduce(log, TEAM_ID)).toEqual([]);
+  });
+
+  it('(AC6) a declared card beside a real attach adds no second descriptor', () => {
+    const log: AkgenticMessage[] = [
+      makeStartMessage('A', [workspaceTool('ws-declared')]),
+      resourceAttached('A', 'users/u1/notes'),
     ];
     const result = workspaceRegistryReduce(log, TEAM_ID);
-    // Default first despite being declared second; named ones alphabetical.
+    expect(result.map((d) => d.workspaceId)).toEqual(['notes']);
+    expect(findById(result, 'ws-declared')).toBeUndefined();
+  });
+
+  it('(AC7) a malformed frame contributes nothing and does not throw', () => {
+    const emptyLeaf = resourceAttached('A', 'users/u1/');
+    const nonString = resourceAttached('B', 'users/u1/x');
+    (nonString as unknown as Record<string, unknown>)['workspace_path'] = null;
+    const noKeys = resourceAttached('C', 'users/u1/good');
+    (noKeys as unknown as Record<string, unknown>)['metadata_keys'] = 'tenant';
+
+    let result: WorkspaceDescriptor[] = [];
+    expect(() => {
+      result = workspaceRegistryReduce([emptyLeaf, nonString, noKeys], TEAM_ID);
+    }).not.toThrow();
+    // Only the well-formed frame produced a workspace; a non-array
+    // `metadata_keys` is tolerated because nothing joins on it.
+    expect(result.map((d) => d.workspaceId)).toEqual(['good']);
+    expect(result[0].agentIds).toEqual(['agent-C']);
+  });
+
+  it('(AC7) an attach with a good leaf but no agent_id lists the workspace with no member', () => {
+    const frame = resourceAttached('A', 'users/u1/notes');
+    delete (frame as unknown as Record<string, unknown>)['agent_id'];
+    const result = workspaceRegistryReduce([frame], TEAM_ID);
+    expect(result.map((d) => d.workspaceId)).toEqual(['notes']);
+    expect(result[0].agentIds).toEqual([]);
+  });
+
+  it('(AC1) order — default first, named workspaces alphabetically', () => {
+    const result = workspaceRegistryReduce(
+      [
+        resourceAttached('A', 'users/u1/shared_workspace'),
+        resourceAttached('B', 'users/u1/' + TEAM_ID),
+        resourceAttached('C', 'users/u1/alpha'),
+      ],
+      TEAM_ID,
+    );
     expect(result.map((d) => d.workspaceId)).toEqual([
       TEAM_ID,
       'alpha',
@@ -219,495 +442,101 @@ describe('workspaceRegistryReduce (pure function)', () => {
     expect(result[0].isDefault).toBe(true);
   });
 
-  it('(AC5) two agents sharing one effective id collapse to one descriptor recording both', () => {
-    const log: AkgenticMessage[] = [
-      makeStartMessage('A', [workspaceTool('ws-shared')]),
-      makeStartMessage('B', [workspaceTool('ws-shared')]),
-    ];
-    const result = workspaceRegistryReduce(log, TEAM_ID);
-    const shared = findById(result, 'ws-shared');
-    expect(shared?.agentIds).toEqual(['agent-A', 'agent-B']);
-    expect(result.filter((d) => d.workspaceId === 'ws-shared').length).toBe(1);
-  });
-
-  it('(AC6) a WorkspaceTool with effective id == team id folds into the default, no second default', () => {
-    const log: AkgenticMessage[] = [
-      makeStartMessage('A', [workspaceTool(TEAM_ID)]),
-    ];
-    const result = workspaceRegistryReduce(log, TEAM_ID);
-    const defaults = result.filter((d) => d.isDefault);
-    expect(defaults.length).toBe(1);
-    expect(defaults[0].agentIds).toEqual(['agent-A']);
-  });
-
-  it('(AC7) Stop drops the member but KEEPS the workspace (sticky — operator retains access)', () => {
-    const log: AkgenticMessage[] = [
-      makeStartMessage('A', [workspaceTool('ws-named')]),
-      makeStopMessage('A'),
-    ];
-    const result = workspaceRegistryReduce(log, TEAM_ID);
-    const named = findById(result, 'ws-named');
-    expect(named).toBeDefined();
-    // The fired member is gone, but the workspace persists with no members.
-    expect(named?.agentIds).toEqual([]);
-  });
-
-  it('(AC7) Stop — descriptor backed by another agent survives, stopped agent removed', () => {
-    const log: AkgenticMessage[] = [
-      makeStartMessage('A', [workspaceTool('ws-shared')]),
-      makeStartMessage('B', [workspaceTool('ws-shared')]),
-      makeStopMessage('A'),
-    ];
-    const result = workspaceRegistryReduce(log, TEAM_ID);
-    const shared = findById(result, 'ws-shared');
-    expect(shared).toBeDefined();
-    expect(shared?.agentIds).toEqual(['agent-B']);
-  });
-
-  it('(AC7) ordered last-wins — Start → Stop → Start ends with the named workspace present', () => {
-    const start1 = makeStartMessage('A', [workspaceTool('ws-named')]);
-    start1.id = 'a-start-1';
-    const stop1 = makeStopMessage('A');
-    stop1.id = 'a-stop-1';
-    const start2 = makeStartMessage('A', [workspaceTool('ws-named')]);
-    start2.id = 'a-start-2';
-    const result = workspaceRegistryReduce([start1, stop1, start2], TEAM_ID);
-    expect(findById(result, 'ws-named')?.agentIds).toEqual(['agent-A']);
-  });
-
-  it('(AC7) Stop keeps the default workspace (sticky), drops its member', () => {
-    const log: AkgenticMessage[] = [
-      makeStartMessage('A', [workspaceTool(TEAM_ID)]),
-      makeStopMessage('A'),
-    ];
-    const result = workspaceRegistryReduce(log, TEAM_ID);
-    const def = findById(result, TEAM_ID);
-    expect(def?.isDefault).toBe(true);
-    expect(def?.agentIds).toEqual([]);
-  });
-
-  it('(sticky) a team that never declared a WorkspaceTool stays empty', () => {
-    const log: AkgenticMessage[] = [makeStartMessage('A', [])];
-    expect(workspaceRegistryReduce(log, TEAM_ID)).toEqual([]);
-  });
-
-  it('(NFR4) realistic serialized StartMessage fixture → named descriptor registered', () => {
-    // A JSON-shaped StartMessage as it arrives on the wire: config serialised
-    // in full, config.tools holding a nested WorkspaceTool object with both a
-    // recursive __model__ and a workspace_id. If a future infra serialization
-    // change drops `tools` or renames the discriminator, this fails in CI
-    // rather than silently collapsing the registry to the default-only tab.
-    const serialized = {
-      id: 'start-serialized',
-      parent_id: null,
-      team_id: TEAM_ID,
-      timestamp: '2026-06-16T00:00:00.000Z',
-      sender: {
-        __actor_address__: true,
-        agent_id: 'agent-serialized',
-        name: 'Researcher',
-        role: 'Agent',
-        squad_id: 's1',
-        user_message: false,
-      },
-      display_type: 'other',
-      content: null,
-      __model__: 'akgentic.core.messages.orchestrator.StartMessage',
-      parent: null,
-      // NOTE: NO `team_id` in config — the backend AgentConfig does not
-      // serialise it. The team id is only present at the MESSAGE level above.
-      config: {
-        name: 'Researcher',
-        role: 'Agent',
-        user_id: 'u1',
-        user_email: 'u@x',
-        squad_id: 's1',
-        orchestrator: {
-          __actor_address__: true,
-          agent_id: 'orch',
-          name: 'orchestrator',
-          role: 'Orchestrator',
-          squad_id: 's1',
-          user_message: false,
-        },
-        tools: [
-          {
-            __model__: WORKSPACE_MODEL,
-            workspace_id: 'ws-from-wire',
-          },
-          // Default workspace tool: NO workspace_id → must resolve to the
-          // team default via the message-level team_id (NOT config.team_id,
-          // which is absent on the wire). Regression guard for the bug where
-          // default-workspace members showed no chips.
-          {
-            __model__: WORKSPACE_MODEL,
-            workspace_id: null,
-          },
-        ],
-      },
-    } as unknown as AkgenticMessage;
-
-    const result = workspaceRegistryReduce([serialized], TEAM_ID);
-    const named = findById(result, 'ws-from-wire');
-    expect(named).toBeDefined();
-    expect(named?.isDefault).toBe(false);
-    expect(named?.agentIds).toEqual(['agent-serialized']);
-    // The default tool (no workspace_id, config without team_id) still lands
-    // in the team-default descriptor — resolved from the message team_id.
-    const def = findById(result, TEAM_ID);
-    expect(def?.isDefault).toBe(true);
-    expect(def?.agentIds).toEqual(['agent-serialized']);
-  });
-});
-
-// ---------------------------------------------------------------------
-// Story 51-1 — identity read off the `#Workspace` StartMessage
-// ---------------------------------------------------------------------
-
-describe('workspaceIdentity (identity off the wire)', () => {
-  it('(AC1) reads the LAST path segment of a #Workspace actor config', () => {
-    const identity = workspaceIdentity(
-      workspaceActorStart('_meta/tenant-azerty', ['tenant']),
-    );
-    expect(identity).toEqual({
-      leaf: 'tenant-azerty',
-      metadataKeys: ['tenant'],
-    });
-  });
-
-  it('(AC6) metadata_keys absent on the wire → an EMPTY key list, not a parse', () => {
-    const identity = workspaceIdentity(
-      workspaceActorStart('_meta/customer_id-ACME__case_id-42'),
-    );
-    // The leaf is carried verbatim; nothing splits it on `__` or `-`.
-    expect(identity).toEqual({
-      leaf: 'customer_id-ACME__case_id-42',
-      metadataKeys: [],
-    });
-  });
-
-  it('a non-array metadata_keys off the wire degrades to [] instead of throwing', () => {
-    const frame = workspaceActorStart('_meta/tenant-azerty');
-    (frame.config as unknown as Record<string, unknown>)['metadata_keys'] =
-      'tenant';
-    expect(workspaceIdentity(frame)).toEqual({
-      leaf: 'tenant-azerty',
-      metadataKeys: [],
-    });
-    // And the fold built on it stays intact rather than tearing down.
+  it('(AC1) agentIds is sorted regardless of arrival order', () => {
     const result = workspaceRegistryReduce(
-      [frame, makeStartMessage('A', [metadataTool(['tenant'])])],
+      [
+        resourceAttached('C', 'users/u1/shared'),
+        resourceAttached('A', 'users/u1/shared'),
+        resourceAttached('B', 'users/u1/shared'),
+      ],
       TEAM_ID,
     );
-    expect(result.map((d) => d.workspaceId)).toEqual(['tenant-azerty']);
-    expect(result[0].agentIds).toEqual([]);
+    expect(result[0].agentIds).toEqual(['agent-A', 'agent-B', 'agent-C']);
   });
 
-  it('rejects an agent StartMessage, and an empty last segment', () => {
-    expect(workspaceIdentity(makeStartMessage('A', [workspaceTool('w')]))).toBe(
-      null,
-    );
-    expect(workspaceIdentity(workspaceActorStart('users/u1/'))).toBe(null);
-    expect(workspaceIdentity(workspaceActorStart(''))).toBe(null);
-  });
-});
-
-describe('startContribution (the card declaration, not an id)', () => {
-  it('(AC3) maps the three card shapes to their join kinds', () => {
-    expect(
-      startContribution(
-        makeStartMessage('A', [
-          workspaceTool('notes'),
-          workspaceTool(null),
-          metadataTool(['customer_id']),
+  it('(AC5) two key sets in one team → two descriptors, no cross-contamination', () => {
+    const result = workspaceRegistryReduce(
+      [
+        resourceAttached('Coarse', '_meta/customer_id-ACME', ['customer_id']),
+        resourceAttached('Fine', '_meta/customer_id-ACME__case_id-42', [
+          'customer_id',
+          'case_id',
         ]),
-      ),
-    ).toEqual([
-      { kind: 'named', workspaceId: 'notes' },
-      { kind: 'default' },
-      { kind: 'metadata', metadataKeys: ['customer_id'] },
-    ]);
-  });
-
-  it('(AC1) a metadata card does NOT fall back to `default` despite a null workspace_id', () => {
-    const keys = startContribution(
-      makeStartMessage('A', [metadataTool(['tenant'])]),
-    );
-    expect(keys).toEqual([{ kind: 'metadata', metadataKeys: ['tenant'] }]);
-    expect(keys.some((k) => k.kind === 'default')).toBe(false);
-  });
-
-  it('an EMPTY workspace_metadata_keys list is not a metadata card', () => {
-    expect(
-      startContribution(
-        makeStartMessage('A', [
-          { __model__: WORKSPACE_MODEL, workspace_metadata_keys: [] },
-        ]),
-      ),
-    ).toEqual([{ kind: 'default' }]);
-  });
-});
-
-describe('resolveJoinKeys (join, no normalisation)', () => {
-  function identityMap(
-    ...entries: WorkspaceIdentity[]
-  ): Map<string, WorkspaceIdentity> {
-    return new Map(entries.map((i) => [i.leaf, i]));
-  }
-
-  it('(AC5) key order is part of the identity — ["b","a"] does NOT join ["a","b"]', () => {
-    const identities = identityMap({
-      leaf: 'a-1__b-2',
-      metadataKeys: ['a', 'b'],
-    });
-    const resolved = resolveJoinKeys(
-      [{ kind: 'metadata', metadataKeys: ['b', 'a'] }],
-      identities,
+      ],
       TEAM_ID,
     );
-    expect([...resolved]).toEqual([]);
-  });
-
-  it('(AC5) the same list in the same order DOES join', () => {
-    const identities = identityMap({
-      leaf: 'a-1__b-2',
-      metadataKeys: ['a', 'b'],
-    });
-    const resolved = resolveJoinKeys(
-      [{ kind: 'metadata', metadataKeys: ['a', 'b'] }],
-      identities,
-      TEAM_ID,
-    );
-    expect([...resolved]).toEqual(['a-1__b-2']);
-  });
-
-  it('a metadata key matching no identity resolves to NOTHING (no team-id fallback)', () => {
-    const resolved = resolveJoinKeys(
-      [{ kind: 'metadata', metadataKeys: ['tenant'] }],
-      identityMap(),
-      TEAM_ID,
-    );
-    expect([...resolved]).toEqual([]);
-  });
-
-  it('an EMPTY key list joins NOTHING, not every keyless identity', () => {
-    // `listEquals([], [])` is TRUE, and a named workspace, a default one and a
-    // pre-48-4 metadata one ALL announce `metadataKeys: []`. Without the guard
-    // in `resolveJoinKeys` an empty declaration would join all three at once —
-    // the cross-contamination AC4 forbids, reached from the one direction
-    // `startContribution`'s own non-empty check does not cover.
-    const identities = identityMap(
-      { leaf: 'notes', metadataKeys: [] },
-      { leaf: TEAM_ID, metadataKeys: [] },
-      { leaf: 'customer_id-ACME', metadataKeys: [] },
-    );
-    const resolved = resolveJoinKeys(
-      [{ kind: 'metadata', metadataKeys: [] }],
-      identities,
-      TEAM_ID,
-    );
-    expect([...resolved]).toEqual([]);
-  });
-});
-
-describe('workspaceRegistryReduce — metadata workspaces (Story 51-1)', () => {
-  it('(AC1) a metadata workspace is listed under its LEAF, not as the default', () => {
-    const log: AkgenticMessage[] = [
-      workspaceActorStart('_meta/tenant-azerty', ['tenant']),
-      makeStartMessage('A', [metadataTool(['tenant'])]),
-    ];
-    const result = workspaceRegistryReduce(log, TEAM_ID);
-    expect(result.length).toBe(1);
-    const meta = findById(result, 'tenant-azerty');
-    expect(meta?.isDefault).toBe(false);
-    expect(meta?.label).toBe('tenant-azerty');
-    expect(meta?.agentIds).toEqual(['agent-A']);
-    // The bug this story removes: the card collapsing into the team default.
-    expect(findById(result, TEAM_ID)).toBeUndefined();
-    expect(result.some((d) => d.label === 'Default workspace')).toBe(false);
-  });
-
-  it('(AC1) the agent StartMessage may arrive BEFORE the #Workspace actor frame', () => {
-    const log: AkgenticMessage[] = [
-      makeStartMessage('A', [metadataTool(['tenant'])]),
-      workspaceActorStart('_meta/tenant-azerty', ['tenant']),
-    ];
-    const result = workspaceRegistryReduce(log, TEAM_ID);
-    expect(findById(result, 'tenant-azerty')?.agentIds).toEqual(['agent-A']);
-  });
-
-  it('(AC2) the descriptor id is byte-identical to the last path segment, percent escapes included', () => {
-    const log: AkgenticMessage[] = [
-      workspaceActorStart('_meta/case_id-2026%2D42', ['case_id']),
-      makeStartMessage('A', [metadataTool(['case_id'])]),
-    ];
-    const result = workspaceRegistryReduce(log, TEAM_ID);
-    expect(result.map((d) => d.workspaceId)).toEqual(['case_id-2026%2D42']);
-    expect(result[0].agentIds).toEqual(['agent-A']);
-  });
-
-  it('(AC3) all three card shapes join their own workspace in one team', () => {
-    const log: AkgenticMessage[] = [
-      workspaceActorStart('_meta/tenant-azerty', ['tenant']),
-      makeStartMessage('N', [workspaceTool('notes')]),
-      makeStartMessage('D', [workspaceTool(null)]),
-      makeStartMessage('M', [metadataTool(['tenant'])]),
-    ];
-    const result = workspaceRegistryReduce(log, TEAM_ID);
-    expect(findById(result, 'notes')?.agentIds).toEqual(['agent-N']);
-    expect(findById(result, TEAM_ID)?.isDefault).toBe(true);
-    expect(findById(result, TEAM_ID)?.agentIds).toEqual(['agent-D']);
-    expect(findById(result, 'tenant-azerty')?.agentIds).toEqual(['agent-M']);
-  });
-
-  it('(AC4) two key sets in one team → two descriptors, no cross-contamination', () => {
-    const log: AkgenticMessage[] = [
-      workspaceActorStart('_meta/customer_id-ACME', ['customer_id']),
-      workspaceActorStart('_meta/customer_id-ACME__case_id-42', [
-        'customer_id',
-        'case_id',
-      ]),
-      makeStartMessage('Coarse', [metadataTool(['customer_id'])]),
-      makeStartMessage('Fine', [metadataTool(['customer_id', 'case_id'])]),
-    ];
-    const result = workspaceRegistryReduce(log, TEAM_ID);
     expect(result.length).toBe(2);
     expect(findById(result, 'customer_id-ACME')?.agentIds).toEqual([
       'agent-Coarse',
     ]);
-    expect(
-      findById(result, 'customer_id-ACME__case_id-42')?.agentIds,
-    ).toEqual(['agent-Fine']);
-  });
-
-  it('(AC5) a card declaring ["b","a"] joins NOTHING when the identity carries ["a","b"]', () => {
-    const log: AkgenticMessage[] = [
-      workspaceActorStart('_meta/a-1__b-2', ['a', 'b']),
-      makeStartMessage('A', [metadataTool(['b', 'a'])]),
-    ];
-    const result = workspaceRegistryReduce(log, TEAM_ID);
-    // The workspace is still listed (identity is monotonic) — with no members.
-    expect(result.map((d) => d.workspaceId)).toEqual(['a-1__b-2']);
-    expect(result[0].agentIds).toEqual([]);
-  });
-
-  it('(AC6) an identity without metadata_keys is listed, and joins no card', () => {
-    const log: AkgenticMessage[] = [
-      workspaceActorStart('_meta/customer_id-ACME__case_id-42'),
-      makeStartMessage('A', [metadataTool(['customer_id', 'case_id'])]),
-    ];
-    const result = workspaceRegistryReduce(log, TEAM_ID);
-    expect(result.map((d) => d.workspaceId)).toEqual([
-      'customer_id-ACME__case_id-42',
+    expect(findById(result, 'customer_id-ACME__case_id-42')?.agentIds).toEqual([
+      'agent-Fine',
     ]);
-    expect(result[0].isDefault).toBe(false);
-    // Nothing recovers the keys by splitting the leaf on `__` or `-`.
-    expect(result[0].agentIds).toEqual([]);
-    expect(findById(result, TEAM_ID)).toBeUndefined();
-  });
-
-  it('(AC8) a metadata workspace survives a StopMessage, with an empty member list', () => {
-    const log: AkgenticMessage[] = [
-      workspaceActorStart('_meta/tenant-azerty', ['tenant']),
-      makeStartMessage('A', [metadataTool(['tenant'])]),
-      makeStopMessage('A'),
-    ];
-    const result = workspaceRegistryReduce(log, TEAM_ID);
-    const meta = findById(result, 'tenant-azerty');
-    expect(meta).toBeDefined();
-    expect(meta?.agentIds).toEqual([]);
-  });
-
-  it('(AC7) a legacy team announcing NO identity still lists its named/default workspaces', () => {
-    // ADR-048 §Decision 7b: pre-rename WorkspaceConfig events are skipped as
-    // corrupted on load, so no `#Workspace` frame ever arrives. `seen` reads
-    // both sources precisely so this team does not go empty.
-    const log: AkgenticMessage[] = [
-      makeStartMessage('A', [workspaceTool('ws-named'), workspaceTool(null)]),
-    ];
-    const result = workspaceRegistryReduce(log, TEAM_ID);
-    expect(result.map((d) => d.workspaceId)).toEqual([TEAM_ID, 'ws-named']);
-  });
-
-  it('(NFR4) realistic serialized #Workspace + metadata-card fixture', () => {
-    // Both frames as they arrive on the wire: the `#Workspace` actor's own
-    // StartMessage (config = WorkspaceConfig, role Tool, orchestrator child)
-    // beside an agent StartMessage whose card declares the key list. If a
-    // future serialization change renames `workspace_path`, drops
-    // `metadata_keys`, or stops emitting the actor frame, this fails in CI
-    // rather than silently emptying the picker.
-    const workspaceActor = {
-      id: 'start-ws-serialized',
-      parent_id: null,
-      team_id: TEAM_ID,
-      timestamp: '2026-09-07T00:00:00.000Z',
-      sender: {
-        __actor_address__: true,
-        agent_id: 'actor-ws-serialized',
-        name: '#Workspace-_meta/tenant-azerty',
-        role: 'Tool',
-        squad_id: 's1',
-        user_message: false,
-      },
-      display_type: 'other',
-      content: null,
-      __model__: 'akgentic.core.messages.orchestrator.StartMessage',
-      parent: null,
-      config: {
-        __model__: WORKSPACE_CONFIG_MODEL,
-        name: '#Workspace-_meta/tenant-azerty',
-        workspace_path: '_meta/tenant-azerty',
-        metadata_keys: ['tenant'],
-      },
-    } as unknown as AkgenticMessage;
-
-    const agent = {
-      id: 'start-agent-serialized',
-      parent_id: null,
-      team_id: TEAM_ID,
-      timestamp: '2026-09-07T00:00:01.000Z',
-      sender: {
-        __actor_address__: true,
-        agent_id: 'agent-serialized',
-        name: 'Researcher',
-        role: 'Agent',
-        squad_id: 's1',
-        user_message: false,
-      },
-      display_type: 'other',
-      content: null,
-      __model__: 'akgentic.core.messages.orchestrator.StartMessage',
-      parent: null,
-      config: {
-        name: 'Researcher',
-        role: 'Agent',
-        user_id: 'u1',
-        user_email: 'u@x',
-        squad_id: 's1',
-        orchestrator: {
-          __actor_address__: true,
-          agent_id: 'orch',
-          name: 'orchestrator',
-          role: 'Orchestrator',
-          squad_id: 's1',
-          user_message: false,
-        },
-        tools: [
-          {
-            __model__: WORKSPACE_MODEL,
-            workspace_id: null,
-            workspace_metadata_keys: ['tenant'],
-          },
-        ],
-      },
-    } as unknown as AkgenticMessage;
-
-    const result = workspaceRegistryReduce([workspaceActor, agent], TEAM_ID);
-    expect(result.map((d) => d.workspaceId)).toEqual(['tenant-azerty']);
-    expect(result[0].isDefault).toBe(false);
-    expect(result[0].agentIds).toEqual(['agent-serialized']);
   });
 });
+
+// ---------------------------------------------------------------------
+// AC11 — one guard anchored to the SERIALISER's output
+// ---------------------------------------------------------------------
+
+describe('workspaceRegistryReduce — the wire shape (AC11)', () => {
+  it('folds a frame written to the serialiser output, content key absent', () => {
+    // DERIVED fixture, not a capture. It is written to what
+    // `event.model_dump_json()` produces for
+    // `akgentic.core.messages.orchestrator.ResourceAttached`: the
+    // fully-qualified discriminator injected by `serialize_type`, `agent_id`
+    // serialised by `str(uuid)` as a canonical lowercase hyphenated string, an
+    // ORCHESTRATOR sender whose own `agent_id` is a different uuid in the same
+    // form, `metadata_keys` present as a list, and NO `content` key at all —
+    // the Python `Message` base declares none, exactly as for `StartMessage`.
+    const wire = {
+      id: '0c7f6d3a-1b6e-4a41-9c2e-5a7e3f0b1d24',
+      parent_id: null,
+      team_id: '8f14e45f-ceea-467a-9f0e-4b2d1a3c7e91',
+      timestamp: '2026-09-09T10:15:30.123456Z',
+      sender: {
+        __actor_address__: true,
+        __actor_type__: 'akgentic.core.orchestrator.Orchestrator',
+        agent_id: 'd94f2a18-3c5b-4e77-8a01-6b9c2d4e8f13',
+        name: 'orchestrator',
+        role: 'Orchestrator',
+        team_id: '8f14e45f-ceea-467a-9f0e-4b2d1a3c7e91',
+        squad_id: 'e3b0c442-98fc-4c14-9afb-f4c8996fb924',
+        user_message: false,
+      },
+      recipient: null,
+      display_type: 'other',
+      __model__: 'akgentic.core.messages.orchestrator.ResourceAttached',
+      agent_id: 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
+      workspace_path: '_meta/customer_id-ACME__case_id-42',
+      metadata_keys: ['customer_id', 'case_id'],
+    };
+
+    // The frame really does carry no `content` — this is the structural claim
+    // the interface encodes, and it is checked rather than assumed.
+    expect('content' in wire).toBe(false);
+    // The two ids are both canonical, both lowercase-hyphenated, and DIFFERENT.
+    expect(wire.agent_id).not.toBe(wire.sender.agent_id);
+
+    const result = workspaceRegistryReduce(
+      [wire as unknown as AkgenticMessage],
+      wire.team_id,
+    );
+    expect(result.length).toBe(1);
+    expect(result[0].workspaceId).toBe('customer_id-ACME__case_id-42');
+    expect(result[0].isDefault).toBe(false);
+    // Membership is the top-level uuid, byte-identical, un-normalised — the
+    // same id space `AgentsByIdService` keys its map by.
+    expect(result[0].agentIds).toEqual([
+      'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
+    ]);
+    expect(result[0].agentIds).not.toContain(wire.sender.agent_id);
+  });
+});
+
+// ---------------------------------------------------------------------
+// The service (AC1)
+// ---------------------------------------------------------------------
 
 describe('WorkspaceRegistryService (selector over MessageLogService.log$)', () => {
   let log: MessageLogService;
@@ -729,12 +558,11 @@ describe('WorkspaceRegistryService (selector over MessageLogService.log$)', () =
   }
 
   it('(1) initial empty log → no descriptors', () => {
-    const result = currentValue();
-    expect(result).toEqual([]);
+    expect(currentValue()).toEqual([]);
   });
 
-  it('(2) live append of a named-WorkspaceTool StartMessage → one named descriptor', () => {
-    log.append(makeStartMessage('A', [workspaceTool('ws-named')]));
+  it('(2) live append of an attach event → one named descriptor', () => {
+    log.append(resourceAttached('A', 'users/u1/ws-named'));
     const result = currentValue();
     expect(result.length).toBe(1);
     expect(findById(result, 'ws-named')?.agentIds).toEqual(['agent-A']);
@@ -745,22 +573,18 @@ describe('WorkspaceRegistryService (selector over MessageLogService.log$)', () =
     const emissions: WorkspaceDescriptor[][] = [];
     const sub = service.workspaces$.subscribe((v) => emissions.push(v));
 
-    const start1 = makeStartMessage('A', [workspaceTool('ws-named')]);
-    start1.id = 'a-1';
-    const start2 = makeStartMessage('A', [workspaceTool('ws-named')]);
-    start2.id = 'a-2';
-    log.append(start1);
-    log.append(start2);
+    // Two DIFFERENT frames (unique ids, so neither is dropped by the log's
+    // id-dedup) announcing the same agent on the same workspace: the second
+    // yields a structurally identical fold, so no third emission.
+    log.append(resourceAttached('A', 'users/u1/ws-named'));
+    log.append(resourceAttached('A', 'users/u1/ws-named'));
 
-    // [initial empty, after first named start]. The second start for the same
-    // agent yields the same effective contribution → structurally identical
-    // fold → distinctUntilChanged suppresses a third emission.
     expect(emissions.length).toBe(2);
     sub.unsubscribe();
   });
 
   it('(4) log.reset() clears the registry on team switch', () => {
-    log.append(makeStartMessage('A', [workspaceTool('ws-named')]));
+    log.append(resourceAttached('A', 'users/u1/ws-named'));
     expect(currentValue().length).toBe(1);
     log.reset();
     expect(currentValue()).toEqual([]);

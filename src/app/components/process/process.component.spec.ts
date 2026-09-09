@@ -5,7 +5,11 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { BehaviorSubject } from 'rxjs';
 
-import { StartMessage, StopMessage } from '../../protocol/message.types';
+import {
+  ResourceAttached,
+  StartMessage,
+  StopMessage,
+} from '../../protocol/message.types';
 import { AkgentService } from '../../core/ui/akgent.service';
 import { ChatService } from './selectors/chat.selector';
 import { ContextService } from '../../core/context/context.service';
@@ -80,26 +84,30 @@ function makeKgStop(id: string): StopMessage {
   };
 }
 
-// A normal agent declaring a WorkspaceTool with no workspace_id (→ default).
-function makeWorkspaceStart(id: string, agentName: string): StartMessage {
+// The orchestrator's attach event binding one agent to the team-default
+// workspace (Story 52-1). The picker is discovered from THIS frame, not from an
+// agent's card: the sender is the orchestrator and the binding agent is the
+// event's own top-level `agent_id`.
+function makeWorkspaceStart(id: string, agentName: string): ResourceAttached {
   return {
     id,
     parent_id: null,
     team_id: 'team-1',
     timestamp: new Date().toISOString(),
-    sender: baseSender(agentName),
+    sender: {
+      __actor_address__: true,
+      agent_id: 'agent-orchestrator',
+      name: 'orchestrator',
+      role: 'Orchestrator',
+      team_id: 'team-1',
+      squad_id: 's1',
+      user_message: false,
+    },
     display_type: 'other',
     content: null,
-    __model__: 'akgentic.core.messages.orchestrator.StartMessage',
-    config: {
-      tools: [
-        {
-          __model__: 'akgentic.tool.workspace.tool.WorkspaceTool',
-          workspace_id: null,
-        },
-      ],
-    } as any,
-    parent: null,
+    __model__: 'akgentic.core.messages.orchestrator.ResourceAttached',
+    agent_id: baseSender(agentName).agent_id,
+    workspace_path: 'users/u1/team-1',
   };
 }
 
