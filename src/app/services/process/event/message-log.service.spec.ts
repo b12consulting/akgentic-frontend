@@ -115,6 +115,18 @@ describe('MessageLogService (Story 6.1)', () => {
     sub.unsubscribe();
   });
 
+  // Story 52-1 (AC #9) — the log itself has NO allowlist: it stores every frame
+  // and dedups by id. The workspace registry can only fold an attach event if
+  // the log admits it, so the admission is pinned here, at the layer that owns
+  // it, rather than assumed by the selector's specs.
+  it('append: a ResourceAttached is stored like any other frame', () => {
+    service.append(msg('r1', 'ResourceAttached'));
+    expect(service.snapshot().map((m) => m.id)).toEqual(['r1']);
+    expect(service.snapshot()[0].__model__).toBe(
+      'akgentic.core.messages.orchestrator.ResourceAttached',
+    );
+  });
+
   it('appendAll: batch of N produces ONE emission with N messages in arrival order', () => {
     const emissions: AkgenticMessage[][] = [];
     const sub = service.log$.subscribe((v) => emissions.push(v));
@@ -428,6 +440,26 @@ describe('messageListFold (Story 6.4, AC4)', () => {
     const log: AkgenticMessage[] = [
       msg('a', 'SentMessage'),
       msg('h1', 'HandledMessage'),
+      msg('b', 'ErrorMessage'),
+    ];
+    expect(messageListFold(log).map((m) => m.id)).toEqual(['a', 'b']);
+  });
+
+  // Story 52-1 (AC #9) — a deliberate NON-change, pinned for the same reason as
+  // `HandledMessage` above.
+  //
+  // `ResourceAttached` is orchestrator telemetry, not a transcript entry. It is
+  // excluded by OMISSION from `MESSAGE_LIST_MODELS`, and the exclusion is
+  // asserted rather than assumed: admitting it would push a frame that carries
+  // NO `content` at all into the component's `SentMessage` branch.
+  it('excludes a ResourceAttached — attach telemetry never enters the message list', () => {
+    expect(messageListFold([msg('r1', 'ResourceAttached')])).toEqual([]);
+  });
+
+  it('a ResourceAttached interleaved in a real log changes nothing else', () => {
+    const log: AkgenticMessage[] = [
+      msg('a', 'SentMessage'),
+      msg('r1', 'ResourceAttached'),
       msg('b', 'ErrorMessage'),
     ];
     expect(messageListFold(log).map((m) => m.id)).toEqual(['a', 'b']);

@@ -21,38 +21,19 @@ export interface ActorAddress {
  * inside `StartMessage.config.tools` (Epic 23 / ADR-019). The config is
  * serialised in full (`msg.model_dump(mode="json")`, no projection), so each
  * tool carries at least its recursive `__model__` discriminator (e.g.
- * `"akgentic.tool.workspace.tool.WorkspaceTool"`) and, for a `WorkspaceTool`,
- * an optional `workspace_id`. We only type the fields the registry fold reads;
- * every other tool field is intentionally ignored.
+ * `"akgentic.tool.workspace.tool.WorkspaceTool"`). Every other tool field is
+ * intentionally ignored.
+ *
+ * NOTE (Story 52-1): NOTHING in this package reads a card for workspace
+ * identity or attribution any more — both come from the orchestrator's
+ * `ResourceAttached` event. `workspace_id` is kept only because the specs that
+ * prove the card is no longer read must be able to CONSTRUCT a card that
+ * declares a workspace; drop it and that guard degenerates into asserting over
+ * a card with nothing to declare. It is not read by production code.
  */
 export interface ToolCardLite {
   __model__: string;
   workspace_id?: string | null;
-  /** The metadata layout's card declaration (ADR-048 §Decision 2/3): the keys
-   *  whose values name a shared `_meta/…` workspace, in DECLARATION order.
-   *  Mutually exclusive with `workspace_id` by a backend `model_validator`.
-   *  Already on the wire — `WorkspaceTool.workspace_metadata_keys` is a plain
-   *  Pydantic field serialised into `StartMessage.config.tools`. The registry
-   *  joins on this list by plain equality and never derives an id from it. */
-  workspace_metadata_keys?: string[];
-}
-
-/**
- * The `#Workspace` ACTOR's config, as it arrives inside that actor's own
- * `StartMessage` (ADR-048 §Decision 8). It is not an agent config: the actor is
- * a child of the orchestrator, so this frame carries workspace IDENTITY, never
- * attribution.
- *
- * `workspace_path` is the backend's resolved `<scope>/<leaf>` — the whole point
- * of reading it is that the client consumes the server's answer instead of
- * recomputing one. `metadata_keys` is OPTIONAL: it does not exist on the wire
- * until akgentic-tool story 48-4 lands, and its absence must degrade to "listed
- * with no members", never to a leaf parser.
- */
-export interface WorkspaceActorConfig {
-  __model__: string;
-  workspace_path: string;
-  metadata_keys?: string[];
 }
 
 export interface BaseConfig {
@@ -131,6 +112,43 @@ export interface StartMessage extends BaseMessage {
 
 export interface StopMessage extends BaseMessage {
   __model__: 'akgentic.core.messages.orchestrator.StopMessage';
+}
+
+/**
+ * The orchestrator's attach telemetry (core ADR-022 §Decision 8): emitted on the
+ * team's own stream as the orchestrator forwards a successful get-or-create for
+ * a resource-scoped actor — including a cache hit, so two agents binding one
+ * workspace produce two events and one actor.
+ *
+ * It replaces the `#Workspace` actor's `StartMessage` as this package's source
+ * of workspace identity AND of agent→workspace attribution. A hosted actor is
+ * created with `orchestrator=None` and emits no lifecycle frame at all, so there
+ * is no `StartMessage` left to read.
+ *
+ * There is deliberately NO detach event. Membership therefore shrinks only via
+ * `StopMessage`, and a workspace is never removed once announced.
+ *
+ * NOTE: no `content` field is declared, because the frame carries none — the
+ * Python `Message` base does not define one. `BaseMessage` declaring `content`
+ * required is a pre-existing structural inaccuracy that `StartMessage` already
+ * lives with; it is not repaired here.
+ */
+export interface ResourceAttached extends BaseMessage {
+  __model__: 'akgentic.core.messages.orchestrator.ResourceAttached';
+  /** The BINDING agent — NOT `sender.agent_id`, which is the ORCHESTRATOR's id
+   *  because the orchestrator is what emits this frame. Every other fold in this
+   *  package keys an agent off `sender.agent_id`; doing so here attributes every
+   *  workspace to the orchestrator, and renders a plausible-looking wrong chip
+   *  rather than throwing. Serialised as `str(uuid)` — the canonical lowercase
+   *  hyphenated form, the same space `sender.agent_id` and `AgentsByIdService`
+   *  use, so no normalisation belongs on this side. */
+  agent_id: string;
+  /** The backend's resolved `<scope>/<leaf>`. Read, never derived: the client
+   *  consumes the server's answer and never recomputes an encoding. */
+  workspace_path: string;
+  /** Informational only. The attribution join is `agent_id`; nothing in this
+   *  package may join on this list. */
+  metadata_keys?: string[];
 }
 
 export interface ErrorMessage extends BaseMessage {
@@ -547,6 +565,7 @@ export type AkgenticMessage =
   | HandledMessage
   | StartMessage
   | StopMessage
+  | ResourceAttached
   | ErrorMessage
   | WarningMessage
   | NotificationMessage
@@ -588,6 +607,24 @@ export function isStopMessage(msg: BaseMessage): msg is StopMessage {
   return msg.__model__.includes('StopMessage');
 }
 
+/**
+ * True for the orchestrator's resource-attach telemetry (core ADR-022
+ * §Decision 8). A bare `.includes()` like its lifecycle siblings, and the
+ * substring check was verified in BOTH directions against the `AkgenticMessage`
+ * union above rather than assumed:
+ *
+ * - no other `__model__` in the union contains `'ResourceAttached'`, so this
+ *   guard admits nothing else. (`ResourceStopped` is an actor-to-actor frame
+ *   that never reaches a team stream, and does not contain the substring
+ *   either.)
+ * - no other guard's substring is contained by
+ *   `'akgentic.core.messages.orchestrator.ResourceAttached'`, so this frame is
+ *   claimed by no sibling guard and guard order is free.
+ */
+export function isResourceAttached(msg: BaseMessage): msg is ResourceAttached {
+  return msg.__model__.includes('ResourceAttached');
+}
+
 export function isErrorMessage(msg: BaseMessage): msg is ErrorMessage {
   return msg.__model__.includes('ErrorMessage');
 }
@@ -598,8 +635,8 @@ export function isWarningMessage(msg: BaseMessage): msg is WarningMessage {
 
 /**
  * True ONLY for the bare `NotificationMessage` base. Deliberately stricter than
- * the `.includes()` siblings (same precedent as `isWorkspaceTool` above):
- * `ErrorMessage` and `WarningMessage` ARE `NotificationMessage` subclasses
+ * the `.includes()` siblings: `ErrorMessage` and `WarningMessage` ARE
+ * `NotificationMessage` subclasses
  * upstream, but each takes its own render branch here, so a guard that admitted
  * them would make the three branches ambiguous. The leading dot also rejects a
  * hypothetical `FooNotificationMessage`.
@@ -661,50 +698,6 @@ export function isUserMessage(msg: BaseMessage): msg is UserMessage {
 
 export function isResultMessage(msg: BaseMessage): msg is ResultMessage {
   return msg.__model__.includes('ResultMessage');
-}
-
-/**
- * ToolCard discriminator check (Epic 23 / ADR-019): true when `t` is a
- * `WorkspaceTool`. Matches on the recursive `__model__` *ending in*
- * `WorkspaceTool` (so `"akgentic.tool.workspace.tool.WorkspaceTool"` matches),
- * deliberately stricter than the `.includes()` used by the message guards: a
- * `__model__` that merely contains `WorkspaceTool` mid-string (or a different
- * tool such as `...KnowledgeGraphTool`, or the empty string) is rejected.
- */
-export function isWorkspaceTool(t: ToolCardLite): t is ToolCardLite {
-  return t.__model__.endsWith('WorkspaceTool');
-}
-
-/**
- * Workspace-actor config check (ADR-048 §Decision 8): true when a
- * `StartMessage.config` is the `#Workspace` actor's own `WorkspaceConfig`.
- *
- * `endsWith('WorkspaceConfig')` for the same reason as `isWorkspaceTool` above,
- * and not `.includes(...)`: a mid-string match would also claim a future
- * `…SandboxWorkspaceConfigFactory`.
- *
- * The parameter is `unknown`, narrowed by explicit predicates the way
- * `parseToolCallArguments` narrows its body below — NOT the
- * `{ __model__?: string }` shape the inner-event guards take. That shape is a
- * weak type, and `StartMessage.config` is typed `BaseConfig`, which declares no
- * `__model__` and so has no property in common with it: the call would not
- * compile without a cast at every site. `unknown` is the stricter answer, and
- * the guard has to be defensive at both ends anyway — a TOOL actor's config
- * carries fields `BaseConfig` does not declare, and the existing
- * `team-with-kg.json` fixture is a `#KnowledgeGraphTool` `StartMessage` whose
- * `config` is `{}`. `BaseConfig` must NOT be widened to accommodate this: a tool
- * actor's config is not an agent config with optional fields.
- */
-export function isWorkspaceActorConfig(
-  config: unknown,
-): config is WorkspaceActorConfig {
-  if (!isJsonObject(config)) return false;
-  const model = config['__model__'];
-  return (
-    typeof model === 'string' &&
-    model.endsWith('WorkspaceConfig') &&
-    typeof config['workspace_path'] === 'string'
-  );
 }
 
 /**
