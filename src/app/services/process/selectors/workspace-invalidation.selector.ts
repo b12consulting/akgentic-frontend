@@ -250,10 +250,11 @@ interface InvalidationState {
  * defensively (`messageListFold` reaches `sender?.role` the same way), the inner
  * guards — `isWorkspaceAttached` included — accept `null`/`undefined`,
  * `attachedLeaf` type-checks the attach payload's `workspace_path` before
- * splitting it, and the argument parser returns `null` rather than raising. Those reads matter MORE here than they did under a fold:
- * a fold that threw spoiled one emission's derivation, whereas a throw out of a
- * live subscription tears the subscription down for good and nothing
- * re-subscribes. Nothing dereferences `StartMessage.config` any more, so the one
+ * splitting it, and the argument parser returns `null` rather than raising.
+ * Those reads matter MORE here than they did under a fold: a fold that threw
+ * spoiled one emission's derivation, whereas a throw out of a live
+ * subscription tears the subscription down for good and nothing re-subscribes.
+ * Nothing dereferences `StartMessage.config` any more, so the one
  * frame that could previously still raise — a `StartMessage` carrying no
  * `config` at all — no longer reaches a dereference on this path.
  */
@@ -323,9 +324,9 @@ function absorb(
  * carry the agent→workspace attribution above all. That is the PRODUCTION
  * ordering, not an artefact of tests: a workspace tab only exists once an
  * attach envelope has announced it, and the explorer subscribes from its
- * constructor, so the attribution always predates the subscription. Without this, every live
- * instruction would resolve to no workspace at all and nothing would ever
- * refresh.
+ * constructor, so the attribution always predates the subscription. Without
+ * this, every live instruction would resolve to no workspace at all and
+ * nothing would ever refresh.
  *
  * Discarding what it returns is the old baseline, and for the same reason:
  * opening the panel on a stopped team must not fire one listing per historical
