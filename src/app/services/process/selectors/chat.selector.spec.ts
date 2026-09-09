@@ -506,6 +506,46 @@ describe('chatFold / chatStep (pure)', () => {
     expect(withUnk).toEqual(withoutUnk);
   });
 
+  // Story 52-2 (AC #9) — the orchestrator's `WorkspaceAttached` payload rides
+  // the same `EventMessage` envelope as the tool and context events this fold
+  // DOES read. It must fall through: no bubble, no marker, no tool row. The
+  // baseline is asserted non-empty first, so the equality is not vacuous.
+  it('(Story 52-2) a WorkspaceAttached envelope from the orchestrator is a pure no-op', () => {
+    const rcv = makeReceived();
+    const sent = makeSent({
+      sender: makeAddress({ name: '@Researcher', agent_id: 'agent-1', role: 'Worker' }),
+    });
+    // The module segment is a placeholder: the tool slice that declares the
+    // dataclass is unwritten, and the guard never reads it.
+    const attach = makeEvent(
+      {
+        __model__: 'akgentic.tool.workspace.event.WorkspaceAttached',
+        agent_id: 'agent-1',
+        workspace_path: 'users/u1/notes',
+      },
+      {
+        id: 'attach-1',
+        sender: makeAddress({
+          name: '@Orchestrator',
+          role: 'Orchestrator',
+          agent_id: 'orch-1',
+        }),
+      },
+    );
+
+    const baseline = chatFold([rcv, sent]);
+    expect(baseline.messages.length).toBeGreaterThan(0);
+
+    expect(chatFold([attach, rcv, sent])).toEqual(baseline);
+    expect(chatFold([rcv, attach, sent])).toEqual(baseline);
+    expect(chatFold([rcv, sent, attach])).toEqual(baseline);
+
+    // And at the step level it is the same state REFERENCE, like every other
+    // neutral frame — no fresh object, so OnPush consumers see nothing.
+    const mid = chatFold([rcv]);
+    expect(chatStep(mid, attach)).toBe(mid);
+  });
+
   it('(AC7) neutral event (StartMessage) returns same state reference', () => {
     const before = chatFold([]);
     const after = chatStep(before, makeStart());

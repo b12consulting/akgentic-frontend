@@ -3,9 +3,10 @@ import { distinctUntilChanged, map, Observable } from 'rxjs';
 
 import {
   AkgenticMessage,
-  isResourceAttached,
+  isEventMessage,
   isStopMessage,
-  ResourceAttached,
+  isWorkspaceAttached,
+  WorkspaceAttached,
 } from '../../../protocol/message.types';
 import { MessageLogService } from '../event/message-log.service';
 
@@ -13,11 +14,12 @@ import { MessageLogService } from '../event/message-log.service';
  * One discovered workspace in a team (Epic 23 / ADR-019 §Decision 1).
  *
  * `workspaceId` is the workspace's LEAF — the last segment of the path the
- * backend resolved, read off the orchestrator's `ResourceAttached` event
- * (ADR-022 §Decision 8). It is what reaches `?workspace_id=`, byte-identical.
- * `isDefault` marks the team-default workspace; `agentIds` records every agent
- * currently bound to this workspace (deterministically ordered for structural
- * equality); `label` is a deterministic UI string consumed by Story 23-3.
+ * backend resolved, read off the `WorkspaceAttached` payload the orchestrator
+ * emits inside an `EventMessage` (ADR-022 §Decision 8). It is what reaches
+ * `?workspace_id=`, byte-identical. `isDefault` marks the team-default
+ * workspace; `agentIds` records every agent currently bound to this workspace
+ * (deterministically ordered for structural equality); `label` is a
+ * deterministic UI string consumed by Story 23-3.
  */
 export interface WorkspaceDescriptor {
   workspaceId: string;
@@ -27,8 +29,11 @@ export interface WorkspaceDescriptor {
 }
 
 /**
- * The workspace LEAF an attach event announces, or `null` when the frame does
- * not carry a usable one.
+ * The workspace LEAF a `WorkspaceAttached` payload announces, or `null` when
+ * it does not carry a usable one.
+ *
+ * The argument is the PAYLOAD — `EventMessage.event`, once `isWorkspaceAttached`
+ * has admitted it — never the envelope.
  *
  * This is the ONE place a workspace id enters this package from the wire, and it
  * is read rather than derived: the client holds a leaf it was given and never
@@ -39,11 +44,11 @@ export interface WorkspaceDescriptor {
  * trusted: the field's declared type is a promise this module cannot enforce
  * over a wire payload, and `.split` on a non-string THROWS. That matters more
  * than it did under a pure fold — `workspace-invalidation.selector.ts` reads
- * these same frames inside a LIVE subscription, and a throw there tears the
+ * these same payloads inside a LIVE subscription, and a throw there tears the
  * subscription down permanently with nothing to re-subscribe.
  */
-export function attachedLeaf(msg: ResourceAttached): string | null {
-  const path: unknown = msg.workspace_path;
+export function attachedLeaf(event: WorkspaceAttached): string | null {
+  const path: unknown = event.workspace_path;
   if (typeof path !== 'string') return null;
   const segments = path.split('/');
   const leaf = segments[segments.length - 1];
@@ -51,18 +56,19 @@ export function attachedLeaf(msg: ResourceAttached): string | null {
 }
 
 /**
- * The BINDING agent an attach event announces, or `null` when it carries none.
+ * The BINDING agent a `WorkspaceAttached` payload announces, or `null` when it
+ * carries none.
  *
- * Read off the event's OWN top-level `agent_id`, never off `sender.agent_id`:
- * the orchestrator emits this frame, so the sender IS the orchestrator. Every
- * other fold in this package keys an agent off the sender, and copying that
- * pattern here silently attributes every workspace to the orchestrator —
- * `WorkspaceTabsComponent.resolveMembers` falls back to rendering a raw id it
- * cannot name, so the mistake ships as one plausible-looking wrong chip per
- * workspace instead of an error.
+ * Read off the PAYLOAD's own `agent_id`, never off the ENVELOPE's
+ * `sender.agent_id`: the orchestrator emits the envelope, so its sender IS the
+ * orchestrator. Every other fold in this package keys an agent off the sender,
+ * and copying that pattern here silently attributes every workspace to the
+ * orchestrator — `WorkspaceTabsComponent.resolveMembers` falls back to
+ * rendering a raw id it cannot name, so the mistake ships as one
+ * plausible-looking wrong chip per workspace instead of an error.
  */
-export function attachedAgentId(msg: ResourceAttached): string | null {
-  const agentId: unknown = msg.agent_id;
+export function attachedAgentId(event: WorkspaceAttached): string | null {
+  const agentId: unknown = event.agent_id;
   if (typeof agentId !== 'string' || agentId === '') return null;
   return agentId;
 }
@@ -77,7 +83,7 @@ function labelFor(workspaceId: string, isDefault: boolean): string {
  * CURRENT per-workspace membership.
  *
  * There is NO always-present default: a workspace exists only because an attach
- * event announced its resolved path. A team whose orchestrator has attached
+ * payload announced its resolved path. A team whose orchestrator has attached
  * nothing yields an EMPTY list. (Supersedes ADR-019 §Decision 3 / FR6.)
  *
  * Workspaces are STICKY: once announced they remain listed even after their
@@ -86,7 +92,7 @@ function labelFor(workspaceId: string, isDefault: boolean): string {
  * members have all stopped renders with an empty member list.
  *
  * `members` is keyed by WORKSPACE (leaf → agent ids), which is the orientation
- * the attach event delivers directly: one frame names one workspace and one
+ * the attach payload delivers directly: one payload names one workspace and one
  * agent. The previous card-shape fold arrived at the inverse (agent → leaves)
  * because it resolved a card's declarations per agent, and had to be transposed
  * here. Nothing about the emitted descriptor changed.
@@ -126,18 +132,25 @@ function buildDescriptors(
  * team (ADR-019 §Decision 1/2, mirror of `presenceReduce`).
  *
  * Two pieces of state, down from three:
- * - `seen` — every leaf a `ResourceAttached` announced. MONOTONIC: a
+ * - `seen` — every leaf a `WorkspaceAttached` payload announced. MONOTONIC: a
  *   `StopMessage` never removes a workspace, so a discovered workspace stays
  *   browsable after its members are fired.
- * - `members` — leaf → the agents CURRENTLY bound to it. An attach event ADDS
+ * - `members` — leaf → the agents CURRENTLY bound to it. An attach payload ADDS
  *   its own `agent_id`; a `StopMessage` removes its `sender.agent_id` from
  *   EVERY workspace.
  *
  * The asymmetry is deliberate and is a property of the protocol, not an
- * oversight: the add is keyed by a TOP-LEVEL field on the attach event (whose
+ * oversight: the add is keyed by a field on the PAYLOAD of one envelope (whose
  * sender is the orchestrator), the remove by `sender.agent_id` on a different
  * message. ADR-022 §Decision 8 states there is no detach event, and this package
  * must not invent one.
+ *
+ * The attach read is the same four steps every reader of a domain event in this
+ * package takes: the outer `isEventMessage` guard, a loose binding of the
+ * payload, the inner guard on the PAYLOAD's `__model__`, and fall-through on
+ * anything else. A frame is a workspace binding because of the payload's NAME,
+ * never its shape: a `ClosedNotification` — or any other event — carrying a
+ * plausible `workspace_path` field lists nothing.
  *
  * No ordering care is needed between the two sources. Core emits one attach
  * event per successful forward INCLUDING a cache hit, so two agents binding one
@@ -154,11 +167,15 @@ export function workspaceRegistryReduce(
   const seen = new Set<string>();
   const members = new Map<string, Set<string>>();
   for (const m of log) {
-    if (isResourceAttached(m)) {
-      const leaf = attachedLeaf(m);
+    if (isEventMessage(m)) {
+      // Binding the payload to the guard's loose parameter type keeps
+      // `EventMessage.event`'s `any` from propagating into this module.
+      const inner: { __model__?: string } | null | undefined = m.event;
+      if (!isWorkspaceAttached(inner)) continue;
+      const leaf = attachedLeaf(inner);
       if (leaf === null) continue;
       seen.add(leaf);
-      const agentId = attachedAgentId(m);
+      const agentId = attachedAgentId(inner);
       if (agentId === null) continue;
       const bucket = members.get(leaf) ?? new Set<string>();
       bucket.add(agentId);
@@ -209,8 +226,8 @@ function teamIdFromLog(log: AkgenticMessage[]): string {
  *
  * Publishes `workspaces$` as a pure selector over `MessageLogService.log$`:
  * the deduped set of `WorkspaceDescriptor`s discovered by folding the
- * orchestrator's `ResourceAttached` events. Set-valued sibling of
- * `ToolPresenceService`.
+ * `WorkspaceAttached` payloads the orchestrator emits inside `EventMessage`
+ * envelopes. Set-valued sibling of `ToolPresenceService`.
  *
  * Scope: component-scoped (NOT `providedIn: 'root'`) because it injects
  * `MessageLogService`, which is scoped to the `process/:id` route. A team

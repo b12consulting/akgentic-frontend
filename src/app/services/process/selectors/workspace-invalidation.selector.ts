@@ -12,10 +12,10 @@ import {
 import {
   AkgenticMessage,
   isEventMessage,
-  isResourceAttached,
   isStopMessage,
   isToolCallEvent,
   isToolReturnEvent,
+  isWorkspaceAttached,
   parseToolCallArguments,
   ToolCallEvent,
   WorkspaceToolArguments,
@@ -194,7 +194,7 @@ function recordCall(
  * An agent mapping to two workspaces yields two instructions, one per workspace
  * (ADR-031 §D4): it is bound to a `Set` of leaves and every workspace exposes
  * identical `workspace_*` tool names, so the tool name cannot disambiguate.
- * Correct, merely coarser. An agent for which no attach event arrived yields
+ * Correct, merely coarser. An agent for which no attach envelope arrived yields
  * none, and no phantom workspace id is invented for it.
  */
 function resolveReturn(
@@ -219,13 +219,14 @@ function resolveReturn(
  *
  * - `attribution` — agent id → the workspace leaves that agent is bound to, the
  *   SAME resolution the picker's *Accessible by* chips render, taken from the
- *   same source rather than encoded a second time. A `ResourceAttached` ADDS a
- *   leaf under the event's own top-level `agent_id`; a `StopMessage` deletes the
- *   agent's whole entry, keyed by `sender.agent_id`. Read at CALL time, never at
- *   return time, so a `StopMessage` landing between a call and its return cannot
- *   retroactively erase the instruction (ADR-031 §D4). Reading at call time is
- *   safe with no ordering care: the resource actor must exist before it can
- *   serve a call, and the orchestrator emits the attach event as it forwards the
+ *   same source rather than encoded a second time. A `WorkspaceAttached`
+ *   payload inside an `EventMessage` ADDS a leaf under the PAYLOAD's own
+ *   `agent_id`; a `StopMessage` deletes the agent's whole entry, keyed by
+ *   `sender.agent_id`. Read at CALL time, never at return time, so a
+ *   `StopMessage` landing between a call and its return cannot retroactively
+ *   erase the instruction (ADR-031 §D4). Reading at call time is safe with no
+ *   ordering care: the resource actor must exist before it can serve a call,
+ *   and the orchestrator emits the attach envelope as it forwards the
  *   get-or-create, so the binding always precedes the call.
  * - `inFlight` — the mutating calls still awaiting a return, keyed by
  *   `tool_call_id`. The return frame names no path, so everything an
@@ -247,9 +248,9 @@ interface InvalidationState {
  *
  * No field it reads can throw: `__model__` and `sender` are both reached
  * defensively (`messageListFold` reaches `sender?.role` the same way), the inner
- * guards accept `null`/`undefined`, `attachedLeaf` type-checks
- * `workspace_path` before splitting it, and the argument parser returns `null`
- * rather than raising. Those reads matter MORE here than they did under a fold:
+ * guards — `isWorkspaceAttached` included — accept `null`/`undefined`,
+ * `attachedLeaf` type-checks the attach payload's `workspace_path` before
+ * splitting it, and the argument parser returns `null` rather than raising. Those reads matter MORE here than they did under a fold:
  * a fold that threw spoiled one emission's derivation, whereas a throw out of a
  * live subscription tears the subscription down for good and nothing
  * re-subscribes. Nothing dereferences `StartMessage.config` any more, so the one
@@ -267,29 +268,31 @@ function absorb(
     // `sender` is typed as required but arrives off the wire. A frame without
     // one keys the empty agent id, which no well-formed frame ever claims.
     const agentId = m.sender?.agent_id ?? '';
-    if (isResourceAttached(m)) {
-      // The BINDING agent is the event's own top-level `agent_id`. `agentId`
-      // above is the ORCHESTRATOR here — this frame is the one exception to the
-      // sender-keyed rule every other branch follows, and using it would
-      // attribute every mutation to the orchestrator.
-      const leaf = attachedLeaf(m);
-      const boundAgentId = attachedAgentId(m);
-      if (leaf === null || boundAgentId === null) continue;
-      const bucket = state.attribution.get(boundAgentId) ?? new Set<string>();
-      bucket.add(leaf);
-      state.attribution.set(boundAgentId, bucket);
-      continue;
-    }
     if (isStopMessage(m)) {
       state.attribution.delete(agentId);
       continue;
     }
     if (!isEventMessage(m)) continue;
     // The guards key on the INNER `__model__`: an `EventMessage` envelope tag
-    // contains neither 'ToolCallEvent' nor 'ToolReturnEvent'. Binding the
-    // payload to the guards' loose parameter type keeps `EventMessage.event`'s
-    // `any` from propagating into this module.
+    // contains none of 'WorkspaceAttached', 'ToolCallEvent' or
+    // 'ToolReturnEvent'. Binding the payload to the guards' loose parameter
+    // type keeps `EventMessage.event`'s `any` from propagating into this
+    // module. Each envelope is handled by exactly ONE branch.
     const inner: { __model__?: string } | null | undefined = m.event;
+    if (isWorkspaceAttached(inner)) {
+      // The BINDING agent is the payload's `agent_id`. `agentId` above is the
+      // envelope sender — the ORCHESTRATOR here — and this payload is the one
+      // exception to the sender-keyed rule every other branch follows: using
+      // it would attribute every mutation to the orchestrator.
+      const leaf = attachedLeaf(inner);
+      const boundAgentId = attachedAgentId(inner);
+      if (leaf !== null && boundAgentId !== null) {
+        const bucket = state.attribution.get(boundAgentId) ?? new Set<string>();
+        bucket.add(leaf);
+        state.attribution.set(boundAgentId, bucket);
+      }
+      continue;
+    }
     if (isToolCallEvent(inner)) {
       recordCall(
         state.inFlight,
@@ -316,11 +319,11 @@ function absorb(
  *
  * It cannot be dropped in favour of reading `appended$` alone. `appended$` is a
  * plain `Subject` with no replay buffer, so every message that predates the
- * subscription is invisible to it — the `ResourceAttached` frames that carry the
- * agent→workspace attribution above all. That is the PRODUCTION ordering, not
- * an artefact of tests: a workspace tab only exists once an attach event has
- * announced it, and the explorer subscribes from its constructor, so the
- * attribution always predates the subscription. Without this, every live
+ * subscription is invisible to it — the `WorkspaceAttached` envelopes that
+ * carry the agent→workspace attribution above all. That is the PRODUCTION
+ * ordering, not an artefact of tests: a workspace tab only exists once an
+ * attach envelope has announced it, and the explorer subscribes from its
+ * constructor, so the attribution always predates the subscription. Without this, every live
  * instruction would resolve to no workspace at all and nothing would ever
  * refresh.
  *
