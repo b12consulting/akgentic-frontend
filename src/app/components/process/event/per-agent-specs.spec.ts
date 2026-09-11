@@ -26,7 +26,7 @@ import {
   foldContextCompaction,
   tokenUsageReduce,
   tokenUsageSpec,
-} from './per-agent-specs';
+  ModelUsage,} from './per-agent-specs';
 
 // ---------------------------------------------------------------------
 // Fixtures — EventMessage(LlmUsageEvent) envelopes (ADR-022 §Decision 1
@@ -286,6 +286,17 @@ describe('tokenUsageSpec reducer (Epic 26 / ADR-022 §Decision 2-4)', () => {
       lastContextWindow: 12_031, // no cache on this fixture — true window == input
       lastRunId: 'run-7',
       lastModelName: 'claude-opus',
+      perModel: new Map<string, ModelUsage>([
+        [
+          'claude-opus',
+          {
+            totalSent: 12_031,
+            totalReceived: 412,
+            totalCacheRead: 0,
+            totalCacheWrite: 0,
+          },
+        ],
+      ]),
       totalSent: 12_031,
       totalReceived: 412,
       totalCacheRead: 0,
@@ -314,6 +325,30 @@ describe('tokenUsageSpec reducer (Epic 26 / ADR-022 §Decision 2-4)', () => {
       lastContextWindow: 200, // overwritten with the newest input_tokens
       lastRunId: 'run-2',
       lastModelName: 'claude-haiku',
+      // This agent ran TWO models, so the split is per model — NOT the cumulative
+      // total keyed on the newest one. Keying on lastModelName is exactly the
+      // defect this field removes: it credited run-1's 1000 sent tokens to
+      // claude-haiku, which never produced them.
+      perModel: new Map<string, ModelUsage>([
+        [
+          'claude-sonnet',
+          {
+            totalSent: 1000,
+            totalReceived: 100,
+            totalCacheRead: 0,
+            totalCacheWrite: 0,
+          },
+        ],
+        [
+          'claude-haiku',
+          {
+            totalSent: 200,
+            totalReceived: 50,
+            totalCacheRead: 0,
+            totalCacheWrite: 0,
+          },
+        ],
+      ]),
       totalSent: 1200, // 1000 + 200
       totalReceived: 150, // 100 + 50
       totalCacheRead: 0,
@@ -339,6 +374,17 @@ describe('tokenUsageSpec reducer (Epic 26 / ADR-022 §Decision 2-4)', () => {
       lastContextWindow: 5_500, // === input_tokens — already the full prompt, cache included
       lastRunId: 'run-8',
       lastModelName: 'claude-sonnet',
+      perModel: new Map<string, ModelUsage>([
+        [
+          'claude-sonnet',
+          {
+            totalSent: 5_500,
+            totalReceived: 60,
+            totalCacheRead: 4_000,
+            totalCacheWrite: 1_000,
+          },
+        ],
+      ]),
       totalSent: 5_500,
       totalReceived: 60,
       totalCacheRead: 4_000,
@@ -374,6 +420,18 @@ describe('tokenUsageSpec reducer (Epic 26 / ADR-022 §Decision 2-4)', () => {
       lastContextWindow: 1_200, // === newest input_tokens (already the full prompt)
       lastRunId: 'run-2',
       lastModelName: 'claude-sonnet',
+      // Both events ran on the same model, so its share IS the cumulative total.
+      perModel: new Map<string, ModelUsage>([
+        [
+          'claude-sonnet',
+          {
+            totalSent: 2_200,
+            totalReceived: 140,
+            totalCacheRead: 1_100,
+            totalCacheWrite: 50,
+          },
+        ],
+      ]),
       totalSent: 2_200, // 1_000 + 1_200
       totalReceived: 140,
       totalCacheRead: 1_100, // 200 + 900
@@ -472,6 +530,17 @@ describe('tokenUsageReduce (pure reducer)', () => {
       lastContextWindow: 300,
       lastRunId: 'run-1',
       lastModelName: 'claude-sonnet',
+      perModel: new Map<string, ModelUsage>([
+        [
+          'claude-sonnet',
+          {
+            totalSent: 300,
+            totalReceived: 40,
+            totalCacheRead: 0,
+            totalCacheWrite: 0,
+          },
+        ],
+      ]),
       totalSent: 300,
       totalReceived: 40,
       totalCacheRead: 0,
@@ -486,6 +555,17 @@ describe('tokenUsageReduce (pure reducer)', () => {
       lastContextWindow: 300,
       lastRunId: 'run-1',
       lastModelName: 'claude-sonnet',
+      perModel: new Map<string, ModelUsage>([
+        [
+          'claude-sonnet',
+          {
+            totalSent: 300,
+            totalReceived: 40,
+            totalCacheRead: 0,
+            totalCacheWrite: 0,
+          },
+        ],
+      ]),
       totalSent: 300,
       totalReceived: 40,
       totalCacheRead: 0,
@@ -508,6 +588,17 @@ describe('tokenUsageReduce (pure reducer)', () => {
       lastContextWindow: 1,
       lastRunId: 'r',
       lastModelName: 'm',
+      perModel: new Map<string, ModelUsage>([
+        [
+          'm',
+          {
+            totalSent: 1,
+            totalReceived: 1,
+            totalCacheRead: 0,
+            totalCacheWrite: 0,
+          },
+        ],
+      ]),
       totalSent: 1,
       totalReceived: 1,
       totalCacheRead: 0,
@@ -768,6 +859,17 @@ describe('tokenUsageReduce — fold compaction/clear (Epic 29 / ADR-010 §4/§8)
     lastContextWindow: 30_000,
     lastRunId: 'run-9',
     lastModelName: 'claude-opus',
+    perModel: new Map<string, ModelUsage>([
+      [
+        'claude-opus',
+        {
+          totalSent: 50_000,
+          totalReceived: 12_000,
+          totalCacheRead: 15_000,
+          totalCacheWrite: 3_000,
+        },
+      ],
+    ]),
     totalSent: 50_000,
     totalReceived: 12_000,
     totalCacheRead: 15_000,
@@ -789,6 +891,17 @@ describe('tokenUsageReduce — fold compaction/clear (Epic 29 / ADR-010 §4/§8)
       lastContextWindow: 8_000,
       lastRunId: 'run-9',
       lastModelName: 'claude-opus',
+      perModel: new Map<string, ModelUsage>([
+        [
+          'claude-opus',
+          {
+            totalSent: 50_000,
+            totalReceived: 12_000,
+            totalCacheRead: 15_000,
+            totalCacheWrite: 3_000,
+          },
+        ],
+      ]),
       totalSent: 50_000,
       totalReceived: 12_000,
       totalCacheRead: 15_000,
@@ -819,6 +932,7 @@ describe('tokenUsageReduce — fold compaction/clear (Epic 29 / ADR-010 §4/§8)
       lastContextWindow: 1_234,
       lastRunId: '',
       lastModelName: '',
+      perModel: new Map<string, ModelUsage>(),
       totalSent: 0,
       totalReceived: 0,
       totalCacheRead: 0,
@@ -834,6 +948,17 @@ describe('tokenUsageReduce — fold compaction/clear (Epic 29 / ADR-010 §4/§8)
       lastContextWindow: 0,
       lastRunId: 'run-9',
       lastModelName: 'claude-opus',
+      perModel: new Map<string, ModelUsage>([
+        [
+          'claude-opus',
+          {
+            totalSent: 50_000,
+            totalReceived: 12_000,
+            totalCacheRead: 15_000,
+            totalCacheWrite: 3_000,
+          },
+        ],
+      ]),
       totalSent: 50_000,
       totalReceived: 12_000,
       totalCacheRead: 15_000,
@@ -864,6 +989,17 @@ describe('tokenUsageSpec — context events via the real registry (Epic 29)', ()
       lastContextWindow: 6_000,
       lastRunId: 'r1',
       lastModelName: 'claude-sonnet',
+      perModel: new Map<string, ModelUsage>([
+        [
+          'claude-sonnet',
+          {
+            totalSent: 30_000,
+            totalReceived: 9_000,
+            totalCacheRead: 0,
+            totalCacheWrite: 0,
+          },
+        ],
+      ]),
       totalSent: 30_000,
       totalReceived: 9_000,
       totalCacheRead: 0,
@@ -883,6 +1019,17 @@ describe('tokenUsageSpec — context events via the real registry (Epic 29)', ()
       lastContextWindow: 6_500,
       lastRunId: 'r2',
       lastModelName: 'claude-sonnet',
+      perModel: new Map<string, ModelUsage>([
+        [
+          'claude-sonnet',
+          {
+            totalSent: 36_500,
+            totalReceived: 9_800,
+            totalCacheRead: 0,
+            totalCacheWrite: 0,
+          },
+        ],
+      ]),
       totalSent: 36_500,
       totalReceived: 9_800,
       totalCacheRead: 0,

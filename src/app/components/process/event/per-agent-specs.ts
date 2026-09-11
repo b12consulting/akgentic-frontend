@@ -487,6 +487,14 @@ export const systemPromptSpec: PerAgentSpec<SystemPromptValue> = {
  * `lastRunId` / `lastModelName` are labels only. `requests` rides the wire but is
  * excluded from v1.
  */
+/** One model's share of a single agent's usage. */
+export interface ModelUsage {
+  totalSent: number;
+  totalReceived: number;
+  totalCacheRead: number;
+  totalCacheWrite: number;
+}
+
 export interface AgentTokenUsage {
   /** input_tokens of the most-recent event — the TRUE context window (already
    *  the full prompt, cache included; overwritten each event). */
@@ -499,6 +507,15 @@ export interface AgentTokenUsage {
   totalSent: number;
   /** running Σ of output_tokens across all this agent's events. */
   totalReceived: number;
+  /** Σ of this agent's usage, split by the model that produced it. Keyed by
+   *  `model_name`. An agent that never switches has exactly one entry; one that
+   *  switches mid-session (ADR-018) has one per model it ran on.
+   *
+   *  This CANNOT be derived downstream from `lastModelName` — that is the model
+   *  of the most recent event only, so grouping the agent's cumulative totals by
+   *  it credits every earlier model's tokens to the current one. The split has to
+   *  be accumulated here, where each event's own `model_name` is still in hand. */
+  perModel: ReadonlyMap<string, ModelUsage>;
   /** running Σ of cache_read_tokens across all this agent's events. */
   totalCacheRead: number;
   /** running Σ of cache_write_tokens across all this agent's events. */
@@ -524,6 +541,7 @@ const ZERO_TOKEN_USAGE: AgentTokenUsage = {
   lastContextWindow: 0,
   lastRunId: '',
   lastModelName: '',
+  perModel: new Map<string, ModelUsage>(),
   totalSent: 0,
   totalReceived: 0,
   totalCacheRead: 0,
@@ -559,10 +577,21 @@ export function tokenUsageReduce(
     const output = ev.output_tokens ?? 0;
     const cacheRead = ev.cache_read_tokens ?? 0;
     const cacheWrite = ev.cache_write_tokens ?? 0;
+    // Fresh Map every time — `prev`'s is never mutated, so OnPush still sees a
+    // changed reference and a replayed fold cannot corrupt an earlier value.
+    const perModel = new Map<string, ModelUsage>(prev?.perModel ?? []);
+    const bucket = perModel.get(ev.model_name);
+    perModel.set(ev.model_name, {
+      totalSent: (bucket?.totalSent ?? 0) + input,
+      totalReceived: (bucket?.totalReceived ?? 0) + output,
+      totalCacheRead: (bucket?.totalCacheRead ?? 0) + cacheRead,
+      totalCacheWrite: (bucket?.totalCacheWrite ?? 0) + cacheWrite,
+    });
     return {
       lastContextWindow: input,
       lastRunId: ev.run_id,
       lastModelName: ev.model_name,
+      perModel,
       totalSent: (prev?.totalSent ?? 0) + input,
       totalReceived: (prev?.totalReceived ?? 0) + output,
       totalCacheRead: (prev?.totalCacheRead ?? 0) + cacheRead,

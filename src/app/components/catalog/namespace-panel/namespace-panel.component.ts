@@ -34,7 +34,6 @@ import {
   CloneYamlError,
   extractYamlName,
   extractYamlNamespace,
-  extractYamlPublic,
   extractYamlShareable,
   extractYamlUserId,
   rewriteNamespaceInYaml,
@@ -1415,10 +1414,18 @@ export class NamespacePanelComponent
     const srcName = extractYamlName(this.buffer) ?? srcNs;
     this.cloneDestNs = suggestDestNamespace(srcNs);
     this.cloneDestName = suggestDestName(srcName);
-    // Pre-fill the visibility/sharing toggles from the same buffer. Absent /
-    // non-boolean / unparseable → default to false.
+    // Pre-fill `shareable` from the same buffer (absent / non-boolean /
+    // unparseable → false). `shareable` governs whether other namespaces may
+    // REFERENCE this one — a structural property of the content that survives
+    // copying, and dropping it would break the cross-namespace refs the clone
+    // is expected to carry.
     this.cloneShareable = extractYamlShareable(this.buffer) ?? false;
-    this.clonePublic = extractYamlPublic(this.buffer) ?? false;
+    // `public` deliberately does NOT pre-fill. It governs who may SEE the
+    // namespace, and a clone is a new resource with a new owner: inheriting
+    // the source's audience would publish the cloner's copy on the strength of
+    // a decision somebody else made. Publishing is always the cloner's opt-in,
+    // so the toggle starts off whatever the source said.
+    this.clonePublic = false;
     this.cloneDialogVisible = true;
   }
 

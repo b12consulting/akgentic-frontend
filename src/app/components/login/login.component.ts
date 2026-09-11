@@ -53,7 +53,7 @@ export interface ProviderOption {
 }
 
 /** The providers the framework ships copy for. Anything else is a deployment's own. */
-const KNOWN_PROVIDERS: readonly AuthProvider[] = ['azure', 'google', 'apikey', 'default'];
+const KNOWN_PROVIDERS: readonly AuthProvider[] = ['azure_ad', 'google', 'apikey', 'default'];
 
 @Component({
   selector: 'app-login',

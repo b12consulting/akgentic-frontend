@@ -215,8 +215,9 @@ export class IngestionService {
    *       Story 35-1 (ADR-027 §3) also starts `NotificationToasts` here, since
    *       it now reads the log rather than the socket and the replay in (c)
    *       must find it already subscribed;
-   *   (c) seed the replay (stopped teams only) — `getAgentStates` + `getEvents`
-   *       → `appendAll`. Every selector then holds its history;
+   *   (c) seed the replay — `getAgentStates` for EVERY team (ADR-020 §4), then
+   *       `getEvents` for stopped teams only → `appendAll`. Every selector then
+   *       holds its history;
    *   (d) wire the consumers, THEN open the socket. Both halves matter: the
    *       consumers must be live before the first frame, and the socket must
    *       open after the replay so nothing can arrive between (b) and (d).
@@ -279,30 +280,37 @@ export class IngestionService {
     // live-path spec stays green.
     this.teamStatusReactor.start(this.log.appended$.pipe(concatAll()));
 
-    // --- (c) seed the replay (stopped teams only) --------------------
-    if (!running) {
-      // Story 25-1 (ADR-020 §2, !running gate): a stopped team's durable event
-      // log carries no `StateChangedMessage` (ADR-013), so without this seed the
-      // backstory head-block stays blank. A running team — including a freshly
-      // restored one — already gets its `StateChangedMessage`(s) on the cursor-0
-      // WS replay, so `getAgentStates` MUST NOT be called for it. The gate lives
-      // HERE and never inside the seeder, which knows no team status.
-      //
-      // TWO sequential awaits and TWO appends, never `Promise.all` and never one
-      // merged array: the state seed must be folded BEFORE the event replay,
-      // since `stateSpec` is latest-wins and a real replayed
-      // `StateChangedMessage` has to be able to overwrite a synthesized seed
-      // (never the reverse). Parallelising would also change failure semantics —
-      // a `getAgentStates` rejection today means `getEvents` is never issued and
-      // `init()` rejects before the socket opens.
-      const seeds: AkgenticMessage[] = await this.replay.seedMessages(processId);
-      // Story 52-1: another team was opened while that request was in flight.
-      // The log below is now ITS log — writing this team's seed into it is the
-      // duplication trap T2 describes, and the appended ids would be
-      // attributed to the team on screen.
-      if (token !== this.cycleToken) return;
-      this.log.appendAll(seeds);
+    // --- (c) seed the replay -----------------------------------------
+    // The agent-state snapshot seed runs for EVERY team, running or stopped
+    // (akgentic-core ADR-020 §4 option (a)). It used to be gated on `!running`
+    // because a running team received its `StateChangedMessage`(s) on the
+    // cursor-0 WS replay — that is no longer true: the stream subscribers now
+    // suppress the message (it is a snapshot, not an event; a full serialized
+    // state per mutation grew the backing store without bound). With the gate in
+    // place a running team has NO source for `state`, so `backstory$` is `''`,
+    // and after a `/clear` empties `context` the Member chat tab disappears
+    // entirely (`agent-tabs.component.ts:chatTabVisible$`). `getAgentStates` is
+    // the named source the ADR asks for; the latest-wins fold means a real
+    // `StateChangedMessage` still overwrites the seed if one ever returns.
+    //
+    // TWO sequential awaits and TWO appends, never `Promise.all` and never one
+    // merged array: the state seed must be folded BEFORE the event replay,
+    // since `stateSpec` is latest-wins and a real replayed
+    // `StateChangedMessage` has to be able to overwrite a synthesized seed
+    // (never the reverse).
+    const seeds: AkgenticMessage[] = await this.replay.seedMessages(processId);
+    // Story 52-1: another team was opened while that request was in flight.
+    // The log below is now ITS log — writing this team's seed into it is the
+    // duplication trap T2 describes, and the appended ids would be
+    // attributed to the team on screen. Kept when the `!running` gate above was
+    // removed: un-gating the seed makes this race MORE reachable, not less,
+    // since it now runs for every team rather than only cold stopped ones.
+    if (token !== this.cycleToken) return;
+    this.log.appendAll(seeds);
 
+    if (!running) {
+      // The durable EVENT replay stays stopped-team-only: a running team gets
+      // the same history on the cursor-0 WS replay opened in step (d).
       const replayMessages: AkgenticMessage[] =
         await this.replay.replayMessages(processId);
       if (token !== this.cycleToken) return;

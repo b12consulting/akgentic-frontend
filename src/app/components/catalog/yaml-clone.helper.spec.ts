@@ -4,7 +4,6 @@ import {
   CloneYamlError,
   extractYamlName,
   extractYamlNamespace,
-  extractYamlPublic,
   extractYamlShareable,
   extractYamlUserId,
   rewriteNamespaceInYaml,
@@ -362,46 +361,6 @@ describe('extractYamlShareable', () => {
 
   it('returns null when the root is a sequence, not a mapping', () => {
     expect(extractYamlShareable('- 1\n- 2\n')).toBeNull();
-  });
-});
-
-describe('extractYamlPublic', () => {
-  it('returns true when root public is the boolean true', () => {
-    expect(
-      extractYamlPublic('namespace: foo\npublic: true\nentries: {}\n'),
-    ).toBe(true);
-  });
-
-  it('returns false when root public is the boolean false', () => {
-    expect(
-      extractYamlPublic('namespace: foo\npublic: false\nentries: {}\n'),
-    ).toBe(false);
-  });
-
-  it('returns null when the public key is absent', () => {
-    expect(extractYamlPublic('namespace: foo\nentries: {}\n')).toBeNull();
-  });
-
-  it('returns null when public is not a boolean (string "yes")', () => {
-    expect(
-      extractYamlPublic('namespace: foo\npublic: "yes"\nentries: {}\n'),
-    ).toBeNull();
-  });
-
-  it('returns null when public is not a boolean (a number)', () => {
-    expect(
-      extractYamlPublic('namespace: foo\npublic: 0\nentries: {}\n'),
-    ).toBeNull();
-  });
-
-  it('returns null on malformed YAML', () => {
-    expect(
-      extractYamlPublic('namespace: foo\nentries: [\n  unclosed\n'),
-    ).toBeNull();
-  });
-
-  it('returns null when the root is a sequence, not a mapping', () => {
-    expect(extractYamlPublic('- 1\n- 2\n')).toBeNull();
   });
 });
 

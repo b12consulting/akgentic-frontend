@@ -2184,6 +2184,25 @@ public: false
 entries: {}
 `;
 
+  // A PUBLIC source. `cloneSrcYamlWithFlags` above carries `public: false`, so
+  // it cannot tell "the toggle inherited the source" apart from "the toggle
+  // seeded false" — only a `public: true` source separates the two.
+  const cloneSrcYamlPublic = `namespace: src
+name: Src
+shareable: true
+public: true
+entries: {}
+`;
+
+  /** Arrange helper: panel loaded on a source bundle that is public + shareable. */
+  async function loadedWithPublicCloneSrc(): Promise<void> {
+    apiSpy.exportNamespace.and.returnValue(Promise.resolve(cloneSrcYamlPublic));
+    await buildFixture('src');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
   it('(12.2 AC7) cloneShareable / clonePublic initialize to false', async () => {
     await loadedWithCloneSrc();
     expect(component.cloneShareable).toBeFalse();
@@ -2223,7 +2242,7 @@ entries: {}
     expect(component.clonePublic).toBeFalse();
   });
 
-  it('(12.2 AC8) onCloneClick pre-fills both toggles from the buffer flags', async () => {
+  it('(12.2 AC8) onCloneClick pre-fills the shareable toggle from the buffer flags', async () => {
     apiSpy.exportNamespace.and.returnValue(
       Promise.resolve(cloneSrcYamlWithFlags),
     );
@@ -2235,7 +2254,6 @@ entries: {}
     component.onCloneClick();
 
     expect(component.cloneShareable).toBeTrue();
-    expect(component.clonePublic).toBeFalse();
     expect(component.cloneDestNs).toMatch(/^src_/);
     expect(component.cloneDestName).toBe('Src_copy');
   });
@@ -2276,6 +2294,64 @@ entries: {}
     expect(parsed['name']).toBe('Dest');
     expect(component.cloneShareable).toBeFalse();
     expect(component.clonePublic).toBeFalse();
+  });
+
+  // ---------------------------------------------------------------------
+  // A clone starts private: the Public toggle stops inheriting from the
+  // source, while Shareable keeps inheriting.
+  // ---------------------------------------------------------------------
+
+  it('(50.1 AC1, AC5) onCloneClick leaves clonePublic false on a public source while cloneShareable still inherits', async () => {
+    await loadedWithPublicCloneSrc();
+
+    component.onCloneClick();
+
+    expect(component.clonePublic).toBeFalse();
+    expect(component.cloneShareable).toBeTrue();
+  });
+
+  it('(50.1 AC3, AC5) cloning a public source sends public: false and shareable: true', async () => {
+    await loadedWithPublicCloneSrc();
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+    apiSpy.exportNamespace.and.callFake((ns: string) =>
+      Promise.resolve(`namespace: ${ns}\nuser_id: null\nentries: {}\n`),
+    );
+
+    component.onCloneClick();
+    component.cloneDestNs = 'dst';
+    component.cloneDestName = 'Dest';
+
+    await component.onCloneConfirmClick();
+    await fixture.whenStable();
+
+    expect(apiSpy.importNamespace).toHaveBeenCalledTimes(1);
+    const sent = apiSpy.importNamespace.calls.mostRecent().args[0] as string;
+    const parsed = yaml.load(sent) as Record<string, unknown>;
+    // `toBe(false)` — not `toBeFalsy()`: an ABSENT key must not pass. The
+    // rewrite helper treats `undefined` as "leave the key alone", so a clone
+    // that omits `public` would inherit the source's `true` server-side.
+    expect(parsed['public']).toBe(false);
+    expect(parsed['shareable']).toBe(true);
+  });
+
+  it('(50.1 AC4) an explicit opt-in still sends public: true', async () => {
+    await loadedWithPublicCloneSrc();
+    apiSpy.importNamespace.and.returnValue(Promise.resolve([]));
+    apiSpy.exportNamespace.and.callFake((ns: string) =>
+      Promise.resolve(`namespace: ${ns}\nuser_id: null\nentries: {}\n`),
+    );
+
+    component.onCloneClick();
+    component.cloneDestNs = 'dst';
+    component.cloneDestName = 'Dest';
+    component.clonePublic = true;
+
+    await component.onCloneConfirmClick();
+    await fixture.whenStable();
+
+    const sent = apiSpy.importNamespace.calls.mostRecent().args[0] as string;
+    const parsed = yaml.load(sent) as Record<string, unknown>;
+    expect(parsed['public']).toBe(true);
   });
 
   it('(12.2 AC10) toggle combinations never change cloneConfirmDisabled or cloneValidationError', async () => {
