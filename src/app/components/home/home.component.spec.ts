@@ -1,11 +1,5 @@
 import { CommonModule } from '@angular/common';
-import {
-  Component,
-  CUSTOM_ELEMENTS_SCHEMA,
-  EventEmitter,
-  Input,
-  Output,
-} from '@angular/core';
+import { CUSTOM_ELEMENTS_SCHEMA } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
@@ -22,6 +16,7 @@ import { ApiService } from '../../core/http/api.service';
 import { AuthService } from '../../core/auth/auth.service';
 import { ConfigService } from '../../core/config/config.service';
 import { ContextService } from '../../core/context/context.service';
+import { ViewService } from '../../core/ui/view.service';
 import {
   NO_TEAM_FILTER,
   TeamContext,
@@ -34,16 +29,9 @@ import {
   NamespaceSummary,
   TeamMetadataContract,
 } from '../../protocol/catalog.interface';
-import { ProcessComponent } from '../process/process.component';
-import {
-  SPLIT_COARSE_STEP_PERCENT,
-  SPLIT_DEFAULT_PERCENT,
-  SPLIT_MAX_PERCENT,
-  SPLIT_MIN_PERCENT,
-  SPLIT_STORAGE_KEY,
-} from '../../shared/util/split-width';
 import { HomeComponent } from './home.component';
 import { TeamCreationService } from './team-creation/team-creation.service';
+import { TeamFilterComponent } from './team-filter/team-filter.component';
 import { TeamMetadataModalComponent } from './team-metadata-modal/team-metadata-modal.component';
 import {
   TeamDescriptionSave,
@@ -145,19 +133,6 @@ function setUrl(params: Record<string, string>): void {
   queryParamMap$.next(map);
 }
 
-/**
- * Stands in for `<app-process>` (Epic 52). Same selector, same surface, none of
- * the ingestion layer — see the `overrideComponent` call below for why.
- */
-@Component({
-  selector: 'app-process',
-  template: '',
-})
-class ProcessStubComponent {
-  @Input() teamId: string | null = null;
-  @Output() teamUnavailable = new EventEmitter<string>();
-}
-
 describe('HomeComponent', () => {
   let fixture: ComponentFixture<HomeComponent>;
   let component: HomeComponent;
@@ -206,6 +181,9 @@ describe('HomeComponent', () => {
         'deleteTeam',
         'createTeam',
         'stopTeamAndAwait',
+        // Epic 56: restore now goes through the awaiting form, like stop
+        // beside it, like the rail's row and like the composer's restore.
+        'restoreTeamAndAwait',
         'setTeamDescription',
         // 48.1/48.2: `ngOnInit` calls `restoreFilter()` on EVERY mount (and
         // `clearFilter()` when the URL names a namespace that is gone), so
@@ -300,24 +278,7 @@ describe('HomeComponent', () => {
         { provide: ActivatedRoute, useValue: routeStub },
       ],
       schemas: [CUSTOM_ELEMENTS_SCHEMA],
-    })
-      // Epic 52: the page now HOSTS the process view. Bootstrapping the real
-      // one would drag its whole ingestion layer — a socket, a REST replay and
-      // a dozen component-scoped providers — into every spec in this file, to
-      // assert nothing about any of them: what belongs here is whether the pane
-      // is on screen and what the page put in it.
-      //
-      // A STUB with the same selector rather than `CUSTOM_ELEMENTS_SCHEMA`.
-      // The schema on the TestBed does not reach a standalone component's own
-      // template, and adding it to HomeComponent's would silence any other
-      // element typo in the whole file. The stub keeps the two things these
-      // specs care about — the id going in, the "team is gone" answer coming
-      // back — as real, checked bindings.
-      .overrideComponent(HomeComponent, {
-        remove: { imports: [ProcessComponent] },
-        add: { imports: [ProcessStubComponent] },
-      })
-      .compileComponents();
+    }).compileComponents();
 
     fixture = TestBed.createComponent(HomeComponent);
     component = fixture.componentInstance;
@@ -398,14 +359,19 @@ describe('HomeComponent', () => {
     expect((component as any).context).toBeUndefined();
   });
 
-  it('(AC4 10.4) createTeam reaches createTeam through the gate, with no reload compensation', async () => {
+  it('(AC4 10.4) the page still creates ONLY through the gate, with no reload compensation', async () => {
+    // Rewritten, not deleted. The ENTRY POINT moved — team creation is the
+    // rail's wizard now, so this page no longer offers a Create button — but
+    // the page keeps a gate of its own for the `hideHome` auto-create route,
+    // and what that route must never do is call `contextService.createTeam`
+    // for itself. `'auto'` is the only origin this page can still produce.
     const ns = nsSummary('cat-1', 'Cat One', 'first cat');
     component.selectedNamespace$.next(ns);
     // The component has not invoked ngOnInit yet (no detectChanges in this
     // test), so contextSpy.getTeams should not have been called. Reset to
     // guard against any spurious prior invocation.
     contextSpy.getTeams.calls.reset();
-    await component.createTeam();
+    await component.creation.request(ns, 'auto');
     expect(contextSpy.createTeam).toHaveBeenCalledOnceWith(
       'cat-1',
       undefined,
@@ -416,10 +382,25 @@ describe('HomeComponent', () => {
     expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
   });
 
-  it('(AC4 10.4) createTeam no-entry guard returns cleanly', async () => {
-    component.selectedNamespace$.next(null);
-    await component.createTeam();
-    expect(contextSpy.createTeam).not.toHaveBeenCalled();
+  it('(R2) the management view declares no gesture creation handler at all', async () => {
+    // The Create button and its `createTeam()` handler are GONE from this
+    // page: choosing a team type and filling its contract is a two-step wizard
+    // opened from the rail, so a second entry point here would be a second
+    // place the same decision lives. Asserted on the RENDERED toolbar as well
+    // as on the class, because either one alone survives half the removal.
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(
+      (component as unknown as Record<string, unknown>)['createTeam'],
+    ).toBeUndefined();
+
+    const labels = Array.from(
+      fixture.nativeElement.querySelectorAll('.home-controls button'),
+    ).map((b) => ((b as HTMLElement).textContent ?? '').trim());
+    expect(labels.length).toBeGreaterThan(0);
+    expect(labels).not.toContain('common.create');
   });
 
   it('(AC1 1.9) ngOnInit loads namespaces via getNamespaces and selects the first', async () => {
@@ -435,12 +416,13 @@ describe('HomeComponent', () => {
     expect(component.selectedNamespace$.value?.namespace).toBe('agent-team-v1');
   });
 
-  it('(AC3 1.9) createTeam hands the gate the SELECTED summary, whose namespace is created (not an id lookup)', async () => {
+  it('(AC3 1.9) the gate is handed the SELECTED summary, whose NAMESPACE is created (not an id lookup)', async () => {
     component.selectedNamespace$.next(
       nsSummary('rag-team-v1', 'RAG Team', 'With RAG'),
     );
     contextSpy.createTeam.calls.reset();
-    await component.createTeam();
+    const selected = component.selectedNamespace$.value!;
+    await component.creation.request(selected, 'auto');
     expect(contextSpy.createTeam).toHaveBeenCalledOnceWith(
       'rag-team-v1',
       undefined,
@@ -512,7 +494,7 @@ describe('HomeComponent', () => {
 
     expect(tracked.length).toBe(1);
     await tracked[0];
-    expect(apiSpy.restoreTeam).toHaveBeenCalledOnceWith('team-A');
+    expect(contextSpy.restoreTeamAndAwait).toHaveBeenCalledOnceWith('team-A');
   });
 
   it('(AC6 10.5) restoreTeam LOGS its failure before re-throwing', async () => {
@@ -520,7 +502,9 @@ describe('HomeComponent', () => {
     // ONLY trace a failed restore leaves. Without it the row simply stops
     // spinning and nothing anywhere says the restore did not happen.
     const consoleErrorSpy = spyOn(console, 'error');
-    apiSpy.restoreTeam.and.returnValue(Promise.reject(new Error('boom')));
+    contextSpy.restoreTeamAndAwait.and.returnValue(
+      Promise.reject(new Error('boom')),
+    );
 
     await expectAsync(component.restoreTeam('team-A')).toBeRejected();
 
@@ -1257,48 +1241,55 @@ describe('HomeComponent', () => {
     expect(text).not.toContain('team-page-1');
   });
 
-  it('(Epic 52) createTeam STAYS: the new team opens beside the list, on the page the user was on', async () => {
-    // Twice-superseded, and the history is the point. Create first reloaded
-    // page 1 (28.2), then navigated to `/process/:id` and reloaded nothing —
-    // correct while the page was being unmounted. Epic 52 stopped unmounting it
-    // for a row click but left the creation path routing, so creating threw the
-    // list away on the one page built to keep it.
+  it('(R1) a created team is SHOWN: the page navigates to it, whatever asked for it', async () => {
+    // Thrice-superseded, and the history is the point. Create first reloaded
+    // page 1 (28.2), then navigated to `/process/:id`, then — under Epic 52 —
+    // opened the team BESIDE the list and reloaded the current page instead.
     //
-    // Now: the team opens in the pane, the paginator does NOT jump, and the list
-    // IS reloaded — the page stays mounted, and a create changes which teams
-    // belong on the current server-paged slice.
+    // R1 reverses the last of those. A team is opened exactly one way now, so
+    // there is no "beside" to open into and no reload to compensate for: the
+    // page is being left. The `hideHome` branch that used to be the exception
+    // is now the whole rule, which is why the branch itself is gone.
     fixture.detectChanges();
     await fixture.whenStable();
 
-    component.selectedNamespace$.next(
-      nsSummary('agent-team-v1', 'Agent Team', 'd'),
-    );
     component.currentPage = 4;
     component.first = 750;
     contextSpy.loadTeamsPage.calls.reset();
-    contextSpy.createTeam.calls.reset();
     routerSpy.navigate.calls.reset();
 
-    await component.createTeam();
+    // Driven through the gate, not through the page's private handler: the
+    // `created$` subscription set up in `ngOnInit` is the seam, and a
+    // subscription lost in a merge has to go red somewhere.
+    await component.creation.request(
+      nsSummary('agent-team-v1', 'Agent Team', 'd'),
+      'auto',
+    );
+    await fixture.whenStable();
 
-    expect(contextSpy.createTeam).toHaveBeenCalledOnceWith(
+    expect(contextSpy.createTeam).toHaveBeenCalledWith(
       'agent-team-v1',
       undefined,
     );
-    expect(component.selectedTeamId).toBe('team-created-1');
-    expect(routerSpy.navigate).not.toHaveBeenCalledWith([
+    expect(routerSpy.navigate).toHaveBeenCalledWith([
       '/process',
       'team-created-1',
     ]);
-    // The current page, not page 1: a create must not also send the user back
-    // to the top of a list they had paged through.
-    expect(contextSpy.loadTeamsPage).toHaveBeenCalledOnceWith(4, 250);
-    expect(component.currentPage).toBe(4);
-    expect(component.first).toBe(750);
+    // No compensating reload of a list the user is no longer looking at.
+    expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
     expect(contextSpy.resetTeams).not.toHaveBeenCalled();
   });
 
-  it('(28.2 AC8e) restoreTeam reloads the CURRENT page with no empty emission', async () => {
+  it('(28.2 AC8e / Epic 56) restoreTeam awaits RUNNING and needs no page reload', async () => {
+    // Rewritten, not deleted. Story 28.2's concern was that a restore must not
+    // blank the list on its way back — `resetTeams()` then a fetch — and that
+    // concern is now met by construction: `restoreTeamAndAwait` polls
+    // `refreshOneTeam` into `_context$`, so the row is already current when it
+    // resolves and there is no page fetch left to get wrong.
+    //
+    // What changed underneath is the readiness signal. The old path fired the
+    // POST and reloaded immediately, so the reload raced the restore and the
+    // row often came back still marked stopped.
     component.currentPage = 2;
     contextSpy.loadTeamsPage.calls.reset();
     const emissions: TeamContext[][] = [];
@@ -1306,10 +1297,11 @@ describe('HomeComponent', () => {
 
     await component.restoreTeam('team-X');
 
-    expect(apiSpy.restoreTeam).toHaveBeenCalledOnceWith('team-X');
-    expect(contextSpy.loadTeamsPage).toHaveBeenCalledOnceWith(2, 250);
+    expect(contextSpy.restoreTeamAndAwait).toHaveBeenCalledOnceWith('team-X');
+    expect(apiSpy.restoreTeam).not.toHaveBeenCalled();
+    expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
     expect(contextSpy.resetTeams).not.toHaveBeenCalled();
-    // No empty [] emission slipped in before the reloaded page.
+    // No empty [] emission slipped in — the 28.2 assertion, unchanged.
     expect(emissions.some((e) => e.length === 0 && e !== emissions[0])).toBeFalse();
     sub.unsubscribe();
   });
@@ -1335,7 +1327,7 @@ describe('HomeComponent', () => {
   // team-table.component.spec.ts.
   // -------------------------------------------------------------------------
 
-  it('(28.2 AC8f, Epic 52) a paged row still renders, and (rowSelected) opens it beside the list', async () => {
+  it('(28.2 AC8f, R1) a paged row still renders, and (rowSelected) NAVIGATES to it', async () => {
     fixture.detectChanges();
     await fixture.whenStable();
     // Render a known running row (REPLACE the seed page).
@@ -1348,14 +1340,18 @@ describe('HomeComponent', () => {
 
     expect(fixture.nativeElement.textContent as string).toContain('row-1');
 
-    // The child emits the team_id; what that MEANS is this page's decision, and
-    // Epic 52 changed the answer. It used to be `navigate(['/process', id])`,
-    // which is the whole problem the epic exists for: working a list of teams
-    // cost a router round trip per team and the filtered list each time.
+    // The child emits the team_id; what that MEANS is this page's decision,
+    // and R1 changed the answer back. Epic 52 opened the team BESIDE the list;
+    // the rail now navigates to `/process/:id` as well, so a team could be
+    // opened two ways and the second of them put FOUR panes on screen (rail,
+    // table, conversation, inspector). One way in, and this is it.
+    routerSpy.navigate.calls.reset();
     component.onRowSelect('row-1');
 
-    expect(component.selectedTeamId).toBe('row-1');
-    expect(routerSpy.navigate).not.toHaveBeenCalledWith(['/process', 'row-1']);
+    expect(routerSpy.navigate).toHaveBeenCalledOnceWith(['/process', 'row-1']);
+    // Nothing is mounted in place: the management view has no second pane at
+    // all any more.
+    expect(fixture.nativeElement.querySelector('app-process')).toBeNull();
   });
 
   it('(28.2 AC8f) (deleteRequested) delegates to contextService.deleteTeam', async () => {
@@ -1364,32 +1360,21 @@ describe('HomeComponent', () => {
     expect(contextSpy.deleteTeam).toHaveBeenCalledWith('row-1');
   });
 
-  // --- Deleting the OPEN team closes it (Epic 52) --------------------------
+  // --- Deleting a team is now a plain delete (R1) --------------------------
+  //
+  // The close-it-first guard these two specs pinned is gone WITH the pane it
+  // protected: there is nothing mounted over the team being deleted any more,
+  // so there is no view left polling it while the request goes out. What
+  // replaces them is the assertion that deleting does not navigate — the user
+  // stays on the management view they were working.
 
-  it('deleting the open team closes the pane, and closes it BEFORE the delete', async () => {
-    component.selectedTeamId = 'row-1';
-    const order: string[] = [];
-    contextSpy.deleteTeam.and.callFake(() => {
-      // Read from INSIDE the delete: the pane must already be gone by the time
-      // the request goes out, or a mounted view keeps asking for a team the
-      // server is removing and the user watches it error instead of close.
-      order.push(`delete:selected=${String(component.selectedTeamId)}`);
-      return Promise.resolve();
-    });
+  it('(R1) deleting a team stays on the management view', async () => {
+    routerSpy.navigate.calls.reset();
 
     await component.deleteTeam('row-1');
 
-    expect(order).toEqual(['delete:selected=null']);
-    expect(component.selectedTeamId).toBeNull();
-  });
-
-  it('deleting a DIFFERENT team leaves the open one alone', async () => {
-    component.selectedTeamId = 'row-1';
-
-    await component.deleteTeam('row-2');
-
-    expect(contextSpy.deleteTeam).toHaveBeenCalledWith('row-2');
-    expect(component.selectedTeamId).toBe('row-1');
+    expect(contextSpy.deleteTeam).toHaveBeenCalledWith('row-1');
+    expect(routerSpy.navigate).not.toHaveBeenCalled();
   });
 
   it('(28.2 AC8f) (stopRequested) delegates to contextService.stopTeamAndAwait', async () => {
@@ -1430,12 +1415,18 @@ describe('HomeComponent', () => {
     return teamTable();
   }
 
-  it('(AC3, Epic 52) the child\'s (rowSelected) is bound to the page\'s selection', async () => {
+  it('(AC3, R1) the child\'s (rowSelected) is bound, and it navigates', async () => {
+    // The ONLY spec that proves the `(rowSelected)` binding still exists in
+    // home.component.html: it emits from the REAL rendered child, so a binding
+    // dropped in a rename or a merge goes red here and nowhere else. What the
+    // page DOES with the emission changed under R1; that the emission still
+    // arrives is the part that must never stop being asserted.
     const table = await renderedTable();
+    routerSpy.navigate.calls.reset();
 
     table.rowSelected.emit('row-1');
 
-    expect(component.selectedTeamId).toBe('row-1');
+    expect(routerSpy.navigate).toHaveBeenCalledOnceWith(['/process', 'row-1']);
   });
 
   it('(AC7) the child\'s (deleteRequested) is bound to deleteTeam', async () => {
@@ -1468,7 +1459,7 @@ describe('HomeComponent', () => {
 
     expect(tracked.length).toBe(1);
     await tracked[0];
-    expect(apiSpy.restoreTeam).toHaveBeenCalledWith('row-1');
+    expect(contextSpy.restoreTeamAndAwait).toHaveBeenCalledWith('row-1');
   });
 
   it('(AC11) the child\'s (descriptionSaved) is bound, and the work comes back', async () => {
@@ -1698,7 +1689,6 @@ describe('HomeComponent', () => {
         '/process',
         'team-created-1',
       ]);
-      expect(component.selectedTeamId).toBeNull();
     });
   });
 
@@ -1714,8 +1704,14 @@ describe('HomeComponent', () => {
   // review found missing: that the page ROUTES THROUGH the gate rather than
   // creating for itself, and that the gate's state and the modal's answers
   // actually travel across the seven template bindings. Every spec below drives
-  // the RENDERED page and the REAL modal; driving `creation.request` directly
-  // would prove nothing about the wiring.
+  // the REAL modal rendered by this page.
+  //
+  // R2 moved the ENTRY POINT off this page — the Create button is now a
+  // two-step wizard opened from the rail — but not the gate: `handleHideHome`
+  // still auto-creates on arrival, and that route can still open this dialog.
+  // So the opener below is `request(ns, 'auto')`, the only origin this page can
+  // produce, and the seven bindings it exercises are exactly the ones that
+  // route still depends on.
   // -------------------------------------------------------------------------
 
   describe('the creation gate, from the page (49.2)', () => {
@@ -1743,7 +1739,10 @@ describe('HomeComponent', () => {
     /** Render, select a contract-bearing namespace, and open the dialog. */
     async function openDialog(): Promise<void> {
       await renderThenSelect(nsSummary('acme-cases', 'Acme Cases', 'd', asking));
-      await component.createTeam();
+      await component.creation.request(
+        component.selectedNamespace$.value!,
+        'auto',
+      );
       fixture.detectChanges();
       // Guard the guard: every assertion below is vacuous on a dialog that
       // never opened.
@@ -1767,25 +1766,31 @@ describe('HomeComponent', () => {
       expect(second.componentInstance.creation).not.toBe(component.creation);
     });
 
-    // --- AC14: the Create button routes through the gate ---
+    // --- AC14: the page's remaining creation route goes through the gate ---
 
-    it('(AC14) the Create button opens the REAL modal on a selection that asks, and creates nothing', async () => {
+    it('(AC14) a selection that asks opens the REAL modal, and creates nothing', async () => {
       await renderThenSelect(nsSummary('acme-cases', 'Acme Cases', 'd', asking));
       contextSpy.createTeam.calls.reset();
       expect(modal().visible).toBeFalse();
 
-      await component.createTeam();
+      await component.creation.request(
+        component.selectedNamespace$.value!,
+        'auto',
+      );
       fixture.detectChanges();
 
       expect(modal().visible).toBeTrue();
       expect(contextSpy.createTeam).not.toHaveBeenCalled();
     });
 
-    it('(AC14) the Create button creates with the two-argument form when nothing is asked', async () => {
+    it('(AC14) a selection that asks NOTHING creates with the two-argument form', async () => {
       await renderThenSelect(nsSummary('agent-team-v1', 'Agent Team', 'd'));
       contextSpy.createTeam.calls.reset();
 
-      await component.createTeam();
+      await component.creation.request(
+        component.selectedNamespace$.value!,
+        'auto',
+      );
       fixture.detectChanges();
 
       expect(contextSpy.createTeam.calls.mostRecent().args).toEqual([
@@ -1795,12 +1800,29 @@ describe('HomeComponent', () => {
       expect(modal().visible).toBeFalse();
     });
 
-    it('(AC14, AC18) the no-selection guard is still the page\'s, and creates nothing', async () => {
+    it('(AC14, AC18, R2) the no-selection guard survives the Create button', async () => {
+      // The guard used to live in `createTeam()`, which is gone. It is not gone
+      // WITH it: `handleHideHome` still reads the selection and still declines
+      // to ask the gate for a creation with no team type behind it. Asserted on
+      // the surviving path, because an auto-create is precisely the one nobody
+      // is watching.
+      // Rendered first: `handleHideHome` waits on the table's page-1 seed
+      // before it decides anything, so an unrendered page never reaches the
+      // guard at all — it just hangs.
+      fixture.detectChanges();
+      await fixture.whenStable();
+      // An EMPTY page is what sends the route down the create branch; a
+      // non-empty one navigates to the first team and never asks the gate.
+      teams$.next([]);
       component.selectedNamespace$.next(null);
+      contextSpy.createTeam.calls.reset();
 
-      await component.createTeam();
+      await (component as unknown as {
+        handleHideHome(): Promise<void>;
+      }).handleHideHome();
 
       expect(contextSpy.createTeam).not.toHaveBeenCalled();
+      expect(component.creation.modalVisible).toBeFalse();
     });
 
     // --- AC8, from the page: the dropdown stays live behind the dialog ---
@@ -1845,7 +1867,10 @@ describe('HomeComponent', () => {
       await renderThenSelect(nsSummary('acme-cases', 'Acme Cases', 'd', asking));
       expect(modal().visible).toBeFalse();
 
-      await component.createTeam();
+      await component.creation.request(
+        component.selectedNamespace$.value!,
+        'auto',
+      );
       fixture.detectChanges();
 
       expect(modal().visible).toBeTrue();
@@ -1929,6 +1954,7 @@ describe('HomeComponent', () => {
       // Not tidiness: each of these left behind is a second place the same
       // decision or the same state lives, and the two would drift the moment
       // one of them is changed — which is the duplication this story removes.
+      fixture.detectChanges();
       for (const member of [
         'metadataModalVisible',
         'metadataContract',
@@ -1947,13 +1973,22 @@ describe('HomeComponent', () => {
         'handleMetadataCreateError',
         'metadataErrorMessage',
         'metadataErrorLine',
+        // Joined the list under R2. The Create button moved to the rail's
+        // two-step wizard, and a page-side handler left behind would be a
+        // second entry point into the same gate — which is the duplication
+        // this whole story removes, reintroduced through a different door.
+        'createTeam',
       ]) {
         expect((component as unknown as Record<string, unknown>)[member])
           .withContext(`HomeComponent must no longer declare ${member}`)
           .toBeUndefined();
       }
-      // What it KEEPS: the two call sites, both delegating.
-      expect(typeof component.createTeam).toBe('function');
+      // What it KEEPS: the gate itself and the dialog it drives, because the
+      // `hideHome` auto-create route still needs both.
+      expect(component.creation).toBeInstanceOf(TeamCreationService);
+      expect(
+        fixture.debugElement.query(By.directive(TeamMetadataModalComponent)),
+      ).not.toBeNull();
     });
   });
 
@@ -2632,16 +2667,16 @@ describe('HomeComponent', () => {
   });
 
   // =======================================================================
-  // The split (Epic 52)
+  // The management view inside the console shell (Epic 56, R1)
   //
-  // The arithmetic of the divider is tested in `split-width.spec.ts` without
-  // a browser, and the divider's own ARIA and keys in its component spec.
-  // What is left here is the PAGE's half: when the second pane exists, what
-  // the page puts in it, and what the URL says about it.
+  // The page keeps every capability it had; what changes is the chrome around
+  // it. The divider and the Close control that used to be asserted here went
+  // with the split under R1 — there is no second pane to divide or close — so
+  // what is left is the one piece of chrome this page still owns: the way back
+  // to a collapsed rail.
   // =======================================================================
 
-  describe('the list and the open team, side by side (52.2)', () => {
-    /** Render the page and settle its two async ngOnInit awaits. */
+  describe('console chrome (56)', () => {
     async function render(): Promise<void> {
       fixture.detectChanges();
       await fixture.whenStable();
@@ -2650,274 +2685,276 @@ describe('HomeComponent', () => {
       fixture.detectChanges();
     }
 
-    function processPane(): HTMLElement | null {
-      return fixture.nativeElement.querySelector('app-process');
+    function railToggle(): HTMLElement | null {
+      return fixture.nativeElement.querySelector('.home-controls app-icon-button');
     }
 
-    function processStub(): ProcessStubComponent | null {
-      return (
-        fixture.debugElement.query(By.directive(ProcessStubComponent))
-          ?.componentInstance ?? null
+    it('offers no rail control while the rail is on screen', async () => {
+      // A permanent "show sidebar" beside a visible sidebar is furniture.
+      await render();
+      expect(railToggle()).toBeNull();
+    });
+
+    it('is the ONLY way back to a collapsed rail, and brings it back', async () => {
+      // The rail's own collapse control lives in the rail: collapsed, it goes
+      // with it, so without this button the state would be unleavable.
+      const viewService = TestBed.inject(ViewService);
+      viewService.isRailCollapsed$.next(true);
+      await render();
+
+      const toggle = railToggle();
+      expect(toggle).not.toBeNull();
+
+      const button = toggle!.querySelector('button') as HTMLButtonElement;
+      expect(button.getAttribute('aria-label')).toBe('chrome.showSidebar');
+      button.click();
+
+      expect(viewService.isRailCollapsed$.value).toBeFalse();
+    });
+
+    it('(R1) mounts no second pane and no divider, whatever the URL says', async () => {
+      // The four-pane defect, pinned. `?team=` used to open a team beside the
+      // list; with the rail also navigating to `/process/:id`, a user could
+      // reach rail + table + conversation + inspector at once. The parameter is
+      // still PARSED (`HomeUrlState.team` is untouched) — it simply no longer
+      // mounts anything here.
+      setUrl({ team: 'team-9' });
+      await render();
+
+      expect(fixture.nativeElement.querySelector('app-process')).toBeNull();
+      expect(fixture.nativeElement.querySelector('app-split-divider')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.home-split')).toBeNull();
+      expect(
+        fixture.nativeElement.querySelector('[data-test="close-open-team-btn"]'),
+      ).toBeNull();
+    });
+
+    it('(R1) the table is a DIRECT child of the content section, with no split wrapper', async () => {
+      // The wrapper divs are gone, not merely emptied: `.main-container` is now
+      // the content section's own child. A leftover `.home-split` would still
+      // be a flex ROW, and the table inside it would size itself against a
+      // second pane that never arrives.
+      await render();
+
+      const container = fixture.nativeElement.querySelector(
+        '.content > .main-container',
       );
+      expect(container).not.toBeNull();
+      expect(container.querySelector('app-team-table')).not.toBeNull();
+    });
+  });
+
+  // =======================================================================
+  // R1 / R2 — the management view, and what it deliberately KEEPS
+  //
+  // The reversal of Epic 52 is a narrow one: the split goes, creation moves to
+  // the rail, and NOTHING ELSE. The two specs below are the guard against a
+  // later pass "finishing the job" — the team-type select in particular reads
+  // like creation furniture and is in fact the input four non-creation
+  // consumers derive from.
+  // =======================================================================
+
+  describe('what the management view keeps (R1, R2)', () => {
+    /** A team type whose contract declares one INDEXED metadata field. */
+    const KEPT_NS = nsSummary(
+      'acme-cases',
+      'Acme Cases',
+      'd',
+      contract([field('case_id', { index: true })]),
+    );
+
+    async function render(): Promise<void> {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
     }
 
-    function divider(): HTMLElement | null {
-      return fixture.nativeElement.querySelector('app-split-divider');
+    it('(R2) the team-type select is STILL rendered, and still feeds the filter form', async () => {
+      // Not creation furniture. The selection decides which metadata fields the
+      // filter offers (Epic 48), which key titles a row (Epic 53), which
+      // namespace the Configuration dialog edits, and what `?type=` means.
+      // Removing it with the Create button would take all four offline.
+      apiSpy.getNamespaces.and.returnValue(Promise.resolve([KEPT_NS]));
+      await render();
+
+      expect(fixture.nativeElement.querySelector('p-select')).not.toBeNull();
+      expect(
+        fixture.nativeElement.querySelector('label[for="namespace-select"]'),
+      ).not.toBeNull();
+      expect(component.selectedNamespace$.value?.namespace).toBe('acme-cases');
+
+      // ...and the form is reading it, so the select is wired and not merely
+      // present.
+      const form = fixture.debugElement.query(
+        By.directive(TeamFilterComponent),
+      ).componentInstance as TeamFilterComponent;
+      expect(form.namespace?.namespace).toBe('acme-cases');
+    });
+
+    it('(R2) the Configuration button and the metadata dialog both survive', async () => {
+      apiSpy.getNamespaces.and.returnValue(Promise.resolve([KEPT_NS]));
+      await render();
+
+      const configure = fixture.nativeElement.querySelector(
+        '[data-test="edit-namespace-yaml-btn"]',
+      ) as HTMLButtonElement;
+      expect(configure).not.toBeNull();
+      expect(configure.disabled).toBeFalse();
+      expect(
+        fixture.debugElement.query(By.directive(TeamMetadataModalComponent)),
+      ).not.toBeNull();
+    });
+  });
+
+  // =======================================================================
+  // R1 — what the page stopped saying, and what it stopped listening to
+  //
+  // The split left three traces behind it that no other spec would notice:
+  // a `?team=` parameter this page no longer populates, a `localStorage` key
+  // it no longer reads, and a subscription to the query string it no longer
+  // needs. Each of them is silent when it goes wrong — a stale `?team=` in a
+  // shared link, a width read from a key R3 has replaced, a live subscription
+  // on a destroyed page.
+  // =======================================================================
+
+  describe('the traces the split left behind (R1)', () => {
+    async function render(): Promise<void> {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
     }
 
-    function listPane(): HTMLElement {
-      return fixture.nativeElement.querySelector('.home-split__list');
-    }
-
-    beforeEach(() => {
-      localStorage.removeItem(SPLIT_STORAGE_KEY);
-    });
-
-    afterEach(() => {
-      localStorage.removeItem(SPLIT_STORAGE_KEY);
-    });
-
-    it('(FR7) with no team selected there is no divider and no second pane', async () => {
-      await render();
-
-      expect(component.selectedTeamId).toBeNull();
-      expect(processPane()).toBeNull();
-      expect(divider()).toBeNull();
-      // No `flex-basis` either: the list is the only child and takes the width
-      // it would have taken before this epic existed.
-      expect(listPane().style.flexBasis).toBe('');
-    });
-
-    it('(FR3) selecting a team puts the divider and the open team beside the list', async () => {
-      await render();
-      component.onRowSelect('team-9');
-      fixture.detectChanges();
-
-      expect(divider()).not.toBeNull();
-      expect(processPane()).not.toBeNull();
-      // The id reaches the embedded view through the input; the page never
-      // writes `currentProcessId$` itself (trap T3).
-      expect(processStub()!.teamId).toBe('team-9');
-    });
-
-    it('(FR4, FR5) the list pane is sized as a PERCENTAGE, not in pixels', async () => {
-      await render();
-      component.onRowSelect('team-9');
-      fixture.detectChanges();
-
-      expect(listPane().style.flexBasis).toBe(`${SPLIT_DEFAULT_PERCENT}%`);
-    });
-
-    it('(FR5) a stored width is adopted on arrival', async () => {
-      localStorage.setItem(SPLIT_STORAGE_KEY, '55');
-      await render();
-      component.onRowSelect('team-9');
-      fixture.detectChanges();
-
-      expect(component.splitPercent).toBe(55);
-      expect(listPane().style.flexBasis).toBe('55%');
-    });
-
-    it('(FR4, FR5) a stored width outside the bounds comes back at the nearest one', async () => {
-      localStorage.setItem(SPLIT_STORAGE_KEY, '99');
-      await render();
-
-      expect(component.splitPercent).toBe(SPLIT_MAX_PERCENT);
-    });
-
-    it('(FR5) a corrupt stored width falls back to the default rather than laying out from it', async () => {
-      localStorage.setItem(SPLIT_STORAGE_KEY, 'forty');
-      await render();
-
-      expect(component.splitPercent).toBe(SPLIT_DEFAULT_PERCENT);
-    });
-
-    it('a drag moves the panes without writing storage; the drop persists once', async () => {
-      await render();
-      component.onRowSelect('team-9');
-
-      component.onSplitPercent(51);
-      component.onSplitPercent(52);
-      expect(component.splitPercent).toBe(52);
-      expect(localStorage.getItem(SPLIT_STORAGE_KEY)).toBeNull();
-
-      component.onSplitCommit(52);
-      expect(localStorage.getItem(SPLIT_STORAGE_KEY)).toBe('52');
-    });
-
-    it('(FR4) the page never stores a width it would refuse to read back', async () => {
-      await render();
-      component.onSplitCommit(1000);
-
-      expect(localStorage.getItem(SPLIT_STORAGE_KEY)).toBe(String(SPLIT_MAX_PERCENT));
-      expect(component.splitPercent).toBe(SPLIT_MAX_PERCENT);
-    });
-
-    it('(FR6) the rendered divider carries the width it is bound to', async () => {
-      await render();
-      component.onRowSelect('team-9');
-      component.onSplitCommit(SPLIT_MIN_PERCENT + SPLIT_COARSE_STEP_PERCENT);
-      fixture.detectChanges();
-
-      expect(divider()!.getAttribute('aria-valuenow')).toBe(
-        String(SPLIT_MIN_PERCENT + SPLIT_COARSE_STEP_PERCENT),
-      );
-    });
-
-    it('(FR7) closing the team removes the split and gives the list the width back', async () => {
-      await render();
-      component.onRowSelect('team-9');
-      fixture.detectChanges();
-      expect(processPane()).not.toBeNull();
-
-      component.closeTeam();
-      fixture.detectChanges();
-
-      expect(component.selectedTeamId).toBeNull();
-      expect(processPane()).toBeNull();
-      expect(divider()).toBeNull();
-      expect(listPane().style.flexBasis).toBe('');
-    });
-
-    it('the Close control in the pane is what closes it', async () => {
-      await render();
-      component.onRowSelect('team-9');
-      fixture.detectChanges();
-
-      const close = fixture.nativeElement.querySelector(
-        '[data-test="close-open-team-btn"]',
-      ) as HTMLElement;
-      expect(close).not.toBeNull();
-      close.click();
-      fixture.detectChanges();
-
-      expect(component.selectedTeamId).toBeNull();
-    });
-
-    it('a dangling team reported by the embedded view drops the selection', async () => {
-      await render();
-      component.onRowSelect('deleted-team');
-      fixture.detectChanges();
-
-      // Through the real binding, so an `(teamUnavailable)` lost in a rename
-      // fails here rather than passing on a direct method call.
-      processStub()!.teamUnavailable.emit('deleted-team');
-      fixture.detectChanges();
-
-      expect(component.selectedTeamId).toBeNull();
-      expect(processPane()).toBeNull();
-    });
-
-    it('re-selecting the team already open changes nothing and writes no URL', async () => {
-      await render();
-      component.onRowSelect('team-9');
-      routerSpy.navigate.calls.reset();
-
-      component.onRowSelect('team-9');
-
-      expect(routerSpy.navigate).not.toHaveBeenCalled();
-    });
-
-    it('the open row is told to the table, so the highlight says which one it is', async () => {
-      await render();
-      component.onRowSelect('team-9');
-      fixture.detectChanges();
-
-      expect(teamTable().selectedTeamId).toBe('team-9');
-    });
-
-    // --- the URL decision (trap T5) ---------------------------------------
-
-    it('(T5) the selected team joins the filter and the page in the URL', async () => {
-      await render();
-      routerSpy.navigate.calls.reset();
-
-      component.onRowSelect('team-9');
-
-      const extras = routerSpy.navigate.calls.mostRecent()
-        .args[1] as NavigationExtras;
-      expect(extras.queryParams).toEqual({ team: 'team-9' });
-      // `replaceUrl`, like every other write on this page. `restoreFromUrl`
-      // reads the ENTRY state and deliberately does not subscribe, so a pushed
-      // history entry would change the address bar on Back and leave the pane
-      // showing the team it named — a URL that lies rather than a Back that
-      // works.
-      expect(extras.replaceUrl).toBeTrue();
-    });
-
-    it('(T5) closing the team takes it back out of the URL', async () => {
-      await render();
-      component.onRowSelect('team-9');
-      routerSpy.navigate.calls.reset();
-
-      component.closeTeam();
-
-      const extras = routerSpy.navigate.calls.mostRecent()
-        .args[1] as NavigationExtras;
-      expect(extras.queryParams).toEqual({});
-    });
-
-    it('(T5) the team survives beside a filter, and the filter beside it', async () => {
-      setUrl({ team: 'team-9', type: 'acme', 'meta.case_id': 'C-1' });
+    it('(R1) the page writes no ?team=, even arriving with one', async () => {
+      // `HomeUrlState.team` deliberately STAYS in the mapping — 16 specs in
+      // home-url.spec.ts pass it as a required property — so the guard has to
+      // be that this page passes `null`, not that the field is gone. An old
+      // bookmark's `?team=` is dropped on the first write rather than echoed
+      // back at a page that can no longer honour it.
+      setUrl({ team: 'team-9', type: 'acme-cases' });
       apiSpy.getNamespaces.and.returnValue(
-        Promise.resolve([nsSummary('acme', 'Acme', 'd', contract([field('case_id', { index: true })]))]),
+        Promise.resolve([nsSummary('acme-cases', 'Acme Cases', 'd')]),
       );
       await render();
-
-      expect(component.selectedTeamId).toBe('team-9');
-      expect(component.restoredFilter.meta).toEqual({ case_id: 'C-1' });
-    });
-
-    it('(T5) a URL naming a team opens it on arrival — a shared link shows what was sent', async () => {
-      setUrl({ team: 'team-9' });
-      await render();
-
-      expect(component.selectedTeamId).toBe('team-9');
-      expect(processPane()).not.toBeNull();
-    });
-
-    it('(T5) an empty ?team= is not a selection', async () => {
-      setUrl({ team: '' });
-      await render();
-
-      expect(component.selectedTeamId).toBeNull();
-      expect(processPane()).toBeNull();
-    });
-
-    it('(T5) the remembered "back to my list" params carry the open team too', async () => {
-      await render();
-      component.onRowSelect('team-9');
-
-      expect(contextSpy.homeQueryParams).toEqual({ team: 'team-9' });
-    });
-
-    it('(T5) the URL governs the selection for as long as the page lives', async () => {
-      setUrl({ team: 'team-9' });
-      await render();
-      expect(component.selectedTeamId).toBe('team-9');
-
-      // A query-string change on THIS route — `navigate(['/'])` from the Home
-      // menu item, a hand-edited address, a Back. None of them rebuilds this
-      // page, so without tracking the pane would go on showing a team the URL
-      // no longer names.
-      setUrl({});
-      fixture.detectChanges();
-
-      expect(component.selectedTeamId).toBeNull();
-      expect(processPane()).toBeNull();
-    });
-
-    it('(T5) tracking the URL cannot loop: the page\'s own write is a no-op', async () => {
-      await render();
-      component.onRowSelect('team-9');
-
-      // Replay exactly what `writeUrl` composed, the way the router would.
-      queryParamMap$.next(convertToParamMap({ team: 'team-9' }));
       routerSpy.navigate.calls.reset();
+
+      component.onFilterChanged(NO_TEAM_FILTER);
+
+      const extras = routerSpy.navigate.calls.mostRecent()
+        .args[1] as NavigationExtras;
+      expect('team' in (extras.queryParams as Record<string, unknown>))
+        .toBeFalse();
+    });
+
+    it('(R1) the remembered "back to my list" params carry no team either', async () => {
+      // The logo replays these when the user is somewhere else entirely, so a
+      // team left in them would re-open a pane this page cannot render.
+      setUrl({ team: 'team-9' });
+      await render();
+
+      expect(contextSpy.homeQueryParams).toEqual({});
+    });
+
+    it('(R1) the orphaned split-width key is never read', async () => {
+      // The literal is deliberate and is NOT imported: this spec exists to say
+      // that `akgentic.home.split-percent` is a key this page must not touch.
+      // R3's pane layout gets its own (`akgentic.console.pane-layout`) rather
+      // than inheriting a value stored against 20/70 bounds it does not share.
+      const getItem = spyOn(localStorage, 'getItem').and.callThrough();
+
+      await render();
+
+      const keysRead = getItem.calls.allArgs().map(([key]) => key);
+      expect(keysRead).not.toContain('akgentic.home.split-percent');
+    });
+
+    it('(R1) the page does not subscribe to the query string at all', async () => {
+      // `restoreFromUrl` reads the SNAPSHOT, once. The selection was the only
+      // reason to track emissions, and tracking is what made a loop possible in
+      // the first place — the page feeding itself its own `writeUrl` output.
+      await render();
+
+      expect(queryParamMap$.observed).toBeFalse();
+    });
+
+    it('(R1) selecting the SAME row twice navigates twice', async () => {
+      // The "already open, do nothing" guard belonged to a pane that stayed on
+      // screen. A router navigation is idempotent by itself, and a row that
+      // silently did nothing on the second click would be a dead control after
+      // a Back.
+      await render();
+      routerSpy.navigate.calls.reset();
+
+      component.onRowSelect('team-9');
+      component.onRowSelect('team-9');
+
+      expect(routerSpy.navigate).toHaveBeenCalledTimes(2);
+      expect(routerSpy.navigate.calls.allArgs()).toEqual([
+        [['/process', 'team-9']],
+        [['/process', 'team-9']],
+      ]);
+    });
+
+    it('(R1) ngOnDestroy still releases the creation subscription', async () => {
+      // The URL subscription went with the selection; the `created$` one did
+      // NOT, because `handleHideHome` still needs it. A teardown that dropped
+      // both while only one was gone would leak a live gate subscriber per
+      // page mount.
+      await render();
+
+      component.ngOnDestroy();
+
+      expect(
+        (component as unknown as Record<string, unknown>)['createdSub'],
+      ).toBeNull();
+      expect(
+        (component as unknown as Record<string, unknown>)['urlSub'],
+      ).toBeUndefined();
+    });
+
+    it('(R1) no row is marked as open — the table is told nothing', async () => {
+      // `[selectedTeamId]` is unbound now. The input SURVIVES on the child (it
+      // is optional and defaults to `null`), so the failure this guards against
+      // is a later pass re-binding it to something stale and leaving a row
+      // highlighted for a team that is no longer on screen.
+      await render();
+      component.onRowSelect('team-9');
       fixture.detectChanges();
 
-      expect(component.selectedTeamId).toBe('team-9');
-      expect(routerSpy.navigate).not.toHaveBeenCalled();
+      expect(teamTable().selectedTeamId).toBeNull();
+    });
+
+    it('(R1) navigating away from a FILTERED list keeps the filter, and the way back', async () => {
+      // The deliberate reversal, and its mitigation. Working a filtered set one
+      // team at a time now costs a navigation per team — but the filter is not
+      // thrown away by it: the service still holds it and the remembered "back
+      // to my list" parameters still describe it, so the return trip lands on
+      // the same narrowed list rather than on an unfiltered page 1.
+      setUrl({ type: 'acme-cases', 'meta.case_id': 'C-1234' });
+      apiSpy.getNamespaces.and.returnValue(
+        Promise.resolve([
+          nsSummary(
+            'acme-cases',
+            'Acme Cases',
+            'd',
+            contract([field('case_id', { index: true })]),
+          ),
+        ]),
+      );
+      await render();
+      routerSpy.navigate.calls.reset();
+
+      component.onRowSelect('team-9');
+
+      expect(routerSpy.navigate).toHaveBeenCalledOnceWith(['/process', 'team-9']);
+      expect(contextSpy.clearFilter).not.toHaveBeenCalled();
+      expect(contextSpy.homeQueryParams).toEqual({
+        type: 'acme-cases',
+        'meta.case_id': 'C-1234',
+      });
     });
   });
 });

@@ -24,6 +24,17 @@ export interface Environment {
    */
   hideAgentNames: boolean;
   initRightPanelCollapsed: boolean;
+  /**
+   * Start with the team rail collapsed.
+   *
+   * OPTIONAL, unlike its counterpart above, and that asymmetry is deliberate:
+   * `initRightPanelCollapsed` has been in every `config.json` since before
+   * those files were written, and this key has not. `ConfigService` supplies
+   * the default (expanded), so a deployment that upgrades without touching its
+   * config keeps the navigation it already had rather than booting with its
+   * only route between teams hidden behind a control the user has not met.
+   */
+  initRailCollapsed?: boolean;
   userInputEnterKeySubmit: boolean;
   favicon: string;
   /**

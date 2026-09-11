@@ -1,45 +1,59 @@
 /*
- * The rating control.
+ * The turn's action row — copy, and the two thumbs.
  *
- * QUIET BY DEFAULT, AND THE DEFAULT IS NOT DECIDED HERE.
- * `--akg-feedback-opacity` is published by the turn this control sits in
- * (`chat-message.component.scss`), which is the only thing that knows whether
- * the reader is looking at it. The fallback is `1`: a host that says nothing
- * gets a visible control, so an unwired parent fails obviously rather than
- * silently rendering an invisible button.
+ * Every colour here is a token. The hard-coded blue this file was written with
+ * predates them and would have been the only untokenised accent on the surface.
  *
- * The opacity applies to the ICONS, never to `:host` — the host also carries
- * the feedback dialog, and fading the host would fade the open dialog with it
- * the moment the pointer left the turn.
+ * The mock's geometry: three 28px buttons, LEFT-aligned under the prose, 10px
+ * below it. It was `justify-content: flex-end` with two bare glyphs, which put
+ * the controls against the right edge of a turn whose text starts on the left —
+ * on a one-line answer they floated with nothing above them, and the row read
+ * as belonging to the turn below rather than the one it rates.
  *
- * Colours moved onto the epic-50 conversation tokens; the hard-coded blue this
- * file was written with predates them and would have been the only untokenised
- * accent left on the surface.
+ * `gap: 2px`, not the old 10px margin: the buttons now have 28px hit targets
+ * with their own hover ground, so the space BETWEEN them is a seam and no
+ * longer has to stand in for the target itself.
  */
-.feedback-icons {
+.action-row {
   display: flex;
-  justify-content: flex-end;
-  margin-top: 6px;
+  justify-content: flex-start;
+  gap: 2px;
+  margin-top: 10px;
 
+  /*
+   * QUIET BY DEFAULT, AND THE DEFAULT IS NOT DECIDED HERE.
+   * `--akg-feedback-opacity` is published by the turn this control sits in
+   * (`chat-message.component.scss`), which is the only thing that knows whether
+   * the reader is looking at it. The fallback is `1`: a host that says nothing
+   * gets a visible control, so an unwired parent fails obviously rather than
+   * silently rendering an invisible button.
+   *
+   * The mock parks this row at a flat `opacity: .55` because a static prototype
+   * has no hover state to reveal it with. Reproducing that literally would put
+   * three permanent pieces of furniture under all forty turns of a transcript —
+   * the exact cost Epic 50 spent its budget removing. The reveal is the
+   * interactive version of the same intent.
+   *
+   * The opacity applies to the ROW, never to `:host` — the host also carries
+   * the feedback dialog, and fading the host would fade the open dialog with it
+   * the moment the pointer left the turn.
+   */
   opacity: var(--akg-feedback-opacity, 1);
   transition: opacity 120ms ease-in-out;
+}
 
-  i {
-    cursor: pointer;
-    margin-left: 10px;
-    font-size: 0.95rem;
-    color: var(--akg-text-faint);
-    transition: color 120ms ease-in-out;
-
-    &:hover {
-      color: var(--akg-accent-fg);
-    }
-
-    /* The thumb the user actually chose. */
-    &.selected {
-      color: var(--akg-accent-fg);
-    }
-  }
+/*
+ * The thumb the user actually chose.
+ *
+ * `tone="pressed"` on the button already supplies the sustained ground, which
+ * is the shared console language for "this toggle is on". The accent on top of
+ * it is what separates a rating from a pressed pane toggle: it is a judgement
+ * the user recorded, not a piece of chrome they left open. `::ng-deep` because
+ * the target is the primitive's own inner button, and reaching it is the only
+ * channel a caller has for a state the primitive does not model.
+ */
+.action-row app-icon-button.is-chosen ::ng-deep .icon-button {
+  color: var(--akg-accent-fg);
 }
 
 /*
@@ -52,7 +66,7 @@
  * whenever a rating exists for this message, and it overrides whatever the
  * turn published.
  */
-:host(.rated) .feedback-icons {
+:host(.rated) .action-row {
   opacity: 1;
 }
 

@@ -1,0 +1,62 @@
+<!--
+  The `id` is a CONTRACT, not decoration: the conversation header's Details
+  button points its `aria-controls` at it, so a screen reader can be told what
+  that button reveals. Renaming it silently breaks that link, since nothing
+  errors when `aria-controls` names an element that does not exist.
+-->
+<aside id="console-inspector" class="inspector">
+  <div class="inspector__title">
+    <span class="inspector__title-text">{{ 'inspector.title' | translate }}</span>
+    <span class="inspector__title-spacer"></span>
+    <!--
+      The swap control (R3) sits BESIDE the close X rather than in the
+      conversation header, because it is an action on THIS pane and the pane is
+      where the user is looking when they decide it is on the wrong side.
+
+      Its label states the DESTINATION, not the current position: "Move to the
+      left" is what the button will do, which is the only thing a button label
+      should ever promise. That is why the key flips with `side` instead of one
+      key saying "Swap sides" — a label that names the action tells a screen
+      reader user which way the pane will go without their having to know which
+      way it faces now.
+    -->
+    <app-icon-button
+      data-test="inspector-swap"
+      size="sm"
+      [label]="swapLabelKey | translate"
+      (pressed)="swapSides.emit()"
+    >
+      <!-- Geometry only: the shared primitive owns the glyph's size and stroke.
+           One arrow, mirrored in CSS for the other direction — two near
+           identical path sets would be two places for the same shape to drift. -->
+      <svg
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+        [class.inspector__swap-glyph--mirrored]="side === 'left'"
+      >
+        <path d="M20 4v16M15 8l-4 4 4 4M11 12h-7" />
+      </svg>
+    </app-icon-button>
+    <app-icon-button
+      data-test="inspector-close"
+      size="sm"
+      [label]="'inspector.close' | translate"
+      (pressed)="viewService.toggleRightColumn()"
+    >
+      <!-- Geometry only: the shared primitive owns the glyph's size and stroke. -->
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 6l12 12M18 6L6 18" />
+      </svg>
+    </app-icon-button>
+  </div>
+
+  <app-inspector-tabs
+    [options]="options"
+    [mode]="mode"
+    (modeChange)="modeChange.emit($event)"
+  ></app-inspector-tabs>
+
+  <div class="inspector__body">
+    <ng-content></ng-content>
+  </div>
+</aside>

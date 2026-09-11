@@ -1,0 +1,84 @@
+/* The top of the height chain (Epic 56).
+   
+   Every scroll region in the app — the transcript, the inspector body, the
+   teams table — is a `flex: 1; min-height: 0` box some way down a chain that
+   starts here. The chain fails SILENTLY: if any single link forgets its
+   `min-height: 0`, or takes the flex default and sizes to its content, nothing
+   errors and nothing looks obviously broken — the regions simply run off the
+   bottom of the window and their scrollbars stop appearing. It has already
+   happened once in this codebase, to a `<section>` that had no rule at all;
+   see the long note in `process.component.scss`.
+   
+   So the two rules below are load-bearing and neither is decoration:
+     - `height: 100vh` + `overflow: hidden` here fixes the total, so nothing
+       below can make the PAGE scroll instead of a pane.
+     - `min-height: 0` on the main column unlocks it, so a tall transcript
+       shrinks the column's scroll box rather than growing the column. */
+:host {
+  display: flex;
+  height: 100vh;
+  width: 100%;
+  overflow: hidden;
+  background: var(--akg-page-bg);
+}
+
+/* The routed content's column. A bare flex COLUMN on purpose: it decides
+   nothing about what is inside it, so `ProcessComponent` can be the row that
+   holds the conversation and the inspector, and `HomeComponent` can be its own
+   layout, without either of them fighting a rule set out here.
+   
+   `min-width: 0` (not just `min-height`) because a flex item refuses by default
+   to shrink below its content's intrinsic width: without it one long
+   unbreakable line in a message pushes the whole column wider than the viewport
+   and the rail gets squeezed off the edge.
+   
+   NO BORDER HERE, and that is a correction rather than an omission. An earlier
+   version of this rule carried `border-right` and claimed it drew the seam
+   between the conversation and the inspector. It cannot: this column is the
+   LAST flex item and takes all remaining width, so its right edge is the
+   viewport's right edge — the inspector sits INSIDE it, not beside it, because
+   `ProcessComponent` owns both panes (see `console-shell.component.ts`). All
+   that rule drew was a hairline hugging the window.
+   
+   The seam is drawn the way the design draws it: by the ground change, white
+   conversation against tinted pane. `.conversation-pane` in
+   `process.component.scss` and the inspector's `:host` both say so, and both
+   deliberately decline a border there — so there is exactly one story about
+   that edge now, in three files that agree.
+   
+   The rail's edge is not this column's business either. It is drawn the same
+   way, by the same ground change, and the object standing on it is
+   `app-split-divider` — a sibling of the rail in THIS component's template,
+   because the rail is a flex item of this row and of no other. See
+   `console-shell.component.ts` for why the console's two draggable boundaries
+   are bound in two files and share everything else. */
+.console-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--akg-overlay-bg);
+}
+
+/* A COLLAPSED RAIL HAS NO DRAGGABLE EDGE (W8b).
+
+   Not tidiness: with the rail pinned at `width: 0` a drag moves nothing on
+   screen and would still rewrite the stored width, so the user would find the
+   rail at a size they never chose the next time they opened it. Exactly the
+   rule `process.component.html` applies to the inspector's divider, reached a
+   different way.
+
+   THE STATE IS READ OFF THE ELEMENT, NOT OFF A SUBJECT. `console-rail` already
+   publishes it as a host class (`@HostBinding('class.collapsed')`), and the
+   divider is its immediate next sibling by construction — both are children of
+   this template, so this selector cannot be broken by anything outside it
+   without also breaking the flex row. That keeps the shell out of the business
+   of observing pane state, which the frame's own suite pins it not to do.
+
+   `display: none` rather than `visibility` or an opacity: it must leave the
+   tab order and stop receiving pointer events, or a keyboard user tabbing past
+   a rail that is not on the screen lands on a control that resizes it. */
+app-console-rail.collapsed + app-split-divider {
+  display: none;
+}

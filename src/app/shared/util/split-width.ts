@@ -43,6 +43,32 @@ export const SPLIT_COARSE_STEP_PERCENT = 10;
 export const SPLIT_STORAGE_KEY = 'akgentic.home.split-percent';
 
 /**
+ * The range a particular divider is allowed to move in.
+ *
+ * The bounds became a PARAMETER when the console gained a second split (R3),
+ * and not for tidiness. This module measures the LEFTMOST pane's share, so a
+ * preference about one identified pane reads as two different ranges depending
+ * on which side that pane is on: an inspector allowed 18..50% of the row is a
+ * leading pane of 18..50 when it sits on the left, and of 50..82 when the
+ * conversation leads. One pair of module constants cannot be both, and a
+ * divider clamped to the wrong pair simply stops in the wrong place — no error,
+ * no failing assertion, just a drag that will not go where it is pulled.
+ */
+export interface SplitBounds {
+  readonly min: number;
+  readonly max: number;
+}
+
+/**
+ * The teams-list split's own range, and the default for every function here —
+ * so every call site that predates the parameter keeps the behaviour it had.
+ */
+export const DEFAULT_SPLIT_BOUNDS: SplitBounds = {
+  min: SPLIT_MIN_PERCENT,
+  max: SPLIT_MAX_PERCENT,
+};
+
+/**
  * Bring a percentage inside the allowed range, at one decimal of precision.
  *
  * The rounding is here rather than at the call sites so that a value which has
@@ -54,14 +80,20 @@ export const SPLIT_STORAGE_KEY = 'akgentic.home.split-percent';
  * A non-finite input yields the DEFAULT rather than a bound. It means the
  * caller had no usable number at all — a corrupt stored value, a measurement
  * taken before layout — and either bound would be an assertion about intent
- * that nothing supports.
+ * that nothing supports. The default is itself brought inside `bounds`, because
+ * a caller with a narrower range than the module's would otherwise be handed a
+ * width outside the one it just declared.
  */
-export function clampSplitPercent(percent: number): number {
+export function clampSplitPercent(
+  percent: number,
+  bounds: SplitBounds = DEFAULT_SPLIT_BOUNDS,
+): number {
+  const inRange = (value: number): number =>
+    Math.min(bounds.max, Math.max(bounds.min, value));
   if (!Number.isFinite(percent)) {
-    return SPLIT_DEFAULT_PERCENT;
+    return inRange(SPLIT_DEFAULT_PERCENT);
   }
-  const rounded = Math.round(percent * 10) / 10;
-  return Math.min(SPLIT_MAX_PERCENT, Math.max(SPLIT_MIN_PERCENT, rounded));
+  return inRange(Math.round(percent * 10) / 10);
 }
 
 /** Everything the pointer maths needs, in the units the DOM reports them in. */
@@ -96,6 +128,7 @@ export interface SplitPointerGeometry {
  */
 export function splitPercentFromPointer(
   geometry: SplitPointerGeometry,
+  bounds: SplitBounds = DEFAULT_SPLIT_BOUNDS,
 ): number | null {
   const { pointerX, containerLeft, containerWidth, dividerWidth } = geometry;
   if (!Number.isFinite(containerWidth) || containerWidth <= 0) {
@@ -106,7 +139,7 @@ export function splitPercentFromPointer(
   }
   const halfDivider = Number.isFinite(dividerWidth) ? dividerWidth / 2 : 0;
   const listWidth = pointerX - containerLeft - halfDivider;
-  return clampSplitPercent((listWidth / containerWidth) * 100);
+  return clampSplitPercent((listWidth / containerWidth) * 100, bounds);
 }
 
 /**
@@ -116,8 +149,12 @@ export function splitPercentFromPointer(
  * somehow been handed an out-of-range value walks back into the range rather
  * than being pinned at a bound: stepping from 95 by -10 gives 60, not 70.
  */
-export function stepSplitPercent(current: number, delta: number): number {
-  return clampSplitPercent(clampSplitPercent(current) + delta);
+export function stepSplitPercent(
+  current: number,
+  delta: number,
+  bounds: SplitBounds = DEFAULT_SPLIT_BOUNDS,
+): number {
+  return clampSplitPercent(clampSplitPercent(current, bounds) + delta, bounds);
 }
 
 /**
@@ -129,7 +166,10 @@ export function stepSplitPercent(current: number, delta: number): number {
  * rather than rejected: a stored value predating a change to the bounds is
  * still a statement of preference, and the nearest allowed width honours it.
  */
-export function parseSplitPercent(raw: string | null): number | null {
+export function parseSplitPercent(
+  raw: string | null,
+  bounds: SplitBounds = DEFAULT_SPLIT_BOUNDS,
+): number | null {
   if (raw === null) {
     return null;
   }
@@ -141,10 +181,13 @@ export function parseSplitPercent(raw: string | null): number | null {
   if (!Number.isFinite(value)) {
     return null;
   }
-  return clampSplitPercent(value);
+  return clampSplitPercent(value, bounds);
 }
 
 /** Render a width for storage. Clamped, so nothing out of range is ever stored. */
-export function formatSplitPercent(percent: number): string {
-  return String(clampSplitPercent(percent));
+export function formatSplitPercent(
+  percent: number,
+  bounds: SplitBounds = DEFAULT_SPLIT_BOUNDS,
+): string {
+  return String(clampSplitPercent(percent, bounds));
 }

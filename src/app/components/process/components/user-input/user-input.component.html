@@ -3,24 +3,28 @@
     <span>{{ "chat.input.sendToPrefix" | translate: { agents: selectedAgentsDisplay } }}</span>
     <i class="pi pi-times reply-indicator-close" role="button" [attr.aria-label]="'chat.input.clearSendTo' | translate" (click)="clearSendTo()"></i>
   </div>
-  <p-floatlabel variant="in">
-    <div class="input-row">
-      <textarea
-        pTextarea
-        rows="4"
-        cols="50"
-        [autoResize]="true"
-        [style]="{ 'max-height': '400px', 'overflow-y': 'auto' }"
-        [(ngModel)]="userInput"
-        (keydown.enter)="userInputEnterKeySubmit ? sendMessage() : null"
-        (keydown.meta.enter)="sendMessage()"
-        (keydown.control.enter)="sendMessage()"
-        [mentionConfig]="mentionConfig"
-        [mentionListTemplate]="mentionItemTemplate"
-      ></textarea>
-      <label for="on_label">{{ "chat.input.processInput" | translate }}</label>
-    </div>
-  </p-floatlabel>
+
+  <!--
+    One resting row, not four.
+
+    `rows="4"` reserved four empty lines of furniture on every screen before a
+    word was typed; `autoResize` then grew the field anyway, so the four were
+    never a capacity, only a hole. The cap lives in the stylesheet (see the SCSS
+    for why it cannot be an inline style) and the placeholder replaces the
+    float label, which collided with the text once the field was one row tall.
+  -->
+  <textarea
+    pTextarea
+    rows="1"
+    [autoResize]="true"
+    [attr.placeholder]="'chat.input.placeholder' | translate"
+    [(ngModel)]="userInput"
+    (keydown.enter)="userInputEnterKeySubmit ? sendMessage() : null"
+    (keydown.meta.enter)="sendMessage()"
+    (keydown.control.enter)="sendMessage()"
+    [mentionConfig]="mentionConfig"
+    [mentionListTemplate]="mentionItemTemplate"
+  ></textarea>
 
   <!--
     ADR-013: shared mention-list item template. `@` items carry only `name`
@@ -37,48 +41,157 @@
   </ng-template>
 
   <div class="button-group">
-    @if (humanAgents.length > 1) {
-      <div class="send-as-group">
-        <label class="send-as-label">{{ "chat.input.sendAs" | translate }}</label>
-        <p-dropdown
-          [options]="humanAgentOptions"
-          [(ngModel)]="selectedSender"
-          optionLabel="label"
-          optionValue="value"
-          [placeholder]="'chat.input.sendAs' | translate"
-          [showClear]="true"
-          size="small"
-          appendTo="body"
-          [panelStyleClass]="'send-as-panel-up'"
-        ></p-dropdown>
-      </div>
+    <!--
+      THE PILL IS THE CONTROL, not a label standing next to one.
+
+      The mock draws one self-contained pill per setting — a leading glyph, the
+      word for the setting, and its current value, all inside a single rounded
+      outline. What shipped was a bare `<label>` sitting OUTSIDE a PrimeNG
+      select that had been given a pill's border of its own, so the row read as
+      two loose words and two floating capsules rather than as two settings.
+
+      The frame moved to a wrapper the template owns and the library control
+      inside it is stripped back to its text (see the SCSS). That is the version
+      that survives a PrimeNG upgrade: the alternative is a `pTemplate` on each
+      of two different components whose slot names have already been renamed
+      once between major versions, to place a glyph the library has no opinion
+      about.
+
+      A `<div>`, NOT a `<label>`. A wrapping label looks like the right way to
+      associate the word with its control, and here it is a trap: clicking a
+      label forwards the click to the first form control inside it, and PrimeNG
+      renders a hidden input alongside its own trigger — so a click on the word
+      "Send as" would be delivered twice and the panel would open and close in
+      the same gesture. The association is carried by `ariaLabel` on the control
+      instead, which is what a screen reader reads anyway.
+    -->
+    <div class="composer-pill" [class.composer-pill--disabled]="!canChooseSender">
+      <!-- Decorative: the pill's own words name the setting. -->
+      <svg class="composer-pill__glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <circle cx="12" cy="8" r="3.5" />
+        <path d="M5 20a7 7 0 0 1 14 0" />
+      </svg>
+      <span class="composer-pill__label">{{ "chat.input.sendAs" | translate }}</span>
+      <!--
+        DISABLED, NOT ABSENT, on a single-human deployment.
+
+        It used to be gated out of the DOM entirely by `humanAgents.length > 1`,
+        which is the common case — so the composer had a different SHAPE from one
+        deployment to the next, and the row's controls sat in different places
+        depending on a fact about the team the user cannot see. A disabled pill
+        answers the question the absent one left open ("can I send as someone
+        else here?") and keeps the geometry still.
+      -->
+      <p-dropdown
+        [options]="humanAgentOptions"
+        [(ngModel)]="selectedSender"
+        optionLabel="label"
+        optionValue="value"
+        [disabled]="!canChooseSender"
+        [ariaLabel]="'chat.input.sendAs' | translate"
+        [placeholder]="'chat.input.sendAsSelf' | translate"
+        [showClear]="canChooseSender"
+        size="small"
+        appendTo="body"
+        [panelStyleClass]="'send-as-panel-up'"
+      ></p-dropdown>
+    </div>
+
+    <div class="composer-pill composer-pill--grow">
+      <svg class="composer-pill__glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+        <path d="M4 6h16M4 12h10M4 18h7" />
+      </svg>
+      <span class="composer-pill__label">{{ "chat.input.sendTo" | translate }}</span>
+      <!--
+        STILL A MULTI-SELECT. The mock's control is a cycle between two fixed
+        choices, which its seed data can afford and a real team cannot: `dispatch`
+        loops over `selectedAgents` and sends to each, so collapsing this to a
+        single pick would delete the ability to address two agents at once. The
+        mock's SHAPE is reproduced; its arity is not.
+      -->
+      <p-multiSelect
+        [options]="dropdownAgents"
+        [(ngModel)]="selectedAgents"
+        optionLabel="label"
+        optionValue="value"
+        [ariaLabel]="'chat.input.sendTo' | translate"
+        [placeholder]="'chat.input.allSupervisors' | translate"
+        [showClear]="true"
+        size="small"
+        display="chip"
+      ></p-multiSelect>
+    </div>
+
+    <!--
+      ONE spacer, rather than an alignment rule per cluster. Story 7-3 pushed the
+      Send-as group right with `margin-left: auto`, which meant every control
+      added afterwards had to decide again which side it belonged to. The row now
+      reads left-to-right: message settings, gap, then what the send costs and
+      the send itself.
+    -->
+    <span class="composer-spacer"></span>
+
+    <!--
+      What this conversation has cost so far, in the corner of the thing that
+      spends it. Hidden at all-zeros: a team that has not run yet would otherwise
+      advertise "0 in · 0 out", which is a measurement of nothing.
+
+      Read from the team-scoped `TokenUsageSelector`, so it is Σ over the CURRENT
+      team's agents by construction — see the component for why the injection is
+      optional.
+    -->
+    @if (teamTotals$ | async; as totals) {
+      @if (totals.totalSent > 0 || totals.totalReceived > 0) {
+        <span class="token-line" [title]="'chat.input.tokenLineTitle' | translate">
+          {{ "chat.input.tokenLine" | translate: {
+            'in': (totals.totalSent | tokenCount),
+            'out': (totals.totalReceived | tokenCount)
+          } }}
+        </span>
+      }
     }
-    <label class="send-to-label">{{ "chat.input.sendTo" | translate }}</label>
-    <p-multiSelect
-      [options]="dropdownAgents"
-      [(ngModel)]="selectedAgents"
-      optionLabel="label"
-      optionValue="value"
-      [placeholder]="'chat.input.allSupervisors' | translate"
-      [showClear]="true"
-      size="small"
-      display="chip"
-    ></p-multiSelect>
+
     <!--
       Story 33-1: the gate no longer depends on run state — a stopped team is
       restored on submit. Story 33-3: it gates on empty text and on the submit
-      phase, the single value that also picks the label and the spinner, so the
-      control cannot read "idle" while a send is still in flight. This covers
-      the CLICK only — the keydown handlers above call sendMessage() directly,
-      and its own early return is what rejects a re-entrant key press.
+      phase, the single value that also picks the accessible name and the
+      spinner, so the control cannot read "idle" while a send is still in
+      flight. This covers the CLICK only — the keydown handlers above call
+      sendMessage() directly, and its own early return is what rejects a
+      re-entrant key press.
+
+      The label went from a word to an `aria-label` when the control became a
+      34px circle. It is NOT dropped: a circular glyph with no accessible name
+      is unreachable by anything that is not a pointer, and the restarting state
+      in particular has no other way to announce itself.
     -->
-    <p-button
-      size="small"
-      icon="pi pi-send"
-      [label]="(phase === 'restarting' ? restoreLabelKey : 'chat.input.submit') | translate"
-      [loading]="busy"
+    <button
+      type="button"
+      class="send-button"
       (click)="sendMessage()"
       [disabled]="!userInput || busy"
-    />
+      [attr.aria-label]="(phase === 'restarting' ? restoreLabelKey : 'chat.input.send') | translate"
+      [title]="(phase === 'restarting' ? restoreLabelKey : 'chat.input.send') | translate"
+    >
+      @if (busy) {
+        <i class="pi pi-spin pi-spinner send-spinner" aria-hidden="true"></i>
+      } @else {
+        <svg class="send-glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <path d="M12 19V5M6 11l6-6 6 6" />
+        </svg>
+      }
+    </button>
   </div>
 </div>
+
+<!--
+  OUTSIDE the card, and conditional on the deployment.
+
+  `userInputEnterKeySubmit` genuinely turns Enter-to-send off, so a fixed
+  "Enter to send" string would be a lie wherever that flag is false. It reads the
+  same component field the `(keydown.enter)` binding above does, which is what
+  keeps the hint and the behaviour from drifting apart.
+-->
+<p class="composer-helper">
+  {{ (userInputEnterKeySubmit ? "chat.input.helperEnter" : "chat.input.helperModifier") | translate }}
+</p>

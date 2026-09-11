@@ -1,39 +1,134 @@
-/* Collapsed line for Rule 3 and Rule 4 */
+/*
+ * THE TWO FOLDS.
+ *
+ * `.collapsed-line` is no longer a look — it is the fact that a row is folded,
+ * which is all the two kinds share (both toggle on click, both carry the caret
+ * and the clock). Everything visual belongs to one of the two modifiers, and
+ * they are deliberately far apart:
+ *
+ *   .collapsed-request  an accent card in the transcript's gutter   LOUDEST
+ *   (an ordinary turn)  prose on the page
+ *   .collapsed-notice   a muted indented line, no fill, no border   QUIETEST
+ *
+ * The ranking is the classifier's, not a preference: rule 3 is the only row
+ * that can be OUTSTANDING (it has a state and an action), rule 4 is the only
+ * one that asks for nothing at all.
+ */
 .collapsed-line {
+  cursor: pointer;
+}
+
+/* --- Rule 3: the request ------------------------------------------------- */
+
+/* The same gutter+gap geometry as `.message`, so the card lines up with the
+   turns around it instead of starting its own column. */
+.collapsed-request {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  width: 100%;
+}
+
+.request-card {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px 12px;
+  border: 1px solid var(--akg-accent-border);
+  /* The accent EDGE, not an accent box. A full accent border draws a rectangle;
+     a weighted left edge points at the text, which is what a callout is for. */
+  border-left: 3px solid var(--akg-accent-fg);
+  border-radius: var(--akg-card-radius);
+  background-color: var(--akg-accent-bg);
+}
+
+.request-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 4px 8px;
-  cursor: pointer;
-  color: var(--akg-text);
-  font-size: 0.9rem;
-  border-radius: 6px;
-  border: 1px solid var(--akg-collapsed-border);
+  gap: 8px;
+}
 
-  &:hover {
-    background-color: var(--akg-collapsed-hover);
+.request-asks {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px;
+  /* The label step — the same size and weight as the name above a turn, so the
+     head of the callout reads as attribution rather than as a second heading. */
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.request-sender {
+  color: var(--akg-text);
+}
+
+.request-target {
+  color: var(--akg-accent-fg);
+}
+
+/* PENDING vs ANSWERED, said in words.
+   The 🙋 it replaces could only mean "something here"; a reader had to already
+   know that the emoji meant "you". */
+.request-state {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: var(--akg-pill-radius);
+  font-size: var(--akg-section-label-size);
+  font-weight: 500;
+  letter-spacing: var(--akg-section-label-tracking);
+  text-transform: uppercase;
+  background-color: var(--akg-status-neutral-bg);
+  color: var(--akg-status-neutral-fg);
+  white-space: nowrap;
+
+  &.pending {
+    background-color: var(--akg-accent-fg);
+    color: var(--akg-accent-bright);
   }
 }
 
-.collapsed-label {
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/*
+ * The question, as prose.
+ *
+ * No `nowrap`, no ellipsis: this is the one row on the surface whose CONTENT is
+ * the thing the user has to act on, and a single clipped line of it is a
+ * notification about a question rather than the question. Turn size and turn
+ * leading, so it reads at the same weight as the conversation it sits in.
+ */
+.request-body {
+  margin: 0;
+  font-size: var(--akg-turn-font-size);
+  font-weight: 300;
+  line-height: var(--akg-turn-line-height);
+  color: var(--akg-turn-fg);
+  overflow-wrap: anywhere;
 }
 
-.collapsed-preview {
-  color: var(--akg-text-muted);
-}
+/* ANSWERED: the request recedes to roughly turn weight. It keeps its text and
+   its fold — the exchange still happened — and loses everything that was there
+   to catch the eye. */
+.collapsed-request.answered {
+  .request-card {
+    border-color: var(--akg-collapsed-border);
+    border-left-color: var(--akg-collapsed-border);
+    background-color: transparent;
+  }
 
-.collapsed-timestamp {
-  font-size: 0.8rem;
-  color: var(--akg-text-faint);
-  white-space: nowrap;
+  .request-target,
+  .request-body {
+    color: var(--akg-text-muted);
+  }
 }
 
 .open-button {
   flex-shrink: 0;
+  align-self: flex-start;
 }
 
 :host ::ng-deep .open-button .p-button {
@@ -41,9 +136,108 @@
   font-size: 0.8rem;
 }
 
-.collapsed-notification-icon {
-  display: inline;
-  margin-left: 0;
+/* A REAL CONTROL, not a chip. The Reply on the folded request was 2px/8px at
+   0.8rem — smaller than the timestamp beside it — for the one action the
+   transcript ever asks the user to take. The expanded bubble's copy stays
+   small: there the Reply sits in a header row of metadata, not under a
+   question. */
+:host ::ng-deep .collapsed-request .open-button .p-button {
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: var(--akg-pill-radius);
+  background-color: var(--akg-accent-fg);
+  border-color: var(--akg-accent-fg);
+  color: var(--akg-accent-bright);
+}
+
+/* ANSWERED: the action recedes with the card. PrimeNG's disabled state only
+   fades what is there, and a faded primary button is still the loudest thing
+   in a row that is finished with. */
+:host ::ng-deep .collapsed-request.answered .open-button .p-button {
+  background-color: transparent;
+  border-color: var(--akg-collapsed-border);
+  color: var(--akg-text-muted);
+}
+
+/* --- Rule 4: the ambient notification ------------------------------------ */
+
+/*
+ * SUBORDINATE, and indented to say so.
+ *
+ * Padding-left is `--akg-avatar-gutter` — the same column the activity fold
+ * uses — so the row starts where an agent's prose starts and is visibly a
+ * consequence of the conversation rather than a participant in it. No fill and
+ * no resting border: the hover is the only chrome, and it only appears once you
+ * are already pointing at it.
+ */
+.collapsed-notice {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 8px 3px var(--akg-avatar-gutter);
+  border-radius: 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--akg-text-muted);
+
+  &:hover {
+    background-color: var(--akg-collapsed-hover);
+  }
+}
+
+.notice-icon {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  color: var(--akg-glyph-quiet);
+}
+
+.notice-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The tool or agent that spoke, as the subject of the sentence. It is the only
+   part of the row set in `--akg-text`: you can find WHAT reported without
+   reading the rest, which is the whole job of an ambient line. */
+.notice-subject {
+  font-weight: 500;
+  color: var(--akg-text);
+}
+
+.notice-verb {
+  margin-left: 4px;
+}
+
+/* The body, after the subject. The separator is generated rather than typed
+   into the template so it cannot end up in the accessible name of the row, and
+   so an empty body (no preview element) takes its punctuation with it — the old
+   row could render a dangling " : ". */
+.collapsed-preview {
+  color: var(--akg-text-muted);
+
+  &::before {
+    content: '\00b7';
+    margin: 0 6px;
+    color: var(--akg-glyph-quiet);
+  }
+}
+
+/* Matches .system-marker-caret — the transcript's other fold. */
+.collapsed-caret {
+  font-size: 0.7rem;
+  flex-shrink: 0;
+  color: var(--akg-glyph-quiet);
+}
+
+.collapsed-timestamp {
+  font-size: 0.8rem;
+  color: var(--akg-text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .hand-raised {
@@ -55,6 +249,7 @@
 .message {
   display: flex;
   width: 100%;
+  gap: 14px;
 
   &.right {
     justify-content: flex-end;
@@ -62,11 +257,36 @@
 
   &.left {
     justify-content: flex-start;
+    align-items: flex-start;
   }
 
   &.clickable {
     cursor: pointer;
   }
+}
+
+/*
+ * The speaker's mark.
+ *
+ * A name repeated down the left edge is a label; an initial in a consistent
+ * gutter is a spine — you can find where an agent starts talking without
+ * reading anything. The fold indents by exactly this gutter, so the work an
+ * agent did lines up under the agent that did it.
+ */
+.turn-avatar {
+  flex: 0 0 auto;
+  width: var(--akg-avatar-size);
+  height: var(--akg-avatar-size);
+  margin-top: 2px;
+  border-radius: 9px;
+  background: var(--akg-accent-fg);
+  color: var(--akg-accent-bright);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  user-select: none;
 }
 
 /*
@@ -83,11 +303,21 @@
  * single label.
  */
 .message-bubble {
-  max-width: 80%;
-  font-size: 1rem;
-  line-height: 1.6;
+  max-width: 78%;
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: var(--akg-turn-font-size);
+  font-weight: 300;
+  line-height: var(--akg-turn-line-height);
   word-wrap: break-word;
-  color: var(--akg-text);
+  /* THE PROSE STEP, not the heading step. `--akg-turn-fg` exists for exactly
+     this element and was reaching nothing: the turn was set in `--akg-text`,
+     the darker value the token file reserves for headings and labels, so every
+     answer in the transcript read one step heavier than it was designed to.
+     The sender's name above it keeps `--akg-text` — that IS a label — which is
+     what makes the pair legible as name-then-prose rather than as two
+     paragraphs. */
+  color: var(--akg-turn-fg);
 
   /* The default: no bubble. */
   background-color: transparent;
@@ -100,7 +330,9 @@
   &.own-turn {
     padding: var(--akg-turn-padding);
     border-radius: var(--akg-turn-radius);
-    border-color: var(--akg-surface-border);
+    border-color: transparent;
+    background-color: var(--akg-user-bubble-bg);
+    line-height: 1.55;
   }
 
   &.selected {
@@ -141,10 +373,13 @@
   gap: 0.5rem;
   margin-bottom: 4px;
 
+  margin-bottom: 6px;
+  gap: 8px;
+
   .bubble-timestamp {
-    margin-left: auto;
-    font-size: 0.8rem;
-    color: var(--akg-text-faint);
+    font-size: 11px;
+    font-weight: 300;
+    color: var(--akg-text-muted);
     white-space: nowrap;
   }
 }
@@ -158,15 +393,24 @@
  * the badge is the only tinted thing left in an agent's turn, so it reads as a
  * label instead of competing with the prose.
  */
+/*
+ * The speaker's name, plain.
+ *
+ * It was a filled pill on every single turn, which put a piece of chrome above
+ * every line of the conversation. A name in the type scale says the same thing
+ * and disappears when you are reading rather than scanning. It stays a button —
+ * it is the way into the sub-agent reader — so it keeps a hover and a focus
+ * ring; it just stops shouting while idle.
+ */
 .label-pill {
-  background-color: var(--akg-accent-bg);
-  border: 1px solid var(--akg-accent-border);
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 0.75rem;
+  background-color: transparent;
+  border: none;
+  padding: 0;
+  border-radius: 4px;
+  font-size: 12.5px;
   font-weight: 500;
-  letter-spacing: 0.02em;
-  color: var(--akg-accent-fg);
+  letter-spacing: 0;
+  color: var(--akg-text);
   cursor: pointer;
   align-self: flex-start;
 
@@ -197,6 +441,27 @@
 
 .markdown-content {
   margin-top: 4px;
+}
+
+/* The user's own turn has no header above it any more, so the 4px that used to
+   separate the prose from the sender's name is now 4px between the bubble's
+   padding and its first word. */
+.own-turn .markdown-content {
+  margin-top: 0;
+}
+
+/*
+ * The user's own words, verbatim.
+ *
+ * `pre-wrap` is the whole rule: it keeps the newlines the person typed (which
+ * `normal` would collapse) while still wrapping at the bubble's edge (which
+ * `pre` would not). `overflow-wrap` covers the one case wrapping cannot — an
+ * unbroken URL or token longer than the bubble, which would otherwise push the
+ * bubble past its own max-width.
+ */
+.own-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* Context-management markers (Epic 29 / ADR-010) — inert, centered system rows.
@@ -245,7 +510,7 @@
 
 .system-marker-timestamp {
   font-size: 0.8rem;
-  color: var(--akg-text-faint);
+  color: var(--akg-text-muted);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -262,4 +527,32 @@
   color: var(--akg-text);
   border-left: 2px solid var(--akg-marker-border);
   background-color: var(--akg-marker-bg);
+}
+
+
+/*
+ * The system rule.
+ *
+ * "Team started · 16:35" is the page telling you where you are. A hairline
+ * either side of it centres it without giving it a voice, and it inherits the
+ * reading column like every other row.
+ */
+.system-rule {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--akg-text-muted);
+}
+
+.system-rule-line {
+  flex: 1;
+  height: 1px;
+  background: var(--akg-hairline);
+}
+
+.system-rule-label {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  font-weight: 300;
+  white-space: nowrap;
 }

@@ -10,16 +10,19 @@
   <ng-template pTemplate="header">
     <div class="dialog-header">
       <i class="pi pi-cloud-upload"></i>
-      <span class="dialog-title">Upload Files</span>
+      <span class="dialog-title">{{ "workspace.upload.title" | translate }}</span>
     </div>
   </ng-template>
 
   <div class="upload-content">
     <div class="target-path">
       <i class="pi pi-folder"></i>
-      <span
-        >Upload to: <strong>{{ targetPath || "Root Folder" }}</strong></span
-      >
+      <span>
+        {{ "workspace.upload.target" | translate }}
+        <strong>{{
+          targetPath || ("workspace.upload.rootFolder" | translate)
+        }}</strong>
+      </span>
     </div>
 
     <p-message
@@ -47,16 +50,18 @@
         (onRemove)="onRemove($event)"
         (onClear)="onClear()"
         [disabled]="uploading"
-        chooseLabel="Select Files"
+        [chooseLabel]="'workspace.upload.choose' | translate"
         chooseIcon="pi pi-file"
         styleClass="custom-file-upload"
       >
         <ng-template pTemplate="content" let-files>
           <div *ngIf="files.length === 0" class="empty-upload">
             <i class="pi pi-cloud-upload empty-upload-icon"></i>
-            <div class="empty-upload-title">Choose files to upload</div>
+            <div class="empty-upload-title">
+              {{ "workspace.upload.emptyTitle" | translate }}
+            </div>
             <div class="empty-upload-desc">
-              Select one or multiple files from your computer
+              {{ "workspace.upload.emptyDesc" | translate }}
             </div>
           </div>
           <div *ngIf="files.length > 0" class="files-list">
@@ -83,7 +88,7 @@
   <ng-template pTemplate="footer">
     <div class="dialog-footer">
       <p-button
-        label="Cancel"
+        [label]="'common.cancel' | translate"
         icon="pi pi-times"
         [text]="true"
         severity="secondary"
@@ -91,7 +96,7 @@
         [disabled]="uploading"
       />
       <p-button
-        label="Upload"
+        [label]="'workspace.upload.submit' | translate"
         icon="pi pi-upload"
         (onClick)="uploadFiles()"
         [disabled]="selectedFiles.length === 0 || uploading"

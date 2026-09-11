@@ -1,34 +1,113 @@
-// The grab strip. Narrow enough not to be a third pane, wide enough to hit:
-// the visible rule is 2px, the hit area is the whole 0.65rem.
+// The grab strip: a hairline seam with a GRIP MARK on it, and a hit area
+// several times wider than either.
 //
 // `touch-action: none` is load-bearing rather than decorative — without it a
 // touch or trackpad drag on this element is claimed by the browser's own
 // scroll/pan gesture and the `pointermove` stream stops after the first event.
+//
+// THE COLOURS ARE TOKENS (R3). This component predates the token rule and was
+// confined to the management page, where three literal hexes went unnoticed.
+// It now sits on the redesigned console surface, between the conversation and
+// the inspector, and a divider that does not follow the palette is the one
+// piece of chrome that would visibly not belong.
+//
+// WHY THE STRIP IS WIDER THAN IT WAS (W8a). It was 0.65rem, and on the console
+// that strip's left edge is flush against the transcript's scrollbar: the grip
+// centred in it sat about five pixels from a piece of chrome that already
+// looks like a vertical bar, so the two read as one smudge and neither read as
+// draggable. 0.9rem puts roughly a scrollbar's width of clear ground on each
+// side of the mark, which is what makes it legible as its own object. The hit
+// area only grows, so nothing that could be grabbed before can be missed now.
 :host {
   flex: 0 0 auto;
-  width: 0.65rem;
+  width: 0.9rem;
   align-self: stretch;
   cursor: col-resize;
   touch-action: none;
   position: relative;
-  // The rule itself, drawn down the middle so the hit area stays symmetric
-  // about the line the user is aiming at.
-  background:
-    linear-gradient(to right, transparent calc(50% - 1px), #dee2e6 calc(50% - 1px), #dee2e6 calc(50% + 1px), transparent calc(50% + 1px));
+  // The seam, drawn down the middle so the hit area stays symmetric about the
+  // line the user is aiming at.
+  background: linear-gradient(
+    to right,
+    transparent calc(50% - 1px),
+    var(--akg-surface-border) calc(50% - 1px),
+    var(--akg-surface-border) calc(50% + 1px),
+    transparent calc(50% + 1px)
+  );
   border: 0;
   padding: 0;
+  // Centres the grip on the seam. `justify-content` rather than an absolute
+  // position, so the mark follows the strip if its width is ever changed again.
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
+// THE RESTING AFFORDANCE. A short capsule sitting on the seam — the idiom every
+// resizable sidebar uses, and the one thing that distinguishes "boundary you
+// may move" from "boundary".
+//
+// It is drawn in `--akg-glyph-quiet` rather than the border tone: at 4px wide
+// the border tone is indistinguishable from the seam it sits on, which would
+// make the grip present and invisible — the same failure as not having one.
+// The contrast against the faint seam is what does the work, so the capsule is
+// opaque and carries NO halo: the two instances of this divider stand on two
+// different grounds (`--akg-page-bg` in the console shell, the conversation's
+// `--akg-overlay-bg` in the pane row), and any single background tone painted
+// behind the mark would be visibly wrong on one of them.
+.split-divider__grip {
+  width: 4px;
+  height: 30px;
+  border-radius: 999px;
+  background: var(--akg-glyph-quiet);
+  // The pointer must land on the HOST: the host is what carries the capture,
+  // the keyboard handlers and the ARIA. A grip that swallowed its own
+  // `pointerdown` would be a hole in the middle of the control.
+  pointer-events: none;
+  transition:
+    height var(--akg-pane-transition-duration) ease,
+    background var(--akg-pane-transition-duration) ease;
+}
+
+// One step darker under the pointer and while dragging, and the grip grows:
+// the same seam and the same mark, confirmed rather than introduced.
+// `--akg-text-muted` rather than a border tone, because at this size the line
+// has to read as an object the user is about to grab rather than as the seam it
+// draws at rest.
 :host(:hover),
 :host(.split-divider--dragging) {
-  background:
-    linear-gradient(to right, transparent calc(50% - 1px), #94a3b8 calc(50% - 1px), #94a3b8 calc(50% + 1px), transparent calc(50% + 1px));
+  background: linear-gradient(
+    to right,
+    transparent calc(50% - 1px),
+    var(--akg-text-muted) calc(50% - 1px),
+    var(--akg-text-muted) calc(50% + 1px),
+    transparent calc(50% + 1px)
+  );
+}
+
+:host(:hover) .split-divider__grip,
+:host(.split-divider--dragging) .split-divider__grip,
+:host(:focus-visible) .split-divider__grip {
+  height: 44px;
+  background: var(--akg-text-muted);
 }
 
 // Keyboard focus must be visible on a control whose whole point is that it can
-// be driven from the keyboard (FR6). An outline OUTSIDE the 2px rule, because
-// an outline drawn over it would be indistinguishable from the hover state.
+// be driven from the keyboard (FR6).
+//
+// A RING, not an outline. `--akg-focus-ring` is this codebase's focus idiom
+// (see `inspector-tabs.component.scss`): it is a box-shadow, so it follows the
+// element's own shape and sits outside it rather than boxing a narrow strip in
+// a rectangle that reads as a second, thicker divider.
 :host(:focus-visible) {
-  outline: 2px solid #3b82f6;
-  outline-offset: -2px;
+  outline: none;
+  box-shadow: var(--akg-focus-ring);
+}
+
+// The grip's growth is confirmation, not information: a user who has asked for
+// less motion still gets the colour change and the ring.
+@media (prefers-reduced-motion: reduce) {
+  .split-divider__grip {
+    transition: none;
+  }
 }

@@ -20,17 +20,21 @@ input {
   margin-bottom: 0.5rem;
 }
 
+/* The accent pair, not a blue of this component's own. The two hexes here were
+   the only place in the pane that a rebrand could not reach — and this form is
+   not currently mounted anywhere, which is exactly how a stray palette survives
+   a review. */
 button {
-  background-color: #6A9BB6;
+  background-color: var(--akg-accent-fg);
   border: none;
   padding: 4px 8px;
   border-radius: 5px;
   font-size: 13px;
-  color: white;
+  color: var(--akg-overlay-bg);
   cursor: pointer;
   align-self: flex-start;
 }
 
 button:hover {
-  background-color: #075985;
+  background-color: var(--akg-accent-hover);
 }

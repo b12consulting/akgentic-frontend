@@ -90,10 +90,14 @@ export function buildLabel(msg: SentMessage, rule: ChatBubbleRule): string {
   const recipientName = makeAgentNameUserFriendly(msg.recipient.name);
 
   switch (rule) {
+    // Your own turn is already identified by being a bubble on your side, and
+    // rule 2 is the agent talking to you — the arrow restates the direction the
+    // layout has already shown. Rules 3 and 4 keep theirs: those are between
+    // two other parties, where who-sent-what-to-whom is the whole content.
     case 1:
-      return `You ⇒ ${recipientName}`;
+      return 'You';
     case 2:
-      return `${senderName} ⇒ You`;
+      return senderName;
     case 3:
     case 4:
       return `${senderName} ⇒ ${recipientName}`;

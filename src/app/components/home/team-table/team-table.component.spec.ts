@@ -311,6 +311,69 @@ describe('TeamTableComponent', () => {
     expect(idle?.getAttribute('title')).toBe('team.status.idleTitle');
   });
 
+  it('paints each status from the token palette, not from a PrimeNG severity', async () => {
+    // R5. The four tags used to ask PrimeNG for `severity="info"` and
+    // `severity="success"`, which resolve off Aura's blue and green ramps —
+    // and `app.theme.ts` re-points `primary` alone, so these were the last
+    // colours on screen that re-pointing the token file could not reach.
+    //
+    // What is pinned here is the WIRING, not the colour: every state carries
+    // its own class, and no tag carries a severity class any more. Asserting
+    // the resolved hue would pin the palette in a spec, which is the one place
+    // a rebrand must not have to edit — the values live in
+    // `_conversation-tokens.scss` and are meant to be re-pointed there.
+    //
+    // Both halves matter. Without the negative, re-adding a severity beside
+    // the class would sail through while PrimeNG quietly painted over the
+    // token ground; without the positive, deleting the class would too.
+    await render([
+      makeTeam({ team_id: 's', status: 'stopped' }),
+      makeTeam({ team_id: 'r', status: 'running', working: null }),
+      makeTeam({ team_id: 'w', status: 'running', working: true }),
+      makeTeam({ team_id: 'i', status: 'running', working: false }),
+    ]);
+
+    const states = ['stopped', 'running', 'working', 'idle'];
+    const tags = rows().map(
+      (row) => statusCell(row).querySelector('[data-test^="row-status-"]'),
+    );
+
+    tags.forEach((tag, index) => {
+      expect(tag).not.toBeNull();
+      expect(tag!.classList.contains('team-status-tag')).toBeTrue();
+      expect(
+        tag!.classList.contains(`team-status-tag--${states[index]}`),
+      ).toBeTrue();
+      expect(tag!.classList.contains('p-tag-info')).toBeFalse();
+      expect(tag!.classList.contains('p-tag-success')).toBeFalse();
+    });
+  });
+
+  it('gives stopped a ground of its own and the three running states a shared one', async () => {
+    // The token pair is chosen per STATE, and the choice is the argument the
+    // template makes: working and idle are running, so recolouring either
+    // towards the stopped neutral would read as a lesser kind of stopped. This
+    // asserts the grouping — one neutral class, three live ones — so a future
+    // pass that "tidies" idle onto the neutral has to argue with a red spec
+    // rather than with nobody.
+    await render([
+      makeTeam({ team_id: 's', status: 'stopped' }),
+      makeTeam({ team_id: 'r', status: 'running', working: null }),
+      makeTeam({ team_id: 'w', status: 'running', working: true }),
+      makeTeam({ team_id: 'i', status: 'running', working: false }),
+    ]);
+
+    const classOf = (row: HTMLTableRowElement): string =>
+      statusCell(row).querySelector('[data-test^="row-status-"]')?.className ??
+      '';
+
+    const [stopped, ...live] = rows();
+    expect(classOf(stopped)).toContain('team-status-tag--stopped');
+    for (const row of live) {
+      expect(classOf(row)).not.toContain('team-status-tag--stopped');
+    }
+  });
+
   // --- The metadata column -------------------------------------------------
 
   it('renders one metadata chip per answered field, label and value', async () => {
@@ -903,15 +966,33 @@ describe('TeamTableComponent', () => {
     expect(table.minHeight).toBe('0px');
   });
 
-  it('(AC13) a header cell is painted OPAQUE white', async () => {
+  it('(AC13) a header cell is painted with the OPAQUE overlay ground', async () => {
     // [scrollable] gives the thead a sticky position for free, but the app
     // theme paints header cells `transparent` — so rows scroll THROUGH the
     // pinned labels unless this rule travels with the table.
+    //
+    // Resolved from the TOKEN rather than pinned as a literal white (R5). The
+    // rule's job is to match whatever ground the rows are painted on, so a hex
+    // asserted here would turn a deliberate re-point of the palette into a red
+    // spec about a table header. Both halves still hold: the ground must be
+    // opaque — a `var()` naming a token nobody defined computes to
+    // `transparent`, which is the exact bug this rule exists to prevent and
+    // which looks perfectly fine in review — and it must be the SAME ground
+    // the token names.
     await render([makeTeam()]);
 
-    expect(getComputedStyle(headerCells()[0]).backgroundColor).toBe(
-      'rgb(255, 255, 255)',
-    );
+    // Round-trip the token through the browser so the comparison is in one
+    // colour syntax, whatever syntax the token is written in.
+    const probe = document.createElement('div');
+    probe.style.backgroundColor = getComputedStyle(document.documentElement)
+      .getPropertyValue('--akg-overlay-bg')
+      .trim();
+    document.body.appendChild(probe);
+    const ground = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+
+    expect(ground).not.toBe('rgba(0, 0, 0, 0)');
+    expect(getComputedStyle(headerCells()[0]).backgroundColor).toBe(ground);
   });
 
   // --- Loading -----------------------------------------------------------

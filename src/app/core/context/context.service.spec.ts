@@ -2097,3 +2097,79 @@ describe('ContextService loading', () => {
     expect(seen[seen.length - 1]).toBeFalse();
   }));
 });
+
+/**
+ * `ensureTeamsLoaded` (rail seed).
+ *
+ * The whole method is a GUARD plus a delegation, and the guard is the part
+ * worth pinning: the rail must never issue a page-1 fetch that races the home
+ * table's own seed, because that seed is the one carrying the filter restored
+ * from the URL.
+ */
+describe('ContextService.ensureTeamsLoaded', () => {
+  let service: ContextService;
+  let apiSpy: jasmine.SpyObj<ApiService>;
+
+  beforeEach(() => {
+    apiSpy = jasmine.createSpyObj('ApiService', ['getTeamsPage']);
+    apiSpy.getTeamsPage.and.returnValue(
+      Promise.resolve({ teams: [], total_count: 0 } as TeamPage),
+    );
+
+    TestBed.configureTestingModule({
+      providers: [
+        ContextService,
+        { provide: ApiService, useValue: apiSpy },
+        { provide: Router, useValue: jasmine.createSpyObj('Router', ['navigate']) },
+      ],
+    });
+    service = TestBed.inject(ContextService);
+  });
+
+  it('fetches page 1 when the cache is empty and nothing is in flight', async () => {
+    await service.ensureTeamsLoaded();
+
+    expect(apiSpy.getTeamsPage).toHaveBeenCalledTimes(1);
+    const [page, size] = apiSpy.getTeamsPage.calls.mostRecent().args;
+    expect(page).toBe(1);
+    expect(size).toBe(250);
+  });
+
+  it('no-ops when the team list is already populated', async () => {
+    apiSpy.getTeamsPage.and.returnValue(
+      Promise.resolve({ teams: [makeTeam('a')], total_count: 1 } as TeamPage),
+    );
+    await service.loadTeamsPage(1, 250);
+    apiSpy.getTeamsPage.calls.reset();
+
+    await service.ensureTeamsLoaded();
+
+    expect(apiSpy.getTeamsPage).not.toHaveBeenCalled();
+  });
+
+  it('no-ops while a fetch is already in flight', async () => {
+    // The home table's seed is exactly this case: issued, not yet resolved,
+    // and carrying a filter this call knows nothing about.
+    let release!: (page: TeamPage) => void;
+    apiSpy.getTeamsPage.and.returnValue(
+      new Promise<TeamPage>((resolve) => (release = resolve)),
+    );
+    const seed = service.loadTeamsPage(1, 250);
+    apiSpy.getTeamsPage.calls.reset();
+
+    await service.ensureTeamsLoaded();
+    expect(apiSpy.getTeamsPage).not.toHaveBeenCalled();
+
+    release({ teams: [], total_count: 0 });
+    await seed;
+  });
+
+  it('goes through loadTeamsPage, so it carries the active filter', async () => {
+    const filter: TeamFilter = { meta: { case_id: 'CS-1' }, catalogNamespace: null };
+    service.restoreFilter(filter);
+
+    await service.ensureTeamsLoaded();
+
+    expect(apiSpy.getTeamsPage.calls.mostRecent().args[2]).toEqual(filter);
+  });
+});

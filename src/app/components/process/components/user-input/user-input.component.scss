@@ -1,35 +1,258 @@
+/*
+ * The composer.
+ *
+ * One rounded card that holds the field and its controls, rather than a
+ * bordered box with a row of library widgets under it. The card is the only
+ * bordered thing in the conversation column, which is what makes it read as
+ * the place you type instead of as another panel.
+ */
 .input-container {
+  /* One step darker than `--akg-surface-border`: the composer sits ON the
+     conversation with a shadow under it, and an inset-field border under a
+     raised card reads as a mistake at the corners. */
+  border: 1px solid var(--akg-composer-border);
+  border-radius: 24px;
+  background: var(--akg-overlay-bg);
+  box-shadow: var(--akg-overlay-shadow);
+  padding: 12px 14px 10px;
+
   textarea {
     width: 100%;
+    /* The card owns the frame; the field inside it should have none. Two
+       nested rounded rectangles read as a form, not as a composer. */
+    border: none !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    resize: none;
+    font-family: var(--akg-font-ui);
+    font-size: 14.5px;
+    font-weight: 300;
+    line-height: 1.55;
+    padding: 4px 4px 8px !important;
+
+    /*
+     * The growth cap, and why it is HERE and not an inline `[style]` binding.
+     *
+     * PrimeNG's `autoResize` writes `height` and `overflow` inline on every
+     * keystroke, so both need beating: `max-height` from a stylesheet still
+     * clamps an inline `height` (it is a used-value constraint, not a
+     * competing declaration), while `overflow-y` genuinely loses to the inline
+     * value and needs `!important` — the same reason the four rules above
+     * carry it. The old binding passed a literal `400px` instead, which is the
+     * one thing a token cannot express through that channel.
+     */
+    max-height: var(--akg-composer-max-height);
+    overflow-y: auto !important;
+
+    &::placeholder {
+      color: var(--akg-text-muted);
+    }
+
+    &:focus-visible {
+      /* The CARD takes the focus ring, not the borderless field inside it —
+         see `.input-container:focus-within` below. */
+      outline: none;
+    }
   }
 
-  .send-to-label {
-    font-size: 0.8rem;
-    color: #64748b;
-    white-space: nowrap;
+  /*
+   * The one visible focus affordance for the field.
+   *
+   * The textarea has no frame of its own to ring, so the CARD reports its
+   * focus. Scoped with `:has(textarea:…)` rather than `:focus-within` on
+   * purpose: the pills and the send button inside the card carry their own
+   * rings, and `:focus-within` would draw a second one around the whole
+   * composer every time one of them was tabbed to.
+   */
+  &:has(textarea:focus-visible) {
+    box-shadow: var(--akg-overlay-shadow), var(--akg-focus-ring);
   }
 
-  .send-as-label {
-    font-size: 0.8rem;
-    color: #64748b;
-    white-space: nowrap;
-  }
-
-  // Story 7-3: wrap the "Send as" label + dropdown so the pair right-aligns
-  // inside `.button-group`. `margin-left: auto` pushes the Send-as group
-  // (and, by proximity, the Send-to cluster that follows it) to the right
-  // edge of the row.
-  .send-as-group {
+  /*
+   * The control row: message settings, one spacer, then cost and send.
+   *
+   * `flex-wrap` is gone deliberately. With the send button pinned to the right
+   * of a single line, a wrap put it under the pills at narrow widths and moved
+   * the primary action somewhere the eye does not look for it; the pills
+   * truncate instead.
+   */
+  .button-group {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    justify-content: flex-end;
-    margin-left: auto;
+    gap: 8px;
   }
 
-  p-multiSelect {
+  /*
+   * THE PILL IS THE WRAPPER, and the library control inside it has no frame.
+   *
+   * The border, the radius, the ground and the hover used to sit on `.p-select`
+   * / `.p-multiselect` themselves, with a bare `<label>` floating outside each
+   * one — two words and two capsules where the mock draws two objects. Moving
+   * the frame one level out is what makes the glyph, the setting's name and its
+   * current value read as one control, and it stops every one of these rules
+   * depending on a PrimeNG internal class name surviving the next major.
+   *
+   * `align-items: center` and a fixed `gap`: the glyph, the label and the
+   * control are three inline things on one baseline-ish row, and letting the
+   * library's own padding supply the rhythm is what made the old spacing drift
+   * between the two different components.
+   */
+  .composer-pill {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex: 0 0 auto;
+    min-width: 0;
+    padding: 6px 10px;
+    border: 1px solid var(--akg-surface-border);
+    border-radius: var(--akg-pill-radius);
+    background: var(--akg-overlay-bg);
+    font-size: 12px;
+    color: var(--akg-control-fg);
+    cursor: pointer;
+    transition: background-color 120ms ease;
+
+    &:hover {
+      background: var(--akg-page-bg);
+    }
+
+    /* The ring goes on the PILL, because the pill is what the user sees as the
+       control. `:focus-within` rather than `:focus-visible`: the focusable
+       element is the library's trigger, several levels down. */
+    &:focus-within {
+      outline: none;
+      box-shadow: var(--akg-focus-ring);
+    }
+  }
+
+  /* Present, and visibly not offering anything. See `canChooseSender` for why
+     this is disabled rather than absent — the composer must not change shape
+     between deployments. */
+  .composer-pill--disabled {
+    cursor: default;
+    opacity: 0.55;
+
+    &:hover {
+      background: var(--akg-overlay-bg);
+    }
+  }
+
+  /* Send-to is the one that can carry a chip list, so it is the one allowed to
+     grow — and to yield. The send button and the token line are fixed and must
+     not be pushed out of the row by a long selection. */
+  .composer-pill--grow {
+    flex: 0 1 auto;
     max-width: 500px;
-    min-width: 150px;
+    overflow: hidden;
+  }
+
+  .composer-pill__glyph {
+    flex: 0 0 auto;
+    width: 13px;
+    height: 13px;
+  }
+
+  /* The setting's NAME, one step quieter than its value: "Send to" is the
+     question and the agent list is the answer, and they should not be read at
+     the same weight. */
+  .composer-pill__label {
+    flex: 0 0 auto;
+    font-weight: 300;
+    color: var(--akg-text-muted);
+    white-space: nowrap;
+  }
+
+  /* The library control, stripped back to its text. Its frame is the pill's
+     now, so anything it draws of its own is a second outline inside the first.
+     `::ng-deep` is the only reach into a library's internals; the values are
+     all `none`, which is what keeps this from becoming a re-skin that has to
+     track PrimeNG's own styling. */
+  :host ::ng-deep .p-select,
+  :host ::ng-deep .p-multiselect {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    font-size: 12px;
+    color: inherit;
+
+    /* The pill already reports focus; a second ring here would draw inside it. */
+    &:focus-visible,
+    &:focus-within {
+      outline: none;
+      box-shadow: none;
+    }
+  }
+
+  :host ::ng-deep .p-select-label,
+  :host ::ng-deep .p-multiselect-label {
+    padding: 0;
+    font-size: 12px;
+    color: inherit;
+  }
+
+  p-dropdown,
+  p-multiSelect {
+    min-width: 0;
+    flex: 0 1 auto;
+  }
+
+  /* The single piece of give in the row. */
+  .composer-spacer {
+    flex: 1;
+    min-width: 0;
+  }
+
+  /* Present, never read first — and that is carried by 11px/300 rather than by
+     a lighter tone. The step this used to use measured 1.96:1 on the composer's
+     ground, which is not "quiet" but "absent". */
+  .token-line {
+    flex: 0 0 auto;
+    font-size: 11px;
+    font-weight: 300;
+    color: var(--akg-text-muted);
+    white-space: nowrap;
+  }
+
+  /* Send: the one filled, circular control on the row, and the only place the
+     accent appears in the composer. */
+  .send-button {
+    width: 34px;
+    height: 34px;
+    flex: 0 0 auto;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: var(--akg-accent-fg);
+    color: var(--akg-overlay-bg);
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      background: var(--akg-accent-hover);
+    }
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: var(--akg-focus-ring);
+    }
+
+    &:disabled {
+      cursor: default;
+      opacity: 0.4;
+    }
+
+    .send-glyph {
+      width: 16px;
+      height: 16px;
+    }
+
+    .send-spinner {
+      font-size: 14px;
+    }
   }
 }
 
@@ -37,36 +260,66 @@
 // `src/styles.scss` because `appendTo="body"` renders the PrimeNG panel
 // outside the component's scoped styles. See that file for the rule.
 
+/*
+ * The "replying to" strip above the field.
+ *
+ * The three colours here were the last non-token ones left in the composer, and
+ * they were not merely untokenised — they were a different palette. The ground
+ * has been `--akg-accent-bg` (mint) since the token pass, while the text was
+ * still `#0c4a6e` and the close glyph `#64748b`/`#334155`: a slate-blue set
+ * from the era when this strip sat on sky blue. Blue text on a mint ground is
+ * what shipped. They map onto the accent pair and the two text steps that
+ * already exist, so nothing new was added to the token file.
+ *
+ * `--primary-color` on the left edge went the same way. It is PrimeNG's theme
+ * variable, not one of ours, so that edge tracked the component library rather
+ * than the palette it sits in.
+ *
+ * The `border-radius` was also declared twice — 999px, then 4px two lines
+ * later. Only the 4px ever applied; the pill was dead the day it was written.
+ */
 .reply-indicator {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 6px 12px;
-  background-color: #e0f2fe;
-  border-left: 3px solid var(--primary-color);
   border-radius: 4px;
+  background-color: var(--akg-accent-bg);
+  border-left: 3px solid var(--akg-accent-fg);
   font-size: 0.85rem;
-  color: #0c4a6e;
+  color: var(--akg-accent-fg);
   margin-bottom: 0.5rem;
 
   .reply-indicator-close {
     cursor: pointer;
     font-size: 0.75rem;
-    color: #64748b;
+    color: var(--akg-text-muted);
     &:hover {
-      color: #334155;
+      color: var(--akg-text);
     }
   }
 }
 
-.button-group {
-  display: flex;
-  align-items: center;
-  // Right-align the controls as a group. With "Send as" present its
-  // `.send-as-group { margin-left: auto }` already pushes the cluster right;
-  // flex-end makes the no-"Send as" case (Send to + multiselect + Submit)
-  // right-align the same way instead of spreading across the row.
-  justify-content: flex-end;
-  gap: 0.5rem;
-  margin-top: 0.5rem;
+/*
+ * The helper line sits OUTSIDE the card, centred under it.
+ *
+ * Outside because it describes how to use the card rather than being part of
+ * it, and a line of 10.5px text inside a raised object competes with the
+ * placeholder for the same glance. Its copy is conditional — see the template.
+ */
+.composer-helper {
+  margin: 9px 0 0;
+  text-align: center;
+  font-size: 10.5px;
+  font-weight: 300;
+  color: var(--akg-text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The send spinner is PrimeNG's, so the only lever from here is the
+     animation itself. A busy control still reads as busy: it is disabled and
+     its accessible name changes. */
+  .send-button .send-spinner {
+    animation: none;
+  }
 }

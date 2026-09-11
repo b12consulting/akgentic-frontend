@@ -1,7 +1,6 @@
 import { Pipe, PipeTransform } from '@angular/core';
 import { upperFirst } from 'lodash';
 import { MarkedOptions, MarkedRenderer } from 'ngx-markdown';
-import { combineLatest, Observable, ObservableInput, of } from 'rxjs';
 
 // Open Markdown links in new tab.
 export const markedOptionsFactory = (): MarkedOptions => {
@@ -18,13 +17,6 @@ export const markedOptionsFactory = (): MarkedOptions => {
     pedantic: false,
   };
 };
-
-export function emptyableCombineLatest<T>(
-  sources?: readonly ObservableInput<T>[]
-): Observable<T[]> {
-  if (!sources) return of([]);
-  else return sources.length === 0 ? of([]) : combineLatest(sources);
-}
 
 @Pipe({
   name: 'makeAgentNameUserFriendly',

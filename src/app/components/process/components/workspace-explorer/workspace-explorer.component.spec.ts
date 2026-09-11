@@ -24,6 +24,11 @@ import {
   WorkspaceService,
 } from '../../workspace/workspace.service';
 import { UploadModalComponent } from './upload-modal/upload-modal.component';
+import { TranslatePipe } from '@ngx-translate/core';
+import {
+  provideTranslateTesting,
+  setTestTranslations,
+} from '../../../../../testing/i18n-testing';
 import { WorkspaceExplorerComponent } from './workspace-explorer.component';
 
 // --------------------------------------------------------------------
@@ -183,6 +188,7 @@ describe('WorkspaceExplorerComponent', () => {
     await TestBed.configureTestingModule({
       imports: [WorkspaceExplorerComponent, NoopAnimationsModule],
       providers: [
+        provideTranslateTesting(),
         { provide: WorkspaceService, useValue: workspaceServiceSpy },
         { provide: ContextService, useValue: contextServiceStub },
         {
@@ -193,7 +199,7 @@ describe('WorkspaceExplorerComponent', () => {
     })
       .overrideComponent(WorkspaceExplorerComponent, {
         set: {
-          imports: [CommonModule],
+          imports: [CommonModule, TranslatePipe],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
       })
@@ -1670,6 +1676,7 @@ describe('WorkspaceExplorerComponent — NFR3 OnPush regression gate', () => {
     await TestBed.configureTestingModule({
       imports: [OnPushHostComponent, NoopAnimationsModule],
       providers: [
+        provideTranslateTesting(),
         { provide: WorkspaceService, useValue: workspaceServiceSpy },
         { provide: ContextService, useValue: contextServiceStub },
         {
@@ -1687,7 +1694,7 @@ describe('WorkspaceExplorerComponent — NFR3 OnPush regression gate', () => {
           // outside it never reaches the template. ButtonModule stays out —
           // `gate().disabled` reads the unclaimed property off the p-button
           // host, the same idiom as `tooltipOf`.
-          imports: [CommonModule, ToolbarModule],
+          imports: [CommonModule, ToolbarModule, TranslatePipe],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
       })
@@ -1933,7 +1940,10 @@ describe('WorkspaceExplorerComponent — NFR3 OnPush regression gate', () => {
 // --------------------------------------------------------------------
 
 describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
-  const STOPPED_TOOLTIP = 'Team must be running to upload files';
+  // The KEY, not the sentence. The panel's copy went through `@ngx-translate`
+  // this round and the spec's no-op loader echoes the key back, so pinning the
+  // English here would pin it through the back door.
+  const STOPPED_TOOLTIP = 'workspace.uploadStopped';
 
   let component: WorkspaceExplorerComponent;
   let fixture: ComponentFixture<WorkspaceExplorerComponent>;
@@ -1967,6 +1977,7 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
     await TestBed.configureTestingModule({
       imports: [WorkspaceExplorerComponent, NoopAnimationsModule],
       providers: [
+        provideTranslateTesting(),
         { provide: WorkspaceService, useValue: workspaceServiceSpy },
         { provide: ContextService, useValue: contextServiceStub },
         {
@@ -1977,7 +1988,7 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
     })
       .overrideComponent(WorkspaceExplorerComponent, {
         set: {
-          imports: [CommonModule, ButtonModule, ToolbarModule],
+          imports: [CommonModule, ButtonModule, ToolbarModule, TranslatePipe],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
       })
@@ -2208,9 +2219,9 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
     // carries the name the label used to. What this spec guards is unchanged:
     // the tooltip and the disabled binding read the same live source, so they
     // cannot disagree about whether the team is running.
-    expect(tooltipOf('Upload Files')).toBe('Upload Files');
+    expect(tooltipOf('Upload Files')).toBe('workspace.uploadHere');
     clearSelection();
-    expect(tooltipOf('Upload to Root')).toBe('Upload to Root');
+    expect(tooltipOf('Upload to Root')).toBe('workspace.uploadToRoot');
   });
 });
 
@@ -2267,6 +2278,7 @@ describe('WorkspaceExplorerComponent — per-file refresh control (Epic 38)', ()
     await TestBed.configureTestingModule({
       imports: [WorkspaceExplorerComponent, NoopAnimationsModule],
       providers: [
+        provideTranslateTesting(),
         { provide: WorkspaceService, useValue: workspaceServiceSpy },
         {
           provide: ContextService,
@@ -2286,7 +2298,7 @@ describe('WorkspaceExplorerComponent — per-file refresh control (Epic 38)', ()
     })
       .overrideComponent(WorkspaceExplorerComponent, {
         set: {
-          imports: [CommonModule, ButtonModule, ToolbarModule],
+          imports: [CommonModule, ButtonModule, ToolbarModule, TranslatePipe],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
       })
@@ -2329,7 +2341,14 @@ describe('WorkspaceExplorerComponent — per-file refresh control (Epic 38)', ()
     // ICON-ONLY, and named by its tooltip instead. The toolbar was labelled
     // until the directory Refresh joined it and the row ran out of width; the
     // name did not disappear, it moved to hover.
-    expect(refresh!.getAttribute('pTooltip')).toBe('Refresh this file');
+    //
+    // Read as a PROPERTY, not an attribute: the tooltip is translated now, so
+    // `pTooltip` is a binding rather than a static attribute and never lands in
+    // the DOM's attribute map. `TooltipModule` is still absent, so the
+    // unclaimed binding is set straight on the host element.
+    expect((refresh as unknown as { pTooltip?: string }).pTooltip).toBe(
+      'workspace.refreshFile',
+    );
 
     const button = fixture.debugElement.query(By.css(FILE_REFRESH))
       .componentInstance as { text: boolean; rounded: boolean };
@@ -2471,6 +2490,7 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
     await TestBed.configureTestingModule({
       imports: [WorkspaceExplorerComponent, NoopAnimationsModule],
       providers: [
+        provideTranslateTesting(),
         { provide: WorkspaceService, useValue: workspaceServiceSpy },
         {
           provide: ContextService,
@@ -2487,7 +2507,7 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
     })
       .overrideComponent(WorkspaceExplorerComponent, {
         set: {
-          imports: [CommonModule, ButtonModule, ToolbarModule],
+          imports: [CommonModule, ButtonModule, ToolbarModule, TranslatePipe],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
       })
@@ -2709,10 +2729,20 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
     );
 
     // ...and the notice reaches the preview pane, naming the file.
+    //
+    // A deliberately synthetic template, because the assertion is about the
+    // PARAMETER reaching the sentence: the no-op loader echoes a bare key and
+    // substitutes nothing, so without this the spec would pass whether the
+    // component threaded the filename or not.
+    setTestTranslations({
+      workspace: { fileDeletedDesc: '<<deleted:{{file}}>>' },
+    });
+    fixture.detectChanges();
     const notice = fixture.nativeElement.querySelector(
       '.deleted-notice',
     ) as HTMLElement | null;
     expect(notice).withContext('deletion notice block').not.toBeNull();
+    expect(notice!.textContent).toContain('<<deleted:');
     expect(notice!.textContent).toContain(OPEN_PATH);
   });
 
@@ -2897,8 +2927,8 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
     const fileRefresh = fixture.debugElement.query(By.css(FILE_REFRESH));
     expect(fileRefresh).withContext('per-file refresh').not.toBeNull();
     expect(
-      (fileRefresh.nativeElement as HTMLElement).getAttribute('pTooltip'),
-    ).toBe('Refresh this file');
+      (fileRefresh.nativeElement as unknown as { pTooltip?: string }).pTooltip,
+    ).toBe('workspace.refreshFile');
     expect(
       (fileRefresh.nativeElement as HTMLElement).querySelector('button')!
         .disabled,
@@ -3085,6 +3115,7 @@ describe('WorkspaceExplorerComponent — gesture-less reads log instead of banne
     await TestBed.configureTestingModule({
       imports: [WorkspaceExplorerComponent, NoopAnimationsModule],
       providers: [
+        provideTranslateTesting(),
         { provide: WorkspaceService, useValue: workspaceServiceSpy },
         {
           provide: ContextService,
@@ -3101,7 +3132,7 @@ describe('WorkspaceExplorerComponent — gesture-less reads log instead of banne
     })
       .overrideComponent(WorkspaceExplorerComponent, {
         set: {
-          imports: [CommonModule, ButtonModule, ToolbarModule],
+          imports: [CommonModule, ButtonModule, ToolbarModule, TranslatePipe],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
       })
@@ -3469,6 +3500,7 @@ describe('WorkspaceExplorerComponent — the pane state model (Epic 45)', () => 
     await TestBed.configureTestingModule({
       imports: [WorkspaceExplorerComponent, NoopAnimationsModule],
       providers: [
+        provideTranslateTesting(),
         { provide: WorkspaceService, useValue: workspaceServiceSpy },
         {
           provide: ContextService,
@@ -3485,7 +3517,7 @@ describe('WorkspaceExplorerComponent — the pane state model (Epic 45)', () => 
     })
       .overrideComponent(WorkspaceExplorerComponent, {
         set: {
-          imports: [CommonModule, ButtonModule, ToolbarModule],
+          imports: [CommonModule, ButtonModule, ToolbarModule, TranslatePipe],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
       })
@@ -3878,7 +3910,7 @@ describe('WorkspaceExplorerComponent — the pane state model (Epic 45)', () => 
       '.empty-workspace',
     ) as HTMLElement | null;
     expect(empty).withContext('empty-workspace block').not.toBeNull();
-    expect(empty!.textContent).toContain('No files found');
+    expect(empty!.textContent).toContain('workspace.noFilesTitle');
     expect(tree()).withContext('no tree for an empty workspace').toBeNull();
   });
 
@@ -4076,7 +4108,10 @@ describe('WorkspaceExplorerComponent — the pane state model (Epic 45)', () => 
 
 describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic 45)', () => {
   const TEAM_ID = 'proc';
-  const STOPPED_TOOLTIP = 'Team must be running to upload files';
+  // The KEY, not the sentence. The panel's copy went through `@ngx-translate`
+  // this round and the spec's no-op loader echoes the key back, so pinning the
+  // English here would pin it through the back door.
+  const STOPPED_TOOLTIP = 'workspace.uploadStopped';
 
   let component: WorkspaceExplorerComponent;
   let fixture: ComponentFixture<WorkspaceExplorerComponent>;
@@ -4149,6 +4184,7 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     await TestBed.configureTestingModule({
       imports: [WorkspaceExplorerComponent, NoopAnimationsModule],
       providers: [
+        provideTranslateTesting(),
         { provide: WorkspaceService, useValue: workspaceServiceSpy },
         {
           provide: ContextService,
@@ -4168,7 +4204,13 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
           // TreeModule so the navigator's label template actually
           // instantiates — the size label is rendered by a
           // pTemplate, which a schema-stubbed <p-tree> never runs.
-          imports: [CommonModule, ButtonModule, ToolbarModule, TreeModule],
+          imports: [
+            CommonModule,
+            ButtonModule,
+            ToolbarModule,
+            TreeModule,
+            TranslatePipe,
+          ],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
       })
@@ -4477,12 +4519,12 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     // ancestor is now shown by there being no ancestor to click, rather than by
     // a dead button pointing nowhere.
     expect(crumbLinks()).toEqual([]);
-    expect(crumbCurrent()).toBe('Root');
+    expect(crumbCurrent()).toBe('workspace.root');
 
     await clickRow('docs');
     await clickRow('deep');
     expect(component.currentDirectory()).toBe('docs/deep');
-    expect(crumbLinks()).toEqual(['Root', 'docs']);
+    expect(crumbLinks()).toEqual(['workspace.root', 'docs']);
     expect(crumbCurrent()).toBe('deep');
 
     // One level up, by naming it rather than by repeating a direction.
@@ -4490,7 +4532,7 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     expect(component.currentDirectory()).toBe('docs');
     expect(rowNames()).toEqual(['deep', 'a.txt']);
 
-    await clickCrumb('Root');
+    await clickCrumb('workspace.root');
     expect(component.currentDirectory()).toBe('');
     expect(rowNames()).toEqual(['assets', 'docs', 'a.txt', 'b.txt']);
     expect(crumbLinks()).toEqual([]);
@@ -4530,7 +4572,7 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     // state ends the trail at the pane's own location, none leaves it blank.
 
     // 1. the list, at the root
-    expect(crumbCurrent()).toBe('Root');
+    expect(crumbCurrent()).toBe('workspace.root');
 
     // 2. the list, in a subdirectory
     await clickRow('docs');
@@ -4541,7 +4583,7 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     await clickRow('a.txt');
     expect(component.viewMode()).toBe('text');
     expect(crumbCurrent()).toBe('a.txt');
-    expect(crumbLinks()).toEqual(['Root', 'docs']);
+    expect(crumbLinks()).toEqual(['workspace.root', 'docs']);
 
     // 4. a read in flight — the trail keys on `openFile()`, not on `viewMode()`
     component.loadingContent.set(true);
@@ -4668,7 +4710,7 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     expect(rowEls().length).toBe(0);
     const empty = pane().querySelector('.empty-directory') as HTMLElement | null;
     expect(empty).withContext('an explicit empty-directory element').not.toBeNull();
-    expect(empty!.textContent).toContain('This folder is empty');
+    expect(empty!.textContent).toContain('workspace.emptyFolder');
     expect(uploadControl()!.getAttribute('data-testid')).toBe('upload-files');
   });
 
@@ -4762,7 +4804,7 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
     expect(crumbCurrent()).toBe('deep');
     expect(crumbLinks())
       .withContext('the ancestors are the way out of a failed navigation')
-      .toEqual(['Root', 'docs']);
+      .toEqual(['workspace.root', 'docs']);
     expect(logged).toHaveBeenCalled();
 
     // And the way out works: the parent crumb re-lists the directory it came from.
@@ -4797,7 +4839,7 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
 
       // The root is a location, not "nothing selected" — one crumb, no ancestors.
       expect(component.breadcrumb()).toEqual([
-        { name: 'Root', path: '', last: true },
+        { name: 'workspace.root', translate: true, path: '', last: true },
       ]);
 
       await clickRow('docs');
@@ -4806,9 +4848,9 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
       // Paths accumulate left to right so a click never re-derives one from an
       // index, and exactly one crumb is `last`.
       expect(component.breadcrumb()).toEqual([
-        { name: 'Root', path: '', last: false },
-        { name: 'docs', path: 'docs', last: false },
-        { name: 'deep', path: 'docs/deep', last: true },
+        { name: 'workspace.root', translate: true, path: '', last: false },
+        { name: 'docs', translate: false, path: 'docs', last: false },
+        { name: 'deep', translate: false, path: 'docs/deep', last: true },
       ]);
     });
 
@@ -4827,7 +4869,7 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
       // Route 2: a breadcrumb crumb back out. Symmetrically, a Root row keyed on
       // the tree would stay UNLIT here — the pane is at the root and the
       // navigator would say otherwise.
-      await clickCrumb('Root');
+      await clickCrumb('workspace.root');
       expect(component.currentDirectory()).toBe('');
       expect(rootRowLit()).withContext('unlit while the pane is at the root').toBe(true);
     });
@@ -4844,7 +4886,7 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
       expect(component.openFile()!.path).toBe('a.txt');
       expect(rootRowLit()).toBe(false);
 
-      await clickCrumb('Root');
+      await clickCrumb('workspace.root');
       expect(component.openFile()).toBeNull();
       expect(rootRowLit()).toBe(true);
     });
@@ -4859,7 +4901,7 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
       await clickRow('docs');
       expect(component.selectedTreeNode()?.data.path).toBe('docs');
 
-      await clickCrumb('Root');
+      await clickCrumb('workspace.root');
       expect(component.selectedTreeNode()).toBeNull();
     });
 

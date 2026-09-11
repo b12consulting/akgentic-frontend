@@ -1,0 +1,246 @@
+// LINK 1 OF THE HEIGHT CHAIN's sibling: the rail is a fixed-basis flex item in
+// the console row. `flex: 0 0 auto` with an explicit width, so the conversation
+// beside it — which is the element that must absorb every remaining pixel —
+// never has to negotiate with the rail's content for its own size.
+//
+// `--akg-rail-width` IS NOW A BOUND VALUE, not just a token (W8b). The token
+// remains the default and is what this rule resolves to when nothing else is
+// set; `console-shell.component.html` overrides the property on this element
+// from the stored preference. Nothing here changes, which is the point: the
+// rail does not know it is resizable, any more than the inspector knows.
+//
+// `max-width` is the GUARANTEE and not the mechanism — the pair to
+// `RAIL_MAX_TRACK_PERCENT` in `pane-layout.ts`, which is where the same 26% is
+// applied to the drag. The drag never proposes a width above this cap, so this
+// rule never has anything to do; it is here for the case the arithmetic cannot
+// see, which is a deployment that overrides the token.
+//
+// NO BORDER ON THIS EDGE, and that is a correction rather than an omission.
+// The rail's right edge is where `app-split-divider` now stands, and the
+// divider draws its own seam down the middle of a strip that is several pixels
+// wide: a border here as well put two vertical rules a few pixels apart and
+// read as a gutter rather than as a boundary. The seam is drawn the way this
+// console draws every other one — by the ground change, `--akg-panel-bg`
+// against the main column's `--akg-overlay-bg` — which is the same rule
+// `console-shell.component.scss` and the inspector already state for the pane
+// edge. Three files, one story about seams.
+:host {
+  flex: 0 0 auto;
+  width: var(--akg-rail-width);
+  max-width: var(--akg-rail-max-width);
+  background: var(--akg-panel-bg);
+  display: flex;
+  flex-direction: column;
+  // Load-bearing while collapsing: the content keeps its intrinsic width all
+  // the way to `width: 0`, and without this it spills across the conversation
+  // for the length of the transition.
+  overflow: hidden;
+  transition: width var(--akg-pane-transition-duration) ease;
+}
+
+:host(.collapsed) {
+  width: 0;
+}
+
+// A DRAG IS NOT A COLLAPSE. The transition above is what makes the collapse
+// toggle read as a movement rather than a jump; applied to a drag it makes the
+// rail trail the pointer by its own duration and never quite arrive. The shell
+// raises this class for the length of the gesture only — the same bargain, and
+// the same class name, as the inspector's `.resizing`.
+:host(.resizing) {
+  transition: none;
+}
+
+.rail {
+  display: flex;
+  flex-direction: column;
+  // The rail's own width, held while the host animates to zero, so the content
+  // slides out rather than reflowing to nothing on the way.
+  width: var(--akg-rail-width);
+  max-width: 100%;
+  min-height: 0;
+  flex: 1;
+}
+
+// --- Brand -------------------------------------------------------------
+
+.rail__brand {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 16px 12px 20px;
+}
+
+// `align-items: baseline`, not `center`: the two halves are set at 19px and
+// 9px, and centring them would leave the qualifier floating in the middle of
+// the wordmark's x-height instead of sitting on its baseline.
+.rail__wordmark {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.rail__wordmark-name {
+  font-family: var(--akg-font-display);
+  font-weight: 300;
+  font-size: 19px;
+  letter-spacing: -0.2px;
+  color: var(--akg-text);
+}
+
+// A DEPLOYMENT'S OWN MARK, drawn INSTEAD of the wordmark (W9c) — see the
+// template for why never both.
+//
+// Bounded rather than sized: the framework has no idea what shape a
+// white-label mark is, and one that is 40px tall would push the collapse
+// control out of the row while one 600px wide would push it off the rail
+// entirely. `max-*` with `width: auto` means a mark keeps its own aspect ratio
+// and is only ever asked to be smaller — the one constraint that is safe to
+// impose on an image nobody in this repo has seen. The height is the
+// wordmark's own cap height plus its descender, so the two alternatives leave
+// the row exactly as tall as each other.
+.rail__logo {
+  display: block;
+  width: auto;
+  height: auto;
+  max-height: 26px;
+  // The brand row's padding is 20px + 16px, so this is the rail at its
+  // narrowest with nothing overflowing.
+  max-width: calc(var(--akg-rail-width) - 100px);
+  object-fit: contain;
+}
+
+.rail__wordmark-suffix {
+  font-family: var(--akg-font-ui);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--akg-text-muted);
+}
+
+// --- Primary action ----------------------------------------------------
+
+.rail__primary {
+  flex: 0 0 auto;
+  padding: 0 14px 12px;
+}
+
+.rail__new-team {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--akg-card-radius);
+  background: var(--akg-accent-fg);
+  // The token, not a raw `#fff`: the console's "on a dark fill" white is the
+  // same value everywhere and is named once.
+  color: var(--akg-overlay-bg);
+  font-family: var(--akg-font-ui);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--akg-accent-hover);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+  }
+}
+
+.rail__new-team-glyph {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+}
+
+// --- The list ----------------------------------------------------------
+
+// The rail's only scroll region: everything above and below it is
+// `flex: 0 0 auto`, so this is the element that absorbs the leftover height.
+.rail__list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0 10px 16px;
+}
+
+// A refetch over rows already on screen. Dimmed, never emptied — an emptied
+// searchable list reads as "nothing matches".
+.rail__list--dimmed {
+  opacity: 0.55;
+  transition: opacity var(--akg-pane-transition-duration) ease;
+}
+
+// The uppercase section label is a shared idiom — the rail's group headers, the
+// inspector's TOOLS and USAGE. The repetition is the language, which is why the
+// size and the tracking are tokens rather than literals repeated per surface.
+.rail__group-label {
+  margin: 0;
+  padding: 12px 10px 6px;
+  font-family: var(--akg-font-ui);
+  font-size: var(--akg-section-label-size);
+  font-weight: 500;
+  letter-spacing: var(--akg-section-label-tracking);
+  text-transform: uppercase;
+  color: var(--akg-text-muted);
+}
+
+.rail__notice {
+  margin: 0;
+  padding: 16px 11px;
+  font-family: var(--akg-font-ui);
+  font-size: 12.5px;
+  font-weight: 300;
+  color: var(--akg-text-muted);
+}
+
+.rail__notice-title {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--akg-text-muted);
+}
+
+.rail__notice-body {
+  margin: 0;
+  line-height: 1.5;
+}
+
+// A button, not an `<a>`: it runs a navigation carrying the home page's query
+// parameters, and it must be focusable.
+.rail__notice-link {
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font-family: var(--akg-font-ui);
+  font-size: 12px;
+  color: var(--akg-accent-fg);
+  cursor: pointer;
+  text-decoration: underline;
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+  }
+}
+
+// One clock for both rails (the inspector collapses on the same duration), and
+// both honour the preference at the consumer rather than globally — a project
+// -wide `* { transition: none }` would also kill transitions nobody complained
+// about.
+@media (prefers-reduced-motion: reduce) {
+  :host,
+  .rail__list--dimmed {
+    transition: none;
+  }
+}

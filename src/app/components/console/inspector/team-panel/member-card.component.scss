@@ -1,0 +1,158 @@
+/* The row is a flex item inside the panel's column, but say it anyway: an
+   inline host would shrink-to-fit and the card inside would never reach the
+   pane's width wherever this is reused. */
+:host {
+  display: block;
+}
+
+/*
+ * The card and its trailing action, on one line.
+ *
+ * The action sits BESIDE the card rather than inside it because a `<button>`
+ * inside a `<button>` is invalid markup — and the browsers that tolerate it
+ * disagree about which of the two a click reaches, which for a control that
+ * opens a dialog is the difference between a reader and a tab switch.
+ *
+ * The indent stays on the CARD, not on this row. The card is the thing that
+ * expresses depth; pushing the whole row in would take the action button with
+ * it and the column of actions would zig-zag down the pane.
+ */
+.member-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/*
+ * A member row.
+ *
+ * `<button>` reset first: the element is a button because the row is an
+ * affordance, not because it wants a button's chrome. Everything a UA gives it
+ * — its own font, its centred text, its border — is undone here, and the card
+ * appearance is stated deliberately below.
+ */
+.member-card {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  /* Takes the row and yields to the action button beside it. `min-width: 0` is
+     what actually lets it shrink: a flex item's automatic minimum is its
+     content's, so without this the longest member name would push the action
+     off the pane's right edge instead of ellipsising. */
+  flex: 1 1 auto;
+  min-width: 0;
+  /* One step of hierarchy per level, with the STEP owned by the token and the
+     LEVEL bound by the row. The fallback matters: a caller that forgets the
+     binding gets a flat list rather than `calc()` failing to parse and the rule
+     being dropped, which would silently un-indent every card in the pane. */
+  margin-left: calc(var(--akg-depth, 0) * var(--akg-member-indent));
+  padding: 9px 12px;
+  border: 1px solid var(--akg-surface-border);
+  border-radius: var(--akg-card-radius);
+  background: var(--akg-overlay-bg);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+
+.member-card:hover {
+  background: var(--akg-panel-hover);
+}
+
+/*
+ * A real focus ring. The prototype ships `outline: none` with nothing in its
+ * place and no `:focus-visible` anywhere, which makes keyboard navigation
+ * invisible — the one thing turning these rows into buttons was for.
+ */
+.member-card:focus-visible {
+  outline: none;
+  box-shadow: var(--akg-focus-ring);
+}
+
+/*
+ * A rounded SQUARE, unlike the circular account avatar in the rail. The shape
+ * is the distinction between "a member of this team" and "the person using the
+ * product", and it is the only distinction available at 26px.
+ */
+.member-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: var(--akg-avatar-size-sm);
+  height: var(--akg-avatar-size-sm);
+  border-radius: 8px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* The same pair the transcript gives a speaking agent. That is the point: the
+   member here and the speaker there should be recognisably one thing. */
+.supervisor .member-avatar {
+  background: var(--akg-accent-fg);
+  color: var(--akg-accent-bright);
+}
+
+/* A hover ground used as a FILL — quiet by construction, so a team of nine
+   workers does not read as nine coloured tiles. */
+.worker .member-avatar {
+  background: var(--akg-avatar-worker-bg);
+  color: var(--akg-avatar-worker-fg);
+}
+
+.member-body {
+  display: flex;
+  flex-direction: column;
+  /* Without this the flex item refuses to shrink below its content and the
+     ellipsis below never engages — the name pushes the status dot off the row
+     instead of truncating. */
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* A NAME, so the heading step — not `--akg-turn-fg`, which is the transcript's
+   prose. The two were the wrong way round in both directions: the turn was set
+   in the label colour and the label in the turn colour. */
+.member-name {
+  overflow: hidden;
+  font-size: 13px;
+  color: var(--akg-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-role {
+  font-size: 11px;
+  font-weight: 300;
+  color: var(--akg-text-muted);
+}
+
+/*
+ * Presence, in six pixels. Bright means the agent is on the team right now;
+ * the idle value exists so the element does not have to disappear and reflow
+ * the row if a liveness signal ever arrives.
+ */
+.member-dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--akg-accent-bright);
+}
+
+.member-dot.idle {
+  background: var(--akg-dot-idle);
+}
+
+/*
+ * The trailing action. Quiet at rest and always present — NOT revealed on
+ * hover.
+ *
+ * A control that only appears once the pointer is on the row is invisible to
+ * the user who is looking for it, and unreachable by touch entirely. It is the
+ * same failure mode as a pane divider that only announces itself once you have
+ * already found it.
+ */
+.member-read {
+  flex: 0 0 auto;
+}

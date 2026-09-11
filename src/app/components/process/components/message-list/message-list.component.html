@@ -4,17 +4,41 @@
     else noMessagesPlaceholder
   "
 >
+  <!--
+    SIZED BY ITS PANE, not by the viewport and not by a full-width layout.
+
+    Two values were wrong the moment this panel moved into the 310px inspector.
+    `min-width: 40rem` is 520px of table inside a 278px lane, so every row
+    overflowed horizontally by nearly twice the pane's width. And
+    `scrollHeight: calc(100vh - 185px)` re-derived a height from the WINDOW
+    inside a pane whose height already arrives through the Epic-56 flex chain —
+    185px was the chrome above this table in the layout it used to live in, a
+    number that has been meaningless since.
+
+    `scrollHeight="flex"` is PrimeNG's own answer: the body takes what the
+    table's box gives it. The box is `height: 100%` off the panel, which is the
+    same chain `process.component.scss` documents end to end.
+  -->
   <p-table
     #dataTable
     [value]="filteredMessages"
-    [tableStyle]="{ 'min-width': '40rem' }"
     [scrollable]="true"
-    scrollHeight="calc(100vh - 185px)"
+    scrollHeight="flex"
     (mouseenter)="isMouseOverTable = true"
     (mouseleave)="isMouseOverTable = false"
   >
     <ng-template #body let-message>
-      <div class="card-container">
+      <!--
+        `.message-card`, not the global `.card-container`.
+
+        That class is declared unencapsulated in `src/styles.scss` with a hard
+        `#e0e0e0` border and a `1rem` margin on all four sides. In a 278px lane
+        the side margins alone eat 32px, and the border was the last
+        untokenised edge on this surface — a deployment re-pointing the palette
+        moved every panel except this one. The class is now this component's,
+        and it is stated in tokens.
+      -->
+      <div class="message-card">
         <div class="card-header">
           <span [ngStyle]="getSenderColor(message)">◼︎</span>
           {{ message.sender.name }} &nbsp;➔&nbsp;
@@ -80,13 +104,19 @@
   </p-table>
 </ng-container>
 <ng-template #noMessagesPlaceholder>
-  <div class="empty-section message-placeholder">
-    <div class="empty-section-box">
-      <i class="pi pi-comments message-placeholder-icon"></i>
-      <div class="message-placeholder-title">{{ "messageList.emptyTitle" | translate }}</div>
-      <div class="message-placeholder-desc">
-        {{ "messageList.emptyDesc" | translate }}
-      </div>
-    </div>
-  </div>
+  <!--
+    THE SHARED EMPTY STATE, not a fourth hand-drawn one.
+
+    This was a dashed-border box with its own glyph size, its own greys and its
+    own type scale — copied, by its own comment, from the knowledge-graph panel,
+    which had copied it from somewhere else. Three panes centring a glyph and a
+    sentence at three different sizes read as three unfinished screens rather
+    than one quiet one, and none of the greys cleared AA on this ground.
+
+    The COPY is unchanged: the same two keys, in the same order.
+  -->
+  <app-inspector-empty-state
+    titleKey="messageList.emptyTitle"
+    blurbKey="messageList.emptyDesc"
+  />
 </ng-template>

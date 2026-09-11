@@ -3,14 +3,16 @@ import { Component, inject, Input, OnInit, DestroyRef } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 
+import { Observable, of } from 'rxjs';
+
 import { MessageService } from 'primeng/api';
-import { ButtonModule } from 'primeng/button';
 import { DropdownModule } from 'primeng/dropdown';
-import { FloatLabelModule } from 'primeng/floatlabel';
 import { MultiSelectModule } from 'primeng/multiselect';
 import { TextareaModule } from 'primeng/textarea';
 import { TranslatePipe } from '@ngx-translate/core';
 import { MentionModule } from 'angular-mentions';
+
+import { TokenCountPipe } from '../../../../shared/pipes/token-count.pipe';
 
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 import { ConfigService } from '../../../../core/config/config.service';
@@ -21,6 +23,11 @@ import { ChatService } from '../../selectors/chat.selector';
 import { ContextService } from '../../../../core/context/context.service';
 import { GraphDataService, HUMAN_ROLE } from '../../selectors/graph.selector';
 import { IngestionService } from '../../event/ingestion.service';
+
+import {
+  TeamTokenTotals,
+  TokenUsageSelector,
+} from '../../selectors/token-usage.selector';
 
 import { ENTRY_POINT_NAME } from '../../selectors/chat-message.model';
 import { CommandDescriptor } from '../../../../protocol/message.types';
@@ -39,12 +46,11 @@ type SubmitPhase = 'idle' | 'restarting' | 'sending';
     CommonModule,
     FormsModule,
     TextareaModule,
-    FloatLabelModule,
-    ButtonModule,
     DropdownModule,
     MultiSelectModule,
     MentionModule,
     TranslatePipe,
+    TokenCountPipe,
   ],
   templateUrl: './user-input.component.html',
   styleUrl: './user-input.component.scss',
@@ -63,6 +69,29 @@ export class ProcessUserInputComponent implements OnInit {
   userInputEnterKeySubmit: boolean = this.config.userInputEnterKeySubmit;
 
   /**
+   * The team's running token cost, for the line beside the send button.
+   *
+   * OPTIONAL injection, and the reason is a real seam rather than defensiveness.
+   * `TokenUsageSelector` is component-scoped on `ProcessComponent.providers`
+   * (never `providedIn: 'root'`, because a root instance would carry one team's
+   * totals into the next), and in the running app this composer is always
+   * mounted inside that injector. It is NOT always mounted inside it in tests:
+   * `ChatPanelComponent`'s spec builds the panel — and therefore this child —
+   * in a bare TestBed, where a required injection would throw.
+   *
+   * Re-providing the selector here instead would compile and would be WRONG: it
+   * would build a second one over a second `IngestionService` and report zeros
+   * forever while the real totals climbed. Falling back to an explicit
+   * all-zeros stream keeps the "no data" case exactly what the selector's own
+   * contract says it is — zeros, never undefined — so the template needs no
+   * null check and the line simply stays hidden.
+   */
+  private readonly tokenUsage = inject(TokenUsageSelector, { optional: true });
+  readonly teamTotals$: Observable<TeamTokenTotals> =
+    this.tokenUsage?.teamTotals$ ??
+    of({ totalSent: 0, totalReceived: 0, totalCacheRead: 0, totalCacheWrite: 0 });
+
+  /**
    * Story 33-3 (revises 33-1): where this submit is. Written ONLY in
    * `sendMessage()`, and returned to `'idle'` by the single `finally` there —
    * so its lifetime is the whole submit, restore *and* dispatch, rather than
@@ -71,12 +100,17 @@ export class ProcessUserInputComponent implements OnInit {
    * come from one value they cannot disagree.
    */
   phase: SubmitPhase = 'idle';
-  /** Submit-control label KEY while the phase is `'restarting'`. */
+  /**
+   * Submit-control accessible-name KEY while the phase is `'restarting'`.
+   * It was a visible label until the control became a circular glyph; the state
+   * still has to be announced, so it moved to `aria-label`/`title` rather than
+   * being dropped.
+   */
   readonly restoreLabelKey: string = 'chat.input.restarting';
 
   /**
-   * The one predicate the re-entrancy guard and the template's `[loading]` /
-   * `[disabled]` bindings share. A second boolean here would reintroduce
+   * The one predicate the re-entrancy guard, the send button's `[disabled]` and
+   * its spinner all share. A second boolean here would reintroduce
    * exactly the "two flags that must never disagree" defect story 33-3 removes.
    */
   get busy(): boolean {
@@ -150,6 +184,24 @@ export class ProcessUserInputComponent implements OnInit {
           this.selectedSender = null;
         }
       });
+  }
+
+  /**
+   * Is there anyone else to send as?
+   *
+   * The Send-as pill is DISABLED rather than removed below this threshold. It
+   * was gated out of the DOM by the same condition, which made the composer a
+   * different shape on a single-human deployment than on a multi-human one —
+   * the controls sat in different places for a reason the user could not see,
+   * and "can I send as somebody else here?" had no answer on screen at all.
+   *
+   * Two, not one: the entry-point `@Human` is itself a selectable sender
+   * (Story 7-3 / ADR-007 Revision 2026-04-15), so a team with one human has
+   * nothing to choose BETWEEN, and a control offering a single option that is
+   * already in effect is a control with no purpose.
+   */
+  get canChooseSender(): boolean {
+    return this.humanAgents.length > 1;
   }
 
   /**

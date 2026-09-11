@@ -1,0 +1,30 @@
+<!--
+  Centred glyph, headline, optional line. The glyph is decorative — the sentence
+  is the message — so it is aria-hidden and the pane reads as its text.
+-->
+<div class="empty-state">
+  <div class="empty-glyph" aria-hidden="true">
+    <!-- Three connected nodes: the same "a team is a graph" idea the tree and
+         the graph view draw, at the size where only the shape survives. -->
+    <svg
+      width="20"
+      height="20"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+    >
+      <circle cx="6" cy="6" r="2.5"></circle>
+      <circle cx="18" cy="7" r="2.5"></circle>
+      <circle cx="12" cy="17" r="2.5"></circle>
+      <path d="M7.7 7.7 10.6 15M16.6 9l-3.2 6"></path>
+    </svg>
+  </div>
+
+  <p class="empty-title">{{ titleKey | translate }}</p>
+
+  @if (blurbKey !== null) {
+    <p class="empty-blurb">{{ blurbKey | translate }}</p>
+  }
+</div>

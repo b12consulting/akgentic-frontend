@@ -79,15 +79,21 @@
     </button>
     <app-user-input [processId]="processId"></app-user-input>
   </div>
-  <!-- Epic 51: the sub-agent conversation reader. Read-only, no fetch — every
-       message it shows is already in `chatMessages`. -->
+  <!-- Epic 51: the sub-agent conversation reader. No fetch — every message and
+       every run it shows is already in `chatMessages` / `thinkingStates`; it
+       scopes them to the open agent itself (W3). It now also composes a message
+       to that agent, which this panel sends (W5b). -->
   <app-agent-conversation-modal
     [visible]="readerVisible"
     [agents]="readerAgents"
     [messages]="chatMessages"
+    [runs]="thinkingStates"
     [selectedAgentId]="readerSelectedAgentId"
+    [pendingNotifications]="pendingNotifications"
+    [canSend]="readerCanSend"
     (visibleChange)="onReaderVisibleChange($event)"
     (agentSelected)="onReaderAgentSelected($event)"
+    (sendToAgent)="onReaderSend($event)"
   ></app-agent-conversation-modal>
   <app-chat-human-modal
     [visible]="modalVisible"

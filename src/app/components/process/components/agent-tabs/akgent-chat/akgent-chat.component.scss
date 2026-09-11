@@ -1,5 +1,23 @@
+/*
+ * LINK IN THE EPIC-56 HEIGHT CHAIN. See `process.component.scss` for the chain
+ * stated end to end, and for why it fails silently: nothing errors, the scroll
+ * region simply runs past the bottom of the pane and its scrollbar stops
+ * appearing. Every link says `min-height: 0` explicitly rather than trusting a
+ * default, because the broken link last time was an element with no rule at all.
+ *
+ * `.trace-scroll` below takes the slack; the chat input row keeps its intrinsic
+ * height so it stays pinned and reachable however long the trace gets.
+ */
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
 // Chat input row layout
 .input-row {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -44,12 +62,12 @@
       border: none;
       font: inherit;
       cursor: pointer;
-      color: #64748b;
+      color: var(--akg-text-muted);
       font-size: 0.75rem;
       font-variant-numeric: tabular-nums;
       padding: 0.15rem 0.5rem;
       border-radius: 999px;
-      background-color: #f1f5f9;
+      background-color: var(--akg-well-bg);
 
       &:disabled {
         cursor: default;
@@ -58,9 +76,10 @@
   }
 }
 
-// ADR-024 §Decision 3 — the popover's key/value breakdown (member-chat pill and
-// team-tree footer share this layout). Exact counts via `| number`; the pill/
-// footer keep the compact `tokenCount` numbers.
+// ADR-024 §Decision 3 — the popover's key/value breakdown. The team tree used
+// to share this layout for its own footer popover; the tree is gone (W6) and its
+// breakdown moved into `usage-panel`, so this is now the member pill's alone.
+// Exact counts via `| number`; the pill keeps the compact `tokenCount` numbers.
 .usage-popover {
   display: flex;
   flex-direction: column;
@@ -75,7 +94,7 @@
   }
 
   .usage-popover-label {
-    color: #64748b;
+    color: var(--akg-text-muted);
     font-weight: 600;
   }
 }
@@ -101,37 +120,58 @@
         padding: 0.35rem 0.9rem;
         border: none;
         border-radius: 999px;
-        background-color: #fff;
-        color: #475569;
+        background-color: var(--akg-overlay-bg);
+        color: var(--akg-control-fg);
         font-size: 0.85rem;
         font-weight: 600;
         cursor: pointer;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+        box-shadow: var(--akg-overlay-shadow);
 
         .pi {
             font-size: 0.85rem;
         }
 
         &:hover {
-            background-color: #f2f7f9;
+            background-color: var(--akg-panel-hover);
         }
     }
 }
 
 // Single scroll region for the whole trace: the Epic 16 head system block and
 // the conversation scroll together, keeping the chat input pinned below and
-// always reachable. Viewport-relative (not flex:1) because the PrimeNG tab
-// chain above this component does not propagate a usable height. The 370px
-// reserves the tab header, the input row, and surrounding chrome — the same
-// budget the conversation table used before this single region replaced its
-// per-table `scrollHeight`.
+// always reachable.
+//
+// FLEX, NOT VIEWPORT. This carried `height: calc(100vh - 370px)`, and the
+// comment above it named the real obstacle: "the PrimeNG tab chain above this
+// component does not propagate a usable height". That was true and the fix was
+// aimed at the wrong element — the answer is to make the chain propagate
+// (`agent-tabs.component.scss` now does, four rules), not to measure the window
+// from inside it. Since Epic 56 this panel lives in the 310px inspector, where
+// 370px of "surrounding chrome" is a budget for a layout that no longer exists
+// and the region is simply taller than the pane clipping it.
+//
+// `min-height: 0` is the load-bearing half: a flex child's default
+// `min-height: auto` refuses to shrink below its content, so `flex: 1` alone
+// would let a long trace push the region past the pane and its scrollbar would
+// never appear — the silent failure `process.component.scss` documents.
 .trace-scroll {
-  height: calc(100vh - 370px);
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
 }
 
+// The global `.card-container` (`src/styles.scss`), narrowed for this pane.
+//
+// Two of its declarations are wrong here and both are overridden rather than
+// inherited: `margin: 1rem` on all four sides spends 32px of a ~278px lane on
+// nothing, and its hardcoded border was the last untokenised edge in the Member
+// tab — a deployment re-pointing the palette moved every surface except this
+// one. The Messages tab stopped using the global class outright; this component
+// is its only remaining consumer, so it is overridden in place rather than
+// forked.
 .card-container {
   margin: 1rem 0;
+  border-color: var(--akg-surface-border);
 }
 
 .text-container {
@@ -159,5 +199,5 @@
     align-items: center;
     padding: 5px;
     margin-bottom: 10px;
-    color: #334155;
+    color: var(--akg-control-fg);
   }

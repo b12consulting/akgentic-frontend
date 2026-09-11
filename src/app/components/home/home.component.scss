@@ -1,18 +1,27 @@
 // Story 28.3 — height-constrained flex column so the classic paginated table
-// fills the area below the app header and defines a bounded scroll region. The
-// table's [scrollable]/scrollHeight="flex" then scrolls the BODY while the
-// header (sticky for free with scrollable) and the bottom paginator stay
-// pinned. Component-local (no shell change): no `position: fixed` (overlap risk
-// with the menubar). The header height is a CSS variable with a fallback rather
-// than a brittle magic pixel — `calc(100vh - var(--app-header-height))` bounds
-// :host so the flex chain has a real height to distribute. `min-height: 0` on
-// each flex child is the unlock that lets the table shrink below its content
-// and form the inner scroll region (without it the page, not the body, scrolls).
+// fills the area it is given and defines a bounded scroll region. The table's
+// [scrollable]/scrollHeight="flex" then scrolls the BODY while the header
+// (sticky for free with scrollable) and the bottom paginator stay pinned.
+// `min-height: 0` on each flex child is the unlock that lets the table shrink
+// below its content and form the inner scroll region (without it the page, not
+// the body, scrolls).
+//
+// Epic 56 — `height: 100%`, not `calc(100vh - var(--app-header-height))`. That
+// variable was a GUESS at the rendered height of the menubar, which no longer
+// exists: the console shell is now a `height: 100vh` flex row and this page is
+// a flex child of its `<main>`, so the height arrives through the chain rather
+// than being re-derived from the viewport.
+//
+// The `:host` -> `.content` -> `.main-container` -> `.home-table` chain is
+// still load-bearing with the split gone, and for the ORIGINAL reason: the
+// table's `scrollHeight="flex"` body needs a bounded ancestor to scroll
+// inside. Re-deriving the height from the viewport would make this page a few
+// pixels taller or shorter than the `<main>` it sits in, and the table's
+// scroll region would start from a bottom edge that is not the real one.
 :host {
-    --app-header-height: 4.5rem;
     display: flex;
     flex-direction: column;
-    height: calc(100vh - var(--app-header-height));
+    height: 100%;
     min-height: 0;
 }
 
@@ -23,73 +32,17 @@
     min-height: 0;
 }
 
-// The split row (Epic 52). A flex ROW whose children are the list, the divider
-// and the team pane; the column chain above it (`:host` -> `.content`) already
-// bounds the height, and `min-height: 0` is what passes that bound down instead
-// of letting the row grow to its tallest child. Trap T6 is exactly this: two
-// panes with their own scroll regions, nested in a container sized in
-// percentages, is where a `height: 100%` chain breaks and BOTH panes stop
-// scrolling at once.
-.home-split {
-    display: flex;
-    flex-direction: row;
-    flex: 1;
-    min-height: 0;
-    min-width: 0;
-}
-
-// The list pane. `min-width: 0` is the flex unlock that lets it be narrower
-// than the table inside it — without it the table's `min-width: 50rem` becomes
-// the pane's floor and the divider stops responding somewhere in the middle of
-// its range, which reads as a broken drag rather than as a layout constraint.
-.home-split__list {
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 auto;
-    min-height: 0;
-    min-width: 0;
-}
-
-// Only while a team is open. `flex-basis` carries the width, so growing AND
-// shrinking must both be off: with either left on, the basis is a suggestion
-// the table's content can argue with, and the pane settles where its contents
-// want rather than where the divider was left.
-.home-split__list--split {
-    flex-grow: 0;
-    flex-shrink: 0;
-}
-
-// The team pane takes what is left — `flex-basis: 0` and not `auto`, so the
-// process view's own content has no say in how wide it is.
-.home-split__team {
-    display: flex;
-    flex-direction: column;
-    flex: 1 1 0;
-    min-height: 0;
-    min-width: 0;
-    padding-left: 0.35rem;
-}
-
-// Natural height, like .home-controls: the pane below it is the only child
-// allowed to grow, and the only one that forms a scroll region.
-.home-split__team-bar {
-    flex: 0 0 auto;
-    display: flex;
-    justify-content: flex-end;
-}
-
-// The process view sizes itself off the VIEWPORT when it owns the page
-// (`/process/:id`). Here it owns a PANE, so its height variable is switched to
-// `auto` and flex decides instead — bounded by the pane it is in, rather than
-// by a second guess at where the app header ends.
-.home-split__team app-process {
-    --process-height: auto;
-    flex: 1 1 0;
-    min-height: 0;
-}
-
 .main-container {
-    background-color: #F2F7F9;
+    // `--akg-panel-bg`, not the `#F2F7F9` that was here.
+    //
+    // That hex is a COOL blue-grey and the console around it is a warm neutral,
+    // so with the rail beside it this card read as a screenshot of a different
+    // application pasted into the page — the one place in the app where the two
+    // palettes met head on. The token is the same ROLE the hex was serving (a
+    // tinted surface that reads as furniture on the white main column), which
+    // is exactly what the rail uses, so the two now agree by construction
+    // rather than by anyone remembering to update both.
+    background-color: var(--akg-panel-bg);
     border-radius: 6px;
     padding: 1rem;
 
@@ -123,6 +76,13 @@
     margin-bottom: 0.75rem;
 }
 
+// The rail re-open control. Centred rather than bottom-aligned like the rest
+// of the row: it has no label stacked above it, so `align-items: flex-end`
+// would drop a 30px square below the baseline the labelled controls share.
+.home-controls app-icon-button {
+    align-self: center;
+}
+
 // Label stacked ABOVE its control.
 .home-controls__group {
     display: flex;
@@ -143,93 +103,6 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-}
-
-// Filter row (Epic 48). `flex: 0 0 auto` for the same reason .home-controls
-// has it — this is a natural-height block, and .home-table below is the only
-// region allowed to grow and form the scroll area (Story 28.3). Wraps rather
-// than overflowing: a namespace may declare several indexed fields, and a row
-// of inputs that scrolls sideways hides the ones on the right.
-.home-filter {
-    flex: 0 0 auto;
-    // Framed as its own panel. Without the border the row read as a second line
-    // of page controls, and the narrowing toggle in particular looked like it
-    // belonged to the Create/Configuration/Refresh group above it rather than
-    // to the filter. The frame is what makes "these controls narrow the list,
-    // those ones act on it" legible without reading a single label.
-    border: 1px solid #dee2e6;
-    border-radius: 6px;
-    background: #ffffff;
-    padding: 0.75rem 0.9rem;
-    display: flex;
-    flex-wrap: wrap;
-    // `flex-end`, matching .home-controls: the fields stack their label above
-    // the input, the narrowing toggle does not, and aligning on the bottom edge
-    // is what keeps the toggle level with the inputs rather than with the
-    // labels above them.
-    align-items: flex-end;
-    gap: 0.75rem 1rem;
-    margin-bottom: 0.75rem;
-
-    label {
-        font-size: 0.85rem;
-    }
-}
-
-// A metadata filter field: label ABOVE its input.
-//
-// The label is the field's declared description, which is a sentence rather
-// than a word ("Reference of the case the team was opened for, if any."), so it
-// must NOT be `white-space: nowrap` — stacked, a long description would push
-// the row far wider than the viewport. It wraps instead, and the input below
-// keeps its own fixed width.
-.home-filter__field {
-    display: inline-flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.25rem;
-    max-width: 22rem;
-
-    label {
-        line-height: 1.25;
-    }
-}
-
-// The narrowing toggle keeps its label BESIDE it, unlike the fields next to it.
-// A switch and its caption read as one control — the switch alone says nothing,
-// where an input at least shows what was typed — so splitting them across two
-// lines separates the state from its meaning.
-.home-filter__namespace {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    // Centre against the INPUTS rather than the row's bottom edge: the fields
-    // stack a label above their input, so a bottom-aligned toggle would sit
-    // level with the input while reading as if it belonged to the label above.
-    padding-bottom: 0.4rem;
-
-    label {
-        white-space: nowrap;
-    }
-}
-
-// Pushed to the far right of the row, away from the controls it clears: a
-// destructive action sitting between two inputs is one mis-aimed click from
-// the term you were typing. `margin-left: auto` rather than a spacer element,
-// so it still falls into place when the row wraps onto a second line.
-//
-// Bottom-aligned like everything else in the row, since it has no label of its
-// own to stack above it.
-.home-filter__reset {
-    margin-left: auto;
-    align-self: flex-end;
-    margin-bottom: 0.15rem;
-}
-
-.home-filter__input {
-    // Wide enough for a case reference, narrow enough that several fit a row.
-    width: 14rem;
-    max-width: 100%;
 }
 
 .home-controls__label {

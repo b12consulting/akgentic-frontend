@@ -34,21 +34,8 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { AuthService } from '../../core/auth/auth.service';
 import { ConfigService } from '../../core/config/config.service';
 import { ContextService } from '../../core/context/context.service';
-import { SplitDividerComponent } from '../../shared/components/split-divider/split-divider.component';
-import {
-  clampSplitPercent,
-  formatSplitPercent,
-  parseSplitPercent,
-  SPLIT_DEFAULT_PERCENT,
-  SPLIT_STORAGE_KEY,
-} from '../../shared/util/split-width';
-
-// Epic 52: the process view is EMBEDDED here, beside the teams list, so that
-// opening a team no longer means leaving them. NOT deferred like
-// <app-namespace-panel> above: `/process/:id` in app.routes.ts imports this
-// component eagerly, so it is in the initial bundle whatever this page does,
-// and a defer block would only look like it was earning something.
-import { ProcessComponent } from '../process/process.component';
+import { ViewService } from '../../core/ui/view.service';
+import { IconButtonComponent } from '../../shared/components/icon-button/icon-button.component';
 
 // Listed in @Component.imports so Angular's @defer block can resolve
 // <app-namespace-panel>. The `@defer (when ...)` block in the template keeps
@@ -86,8 +73,7 @@ const PAGE_SIZE = 250;
     TeamMetadataModalComponent,
     TeamFilterComponent,
     TeamTableComponent,
-    SplitDividerComponent,
-    ProcessComponent,
+    IconButtonComponent,
     TranslatePipe,
   ],
   templateUrl: './home.component.html',
@@ -104,6 +90,15 @@ export class HomeComponent {
   private route: ActivatedRoute = inject(ActivatedRoute);
   authService: AuthService = inject(AuthService);
   private config = inject(ConfigService);
+  /**
+   * Public because the template reads `isRailCollapsed$` and calls
+   * `toggleRail()` on it.
+   *
+   * Root-scoped, so the rail's own collapse control and this page's re-open
+   * control are two controls over ONE piece of state — which is the whole
+   * reason the flag does not live on the rail.
+   */
+  viewService: ViewService = inject(ViewService);
 
   /**
    * The creation gate. PUBLIC because the template binds the dialog straight to
@@ -219,34 +214,6 @@ export class HomeComponent {
    */
   filtersVisible = false;
 
-  // -----------------------------------------------------------------------
-  // The split (Epic 52).
-  //
-  // The list keeps the page; opening a team puts it BESIDE the list instead of
-  // navigating away from it. Two pieces of state, and they are independent:
-  // WHICH team is open, and how wide the list is.
-  // -----------------------------------------------------------------------
-
-  /**
-   * The team open beside the list, or `null` for a list on its own (FR7).
-   *
-   * The page owns the SELECTION; the embedded view owns everything about the
-   * team itself. In particular this page never writes
-   * `ContextService.currentProcessId$` — `ProcessComponent` publishes the id it
-   * has actually opened, and two writers on that subject would leave the agent
-   * tabs and the workspace following whichever wrote last (Epic 52 trap T3).
-   */
-  selectedTeamId: string | null = null;
-
-  /**
-   * The list's share of the width, as a percentage (FR5).
-   *
-   * A percentage rather than pixels so the split survives a window resize with
-   * its proportions intact, and so a width stored on a wide monitor does not
-   * come back as the whole of a narrow one.
-   */
-  splitPercent: number = SPLIT_DEFAULT_PERCENT;
-
   /** Show or hide the filter row. Never touches the filter itself. */
   toggleFilters(): void {
     this.filtersVisible = !this.filtersVisible;
@@ -287,13 +254,7 @@ export class HomeComponent {
     // first lazy load stays the sole page-1 seed (Story 28.2) and carries the
     // restored filter with it, because `loadTeamsPage` reads that value.
     this.restoreFromUrl();
-    this.trackUrlSelection();
     this.trackCreations();
-
-    // Not from the URL: a pane width is a preference of THIS browser, not a
-    // property of the view being shared. Putting it in the query string would
-    // impose the sender's monitor on the recipient's.
-    this.restoreSplitPercent();
 
     await this.loadNamespaces();
 
@@ -534,7 +495,12 @@ export class HomeComponent {
       filter: this.contextService.filter,
       page: this.currentPage,
       namespace: this.currentNamespace(),
-      team: this.selectedTeamId,
+      // Always `null` since R1, and the field deliberately STAYS on
+      // `HomeUrlState`. This page no longer opens a team, so it has nothing to
+      // say about one — but `?team=` is still a parameter the mapping knows how
+      // to read and drop, and removing the field would break every call site in
+      // `home-url.spec.ts` for no user-visible gain.
+      team: null,
     });
     // Remembered because the navigations that mean "back to my list" run when
     // this route is no longer active and its parameters are already gone.
@@ -573,13 +539,11 @@ export class HomeComponent {
     this.first = (state.page - 1) * this.rows;
     this.restoredFilter = state.filter;
     this.restoreNamespace = state.namespace;
-    // Epic 52: the open team is part of the entry state, so a shared link, a
-    // bookmark and a reload all come back to the view that was actually on
-    // screen. A team the URL names but that no longer exists is not resolved
-    // here — the embedded view fetches it and reports back through
-    // `(teamUnavailable)`, so there is exactly one place that decides whether a
-    // team can be shown.
-    this.selectedTeamId = state.team;
+    // `state.team` is READ and deliberately IGNORED. Epic 52 made the open team
+    // part of this page's entry state; R1 gave that job back to `/process/:id`,
+    // which is a route rather than a query parameter, so an old bookmark
+    // carrying `?team=` lands on the management view and simply shows the list.
+    // Honouring it here is what produced four panes at once.
     this.contextService.restoreFilter(state.filter);
 
     // The row opens iff it has something to show for itself. Hidden while
@@ -593,38 +557,6 @@ export class HomeComponent {
     // one path where no write ever runs — so recording only on write would
     // leave the logo replaying nothing.
     this.rememberQueryParams();
-  }
-
-  /**
-   * Keep the open team in step with the URL, for as long as this page lives
-   * (Epic 52).
-   *
-   * The filter and the page above are restored from the SNAPSHOT and never
-   * tracked — subscribing would feed this component its own `writeUrl` output.
-   * The open team is tracked, and the difference is not an inconsistency:
-   *
-   *  - It CANNOT loop. `writeUrl` composes `team` from `selectedTeamId`, so
-   *    every emission this page causes arrives holding the value it already
-   *    has, and the guard below returns. There is no such guard available for
-   *    the filter, whose restore has to rebuild a form.
-   *
-   *  - It has to be tracked, or the URL becomes write-only for the selection.
-   *    Query-string changes on THIS route do not rebuild this component, so
-   *    `router.navigate(['/'])` — the Home menu item — would drop `?team` while
-   *    the pane went on showing it. A URL that disagrees with the screen is
-   *    worse than one that says less, and this page's URL is the thing Epic 48
-   *    built for sharing.
-   */
-  private urlSub: Subscription | null = null;
-
-  private trackUrlSelection(): void {
-    this.urlSub = this.route.queryParamMap.subscribe((params) => {
-      const team = params.get('team') || null;
-      if (team === this.selectedTeamId) {
-        return;
-      }
-      this.selectedTeamId = team;
-    });
   }
 
   /**
@@ -644,8 +576,6 @@ export class HomeComponent {
   }
 
   ngOnDestroy(): void {
-    this.urlSub?.unsubscribe();
-    this.urlSub = null;
     this.createdSub?.unsubscribe();
     this.createdSub = null;
   }
@@ -660,44 +590,15 @@ export class HomeComponent {
   private restoreNamespace: string | null = null;
 
   /**
-   * The Create button's handler. The no-selection guard is the PAGE's — the
-   * dropdown is the page's control and an empty one is not a creation the gate
-   * should ever hear about. Everything past it belongs to the gate: whether
-   * this team type asks something first, the dialog if it does, the POST if it
-   * does not, and the spinner while that POST runs.
-   */
-  async createTeam(): Promise<void> {
-    const selected = this.selectedNamespace$.value;
-    if (!selected) {
-      console.warn('No namespace selected');
-      return;
-    }
-    await this.creation.request(selected, 'gesture');
-  }
-
-  /**
-   * `(deleteRequested)` handler. Deletes the team — and CLOSES IT FIRST if it
-   * is the one open beside the list (Epic 52).
+   * `(deleteRequested)` handler. Deletes the team, and that is all it does.
    *
-   * Before this, deleting the open team left its pane mounted over a team that
-   * no longer existed: still polling it, still holding `?team=` in a URL that
-   * was now unshareable. The pane recovers on its own through
-   * `onTeamUnavailable`, but only after a fetch has come back empty, so the
-   * user watched a live conversation turn into an error first.
-   *
-   * CLOSED BEFORE THE DELETE, not after, because the pane is what makes the
-   * requests: tearing it down first means the delete lands with nothing reading
-   * that team, instead of racing a view that is still asking for its events.
-   *
-   * The cost, stated because it is a real one: a delete that FAILS leaves the
-   * team closed though it still exists. That is one click to reopen from a row
-   * that never went away, against a guaranteed burst of errors on every
-   * successful delete — which is the common case, not the rare one.
+   * Under Epic 52 this ALSO had to close the pane beside the list first, or the
+   * deleted team stayed mounted and went on polling a row the server was
+   * removing. R1 removed the pane, so the guard it needed went with it: nothing
+   * on this page is reading the team being deleted, and the management view the
+   * user is working stays exactly where it is.
    */
   async deleteTeam(teamId: string) {
-    if (this.selectedTeamId === teamId) {
-      this.closeTeam();
-    }
     await this.contextService.deleteTeam(teamId);
   }
 
@@ -727,9 +628,20 @@ export class HomeComponent {
    */
   async restoreTeam(teamId: string) {
     try {
-      await this.apiService.restoreTeam(teamId);
-      // Reload the current page (REPLACE — no empty flash); no page jump.
-      await this.contextService.loadTeamsPage(this.currentPage, PAGE_SIZE);
+      // `restoreTeamAndAwait`, not `apiService.restoreTeam` + a page reload.
+      // The bare POST returns as soon as the restore is ACCEPTED, so the row's
+      // spinner cleared while the team was still starting and the reload that
+      // followed fetched the pre-restore status about as often as not — the
+      // team came back looking stopped and the user pressed restore again.
+      // The await polls until the cache says `running`, which is also what
+      // `stopTeamAndAwait` beside it does, what the rail's row does, and what
+      // the composer's restore does. Four surfaces, one definition of "done".
+      //
+      // It replaces the page reload rather than preceding it: the poll feeds
+      // `_context$` through `refreshOneTeam`, so this team's row is already
+      // current when it resolves, and re-fetching the page would only trade a
+      // fresh row for a round trip.
+      await this.contextService.restoreTeamAndAwait(teamId);
     } catch (error) {
       console.error(`Failed to restore team ${teamId}:`, error);
       throw error;
@@ -765,130 +677,42 @@ export class HomeComponent {
   }
 
   /**
-   * `(rowSelected)` handler. A row was picked; this page decides that means
-   * OPEN IT BESIDE THE LIST (Epic 52 FR3) rather than navigate to it.
+   * `(rowSelected)` handler. A row was picked; this page NAVIGATES to it.
    *
-   * The router call this replaced is the whole problem the epic exists for:
-   * working a list of teams — the thing the filter bar was built to make
-   * possible — meant a round trip through the router per team and losing the
-   * filtered list each time.
+   * This reverses Epic 52, and the reason is the rail. The epic embedded the
+   * process view here so that working a list of teams stopped costing a router
+   * round trip per team — a real gain, and it is genuinely given up (see the
+   * cost paragraph below). What it could not survive is a SECOND way in: the
+   * rail's team list now navigates to `/process/:id`, so the same team could be
+   * opened two different ways, and the second of them left four panes on screen
+   * at once — rail, table, conversation, inspector — each competing for the
+   * same width. A team is opened exactly ONE way now, and this is it.
+   *
+   * The cost, stated rather than hidden: working a SERVER-FILTERED set of teams
+   * one at a time is now filter → navigate → back → navigate, where it was zero
+   * navigations. The rail's search is client-side over the loaded page, so it
+   * is not a substitute for the metadata filter here. Both remain possible;
+   * neither remains cheap.
    */
   onRowSelect(teamId: string) {
-    this.openBeside(teamId);
+    void this.router.navigate(['/process', teamId]);
   }
 
   /**
-   * Show `teamId` in the pane beside the list, and say so in the URL.
+   * A team was just created. Show it — which means GO TO IT.
    *
-   * Shared by the two ways a team becomes the open one — a row click and a
-   * creation — so they cannot drift into two different notions of "open".
-   */
-  private openBeside(teamId: string): void {
-    if (this.selectedTeamId === teamId) {
-      return;
-    }
-    this.selectedTeamId = teamId;
-    this.writeUrl();
-  }
-
-  /**
-   * A team was just created. Show it — and, on this page, that means BESIDE
-   * THE LIST, the same as clicking its row (Epic 52 FR3).
+   * One destination for every creation path, which is the point of the gate
+   * having a single `created$` channel. Epic 52 briefly made this page an
+   * exception (open it beside the list, reload the page of rows behind it) with
+   * `hideHome` as an exception to the exception; R1 removed the pane, so the
+   * exception has nothing left to mean and the `hideHome` branch IS the rule.
    *
-   * Creating used to route to `/process/:id`. Epic 52 changed what selecting a
-   * team means but not what creating one means, so the Create button still
-   * threw the list away — the one round trip the epic exists to remove, on the
-   * one path most likely to be followed by "and now show me the others".
-   *
-   * `hideHome` KEEPS ROUTING, and that is not an exception to the rule but the
-   * rule applied: there is no list to sit beside on that route, so the
-   * full-page view is the only place the new team can be shown.
-   *
-   * The list is reloaded because the page no longer unmounts. The new team is
-   * already in `_context$` (the gate seeds it, so the pane can render before
-   * any fetch returns), but the table shows a SERVER-PAGED slice, and a create
-   * changes which teams belong on the current page. Without this the user would
-   * be talking to a team that does not appear in the list beside it. Selection
-   * first, so the pane opens immediately rather than after a round trip.
+   * No compensating list reload any more either: the page is being left, so
+   * re-fetching the server-paged slice the user is walking away from would be a
+   * round trip nobody waits for.
    */
   private async onTeamCreated(teamId: string): Promise<void> {
-    if (this.config.hideHome) {
-      await this.router.navigate(['/process', teamId]);
-      return;
-    }
-    this.openBeside(teamId);
-    await this.refreshContext();
-  }
-
-  /** Close the open team; the list takes the full width again (FR7). */
-  closeTeam(): void {
-    if (this.selectedTeamId === null) {
-      return;
-    }
-    this.selectedTeamId = null;
-    this.writeUrl();
-  }
-
-  /**
-   * `(teamUnavailable)` handler: the embedded view fetched the selected team
-   * and there was none.
-   *
-   * A URL naming a deleted team is the ordinary way to arrive here — a
-   * bookmark, or a link from someone who cleaned up afterwards — and the only
-   * honest answer is to drop the selection. Leaving it would show an empty
-   * pane with no way to tell it from a team that has simply said nothing yet.
-   */
-  onTeamUnavailable(): void {
-    this.closeTeam();
-  }
-
-  /**
-   * `(percentChange)` from the divider: move the panes, do not persist yet.
-   *
-   * Clamped HERE as well as inside the divider. That is not belt-and-braces: it
-   * is what makes "`splitPercent` is always a width this page would lay out"
-   * true of the field itself, rather than a property of whoever last wrote to
-   * it. The value reaches the DOM as a `flex-basis` and the storage as a
-   * string, and neither has an opinion about 1000%.
-   */
-  onSplitPercent(percent: number): void {
-    this.splitPercent = clampSplitPercent(percent);
-  }
-
-  /**
-   * `(commit)` from the divider: the drag ended, or a key was pressed. THIS is
-   * what persists, so one drag costs one write instead of one per frame.
-   */
-  onSplitCommit(percent: number): void {
-    this.onSplitPercent(percent);
-    this.storeSplitPercent(this.splitPercent);
-  }
-
-  /**
-   * Adopt the stored split width, or the default when there is none.
-   *
-   * Wrapped, because `localStorage` is not merely a map: reading it throws
-   * outright when the browser blocks storage for the origin. A remembered pane
-   * width is not worth a page that fails to render, so a refusal reads as "no
-   * preference stored".
-   */
-  private restoreSplitPercent(): void {
-    let raw: string | null = null;
-    try {
-      raw = localStorage.getItem(SPLIT_STORAGE_KEY);
-    } catch {
-      raw = null;
-    }
-    this.splitPercent = parseSplitPercent(raw) ?? SPLIT_DEFAULT_PERCENT;
-  }
-
-  /** As `restoreSplitPercent`: a refused write costs the preference, nothing more. */
-  private storeSplitPercent(percent: number): void {
-    try {
-      localStorage.setItem(SPLIT_STORAGE_KEY, formatSplitPercent(percent));
-    } catch {
-      /* storage unavailable — the width still applies for this visit */
-    }
+    await this.router.navigate(['/process', teamId]);
   }
 
   /**
@@ -1070,6 +894,4 @@ export class HomeComponent {
     }
     return selected.name ?? selected.namespace ?? 'Namespace';
   }
-
-  visible = false;
 }

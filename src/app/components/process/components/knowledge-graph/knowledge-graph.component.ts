@@ -1,4 +1,5 @@
 import { CommonModule } from '@angular/common';
+import { TranslatePipe } from '@ngx-translate/core';
 import {
   Component,
   inject,
@@ -73,6 +74,7 @@ interface KnowledgeGraphData {
   selector: 'app-knowledge-graph',
   imports: [
     CommonModule,
+    TranslatePipe,
     NgxEchartsDirective,
     ButtonModule,
     FieldsetModule,

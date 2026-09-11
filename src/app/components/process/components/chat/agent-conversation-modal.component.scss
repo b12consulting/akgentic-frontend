@@ -66,9 +66,20 @@
   color: var(--akg-text-muted);
 }
 
+/* The right-hand half: transcript above, composer below. A column of its own
+   so the transcript can scroll while the box you type into stays put. */
+.conversation-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .conversation-column {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -93,4 +104,127 @@
   text-align: center;
   color: var(--akg-text-muted);
   font-style: italic;
+}
+
+/*
+ * The calendar-day rule (Epic 54). The reader shows runs now, and a run can
+ * cross midnight just as a turn can — so the same chrome appears here. Its
+ * rules are repeated rather than imported: style encapsulation means the chat
+ * panel's copy cannot reach a node rendered in this component, and the shared
+ * thing between the two surfaces is the SELECTOR that decides where a boundary
+ * goes, not the CSS that draws it.
+ */
+.day-separator {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 10px;
+  margin-bottom: 2px;
+  color: var(--akg-text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  /* Chrome, not content: it is not a selectable item of the transcript. */
+  user-select: none;
+
+  &::before,
+  &::after {
+    content: '';
+    flex: 1 1 auto;
+    height: 1px;
+    background-color: var(--akg-marker-border);
+  }
+}
+
+.day-separator-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/*
+ * The one write affordance in the dialog.
+ *
+ * It sits on the dialog's own surface rather than on the conversation ground,
+ * and carries the composer border token the main input uses — so it reads as
+ * the same kind of control in a different place, which is exactly what it is.
+ */
+.reader-composer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  /* Wraps so the stopped-state hint can take a full row of its own beneath the
+     input and the button, rather than squeezing them. */
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border-top: 1px solid var(--akg-surface-border);
+  background-color: var(--akg-surface);
+}
+
+/* Why the control is disabled, said once. A greyed button with no explanation
+   reads as a bug; this is the only line on the surface describing a state the
+   user did not put the app into. Quiet, because it is an explanation and not an
+   alert. */
+.reader-composer-hint {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--akg-text-muted);
+  font-family: var(--akg-font-ui);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.reader-composer-input {
+  flex: 1;
+  min-width: 0;
+  resize: vertical;
+  max-height: var(--akg-composer-max-height);
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--akg-composer-border);
+  border-radius: var(--akg-card-radius);
+  background-color: var(--akg-surface);
+  color: var(--akg-text);
+  font-family: var(--akg-font-ui);
+  font-size: 0.9rem;
+  line-height: 1.4;
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+  }
+
+  &:disabled {
+    color: var(--akg-text-muted);
+    cursor: not-allowed;
+  }
+}
+
+.reader-composer-send {
+  flex: 0 0 auto;
+  padding: 0.5rem 1rem;
+  border: 0;
+  border-radius: var(--akg-pill-radius);
+  /* The same accent, hover and focus treatment the main composer's send
+     carries — one "this is the primary action" in the app, not two. */
+  background: var(--akg-accent-fg);
+  color: var(--akg-overlay-bg);
+  font-family: var(--akg-font-ui);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: var(--akg-accent-hover);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+  }
+
+  /* Disabled is a STATE, not an absence: the control stays where it is so the
+     user can see what would send, and why it will not yet. */
+  &:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
 }

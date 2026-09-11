@@ -19,9 +19,9 @@
         *ngIf="!(graphData$ | async)?.nodes?.length"
       >
         <i class="pi pi-sitemap kg-graph-empty-icon"></i>
-        <div class="kg-graph-empty-title">No Knowledge Graph</div>
+        <div class="kg-graph-empty-title">{{ "knowledgeGraph.emptyTitle" | translate }}</div>
         <div class="kg-graph-empty-desc">
-          No entities yet — the graph will populate as agents add knowledge.
+          {{ "knowledgeGraph.emptyBody" | translate }}
         </div>
       </div>
     </div>
@@ -31,12 +31,12 @@
 <!-- Entities Section Template -->
 <ng-template #entitiesSectionTemplate>
   <div class="nodes-section">
-    <h4>Entities</h4>
+    <h4>{{ "knowledgeGraph.entities" | translate }}</h4>
     <div class="entities-grid">
       <p-card
         *ngFor="let node of (graphData$ | async)?.nodes"
         class="entity-card"
-        [header]="node.name || 'Unnamed Entity'"
+        [header]="node.name || ('knowledgeGraph.unnamedEntity' | translate)"
       >
         <div class="entity-content">
           <div class="entity-type-container" *ngIf="node.entity_type">
@@ -53,7 +53,10 @@
             *ngIf="node.observations && node.observations.length > 0"
             class="entity-observations"
           >
-            <strong>Observations ({{ node.observations.length }}):</strong>
+            <strong>{{
+              "knowledgeGraph.observations"
+                | translate : { count: node.observations.length }
+            }}</strong>
             <ul class="observations-list">
               <li *ngFor="let obs of node.observations">
                 {{ obs }}
@@ -65,7 +68,7 @@
     </div>
     <div *ngIf="!(graphData$ | async)?.nodes?.length" class="empty-section">
       <i class="pi pi-inbox"></i>
-      <p>No entities found</p>
+      <p>{{ "knowledgeGraph.noEntities" | translate }}</p>
     </div>
   </div>
 </ng-template>
@@ -73,7 +76,7 @@
 <!-- Relations Section Template -->
 <ng-template #relationsSectionTemplate>
   <div class="edges-section">
-    <h4>Relations</h4>
+    <h4>{{ "knowledgeGraph.relations" | translate }}</h4>
     <div class="relations-grid">
       <p-card
         *ngFor="let edge of (graphData$ | async)?.edges"
@@ -99,7 +102,7 @@
     </div>
     <div *ngIf="!(graphData$ | async)?.edges?.length" class="empty-section">
       <i class="pi pi-link"></i>
-      <p>No relations found</p>
+      <p>{{ "knowledgeGraph.noRelations" | translate }}</p>
     </div>
   </div>
 </ng-template>
@@ -144,7 +147,7 @@
   >
     <ng-template pTemplate="header">
       <div class="dialog-header-container">
-        <span class="dialog-title">Knowledge Graph</span>
+        <span class="dialog-title">{{ "knowledgeGraph.title" | translate }}</span>
       </div>
     </ng-template>
     <app-knowledge-graph
@@ -181,7 +184,7 @@
         <div class="side-panel-header">
           <h3 class="side-panel-title">
             <i class="pi pi-info-circle"></i>
-            Node Properties
+            {{ "knowledgeGraph.nodeProperties" | translate }}
           </h3>
           <button
             pButton
@@ -195,15 +198,19 @@
         <div class="side-panel-content">
           <!-- Node Name -->
           <div class="property-section">
-            <label class="property-label">Name:</label>
+            <label class="property-label">{{
+              "knowledgeGraph.propName" | translate
+            }}</label>
             <div class="property-value">
-              {{ node.name || "Unnamed Entity" }}
+              {{ node.name || ("knowledgeGraph.unnamedEntity" | translate) }}
             </div>
           </div>
 
           <!-- Entity Type -->
           <div class="property-section" *ngIf="node.entity_type">
-            <label class="property-label">Type:</label>
+            <label class="property-label">{{
+              "knowledgeGraph.propType" | translate
+            }}</label>
             <div class="property-value">
               <p-tag
                 [value]="node.entity_type"
@@ -215,7 +222,9 @@
 
           <!-- Description -->
           <div class="property-section" *ngIf="node.description">
-            <label class="property-label">Description:</label>
+            <label class="property-label">{{
+              "knowledgeGraph.propDescription" | translate
+            }}</label>
             <div class="property-value description-text">
               <markdown [data]="node.description"></markdown>
             </div>
@@ -226,9 +235,10 @@
             class="property-section"
             *ngIf="node.observations && node.observations.length > 0"
           >
-            <label class="property-label"
-              >Observations ({{ node.observations.length }}):</label
-            >
+            <label class="property-label">{{
+              "knowledgeGraph.observations"
+                | translate : { count: node.observations.length }
+            }}</label>
             <div class="property-value">
               <div class="observations-container">
                 <div
@@ -251,7 +261,7 @@
             class="empty-properties"
           >
             <i class="pi pi-info-circle"></i>
-            <span>No additional properties available</span>
+            <span>{{ "knowledgeGraph.noProperties" | translate }}</span>
           </div>
         </div>
       </div>
@@ -266,12 +276,12 @@
     <div class="tabs-header-container">
       <div class="tabs-with-button">
         <p-tabView class="flex-tabs" [(activeIndex)]="activeTabIndex">
-          <p-tabPanel header="Graph Visualization">
+          <p-tabPanel [header]="'knowledgeGraph.tabGraph' | translate">
             <ng-container
               *ngTemplateOutlet="graphVisualizationTemplate"
             ></ng-container>
           </p-tabPanel>
-          <p-tabPanel header="Raw Data">
+          <p-tabPanel [header]="'knowledgeGraph.tabRawData' | translate">
             <ng-container
               *ngTemplateOutlet="rawDataContentTemplate"
             ></ng-container>
@@ -283,7 +293,7 @@
           size="small"
           severity="secondary"
           icon="pi pi-external-link"
-          label="Expand KG"
+          [label]="'knowledgeGraph.expand' | translate"
           (click)="isModalView = true; openKGModal()"
           class="external-expand-button"
         ></button>
@@ -302,7 +312,7 @@
   [closable]="true"
   [draggable]="true"
   [resizable]="false"
-  header="Node Properties"
+  [header]="'knowledgeGraph.nodeProperties' | translate"
   [style]="{ width: '400px' }"
   [baseZIndex]="1000"
   styleClass="node-properties-dialog"
@@ -310,15 +320,19 @@
   <div class="node-details" *ngIf="selectedNode$ | async as node">
     <!-- Node Name -->
     <div class="property-section">
-      <label class="property-label">Name:</label>
+      <label class="property-label">{{
+        "knowledgeGraph.propName" | translate
+      }}</label>
       <div class="property-value">
-        {{ node.name || "Unnamed Entity" }}
+        {{ node.name || ("knowledgeGraph.unnamedEntity" | translate) }}
       </div>
     </div>
 
     <!-- Entity Type -->
     <div class="property-section" *ngIf="node.entity_type">
-      <label class="property-label">Type:</label>
+      <label class="property-label">{{
+        "knowledgeGraph.propType" | translate
+      }}</label>
       <div class="property-value">
         <p-tag
           [value]="node.entity_type"
@@ -330,7 +344,9 @@
 
     <!-- Description -->
     <div class="property-section" *ngIf="node.description">
-      <label class="property-label">Description:</label>
+      <label class="property-label">{{
+        "knowledgeGraph.propDescription" | translate
+      }}</label>
       <div class="property-value description-text">
         <markdown [data]="node.description"></markdown>
       </div>
@@ -341,9 +357,10 @@
       class="property-section"
       *ngIf="node.observations && node.observations.length > 0"
     >
-      <label class="property-label"
-        >Observations ({{ node.observations.length }}):</label
-      >
+      <label class="property-label">{{
+        "knowledgeGraph.observations"
+          | translate : { count: node.observations.length }
+      }}</label>
       <div class="property-value">
         <div class="observations-container">
           <div
@@ -366,7 +383,7 @@
       class="empty-properties"
     >
       <i class="pi pi-info-circle"></i>
-      <span>No additional properties available</span>
+      <span>{{ "knowledgeGraph.noProperties" | translate }}</span>
     </div>
   </div>
 </p-dialog>

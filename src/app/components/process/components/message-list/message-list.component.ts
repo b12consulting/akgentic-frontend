@@ -20,6 +20,7 @@ import {
   NotificationSeverity,
 } from '../../../../protocol/message.types';
 import { CopyButtonComponent } from '../../../../shared/components/copy-button/copy-button.component';
+import { InspectorEmptyStateComponent } from '../../../console/inspector/inspector-empty-state.component';
 
 /** Legend used when a notification carries no `content_type` of its own. */
 const LEGEND_FALLBACK: Record<NotificationSeverity, string | null> = {
@@ -37,6 +38,7 @@ const LEGEND_FALLBACK: Record<NotificationSeverity, string | null> = {
     FieldsetModule,
     ButtonModule,
     CopyButtonComponent,
+    InspectorEmptyStateComponent,
     TranslatePipe,
   ],
   templateUrl: './message-list.component.html',

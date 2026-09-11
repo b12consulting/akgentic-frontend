@@ -20,6 +20,10 @@ import { TeamStatusReactor } from '../../event/team-status-reactor';
 import { ContextService } from '../../../../core/context/context.service';
 import { ChatService } from '../../selectors/chat.selector';
 import { ApiService } from '../../../../core/http/api.service';
+import { SystemPromptSelector } from '../../selectors/system-prompt.selector';
+import { TokenUsageSelector } from '../../selectors/token-usage.selector';
+
+import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
 
 /**
  * Story 17-2 (ADR-014) — the agent-state panel and agent-chat context view are
@@ -93,6 +97,10 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
 
     TestBed.configureTestingModule({
       providers: [
+        // The template renders `| translate`; without this the DOM spec at the
+        // bottom of the file cannot render at all. Every other spec here drives
+        // the component instance and is unaffected.
+        provideTranslateTesting(),
         MessageLogService,
         PerAgentStoreRegistry,
         ProcessStores,
@@ -107,10 +115,23 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
         // Story 37-2: `IngestionService` injects `TeamStatusReactor`, which
         // injects the root-scoped `ContextService`. A real one would need a
         // `Router` this bed has no use for.
+        //
+        // `currentTeamRunning$` is here for the DOM specs at the bottom: once
+        // the pane can actually render `<app-akgent-chat>`, that component's
+        // composer reads it to decide whether it may send.
         {
           provide: ContextService,
-          useValue: { markStopped: jasmine.createSpy('markStopped') },
+          useValue: {
+            markStopped: jasmine.createSpy('markStopped'),
+            currentTeamRunning$: new BehaviorSubject<boolean>(true),
+          },
         },
+        // `<app-akgent-chat>`'s two component-scoped selectors. Real ones —
+        // both are pure derivations over the log this bed already drives, so
+        // faking them would put a stub between the spec and the thing it is
+        // asserting rendered.
+        SystemPromptSelector,
+        TokenUsageSelector,
         ChatService,
         {
           provide: ApiService,
@@ -296,5 +317,107 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
 
     expect(component.context$.value).toEqual([{ role: 'user', content: 'hi' }]);
     expect(tabVisible()).toBeTrue();
+  });
+
+  /**
+   * Epic 56 moved this panel into the 310px inspector; the agent picker did not
+   * come with it.
+   *
+   * `minWidth: 220px` was sized for a full-width tab strip. In a ~278px lane,
+   * with a tab label beside it, that floor pushed the control off the strip's
+   * right edge — and a `min-width` is the one constraint no amount of narrowing
+   * recovers from, so the picker was unreachable rather than merely cramped.
+   */
+  it('lets the agent picker take the pane rather than demanding 220px', () => {
+    nodes$.next([
+      { name: 'agent-A', actorName: '@agent-A', category: 0, role: 'Worker' },
+    ]);
+    const fixture = TestBed.createComponent(AgentTabsComponent);
+    fixture.detectChanges();
+
+    const dropdown = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>(
+      'p-dropdown',
+    );
+    expect(dropdown).withContext('the picker rendered').not.toBeNull();
+
+    // Asserted on the RENDERED style, not on the absence of a `[style]` binding:
+    // the floor could come back through either channel and the consequence is
+    // the same.
+    expect(dropdown!.style.minWidth ?? '').toBe('');
+    expect(dropdown!.style.maxWidth ?? '').toBe('');
+  });
+
+  // ==========================================================================
+  // W7 — the Member pane, brought onto the console's design language.
+  //
+  // Two of these are about a control that could not be operated, and one is
+  // about a branch that could never be reached. Both were invisible in review
+  // for the same reason: nothing in the suite rendered this template.
+  // ==========================================================================
+
+  /** Render a fresh fixture against the CURRENT `nodes$` value. */
+  function renderPanel(): HTMLElement {
+    const fixture = TestBed.createComponent(AgentTabsComponent);
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  const AGENT = {
+    name: 'agent-A',
+    actorName: '@agent-A',
+    category: 0,
+    role: 'Worker',
+  };
+
+  it('draws no tab strip — one tab is not a choice', () => {
+    // The strip held a single tab whose caption repeated the agent already
+    // named in the picker beside it. A control with one option cannot be
+    // operated, and a second tab strip inside a tabbed pane puts two identical
+    // controls at two different depths.
+    nodes$.next([AGENT]);
+    const host = renderPanel();
+
+    expect(host.querySelector('p-tabs')).toBeNull();
+    expect(host.querySelector('p-tablist')).toBeNull();
+    expect(host.querySelector('p-tab')).toBeNull();
+    // …and the picker, which the strip used to carry, survived the removal.
+    expect(host.querySelector('p-dropdown')).not.toBeNull();
+  });
+
+  it('shows the empty state for a team with no agents, which it never could before', () => {
+    // `agentsByCategory` is initialised to `[]` and reset to `[]` for an
+    // agentless team — and `[]` is truthy, so the `*ngIf` that was supposed to
+    // reach this branch never did. The pane rendered a disabled dropdown over
+    // blank space and the copy written for this state was unreachable.
+    nodes$.next([]);
+    const host = renderPanel();
+
+    expect(host.querySelector('app-inspector-empty-state')).not.toBeNull();
+    expect(host.querySelector('p-dropdown')).toBeNull();
+  });
+
+  it('says so when the picked agent has nothing to show, rather than going blank', () => {
+    // An agent that exists and has never run has neither context nor a
+    // backstory. The pane used to render the picker over nothing at all, which
+    // is indistinguishable from a panel that failed to load.
+    nodes$.next([AGENT]);
+    const host = renderPanel();
+
+    expect(host.querySelector('app-akgent-chat')).toBeNull();
+    expect(host.querySelector('app-inspector-empty-state')).not.toBeNull();
+    // The picker stays: the state is "this one has nothing", not "there is
+    // nothing to pick".
+    expect(host.querySelector('p-dropdown')).not.toBeNull();
+  });
+
+  it('shows the trace, and drops the empty state, once the agent has context', () => {
+    nodes$.next([AGENT]);
+    log.append(mkLlmEvent('agent-A', { role: 'user', content: 'hi' }, 'e1'));
+    selectedAkgent$.next({ name: '@agent-A', agentId: 'agent-A' });
+
+    const host = renderPanel();
+
+    expect(host.querySelector('app-akgent-chat')).not.toBeNull();
+    expect(host.querySelector('app-inspector-empty-state')).toBeNull();
   });
 });

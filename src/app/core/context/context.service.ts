@@ -353,6 +353,28 @@ export class ContextService {
     }
   }
 
+  /**
+   * Seed page 1 for a caller that has no page state of its own (the rail).
+   *
+   * NO-OPS when a request is already in flight or the list is non-empty.
+   * `HomeComponent`'s table is the PRIMARY seeder and its seed is the one that
+   * carries the restored filter: `restoreFromUrl` installs that filter through
+   * `restoreFilter` (value only, no fetch) precisely so the table's first
+   * `(onLazyLoad)` picks it up. A second, unfiltered page-1 fetch issued from
+   * here would race it — and both are direct `loadTeamsPage` calls, so there is
+   * no `switchMap` anywhere able to order them and the loser can land last.
+   *
+   * Goes through `loadTeamsPage` rather than `apiService` directly, so it picks
+   * up `_filter$.value`, `_pageSize` and the in-flight accounting like every
+   * other reload path.
+   */
+  async ensureTeamsLoaded(): Promise<void> {
+    if (this._inFlight > 0 || this._context$.value.length > 0) {
+      return;
+    }
+    await this.loadTeamsPage(1, this._pageSize ?? 250);
+  }
+
   /** Clear team-list state on team-switch / context reset so a stale page or
    *  total never bleeds across teams. */
   resetTeams(): void {

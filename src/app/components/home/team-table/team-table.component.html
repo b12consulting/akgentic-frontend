@@ -193,9 +193,18 @@
         this column knew about activity at all.
 
         DISTINGUISHABLE WITHOUT COLOUR: the four differ by label, and working
-        and idle carry an icon each. Both keep `success`, the running colour,
-        because they ARE running — recolouring idle towards `Stopped`'s
+        and idle carry an icon each. Both keep the LIVE ground, the running
+        colour, because they ARE running — recolouring idle towards `Stopped`'s
         neutral would read as a lesser stopped, which it is not.
+
+        THE GROUND IS A CLASS, NOT A PrimeNG `severity`. A severity resolves
+        off Aura's own blue and green ramps, and `app.theme.ts` re-points
+        `primary` and nothing else, so these four tags were the last colours on
+        screen that re-pointing the token file could not reach. Each state now
+        names itself and the stylesheet paints it from `--akg-status-live-*` /
+        `--akg-status-neutral-*` — the same pair the conversation header's
+        status pill uses, so the two places a team's state is drawn agree by
+        construction instead of by two people having picked the same green.
 
         The titles say "as of the last refresh" on purpose. The flag describes
         one instant and arrived inside a page fetched at another, so a label
@@ -208,14 +217,14 @@
             *ngIf="state === 'stopped'"
             data-test="row-status-stopped"
             [value]="'team.status.stopped' | translate"
-            severity="info"
+            styleClass="team-status-tag team-status-tag--stopped"
           >
           </p-tag>
           <p-tag
             *ngIf="state === 'running'"
             data-test="row-status-running"
             [value]="'team.status.running' | translate"
-            severity="success"
+            styleClass="team-status-tag team-status-tag--running"
           >
           </p-tag>
           <p-tag
@@ -224,7 +233,7 @@
             [title]="'team.status.workingTitle' | translate"
             [value]="'team.status.working' | translate"
             icon="pi pi-bolt"
-            severity="success"
+            styleClass="team-status-tag team-status-tag--working"
           >
           </p-tag>
           <p-tag
@@ -233,7 +242,7 @@
             [title]="'team.status.idleTitle' | translate"
             [value]="'team.status.idle' | translate"
             icon="pi pi-hourglass"
-            severity="success"
+            styleClass="team-status-tag team-status-tag--idle"
           >
           </p-tag>
         </ng-container>

@@ -1,0 +1,20 @@
+<!--
+  The uppercase section label is the same treatment the rail's group headers and
+  the Usage header use. That repetition is the language of the console, not a
+  coincidence: one look tells you this is a section of a pane rather than a
+  heading in a document.
+-->
+@if (tools.length > 0) {
+  <p class="tools-label">{{ "inspector.tools" | translate }}</p>
+
+  <div class="tool-chips">
+    @for (tool of tools; track tool) {
+      <span class="tool-chip">
+        <!-- The tool hue, not the accent: the same mark the transcript's tool
+             fold carries, so a chip here and a step there read as one thing. -->
+        <span class="tool-chip-dot" aria-hidden="true"></span>
+        {{ tool }}
+      </span>
+    }
+  </div>
+}

@@ -31,6 +31,7 @@ import {
   SelectionService,
 } from '../../../ui-state/selection.service';
 import { HumanRequestComponent } from '../../human-request/human-request.component';
+import { InspectorEmptyStateComponent } from '../../../../console/inspector/inspector-empty-state.component';
 
 echarts.use([
   CanvasRenderer,
@@ -51,6 +52,7 @@ echarts.use([
     TextareaModule,
     NgxEchartsDirective,
     HumanRequestComponent,
+    InspectorEmptyStateComponent,
   ],
   templateUrl: './graph.component.html',
   styleUrls: ['./graph.component.scss'],
@@ -143,7 +145,13 @@ export class GraphComponent {
             const name = makeAgentNameUserFriendly(params.data.actorName);
             const escaped = params.data.errorMessage
               .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            return `<b>${name}</b><br/><span style="color:darkred; font-size:11px">${escaped}</span>`;
+            // `var(--akg-danger-fg)`, not the CSS keyword `darkred`. echarts
+            // renders this tooltip as real DOM inside the document, so the
+            // custom property resolves — which means a deployment that
+            // re-points the palette moves this error tone with everything
+            // else. The keyword was the last colour on this surface that no
+            // rebrand could reach.
+            return `<b>${name}</b><br/><span style="color:var(--akg-danger-fg); font-size:11px">${escaped}</span>`;
           }
           return '';
         },

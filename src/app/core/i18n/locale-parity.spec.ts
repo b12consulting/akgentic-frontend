@@ -16,6 +16,15 @@ import fr from './locales/fr.json';
  * This asserts on key *sets*, never on values. Asserting that `fr.common.save`
  * says anything in particular would pin the translation, which is NFR3's whole
  * complaint applied to French.
+ *
+ * WHAT THIS SPEC STRUCTURALLY CANNOT SEE: a key that is dead in BOTH locales.
+ * Parity is a relation between the two files, so two matching dead keys are
+ * perfectly parallel and pass — which is how `chrome.logoAlt` and
+ * `chrome.goHome` outlived the affordance they named. The other half of that
+ * question needs the SOURCE, and a Karma bundle has neither a filesystem nor
+ * `require.context` under the esbuild builder, so it lives in
+ * `tools/i18n-usage-audit.mjs` and runs from `npm run lint`. The two checks are
+ * a pair: this one says the locales agree, that one says the keys are real.
  */
 
 type Dict = Record<string, unknown>;

@@ -1,115 +1,314 @@
-/* Story 4-8 (ADR-002 Decision 10):
- * Per-agent thinking bubble. Reuses the Rule 4 collapsed-line border colour
- * for visual consistency. Owns the @keyframes dot-blink animation that
- * previously lived in chat-panel.component.scss (Story 4-8 AC6). */
+/*
+ * The activity fold.
+ *
+ * Chrome, not speech. It sits between a question and its answer and says what
+ * the agent did to get there, so it is deliberately quieter than a turn:
+ * no filled surface, hairline border, muted type. The conversation stays the
+ * thing you read; this stays the thing you can check.
+ *
+ * Every colour is a token. The previous version hardcoded #334155 / #94a3b8 /
+ * #475569 / #6a9bb6 and an rgba border, which meant a deployment re-pointing
+ * the conversation tokens got a fold that ignored them — the one outcome
+ * _conversation-tokens.scss exists to prevent.
+ */
 
-.thinking-bubble {
-  /* Match the collapsed-line styling (chat-message.component.scss) so a
-   * thinking bubble and a Rule 4 collapsed bubble read as the same family:
-   * transparent background, hover tint only. */
-  padding: 4px 8px;
-  cursor: pointer;
-  color: #334155;
-  font-size: 0.9rem;
-  border-radius: 6px;
-  border: 1px solid rgba(158, 187, 203, 0.5);
+.activity {
+  /*
+   * No border, no card. Three bordered rows in a row read as a stack of
+   * furniture and the eye lands on the outlines before the answer beneath them —
+   * the opposite of the "quieter, mostly typographic transcript" this is meant
+   * to be. Muted type carries it, and a hover tint supplies the affordance the
+   * border was doing by accident.
+   */
+  /* Indented into the avatar gutter so the work an agent did lines up under
+     the agent that did it — one spine down the transcript instead of two
+     margins. A card rather than a bare row, so the fold is legible as one
+     object when it is open and holding four steps. */
+  margin-left: var(--akg-avatar-gutter);
+  padding: 10px 13px;
+  border: 1px solid var(--akg-hairline);
+  border-radius: 12px;
+  background: var(--akg-surface-muted);
+  color: var(--akg-text-muted);
+  font-size: 12.5px;
+  transition: background-color 120ms ease;
 
-  /* Hover tint only while the bubble is clickable (non-final). Once
-   * finalised the bubble is static chat history — no cursor change, no
-   * hover affordance. */
-  &:not(.final):hover {
-    background-color: rgba(0, 0, 0, 0.02);
-  }
+  &.openable {
+    cursor: pointer;
 
-  &.final {
-    cursor: default;
+    &:hover {
+      background-color: var(--akg-page-bg);
+    }
   }
 }
 
-.thinking-header {
+.activity-row {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.45rem;
+  min-width: 0;
 }
 
-.agent-label {
-  font-weight: 500;
+/*
+ * One mark, two states — now a WRENCH rather than a dot.
+ *
+ * A 6px grey dot said "something is here", which is the one fact the reader
+ * already had. The glyph says what KIND of row this is before a word is read,
+ * and the tool hue is reserved for exactly that meaning, so the shape and the
+ * colour carry the same claim through the two channels a glance uses.
+ *
+ * The TOOL hue in BOTH states, never a text tone: a tool step is a tool step
+ * whether it is still running or finished. The pulse is what says "running",
+ * and it is the only thing that changes.
+ */
+.activity-mark {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  color: var(--akg-tool-accent);
 }
 
-.thinking-dots {
-  display: inline-flex;
-  gap: 2px;
+.live .activity-mark {
+  animation: activity-pulse 1.6s ease-in-out infinite;
 }
 
-.spacer {
-  flex: 1;
+.activity-agent {
+  flex: 0 0 auto;
+  font-weight: 400;
+  color: var(--akg-text-muted);
 }
 
-.timestamp {
-  font-size: 0.8rem;
-  color: #94a3b8;
+/* The only element allowed to consume the row: a long tool name truncates
+ * rather than pushing the caret, the count and the time off the end. */
+.activity-latest {
+  flex: 0 1 auto;
+  color: var(--akg-text);
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.activity-spacer {
+  flex: 1 1 auto;
+}
+
+/* The count sits with the text; only the timestamp is pinned to the edge, so a
+ * short step no longer leaves most of the reading column empty before the
+ * caret. */
+.activity-count,
+.activity-time {
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  color: var(--akg-text-muted);
   white-space: nowrap;
 }
 
-.tool-list {
-  margin-top: 4px;
+/*
+ * The trailing toggle label.
+ *
+ * A `<button>` stripped back to text: the fold already reads as one object, and
+ * a second bordered control inside a bordered card is furniture. What it keeps
+ * from being a button is the part that matters — a hit target, a focus ring,
+ * and a place for the keyboard to land, none of which the chevron it replaces
+ * had.
+ *
+ * Same type step as the count and the clock beside it, so the trailing cluster
+ * reads as one line of supporting information rather than as a control that has
+ * wandered into it.
+ */
+.activity-toggle {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 0.78rem;
+  color: var(--akg-text-muted);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 120ms ease;
+
+  &:hover {
+    color: var(--akg-text);
+  }
+
+  &:focus-visible {
+    outline: none;
+    border-radius: 4px;
+    box-shadow: var(--akg-focus-ring);
+  }
+}
+
+/*
+ * The sequence.
+ *
+ * NO LEFT RAIL. It had one, and the rail was doing the bullets' job a second
+ * time: every step already carries a dot, so the rule beside them grouped a set
+ * that was visibly a set, and drew a hard vertical line inside a card whose
+ * whole point is that it is quieter than a turn. The mock draws the steps with
+ * no rule at all and it is right to — the indent is what ties them to the row
+ * that opened them.
+ *
+ * Opened, this is content to be READ, not a footnote. The first pass set 0.8rem
+ * entries 3px apart, which made a run of steps a grey block you squint at —
+ * quiet to the point of useless. The collapsed row earns its restraint because
+ * it is one line among turns; the open list does not, because at that point the
+ * steps ARE what you asked to see.
+ */
+.activity-list {
+  margin: 10px 0 6px;
+  /* The left inset the rail used to sit against, kept: it is what aligns the
+     step titles under the summary's text rather than under its glyph. */
+  padding: 2px 0 2px 21px;
+  list-style: none;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding-left: 0.5rem;
+  gap: 10px;
+  animation: activity-reveal 140ms ease-out;
 }
 
-.tool-entry {
-  font-family:
-    ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, monospace;
-  font-size: 0.8rem;
-  color: #475569;
+/*
+ * A step is a sentence and a supporting line, not a name and a blob.
+ *
+ * The title carries what happened; the detail carries the particulars — a
+ * quoted message, or the arguments. Two lines is what lets the fold be read
+ * rather than decoded, which is the whole point of opening it.
+ */
+.activity-entry {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  min-width: 0;
 
-  &.done {
-    color: #94a3b8;
-  }
-
-  .bullet {
-    margin-right: 4px;
-  }
-
-  .tool-name {
-    font-weight: 500;
-  }
-
-  .tool-args {
-    color: #64748b;
+  &.done .entry-title {
+    color: var(--akg-text-muted);
   }
 }
 
-/* dot-blink animation — relocated from chat-panel.component.scss (AC6). */
-.thinking-bubble .dot {
-  width: 6px;
-  height: 6px;
+/* `--akg-dot-idle`, the token that exists for exactly this: a mark that is
+   PRESENT but not live. It was set in a TEXT step — a shade too dark for a 5px
+   dot, which reads as a bullet demanding attention rather than as the quiet
+   index the mock draws. A dot is not text and must not borrow a text tone in
+   either direction. */
+.entry-bullet {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  margin-top: 0.5rem;
   border-radius: 50%;
-  background-color: #6a9bb6;
-  opacity: 0;
-  animation: dot-blink 1.5s infinite ease-in-out;
+  background-color: var(--akg-dot-idle);
 }
 
-.thinking-bubble .dot:nth-child(1) {
-  animation-delay: 0s;
-}
-.thinking-bubble .dot:nth-child(2) {
-  animation-delay: 0.3s;
-}
-.thinking-bubble .dot:nth-child(3) {
-  animation-delay: 0.6s;
+.entry-body {
+  min-width: 0;
+  flex: 1;
 }
 
-@keyframes dot-blink {
-  0% {
-    opacity: 0;
+.entry-title {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--akg-text);
+}
+
+/* The SECOND line under a title — the same treatment the rail's team meta and
+   a member's role get. It is SIZE and WEIGHT that separate it from the title
+   above, not colour: the lighter tone this once used failed AA, and every step
+   quiet enough to be a visible demotion fails with it. 12px/300 under
+   12.5px/400 is a legible hierarchy that costs no contrast. */
+.entry-detail {
+  margin-top: 1px;
+  font-size: 12px;
+  font-weight: 300;
+  line-height: 1.5;
+  color: var(--akg-text-muted);
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The escape hatch. Quiet by default and never open on entry: an operator who
+ * wants the wire format asks for it, and a conversation is not the place to
+ * leave JSON lying around.
+ */
+.activity-raw-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.activity-raw-toggle {
+  align-self: flex-start;
+  padding: 3px 10px;
+  border: 1px solid var(--akg-surface-border);
+  border-radius: 999px;
+  background: var(--akg-overlay-bg);
+  font-size: 0.78rem;
+  color: var(--akg-text-muted);
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease;
+
+  &:hover {
+    color: var(--akg-text);
+    border-color: var(--akg-marker-border);
+  }
+}
+
+.activity-raw {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* `--akg-hairline` for the rule, per the mock. A separator INSIDE a surface is
+   the hairline's job — `--akg-surface-border` is the tone that goes AROUND one,
+   and used here it drew a harder line beside the quietest text in the fold than
+   the fold's own edge. The text itself is the ordinary quiet step: raw tool
+   output is the least important thing in the fold and still has to be readable,
+   which is exactly the case the light ramp could not serve. */
+.raw-line {
+  padding-left: 11px;
+  border-left: 2px solid var(--akg-hairline);
+  font-family: var(--akg-font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--akg-text-muted);
+  overflow-wrap: anywhere;
+}
+
+@keyframes activity-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
   }
   50% {
     opacity: 1;
   }
-  100% {
+}
+
+@keyframes activity-reveal {
+  from {
     opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Motion here is decoration — the pulse says "working", which the text already
+ * says. Honour the OS preference and drop it. */
+@media (prefers-reduced-motion: reduce) {
+  .live .activity-mark {
+    animation: none;
+  }
+
+  .activity-list {
+    animation: none;
+  }
+
+  .activity-toggle {
+    transition: none;
   }
 }

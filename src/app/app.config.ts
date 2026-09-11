@@ -1,5 +1,5 @@
 import { APP_INITIALIZER, ApplicationConfig, provideZoneChangeDetection } from '@angular/core';
-import { provideRouter } from '@angular/router';
+import { TitleStrategy, provideRouter } from '@angular/router';
 
 import { routes } from './app.routes';
 
@@ -19,6 +19,7 @@ import { markedOptionsFactory } from './shared/util/util';
 import { ConfigService } from './core/config/config.service';
 import { I18nService } from './core/i18n/i18n.service';
 import { provideI18n } from './core/i18n/i18n.providers';
+import { TranslatedTitleStrategy } from './core/i18n/translated-title.strategy';
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -48,6 +49,11 @@ export const appConfig: ApplicationConfig = {
       multi: true,
     },
     provideI18n(),
+    // The browser tab, translated. Angular's default strategy writes the
+    // route's `title` string verbatim, which left the tab in English on every
+    // deployment — see `TranslatedTitleStrategy` for why a pipe cannot reach
+    // it and why the strategy also listens to `onLangChange`.
+    { provide: TitleStrategy, useClass: TranslatedTitleStrategy },
     // Load runtime config, then resolve the language, before the app renders.
     //
     // One initializer rather than two, because the order matters and

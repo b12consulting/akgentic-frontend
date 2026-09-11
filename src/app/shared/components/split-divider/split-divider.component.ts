@@ -14,6 +14,7 @@ import {
   SPLIT_FINE_STEP_PERCENT,
   SPLIT_MAX_PERCENT,
   SPLIT_MIN_PERCENT,
+  SplitBounds,
   splitPercentFromPointer,
   stepSplitPercent,
 } from '../../util/split-width';
@@ -35,14 +36,40 @@ import {
  * sixty times a second for one drag; a host that lays out on `commit` alone
  * has a divider that does not move until you let go of it.
  *
+ * IT LOOKS LIKE A CONTROL BEFORE IT IS TOUCHED (W8a). The first version drew a
+ * 2px hairline in the surface-border tone and revealed itself only on hover,
+ * which reads as a seam between two panes rather than as something to grab —
+ * and hover is precisely the state a user who cannot find the divider will
+ * never reach. So there is a grip mark at rest, and hover/drag/focus are
+ * changes to a thing already on screen instead of the thing appearing. No
+ * touch device has a hover state at all, which makes a hover-only affordance
+ * not merely hard to find there but absent.
+ *
  * `track` is the element the percentage is OF, passed in rather than
  * discovered: reaching for `parentElement` would make the maths depend on how
  * the host chose to wrap this element, which is the kind of coupling that
  * survives until someone adds a wrapper div.
+ *
+ * THE RANGE IS THE HOST'S, NOT THIS COMPONENT'S (R3). `min`, `max` and
+ * `defaultPercent` are inputs, defaulted to the teams-list split's values so
+ * that a host which says nothing gets exactly the behaviour this component
+ * shipped with. They had to become inputs the moment a second host appeared
+ * whose two panes can trade places: this component measures the LEFTMOST pane,
+ * so a single preference about one identified pane reads as two different
+ * ranges depending on which side that pane is currently on. See `SplitBounds`
+ * in `split-width.ts`.
  */
 @Component({
   selector: 'app-split-divider',
-  template: '',
+  // THE GRIP IS A REAL ELEMENT, NOT A PSEUDO-ELEMENT (W8a). It has to be
+  // findable by a spec: the user's complaint was not that the divider looked
+  // wrong but that they could not tell it was a control, and the only
+  // regression worth pinning is "the affordance is present AT REST" — which a
+  // `::after` cannot be asked about. It is `aria-hidden` because the host is
+  // already a labelled `separator` with a value and a range; the grip is that
+  // control's paint, and announcing it a second time would be one control
+  // spoken as two.
+  template: '<span class="split-divider__grip" aria-hidden="true"></span>',
   styleUrl: './split-divider.component.scss',
   host: {
     // WAI-ARIA "window splitter": a separator that takes focus is operable, and
@@ -81,6 +108,27 @@ export class SplitDividerComponent {
   /** What this separator is for, spoken by a screen reader. */
   @Input() label = 'Resize panes';
 
+  /**
+   * The narrowest and widest the FIRST pane may be, as a percentage of `track`.
+   *
+   * Defaulted to the module constants, so every pre-R3 call site and its specs
+   * keep the range they had. A host with two arrangeable panes rebinds them per
+   * arrangement — see `leadingBounds` in `core/ui/pane-layout.ts`.
+   */
+  @Input() min = SPLIT_MIN_PERCENT;
+  @Input() max = SPLIT_MAX_PERCENT;
+
+  /**
+   * What double-click restores.
+   *
+   * An input for the same reason the bounds are: the module's 40% is the teams
+   * list's resting width and is not necessarily even INSIDE a different host's
+   * range. Left as a constant, "double-click restores the default" would quietly
+   * become "double-click jumps to whatever 40 clamps to here", which is a worse
+   * affordance than not having it.
+   */
+  @Input() defaultPercent = SPLIT_DEFAULT_PERCENT;
+
   /** Live — every pointer move. The panes follow this. */
   @Output() percentChange = new EventEmitter<number>();
 
@@ -89,10 +137,13 @@ export class SplitDividerComponent {
 
   /** Exposed to the host bindings above; `Math` is not in template scope. */
   readonly Math = Math;
-  readonly min = SPLIT_MIN_PERCENT;
-  readonly max = SPLIT_MAX_PERCENT;
 
   dragging = false;
+
+  /** The two inputs in the shape every function in `split-width.ts` wants. */
+  private get bounds(): SplitBounds {
+    return { min: this.min, max: this.max };
+  }
 
   /**
    * The last value this divider emitted, so `commit` reports what the user
@@ -102,7 +153,7 @@ export class SplitDividerComponent {
 
   /** The bound value, defended against a host that hands over a bad one. */
   get clamped(): number {
-    return clampSplitPercent(this.percent);
+    return clampSplitPercent(this.percent, this.bounds);
   }
 
   get valueText(): string {
@@ -136,7 +187,7 @@ export class SplitDividerComponent {
       containerLeft: rect.left,
       containerWidth: rect.width,
       dividerWidth: this.host.nativeElement.getBoundingClientRect().width,
-    });
+    }, this.bounds);
     // `null` is an unmeasurable container, and an unchanged value is a pointer
     // move inside the same tenth of a percent — neither is a layout change,
     // and emitting either would re-run change detection for nothing.
@@ -194,17 +245,17 @@ export class SplitDividerComponent {
     const step = coarse ? SPLIT_COARSE_STEP_PERCENT : SPLIT_FINE_STEP_PERCENT;
     switch (event.key) {
       case 'ArrowLeft':
-        return stepSplitPercent(this.percent, -step);
+        return stepSplitPercent(this.percent, -step, this.bounds);
       case 'ArrowRight':
-        return stepSplitPercent(this.percent, step);
+        return stepSplitPercent(this.percent, step, this.bounds);
       case 'PageDown':
-        return stepSplitPercent(this.percent, -SPLIT_COARSE_STEP_PERCENT);
+        return stepSplitPercent(this.percent, -SPLIT_COARSE_STEP_PERCENT, this.bounds);
       case 'PageUp':
-        return stepSplitPercent(this.percent, SPLIT_COARSE_STEP_PERCENT);
+        return stepSplitPercent(this.percent, SPLIT_COARSE_STEP_PERCENT, this.bounds);
       case 'Home':
-        return SPLIT_MIN_PERCENT;
+        return this.min;
       case 'End':
-        return SPLIT_MAX_PERCENT;
+        return this.max;
       default:
         return null;
     }
@@ -212,10 +263,11 @@ export class SplitDividerComponent {
 
   /** Double-click restores the default width — the usual splitter idiom. */
   onDoubleClick(): void {
-    if (this.clamped === SPLIT_DEFAULT_PERCENT) {
+    const restored = clampSplitPercent(this.defaultPercent, this.bounds);
+    if (this.clamped === restored) {
       return;
     }
-    this.percentChange.emit(SPLIT_DEFAULT_PERCENT);
-    this.commit.emit(SPLIT_DEFAULT_PERCENT);
+    this.percentChange.emit(restored);
+    this.commit.emit(restored);
   }
 }

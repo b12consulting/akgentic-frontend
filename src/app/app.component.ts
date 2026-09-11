@@ -1,61 +1,170 @@
-import { Component, DestroyRef, inject, ViewChild } from '@angular/core';
-import { Router, RouterModule, RouterOutlet } from '@angular/router';
+import { AfterViewInit, Component, DestroyRef, inject, OnInit, ViewChild } from '@angular/core';
+import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
 
-import { CommonModule } from '@angular/common';
-import { MenuItem } from 'primeng/api';
-import { MenubarModule } from 'primeng/menubar';
-import { TagModule } from 'primeng/tag';
+import { CommonModule, Location } from '@angular/common';
 import { Toast, ToastModule } from 'primeng/toast';
-import { TranslatePipe, TranslateService } from '@ngx-translate/core';
-import { Subject, takeUntil } from 'rxjs';
-import { emptyableCombineLatest } from './shared/util/util';
-import { AkgentService } from './core/ui/akgent.service';
+import { Observable, combineLatest } from 'rxjs';
+import { distinctUntilChanged, filter, map, startWith } from 'rxjs/operators';
+
+import { ConsoleShellComponent } from './components/console/console-shell.component';
+import { TeamCreationDialogComponent } from './components/console/team-creation/team-creation-dialog.component';
 import { ApiService } from './core/http/api.service';
 import { AuthService } from './core/auth/auth.service';
 import { ConfigService } from './core/config/config.service';
-import { ContextService } from './core/context/context.service';
 import { FaviconService } from './core/config/favicon.service';
 import { NotificationToastService } from './core/ui/notification-toast.service';
-import { ViewService } from './core/ui/view.service';
-import {
-  TeamMetadataPipe,
-  trackMetadataEntry,
-} from './core/context/team-metadata.pipe';
+import { TeamCreationLauncher } from './core/ui/team-creation-launcher.service';
 
+/**
+ * The routes that render WITHOUT the app frame.
+ *
+ * A list here rather than a flag on the route definition (`data: { bare: true }`)
+ * because the answer is needed BEFORE the router has produced a snapshot — see
+ * `bareRoute$` for why the first paint cannot wait for a `NavigationEnd`.
+ */
+const BARE_ROUTE_PATHS = new Set<string>(['/login']);
+
+/**
+ * Whether a serialized URL is one of the bare routes.
+ *
+ * The router hands out the serialized form, so query params and the fragment
+ * have to come off before the path can be matched: a guard redirect arrives as
+ * `/login?next=%2Fprocess%2F1`, and an exact `=== '/login'` would let the frame
+ * back in on exactly the navigation that redirected away from it. A trailing
+ * slash is the same route.
+ */
+function isBareRoute(url: string): boolean {
+  const path = url.split('?')[0].split('#')[0].replace(/\/$/, '');
+  return BARE_ROUTE_PATHS.has(path || '/');
+}
+
+/**
+ * The application root.
+ *
+ * Epic 56 emptied this component out. It used to carry the whole of the app
+ * chrome: a `p-menubar` whose items were rebuilt from a three-way
+ * `combineLatest` over the open team, the session and the inspector's collapse
+ * state, plus a language-change subscription to rebuild them again because
+ * PrimeNG takes resolved strings rather than keys. All of it is gone — the menu
+ * redistributed into the rail (logo, account, all-teams) and the conversation
+ * header (team name, status, Clear, Details), each of which reads the state it
+ * needs where it is rendered instead of having it pushed down from the root.
+ *
+ * What is left is the frame and two overlays, and the three are unrelated to
+ * each other:
+ *   - the shell, told only whether to draw the chrome;
+ *   - the app's ONE `<p-toast>` mount, which stories 31-3/31-5 depend on being
+ *     exactly one and being owned here;
+ *   - the team-creation wizard, mounted only while it is open.
+ *
+ * BOTH OVERLAYS ARE SIBLINGS OF THE SHELL, for the same reason and a second
+ * one. The shared reason is clipping: they are positioned against the viewport,
+ * and nesting either in the shell's `overflow: hidden` flex row would simply
+ * hide it. The wizard adds its own — the control that opens it is in the rail,
+ * and a collapsed rail is `inert` + `aria-hidden`, so a dialog mounted there
+ * would become untypeable the moment the user collapsed the rail behind it.
+ *
+ * This root component still subscribes to NONE of the wizard's state. It reads
+ * one boolean off `TeamCreationLauncher` to decide whether the dialog exists;
+ * everything a creation-in-progress knows lives on the dialog component, which
+ * is created and destroyed with the `@if`.
+ */
 @Component({
   selector: 'app-root',
   imports: [
-    RouterOutlet,
-    RouterModule,
-    MenubarModule,
-    ToastModule,
-    TagModule,
     CommonModule,
-    TeamMetadataPipe,
-    TranslatePipe,
+    RouterOutlet,
+    ToastModule,
+    ConsoleShellComponent,
+    TeamCreationDialogComponent,
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
 })
-export class AppComponent {
-  /** `trackBy` for the header's metadata chips. See the pipe. */
-  trackMetadataEntry = trackMetadataEntry;
-
-  title = 'akgent-app';
-  items: MenuItem[] | undefined;
+export class AppComponent implements OnInit, AfterViewInit {
   private configService = inject(ConfigService);
-  logo: string = '';
-  hideLogin: boolean = true;
 
-  akgentService: AkgentService = inject(AkgentService);
+  /**
+   * Whether the creation wizard is on screen. PUBLIC because the template's
+   * `@if` reads it; nothing here writes it — the rail opens the wizard and the
+   * wizard closes itself.
+   */
+  readonly creationLauncher = inject(TeamCreationLauncher);
+
+  /**
+   * Community tier runs with no login at all, so there is no user to wait for
+   * and the chrome must still be drawn. Read once, in `ngOnInit`, because
+   * `ConfigService` is only populated after the `APP_INITIALIZER` has fetched
+   * `config.json`.
+   */
+  hideLogin = true;
+
   authService: AuthService = inject(AuthService);
-  contextService: ContextService = inject(ContextService);
-  viewService: ViewService = inject(ViewService);
   destroyRef = inject(DestroyRef);
   faviconService = inject(FaviconService);
   apiService = inject(ApiService);
-  router = inject(Router);
-  private translate = inject(TranslateService);
+
+  private router = inject(Router);
+  private location = inject(Location);
+
+  /**
+   * Is the CURRENT route one that renders bare?
+   *
+   * Two sources, because neither alone is correct at both ends of the app's
+   * life:
+   *
+   *   - `NavigationEnd` is the authority once the router is running, and
+   *     `urlAfterRedirects` is the url that matters — `AuthGuard` answers a
+   *     rejected activation by navigating to `/login`, and a guard returning a
+   *     `UrlTree` would leave `event.url` pointing at the route it refused.
+   *   - `Location.path()` is the authority BEFORE the router is running.
+   *     `provideRouter` is registered without `withEnabledBlockingInitialNavigation`,
+   *     so the initial navigation is kicked off by a bootstrap listener that
+   *     runs AFTER the root view's first `tick()`. For that first pass
+   *     `Router.url` is still `'/'` on every deep link, which on `/login` is
+   *     precisely the frame-flash this rule exists to prevent. `Location`
+   *     reads the browser's address bar and does not wait for the router.
+   *
+   * Seeding `false` instead would trade that flash for a missing rail lasting
+   * the whole of `AuthGuard`'s session fetch on every normal load, which is the
+   * worse of the two.
+   */
+  private bareRoute$: Observable<boolean> = this.router.events.pipe(
+    filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+    map((event) => isBareRoute(event.urlAfterRedirects)),
+    startWith(isBareRoute(this.location.path() || '/')),
+    distinctUntilChanged(),
+  );
+
+  /**
+   * Whether the shell draws the app frame (currently: the team rail).
+   *
+   * THE ROUTE IS A VETO, not one vote among two. `currentUser$` cannot answer
+   * this question: `AuthService` seeds its subject with an anonymous sentinel
+   * and re-emits that same sentinel on a 401, so `!!user` is true for a visitor
+   * who has never signed in — which is how the rail came to render beside the
+   * login card, offering "No teams yet" and an account footer reading
+   * "Anonymous". `hideLogin` cannot answer it either: `/login` carries no
+   * guard, so a community-tier deployment can still reach it by url.
+   *
+   * So the auth terms are kept — they still decide the frame on every OTHER
+   * route — and the route gates them unconditionally.
+   *
+   * Exposed as an observable and consumed through `async` so the subscription
+   * dies with the view. A hand-rolled one on `router.events` (a root-scoped
+   * subject that outlives every component) is the shape the frame's leak specs
+   * exist to catch.
+   */
+  chromeVisible$: Observable<boolean> = combineLatest([
+    this.bareRoute$,
+    this.authService.currentUser$,
+  ]).pipe(
+    // `hideLogin` is read at emission time, not capture time: it is only
+    // truthful after `ngOnInit`, and every source here emits on subscribe —
+    // which the template does after the hooks have run.
+    map(([bare, user]) => !bare && (!!user || this.hideLogin)),
+    distinctUntilChanged(),
+  );
 
   /**
    * Story 31-5: the app's one and only toast container. Handed to
@@ -72,125 +181,13 @@ export class AppComponent {
   }
 
   ngOnInit() {
-    this.logo = this.configService.logo;
     this.hideLogin = this.configService.hideLogin;
     this.faviconService.setFavicon(this.configService.favicon);
 
-    // Fetch the authenticated user from the backend session
+    // Fetch the authenticated user from the backend session. Nothing here
+    // subscribes to the RESULT: the rail and the shell read `currentUser$`
+    // where they render it, so this call exists only to populate that subject.
     this.authService.checkAuth().subscribe();
-    const destroyed = new Subject();
-
-    this.destroyRef.onDestroy(() => {
-      destroyed.next(null);
-      destroyed.complete();
-    });
-
-    emptyableCombineLatest([
-      this.contextService.currentProcessId$.asObservable(),
-      this.authService.currentUser$,
-      this.viewService.isRightColumnCollapsed$,
-    ])
-      .pipe(takeUntil(destroyed))
-      .subscribe(([processId, currentUser, isRightColumnCollapsed]) => {
-        this.menuInputs = { processId, currentUser, isRightColumnCollapsed };
-        this.items = this.buildMenu();
-      });
-
-    // PrimeNG's menubar takes resolved strings, not keys, so the menu is built
-    // with `instant()` — which means it is a SNAPSHOT of one language. Rebuild
-    // it when the language moves, or a switch after boot leaves the whole
-    // navigation in the previous one while the rest of the page changes.
-    this.translate.onLangChange.pipe(takeUntil(destroyed)).subscribe(() => {
-      if (this.menuInputs) {
-        this.items = this.buildMenu();
-      }
-    });
-  }
-
-  /** The last values the menu was built from, so a language change can rebuild it. */
-  private menuInputs: {
-    processId: string;
-    currentUser: { name?: string } | null;
-    isRightColumnCollapsed: boolean;
-  } | null = null;
-
-  /**
-   * The menubar's items for the current inputs and the current language.
-   *
-   * `id` carries the identity, `label` only the words. The Home entry used to be
-   * hidden by comparing `item.label != 'Home'` — a filter that reads the COPY to
-   * decide what a control is, and therefore one that stops hiding anything the
-   * first time Home is translated. Nothing here matches on a rendered string.
-   */
-  private buildMenu(): MenuItem[] {
-    const { processId, currentUser, isRightColumnCollapsed } = this.menuInputs!;
-    return [
-      {
-        id: 'home',
-        icon: 'pi pi-home',
-        label: this.translate.instant('chrome.home'),
-        route: ['/'],
-        // Epic 52 (trap T3): NO `currentProcessId$.next('')` here.
-        // `ProcessComponent` is the single owner of that subject and retracts
-        // its own value on destroy, which this navigation causes. Writing it
-        // from here too was harmless only while leaving the process view was
-        // always a route change; now that the view can be HOSTED on the page
-        // being navigated to, a write from here blanks the header's team name
-        // while that team is still on screen.
-        //
-        // Epic 56 branched before 52 and carried the old `command` forward into
-        // this refactor, so it is removed again here rather than at the merge
-        // by accident.
-      },
-      {
-        id: 'clear',
-        icon: 'pi pi-eraser',
-        label: this.translate.instant('chrome.clear'),
-        command: () => {
-          this.clear();
-        },
-        disabled: processId === '',
-      },
-      {
-        id: 'details',
-        icon: isRightColumnCollapsed ? 'pi pi-arrow-left' : 'pi pi-arrow-right',
-        label: this.translate.instant(
-          isRightColumnCollapsed ? 'chrome.showDetails' : 'chrome.hideDetails',
-        ),
-        command: () => {
-          this.viewService.toggleRightColumn();
-        },
-        visible: processId !== '',
-      },
-      // Username dropdown menu at end (only when authenticated). The user's own
-      // name is NOT translated — it is not copy.
-      ...(currentUser && currentUser.name
-        ? [
-            {
-              id: 'user',
-              label: currentUser.name,
-              icon: 'pi pi-user',
-              styleClass: 'username-menu',
-              items: [
-                {
-                  id: 'logout',
-                  label: this.translate.instant('chrome.logout'),
-                  icon: 'pi pi-power-off',
-                  command: () => {
-                    this.authService.logout();
-                  },
-                },
-              ],
-            },
-          ]
-        : []),
-    ].filter((item) => (this.configService.hideHome ? item.id !== 'home' : true));
-  }
-
-  // Clear the current process and create a new one of the same type
-  async clear() {
-    const processId = this.contextService.currentProcessId$.value;
-    this.contextService.clear(processId);
   }
 
   /**
@@ -226,18 +223,5 @@ export class AppComponent {
       .catch((err: unknown) => {
         console.error('Failed to record notification dismissal:', err);
       });
-  }
-
-  // Navigate to the home page, as the user left it.
-  //
-  // Epic 52 (trap T3): the `currentProcessId$.next('')` that used to open this
-  // method is gone, for the reason recorded on the Home menu item above — the
-  // teams list can now be hosting the open team, and "as the user left it"
-  // includes it.
-  navigateToHome() {
-    // Through the service, so the teams list comes back filtered as the user
-    // left it. A bare `navigate(['/'])` lands on an unfiltered list, because
-    // the home page's filter, page and open team live in its query string.
-    void this.contextService.navigateHome();
   }
 }

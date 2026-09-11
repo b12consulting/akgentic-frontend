@@ -11,19 +11,36 @@ import { DialogModule } from 'primeng/dialog';
 
 import { agentConversation } from '../../selectors/agent-conversation.selector';
 import { ChatMessage } from '../../selectors/chat-message.model';
+import { ThinkingState } from '../../selectors/chat.selector';
+import {
+  agentRuns,
+  buildDisplayItems,
+  DisplayItem,
+  trackDisplayItem,
+} from '../../selectors/display-items';
 import { NodeInterface } from '../../models/types';
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 import { TranslatePipe } from '@ngx-translate/core';
 
-import { ChatMessageComponent } from './chat-message.component';
+import type { AgentRef } from '../../../../core/ui/agent-reader.service';
 
-/** The identity a caller needs to move the app's selection to an agent. */
-export interface AgentRef {
-  /** `agent_id` — the key `AkgentService`/`SelectionService` select by. */
-  agentId: string;
-  /** The actor name, carried alongside because selection stores both. */
-  actorName: string;
+import { ChatMessageComponent } from './chat-message.component';
+import { ChatThinkingComponent } from './chat-thinking.component';
+
+/** What the reader's composer asks its host to send. */
+export interface ReaderSendRequest extends AgentRef {
+  content: string;
 }
+
+/**
+ * `AgentRef` and `AgentReaderService` now live in `core/ui` — they are shell
+ * plumbing shared with the inspector, not reader internals, and keeping the
+ * inspector importing a chat COMPONENT file to reach them was the wrong
+ * dependency direction. Re-exported here so existing importers of this module
+ * keep compiling; new callers should import from `core/ui/agent-reader.service`.
+ */
+export { AgentReaderService } from '../../../../core/ui/agent-reader.service';
+export type { AgentRef } from '../../../../core/ui/agent-reader.service';
 
 /** The rules that render as a collapsed one-liner until the reader opens them.
  *  3/4 are the agent-to-agent lines; 6 is the compaction fold. */
@@ -47,16 +64,34 @@ const COLLAPSIBLE_RULES: ReadonlySet<number> = new Set([3, 4, 6]);
  * panel pointing elsewhere on close) and it fetches nothing (the message log is
  * already in memory; a request here would make a reader feel like a
  * navigation). Everything it shows arrives as an input; everything it wants
- * changed leaves as an output.
+ * changed leaves as an output — INCLUDING the send. The one thing it does
+ * NOT offer is the reply control: answering a request opens the human-input
+ * modal, which lives in the main panel, so the reader reports a request's
+ * state (`pendingNotifications`) and leaves acting on it there.
  *
- * READ-ONLY. There is no reply, no edit and no send: every write path in this
- * app has a routing contract behind it, and a reader is not the place to
- * exercise one.
+ * IT IS NO LONGER READ-ONLY (W5b), and the distinction that replaced that rule
+ * matters. The old rule was "every write path has a routing contract behind it,
+ * and a reader is not the place to exercise one". What actually follows from
+ * that is: a reader must not INVENT a routing contract. So the composer here
+ * emits `sendToAgent` and the host performs the app's existing "send to one
+ * named agent" call — the same one the main composer's Send-to makes. The
+ * transcript itself stays inert: no reply affordance, no rating, no edit.
+ *
+ * WHAT IT SHOWS is scoped by the same rule the main transcript uses (W3): the
+ * selected agent's own turns, interleaved with the selected agent's own runs.
+ * Before, the reader showed no activity at all while the main panel showed
+ * everyone's — two wrong answers to one question.
  */
 @Component({
   selector: 'app-agent-conversation-modal',
   standalone: true,
-  imports: [CommonModule, DialogModule, ChatMessageComponent, TranslatePipe],
+  imports: [
+    CommonModule,
+    DialogModule,
+    ChatMessageComponent,
+    ChatThinkingComponent,
+    TranslatePipe,
+  ],
   templateUrl: './agent-conversation-modal.component.html',
   styleUrl: './agent-conversation-modal.component.scss',
 })
@@ -68,11 +103,31 @@ export class AgentConversationModalComponent {
   agents = input<NodeInterface[]>([]);
   /** The whole classified conversation; the reader filters it per agent. */
   messages = input<ChatMessage[]>([]);
+  /** EVERY agent's activity folds; the reader filters them per agent, exactly
+   *  as it does the messages. Handed the whole list rather than a pre-filtered
+   *  one so the reader's two halves are scoped by one rule in one place. */
+  runs = input<ThinkingState[]>([]);
+  /**
+   * The INNER `BaseMessage.id` of every rule-3 request still awaiting a human,
+   * straight from the host — the same set the main transcript keys its request
+   * state off. Handed down rather than re-derived: two surfaces computing "is
+   * this still open?" from different inputs is how one of them ends up stating
+   * the opposite of the other, which is precisely what an unbound default did.
+   */
+  pendingNotifications = input<ReadonlySet<string>>(new Set<string>());
   /** `agent_id` of the app-wide selected agent — the reader follows it. */
   selectedAgentId = input<string | null>(null);
+  /** Whether the team can accept a message at all (the process is running). */
+  canSend = input<boolean>(false);
 
   @Output() visibleChange = new EventEmitter<boolean>();
   @Output() agentSelected = new EventEmitter<AgentRef>();
+  @Output() sendToAgent = new EventEmitter<ReaderSendRequest>();
+
+  /** The composer's text. Owned here because it is transient UI state; it is
+   *  cleared on send and when the reader moves to another agent, so a half-typed
+   *  message can never be delivered to somebody it was not addressed to. */
+  readonly draft = signal<string>('');
 
   /**
    * Ids the reader has been asked to expand.
@@ -110,6 +165,84 @@ export class AgentConversationModalComponent {
     );
   });
 
+  /** Anchor ids of the runs this reader has been asked to expand. Its OWN set,
+   *  for the same reason the collapse state is its own: the main panel's
+   *  expansion is the user's place in the main conversation. */
+  private readonly expandedRunIds = signal<ReadonlySet<string>>(new Set<string>());
+
+  /** The reader's transcript: the agent's turns and the agent's runs, merged.
+   *
+   *  `agentRuns` is applied BEFORE `buildDisplayItems`, and the result is what
+   *  is handed in — never the global list. The contact-step exclusion is derived
+   *  from the runs given, so passing the global list here would delete from this
+   *  view the very messages whose folds it is not showing. */
+  readonly displayItems = computed<DisplayItem[]>(() =>
+    buildDisplayItems(this.conversation(), agentRuns(this.runs(), this.selectedAgentId())),
+  );
+
+  /** True once there is an agent to address and a team able to receive. */
+  readonly composerEnabled = computed<boolean>(
+    () => this.canSend() && this.selectedAgent() !== null,
+  );
+
+  readonly sendDisabled = computed<boolean>(
+    () => !this.composerEnabled() || this.draft().trim().length === 0,
+  );
+
+  /** Mirrors the main panel's `hasNotification`: only a rule-3 message can be
+   *  outstanding, and the set is keyed by the INNER id so a reply's `parent_id`
+   *  clears the right entry. */
+  isPending(message: ChatMessage): boolean {
+    return message.rule === 3 && this.pendingNotifications().has(message.message_id);
+  }
+
+  isRunExpanded(state: ThinkingState): boolean {
+    return this.expandedRunIds().has(state.anchor_message_id);
+  }
+
+  onToggleRunExpanded(anchorId: string): void {
+    const next = new Set(this.expandedRunIds());
+    if (next.has(anchorId)) {
+      next.delete(anchorId);
+    } else {
+      next.add(anchorId);
+    }
+    this.expandedRunIds.set(next);
+  }
+
+  /** Reads the box. Takes the event rather than a string so the template needs
+   *  no `$any` to get at the target — the cast belongs in typed code. */
+  onDraftInput(event: Event): void {
+    this.draft.set((event.target as HTMLTextAreaElement).value);
+  }
+
+  /**
+   * Send the draft to the agent currently open — not to the team.
+   *
+   * The request carries the ACTOR NAME as well as the `agent_id` because the
+   * send path addresses the actor by name; resolving it here, where the graph
+   * node is in hand, keeps the host from having to look it up again and keeps
+   * the two identities from being confused at the call site.
+   */
+  onSend(): void {
+    const agent = this.selectedAgent();
+    const content = this.draft().trim();
+    if (!agent || !this.composerEnabled() || content.length === 0) return;
+    this.sendToAgent.emit({
+      agentId: agent.name,
+      actorName: agent.actorName,
+      content,
+    });
+    this.draft.set('');
+  }
+
+  /** Enter sends, Shift+Enter breaks the line — the main composer's contract. */
+  onComposerKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Enter' || event.shiftKey) return;
+    event.preventDefault();
+    this.onSend();
+  }
+
   agentLabel(agent: NodeInterface): string {
     return makeAgentNameUserFriendly(agent.actorName);
   }
@@ -119,6 +252,7 @@ export class AgentConversationModalComponent {
   }
 
   onAgentClick(agent: NodeInterface): void {
+    this.draft.set('');
     this.agentSelected.emit({
       agentId: agent.name,
       actorName: agent.actorName,
@@ -146,6 +280,7 @@ export class AgentConversationModalComponent {
     const agentId = message.sender.agent_id;
     if (!agentId || agentId === this.selectedAgentId()) return;
     if (!this.agents().some((a) => a.name === agentId)) return;
+    this.draft.set('');
     this.agentSelected.emit({ agentId, actorName: message.sender.name });
   }
 
@@ -169,5 +304,10 @@ export class AgentConversationModalComponent {
 
   trackByMessageId(_index: number, message: ChatMessage): string {
     return message.id;
+  }
+
+  /** The SAME key function the main panel uses — one row, one identity. */
+  trackByDisplayItem(index: number, item: DisplayItem): string {
+    return trackDisplayItem(index, item);
   }
 }

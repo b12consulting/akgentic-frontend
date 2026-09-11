@@ -4,6 +4,7 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { FileUpload } from 'primeng/fileupload';
 
 import { UploadModalComponent } from './upload-modal.component';
+import { provideTranslateTesting } from '../../../../../../testing/i18n-testing';
 
 // --------------------------------------------------------------------
 // Test helpers
@@ -30,6 +31,10 @@ describe('UploadModalComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [UploadModalComponent, NoopAnimationsModule],
+      // The dialog's three status sentences go through `TranslateService` now
+      // (a p-message takes `[text]`, not a template expression), so the
+      // component injects it even with its template stripped.
+      providers: [provideTranslateTesting()],
     })
       .overrideComponent(UploadModalComponent, {
         set: {

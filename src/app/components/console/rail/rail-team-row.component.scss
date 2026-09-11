@@ -1,0 +1,146 @@
+// The host is the positioning context for the overflow kebab, which overlays
+// the row's trailing edge rather than nesting inside its button.
+:host {
+  display: block;
+  position: relative;
+}
+
+.rail-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  // The trailing padding reserves the kebab's lane, so a long team name
+  // ellipsises before it reaches the glyph rather than underneath it.
+  padding: 9px 34px 9px 11px;
+  margin-bottom: 2px;
+  border: 0;
+  border-radius: 10px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--akg-font-ui);
+  color: var(--akg-text);
+
+  &:hover {
+    background: var(--akg-panel-hover);
+  }
+
+  &:focus-visible {
+    // The prototype ships `outline: none` and no `:focus-visible` anywhere.
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+  }
+}
+
+// THE HOVER INVERSION FIX. In the prototype the hover ground (#e8e2dd) is
+// LIGHTER than the active ground (#e4ded8), so hovering the team you are
+// already in makes it FADE — the selection appears to be slipping away under
+// the pointer. `--akg-panel-active-hover` is the darker step the active row
+// moves to instead, and it is the reason that token is not from the mock.
+.rail-row.active {
+  background: var(--akg-panel-active);
+
+  &:hover {
+    background: var(--akg-panel-active-hover);
+  }
+}
+
+.rail-row__dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+// Live, and either confirmed busy or of unknown activity — both are teams the
+// server says are running, so both get the bright signal colour.
+.rail-row__dot--running,
+.rail-row__dot--working,
+.rail-row__dot--idle {
+  background: var(--akg-accent-bright);
+}
+
+// Present, not live. Reserved for a team that has actually stopped, which is
+// the state the prototype's unconditional green fill misreports.
+.rail-row__dot--stopped {
+  background: var(--akg-dot-idle);
+}
+
+// Only `running` and `working` pulse. `idle` keeps the live colour without the
+// motion: it is running, it is simply not doing anything this instant.
+.rail-row__dot--pulse {
+  animation: pulseDot 2.4s ease-in-out infinite;
+}
+
+@keyframes pulseDot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.35;
+    transform: scale(0.82);
+  }
+}
+
+.rail-row__busy {
+  flex: 0 0 auto;
+  font-size: 9px;
+  color: var(--akg-glyph-quiet);
+}
+
+.rail-row__text {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.rail-row__name {
+  font-size: 13.5px;
+  font-weight: 400;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.rail-row__meta {
+  font-size: 11.5px;
+  font-weight: 300;
+  line-height: 1.35;
+  color: var(--akg-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// Hidden until the row is pointed at, focused, or has its menu open. Driven by
+// a host class rather than by `:hover` alone so the reveal has one rule that a
+// spec can read, and so the menu staying open keeps its own trigger visible.
+.rail-row__menu {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  transform: translateY(-50%);
+  display: flex;
+  opacity: 0;
+  transition: opacity var(--akg-pane-transition-duration) ease;
+}
+
+:host(.rail-row--revealed) .rail-row__menu {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail-row__dot--pulse {
+    animation: none;
+  }
+
+  .rail-row__menu {
+    transition: none;
+  }
+}

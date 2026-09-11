@@ -1,245 +1,155 @@
-/* Ensure the entire viewport is used and no extra scrolling occurs */
-html,
-body {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  overflow: hidden; /* so the entire page won't scroll */
-}
+/* THE HEIGHT CHAIN — read this before changing any rule in this file.
+   
+   Every link from the shell down to the two scroll regions (the transcript and
+   the inspector's body) is a `flex: 1` box that has also been told
+   `min-height: 0`. The chain fails SILENTLY: nothing errors, nothing looks
+   obviously wrong, the regions simply run past the bottom of the window and
+   their scrollbars stop appearing. It has already broken here once, and the
+   broken link was an element with NO RULE AT ALL — the old template's outer
+   `<section>`, which took the flex default (`flex: 0 1 auto`), sized itself to
+   its content, and left every `flex: 1` beneath it dividing up a box that had
+   already collapsed. An element with nothing written about it is the easiest
+   kind to miss, so the chain is now stated end to end below with no gaps.
+   
+   Where the height comes from. The console shell's `<main>` is a bounded flex
+   column, so this view is handed a lane and takes 100% of it; it does NOT
+   measure off the viewport, because it does not own the page.
 
-/* Where this view's height comes from (Epic 52).
-   Standalone, on `/process/:id`, it owns the page and there is nothing above it
-   to inherit a height from, so it measures off the viewport as it always has.
-   Embedded beside the teams list it owns a PANE, and the host overrides the
-   variable to `auto` and sizes it with flex instead — a view that kept
-   measuring off the viewport there would be taller than the pane holding it by
-   however much of the page sits above, and both its scroll regions would run
-   off the bottom. */
+   `--process-height` IS A VARIABLE WITH NO SECOND VALUE, and that is a
+   correction. It was introduced so the teams page could embed this view in a
+   pane and override the height to `auto`, sizing it with flex instead. R1
+   removed that embedding: a row click navigates to `/process/:id` now, and
+   nothing anywhere sets `--process-height`. What is left is a one-line
+   indirection over `100%`.
+
+   It stays, unbound, for two reasons and neither is inertia. The specs measure
+   this chain by PINNING the property on the host (see the height-chain spec in
+   `process.component.spec.ts`), which is what makes the assertion a statement
+   about the chain rather than about a shell that is not in the fixture. And a
+   height that can be overridden from outside is exactly what a second host
+   would need, which R3's arrangement work makes plausible again.
+
+   `flex: 1` below is load-bearing regardless of the variable: with the height
+   resolving against a flex parent, this is what makes the view fill the lane it
+   was given rather than shrink to its content. */
 :host {
-  --process-height: calc(100vh - 80px);
+  --process-height: 100%;
   display: flex;
   flex-direction: column;
   height: var(--process-height);
   min-height: 0;
-}
-
-/* The template's outer <section>, and the reason the height chain reaches the
-   columns at all.
-
-   It is the host's ONLY flex child, and it had no styles whatsoever — so it took
-   the flex default, `flex: 0 1 auto`, and sized itself to its content. Every
-   `flex: 1` below it was then measured against a parent that was already only as
-   tall as what it held, which is why the conversation and the details panel
-   stopped partway down the pane and left grey space beneath them. The host knew
-   how tall this view should be and nothing carried that answer inward.
-
-   A chain is only as good as its weakest link, and an element with no rule at
-   all is easy to miss precisely because there is nothing to read. */
-section {
-  display: flex;
-  flex-direction: column;
   flex: 1;
-  min-height: 0;
 }
 
-/* Flex container for the layout. Takes its height from the host rather than
-   naming the viewport a second time — one place decides how tall this view is. */
-.main-container {
+/* The row the design draws as the second and third panes. The first — the team
+   rail — belongs to the shell and is deliberately not here; see
+   `console-shell.component.ts` for why the split is at this seam.
+
+   `min-width: 0` is harmless today and load-bearing from R3 on: this row now
+   holds a percentage-basis flex item and a divider, and a flex container that
+   refuses to shrink below its content's intrinsic width would push the pair
+   past the edge of the lane the shell gave it rather than dividing what it has.
+*/
+.console-panes {
   display: flex;
   flex: 1;
   min-height: 0;
-  background-color: #f2f7f9;
-  border-radius: 6px;
-}
-
-/* Left Column Styling.
-   `min-width: 0` (Epic 52 trap T4): at full width these columns never hit
-   their content's intrinsic minimum, so the flex ratios above were the whole
-   story. In a narrow pane they do, and without the unlock a column refuses to
-   shrink past its widest child and pushes the other one off the edge. */
-.left-column {
-  flex: 2.1;
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  /* NOT `align-items: center`. Centering a capped chat surface inside the column
-     left a band of the container's tint down each side of it — which read as the
-     conversation failing to fill its pane rather than as a deliberate margin,
-     most visibly with the details column collapsed. The surface now stretches
-     and the reading column is centred WITHIN it (see `.chat-app`). */
-  overflow: hidden;
 }
 
+/* THE SWAP (R3), and it is `order` rather than a reordered template.
 
+   The DOM order is fixed — conversation, divider, inspector — because the
+   inspector cannot leave this template (it and the five projected panels
+   resolve four component-scoped providers off this component's `providers`) and
+   because the specs pin DIRECT-child selectors, which a wrapper or a structural
+   swap would break. `order` moves the painted arrangement and leaves both of
+   those alone.
+
+   The divider keeps the MIDDLE slot in either arrangement, which is the whole
+   point: it is the boundary between the two, not a decoration attached to one
+   of them.
+
+   Reading order stays conversation-first for a screen reader, deliberately.
+   Visual order is a preference about where to look; the conversation is still
+   the thing the page is about, and `order` does not, and should not, move it in
+   the accessibility tree. */
+.console-panes--swapped > .conversation-pane {
+  order: 3;
+}
+
+.console-panes--swapped > app-split-divider {
+  order: 2;
+}
+
+.console-panes--swapped > app-console-inspector {
+  order: 1;
+}
+
+/* `min-width: 0` (Epic 52 trap T4): at full width this pane never reaches its
+   content's intrinsic minimum, so the flex ratio was the whole story. In a
+   narrow pane it does, and without the unlock one long unbreakable line in a
+   message refuses to shrink and pushes the inspector off the edge. */
+.conversation-pane {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* The conversation reads as the page; the panes around it read as furniture.
+     That contrast is also what draws the edge against the inspector, which is
+     why neither side grows a border there. */
+  background: var(--akg-overlay-bg);
+}
+
+/* NO readability cap on the surface, deliberately. Line length is already
+   bounded where it belongs — `--akg-conversation-max-width` caps and centres
+   each turn INSIDE the message list — so capping the surface as well bounded
+   nothing extra and merely stopped the white ground reaching the edge of the
+   pane, which read as the conversation failing to fill it. */
 .chat-app {
   flex: 1;
-  overflow: hidden;
-  border-radius: 6px;
-  width: 100%;
-  /* NO readability cap here, deliberately.
-     There were two, and this was the one doing visible harm. Line length is
-     already bounded where it belongs — `--akg-conversation-max-width` caps and
-     centres each turn INSIDE the message list — so capping the surface as well
-     bounded nothing extra and merely stopped the white ground reaching the edge
-     of the pane. Removing it also removes the collapse/expand race the old cap
-     had to be unconditional to avoid: there is nothing left to toggle. */
-}
-
-/* Right Column Styling */
-.right-column {
-  flex: 2; /* Initial flex value when expanded */
-  min-width: 0; /* see .left-column — Epic 52 trap T4 */
-  padding: 1rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem; /* Adds space between elements */
+  min-height: 0;
   overflow: hidden;
 }
 
-/* Collapse/expand is animated only once the view has rendered — see
-   `animateRightColumn` in the component. Entering the route with details
-   already hidden must paint the collapsed layout, not slide into it. */
-.right-column.animated {
-  transition: all 0.3s ease-in-out;
-}
-
-.right-header {
-  padding: 1rem;
-  background-color: #ffffff;
-  border-radius: 6px;
-  border: 1px solid #e0e0e0;
-  flex-shrink: 0;
-  text-align: left;
-}
-
-/* Collapsed Right Column Styling */
-.right-column.collapsed {
-  flex: 0; /* Set flex to 0 to minimize width */
-  width: 0; /* Explicitly set width to 0 */
-  padding: 0; /* Remove padding */
-  margin-left: 0; /* Remove margin if needed to fully collapse */
-  overflow: hidden; /* Hide content when collapsed */
-}
-
-
-/* Header Styling */
-.header {
-  display: flex;
-  justify-content: space-between; /* Keep button on right if added */
-  align-items: center;
-  background-color: #ffffff;
-  padding: 0.5rem;
-  border-radius: 6px;
-}
-
-.title {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0 0.5em;
-}
-
-.process-id {
-  font-size: 80%;
-  color: grey;
-}
-
-/* Visualization Container */
-.visualization-container {
+/* The five visualisation panels, stacked in one box inside the inspector.
+   
+   They are PROJECTED into the inspector but styled from here, and that is not
+   an oversight: projected nodes carry the projecting component's
+   style-encapsulation attribute, so a `.inspector__body > *` rule written in
+   the inspector's own stylesheet would never match them. The wrapper exists so
+   these rules have a parent they are allowed to name. */
+.inspector-panels {
   flex: 1;
-  background-color: #ffffff;
-  border-radius: 6px;
-  overflow: hidden; /* Changed from scroll to hidden to prevent scrollbars */
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  position: relative; /* Enable positioning context for children */
+  min-height: 0;
+  /* The containing block for the absolutely positioned panels below. */
+  position: relative;
 }
 
-/* Off-screen mechanism to preserve dimensions while hiding components */
-.visualization-container > * {
+/* All five panels occupy the same space at once, so each is taken out of flow.
+   
+   The `inset` is where the pane's body padding went. An absolutely positioned
+   child resolves its offsets against its container's PADDING box, so padding on
+   the inspector's body would have been drawn over and would have inset nothing;
+   stating the same 4/16/18 here is the version that is actually applied, and it
+   is stated once. */
+.inspector-panels > * {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  /* No transition for instant switching */
+  inset: 4px 16px 18px;
 }
 
-.visualization-container > .moved-offscreen {
-  transform: translateX(-100vw); /* Move completely off-screen to the left */
-  pointer-events: none; /* Disable interactions when off-screen */
-  z-index: -1; /* Put off-screen elements behind */
+/* Off-screen rather than unmounted: see the note in the template. Moving a
+   panel out of view preserves its dimensions, which is what lets echarts keep
+   its layout across a tab switch instead of re-running it. */
+.inspector-panels > .moved-offscreen {
+  transform: translateX(-100vw);
+  pointer-events: none;
+  z-index: -1;
 }
 
-/* Ensure visible components are on top and can receive events */
-.visualization-container > *:not(.moved-offscreen) {
+/* And the visible one is on top and reachable. */
+.inspector-panels > *:not(.moved-offscreen) {
   z-index: 1;
   pointer-events: auto;
-}
-
-/* Tabs Container Styling */
-.tabs-container {
-  flex: 1;
-  overflow-y: scroll;
-  background-color: #ffffff;
-  border-radius: 6px;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-/* Styling for Tab Headers */
-.p-tablist {
-  display: flex;
-  justify-content: space-around;
-  background-color: #f8f9fa;
-  border-radius: 6px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-}
-
-.p-tablist .p-tab {
-  padding: 10px;
-  cursor: pointer;
-}
-
-.p-tablist .p-tab.p-highlight {
-  background-color: #007bff;
-  color: #ffffff;
-}
-
-/*  Styling for the collapse button (example - adjust as needed) */
-.header button {
-  cursor: pointer;
-  background: none;
-  border: none;
-  padding: 5px 10px;
-  /* Add any specific styling for your button here */
-}
-
-/* Ensuring Responsiveness */
-@media (max-width: 768px) {
-  .main-container {
-    flex-direction: column;
-    height: 100%;
-  }
-  .left-column,
-  .right-column {
-    flex: 1;
-    padding: 0.5rem;
-    margin-left: 0; /* Remove margin in mobile view if it exists */
-  }
-  .right-column {
-    flex: 1; /* Adjust right column flex in mobile view to take available space */
-  }
-  .right-column.collapsed {
-    flex: 0; /* Keep collapsed behavior in mobile */
-  }
-  .visualization-container {
-    flex: 0 0 35%;
-  }
-  .tabs-container {
-    flex: 1;
-  }
-  .header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
 }

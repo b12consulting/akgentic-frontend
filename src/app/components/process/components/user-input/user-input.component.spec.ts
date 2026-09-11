@@ -11,6 +11,10 @@ import { ChatService } from '../../selectors/chat.selector';
 import { ContextService } from '../../../../core/context/context.service';
 import { GraphDataService } from '../../selectors/graph.selector';
 import { IngestionService } from '../../event/ingestion.service';
+import {
+  TeamTokenTotals,
+  TokenUsageSelector,
+} from '../../selectors/token-usage.selector';
 import { ActorAddress, CommandDescriptor } from '../../../../protocol/message.types';
 import { NodeInterface } from '../../models/types';
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
@@ -69,6 +73,10 @@ describe('ProcessUserInputComponent', () => {
   // agent_id. The stub holds a plain agent_id → descriptors map and a
   // `snapshot(id)` reader matching the real store's synchronous getter shape.
   let commandsById: Record<string, CommandDescriptor[]>;
+  // The composer's token line reads the team-scoped TokenUsageSelector. The
+  // double is a bare subject so a spec can put the team at zero (a team that
+  // has not run) or at real figures without going through the ingestion stack.
+  let teamTotals$: BehaviorSubject<TeamTokenTotals>;
 
   beforeEach(async () => {
     apiServiceSpy = jasmine.createSpyObj('ApiService', ['sendMessage', 'sendMessageFromTo']);
@@ -101,6 +109,13 @@ describe('ProcessUserInputComponent', () => {
 
     nodesSubject = new BehaviorSubject<NodeInterface[]>([]);
 
+    teamTotals$ = new BehaviorSubject<TeamTokenTotals>({
+      totalSent: 0,
+      totalReceived: 0,
+      totalCacheRead: 0,
+      totalCacheWrite: 0,
+    });
+
     const graphDataService = {
       nodes$: nodesSubject,
     };
@@ -127,6 +142,7 @@ describe('ProcessUserInputComponent', () => {
         { provide: GraphDataService, useValue: graphDataService },
         { provide: IngestionService, useValue: ingestionServiceStub },
         { provide: MessageService, useValue: messageServiceSpy },
+        { provide: TokenUsageSelector, useValue: { teamTotals$ } },
       ],
     }).compileComponents();
 
@@ -155,18 +171,40 @@ describe('ProcessUserInputComponent', () => {
     return err;
   }
 
-  function submitButton() {
-    return fixture.debugElement.query(By.css('p-button')).componentInstance;
+  /**
+   * The send control. It is a plain `<button>` since the console redesign
+   * turned it into a 34px circle, so `disabled` is the DOM property rather than
+   * a PrimeNG input — every existing `submitButton().disabled` assertion below
+   * still reads the same thing about the same control.
+   */
+  function submitButton(): HTMLButtonElement {
+    return fixture.nativeElement.querySelector('.send-button');
+  }
+
+  /** The key behind the send control's accessible name. With the no-op loader
+   *  the key is echoed, so this is the label assertion without pinning copy. */
+  function sendLabelKey(): string | null {
+    return submitButton().getAttribute('aria-label');
+  }
+
+  /** The busy affordance the PrimeNG `[loading]` input used to render. */
+  function sendShowsSpinner(): boolean {
+    return fixture.nativeElement.querySelector('.send-button .send-spinner') !== null;
   }
 
   it('should create', () => {
     expect(component).toBeTruthy();
   });
 
-  it('renders the send icon on the Submit button (parity with member chat)', () => {
-    const submitBtn = fixture.debugElement.query(By.css('p-button'));
-    expect(submitBtn).toBeTruthy();
-    expect(submitBtn.componentInstance.icon).toBe('pi pi-send');
+  it('renders send as a glyph-only control that still has an accessible name', () => {
+    // The labelled p-button became a circle, which is the one restyle that can
+    // silently delete a control's name. The glyph and the name are asserted
+    // together because either alone would pass while the control was unusable
+    // to anything that is not a pointer.
+    expect(submitButton()).toBeTruthy();
+    expect(submitButton().querySelector('.send-glyph')).not.toBeNull();
+    expect(sendLabelKey()).toBe('chat.input.send');
+    expect(submitButton().getAttribute('title')).toBe('chat.input.send');
   });
 
   describe('dropdown population from nodes$', () => {
@@ -454,38 +492,79 @@ describe('ProcessUserInputComponent', () => {
     });
   });
 
-  describe('"Send as" dropdown visibility (Story 7-1)', () => {
-    it('is hidden when humanAgents.length === 0', () => {
+  /**
+   * DISABLED, NOT ABSENT — the deliberate change, and the reason it is worth a
+   * describe block of its own.
+   *
+   * The threshold itself is Story 7-3's and is unchanged: a team with fewer
+   * than two humans has nothing to choose between. What changed is what that
+   * means on screen. The control used to be gated out of the DOM, so the
+   * composer had a different SHAPE on a single-human deployment — the settings
+   * sat in different places for a reason the user could not see, and "can I
+   * send as somebody else here?" had no answer at all. The pill now always
+   * renders and reports whether it is available.
+   */
+  describe('"Send as" availability (Story 7-1, restyled)', () => {
+    function sendAsPill(): HTMLElement {
+      return fixture.nativeElement.querySelector('.composer-pill');
+    }
+
+    it('renders but is unavailable when there are no humans at all', () => {
       nodesSubject.next([
         makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
       ]);
       fixture.detectChanges();
 
-      const dropdown = fixture.nativeElement.querySelector('p-dropdown');
-      expect(dropdown).toBeNull();
+      expect(component.canChooseSender).toBeFalse();
+      expect(sendAsPill()).not.toBeNull();
+      expect(sendAsPill().classList).toContain('composer-pill--disabled');
     });
 
-    it('is hidden when humanAgents.length === 1 (solo @Human) (Story 7-3)', () => {
-      // Story 7-3: humans include @Human; solo-@Human still hides dropdown.
+    it('renders but is unavailable for a solo @Human (Story 7-3)', () => {
+      // Story 7-3: humans INCLUDE @Human, so one of them is nothing to choose
+      // between — the entry point is already the sender.
       nodesSubject.next([
         makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
       ]);
       fixture.detectChanges();
 
-      const dropdown = fixture.nativeElement.querySelector('p-dropdown');
-      expect(dropdown).toBeNull();
+      expect(component.canChooseSender).toBeFalse();
+      expect(sendAsPill().classList).toContain('composer-pill--disabled');
     });
 
-    it('is visible when humanAgents.length === 2 (@Human + @Support) (Story 7-3)', () => {
-      // Story 7-3: threshold fires at 2 humans INCLUDING @Human.
+    it('the composer keeps its shape either way', () => {
+      // The whole point of disabling rather than removing: the row's controls
+      // must not move between deployments.
+      nodesSubject.next([
+        makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
+      ]);
+      fixture.detectChanges();
+      const soloShape = Array.from(
+        fixture.nativeElement.querySelector('.button-group').children,
+      ).map((node) => (node as HTMLElement).className);
+
+      nodesSubject.next([
+        makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
+        makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+      ]);
+      fixture.detectChanges();
+      const multiShape = Array.from(
+        fixture.nativeElement.querySelector('.button-group').children,
+      ).map((node) => (node as HTMLElement).className.replace(' composer-pill--disabled', ''));
+
+      expect(multiShape).toEqual(soloShape.map((c) => c.replace(' composer-pill--disabled', '')));
+    });
+
+    it('becomes available at 2 humans INCLUDING @Human (Story 7-3)', () => {
       nodesSubject.next([
         makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
         makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
       ]);
       fixture.detectChanges();
 
-      const dropdown = fixture.nativeElement.querySelector('p-dropdown');
-      expect(dropdown).not.toBeNull();
+      expect(component.canChooseSender).toBeTrue();
+      expect(sendAsPill().classList).not.toContain('composer-pill--disabled');
+      expect(fixture.nativeElement.querySelector('p-dropdown')).not.toBeNull();
       expect(component.humanAgentOptions.length).toBe(2);
       expect(component.humanAgentOptions.map((o) => o.value)).toContain('@Human');
       expect(component.humanAgentOptions.map((o) => o.value)).toContain('@Support');
@@ -781,17 +860,55 @@ describe('ProcessUserInputComponent', () => {
       expect(panelClass).toContain('send-as-panel-up');
     });
 
-    it('right-aligns the Send-as group inside .button-group (AC #15)', () => {
-      const group = fixture.nativeElement.querySelector('.send-as-group');
-      expect(group).not.toBeNull();
-      // The implementation uses both `justify-content: flex-end` (intra-group
-      // alignment) and `margin-left: auto` (pushes the group to the right
-      // inside `.button-group`). Either is acceptable evidence that the
-      // Send-as block is right-aligned.
-      const style = window.getComputedStyle(group);
-      expect(
-        style.justifyContent === 'flex-end' || style.marginLeft === 'auto',
-      ).toBeTrue();
+    it('holds the glyph, the setting name and its control in ONE pill (AC #15, restyled)', () => {
+      // Story 7-3's `margin-left: auto` is GONE, deliberately: the console
+      // redesign gives the control row one `.composer-spacer` instead of an
+      // alignment rule per cluster. What replaced the label-beside-a-control
+      // pair is a single object — the mock's pill — so the assertion is that
+      // all three parts are INSIDE it, not merely adjacent to each other.
+      const pill = fixture.nativeElement.querySelector('.composer-pill');
+      expect(pill).not.toBeNull();
+      expect(pill.querySelector('.composer-pill__glyph')).not.toBeNull();
+      expect(pill.querySelector('.composer-pill__label')).not.toBeNull();
+      expect(pill.querySelector('p-dropdown')).not.toBeNull();
+      expect(window.getComputedStyle(pill).display).toBe('flex');
+    });
+
+    it('gives the pill the frame, and the library control none of its own', () => {
+      // The frame moved out one level on purpose: a bordered PrimeNG trigger
+      // inside a bordered pill is two outlines, and every rule that styled the
+      // trigger depended on a library-internal class name surviving the next
+      // major version.
+      const pill = fixture.nativeElement.querySelector('.composer-pill');
+      expect(window.getComputedStyle(pill).borderTopWidth).toBe('1px');
+
+      const trigger = pill.querySelector('.p-select');
+      expect(trigger).withContext('PrimeNG rendered its trigger').not.toBeNull();
+      expect(window.getComputedStyle(trigger!).borderTopWidth).toBe('0px');
+    });
+
+    it('separates the message settings from the send cluster with ONE spacer', () => {
+      const row = fixture.nativeElement.querySelector('.button-group');
+      const spacer = row.querySelector('.composer-spacer');
+      expect(spacer).not.toBeNull();
+      expect(window.getComputedStyle(spacer).flexGrow).toBe('1');
+
+      // Order matters as much as existence: the spacer has to sit BETWEEN the
+      // settings and the send button, or it pushes the wrong things apart. The
+      // settings are now the two pills, so the last of THOSE is the boundary —
+      // `p-multiSelect` is no longer a direct child of the row.
+      const children = Array.from(row.children) as HTMLElement[];
+      const pills = children.filter((node) =>
+        node.classList.contains('composer-pill'),
+      );
+      expect(pills.length).toBe(2);
+
+      expect(children.indexOf(spacer)).toBeGreaterThan(
+        children.indexOf(pills[pills.length - 1]),
+      );
+      expect(children.indexOf(spacer)).toBeLessThan(
+        children.indexOf(row.querySelector('.send-button')),
+      );
     });
   });
 
@@ -1231,21 +1348,21 @@ describe('ProcessUserInputComponent', () => {
       fixture.detectChanges();
 
       expect(component.phase).toBe('restarting');
-      expect(submitButton().label).toBe('chat.input.restarting');
-      expect(submitButton().loading).toBeTrue();
+      expect(sendLabelKey()).toBe('chat.input.restarting');
+      expect(sendShowsSpinner()).toBeTrue();
       expect(submitButton().disabled).toBeTruthy();
 
       // The state is TRANSIENT, and only the rendered control proves it: release
-      // the restore, drain the send, and the button must be Submit again with no
-      // spinner. Leaving the restore un-released would also abandon a pending
+      // the restore, drain the send, and the button must be back to its plain
+      // send name with no spinner. Leaving the restore un-released would also abandon a pending
       // promise for the rest of the run.
       release();
       await pending;
       fixture.detectChanges();
 
       expect(component.phase).toBe('idle');
-      expect(submitButton().label).toBe('chat.input.submit');
-      expect(submitButton().loading).toBeFalse();
+      expect(sendLabelKey()).toBe('chat.input.send');
+      expect(sendShowsSpinner()).toBeFalse();
     });
 
     it('(AC9) a second submit during an in-flight restore is rejected, not queued', async () => {
@@ -1568,15 +1685,15 @@ describe('ProcessUserInputComponent', () => {
       fixture.detectChanges();
 
       expect(component.phase).toBe('restarting');
-      expect(submitButton().label).toBe('chat.input.restarting');
-      expect(submitButton().loading).toBeTrue();
+      expect(sendLabelKey()).toBe('chat.input.restarting');
+      expect(sendShowsSpinner()).toBeTrue();
       expect(submitButton().disabled).toBeTruthy();
 
       release();
       await pending;
     });
 
-    it('(AC3) the sending phase renders the Submit label, a spinner and a disabled control', async () => {
+    it('(AC3) the sending phase renders the send name, a spinner and a disabled control', async () => {
       const { release } = deferredSend();
       runningSubject.next(true);
       component.selectedAgents = [];
@@ -1587,21 +1704,21 @@ describe('ProcessUserInputComponent', () => {
       fixture.detectChanges();
 
       expect(component.phase).toBe('sending');
-      expect(submitButton().label).toBe('chat.input.submit');
-      expect(submitButton().loading).toBeTrue();
+      expect(sendLabelKey()).toBe('chat.input.send');
+      expect(sendShowsSpinner()).toBeTrue();
       expect(submitButton().disabled).toBeTruthy();
 
       release();
       await pending;
     });
 
-    it('(AC3) the idle phase with text renders Submit, no spinner, enabled', () => {
+    it('(AC3) the idle phase with text renders the send name, no spinner, enabled', () => {
       component.userInput = 'at rest';
       fixture.detectChanges();
 
       expect(component.phase).toBe('idle');
-      expect(submitButton().label).toBe('chat.input.submit');
-      expect(submitButton().loading).toBeFalse();
+      expect(sendLabelKey()).toBe('chat.input.send');
+      expect(sendShowsSpinner()).toBeFalse();
       expect(submitButton().disabled).toBeFalsy();
     });
 
@@ -1707,4 +1824,188 @@ describe('ProcessUserInputComponent', () => {
       expect(component.phase).toBe('idle');
     });
   });
+
+  // -------------------------------------------------------------------------
+  // Console redesign (B3) — the composer's resting state, its cost line and
+  // its helper line. These are the three things the restyle ADDED; the submit
+  // lifecycle above is unchanged and is what proves nothing was lost.
+  // -------------------------------------------------------------------------
+  describe('composer field', () => {
+    function textarea(): HTMLTextAreaElement {
+      return fixture.nativeElement.querySelector('textarea');
+    }
+
+    it('rests at a single row', () => {
+      // Four rows reserved four empty lines of furniture on every screen, and
+      // `autoResize` grew the field anyway — so the four were never a capacity.
+      expect(textarea().getAttribute('rows')).toBe('1');
+    });
+
+    it('caps its growth at the composer token, with nothing left inline', () => {
+      // The 400px cap used to be an inline `[style]` binding, which is the one
+      // channel a CSS custom property cannot travel through. Both halves are
+      // asserted: that the inline value is gone, and that the stylesheet cap
+      // actually resolves — a `var()` naming a token nobody defined computes to
+      // `none`, which is an uncapped field that still looks correct in review.
+      const cap = getComputedStyle(document.documentElement)
+        .getPropertyValue('--akg-composer-max-height')
+        .trim();
+      expect(cap).toBe('180px');
+      expect(textarea().style.maxHeight).toBe('');
+      expect(getComputedStyle(textarea()).maxHeight).toBe(cap);
+    });
+
+    it('labels the field with a placeholder rather than a float label', () => {
+      // A float label inside a one-row composer sits on top of the first line
+      // of what you are typing.
+      expect(textarea().getAttribute('placeholder')).toBe('chat.input.placeholder');
+      expect(fixture.nativeElement.querySelector('p-floatlabel')).toBeNull();
+    });
+
+    it('still routes all three submit keystrokes at one row', () => {
+      // The row count is presentation; the keyboard contract is behaviour, and
+      // it is the thing a restyle can quietly drop.
+      const el = fixture.debugElement.query(By.css('textarea'));
+      component.userInputEnterKeySubmit = true;
+      component.userInput = 'via keyboard';
+
+      el.triggerEventHandler('keydown.enter', {});
+      el.triggerEventHandler('keydown.meta.enter', {});
+      el.triggerEventHandler('keydown.control.enter', {});
+
+      // One dispatch, not three: the re-entrancy guard owns that. What matters
+      // here is that every handler is still bound to the field.
+      expect(apiServiceSpy.sendMessage).toHaveBeenCalled();
+    });
+  });
+
+  describe('token line', () => {
+    function tokenLine(): HTMLElement | null {
+      return fixture.nativeElement.querySelector('.token-line');
+    }
+
+    it('is absent while the team has spent nothing', () => {
+      // All-zero IS the empty state — `teamTotals$` never emits undefined — so
+      // without this gate a freshly opened team advertises "0 in, 0 out", which
+      // is a measurement of nothing dressed as a measurement.
+      expect(tokenLine()).toBeNull();
+    });
+
+    it('renders both totals, compacted, once anything has been spent', () => {
+      // A deliberately synthetic template: the assertion has to prove that BOTH
+      // parameters were threaded, which the no-op loader cannot show (it echoes
+      // the key with nothing substituted), and registering the shipped English
+      // would pin the copy through the back door.
+      setTestTranslations({ chat: { input: { tokenLine: '<<{{in}}|{{out}}>>' } } });
+      teamTotals$.next({
+        totalSent: 24_900,
+        totalReceived: 252,
+        totalCacheRead: 0,
+        totalCacheWrite: 0,
+      });
+      fixture.detectChanges();
+
+      // 24.9k / 252 is TokenCountPipe's output, not a raw number: the line is
+      // 11px in the corner of a control row and has no room for six digits.
+      expect(tokenLine()!.textContent!.trim()).toBe('<<24.9k|252>>');
+    });
+
+    it('appears when only one side of the ledger has moved', () => {
+      teamTotals$.next({
+        totalSent: 0,
+        totalReceived: 7,
+        totalCacheRead: 0,
+        totalCacheWrite: 0,
+      });
+      fixture.detectChanges();
+
+      expect(tokenLine()).not.toBeNull();
+    });
+
+    it('explains itself on hover rather than in the row', () => {
+      teamTotals$.next({
+        totalSent: 10,
+        totalReceived: 10,
+        totalCacheRead: 0,
+        totalCacheWrite: 0,
+      });
+      fixture.detectChanges();
+
+      expect(tokenLine()!.getAttribute('title')).toBe('chat.input.tokenLineTitle');
+    });
+
+    it('renders at all with NO team-scoped TokenUsageSelector in the injector', async () => {
+      // The composer is a child of ChatPanelComponent, which specs mount in a
+      // bare TestBed outside ProcessComponent's provider array. A required
+      // injection would take that whole suite down; re-providing the selector
+      // here would be worse, because it would build a second, permanently empty
+      // one over a second IngestionService and report zeros forever.
+      TestBed.resetTestingModule();
+      await TestBed.configureTestingModule({
+        imports: [FormsModule, ProcessUserInputComponent],
+        providers: [
+          provideTranslateTesting(),
+          { provide: ApiService, useValue: apiServiceSpy },
+          { provide: ChatService, useValue: chatServiceMock },
+          { provide: ContextService, useValue: contextServiceStub },
+          { provide: GraphDataService, useValue: { nodes$: nodesSubject } },
+          {
+            provide: IngestionService,
+            useValue: { commands: { snapshot: () => undefined } },
+          },
+          { provide: MessageService, useValue: messageServiceSpy },
+        ],
+      }).compileComponents();
+
+      const bare = TestBed.createComponent(ProcessUserInputComponent);
+      bare.componentInstance.processId = 'test-team-id';
+      bare.detectChanges();
+
+      expect(bare.nativeElement.querySelector('.send-button')).not.toBeNull();
+      expect(bare.nativeElement.querySelector('.token-line')).toBeNull();
+    });
+  });
+
+  describe('helper line', () => {
+    function helper(): HTMLElement | null {
+      return fixture.nativeElement.querySelector('.composer-helper');
+    }
+
+    it('names the Enter key only where Enter actually submits', () => {
+      // The flag genuinely turns Enter-to-send off, so a fixed string would be
+      // a lie on those deployments — and it would be the kind of lie a user
+      // discovers by losing a message.
+      component.userInputEnterKeySubmit = true;
+      fixture.detectChanges();
+      expect(helper()!.textContent!.trim()).toBe('chat.input.helperEnter');
+
+      component.userInputEnterKeySubmit = false;
+      fixture.detectChanges();
+      expect(helper()!.textContent!.trim()).toBe('chat.input.helperModifier');
+    });
+
+    it('reads the same field the keydown binding does', () => {
+      // Not `configService.userInputEnterKeySubmit` directly: the hint and the
+      // behaviour have to come from one value, or a spec that overrides one can
+      // leave the other saying the opposite.
+      component.userInputEnterKeySubmit = false;
+      fixture.detectChanges();
+      component.userInput = 'plain enter';
+
+      fixture.debugElement.query(By.css('textarea')).triggerEventHandler('keydown.enter', {});
+
+      expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+      expect(helper()!.textContent!.trim()).toBe('chat.input.helperModifier');
+    });
+
+    it('sits outside the composer card', () => {
+      // Inside, a line of 10.5px text competes with the placeholder for the
+      // same glance; the card is the thing you type into, not a legend.
+      expect(
+        fixture.nativeElement.querySelector('.input-container .composer-helper'),
+      ).toBeNull();
+      expect(helper()).not.toBeNull();
+    });
+  });
+
 });

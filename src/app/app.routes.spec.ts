@@ -29,7 +29,7 @@ describe('app.routes (Story 11.6 — deep-link route registration)', () => {
     expect(route!.path).toBe('admin/catalog/namespace/:namespace');
     expect(typeof route!.loadComponent).toBe('function');
     expect(route!.component).toBeUndefined(); // lazy-loaded, not eager
-    expect(route!.title).toBe('Catalog namespace');
+    expect(route!.title).toBe('title.catalogNamespace');
     expect(route!.canActivate).toEqual([AuthGuard]);
     expect(route!.canDeactivate).toEqual([namespacePanelCanDeactivate]);
   });

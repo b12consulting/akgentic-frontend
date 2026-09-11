@@ -1,3 +1,55 @@
+/*
+ * THE PANEL FILLS ITS PANE.
+ *
+ * Link in the Epic-56 height chain (`process.component.scss` states it end to
+ * end). The panel box is absolutely positioned by the inspector, so it already
+ * has a height; this is what passes it down to the table instead of the table
+ * measuring the window. The chain fails SILENTLY — nothing errors, the region
+ * simply runs past the bottom and its scrollbar stops appearing — so every link
+ * says `min-height: 0` explicitly rather than relying on a default.
+ */
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+:host ::ng-deep p-table,
+:host ::ng-deep .p-datatable {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * One row of the Messages tab.
+ *
+ * REPLACES the global `.card-container`, which is declared unencapsulated in
+ * `src/styles.scss` with a hard `#e0e0e0` border and a `1rem` margin on all
+ * four sides. In this pane the side margins alone took 32px of a 278px lane,
+ * and the border was the last untokenised edge on the surface. Owning the class
+ * here means the Messages tab can be sized for the pane it is actually in
+ * without touching the two other components that still use the global one.
+ */
+.message-card {
+	padding: 0.5rem 0.75rem 0.75rem;
+	// No side margin: the panel already insets itself from the pane's edges, and
+	// a second inset here is the pane's width spent twice.
+	margin: 0.75rem 0;
+	border: 1px solid var(--akg-surface-border);
+	border-radius: var(--akg-card-radius);
+}
+
+// The row header wraps rather than truncating: `@Sender ➔ @Recipient` is two
+// names and an arrow, and at this width it does not fit on one line — which the
+// global rule, written for a full-width table, never had to consider.
+.message-card .card-header {
+	font-size: 0.95rem;
+	overflow-wrap: anywhere;
+}
+
 // Story 31-2 — notification severity colours. The muted alert-text triad: one
 // visual family, each ≳4.5:1 on a white card, visibly softer than the `darkred`
 // they replace. Scoped to :host rather than :root because this story repaints
@@ -33,63 +85,41 @@
 	margin-top: 1rem;
 }
 
-// Boxed empty-section style (copied from knowledge-graph)
-.empty-section {
-	padding: 2rem;
-	text-align: center;
-	color: #6c757d;
-	background: #f8f9fa;
-	border-radius: 8px;
-	border: 2px dashed #dee2e6;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: 0.5rem;
+/*
+ * The empty state is `<app-inspector-empty-state>` now, so the three blocks
+ * that used to live here — `.empty-section`, `.empty-section-box` and
+ * `.message-placeholder` — are gone rather than restyled. They were a copy of
+ * the knowledge-graph panel's placeholder, carried a dashed border and four
+ * untokenised greys, and none of those greys cleared AA on this pane's ground.
+ * Restyling them would have left the console with two empty-state idioms that
+ * merely looked alike.
+ */
 
-	i {
-		font-size: 2rem;
-		color: #adb5bd;
-	}
-
-	p {
-		margin: 0;
-		font-style: italic;
-		font-size: 0.9rem;
-	}
+/*
+ * The table's own chrome, in the palette's terms. PrimeNG draws the row rule
+ * and the body ground from Aura's defaults, which are the last surfaces in this
+ * pane a deployment cannot re-point.
+ */
+:host ::ng-deep .p-datatable-tbody > tr {
+	background: transparent;
 }
 
-.empty-section-box {
-	width: 100%;
-	max-width: 400px;
-	margin: 0 auto;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-}
-// Placeholder for no messages (matches agent-tabs style)
-.message-placeholder {
-	margin: 2rem;
-	padding: 2.5rem 0;
-	text-align: center;
-	color: #888;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	gap: 0.5rem;
-
-	&-icon {
-		font-size: 2.5rem;
-		margin-bottom: 0.5rem;
-	}
-	&-title {
-		font-size: 1.15rem;
-		font-weight: 500;
-	}
-	&-desc {
-		font-size: 0.98rem;
-		color: #aaa;
-		max-width: 320px;
-	}
+:host ::ng-deep .p-datatable-tbody > tr > td {
+	border-color: var(--akg-hairline);
+	padding: 0 0.25rem;
 }
 
+:host ::ng-deep .p-fieldset {
+	border-color: var(--akg-surface-border);
+	border-radius: var(--akg-card-radius);
+	background: transparent;
+}
+
+:host ::ng-deep .p-fieldset-legend {
+	background: transparent;
+	color: var(--akg-text-muted);
+	font-size: var(--akg-section-label-size);
+	font-weight: 500;
+	letter-spacing: var(--akg-section-label-tracking);
+	text-transform: uppercase;
+}

@@ -39,9 +39,15 @@ p-table {
 // It lives with the table for the same reason the rule above does: left on the
 // page it matches nothing, and the regression it prevents is invisible to a
 // green suite.
+//
+// The ground is the OVERLAY token, not a literal `#fff`. Same value today, but
+// this rule exists to mask scrolling rows, so it has to track whatever ground
+// those rows are painted on — a hardcoded white would keep masking against a
+// colour the rest of the app had moved off. The literal predated the token
+// file; this is the correction, not a new decision.
 :host ::ng-deep .p-datatable-thead,
 :host ::ng-deep .p-datatable-thead > tr > th {
-    background: #fff;
+    background: var(--akg-overlay-bg);
 }
 
 .team-info {
@@ -206,4 +212,45 @@ p-table {
     width: 3rem;
     height: 3rem;
     color: #94a3b8;
+}
+
+// The status tag's palette (R5).
+//
+// `<p-tag>` draws its ground from a `severity`, and a severity resolves off
+// Aura's own blue and green ramps. `app.theme.ts` re-points `primary` and
+// nothing else, so these four tags were the last colours on screen that
+// re-pointing `_conversation-tokens.scss` could not reach — a cool blue and a
+// stock green sitting in the middle of a warm-neutral palette. The severities
+// are gone; each state names itself with a class and the ground is set here.
+//
+// The tokens are the SAME pair the conversation header's status pill reads
+// (`conversation-header.component.scss`). That is the point of the aliases
+// rather than of reaching for `--akg-accent-bg` directly: the two places a
+// team's state is drawn now agree by construction, and re-pointing the accent
+// moves both.
+//
+// `::ng-deep` because PrimeNG paints `.p-tag` from a stylesheet it injects at
+// runtime, outside this component's encapsulation, and `:host` is what keeps
+// the override off every other tag in the app — the same scoping argument the
+// sticky-header rule above makes, for the same reason. A class selector under
+// `:host` already out-specifies PrimeNG's single-class `.p-tag`, so none of
+// this needs `!important`.
+//
+// COLOUR IS SET ONCE, on the tag, and inherited: neither `.p-tag-label` nor
+// `.p-tag-icon` declares one, so the icon can never drift away from the word
+// beside it.
+:host ::ng-deep .team-status-tag--stopped {
+    background: var(--akg-status-neutral-bg);
+    color: var(--akg-status-neutral-fg);
+}
+
+// Running, working and idle share ONE ground. All three ARE running, and only
+// the label and the icon separate them; giving idle a ground of its own would
+// read as a lesser kind of stopped, which is exactly what it is not. The
+// template's comment makes the same argument from the other side.
+:host ::ng-deep .team-status-tag--running,
+:host ::ng-deep .team-status-tag--working,
+:host ::ng-deep .team-status-tag--idle {
+    background: var(--akg-status-live-bg);
+    color: var(--akg-status-live-fg);
 }

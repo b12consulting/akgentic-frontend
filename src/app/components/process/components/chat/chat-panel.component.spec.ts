@@ -13,6 +13,7 @@ import { MessageService } from 'primeng/api';
 import { provideMarkdown } from 'ngx-markdown';
 
 import { ChatPanelComponent } from './chat-panel.component';
+import { AgentReaderService } from '../../../../core/ui/agent-reader.service';
 import {
   chatFold,
   ChatService,
@@ -407,6 +408,90 @@ describe('ChatPanelComponent', () => {
       expect(
         component.chatMessages.map((m) => ({ id: m.id, collapsed: m.collapsed })),
       ).toEqual(before);
+    });
+
+    // --- W5a: opened from somewhere that cannot reach this component --------
+    //
+    // The inspector's member cards live under `ProcessComponent`, a sibling.
+    // One bit travels (`show it`); WHICH agent still goes through the app's
+    // single selection path, so the reader and the right-hand panel cannot end
+    // up pointing at two different agents.
+    it('opens on request from AgentReaderService', () => {
+      expect(component.readerVisible).toBe(false);
+
+      TestBed.inject(AgentReaderService).open({
+        agentId: 'worker-1',
+        actorName: '@Worker',
+      });
+
+      expect(component.readerVisible).toBe(true);
+      expect(TestBed.inject(SelectionService).handleSelection).toHaveBeenCalledWith({
+        type: 'message',
+        data: { name: 'worker-1', actorName: '@Worker' },
+      });
+    });
+
+    it('does not replay a stale open request to a later subscriber', () => {
+      // The request is an EVENT, not a state. A replayed last value would
+      // re-open the dialog the user had just dismissed, on the next navigation.
+      const svc = TestBed.inject(AgentReaderService);
+      svc.open({ agentId: 'worker-1', actorName: '@Worker' });
+
+      const late: unknown[] = [];
+      const sub = svc.open$.subscribe((a) => late.push(a));
+      expect(late).toEqual([]);
+      sub.unsubscribe();
+    });
+
+    it('stops listening for open requests once destroyed', () => {
+      fixture.destroy();
+      TestBed.inject(AgentReaderService).open({
+        agentId: 'worker-1',
+        actorName: '@Worker',
+      });
+      expect(component.readerVisible).toBe(false);
+    });
+
+    // --- W5b: the reader's composer ----------------------------------------
+    it('sends the reader draft to that ONE agent, addressed by actor name', () => {
+      // Priority 3 of the main composer's dispatch: one named recipient,
+      // default human sender. The path segment is the actor NAME — an agent_id
+      // there addresses nobody.
+      component.onReaderSend({
+        agentId: 'worker-1',
+        actorName: '@Worker934',
+        content: 'what did you find?',
+      });
+
+      const api = TestBed.inject(ApiService);
+      expect(api.sendMessage).toHaveBeenCalledWith(
+        'test-team',
+        'what did you find?',
+        '@Worker934',
+      );
+    });
+
+    it('does not announce a reader send as a just-sent turn', () => {
+      // `justSent$` pins the MAIN transcript's scroll to the echo of a send.
+      // Under the scoping rule that message may not even be rendered there.
+      const chat = TestBed.inject(ChatService);
+      const spy = spyOn(chat, 'emitJustSent').and.callThrough();
+
+      component.onReaderSend({
+        agentId: 'worker-1',
+        actorName: '@Worker934',
+        content: 'ping',
+      });
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('gates the reader composer on the team actually running', () => {
+      const ctx = TestBed.inject(ContextService);
+      ctx.currentTeamRunning$.next(false);
+      expect(component.readerCanSend).toBe(false);
+      ctx.currentTeamRunning$.next(true);
+      expect(component.readerCanSend).toBe(true);
     });
   });
 
@@ -1084,6 +1169,9 @@ describe('ChatPanelComponent', () => {
       getThinkingSubj().next([
         makeThinking({
           start_time: new Date('2026-04-12T10:00:00Z'),
+          // W3: anchored on the user's own turn, so the run is in scope for
+          // the main transcript on its merits rather than on the fail-open.
+          anchor_message_id: 'inner-m-1',
         }),
       ]);
       fixture.detectChanges();
@@ -1103,7 +1191,10 @@ describe('ChatPanelComponent', () => {
       sent.timestamp = '2026-04-12T10:00:00Z';
       messagesSubject.next([sent]);
       getThinkingSubj().next([
-        makeThinking({ start_time: new Date('2026-04-12T10:00:00Z') }),
+        makeThinking({
+          start_time: new Date('2026-04-12T10:00:00Z'),
+          anchor_message_id: 'inner-tie-1',
+        }),
       ]);
       fixture.detectChanges();
 
@@ -1156,6 +1247,87 @@ describe('ChatPanelComponent', () => {
       const list = el.querySelector('.message-list');
       expect(list).not.toBeNull();
       expect(list!.querySelector('.thinking-animation')).toBeNull();
+    });
+
+    // -----------------------------------------------------------------------
+    // W3 — the main transcript is the USER's inbox, not every agent's.
+    //
+    // The panel still subscribes to `thinkingAgents$` wholesale; the scoping is
+    // a pure step over the emitted list. These fixtures pin the seam between
+    // the two, not the rule — the rule's own table lives in
+    // `display-items.spec.ts` with no fixture at all.
+    // -----------------------------------------------------------------------
+    it('shows a run the user triggered', () => {
+      const ask = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'find two people',
+        'ask',
+      );
+      messagesSubject.next([ask]);
+      getThinkingSubj().next([
+        makeThinking({ agent_id: 'manager', anchor_message_id: 'inner-ask' }),
+      ]);
+      fixture.detectChanges();
+
+      expect(component.displayItems.filter((i) => i.kind === 'thinking').length).toBe(1);
+      expect(fixture.nativeElement.querySelectorAll('app-chat-thinking').length).toBe(1);
+    });
+
+    it('does NOT show a run one agent triggered in another', () => {
+      // The reported symptom: with four agents the human read
+      // "@Expert contacted @Manager" in their own transcript.
+      const ask = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'find two people',
+        'ask',
+      );
+      const delegation = makeSentMessage(
+        { name: '@Manager', role: 'Manager', agent_id: 'manager' },
+        { name: '@Expert', role: 'Worker', agent_id: 'expert' },
+        'look this up',
+        'delegate',
+      );
+      messagesSubject.next([ask, delegation]);
+      getThinkingSubj().next([
+        makeThinking({ agent_id: 'manager', anchor_message_id: 'inner-ask' }),
+        makeThinking({ agent_id: 'expert', anchor_message_id: 'inner-delegate' }),
+      ]);
+      fixture.detectChanges();
+
+      const runs = component.displayItems
+        .filter((i) => i.kind === 'thinking')
+        .map((i) => (i.data as ThinkingState).agent_id);
+      expect(runs).toEqual(['manager']);
+    });
+
+    it('keeps the delegated MESSAGE even though its run is out of scope', () => {
+      // Scoping hides work, never content. The rule-4 line is still the only
+      // thing on screen that explains why the other agent is busy.
+      const delegation = makeSentMessage(
+        { name: '@Manager', role: 'Manager', agent_id: 'manager' },
+        { name: '@Expert', role: 'Worker', agent_id: 'expert' },
+        'look this up',
+        'delegate',
+      );
+      messagesSubject.next([delegation]);
+      getThinkingSubj().next([
+        makeThinking({ agent_id: 'expert', anchor_message_id: 'inner-delegate' }),
+      ]);
+      fixture.detectChanges();
+
+      expect(component.displayItems.map((i) => i.kind)).toEqual(['message']);
+    });
+
+    it('still shows a run whose anchor is not in the log (fail-open)', () => {
+      // History can be truncated by a compaction, or begin mid-conversation on
+      // a REST replay. A live bubble must not vanish because of it.
+      messagesSubject.next([]);
+      getThinkingSubj().next([makeThinking({ anchor_message_id: 'inner-gone' })]);
+      fixture.detectChanges();
+
+      expect(component.displayItems.filter((i) => i.kind === 'thinking').length).toBe(1);
     });
 
     it('onToggleThinkingExpanded toggles the anchor id in the internal set', () => {

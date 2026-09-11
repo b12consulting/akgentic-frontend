@@ -1,34 +1,46 @@
 <section class="content">
-  <br />
   <!--
-    The split (Epic 52). The list on the left, the open team on the right, and
-    a divider between them. `#splitRow` is handed to the divider as the element
-    the percentage is measured AGAINST — passed rather than discovered, so the
-    maths never depends on how this markup happens to be wrapped.
-
-    With no team selected there is no divider and no second pane at all (FR7):
-    the list is the only child and takes the whole width, exactly as it did
-    before this epic.
+    A single child. The split row and list wrapper that used to sit here are
+    gone with Epic 52: opening a team is a navigation to `/process/:id` again,
+    so there is no second pane for this page to make room for and no divider
+    between them. `.main-container` bounds the table's scroll region straight
+    off `.content`.
   -->
-  <div class="home-split" #splitRow>
-  <!--
-    `flex-basis` carries the width, and only while the split is on. The bound
-    percentage is the LIST's share; the team pane takes whatever is left, so the
-    two can never disagree about what adds up to 100.
-  -->
-  <div
-    class="home-split__list"
-    [class.home-split__list--split]="selectedTeamId !== null"
-    [style.flex-basis.%]="selectedTeamId !== null ? splitPercent : null"
-  >
   <div class="main-container">
     <!--
-      Controls row (dropdown + Create/Configuration/Refresh + "Show all" toggle).
+      Controls row (team-type select + Configuration/Refresh/Filters + the
+      admin "Show all" toggle). Create is NOT among them any more — see below.
       Wrapped so it stays a normal-flow block (its master inline layout) and is
       NOT a stretched/stacked flex child of .main-container — the table area
       below is the only flex/scroll region (Story 28.3).
     -->
     <div class="home-controls">
+    <!--
+      The way back to the rail, and the ONLY one on this page: the brand row's
+      collapse control lives in the rail itself, so with the rail collapsed
+      there would otherwise be no control anywhere that could bring it back.
+      Rendered only while it is collapsed — a permanent "show sidebar" beside a
+      visible sidebar is furniture.
+    -->
+    @if (viewService.isRailCollapsed$ | async) {
+      <app-icon-button
+        [label]="'chrome.showSidebar' | translate"
+        (pressed)="viewService.toggleRail()"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.7"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="3" y="4" width="18" height="16" rx="3" />
+          <path d="M9 4v16" />
+        </svg>
+      </app-icon-button>
+    }
     <!--
       The team-TYPE select. It decides which team a Create makes AND which
       metadata fields the filter bar below offers — it does NOT narrow the
@@ -75,16 +87,13 @@
       ></p-toggleswitch>
       <label for="show-all-namespaces-toggle">{{ "home.showAllNamespaces" | translate }}</label>
     </span>
-    <button
-      pButton
-      size="small"
-      type="button"
-      [label]="'common.create' | translate"
-      [icon]="creation.creatingByGesture ? 'pi pi-spinner pi-spin' : 'pi pi-plus'"
-      [disabled]="creation.creatingByGesture || ((namespaces$ | async) || []).length === 0"
-      (click)="createTeam()"
-      class="extra-small-button"
-    ></button>
+    <!--
+      No Create button. Creating a team is a two-step wizard opened from the
+      rail — pick the team type, then answer its metadata contract — so this
+      toolbar's team-type select is now only what it always also was: the input
+      the filter row, the row title column and the Configuration dialog derive
+      from.
+    -->
     <!-- Edit Configuration button; opens the Monaco panel in a dialog. -->
     <button
       pButton
@@ -167,7 +176,6 @@
       [rows]="rows"
       [first]="first"
       [titleKey]="(titleKey$ | async) ?? null"
-      [selectedTeamId]="selectedTeamId"
       (lazyLoad)="loadPage($event)"
       (rowSelected)="onRowSelect($event)"
       (stopRequested)="onStopRequested($event)"
@@ -176,57 +184,6 @@
       (descriptionSaved)="onDescriptionSaved($event)"
     />
     </div>
-  </div>
-  </div>
-
-  @if (selectedTeamId !== null) {
-    <app-split-divider
-      [track]="splitRow"
-      [percent]="splitPercent"
-      label="Teams list width"
-      (percentChange)="onSplitPercent($event)"
-      (commit)="onSplitCommit($event)"
-    />
-    <div class="home-split__team">
-      <!--
-        The pane's only chrome. The team's name, its metadata and its status
-        chip are already in the app header, so this bar carries exactly one
-        thing: the way back to a full-width list. Without it the split is a
-        state the user can enter and not leave.
-      -->
-      <div class="home-split__team-bar">
-        <button
-          pButton
-          size="small"
-          type="button"
-          label="Close"
-          icon="pi pi-times"
-          severity="secondary"
-          [text]="true"
-          title="Close the team and give the list the full width"
-          (click)="closeTeam()"
-          class="extra-small-button"
-          data-test="close-open-team-btn"
-        ></button>
-      </div>
-      <!--
-        Mounted by the enclosing `@if` and NOT `@defer`-ed, unlike
-        <app-namespace-panel> above. The panel is deferred because it drags
-        Monaco in and nothing else references it; this view is already in the
-        initial bundle either way, because `/process/:id` in app.routes.ts
-        imports it eagerly. A defer block here would buy nothing today and
-        would read as though it did.
-
-        The `@if` also does the work `@defer` could not: a defer block renders
-        its content once triggered and does not go back, so closing a team
-        would have left the previous one mounted behind an empty pane.
-      -->
-      <app-process
-        [teamId]="selectedTeamId"
-        (teamUnavailable)="onTeamUnavailable()"
-      />
-    </div>
-  }
   </div>
 </section>
 
@@ -289,11 +246,16 @@
 </p-dialog>
 
 <!--
-  Team-metadata dialog. Opened by the creation gate, whichever path asked it —
-  the Create button or the gesture-less hideHome route. The GATE owns
-  visibility, the captured namespace and the error state, so all five bindings
-  below are one-way in off `creation` and the two outputs carry the decision
-  straight back to it. This page renders the element and owns none of it.
+  Team-metadata dialog. Opened by the creation gate — which, on THIS page, only
+  the gesture-less hideHome route still reaches: the Create button moved to the
+  rail's wizard, which provides a gate of its own. The dialog stays here because
+  that auto-create route can still need to ask, and a mandatory field skipped on
+  the one path nobody is watching is skipped in silence.
+
+  The GATE owns visibility, the captured namespace and the error state, so all
+  five bindings below are one-way in off `creation` and the two outputs carry
+  the decision straight back to it. This page renders the element and owns none
+  of it.
 
   `(confirmed)` binds a promise-returning method to a `void` output. That is
   fine in a template and its result is ignored; wrapping it or adding a

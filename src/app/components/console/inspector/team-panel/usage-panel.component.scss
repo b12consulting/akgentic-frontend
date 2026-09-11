@@ -1,0 +1,93 @@
+/*
+ * Separated from the sections above by margin rather than a rule. The card's
+ * own border already closes the pane; a divider on top of it would be two
+ * boundaries doing one job.
+ */
+.usage {
+  margin-top: 18px;
+  padding: 13px 14px;
+  border: 1px solid var(--akg-surface-border);
+  border-radius: var(--akg-card-radius);
+  background: var(--akg-overlay-bg);
+}
+
+/* The same uppercase treatment as the TOOLS header and the rail's group
+   headers — one shape for "this is a section". */
+.usage-label {
+  margin: 0 0 10px;
+  font-size: var(--akg-section-label-size);
+  font-weight: 500;
+  letter-spacing: var(--akg-section-label-tracking);
+  text-transform: uppercase;
+  color: var(--akg-text-muted);
+}
+
+.usage-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 12.5px;
+  font-weight: 300;
+}
+
+.usage-name {
+  color: var(--akg-text-muted);
+}
+
+/*
+ * The figure is the darkest thing in the card. Label and value at the same
+ * weight would make the row read as a sentence; the contrast step is what makes
+ * the number the thing you came for.
+ */
+.usage-value {
+  color: var(--akg-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The per-model breakdown, under a rule rather than in a second card. It
+ * decomposes the three figures above, so it has to read as the same block
+ * continued — a card of its own would read as a different subject.
+ *
+ * The hairline is the INSIDE-a-surface separator, not the surface border: the
+ * card already has an outline and repeating that value here would draw the
+ * heavier of the two lines in the lighter of the two roles.
+ */
+.usage-models {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--akg-hairline);
+}
+
+.usage-model-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 11.5px;
+  font-weight: 300;
+}
+
+/*
+ * A model name is long, opaque and not the point — `gpt-5.4-2026-03-05` would
+ * push the figures out of the pane if it were allowed its natural width. It
+ * truncates and keeps the full string on `title`; the figures do not, because
+ * an elided number is worse than no number.
+ */
+.usage-model-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--akg-text-muted);
+}
+
+.usage-model-figures {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 7px;
+  color: var(--akg-text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

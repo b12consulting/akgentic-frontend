@@ -1,0 +1,40 @@
+.tools-label {
+  margin: 0;
+  padding: 16px 4px 6px;
+  font-size: var(--akg-section-label-size);
+  font-weight: 500;
+  letter-spacing: var(--akg-section-label-tracking);
+  text-transform: uppercase;
+  color: var(--akg-text-muted);
+}
+
+.tool-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/*
+ * Pill, not card. A member is a row you can open; a tool is a fact about the
+ * team. The radius is doing that distinction on its own at this size.
+ */
+.tool-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--akg-surface-border);
+  border-radius: var(--akg-pill-radius);
+  background: var(--akg-overlay-bg);
+  font-size: 11.5px;
+  font-weight: 300;
+  color: var(--akg-control-fg);
+}
+
+.tool-chip-dot {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--akg-tool-accent);
+}

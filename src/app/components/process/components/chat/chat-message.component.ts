@@ -13,7 +13,20 @@ import { MarkdownModule } from 'ngx-markdown';
 import { ConfigService } from '../../../../core/config/config.service';
 import { buildPreview, ChatMessage } from '../../selectors/chat-message.model';
 import { isRateable } from '../../selectors/rateable';
+import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 import { FeedbackComponent } from './feedback.component';
+
+/**
+ * How much of a pending request the folded callout shows.
+ *
+ * The shared `buildPreview` default is 60 — one clipped line, which is what a
+ * row of metadata can carry. A request is not metadata: it is a question the
+ * user is being asked, and sixty characters of it is reliably the polite
+ * preamble and none of the question. This is the budget for "enough to answer
+ * or to decide to open it", not for the whole message; the expanded bubble is
+ * still where the full text (and its markdown) lives.
+ */
+const REQUEST_PREVIEW_CHARS = 240;
 
 @Component({
   selector: 'app-chat-message',
@@ -49,6 +62,28 @@ export class ChatMessageComponent {
    * has to opt out deliberately rather than inherit a write path by accident.
    */
   ratingEnabled = input<boolean>(true);
+  /**
+   * May a rule-3 request be ANSWERED here?
+   *
+   * The twin of `ratingEnabled`, and it exists for the same reason: replying
+   * opens the human-input modal, which only the main conversation hosts. The
+   * sub-agent reader renders this component to REPORT a request's state, not to
+   * act on it, so it turns the control off rather than shipping a button whose
+   * click reaches nothing.
+   *
+   * It is NOT `notification()`. That signal says whether the request is still
+   * outstanding — a fact about the message — and using it to hide the control
+   * is what made an unbound input read as "already answered".
+   */
+  replyEnabled = input<boolean>(true);
+  /**
+   * Is this rule-3 request still WAITING on a human?
+   *
+   * A fact about the message, so every surface that renders a request must bind
+   * it. The collapsed request fold states the answer in words ("Pending" /
+   * "Answered") and recedes when it is false, so leaving it at its default no
+   * longer means "say nothing" — it means "claim this was answered".
+   */
   notification = input<boolean>(false);
 
   private readonly config = inject(ConfigService);
@@ -77,11 +112,95 @@ export class ChatMessageComponent {
    * `label` beside it is deliberately NOT translated: it is a name the backend
    * chose and it has no key.
    */
+  /**
+   * One character for the gutter.
+   *
+   * HONOURS `hideAgentNames`, and that is the point of the guard rather than a
+   * nicety. `label` is the agent's identity — the same string the pill above
+   * renders — so an initial taken from it leaks the first letter of an agent's
+   * name onto every left-aligned turn in a deployment that has asked for the
+   * team to read as one assistant. Hiding the pill and keeping the monogram
+   * hides the name from a reader and not from an observer.
+   *
+   * A DOT, not an absent element. The gutter is the transcript's spine: the
+   * activity fold indents by exactly `--akg-avatar-gutter` to line up under the
+   * agent that did the work, so removing the mark would leave the fold indented
+   * against nothing. The dot holds the column while saying no name.
+   *
+   * The same fallback covers a message with no label at all, which is why the
+   * two cases share one expression rather than being tested separately.
+   */
+  readonly avatarInitial = computed<string>(() => {
+    if (!this.showAgentNames) {
+      return '\u00b7';
+    }
+    const label = (this.message().label ?? '').replace(/^@/, '').trim();
+    return label ? label.slice(0, 1).toUpperCase() : '\u00b7';
+  });
+
   readonly collapsedFallback = computed(() =>
     this.message().rule === 3 ? 'chat.messageForYou' : 'chat.teamMessage',
   );
 
   readonly preview = computed(() => buildPreview(this.message().content));
+
+  /**
+   * The two folds, told apart once.
+   *
+   * Rules 3 and 4 arrive collapsed and shared one row until Epic 58. They are
+   * not the same kind of thing — rule 3 is `recipient.role === 'Human'` with a
+   * named seat, i.e. an agent BLOCKED waiting on the user, and rule 4 is the
+   * classifier's fall-through, i.e. ambient traffic nobody is waiting on. The
+   * predicates live here rather than in two template expressions so the pair
+   * stays mutually exclusive by construction: a message cannot render as both.
+   */
+  readonly isRequestFold = computed(
+    () => this.message().rule === 3 && this.message().collapsed,
+  );
+
+  readonly isNoticeFold = computed(
+    () => this.message().rule === 4 && this.message().collapsed,
+  );
+
+  /**
+   * The two parties, separately.
+   *
+   * `label` pre-joins them as `@A ⇒ @B`, which is exactly the "bracket soup"
+   * both folds are moving away from — a joined string can only be rendered as
+   * one run of text, so the sender can never be weighted differently from the
+   * recipient and neither can be dropped. Reading the addresses gives each half
+   * its own slot; `makeAgentNameUserFriendly` is the same normaliser `buildLabel`
+   * applies, so the names read identically to the pill above a turn.
+   *
+   * Optional-chained because the synthetic context markers (rules 6/7) carry no
+   * real addresses. They never reach these branches today, and a fold that
+   * throws on a message shape it does not render would be a poor way to find out
+   * if that ever changes.
+   */
+  readonly senderName = computed(() =>
+    makeAgentNameUserFriendly(this.message().sender?.name ?? ''),
+  );
+
+  readonly recipientName = computed(() =>
+    makeAgentNameUserFriendly(this.message().recipient?.name ?? ''),
+  );
+
+  /** The question, long enough to be a question. See `REQUEST_PREVIEW_CHARS`. */
+  readonly requestText = computed(() =>
+    buildPreview(this.message().content, REQUEST_PREVIEW_CHARS),
+  );
+
+  /**
+   * Leading glyph for the ambient row.
+   *
+   * A `#` sigil is how the backend names a TOOL rather than an agent, so the
+   * two kinds of ambient traffic — a tool reporting and an agent handing off —
+   * are distinguishable without reading the name. Both are quiet; only the
+   * glyph differs.
+   */
+  readonly noticeIcon = computed(() =>
+    (this.message().sender?.name ?? '').startsWith('#') ? 'pi-bell' : 'pi-comment',
+  );
 
   /**
    * The turn's timestamp, or `null` when the backend sent one that could not be

@@ -1,0 +1,52 @@
+@if (user$ | async; as user) {
+  <!--
+    Decorative: the name beside it already says who this is, so announcing the
+    letter too would read the same fact twice.
+  -->
+  <span class="rail-footer__avatar" aria-hidden="true">{{ user.initial }}</span>
+
+  <span class="rail-footer__text">
+    <!-- A person's name is not copy and is never translated. -->
+    <span class="rail-footer__name">{{
+      user.displayName ?? ('rail.anonymous' | translate)
+    }}</span>
+
+    @if (showAllTeams) {
+      <!--
+        A BUTTON styled as a link, not an `<a>`: it runs a navigation with
+        query parameters rather than pointing at a URL, and an `<a>` without
+        an `href` is neither focusable nor announced. It also sidesteps the
+        prototype's global `a:hover { color: #21e467 }` — that green is a
+        signal colour, ~1.8:1 on white, and never legitimate as text.
+      -->
+      <button type="button" class="rail-footer__link" (click)="goToAllTeams()">
+        {{ 'rail.allTeams' | translate }}
+      </button>
+    }
+  </span>
+
+  <!--
+    The click is taken on the wrapper so the popup has a real event with a real
+    element to position against.
+  -->
+  <span class="rail-footer__account" (click)="openMenu($event)">
+    <app-icon-button size="sm" [label]="'rail.account' | translate">
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.7"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <circle cx="12" cy="12" r="3" />
+        <path
+          d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+        />
+      </svg>
+    </app-icon-button>
+  </span>
+
+  <p-menu [model]="menuItems" [popup]="true" />
+}

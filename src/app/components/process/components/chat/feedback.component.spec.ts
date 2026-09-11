@@ -2,7 +2,9 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { BehaviorSubject } from 'rxjs';
 
+import { UtilService } from '../../../../core/ui/utils.service';
 import { ActorAddress } from '../../../../protocol/message.types';
+import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
 import { ChatMessage } from '../../selectors/chat-message.model';
 import { Feedback, FeedbackService } from '../../ui-state/feedback.service';
 import { FeedbackComponent } from './feedback.component';
@@ -16,6 +18,13 @@ import { FeedbackComponent } from './feedback.component';
  * predicate rather than a magic number, a rating already given comes back
  * visible (FR8), and neither of those depends on the component instance
  * surviving — the chat list rebuilds rows constantly (T4).
+ *
+ * The selectors are the row's OWN classes (`.action-copy`, `.action-thumb-up`,
+ * `.action-thumb-down`), not the glyph library's. They used to be `.pi-thumbs-up`
+ * / `.pi-thumbs-down`, which pinned the icon set: swapping PrimeIcons for the
+ * console's own inline SVGs broke every assertion here without a single one of
+ * them being about an icon. A class the component states is the seam a spec is
+ * entitled to hold.
  */
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
@@ -59,6 +68,7 @@ describe('FeedbackComponent', () => {
   let feedbacks$: BehaviorSubject<Feedback[]>;
   let loadCalls: number;
   let setFeedback: jasmine.Spy;
+  let copyToClipboard: jasmine.Spy;
 
   beforeEach(async () => {
     feedbacks$ = new BehaviorSubject<Feedback[]>([]);
@@ -74,9 +84,18 @@ describe('FeedbackComponent', () => {
       setFeedback,
     } as unknown as FeedbackService;
 
+    copyToClipboard = jasmine.createSpy('copyToClipboard');
+
     await TestBed.configureTestingModule({
       imports: [FeedbackComponent, NoopAnimationsModule],
-      providers: [{ provide: FeedbackService, useValue: feedbackService }],
+      providers: [
+        provideTranslateTesting(),
+        { provide: FeedbackService, useValue: feedbackService },
+        // The real one reaches for the CDK `Clipboard` and PrimeNG's
+        // `MessageService`; neither is what any assertion here is about, and a
+        // spec that mounted them would be testing the toast.
+        { provide: UtilService, useValue: { copyToClipboard } as unknown as UtilService },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(FeedbackComponent);
@@ -90,15 +109,15 @@ describe('FeedbackComponent', () => {
   }
 
   describe('the gate is the shared rule', () => {
-    it('shows the thumbs on an agent answer', () => {
+    it('shows the action row on an agent answer', () => {
       const el = render(makeChatMessage({ rule: 2 }));
-      expect(el.querySelector('.feedback-icons')).not.toBeNull();
+      expect(el.querySelector('.action-row')).not.toBeNull();
     });
 
     it('shows nothing on a turn the rule excludes', () => {
       for (const rule of [1, 5, 6, 7] as const) {
         const el = render(makeChatMessage({ rule }));
-        expect(el.querySelector('.feedback-icons'))
+        expect(el.querySelector('.action-row'))
           .withContext(`rule ${rule}`)
           .toBeNull();
       }
@@ -112,9 +131,9 @@ describe('FeedbackComponent', () => {
 
       const el = render(message);
 
-      expect(el.querySelector('.pi-thumbs-up')!.classList).toContain('selected');
-      expect(el.querySelector('.pi-thumbs-down')!.classList).not.toContain(
-        'selected',
+      expect(el.querySelector('.action-thumb-up')!.classList).toContain('is-chosen');
+      expect(el.querySelector('.action-thumb-down')!.classList).not.toContain(
+        'is-chosen',
       );
     });
 
@@ -124,11 +143,11 @@ describe('FeedbackComponent', () => {
 
       const el = render(message);
 
-      expect(el.querySelector('.pi-thumbs-down')!.classList).toContain(
-        'selected',
+      expect(el.querySelector('.action-thumb-down')!.classList).toContain(
+        'is-chosen',
       );
-      expect(el.querySelector('.pi-thumbs-up')!.classList).not.toContain(
-        'selected',
+      expect(el.querySelector('.action-thumb-up')!.classList).not.toContain(
+        'is-chosen',
       );
     });
 
@@ -158,8 +177,8 @@ describe('FeedbackComponent', () => {
 
       const el = render(makeChatMessage({ id: 'mine' }));
 
-      expect(el.querySelector('.pi-thumbs-up')!.classList).not.toContain(
-        'selected',
+      expect(el.querySelector('.action-thumb-up')!.classList).not.toContain(
+        'is-chosen',
       );
       expect(fixture.debugElement.nativeElement.classList).not.toContain(
         'rated',
@@ -171,14 +190,14 @@ describe('FeedbackComponent', () => {
     it('picks a rating up when it arrives after the control rendered', () => {
       const message = makeChatMessage({ id: 'late-1' });
       const el = render(message);
-      expect(el.querySelector('.pi-thumbs-up')!.classList).not.toContain(
-        'selected',
+      expect(el.querySelector('.action-thumb-up')!.classList).not.toContain(
+        'is-chosen',
       );
 
       feedbacks$.next([makeFeedback(message, true)]);
       fixture.detectChanges();
 
-      expect(el.querySelector('.pi-thumbs-up')!.classList).toContain('selected');
+      expect(el.querySelector('.action-thumb-up')!.classList).toContain('is-chosen');
     });
 
     it('recovers the rating on a freshly built control for the same message', () => {
@@ -193,10 +212,60 @@ describe('FeedbackComponent', () => {
       rebuilt.detectChanges();
 
       expect(
-        (rebuilt.nativeElement as HTMLElement).querySelector('.pi-thumbs-down')!
+        (rebuilt.nativeElement as HTMLElement).querySelector('.action-thumb-down')!
           .classList,
-      ).toContain('selected');
+      ).toContain('is-chosen');
       expect(rebuilt.debugElement.nativeElement.classList).toContain('rated');
+    });
+  });
+
+  describe('the action row is the mock\'s three controls', () => {
+    it('renders copy, thumb-up and thumb-down, in that order', () => {
+      // The order is the mock's and it is not arbitrary: copy is the thing a
+      // reader reaches for constantly and the ratings are the thing they reach
+      // for rarely, so the common action is nearest the prose.
+      const el = render(makeChatMessage({ rule: 2 }));
+      const buttons = Array.from(
+        el.querySelectorAll('.action-row app-icon-button'),
+      ).map((node) => node.className.split(/\s+/)[0]);
+
+      expect(buttons).toEqual([
+        'action-copy',
+        'action-thumb-up',
+        'action-thumb-down',
+      ]);
+    });
+
+    it('gives every control a real button with an accessible name', () => {
+      // The row shipped as three bare `<i>` glyphs: unreachable by keyboard and
+      // unannounced. This is the assertion that stops that regressing.
+      const el = render(makeChatMessage({ rule: 2 }));
+      const buttons = el.querySelectorAll<HTMLButtonElement>(
+        '.action-row app-icon-button button',
+      );
+
+      expect(buttons.length).toBe(3);
+      for (const button of Array.from(buttons)) {
+        expect(button.getAttribute('aria-label')).toBeTruthy();
+      }
+    });
+
+    it('copies the turn\'s RAW content, not its rendered text', () => {
+      // What the agent sent is markdown, and a paste is nearly always headed
+      // somewhere that understands it. Scraping the rendered DOM would flatten
+      // the structure the author put there.
+      const message = makeChatMessage({ content: '# Heading\n\n- a\n- b' });
+      const el = render(message);
+
+      el.querySelector<HTMLButtonElement>('.action-copy button')!.click();
+
+      expect(copyToClipboard).toHaveBeenCalledWith('# Heading\n\n- a\n- b');
+    });
+
+    it('does not open the rating dialog when copy is pressed', () => {
+      const el = render(makeChatMessage());
+      el.querySelector<HTMLButtonElement>('.action-copy button')!.click();
+      expect(component.displayModal$.value).toBeFalse();
     });
   });
 
@@ -205,7 +274,7 @@ describe('FeedbackComponent', () => {
       const message = makeChatMessage({ id: 'submit-1' });
       const el = render(message);
 
-      el.querySelector<HTMLElement>('.pi-thumbs-up')!.click();
+      el.querySelector<HTMLButtonElement>('.action-thumb-up button')!.click();
       fixture.detectChanges();
       expect(component.displayModal$.value).toBeTrue();
 

@@ -17,10 +17,14 @@
 //     protocol        -> nothing app-internal
 //     shared          -> protocol
 //     core            -> protocol, shared
-//     page-*          -> core, shared, protocol, feature-catalog
-//                       (NO sibling-page imports, EXCEPT the reusable
-//                        feature-catalog dialog which pages may embed)
-//     feature-catalog -> core, shared, protocol
+//     page-*          -> core, shared, protocol, feature-catalog,
+//                        feature-team-creation
+//                       (NO sibling-page imports, EXCEPT the two reusable
+//                        dialogs — the catalog's namespace panel and the team
+//                        creation gate + metadata modal — which pages embed)
+//     feature-*       -> core, shared, protocol
+//     console         -> core, shared, protocol, feature-team-creation,
+//                        proc-selectors, proc-models
 //
 //   Within process/ (top consumes down):
 //     proc-components -> proc-ui-state, proc-selectors, proc-event,
@@ -92,6 +96,20 @@ module.exports = tseslint.config(
         { type: 'proc-models', pattern: 'src/app/components/process/models' },
         { type: 'proc-components', pattern: 'src/app/components/process' },
 
+        // --- The console shell (Epic 56) ---
+        // Rail, conversation header and inspector: the chrome the redesign put
+        // around the routed views. Its own element type rather than a page,
+        // because it is neither routed nor a leaf — `AppComponent` mounts the
+        // shell and `ProcessComponent` mounts the header and the inspector, so
+        // it is a presentation tier with two hosts.
+        //
+        // Without this entry the whole subtree matches no pattern, is tagged
+        // "unknown", and is therefore completely UNGATED: the inspector panels
+        // reach into `proc-selectors` and `proc-models`, and nothing would have
+        // checked the direction. That is the largest new folder in the tree, so
+        // leaving it unknown would have opted the redesign out of ADR-015 §7.
+        { type: 'console', pattern: 'src/app/components/console' },
+
         // --- catalog is a REUSABLE feature, not a leaf page ---
         // Its namespace-panel dialog is intentionally embedded by other pages
         // (the home page hosts the namespace editor — Epic 11/12 reuse), so
@@ -99,6 +117,31 @@ module.exports = tseslint.config(
         // This is NOT a general page->page edge: feature-catalog is the only
         // page-level element other pages may import (ADR-015 §7).
         { type: 'feature-catalog', pattern: 'src/app/components/catalog' },
+
+        // --- team creation is a REUSABLE feature, not a home-page leaf ---
+        // Same carve-out as feature-catalog above, and for the same reason: R2
+        // moved team creation out of the home page and into a console wizard
+        // that reuses BOTH the creation gate (`TeamCreationService` — the one
+        // place the "does this namespace ask for metadata" question is decided)
+        // and the metadata dialog verbatim. Home still embeds both for its
+        // auto-create path, so there are now two hosts on opposite sides of the
+        // page/console line.
+        //
+        // These two entries MUST precede `page-home` below: boundaries matches
+        // patterns in order, so the broader `src/app/components/home` pattern
+        // would otherwise swallow them and re-tag them as page-home.
+        //
+        // The honest alternative — copying either symbol into console/ — is a
+        // SECOND creation gate, which is exactly the duplication
+        // `TeamCreationService` was extracted to remove.
+        {
+          type: 'feature-team-creation',
+          pattern: 'src/app/components/home/team-creation',
+        },
+        {
+          type: 'feature-team-creation',
+          pattern: 'src/app/components/home/team-metadata-modal',
+        },
 
         // --- Pages: one element type per page; each captures its page folder ---
         // Listing distinct types (page-home, page-login, ...) means page->page
@@ -128,31 +171,57 @@ module.exports = tseslint.config(
             // the reusable feature-catalog dialog, which pages may embed.
             {
               from: { type: ['page-home', 'page-login'] },
-              allow: { to: { type: ['core', 'shared', 'protocol', 'feature-catalog'] } },
+              allow: {
+                to: {
+                  type: [
+                    'core',
+                    'shared',
+                    'protocol',
+                    'feature-catalog',
+                    'feature-team-creation',
+                  ],
+                },
+              },
             },
 
-            // Epic 52: the home page HOSTS the process view beside the teams
-            // list, so it may import that view. `proc-components` and nothing
-            // below it — the page embeds the presentation tier and knows
-            // nothing of the ingestion layer, the selectors or the ui-state
-            // underneath it. That is the same shape as the feature-catalog edge
-            // above, where a page embeds the namespace panel without reaching
-            // into the catalog's internals.
-            //
-            // Still acyclic: no rule anywhere below permits `proc-*` ->
-            // `page-home`, and the default is disallow, so this edge can only
-            // ever run in the direction written here.
+            // The two reusable features -> core, shared, protocol. Neither may
+            // import a page or the console, which is what keeps the carve-outs
+            // above from becoming page<->page edges by the back door.
             {
-              from: { type: ['page-home'] },
-              allow: { to: { type: ['proc-components'] } },
-            },
-
-            // catalog feature -> core, shared, protocol (its own intra-feature
-            // imports — e.g. namespace-panel -> validation-report — are same-type
-            // and allowed by default).
-            {
-              from: { type: 'feature-catalog' },
+              from: { type: ['feature-catalog', 'feature-team-creation'] },
               allow: { to: { type: ['core', 'shared', 'protocol'] } },
+            },
+
+            // console -> core, shared, protocol, the reusable
+            // `feature-team-creation` pair (R2: the rail's wizard reuses the
+            // creation gate and the metadata dialog rather than growing a
+            // second copy of either), plus the two process layers
+            // the inspector genuinely reads: `proc-selectors` (the Team panel
+            // injects the component-scoped `GraphDataService`, which is the
+            // whole reason the inspector is mounted from inside the process
+            // view rather than beside it) and `proc-models` for the node type
+            // that service emits.
+            //
+            // NOT `proc-components`, `proc-event`, `proc-ui-state` or
+            // `proc-workspace`. The edge that exists runs the other way —
+            // `proc-components` mounts the header and the inspector, below —
+            // and permitting the return edge is what would turn this into a
+            // cycle. The default being `disallow` means that stays true by
+            // omission rather than by anyone remembering it.
+            {
+              from: { type: 'console' },
+              allow: {
+                to: {
+                  type: [
+                    'core',
+                    'shared',
+                    'protocol',
+                    'feature-team-creation',
+                    'proc-selectors',
+                    'proc-models',
+                  ],
+                },
+              },
             },
 
             // process/components (presentation) -> all process peers it consumes
@@ -166,6 +235,11 @@ module.exports = tseslint.config(
                     // child presentation components, and sibling presentation
                     // components compose each other (e.g. team-tabs -> graph).
                     'proc-components',
+                    // Epic 56: the process view mounts the conversation header
+                    // and the inspector frame. They have to be mounted from in
+                    // here — both sit either side of, or read, this view's
+                    // component-scoped providers, which resolve nowhere else.
+                    'console',
                     'proc-ui-state',
                     'proc-selectors',
                     'proc-event',

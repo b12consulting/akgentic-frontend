@@ -176,27 +176,25 @@ describe('classifyRule', () => {
 });
 
 describe('buildLabel', () => {
-  it('Rule 1: "You ⇒ {recipient}"', () => {
+  // Rules 1 and 2 name a SPEAKER, not a route. The direction is already carried
+  // by the layout — your turn is a bubble on your side, an agent's is not — so
+  // the arrow restated what the shape had said, once per turn, forever.
+  it('Rule 1 names you, without a route', () => {
     const msg = makeSentMessage({
       sender: makeAddress({ name: '@Human', role: 'Human' }),
       recipient: makeAddress({ name: '@Manager-manager', role: 'Manager' }),
     });
-    const label = buildLabel(msg, 1);
-    expect(label).toContain('You ⇒');
-    expect(label).toContain('Manager');
-    expect(label).not.toContain('->');
+    expect(buildLabel(msg, 1)).toBe('You');
   });
 
-  it('Rule 2: "{sender} ⇒ You"', () => {
+  it('Rule 2 names the agent that spoke, without a route', () => {
     const msg = makeSentMessage({
       sender: makeAddress({ name: '@Manager-manager', role: 'Manager' }),
       recipient: makeAddress({ name: '@Human', role: 'Human' }),
     });
     const label = buildLabel(msg, 2);
-    expect(label).toContain('⇒ You');
     expect(label).toContain('Manager');
-    expect(label.endsWith('⇒ You')).toBe(true);
-    expect(label).not.toContain('->');
+    expect(label).not.toContain('⇒');
   });
 
   it('Rule 3: "@{sender} ⇒ @{recipient}"', () => {
@@ -223,13 +221,14 @@ describe('buildLabel', () => {
     expect(label).not.toContain('->');
   });
 
-  it('Rule 2 explicit: result ends with "⇒ You" (Story 4.3)', () => {
+  it('Rules 3 and 4 KEEP their route — it is the content, not chrome', () => {
     const msg = makeSentMessage({
       sender: makeAddress({ name: '@Manager-manager', role: 'Manager' }),
-      recipient: makeAddress({ name: '@Human', role: 'Human' }),
+      recipient: makeAddress({ name: '@Expert-expert', role: 'Expert' }),
     });
-    const label = buildLabel(msg, 2);
-    expect(label.endsWith('⇒ You')).toBe(true);
+    // Between two other parties, who sent what to whom is the whole point of
+    // the line. Only the turns that involve you lose the arrow.
+    expect(buildLabel(msg, 4)).toContain('⇒');
   });
 
   it('Rule 5: returns the fixed SYSTEM_MESSAGE_LABEL (Story 2.6)', () => {
@@ -353,7 +352,7 @@ describe('classifyMessage', () => {
     // The user's own turn is the ONLY filled one (conversation surface).
     expect(result.color).toBe('var(--akg-surface)');
     expect(result.collapsed).toBe(false);
-    expect(result.label).toContain('You ⇒');
+    expect(result.label).toBe('You');
   });
 
   it('should return a ChatMessage with correct fields for Rule 4 (collapsed)', () => {

@@ -14,7 +14,12 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { combineLatest, Subscription } from 'rxjs';
 
 import { ChatMessage, ENTRY_POINT_NAME } from '../../selectors/chat-message.model';
-import { DaySeparator, daySeparatorsFor } from '../../selectors/day-separator';
+import {
+  buildDisplayItems,
+  DisplayItem,
+  mainTranscriptRuns,
+  trackDisplayItem,
+} from '../../selectors/display-items';
 import { ActorAddress } from '../../../../protocol/message.types';
 import { ApiService } from '../../../../core/http/api.service';
 import { ChatService, ThinkingState } from '../../selectors/chat.selector';
@@ -31,29 +36,23 @@ import {
 } from './chat-human-modal.component';
 import {
   AgentConversationModalComponent,
-  AgentRef,
+  ReaderSendRequest,
 } from './agent-conversation-modal.component';
+import {
+  AgentReaderService,
+  AgentRef,
+} from '../../../../core/ui/agent-reader.service';
 import { ChatMessageComponent } from './chat-message.component';
 import { ChatThinkingComponent } from './chat-thinking.component';
 import { ProcessUserInputComponent } from '../user-input/user-input.component';
 
-/** A row of the transcript that is a TURN — something an agent or the user
- *  actually did. These are the rows the day arithmetic is computed over. */
-export type TurnDisplayItem =
-  | { kind: 'message'; data: ChatMessage }
-  | { kind: 'thinking'; data: ThinkingState };
-
 /**
- * Discriminated-union item rendered inline in the chat panel.
- *
- * `day` is chrome, not content (Epic 54 / NFR1): it has no sender, is not
- * selectable, is not collapsible and takes no part in reply routing. It exists
- * only in this list — nothing upstream of the panel knows about it, and it is
- * never counted as a message (`chatMessages` and `prevCount` are still built
- * from the classified stream alone, so the scroll model and the "New messages"
- * pill are untouched by it).
+ * The transcript row types now live in `../../selectors/display-items` — the
+ * reader renders the same list, and one shape rendered by two views cannot be
+ * declared by one of them. Re-exported here so existing importers of the panel
+ * keep compiling.
  */
-export type DisplayItem = TurnDisplayItem | { kind: 'day'; data: DaySeparator };
+export type { DisplayItem, TurnDisplayItem } from '../../selectors/display-items';
 
 /**
  * Chat panel scroll model (ADR-016, simplified rewrite).
@@ -125,6 +124,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   private contextService: ContextService = inject(ContextService);
   private akgentService: AkgentService = inject(AkgentService);
   private graphDataService: GraphDataService = inject(GraphDataService);
+  private agentReader: AgentReaderService = inject(AgentReaderService);
 
   chatMessages: ChatMessage[] = [];
   thinkingStates: ThinkingState[] = [];
@@ -146,6 +146,10 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   readerVisible = false;
   readerAgents: NodeInterface[] = [];
   readerSelectedAgentId: string | null = null;
+  /** Gates the reader's composer. A stopped team accepts no message, and an
+   *  enabled control that silently does nothing is worse than a disabled one.
+   *  Mirrors the guard `akgent-chat` already applies to its own per-agent box. */
+  readerCanSend = false;
 
   private subscription!: Subscription;
   private readerSubscriptions = new Subscription();
@@ -209,6 +213,14 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.readerSelectedAgentId = akgent?.agentId ?? null;
       }),
     );
+    // W5a: the reader is hosted here (it is bound to this panel's message list),
+    // but the inspector's member cards are the natural place to open it from.
+    // `AgentReaderService` carries the single bit those callers cannot reach —
+    // "show it" — while WHICH agent still travels the app's one selection path,
+    // so the reader and the right-hand panel can never point at two agents.
+    this.readerSubscriptions.add(
+      this.agentReader.open$.subscribe((agent) => this.openReaderOn(agent)),
+    );
 
     this.notificationSubscription = this.chatService.pendingNotifications$.subscribe(
       (pending) => {
@@ -236,6 +248,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.runningSubscription = this.contextService.currentTeamRunning$.subscribe(
       (running) => {
         if (!running) this.following = false;
+        this.readerCanSend = running;
         this.updateIndicator();
       },
     );
@@ -276,7 +289,13 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
 
     this.chatMessages = classified;
     this.thinkingStates = thinking;
-    this.displayItems = this.buildDisplayItems(classified, thinking);
+    // W3: the panel subscribes to EVERY agent's runs (one stream, one
+    // subscription) and scopes them here. The scoping is a pure step
+    // downstream, not a different subscription — see `mainTranscriptRuns`.
+    this.displayItems = buildDisplayItems(
+      classified,
+      mainTranscriptRuns(classified, thinking),
+    );
 
     // The user's just-sent message arrived → pin it to the top (done in
     // ngAfterViewChecked once it has rendered). The baseline distinguishes the
@@ -633,8 +652,10 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
    * reader can never open on an actor that is not an agent.
    */
   onMessageSelected(chatMsg: ChatMessage): void {
-    this.selectAgent(chatMsg.sender.agent_id, chatMsg.sender.name);
-    this.readerVisible = true;
+    this.openReaderOn({
+      agentId: chatMsg.sender.agent_id,
+      actorName: chatMsg.sender.name,
+    });
   }
 
   /** An agent was picked from the reader's own list. */
@@ -646,13 +667,39 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.readerVisible = visible;
   }
 
+  /** Open the reader on an agent — the one place that does both halves, so a
+   *  caller cannot show the dialog without moving the selection it reads. */
+  private openReaderOn(agent: AgentRef): void {
+    this.selectAgent(agent.agentId, agent.actorName);
+    this.readerVisible = true;
+  }
+
+  /**
+   * The reader's composer asked to message the agent it is showing.
+   *
+   * This is the EXISTING send path, at the main composer's "Send to @Expert934"
+   * priority: one named recipient, the default human sender. The path segment
+   * is the ACTOR NAME, not the `agent_id` — `/teams/{id}/message/{agentName}` —
+   * and the reader carries both precisely so this call does not have to guess.
+   *
+   * Deliberately NOT `chatService.emitJustSent()`: that signal pins the MAIN
+   * transcript's scroll to the echo of a send, and a message sent from the
+   * reader may not even be rendered there under the scoping rule.
+   */
+  onReaderSend(request: ReaderSendRequest): void {
+    this.apiService
+      .sendMessage(this.processId, request.content, request.actorName)
+      .catch((err) => console.error('Failed to send message to agent:', err));
+  }
+
   /**
    * Route an agent choice through the app's ONE selection path.
    *
    * The `Selectable` deliberately carries the identity only, never the graph
    * node: a node drags its `humanRequests` along, and `SelectionService` opens
-   * the human-input dialog for those. The reader is read-only, and picking an
-   * agent to read must not put a reply box on the screen.
+   * the human-input dialog for those. The reader has a composer of its own now,
+   * but that is a message TO the agent — choosing an agent to read must not put
+   * somebody else's pending request on the screen on top of it.
    */
   private selectAgent(agentId: string, actorName: string): void {
     const selectable: Selectable = {
@@ -666,24 +713,10 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     return item.id;
   }
 
-  /**
-   * Stable tracking key for the mixed display list.
-   *
-   * A day separator has no message id (Trap T4). Keying it on its calendar day
-   * gives it an identity that is unique within the list and CONSTANT across
-   * emissions — the transcript re-emits on every event, and a key derived from
-   * the index or from the neighbouring message id would move each time a turn
-   * was appended, tearing down and rebuilding every row below it.
-   */
-  trackByDisplayItem(_: number, item: DisplayItem): string {
-    switch (item.kind) {
-      case 'message':
-        return 'message:' + item.data.id;
-      case 'thinking':
-        return 'thinking:' + item.data.anchor_message_id;
-      case 'day':
-        return 'day:' + item.data.day;
-    }
+  /** Delegates to the shared key function so the panel and the reader can
+   *  never key the same row differently. */
+  trackByDisplayItem(index: number, item: DisplayItem): string {
+    return trackDisplayItem(index, item);
   }
 
   isThinkingExpanded(state: ThinkingState): boolean {
@@ -697,65 +730,4 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
       this.thinkingExpanded.add(anchorId);
     }
   }
-
-  /** Merge chat messages + thinking states into one chronologically sorted list,
-   *  then mark the calendar-day boundaries in it (Epic 54). */
-  private buildDisplayItems(
-    messages: ChatMessage[],
-    thinking: ThinkingState[],
-  ): DisplayItem[] {
-    const items: TurnDisplayItem[] = [];
-    for (const m of messages) items.push({ kind: 'message', data: m });
-    for (const t of thinking) items.push({ kind: 'thinking', data: t });
-    items.sort((a, b) => {
-      const ta = turnTime(a);
-      const tb = turnTime(b);
-      if (ta !== tb) return ta - tb;
-      // Tie-break: messages before thinking bubbles.
-      if (a.kind === b.kind) return 0;
-      return a.kind === 'message' ? -1 : 1;
-    });
-    return withDaySeparators(items);
-  }
-}
-
-/** Milliseconds of a turn row (`NaN` when its timestamp is unusable — which
- *  `Array.prototype.sort` treats as "leave it where it is", the same as the
- *  pre-Epic-54 comparator did). */
-function turnTime(item: TurnDisplayItem): number {
-  return item.kind === 'message'
-    ? item.data.timestamp.getTime()
-    : item.data.start_time.getTime();
-}
-
-/**
- * Interleave day separators into an already-sorted run of turns.
- *
- * All of the judgement lives in `daySeparatorsFor` (pure, and unit-tested
- * without a fixture per NFR2); this function only splices. Note what is NOT
- * here:
- *
- * - No special case for a boundary inside a collapsed run (Trap T3). Collapsed
- *   Rule 3/4 rows are ordinary siblings of the flat list, not children of a
- *   wrapping block, so a separator between two of them breaks nothing and hides
- *   nothing. The rule is: the separator goes where the day changes, collapsed or
- *   not, and the collapsed rows either side keep their own behaviour.
- * - No special case for the first row. `daySeparatorsFor` already guarantees
- *   index 0 is never marked (FR2), so this can never emit a rule above the
- *   first turn — and `displayItems` is still empty exactly when there are no
- *   turns, which the template's empty-state gate relies on.
- */
-function withDaySeparators(items: TurnDisplayItem[]): DisplayItem[] {
-  const separators = daySeparatorsFor(items.map(turnTimestamp));
-  const out: DisplayItem[] = [];
-  for (let i = 0; i < items.length; i++) {
-    const separator = separators[i];
-    if (separator !== null) out.push({ kind: 'day', data: separator });
-    out.push(items[i]);
-  }
-  return out;
-}
-
-function turnTimestamp(item: TurnDisplayItem): Date {
-  return item.kind === 'message' ? item.data.timestamp : item.data.start_time;
 }

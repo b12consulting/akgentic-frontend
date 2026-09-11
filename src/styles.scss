@@ -1,14 +1,102 @@
 /* You can add global styles to this file, and also import other style files */
 
+/*
+ * `@use`, not `@import`. Sass's `@import` is deprecated and Dart Sass 3.0
+ * removes it, so the build has been warning on this line; the token partial is
+ * a single `:root { … }` block with no variables, mixins or functions in it, so
+ * the module system's namespacing has nothing to change and the emitted CSS is
+ * byte-identical.
+ *
+ * It has to come FIRST: `@use` must precede every other rule in a file, and the
+ * plain-CSS primeicons import below counts as one. That only reorders the two
+ * blocks in the output — custom properties before an icon font's `@font-face`
+ * and classes, which share no selector and no cascade.
+ */
+@use "./styles/conversation-tokens";
+
+/*
+ * THE THREE FAMILIES, SELF-HOSTED.
+ *
+ * These were a `<link>` to `fonts.googleapis.com` in `index.html`, which is a
+ * defect rather than a preference in this product. It is an enterprise console
+ * deployed inside a customer's tenancy: a render-blocking third-party
+ * stylesheet on every page load sends every user's IP address, User-Agent and
+ * `Referer` to Google before a single pixel is drawn, from a page that is
+ * otherwise entirely first-party. That is a data-protection question the
+ * frontend is not entitled to answer on a deployment's behalf, and it is one
+ * nobody would notice, because a font either renders or falls back silently.
+ *
+ * It also removes a hard dependency on a third party being reachable. On a
+ * locked-down or air-gapped network the `<link>` did not fail loudly; it hung
+ * for the connect timeout with the page blank behind it.
+ *
+ * `@fontsource/*` rather than vendored files under `public/`: the woff2 are
+ * versioned, licence-carrying and updated by `npm`, where a hand-copied binary
+ * in the repo is a file nobody can attribute or refresh. The bare-specifier
+ * `@import` is resolved by the build, exactly as the primeicons line below is.
+ *
+ * ONE FILE PER WEIGHT WE ACTUALLY USE — 300/400/500/600 for Inter, and one each
+ * for the display and mono faces. Each of these carries every SUBSET behind a
+ * `unicode-range`, so the browser fetches only the script a reader needs; that
+ * is the same arrangement the Google stylesheet made, minus the third party.
+ *
+ * The tokens keep their `system-ui` / Georgia / Menlo fallbacks
+ * (`_conversation-tokens.scss`), so a deployment that strips these still gets a
+ * finished-looking page rather than Times New Roman.
+ */
+@import "@fontsource/inter/300.css";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/merriweather/300.css";
+@import "@fontsource/jetbrains-mono/400.css";
+
 @import "primeicons/primeicons.css";
-@import "./styles/_conversation-tokens.scss";
 
 html {
   font-size: 13px;
 }
 
+html,
 body {
-  font-family: sans-serif;
+  /* The shell claims exactly 100vh (Epic 56). The UA's default 8px body margin
+     is added to that, not absorbed by it, so without this reset the page is
+     8px taller than the window and scrolls behind two panes that are already
+     managing their own scrolling. `process.component.scss` carries the same
+     reset, but as element selectors inside an ENCAPSULATED stylesheet — where
+     they are rewritten with a `[_ngcontent]` attribute and match nothing. It
+     has to be here to have any effect at all. */
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  /* Every face and colour comes from the token layer, so a deployment
+     re-points _conversation-tokens.scss and the whole app follows. */
+  font-family: var(--akg-font-ui);
+  background: var(--akg-page-bg);
+  color: var(--akg-text);
+  -webkit-font-smoothing: antialiased;
+  /* Nothing scrolls at the page level; the panes each own a scroll region. */
+  overflow: hidden;
+}
+
+/* A scrollbar that belongs to the palette rather than to the OS. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--akg-marker-border);
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+
+::placeholder {
+  color: var(--akg-text-muted);
 }
 
 .error {
@@ -18,6 +106,11 @@ body {
 //
 // Lists and p-fields
 //
+/* Kept, though the Epic-56 plan listed it for deletion with the legacy chat
+   block below. It is not part of that block: `message-list.component.html`
+   still wraps every row of the Messages tab in it and defines nothing of its
+   own, so removing it here unboxes that whole tab. Retiring it belongs with
+   that component, not with the chrome. */
 .card-container {
   padding: 0.5rem 1rem 1rem;
   margin: 1rem;
@@ -55,72 +148,21 @@ span.p-fieldset-legend-label {
   margin-bottom: 0.4rem;
 }
 
-chat-wrapper {
-  display: flex;
-  flex-direction: column;
-  flex-grow: 1;
-  height: 100%; // Ajout de la hauteur
-}
-// Modifier le conteneur des messages
-.message-list {
-  padding: 20px;
-  overflow-y: auto;
-  background-color: #ffffff;
-  flex: 1;
-  border-radius: 6px;
-  height: 100%;
-}
+/* The pre-redesign global chat styles used to live here: `chat-wrapper`,
+   `.message-list`, `.message`, `.timestamp`, `.message-input`,
+   `.message-input-container` and `.message-input-field`. All seven are gone
+   (Epic 56).
 
-.message {
-  display: flex;
-  align-items: center;
-  margin-bottom: 10px;
-
-  &.user {
-    justify-content: end;
-  }
-
-  &.bot {
-    justify-content: start;
-  }
-}
-
-.timestamp {
-  font-size: 12px;
-  color: #999;
-  margin-left: 10px;
-}
-
-
-
-.message-input {
-  display: flex;
-  align-items: center;
-  padding: 1rem;
-  border-top: 1px solid #d1d5db;
-  background-color: white;
-}
-
-// Modifier le conteneur de l'input
-.message-input-container {
-  position: absolute; // Position absolue
-  bottom: 0; // Coller en bas
-  left: 0;
-  right: 0;
-  display: flex;
-  align-items: center;
-  padding: 1rem;
-  border-top: 1px solid #ccc;
-  background-color: white;
-  z-index: 1; // S'assurer qu'il reste au-dessus
-}
-
-.message-input-field {
-  flex-grow: 1;
-  padding: 0.5rem;
-  border: 1px solid #ccc;
-  border-radius: 5px;
-}
+   `.message-list` and `.message` are the reason this is a correctness change
+   and not tidying. Both class names are ALSO used by the redesigned
+   conversation — `chat-panel.component.scss` scopes `.message-list` and
+   `chat-message.component.scss` scopes `.message` — and the scoped rules only
+   won because component styles carry an extra attribute selector's worth of
+   specificity. That is an accident, not a mechanism: a global here that ever
+   got one selector more specific (or that landed later in the cascade after
+   the shell re-parented the panes) starts overriding the conversation with
+   a bootstrap-era white card and a 20px pad. The remaining five had no
+   consumer left in the app at all. */
 
 .error-message {
   color: red;
@@ -183,10 +225,22 @@ chat-wrapper {
   }
 }
 
-// markdown styles
+/* Markdown styles.
+ *
+ * TYPOGRAPHY ONLY — no colour and no leading. This block is unencapsulated and
+ * matches the element NAME, so anything it states wins over the component that
+ * mounts the `<markdown>`: the transcript's turns, the compaction summary, the
+ * workspace preview and the knowledge-graph descriptions all render through it.
+ * It used to state `color: #2b3238` and `line-height: 1.4`, which meant every
+ * message body in the conversation ignored `--akg-turn-fg` and
+ * `--akg-turn-line-height` — the single most visible surface in the app, and
+ * the one place the conversation tokens could not reach.
+ *
+ * Both now INHERIT, so the turn decides and this decides the block rhythm.
+ * A legacy surface that genuinely wants a different tone sets it on the host it
+ * controls; naming the element is how one surface's preference became every
+ * surface's rule. */
 markdown {
-
-  color: #2b3238;
 
   h1, h2, h3 {
     margin-block-start: 0.75em;
@@ -196,7 +250,18 @@ markdown {
   p, blockquote {
     margin-block-start: 0.75em;
     margin-block-end: 0.25em;
-    line-height: 1.4
+    line-height: inherit;
+  }
+
+  /* A turn opens with prose, and the leading margin above put a blank line
+     between the sender's name and the first word of what they said — visible on
+     every single message. Only the FIRST child loses it: the margin between
+     paragraphs is what makes a multi-paragraph answer readable. */
+  > p:first-child,
+  > h1:first-child,
+  > h2:first-child,
+  > h3:first-child {
+    margin-block-start: 0;
   }
 
   h1 {
@@ -215,24 +280,29 @@ markdown {
     font-size: 1em;
   }
 
+  /* Conversation tokens, not PrimeNG's togglebutton variables. A code block in
+     an answer took its ground and its rule from whatever the component library
+     happened to theme a toggle button as, so re-pointing the palette moved
+     every surface in the app except this one. */
   pre {
     font-size: 0.9em;
     margin: 0.5rem;
     padding: 0.5rem;
     border-radius: 5px;
-    border-left: 2px solid var(--p-togglebutton-color);
-    background-color:var(--p-togglebutton-background)
-
+    border-left: 2px solid var(--akg-marker-border);
+    background-color: var(--akg-surface-muted);
   }
 
   blockquote {
     margin: 0 0.25rem;
     padding: 0 0.75rem;
-    border-left: 2px solid var(--p-togglebutton-color);
+    border-left: 2px solid var(--akg-marker-border);
   }
 
+  /* Same reason as `p` above: a list inside a turn is prose, and pinning it to
+     1.4 made a bulleted answer set tighter than the sentence introducing it. */
   li {
-    line-height: 1.4
+    line-height: inherit;
   }
 
   ul {

@@ -26,6 +26,9 @@ import { SplitDividerComponent } from './split-divider.component';
         [track]="track"
         [percent]="percent"
         [label]="label"
+        [min]="min"
+        [max]="max"
+        [defaultPercent]="defaultPercent"
         (percentChange)="live.push($event)"
         (commit)="commits.push($event)"
       />
@@ -36,6 +39,12 @@ class HostComponent {
   @ViewChild(SplitDividerComponent) divider!: SplitDividerComponent;
   percent = 40;
   label = 'Teams list width';
+  // Bound to the module defaults, so every spec below this one exercises the
+  // pre-R3 behaviour through the new inputs rather than around them — which is
+  // the thing that would otherwise rot: a defaulted input nobody ever binds.
+  min = SPLIT_MIN_PERCENT;
+  max = SPLIT_MAX_PERCENT;
+  defaultPercent = SPLIT_DEFAULT_PERCENT;
   live: number[] = [];
   commits: number[] = [];
 }
@@ -93,6 +102,96 @@ describe('SplitDividerComponent (Story 52-2)', () => {
       host.percent = 500;
       fixture.detectChanges();
       expect(element.getAttribute('aria-valuenow')).toBe(String(SPLIT_MAX_PERCENT));
+    });
+  });
+
+  /**
+   * W8a — IT HAS TO LOOK LIKE A CONTROL BEFORE IT IS TOUCHED.
+   *
+   * The user's report was not "the divider is ugly", it was "I cannot resize".
+   * The divider was there and worked; it drew a 2px hairline in the same tone
+   * as every other border and only distinguished itself on HOVER — which is
+   * the one state a user who cannot find it will never reach, and which no
+   * touch device has at all.
+   *
+   * So the assertion is specifically about the RESTING state. A grip that
+   * exists but is `display: none` or transparent until `:hover` would satisfy
+   * "there is a grip" and would reproduce the bug exactly.
+   */
+  describe('(W8a) the resting affordance', () => {
+    function grip(): HTMLElement | null {
+      return element.querySelector('.split-divider__grip');
+    }
+
+    it('draws a grip mark without being touched first', () => {
+      const mark = grip();
+      expect(mark).not.toBeNull();
+
+      const style = getComputedStyle(mark!);
+      expect(style.display).not.toBe('none');
+      expect(style.visibility).not.toBe('hidden');
+      expect(Number.parseFloat(style.opacity)).toBeGreaterThan(0);
+      // A mark with no area is a mark nobody can see.
+      expect(mark!.getBoundingClientRect().height).toBeGreaterThan(0);
+      expect(mark!.getBoundingClientRect().width).toBeGreaterThan(0);
+    });
+
+    /**
+     * The host is already a labelled `separator` carrying a value and a range.
+     * The grip is that control's paint; announced separately it would be one
+     * control spoken as two.
+     */
+    it('is paint, not a second control: hidden from the reader and from the pointer', () => {
+      expect(grip()!.getAttribute('aria-hidden')).toBe('true');
+      expect(getComputedStyle(grip()!).pointerEvents).toBe('none');
+    });
+
+    /**
+     * The hit area is the HOST, and it has only ever been allowed to grow: the
+     * grip sits a few pixels from the transcript's scrollbar, and the strip is
+     * what keeps the two from reading as one smudge. Anything narrower than
+     * the original 0.65rem would make a divider that was merely hard to find
+     * hard to HIT as well.
+     */
+    it('keeps a hit area wider than the mark it draws', () => {
+      const strip = element.getBoundingClientRect();
+      const mark = grip()!.getBoundingClientRect();
+
+      // 0.65rem at the default 16px root.
+      expect(strip.width).toBeGreaterThanOrEqual(10.4);
+      expect(strip.width).toBeGreaterThan(mark.width);
+    });
+
+    it('still reports the pointer to the HOST, so the grip is not a hole in the control', () => {
+      // `pointer-events: none` on the mark is what makes this true; without it
+      // a press that landed on the middle of the divider — the part that looks
+      // most like a handle — would never start a drag.
+      //
+      // SCROLLED INTO VIEW FIRST, and that is not a formality.
+      // `elementFromPoint` takes VIEWPORT coordinates and returns null for any
+      // point outside it. Karma stacks every suite's fixture in one document,
+      // so where this one lands vertically depends on which specs ran before
+      // it — and the suite order is randomised. Without this the test passed
+      // or failed by lottery: it failed on two runs out of three here while
+      // the behaviour it describes never changed.
+      element.scrollIntoView({ block: 'center' });
+      const rect = element.getBoundingClientRect();
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+
+      // If the probe is still outside the viewport the hit test cannot mean
+      // anything, so say THAT rather than reporting a null as a design defect.
+      expect(x)
+        .withContext('probe x is outside the viewport')
+        .toBeGreaterThanOrEqual(0);
+      expect(y)
+        .withContext('probe y is outside the viewport')
+        .toBeGreaterThanOrEqual(0);
+      expect(y)
+        .withContext('probe y is below the viewport')
+        .toBeLessThan(window.innerHeight);
+
+      expect(document.elementFromPoint(x, y)).toBe(element);
     });
   });
 
@@ -182,6 +281,147 @@ describe('SplitDividerComponent (Story 52-2)', () => {
     it('a move with no drag in progress emits nothing at all', () => {
       host.divider.onPointerMove({ clientX: 800 } as PointerEvent);
       expect(host.live).toEqual([]);
+    });
+  });
+
+  /**
+   * R3. The range is the HOST's.
+   *
+   * This divider measures the LEFTMOST pane, so one preference about one
+   * identified pane ("the inspector may have 18..50% of the row") reads as two
+   * different ranges depending on which side that pane is on. Hard-coded
+   * bounds cannot express that, and the failure is silent: the drag simply
+   * stops somewhere the user did not ask for.
+   */
+  describe('(R3) the bounds are inputs, not module constants', () => {
+    /** The console's range with the inspector leading: 18..50. */
+    function narrowRange(): void {
+      host.min = 18;
+      host.max = 50;
+      host.defaultPercent = 26;
+      fixture.detectChanges();
+    }
+
+    it('defaults to the teams-list range, so an unbound host is unchanged', () => {
+      expect(host.divider.min).toBe(SPLIT_MIN_PERCENT);
+      expect(host.divider.max).toBe(SPLIT_MAX_PERCENT);
+      expect(host.divider.defaultPercent).toBe(SPLIT_DEFAULT_PERCENT);
+    });
+
+    it('announces the bound range, not the module one', () => {
+      narrowRange();
+
+      expect(element.getAttribute('aria-valuemin')).toBe('18');
+      expect(element.getAttribute('aria-valuemax')).toBe('50');
+    });
+
+    it('clamps the value it reports to the bound range', () => {
+      narrowRange();
+      host.percent = 65;
+      fixture.detectChanges();
+
+      expect(element.getAttribute('aria-valuenow')).toBe('50');
+    });
+
+    it('steps inside the bound range and stops at its ceiling', () => {
+      narrowRange();
+      host.percent = 49;
+      fixture.detectChanges();
+
+      press('ArrowRight', { shiftKey: true });
+
+      expect(host.live).toEqual([50]);
+    });
+
+    it('Home and End go to the BOUND range, not the module one', () => {
+      narrowRange();
+
+      press('Home');
+      expect(host.live).toEqual([18]);
+
+      host.live = [];
+      host.percent = 30;
+      fixture.detectChanges();
+      press('End');
+      expect(host.live).toEqual([50]);
+    });
+
+    it('a keystroke at a bound of the NARROWED range announces and stores nothing', () => {
+      narrowRange();
+      host.percent = 50;
+      fixture.detectChanges();
+
+      press('ArrowRight');
+
+      expect(host.live).toEqual([]);
+      expect(host.commits).toEqual([]);
+    });
+
+    /**
+     * The mirrored arrangement: the inspector on the RIGHT makes the
+     * conversation the leading pane, and the same preference reads as 50..82.
+     * Both halves have to be reachable, or a swap would silently lose range.
+     */
+    it('serves the mirrored range just as well', () => {
+      host.min = 50;
+      host.max = 82;
+      host.percent = 74;
+      fixture.detectChanges();
+
+      press('Home');
+      expect(host.live).toEqual([50]);
+
+      host.live = [];
+      host.percent = 74;
+      fixture.detectChanges();
+      press('End');
+      expect(host.live).toEqual([82]);
+    });
+
+    it('double-click restores the BOUND default, which the module one is not', () => {
+      narrowRange();
+      host.percent = 44;
+      fixture.detectChanges();
+
+      element.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      fixture.detectChanges();
+
+      expect(host.live).toEqual([26]);
+      expect(host.commits).toEqual([26]);
+    });
+
+    it('double-click at the bound default changes nothing', () => {
+      narrowRange();
+      host.percent = 26;
+      fixture.detectChanges();
+
+      element.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      fixture.detectChanges();
+
+      expect(host.live).toEqual([]);
+      expect(host.commits).toEqual([]);
+    });
+
+    /**
+     * The pointer path takes the bounds too. It is the only one a user drives
+     * with a mouse, so a clamp missing HERE is the one they would actually hit.
+     */
+    it('a drag is clamped to the bound range', () => {
+      narrowRange();
+      const trackEl = fixture.nativeElement.querySelector('div') as HTMLElement;
+      spyOn(trackEl, 'getBoundingClientRect').and.returnValue({
+        left: 0,
+        width: 1000,
+      } as DOMRect);
+
+      // `dragging` directly rather than a synthetic `pointerdown`:
+      // `setPointerCapture` rejects a pointer id the browser has no record of,
+      // and the capture is not what this spec is about.
+      host.divider.dragging = true;
+      // 900px of a 1000px track is 90% — well past the 50% ceiling.
+      host.divider.onPointerMove({ clientX: 900 } as PointerEvent);
+
+      expect(host.live).toEqual([50]);
     });
   });
 });

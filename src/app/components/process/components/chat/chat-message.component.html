@@ -1,28 +1,119 @@
-<!-- Collapsed line for Rule 3 and Rule 4 -->
+<!--
+  THE TWO FOLDS, AND WHY THEY MUST NOT LOOK ALIKE.
+
+  Rules 3 and 4 both arrive collapsed and both used to render the same clipped
+  `[@A ⇒ @B] : first sixty characters…` row. That put the one message in the
+  transcript that is BLOCKED ON THE USER — an agent asking a named human seat —
+  in the same shape as the most ambient thing on the surface, a tool announcing
+  itself to a manager. The hierarchy the surface now states, loudest first:
+
+    REQUEST (rule 3) > TURN (rules 1/2) > NOTIFICATION (rule 4)
+
+  It is derived from the classifier, not from taste. Rule 3 is the only row that
+  carries a state (`notification()`: live or answered) AND an action (Reply), so
+  it is the only one that can be OUTSTANDING — it gets the accent card. Rule 4
+  carries neither, so it ranks below an ordinary turn and gets a quiet indented
+  system row with no fill and no border of its own.
+-->
+
+<!--
+  RULE 3 — the human-support request.
+
+  In the transcript's gutter, not beside it: the avatar is the same mark and the
+  same `--akg-avatar-gutter` a turn uses, because this IS someone speaking and
+  floating it in its own lane would read as chrome. The question is prose at
+  turn size — a request you cannot read is a request you cannot answer, and the
+  sixty-character clip was exactly that.
+
+  ANSWERED RECEDES. `notification()` is already the live/answered bit (it is
+  false once the reply lands, chat-panel keys it off the INNER message id), so
+  the resolved request drops its fill and its accent and stops competing with
+  the conversation it interrupted. It is not removed: the exchange still
+  happened and the row still expands.
+-->
 <div
-  *ngIf="(message().rule === 3 || message().rule === 4) && message().collapsed"
-  class="collapsed-line"
+  *ngIf="isRequestFold()"
+  class="collapsed-line collapsed-request"
+  [class.answered]="!notification()"
   (click)="onToggleCollapse()"
 >
-  <span class="collapsed-label">
-    [<span *ngIf="showAgentNames">{{ message().label }}</span><span
-      *ngIf="!showAgentNames"
-    >{{ collapsedFallback() | translate }}</span><span
-      *ngIf="message().rule === 3 && notification()"
-      class="notification-icon collapsed-notification-icon"
-    > (<span class="hand-raised">🙋</span>)</span>]<span
-      *ngIf="preview().length > 0"
-      class="collapsed-preview"
-    > : {{ preview() }}</span>
+  <span class="turn-avatar" aria-hidden="true">{{ avatarInitial() }}</span>
+  <div class="request-card">
+    <div class="request-head">
+      <span class="request-asks">
+        <!-- WHO IT IS FOR, IN WORDS. The seat being asked used to be the second
+             half of a bracketed pair, which is where a reader stops looking.
+             With `hideAgentNames` there is no seat to name, so the row says what
+             kind of thing it is instead of naming nobody. -->
+        <ng-container *ngIf="showAgentNames; else requestAnonymous">
+          <span class="request-sender">{{ senderName() }}</span>
+          <span class="request-target">{{
+            "chat.request.asks" | translate : { agent: recipientName() }
+          }}</span>
+        </ng-container>
+        <ng-template #requestAnonymous>
+          <span class="request-target">{{ collapsedFallback() | translate }}</span>
+        </ng-template>
+      </span>
+      <span class="request-state" [class.pending]="notification()">{{
+        (notification() ? "chat.request.pending" : "chat.request.answered")
+          | translate
+      }}</span>
+      <i class="pi pi-chevron-right collapsed-caret" aria-hidden="true"></i>
+      <span class="collapsed-timestamp">{{
+        timestampOrNull() | date : "HH:mm"
+      }}</span>
+    </div>
+    <p class="request-body">{{ requestText() }}</p>
+    <!-- Same output as the expanded bubble's Reply and the same disabled rule —
+         `rule3Clicked` is the only thing that opens the human-input modal, and
+         `onOpenModal` stops the click before the row's collapse toggle sees it.
+         Absent entirely on a surface that cannot host that modal
+         (`replyEnabled()`), because a live-looking button that reaches nothing
+         is worse than no button. -->
+    <p-button
+      *ngIf="replyEnabled()"
+      size="small"
+      [label]="'chat.reply' | translate"
+      [disabled]="!notification()"
+      (click)="onOpenModal($event)"
+      class="open-button"
+    ></p-button>
+  </div>
+</div>
+
+<!--
+  RULE 4 — the ambient system row.
+
+  Nothing is waiting on this, so nothing about it asks. No card, no fill, no
+  border: it is an indented line under the transcript's gutter in muted type,
+  the same idiom the compaction marker already uses one block down. What it DOES
+  get is a subject — `#NotificationTool contacted @Manager` in plain words with a
+  glyph, rather than `[#NotificationTool ⇒ @Manager]` — so the thing that spoke
+  is readable at a glance instead of being parsed out of punctuation. Still the
+  whole row toggles, and the caret still says so.
+-->
+<div
+  *ngIf="isNoticeFold()"
+  class="collapsed-line collapsed-notice"
+  (click)="onToggleCollapse()"
+>
+  <i class="pi notice-icon" [ngClass]="noticeIcon()" aria-hidden="true"></i>
+  <span class="notice-text">
+    <ng-container *ngIf="showAgentNames; else noticeAnonymous">
+      <span class="notice-subject">{{ senderName() }}</span>
+      <span class="notice-verb">{{
+        "chat.notice.contacted" | translate : { agent: recipientName() }
+      }}</span>
+    </ng-container>
+    <ng-template #noticeAnonymous>
+      <span class="notice-subject">{{ collapsedFallback() | translate }}</span>
+    </ng-template>
+    <span *ngIf="preview().length > 0" class="collapsed-preview">{{
+      preview()
+    }}</span>
   </span>
-  <p-button
-    *ngIf="message().rule === 3"
-    size="small"
-    [label]="'chat.reply' | translate"
-    [disabled]="!notification()"
-    (click)="onOpenModal($event)"
-    class="open-button"
-  ></p-button>
+  <i class="pi pi-chevron-right collapsed-caret" aria-hidden="true"></i>
   <span class="collapsed-timestamp">{{
     timestampOrNull() | date : "HH:mm"
   }}</span>
@@ -56,24 +147,53 @@
   </div>
 </div>
 
+<!-- Rule 5 — the system announcement.
+     Chrome, not a turn: nobody said it, so it gets no avatar, no side and no
+     bubble. A centred rule with the text sitting in it reads as a marker in the
+     transcript rather than as a participant in it. -->
+<div *ngIf="message().rule === 5" class="system-rule" role="separator">
+  <span class="system-rule-line"></span>
+  <span class="system-rule-label">{{ message().content }}</span>
+  <span class="system-rule-line"></span>
+</div>
+
 <!-- Expanded bubble (Rules 1/2, or Rule 3/4 expanded) -->
 <div
-  *ngIf="!isMarker() && ((message().rule !== 3 && message().rule !== 4) || !message().collapsed)"
+  *ngIf="!isMarker() && message().rule !== 5 && ((message().rule !== 3 && message().rule !== 4) || !message().collapsed)"
   class="message"
   [class.right]="message().alignment === 'right'"
   [class.left]="message().alignment === 'left'"
   (click)="onBubbleClick($event)"
   [class.clickable]="true"
 >
+  <!-- The speaker's mark, on their side only. The user's own turn is already
+       identified by being a bubble on the right, so a second marker there would
+       label what the shape has already said. -->
+  <span
+    class="turn-avatar"
+    *ngIf="message().alignment === 'left' && message().rule !== 5"
+    aria-hidden="true"
+    >{{ avatarInitial() }}</span
+  >
   <div
     class="message-bubble"
     [class.own-turn]="message().rule === 1"
     [class.selected]="selected()"
     [style.background-color]="message().color"
   >
-    <div class="bubble-header">
+    <!--
+      NO HEADER ON THE USER'S OWN TURN (rule 1).
+
+      Every other child of this row is already gated to a rule that is not 1 —
+      the name pill, the two notification glyphs, the Reply button — so on a
+      user's turn the header rendered as a bare clock above their own words.
+      The mock draws that bubble as text and nothing else, and it is right to:
+      you do not need to be told what time you typed something, and the stamp
+      was the only thing standing between the bubble's top edge and the message.
+    -->
+    <div class="bubble-header" *ngIf="message().rule !== 1">
       <button
-        *ngIf="showAgentNames || message().rule === 5"
+        *ngIf="showAgentNames && message().rule !== 1"
         class="label-pill"
         [disabled]="message().rule === 1 || message().rule === 5"
         (click)="onLabelClick(); $event.stopPropagation()"
@@ -93,7 +213,7 @@
         <i class="pi pi-bell"></i>
       </span>
       <p-button
-        *ngIf="message().rule === 3"
+        *ngIf="message().rule === 3 && replyEnabled()"
         size="small"
         [label]="'chat.reply' | translate"
         [disabled]="!notification()"
@@ -104,9 +224,27 @@
         timestampOrNull() | date : "HH:mm"
       }}</span>
     </div>
-    <div class="markdown-content">
-      <markdown [data]="message().content"></markdown>
+    <!--
+      A PERSON'S OWN TYPING IS NOT MARKDOWN.
+
+      Rule 1 is what the user typed into the composer, and running it through
+      the markdown pipeline silently reformats it: a line starting `#` becomes a
+      heading, `*` becomes a bullet, `_word_` loses its underscores, and a
+      pasted code fragment can vanish entirely. None of that was asked for, and
+      the user has no way to escape it. `pre-wrap` renders it back exactly as it
+      was written, newlines included — which is also what the mock draws.
+
+      Everything else on this surface IS authored as markdown by an agent, and
+      keeps the pipeline.
+    -->
+    <div class="markdown-content" *ngIf="message().rule === 1; else renderedBody">
+      <div class="own-text">{{ message().content }}</div>
     </div>
+    <ng-template #renderedBody>
+      <div class="markdown-content">
+        <markdown [data]="message().content"></markdown>
+      </div>
+    </ng-template>
     <!-- Epic 57: the rating control, on the turns the rule allows and no
          others. `rateable()` delegates to the single predicate — the answer is
          NOT restated here, so a message kind added later cannot become

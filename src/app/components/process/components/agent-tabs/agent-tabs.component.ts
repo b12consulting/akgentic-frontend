@@ -6,7 +6,6 @@ import { FormsModule } from '@angular/forms';
 import { BehaviorSubject, combineLatest, Subject } from 'rxjs';
 import { map, takeUntil } from 'rxjs/operators';
 
-import { TabsModule } from 'primeng/tabs';
 import { DropdownModule } from 'primeng/dropdown';
 
 import { AkgentService } from '../../../../core/ui/akgent.service';
@@ -18,17 +17,28 @@ import {
 import { IngestionService } from '../../event/ingestion.service';
 
 import { AkgentChatComponent } from './akgent-chat/akgent-chat.component';
+import { InspectorEmptyStateComponent } from '../../../console/inspector/inspector-empty-state.component';
 import { TranslatePipe } from '@ngx-translate/core';
 
+/**
+ * The inspector's Member pane.
+ *
+ * The name is a leftover: there are no tabs here any more. The template was a
+ * `<p-tabs>` holding ONE tab whose caption repeated the agent already named in
+ * the picker beside it — a row of library chrome that could not be operated and
+ * said nothing. Renaming the component is a cross-cutting change (the element
+ * is addressed by `process.component.html` and its specs), so the class keeps
+ * its name and the template no longer pretends.
+ */
 @Component({
   selector: 'app-agent-tabs',
   standalone: true,
   imports: [
     CommonModule,
     FormsModule,
-    TabsModule,
     DropdownModule,
     AkgentChatComponent,
+    InspectorEmptyStateComponent,
     TranslatePipe,
   ],
   templateUrl: './agent-tabs.component.html',

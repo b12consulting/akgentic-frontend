@@ -1,0 +1,75 @@
+<!--
+  The row itself. A `<button>`, so it is reachable by Tab and announced as an
+  activator; the kebab is a SIBLING rather than a child because a button inside
+  a button is invalid markup that browsers silently repair by dropping one of
+  them. It is positioned over the row's trailing edge instead, and the row
+  reserves the space for it in its padding.
+-->
+<button
+  type="button"
+  class="rail-row"
+  [class.active]="active"
+  [attr.aria-current]="active ? 'true' : null"
+  (click)="onSelect()"
+>
+  @if (stopping || restoring) {
+    <!--
+      The dot answers "is this team live?", which is the exact question a stop
+      or a restore has suspended. Showing the old answer while it changes is
+      worse than showing that it is changing.
+    -->
+    <i
+      class="pi pi-spin pi-spinner rail-row__busy"
+      [attr.title]="(stopping ? 'team.action.stop' : 'team.action.restore') | translate"
+    ></i>
+  } @else {
+    <span
+      class="rail-row__dot"
+      [class]="dotClass"
+      [class.rail-row__dot--pulse]="dotPulses"
+      [attr.title]="statusTitleKey | translate"
+    ></span>
+  }
+
+  <span class="rail-row__text">
+    <!--
+      The declared title when the namespace nominates one, the team's own name
+      otherwise. `teamTitle` returns `null` for every flavour of "no title",
+      including a generated empty string — a blank heading reads as a value
+      that failed to load.
+    -->
+    <span class="rail-row__name">{{
+      (row.team.metadata | teamTitle: titleKey) ?? row.team.name
+    }}</span>
+    <!--
+      ONE key with parameters. The mock concatenates a middle dot between the
+      two halves; that separator is punctuation a translator has to be able to
+      move, and a splice in the template gives them nowhere to move it.
+    -->
+    <span class="rail-row__meta">{{
+      metaKey | translate: { summary: summary, when: when }
+    }}</span>
+  </span>
+</button>
+
+<!--
+  The click is taken on the WRAPPER, not on the icon button's own output: the
+  popup positions itself against the DOM event's target, so it needs a real
+  event with a real element behind it.
+-->
+<span class="rail-row__menu" (click)="openMenu($event)">
+  <app-icon-button size="sm" [label]="'rail.rowMenu' | translate">
+    <svg
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      stroke="none"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="5" r="1.6" />
+      <circle cx="12" cy="12" r="1.6" />
+      <circle cx="12" cy="19" r="1.6" />
+    </svg>
+  </app-icon-button>
+</span>
+
+<p-menu [model]="menuItems" [popup]="true" (onHide)="onMenuHide()" />

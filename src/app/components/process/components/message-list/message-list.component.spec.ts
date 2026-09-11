@@ -197,6 +197,117 @@ describe('MessageListComponent (Story 2.6, AC8)', () => {
 
     expect(component.filteredMessages.map((m) => m.id)).toEqual(['s1']);
   });
+
+  /**
+   * Epic 56 moved this panel into the 310px inspector, and two of its sizing
+   * values did not come with it.
+   *
+   * Both were invisible in review because both look like ordinary layout: a
+   * `min-width` on a table and a `scrollHeight` in `calc()`. In a ~278px lane
+   * the first is 520px of table inside it, and the second re-derives a height
+   * from the WINDOW inside a pane whose height already arrives through the
+   * flex chain — so the panel overflowed on both axes at once.
+   */
+  describe('fits the pane it was moved into', () => {
+    it('asks the table for no minimum width', () => {
+      log.appendAll([workerSent('s1') as AkgenticMessage]);
+      fixture.detectChanges();
+
+      // 40rem is 520px. The lane is ~278px. Asserting on the rendered table
+      // rather than on the binding, because `[tableStyle]` is only one of the
+      // channels that can put a width there.
+      const table = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>(
+        'table',
+      );
+      expect(table).not.toBeNull();
+      expect(table!.style.minWidth).toBe('');
+    });
+
+    it('derives its scroll height from the pane, never from the viewport', () => {
+      log.appendAll([workerSent('s1') as AkgenticMessage]);
+      fixture.detectChanges();
+
+      // `scrollHeight="flex"` is PrimeNG's "take what your box gives you". The
+      // assertion is on the ABSENCE of viewport arithmetic: any `vh` in this
+      // panel's inline geometry is a height measured from the wrong element.
+      const scroller = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>(
+        '.p-datatable-table-container, .p-datatable-wrapper',
+      );
+      expect(scroller).withContext('the scrollable body rendered').not.toBeNull();
+      expect(scroller!.style.maxHeight ?? '').not.toContain('vh');
+      expect(scroller!.style.height ?? '').not.toContain('vh');
+    });
+
+    it('boxes a row in its own class, not the full-width global one', () => {
+      // `.card-container` is declared unencapsulated in `src/styles.scss` with a
+      // hard `#e0e0e0` border and a `1rem` margin on all four sides — 32px of a
+      // 278px lane spent on margin, and the last untokenised edge on the panel.
+      log.appendAll([workerSent('s1') as AkgenticMessage]);
+      fixture.detectChanges();
+
+      const host = fixture.nativeElement as HTMLElement;
+      expect(host.querySelector('.message-card')).not.toBeNull();
+      expect(host.querySelector('.card-container')).toBeNull();
+
+      const card = host.querySelector<HTMLElement>('.message-card')!;
+      const style = window.getComputedStyle(card);
+      expect(style.marginLeft).toBe('0px');
+      expect(style.marginRight).toBe('0px');
+    });
+  });
+
+  /**
+   * W7 — the panel's empty state is the inspector's shared one.
+   *
+   * It used to be a hand-drawn dashed box, copied by its own comment from the
+   * knowledge-graph panel: a fourth empty-state idiom in a console that already
+   * had one. The assertions below are about the SWAP being lossless — the same
+   * two keys, still going through the translation layer — because a restyle
+   * that quietly drops a sentence is indistinguishable from a restyle that
+   * works.
+   */
+  describe('the empty pane', () => {
+    it('renders the shared empty state, not a placeholder of its own', () => {
+      fixture.detectChanges();
+
+      const host = fixture.nativeElement as HTMLElement;
+      expect(host.querySelector('app-inspector-empty-state')).not.toBeNull();
+      // The dashed box and its three bespoke type steps are gone, not restyled.
+      expect(host.querySelector('.empty-section')).toBeNull();
+      expect(host.querySelector('.message-placeholder')).toBeNull();
+    });
+
+    it('keeps both sentences, and keeps them as translation keys', () => {
+      // No translations registered, so the loader echoes the key back — which
+      // is the assertion worth making: neither line was inlined as copy while
+      // the markup moved.
+      fixture.detectChanges();
+
+      const host = fixture.nativeElement as HTMLElement;
+      expect(host.querySelector('.empty-title')?.textContent?.trim()).toBe(
+        'messageList.emptyTitle',
+      );
+      expect(host.querySelector('.empty-blurb')?.textContent?.trim()).toBe(
+        'messageList.emptyDesc',
+      );
+    });
+
+    it('gives way to the table as soon as a message lands', () => {
+      fixture.detectChanges();
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector(
+          'app-inspector-empty-state',
+        ),
+      ).not.toBeNull();
+
+      log.appendAll([workerSent('s1') as AkgenticMessage]);
+      fixture.detectChanges();
+
+      const host = fixture.nativeElement as HTMLElement;
+      expect(host.querySelector('app-inspector-empty-state')).toBeNull();
+      expect(host.querySelector('.message-card')).not.toBeNull();
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,42 @@
+<!--
+  The rail is a sibling of the routed content, not part of it, so it survives
+  navigation: switching teams re-creates the conversation and leaves the list
+  you picked from standing.
+
+  `--akg-rail-width` is set HERE rather than in the rail's own stylesheet
+  because the width is a stored preference and the rail is not the thing that
+  stores it. The custom property inherits, so both the host's `width` and the
+  inner `.rail`'s hold-during-collapse copy pick it up from one binding.
+-->
+<app-console-rail
+  *ngIf="chromeVisible"
+  [class.resizing]="railResizing"
+  [style.--akg-rail-width]="railWidthCss"
+></app-console-rail>
+
+<!--
+  The rail's draggable edge. A SIBLING of the rail, never a wrapper around it,
+  and the SAME component the conversation/inspector boundary uses — see
+  `console-shell.component.ts` for why the two bindings are in different files
+  and share everything else.
+
+  GONE WHEN THE RAIL IS COLLAPSED, not merely disabled. With the rail pinned at
+  zero a drag moves nothing on screen and would still rewrite the stored width,
+  so the user would find the rail at a size they never chose the next time they
+  opened it — the same rule, for the same reason, as the inspector's divider.
+-->
+<app-split-divider
+  *ngIf="railDividerVisible"
+  [track]="hostEl"
+  [percent]="railPercent"
+  [min]="railMinPercent"
+  [max]="railMaxPercent"
+  [defaultPercent]="railDefaultPercent"
+  [label]="(dividerLabel$ | async) ?? ''"
+  (percentChange)="onRailPercent($event)"
+  (commit)="onRailCommit($event)"
+></app-split-divider>
+
+<main class="console-main">
+  <ng-content></ng-content>
+</main>
