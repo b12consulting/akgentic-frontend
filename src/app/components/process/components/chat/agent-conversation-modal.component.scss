@@ -1,3 +1,59 @@
+// THE DIALOG SHELL, which nothing in this file could otherwise reach.
+//
+// PrimeNG renders the dialog through a portal outside this component's DOM, so
+// emulated encapsulation cannot touch its header, border, radius or shadow —
+// and until now none of them were touched. The result was a fully tokenised
+// reader sitting inside an untouched Aura frame: a cool grey chrome around warm
+// neutral content, a title in the UI face at Aura's weight, and a radius that
+// matched nothing else on the surface. The contents were right, which is
+// precisely why the seam showed.
+//
+// Scoped to `.agent-reader-dialog`, the class this component puts on its own
+// dialog via `styleClass`, so the escape cannot leak onto every other dialog in
+// the app. Same containment the team-creation dialog already uses — this is the
+// second instance of that pattern, not a new one.
+//
+// `[contentStyle]` is deliberately left alone: it carries `padding: 0` and the
+// `70vh` height because the reader fills its own content box, and an inline
+// style would win over anything written here anyway.
+::ng-deep .agent-reader-dialog {
+  background: var(--akg-overlay-bg);
+  border: 1px solid var(--akg-surface-border);
+  border-radius: var(--akg-card-radius);
+  box-shadow: var(--akg-overlay-shadow-strong);
+  font-family: var(--akg-font-ui);
+
+  .p-dialog-header {
+    border-bottom: 1px solid var(--akg-hairline);
+  }
+
+  // The header states WHICH agent is open, so it is naming a participant rather
+  // than labelling a window. Same treatment as the team-creation dialog's title
+  // so the two read as one product.
+  .p-dialog-title {
+    color: var(--akg-text);
+    font-family: var(--akg-font-ui);
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  // Aura's close button is a cool grey on a cool grey hover. The console has a
+  // named quiet-control pair and this is one.
+  .p-dialog-close-button {
+    color: var(--akg-text-muted);
+
+    &:hover {
+      background: var(--akg-panel-hover);
+      color: var(--akg-text);
+    }
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: var(--akg-focus-ring);
+    }
+  }
+}
+
 /*
  * Two columns: who is on the team, and what the selected one said.
  *
