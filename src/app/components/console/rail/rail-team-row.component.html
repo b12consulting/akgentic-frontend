@@ -72,4 +72,18 @@
   </app-icon-button>
 </span>
 
-<p-menu [model]="menuItems" [popup]="true" (onHide)="onMenuHide()" />
+<!--
+  `appendTo="body"`, and it is the difference between this menu working and not.
+
+  A `[popup]` menu renders IN PLACE, and this row lives inside `.rail__list`,
+  which is `overflow-y: auto` because the rail's team list is the console's one
+  scrolling column. An absolutely positioned popup inside a scroll container is
+  clipped by it, so the menu opened and was simply never visible — indis-
+  tinguishable, from the outside, from a button that does nothing.
+-->
+<p-menu
+  [model]="menuItems"
+  [popup]="true"
+  appendTo="body"
+  (onHide)="onMenuHide()"
+/>

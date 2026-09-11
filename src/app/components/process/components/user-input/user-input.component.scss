@@ -256,9 +256,12 @@
   }
 }
 
-// Story 7-3 note: the `.send-as-panel-up` overlay rule lives in
-// `src/styles.scss` because `appendTo="body"` renders the PrimeNG panel
-// outside the component's scoped styles. See that file for the rule.
+// Both composer dropdowns use `appendTo="body"`, so their panels render outside
+// this component's scoped styles and no rule here can reach them. They are also
+// no longer positioned by hand: PrimeNG flips a body-appended overlay above its
+// trigger when there is no room below, which is every time for a composer
+// pinned to the bottom of the viewport. Story 7-3's manual lift is retired —
+// see the note in `src/styles.scss`.
 
 /*
  * The "replying to" strip above the field.

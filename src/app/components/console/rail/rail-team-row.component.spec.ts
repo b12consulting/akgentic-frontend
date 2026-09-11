@@ -400,6 +400,22 @@ describe('RailTeamRowComponent', () => {
     ).toBeTrue();
   });
 
+  it('APPENDS THE OVERFLOW MENU TO BODY, or it is clipped away', async () => {
+    // The row sits inside `.rail__list`, which is `overflow-y: auto`. A
+    // `[popup]` menu renders in place, and an absolutely positioned popup
+    // inside a scroll container is clipped by it — so the menu opened and was
+    // never visible, which from the outside is indistinguishable from a kebab
+    // that does nothing. Asserted on the template contract rather than on
+    // rendered geometry, because the clipping ancestor is not in this fixture.
+    await render(makeRow('stopped'));
+    const menu = fixture.nativeElement.querySelector('p-menu');
+
+    expect(menu).not.toBeNull();
+    expect(menu.getAttribute('appendTo'))
+      .withContext('a popup left inside the rail scroll container is clipped')
+      .toBe('body');
+  });
+
   it('excludes the title field from the summary, so the row never says it twice', async () => {
     fixture.componentRef.setInput('titleKey', 'subject');
     await render(

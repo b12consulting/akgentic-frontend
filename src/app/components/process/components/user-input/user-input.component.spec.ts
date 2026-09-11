@@ -848,16 +848,32 @@ describe('ProcessUserInputComponent', () => {
       expect(dropdown.getAttribute('appendTo')).toBe('body');
     });
 
-    it('renders p-dropdown with the upward panel style class configured (AC #14)', () => {
+    // UPDATED, deliberately. This asserted `[panelStyleClass]="send-as-panel-up"`,
+    // a manual `translateY(calc(-100% - 2.5rem))` lift from Story 7-3. PrimeNG
+    // already flips a body-appended overlay above its trigger when there is no
+    // room below — which is every time, for a composer pinned to the bottom of
+    // the viewport — so the lift had become a SECOND offset stacked on the
+    // built-in one, and its 2.5rem was calibrated to a trigger height the
+    // console redesign changed. The requirement it served (the panel must not
+    // open off the bottom of the screen) is unchanged; the mechanism is now
+    // PrimeNG's, so what is asserted is that we no longer override it.
+    it('leaves the Send-as overlay to PrimeNG rather than lifting it by hand', () => {
       const dropdown = fixture.nativeElement.querySelector('p-dropdown');
       expect(dropdown).not.toBeNull();
-      // [panelStyleClass] is an input binding — Angular reflects its current
-      // value via `ng-reflect-panel-style-class` in dev mode. Accept any
-      // deterministic channel that carries the class name.
+
       const panelClass =
         dropdown.getAttribute('ng-reflect-panel-style-class') ||
         dropdown.getAttribute('panelStyleClass');
-      expect(panelClass).toContain('send-as-panel-up');
+      expect(panelClass ?? '').not.toContain('send-as-panel-up');
+    });
+
+    it('renders p-multiSelect with appendTo="body" too — it was the one that clipped', () => {
+      // "Send to" had NO appendTo at all, so its overlay rendered in place
+      // inside a composer at the bottom of the viewport and opened downward
+      // into nothing. Same treatment as its neighbour, for the same reason.
+      const multi = fixture.nativeElement.querySelector('p-multiSelect');
+      expect(multi).not.toBeNull();
+      expect(multi.getAttribute('appendTo')).toBe('body');
     });
 
     it('holds the glyph, the setting name and its control in ONE pill (AC #15, restyled)', () => {
