@@ -17,9 +17,9 @@ import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 
 import { TeamCreationService } from '../../home/team-creation/team-creation.service';
+import { TeamTypeCatalog } from '../../home/team-creation/team-type-catalog.service';
 import { TeamMetadataModalComponent } from '../../home/team-metadata-modal/team-metadata-modal.component';
 import { AuthService } from '../../../core/auth/auth.service';
-import { ApiService } from '../../../core/http/api.service';
 import { TeamCreationLauncher } from '../../../core/ui/team-creation-launcher.service';
 import { NamespaceSummary } from '../../../protocol/catalog.interface';
 
@@ -120,8 +120,14 @@ export type CreationTypesState = 'loading' | 'empty' | 'types';
   providers: [TeamCreationService],
 })
 export class TeamCreationDialogComponent implements OnInit {
-  private readonly apiService = inject(ApiService);
   private readonly router = inject(Router);
+
+  /**
+   * WHAT MAY BE CREATED, as opposed to what may be listed. See
+   * `TeamTypeCatalog` — this dialog used to ask `ApiService` for namespaces and
+   * render all of them, library entries included.
+   */
+  private readonly teamTypes = inject(TeamTypeCatalog);
   private readonly destroyRef = inject(DestroyRef);
 
   /**
@@ -274,7 +280,17 @@ export class TeamCreationDialogComponent implements OnInit {
   }
 
   /**
-   * The type list, fetched by the wizard itself.
+   * The type list, asked of `TeamTypeCatalog` — never of `ApiService`.
+   *
+   * `loadTeamTypes()` is the fetch and the "is this a team type?" rule
+   * together, which is the whole point of it living there: this dialog used to
+   * call `getNamespaces()` and render whatever came back, so the two LIBRARY
+   * namespaces the catalog ships to every deployment ("Global Library",
+   * "Global Tools") appeared under "choose the type of team to create" and
+   * could be selected and created. A creation surface that asks a
+   * general-purpose namespace endpoint and filters afterwards is one forgotten
+   * filter away from that bug every time; one that asks for team types cannot
+   * be.
    *
    * WITHOUT `all: true`, always. The widened list is a separate, later fetch
    * behind an explicit admin gesture (`onToggleShowAll`) — never the arrival
@@ -287,7 +303,7 @@ export class TeamCreationDialogComponent implements OnInit {
    */
   private async loadNamespaces(): Promise<void> {
     try {
-      const list = await this.apiService.getNamespaces();
+      const list = await this.teamTypes.loadTeamTypes();
       this.scopedNamespaces.set(list);
       this.selected.set(list[0] ?? null);
     } catch (error) {
@@ -326,7 +342,7 @@ export class TeamCreationDialogComponent implements OnInit {
     if (value && this.allNamespaces() === null) {
       this.fetching.set(true);
       try {
-        this.allNamespaces.set(await this.apiService.getNamespaces({ all: true }));
+        this.allNamespaces.set(await this.teamTypes.loadTeamTypes({ all: true }));
       } catch (error) {
         console.error('Failed to load all team types:', error);
         // `[]` and not a reset to `null`: the fetch HAS settled, and leaving it

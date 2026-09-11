@@ -46,17 +46,23 @@
             <p>{{ treeError() }}</p>
           </div>
 
+          <!--
+            THE SHARED EMPTY STATE, not this panel's third hand-drawn one.
+
+            It was a 3rem glyph over a 1rem title over a 0.875rem line — one of
+            THREE placeholder shapes in this component alone, each at its own
+            type scale, none of them the console's. The wrapper keeps its
+            `.empty-workspace` class: it is what the pane's exclusivity specs
+            address this state by, and it is still the thing that is empty.
+          -->
           <div
             *ngIf="hasLoadedRoot() && !treeError() && treeNodes().length === 0"
             class="empty-workspace"
           >
-            <i class="pi pi-folder-open empty-workspace-icon"></i>
-            <div class="empty-workspace-title">
-              {{ "workspace.noFilesTitle" | translate }}
-            </div>
-            <div class="empty-workspace-desc">
-              {{ "workspace.noFilesDesc" | translate }}
-            </div>
+            <app-inspector-empty-state
+              titleKey="workspace.noFilesTitle"
+              blurbKey="workspace.noFilesDesc"
+            />
           </div>
 
           <!--
@@ -274,7 +280,11 @@
         </ng-template>
       </p-toolbar>
 
-      <p-divider />
+      <!--
+        The `<p-divider/>` that used to sit here is gone: `.preview-toolbar`
+        already draws its own `border-bottom`, so the pane carried TWO rules a
+        pixel apart under the location trail. One separator per separation.
+      -->
 
       <div class="panel-content">
         <!--
@@ -322,19 +332,31 @@
             </div>
           }
           @case ('deleted') {
-            <div class="empty-section file-placeholder deleted-notice">
-              <div class="empty-section-box">
-                <i class="pi pi-trash file-placeholder-icon"></i>
-                <div class="file-placeholder-title">
-                  {{ "workspace.fileDeletedTitle" | translate }}
-                </div>
-                <div class="file-placeholder-desc">
-                  {{
-                    "workspace.fileDeletedDesc"
-                      | translate : { file: deletedNotice() }
-                  }}
-                </div>
+            <!--
+              THE ONE PLACEHOLDER THAT CANNOT BE `<app-inspector-empty-state>`.
+
+              Its sentence is PARAMETERISED — it names the file that went away,
+              which is the whole reason the notice exists — and the shared
+              component takes keys, not keys-with-params. So the SHAPE is
+              restated here (well glyph, display title, muted line) against the
+              same tokens, and the dashed-border box it used to draw is gone
+              rather than restyled. See the follow-up asking for a
+              `blurbParams` input; this block collapses into the shared one the
+              day it lands.
+            -->
+            <div class="deleted-notice">
+              <div class="deleted-glyph" aria-hidden="true">
+                <i class="pi pi-trash"></i>
               </div>
+              <p class="deleted-title">
+                {{ "workspace.fileDeletedTitle" | translate }}
+              </p>
+              <p class="deleted-blurb">
+                {{
+                  "workspace.fileDeletedDesc"
+                    | translate : { file: deletedNotice() }
+                }}
+              </p>
             </div>
           }
           @case ('list') {
@@ -348,11 +370,13 @@
             <div class="directory-list">
               @if (listedEntries(); as entries) {
                 @if (entries.length === 0) {
+                  <!-- Shared empty state again. No blurb: "this folder is
+                       empty" is the whole fact, and a second reassuring line
+                       under it would be padding. -->
                   <div class="empty-directory">
-                    <i class="pi pi-folder-open empty-directory-icon"></i>
-                    <div class="empty-directory-title">
-                      {{ "workspace.emptyFolder" | translate }}
-                    </div>
+                    <app-inspector-empty-state
+                      titleKey="workspace.emptyFolder"
+                    />
                   </div>
                 } @else {
                   @for (entry of entries; track entry.path) {

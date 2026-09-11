@@ -425,3 +425,102 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
     expect(host.querySelector('app-inspector-empty-state')).toBeNull();
   });
 });
+
+/**
+ * THE PICKER'S GROUP HEADERS.
+ *
+ * Two strings reached the user through this control without a translation key
+ * and without anything watching: `"Agents"`, over a list of agents, inside a
+ * control already placeheld "Select agent"; and `` `Team ${idx}` ``, composed
+ * here from a loop index while the graph fold was composing the SAME label from
+ * its own. Two derivations of one string is how the picker's header and the
+ * graph's legend come to disagree.
+ */
+describe('AgentTabsComponent — the picker groups by squad, or not at all', () => {
+  let component: AgentTabsComponent;
+  let nodes$: BehaviorSubject<any[]>;
+  let categories$: BehaviorSubject<any[]>;
+
+  function member(id: string, category: number): any {
+    return {
+      name: id,
+      actorName: '@' + id,
+      agent_id: id,
+      role: 'Worker',
+      category,
+    };
+  }
+
+  beforeEach(() => {
+    nodes$ = new BehaviorSubject<any[]>([]);
+    categories$ = new BehaviorSubject<any[]>([]);
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [AgentTabsComponent],
+      providers: [
+        provideTranslateTesting(),
+        {
+          provide: AkgentService,
+          useValue: {
+            selectedAkgent$: new BehaviorSubject<Akgent | null>(null),
+            select: () => {},
+            unselect: () => {},
+          },
+        },
+        { provide: GraphDataService, useValue: { nodes$, categories$ } },
+        {
+          provide: IngestionService,
+          useValue: {
+            context: { forAgent: () => new BehaviorSubject<any>([]) },
+            state: { forAgent: () => new BehaviorSubject<any>(null) },
+          },
+        },
+      ],
+    });
+
+    const fixture = TestBed.createComponent(AgentTabsComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+  });
+
+  it('draws no group header for a single squad — one group separates nothing', () => {
+    categories$.next([{ name: 'Team 0' }]);
+    nodes$.next([member('a', 0), member('b', 0)]);
+
+    expect(component.grouped).toBeFalse();
+    expect(component.agentsByCategory.length).toBe(1);
+    expect(component.agentsByCategory[0].label).toBe('');
+    expect(component.agentsByCategory[0].items.map((i) => i.label)).toEqual([
+      '@a',
+      '@b',
+    ]);
+  });
+
+  it("takes each header from the SQUAD's own name rather than re-deriving it from an index", () => {
+    // The name the graph fold put on the squad. A picker that composed
+    // `Team ${idx}` locally would answer 'Team 0' / 'Team 1' here and disagree
+    // with the legend the moment a real squad name arrived.
+    categories$.next([{ name: 'Research' }, { name: 'Delivery' }]);
+    nodes$.next([member('a', 0), member('b', 1)]);
+
+    expect(component.grouped).toBeTrue();
+    expect(component.agentsByCategory.map((g) => g.label)).toEqual([
+      'Research',
+      'Delivery',
+    ]);
+    expect(component.agentsByCategory[1].items.map((i) => i.label)).toEqual([
+      '@b',
+    ]);
+  });
+
+  it('survives a squad the fold has not named yet, rather than printing "undefined"', () => {
+    categories$.next([{ name: 'Research' }, {}]);
+    nodes$.next([member('a', 0), member('b', 1)]);
+
+    expect(component.agentsByCategory.map((g) => g.label)).toEqual([
+      'Research',
+      '',
+    ]);
+  });
+});

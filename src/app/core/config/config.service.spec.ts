@@ -147,4 +147,41 @@ describe('ConfigService', () => {
       expect(config.declaredWelcomeMessage).toBeNull();
     });
   });
+
+  /**
+   * W18 — the per-deployment tab filter.
+   *
+   * Worth a spec despite being a plain read, for the one reason the header of
+   * this file gives: this key is OPTIONAL, so the merge cannot fill it, and the
+   * value a caller gets when a deployment never mentioned it is a decision
+   * rather than a default. `undefined` reaching `new Set(...)` would hide
+   * nothing — right by accident, and wrong the moment anybody iterates it.
+   */
+  describe('hiddenInspectorTabs — a deployment turning tabs off', () => {
+    it('hides nothing for a config.json that predates the key', async () => {
+      const config = await loadConfig({ api: 'http://backend.test' });
+
+      expect(config.hiddenInspectorTabs).toEqual([]);
+    });
+
+    it('hides nothing when there is no config.json at all', async () => {
+      const config = await loadConfig(null);
+
+      expect(config.hiddenInspectorTabs).toEqual([]);
+    });
+
+    it('reports the tabs a deployment named, in the order it named them', async () => {
+      const config = await loadConfig({
+        hiddenInspectorTabs: ['messages', 'member'],
+      });
+
+      expect(config.hiddenInspectorTabs).toEqual(['messages', 'member']);
+    });
+
+    it('accepts an empty list as "hide nothing" rather than as absent', async () => {
+      const config = await loadConfig({ hiddenInspectorTabs: [] });
+
+      expect(config.hiddenInspectorTabs).toEqual([]);
+    });
+  });
 });

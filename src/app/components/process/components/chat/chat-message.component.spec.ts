@@ -887,6 +887,153 @@ describe('ChatMessageComponent', () => {
     });
   });
 
+  describe('Rule 5 with a BODY — a team\'s welcome message (W19b)', () => {
+    /**
+     * What "General Team" actually ships: a multi-paragraph markdown welcome,
+     * arriving on rule 5 exactly like "Team started" does.
+     *
+     * Held as one fixture because all three of its properties matter and each
+     * one alone would let a wrong implementation through: it has NEWLINES (a
+     * flex row collapses them), it is LONG (a nowrap caption clips it), and it
+     * is MARKDOWN (an interpolated caption shows the markup).
+     */
+    const WELCOME = [
+      '## Welcome to the General Team',
+      '',
+      'I can help you with **research**, drafting and analysis.',
+      '',
+      'Ask me anything to get started.',
+    ].join('\n');
+
+    function makeWelcome(content: string): ChatMessage {
+      return makeChatMessage({
+        rule: 5,
+        alignment: 'left',
+        collapsed: false,
+        label: 'System message',
+        content,
+      });
+    }
+
+    async function renderRule5(content: string): Promise<HTMLElement> {
+      fixture.componentRef.setInput('message', makeWelcome(content));
+      fixture.detectChanges();
+      // `<markdown [data]>` parses in a promise, so the parsed HTML lands a
+      // microtask after the binding does.
+      await fixture.whenStable();
+      fixture.detectChanges();
+      return fixture.nativeElement as HTMLElement;
+    }
+
+    it('renders the welcome through the markdown pipeline, not as source text', async () => {
+      const el = await renderRule5(WELCOME);
+
+      const block = el.querySelector('.system-announcement');
+      expect(block).withContext('a body needs a block, not a divider').not.toBeNull();
+      expect(block!.querySelector('markdown')).not.toBeNull();
+      // The proof that it was PARSED: `##` became a heading and `**bold**` an
+      // emphasis element. An interpolated span would still contain the hashes.
+      expect(block!.querySelector('h2')).not.toBeNull();
+      expect(block!.querySelector('strong')).not.toBeNull();
+      expect(el.textContent).not.toContain('##');
+      expect(el.textContent).not.toContain('**');
+    });
+
+    it('keeps every paragraph — the divider collapsed them into one line', async () => {
+      const el = await renderRule5(WELCOME);
+
+      const paragraphs = el.querySelectorAll('.system-announcement p');
+      expect(paragraphs.length).toBeGreaterThanOrEqual(2);
+      expect(el.textContent).toContain('Ask me anything to get started.');
+    });
+
+    it('WRAPS: nothing in the block refuses to break a line', async () => {
+      // The clipping half of the defect. `.system-rule-label` is
+      // `white-space: nowrap`, so the welcome ran off the panel's edge; a block
+      // that inherited that would look fixed and read identically.
+      const el = await renderRule5(WELCOME);
+      const block = el.querySelector('.system-announcement') as HTMLElement;
+
+      expect(getComputedStyle(block).whiteSpace).not.toBe('nowrap');
+      for (const node of Array.from(block.querySelectorAll('*'))) {
+        expect(getComputedStyle(node as HTMLElement).whiteSpace)
+          .withContext(`${(node as HTMLElement).tagName} must wrap`)
+          .not.toBe('nowrap');
+      }
+    });
+
+    it('is NOT a divider — the two treatments are mutually exclusive', async () => {
+      const el = await renderRule5(WELCOME);
+
+      expect(el.querySelector('.system-rule')).toBeNull();
+      expect(el.querySelector('.system-rule-label')).toBeNull();
+    });
+
+    it('stays chrome: no bubble, no avatar, no rating, nothing to click', async () => {
+      // Rule 5 is inert (ADR-011 Decision 3), and gaining a body must not have
+      // turned it into a participant.
+      const el = await renderRule5(WELCOME);
+      spyOn(component.bubbleClicked, 'emit');
+      spyOn(component.toggleCollapse, 'emit');
+      spyOn(component.messageSelected, 'emit');
+
+      (el.querySelector('.system-announcement') as HTMLElement).click();
+
+      expect(el.querySelector('.message-bubble')).toBeNull();
+      expect(el.querySelector('.turn-avatar')).toBeNull();
+      expect(el.querySelector('app-feedback')).toBeNull();
+      expect(component.bubbleClicked.emit).not.toHaveBeenCalled();
+      expect(component.toggleCollapse.emit).not.toHaveBeenCalled();
+      expect(component.messageSelected.emit).not.toHaveBeenCalled();
+    });
+
+    // --- where the line is drawn -----------------------------------------
+
+    it('a short plain status line is still a DIVIDER', async () => {
+      const el = await renderRule5('Team started');
+
+      expect(el.querySelector('.system-rule')).not.toBeNull();
+      expect(el.querySelector('.system-announcement')).toBeNull();
+    });
+
+    it('a trailing newline alone does not promote a status line to a block', async () => {
+      // Whitespace is not a body. Trimming first is what keeps a backend that
+      // terminates its lines from changing how they are drawn.
+      const el = await renderRule5('Team started\n');
+
+      expect(el.querySelector('.system-rule')).not.toBeNull();
+    });
+
+    it('pins the length threshold at 80 characters, on both sides of it', async () => {
+      const eighty = 'x'.repeat(80);
+      expect(eighty.length).toBe(80);
+
+      const caption = await renderRule5(eighty);
+      expect(caption.querySelector('.system-rule')).not.toBeNull();
+
+      const body = await renderRule5(`${eighty}x`);
+      expect(body.querySelector('.system-rule')).toBeNull();
+      expect(body.querySelector('.system-announcement')).not.toBeNull();
+    });
+
+    it('a SHORT markdown announcement is a block, because a caption would leak its markup', async () => {
+      // Eleven characters — it clears the length test comfortably, and
+      // interpolated it reads as `**Welcome**`.
+      const el = await renderRule5('**Welcome**');
+
+      expect(el.querySelector('.system-announcement strong')).not.toBeNull();
+      expect(el.textContent).not.toContain('**');
+    });
+
+    it('does not mistake ordinary punctuation for markdown', async () => {
+      // A hyphen mid-sentence is punctuation. Treating it as a list bullet
+      // would push ordinary status lines into the block treatment for nothing.
+      const el = await renderRule5('Team started - 3 agents ready');
+
+      expect(el.querySelector('.system-rule')).not.toBeNull();
+    });
+  });
+
   describe('Rule 2 label — @Sender ⇒ You (Story 4.3)', () => {
     it('renders label pill ending with "⇒ You" for Rule 2', () => {
       const msg = makeChatMessage({

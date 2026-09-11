@@ -96,11 +96,21 @@
   opacity: 1;
 }
 
+/*
+ * The drawer's heading, in the console's uppercase micro-label — the same
+ * treatment the inspector's TOOLS heading, the rail's group headers and the
+ * workspace member strip use. It was a 14px semibold sentence-case line, which
+ * is a HEADING, and this is a section label on a drawer; one treatment per job
+ * is what makes the panel read as part of the console rather than as a window
+ * inside it.
+ */
 .navigator-title {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--akg-section-label-size);
+  letter-spacing: var(--akg-section-label-tracking);
+  text-transform: uppercase;
   font-weight: 600;
-  color: var(--akg-text);
+  color: var(--akg-text-muted);
 }
 
 .navigator-content {
@@ -115,31 +125,16 @@
   opacity: 1;
 }
 
-.empty-workspace {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem 1rem;
-  text-align: center;
-  color: var(--akg-text-muted);
-
-  &-icon {
-    font-size: 3rem;
-    margin-bottom: 1rem;
-  }
-
-  &-title {
-    font-size: 1rem;
-    font-weight: 500;
-    margin-bottom: 0.5rem;
-  }
-
-  &-desc {
-    font-size: 0.875rem;
-    color: var(--akg-text-muted);
-    line-height: 1.4;
-  }
+/*
+ * Both of this pane's parameter-free placeholders are `<app-inspector-empty-state>`
+ * now, so the three bespoke type scales that lived here — a 3rem glyph over a
+ * 1rem title, and a 2.5rem glyph over a 0.95rem one — are DELETED rather than
+ * re-tuned. The wrappers keep only what the wrapper owes: the block the pane's
+ * exclusivity specs address, and a little breathing room.
+ */
+.empty-workspace,
+.empty-directory {
+  padding: 0.5rem 0 1.5rem;
 }
 
 /*
@@ -195,21 +190,21 @@
   width: 100%;
   padding: 0.25rem 0.5rem;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--akg-control-radius);
   background: none;
   font: inherit;
-  font-size: 0.875rem;
+  font-size: var(--akg-font-size-control);
   color: var(--akg-text);
   text-align: left;
   cursor: pointer;
 
   &:hover {
-    background: var(--akg-panel-hover);
+    background: var(--akg-row-hover);
   }
 
   &:focus-visible {
-    outline: 2px solid var(--akg-accent-fg);
-    outline-offset: -2px;
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
   }
 
   /*
@@ -255,7 +250,7 @@
 
 .tree-node-size {
   color: var(--akg-text-muted);
-  font-size: 0.75rem;
+  font-size: var(--akg-font-size-meta);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
@@ -272,10 +267,6 @@
   padding: 0.75rem 1rem;
   background: var(--akg-overlay-bg);
   border-bottom: 1px solid var(--akg-surface-border);
-}
-
-:host ::ng-deep .p-divider {
-  margin: 0;
 }
 
 .file-info {
@@ -299,12 +290,12 @@
   column-gap: 0.25rem;
   row-gap: 0.125rem;
   min-width: 0;
-  font-size: 0.875rem;
+  font-size: var(--akg-font-size-control);
 }
 
 .breadcrumb-separator {
-  color: var(--akg-text-muted);
-  font-size: 0.75rem;
+  color: var(--akg-glyph-quiet);
+  font-size: var(--akg-font-size-meta);
   /* Decorative: the nav landmark and aria-current carry the structure. */
   opacity: 0.7;
 }
@@ -326,12 +317,12 @@
 
   &:hover {
     color: var(--akg-accent-fg);
-    background: var(--akg-panel-hover);
+    background: var(--akg-row-hover);
   }
 
   &:focus-visible {
-    outline: 2px solid var(--akg-accent-fg);
-    outline-offset: 1px;
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
   }
 }
 
@@ -400,22 +391,27 @@
   width: 100%;
   padding: 0.5rem 0.75rem;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--akg-control-radius);
   background: transparent;
   color: var(--akg-text);
   font-family: inherit;
-  font-size: 0.875rem;
+  font-size: var(--akg-font-size-control);
   text-align: left;
   cursor: pointer;
   transition: background-color 0.2s;
 
   &:hover {
-    background-color: var(--akg-panel-hover);
+    background-color: var(--akg-row-hover);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
   }
 
   &-icon {
-    color: var(--akg-text-muted);
-    font-size: 1rem;
+    color: var(--akg-glyph-quiet);
+    font-size: var(--akg-font-size-body);
   }
 
   &-name {
@@ -427,30 +423,12 @@
 
   &-size {
     color: var(--akg-text-muted);
-    font-size: 0.75rem;
+    font-size: var(--akg-font-size-meta);
     flex-shrink: 0;
   }
 }
 
-.empty-directory {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 3rem 1rem;
-  text-align: center;
-  color: var(--akg-text-muted);
 
-  &-icon {
-    font-size: 2.5rem;
-    margin-bottom: 0.75rem;
-  }
-
-  &-title {
-    font-size: 0.95rem;
-    font-weight: 500;
-  }
-}
 
 
 // A pane's "re-reading" overlay: the content stays, this floats over it.
@@ -531,93 +509,109 @@
   align-items: center;
 }
 
+/*
+ * The failure banner, at the console's scale.
+ *
+ * A 3rem glyph is a full-page error illustration, and this is a strip above a
+ * document that is still readable (ADR-030 §D5) — it must not out-shout the
+ * thing it is annotating. Row shape rather than stacked-and-centred, for the
+ * same reason: it reads as a note, not as a replacement for the pane.
+ */
 .error-message {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
   /* Above a body that stays (ADR-030 §D5) — the banner must not be squeezed. */
   flex-shrink: 0;
-  padding: 2rem;
-  text-align: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--akg-danger-fg);
+  border-radius: var(--akg-card-radius);
+  background: var(--akg-danger-bg);
+  text-align: left;
 
   i {
-    font-size: 3rem;
+    flex: 0 0 auto;
+    font-size: var(--akg-font-size-body);
+    line-height: 1.5;
     color: var(--akg-danger-fg);
   }
 
   p {
     margin: 0;
-    font-size: 0.875rem;
+    font-size: var(--akg-font-size-control);
+    line-height: 1.5;
     color: var(--akg-text);
   }
 }
 
-// File placeholder (matches message-list style)
-.empty-section {
-  padding: 2rem;
+/*
+ * THE DELETED-FILE NOTICE.
+ *
+ * `.empty-section` / `.empty-section-box` / `.file-placeholder` are gone: a
+ * 2px DASHED box around a 3.5rem glyph and a 1.25rem heading, which was the
+ * "copied from the knowledge-graph panel" idiom the Messages tab already shed.
+ * What is left is `<app-inspector-empty-state>`'s own shape, restated because
+ * this sentence takes a parameter and that component takes keys — every value
+ * below is the shared component's, so the two cannot drift apart by accident.
+ */
+.deleted-notice {
+  margin-top: 40px;
+  padding: 0 18px;
   text-align: center;
+}
+
+.deleted-glyph {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 14px;
+  border-radius: 14px;
+  background: var(--akg-well-bg);
+  color: var(--akg-glyph-quiet);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.deleted-title {
+  margin: 0 0 6px;
+  font-family: var(--akg-font-display);
+  font-weight: 300;
+  font-size: 15px;
+  color: var(--akg-text);
+}
+
+.deleted-blurb {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 300;
+  line-height: 1.6;
   color: var(--akg-text-muted);
-  background: var(--akg-surface-muted);
-  border-radius: var(--akg-card-radius);
-  border: 2px dashed var(--akg-surface-border);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
+  /* A filename is one unbroken token and the pane is ~278px wide. */
+  overflow-wrap: anywhere;
 }
 
-.empty-section-box {
-  width: 100%;
-  max-width: 400px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.file-placeholder {
-  margin: 2rem;
-  padding: 3rem 2rem;
-
-  &-icon {
-    font-size: 3.5rem;
-    margin-bottom: 1rem;
-  }
-
-  &-title {
-    font-size: 1.25rem;
-    font-weight: 500;
-    margin-bottom: 0.75rem;
-  }
-
-  &-desc {
-    font-size: 0.95rem;
-    color: var(--akg-text-muted);
-    max-width: 400px;
-    margin-bottom: 1.5rem;
-    line-height: 1.5;
-  }
-}
-
+/* Same correction as the error banner: a 3rem glyph in a 278px lane is an
+   illustration, and this is a one-sentence notice with a download button. */
 .binary-message {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 2rem;
+  padding: 1.25rem 1rem;
   text-align: center;
-  gap: 1rem;
+  gap: 0.75rem;
 
   i {
-    font-size: 3rem;
-    color: var(--akg-accent-fg);
+    font-size: 1.5rem;
+    color: var(--akg-glyph-quiet);
   }
 
   p {
     margin: 0;
-    font-size: 0.875rem;
+    font-size: var(--akg-font-size-control);
+    line-height: 1.5;
     color: var(--akg-text);
   }
 }
@@ -707,7 +701,7 @@
 
 :host ::ng-deep .p-tree .p-treenode-content {
   padding: 0.5rem;
-  border-radius: 8px;
+  border-radius: var(--akg-control-radius);
   transition: background-color 0.2s;
   cursor: pointer;
   width: 100%;
@@ -716,7 +710,7 @@
 }
 
 :host ::ng-deep .p-tree .p-treenode-content:hover {
-  background-color: var(--akg-panel-hover);
+  background-color: var(--akg-row-hover);
 }
 
 :host ::ng-deep .p-tree .p-treenode-content.p-highlight {
@@ -730,11 +724,11 @@
 
 :host ::ng-deep .p-tree .p-treenode-icon {
   margin-right: 0.5rem;
-  color: var(--akg-text-muted);
+  color: var(--akg-glyph-quiet);
 }
 
 :host ::ng-deep .p-tree .p-treenode-label {
-  font-size: 0.8125rem;
+  font-size: var(--akg-font-size-control);
   color: var(--akg-text);
   flex: 1;
   cursor: pointer;

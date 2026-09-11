@@ -32,11 +32,11 @@
     <div class="agent-picker">
       <p-dropdown
         optionLabel="label"
-        group="true"
+        [group]="grouped"
         [placeholder]="'panels.selectAgent' | translate"
         appendTo="body"
         inputId="agent-dropdown"
-        [options]="agentsByCategory"
+        [options]="pickerOptions"
         [filter]="true"
         [disabled]="agentsByCategory.length === 0"
         [(ngModel)]="selectedAgent"

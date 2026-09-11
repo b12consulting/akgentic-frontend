@@ -56,6 +56,14 @@ const TEXT: readonly Foreground[] = [
   // owe 3:1 — the caption is what sets the bar, and one token covering both is
   // what stops the surface splitting into a legible amber and a pretty one.
   { token: '--akg-attention-fg', ratio: 4.5 },
+  // The agent names echarts draws ON the hierarchy and knowledge canvases.
+  // It is TEXT — the only text on those surfaces — but the naming convention
+  // this file's exhaustiveness guard keys on (`text|fg|glyph`) does not match
+  // `-label`, so it would otherwise have been the one string in the palette
+  // nothing here measured. Held to 4.5 on every ground rather than only on
+  // `--akg-graph-ground`: it is an alias of `--akg-text`, and pinning it here
+  // is what makes re-pointing it away from that alias fail loudly.
+  { token: '--akg-graph-label', ratio: 4.5 },
 ];
 
 /**

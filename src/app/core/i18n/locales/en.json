@@ -151,7 +151,8 @@
     }
   },
   "messageList": {
-    "broadcast": "All",
+    "routeTo": "to",
+    "broadcast": "everyone",
     "relaunch": "Relaunch (N/A)",
     "emptyTitle": "No messages to display",
     "emptyDesc": "Messages exchanged between agents will appear here."
@@ -251,11 +252,21 @@
     "anonymous": "Anonymous"
   },
   "inspector": {
+    "trace": {
+      "args": "Arguments",
+      "result": "Result",
+      "model": "Model",
+      "contextWindow": "Context window"
+    },
     "title": "Team details",
     "close": "Close details",
     "moveLeft": "Move details to the left",
     "moveRight": "Move details to the right",
     "tablist": "Team detail sections",
+    "narrow": {
+      "title": "This panel needs more room",
+      "blurb": "Drag the divider to widen the panel, or collapse the team list. The other sections still fit here."
+    },
     "human": "@Human",
     "humanSub": "You · Team {{team}}",
     "role": {

@@ -52,6 +52,7 @@ import {
 import { TeamFilterComponent } from './team-filter/team-filter.component';
 import { HomeGreetingComponent } from './greeting/home-greeting.component';
 import { TeamCreationService } from './team-creation/team-creation.service';
+import { TeamTypeCatalog } from './team-creation/team-type-catalog.service';
 import {
   TeamDescriptionSave,
   TeamRowAction,
@@ -142,6 +143,7 @@ export class HomeComponent {
    * themselves.
    */
   creation = inject(TeamCreationService);
+  private readonly teamTypes = inject(TeamTypeCatalog);
 
   // Catalog namespaces for the team creation dropdown. Held sorted by
   // `sortNamespaces` (teams first, then library, each alphabetical) — the list
@@ -355,14 +357,26 @@ export class HomeComponent {
     await firstValueFrom(this.firstPageLoaded$.pipe(filter((done) => done), take(1)));
     const teams = await firstValueFrom(this.contextService.teams$.pipe(take(1)));
     if (!teams || teams.length === 0) {
+      // W19a, the last creation surface that could disagree with the wizard.
+      // The selection this picks up comes from the management dropdown, which
+      // is a namespace PICKER and legitimately lists library entries — #350
+      // sections them under "Library" precisely because they belong there. So
+      // the auto-route cannot take that selection on trust: it creates with NO
+      // user gesture, which means nobody is looking when it picks the wrong
+      // thing. A library selection (or a URL that named one via
+      // `restoreNamespace`) falls back to the first genuine team type.
       const selected = this.selectedNamespace$.value;
-      if (selected) {
+      const creatable =
+        selected !== null && this.teamTypes.isTeamType(selected)
+          ? selected
+          : (this.teamTypes.teamTypesOf(this.namespaces$.value)[0] ?? null);
+      if (creatable) {
         // Gated like every other creation path, and the gate is TOLD which one
         // this is. `'auto'` runs with NO user gesture, so it must still ask —
         // skipping the dialog here is precisely how a mandatory field would go
         // unfilled without anyone noticing — and it must NOT spin the Create
         // button, which nobody pressed.
-        await this.creation.request(selected, 'auto');
+        await this.creation.request(creatable, 'auto');
       }
       return;
     }

@@ -1,5 +1,10 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject, NgZone } from '@angular/core';
+import {
+  ChangeDetectorRef,
+  Component,
+  inject,
+  NgZone,
+} from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
@@ -21,7 +26,11 @@ import { NgxEchartsDirective, provideEchartsCore } from 'ngx-echarts';
 
 import { AkgentService } from '../../../../../core/ui/akgent.service';
 import { ApiService } from '../../../../../core/http/api.service';
-import { CategoryService } from '../../../../../core/ui/category.service';
+import {
+  CategoryService,
+  graphCategoryColors,
+  readToken,
+} from '../../../../../core/ui/category.service';
 
 // Import the shared GraphDataService
 import { makeAgentNameUserFriendly } from '../../../../../shared/util/util';
@@ -40,6 +49,24 @@ echarts.use([
   GraphChart,
   LegendComponent,
 ]);
+
+/**
+ * HTML-escape a value on its way into the echarts tooltip.
+ *
+ * The tooltip is the one place this component emits markup: echarts renders it
+ * as real DOM in the document rather than painting it on the canvas. Every
+ * value interpolated into it is therefore attacker-reachable if it is
+ * attacker-controlled, and both of the two — the agent's name and its error
+ * message — come off the wire. One helper rather than a `replace` chain per
+ * call site, because the chain was applied to one of them and not the other.
+ */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 
 @Component({
   selector: 'app-graph',
@@ -60,6 +87,7 @@ echarts.use([
 })
 export class GraphComponent {
   zone: NgZone = inject(NgZone);
+  private readonly cdr: ChangeDetectorRef = inject(ChangeDetectorRef);
   apiService: ApiService = inject(ApiService);
   akgentService: AkgentService = inject(AkgentService);
   categoryService: CategoryService = inject(CategoryService);
@@ -73,11 +101,48 @@ export class GraphComponent {
   edges: any[] = [];
   categories: any[] = [];
 
-  private chartCreated = false;
+  /**
+   * The data slices of `graphOptions`, HELD BY REFERENCE.
+   *
+   * There is a window — from `ngOnInit` until ngx-echarts creates the canvas a
+   * macrotask later — in which there is no chart to merge into, and for a team
+   * that is already running that window contains the ENTIRE roster: the feed is
+   * a `BehaviorSubject` chain and fires on subscribe. Writing INTO these
+   * objects fills the option the directive is about to apply, without replacing
+   * `graphOptions` itself — and not replacing it is the whole point, because a
+   * new reference on that input is answered with a notMerge replace.
+   */
+  private seededSeries: {
+    data: unknown[];
+    links: unknown[];
+    categories: unknown[];
+  } | null = null;
+  private seededLegend: { data: string[] } | null = null;
 
   private dataSub: Subscription = new Subscription();
 
   ngOnInit() {
+    // BUILT ONCE, BEFORE THE CHART EXISTS, AND NEVER REASSIGNED.
+    //
+    // `[options]` is a SECOND, non-merging channel into the same chart, and the
+    // two channels were fighting. ngx-echarts skips only the FIRST change on
+    // that input and answers every later one with `setOption(options, true)` —
+    // `notMerge`, a full replace. This option object used to be built in
+    // `onChartInit`, i.e. assigned a second time, carrying a SNAPSHOT of
+    // `nodes` as it stood the instant the canvas appeared: empty. So any
+    // change-detection pass after that point replayed an empty chart over a
+    // populated one, and the graph went blank while `nodes.length` said
+    // otherwise and the empty-state overlay stayed down.
+    //
+    // That was dormant only because the pane sits under an OnPush wrapper that
+    // nothing marked dirty (the overlay bug below), so the binding never
+    // updated at all. Fixing the overlay would have armed it.
+    //
+    // The option built here is therefore pure CONFIGURATION — no nodes, no
+    // edges, no categories. DATA arrives on one channel only: the merging
+    // `setOption` in `updateChart()`.
+    this.graphOptions = this.buildChartOptions();
+
     this.dataSub = combineLatest([
       this.graphDataService.nodes$,
       this.graphDataService.edges$,
@@ -93,11 +158,8 @@ export class GraphComponent {
       // The `@if (nodes.length === 0)` empty-state overlay changed that. It is
       // an ordinary template binding and only re-evaluates when Angular runs a
       // tick, and these emissions originate on the websocket feed, outside the
-      // Angular zone. So the overlay rendered once against the initial empty
-      // array and then never re-evaluated: the canvas filled with agents and
-      // "No agents available" stayed on top of them, permanently, on every
-      // team. `onChartInit`'s legend handler already reaches for `zone.run`
-      // for the same underlying reason.
+      // Angular zone. `onChartInit`'s legend handler already reaches for
+      // `zone.run` for the same underlying reason.
       //
       // The whole assignment goes inside, not just the flag: `edges` and
       // `categories` feed `<app-human-request [nodes]>` and the legend, and a
@@ -108,6 +170,17 @@ export class GraphComponent {
         this.edges = updatedEdges;
         this.categories = updatedCats;
         this.updateChart();
+        // AND THE TICK HAS TO BE ALLOWED IN. `zone.run` schedules a pass;
+        // `markForCheck` is what lets it reach this template. The only parent
+        // this component has is `TeamTabsComponent`, which is OnPush with an
+        // empty class body — no inputs, no outputs, no bindings — so after its
+        // first check nothing could ever mark it dirty again, and Angular
+        // skipped it and everything under it on every subsequent pass. The
+        // overlay froze on the value it had at mount ("No agents available",
+        // true) while the canvas, which does not ask Angular for anything,
+        // filled up underneath it. `markForCheck` walks UP the view tree, so
+        // it dirties that wrapper too.
+        this.cdr.markForCheck();
       });
     });
   }
@@ -120,11 +193,11 @@ export class GraphComponent {
     this.echartsInstance = ec;
     this.echartsInstance.resize();
 
-    // Always create the chart when the instance is available, even with empty data
-    if (!this.chartCreated) {
-      this.createChart();
-    }
-
+    // NOTHING IS PUSHED HERE. ngx-echarts emits `chartInit` BEFORE it applies
+    // `[options]`, so a `setOption` from this handler lands on a chart that has
+    // no series yet ("Unknown series undefined") and is then replaced by the
+    // directive's own notMerge call a line later. Whatever arrived before the
+    // canvas existed is already in the option object, seeded by `updateChart`.
     this.echartsInstance.on('click', (params: any) => {
       if (params.dataType === 'node') {
         const selectable: Selectable = {
@@ -133,7 +206,6 @@ export class GraphComponent {
         };
 
         this.selectionService.handleSelection(selectable);
-      } else if (params.dataType === 'edge') {
       }
     });
 
@@ -146,94 +218,212 @@ export class GraphComponent {
     });
   }
 
-  private createChart() {
-    // Ensure arrays are initialized, use empty arrays as fallback
-    const nodes = this.nodes || [];
-    const edges = this.edges || [];
-    const categories = this.categories || [];
+  /**
+   * Everything about the chart that is NOT data.
+   *
+   * ALL COLOURS ARE RESOLVED, NOT `var()`. echarts paints this with the canvas
+   * renderer, and a canvas has no cascade: `"var(--akg-graph-label)"` is not a
+   * colour it fails to find, it is a string it cannot parse. `readToken` does
+   * the lookup here so the values that reach the canvas are literals. The
+   * TOOLTIP is the stated exception — echarts renders that as real DOM inside
+   * the document, so `var()` resolves there and a rebrand reaches it.
+   */
+  private buildChartOptions(): EChartsCoreOption {
+    const ramp = graphCategoryColors();
+    const ground = readToken('--akg-graph-ground');
+    const edgeColor = readToken('--akg-graph-edge');
+    const labelColor = readToken('--akg-graph-label');
+    const legendColor = readToken('--akg-text-muted');
+    const quiet = readToken('--akg-glyph-quiet');
+    const fontFamily = readToken('--akg-font-ui');
 
     const labelFormatter = (params: any) => {
       const name = makeAgentNameUserFriendly(params.data.actorName);
       return params.data.humanRequests?.length ? `${name} 🙋 ` : name;
     };
 
-    const chartOptions: EChartsCoreOption = {
+    const legend = {
+      data: [] as string[],
+      top: '8px',
+      icon: 'roundRect',
+      itemWidth: 10,
+      itemHeight: 10,
+      textStyle: { color: legendColor, fontFamily, fontSize: 11 },
+      // A squad the user has switched OFF still has to be readable enough to
+      // switch back on, which is what makes this a meaningful mark rather than
+      // a disabled one.
+      inactiveColor: quiet,
+    };
+
+    const series = {
+      type: 'graph',
+      layout: 'force',
+      roam: true,
+      draggable: true,
+      // THE LANE, INSET FROM THE CANVAS — this is the clipped-label fix.
+      //
+      // Left to itself the force layout uses (near enough) the whole canvas,
+      // and a label is drawn CENTRED ON ITS NODE: a node sitting legitimately
+      // at the edge of the lane puts half its name outside the canvas, where
+      // the canvas cuts it. So the lane is narrower than the canvas by about
+      // half a label on each side, and the names have somewhere to go.
+      //
+      // Pixels rather than percentages: the gutter has to hold a label, and a
+      // label is a fixed number of pixels wide whatever the pane is. `top`
+      // also clears the legend above.
+      left: 52,
+      right: 52,
+      top: 40,
+      bottom: 16,
+      force: {
+        repulsion: 180,
+        edgeLength: [60, 140],
+        // GRAVITY IS THE SCATTER FIX. A force layout only holds a graph
+        // together through its EDGES; a node with none — which is what every
+        // unused tool is — feels nothing but repulsion and drifts until it
+        // hits the edge of the lane. The user's screenshots show exactly that:
+        // tools pinned in the corners, agents crushed into the middle. Gravity
+        // is a pull toward the centre of the lane that every node feels,
+        // connected or not, so an isolated node settles at a readable distance
+        // instead of at infinity. echarts' default is 0.1, which is too weak
+        // to matter against this repulsion.
+        gravity: 0.25,
+        friction: 0.15,
+      },
+      label: {
+        show: true,
+        position: 'top',
+        distance: 6,
+        formatter: labelFormatter,
+        color: labelColor,
+        fontFamily,
+        fontSize: 11,
+        // Capped and ellipsised rather than allowed to run. `truncate` ends the
+        // name with an ellipsis, which READS as shortened; the canvas edge
+        // cutting it mid-glyph reads as broken. Full name in the tooltip.
+        width: 96,
+        overflow: 'truncate',
+        // A halo in the ground colour, so a name that crosses an edge or
+        // another node stays legible without the labels needing their own
+        // collision avoidance.
+        textBorderColor: ground,
+        textBorderWidth: 3,
+      },
+      symbol: 'roundRect',
+      symbolSize: [15, 15],
+      itemStyle: {
+        // A cut-out ring, not an outline: matching the ground is what makes two
+        // overlapping nodes read as two.
+        borderColor: ground,
+        borderWidth: 1.5,
+      },
+      edgeSymbol: ['none', 'arrow'],
+      edgeSymbolSize: 8,
+      lineStyle: {
+        color: edgeColor,
+        curveness: 0.1,
+        width: 1.5,
+        type: 'solid',
+        opacity: 0.9,
+      },
+      emphasis: {
+        focus: 'adjacency',
+        label: { fontWeight: 'bold' },
+        lineStyle: { width: 3 },
+      },
+      data: [] as unknown[],
+      links: [] as unknown[],
+      categories: [] as unknown[],
+      // ZOOM 1, NOT 1.5. `zoom` scales the laid-out graph about the centre
+      // AFTER the lane has been computed, so 1.5 took the inset above and
+      // multiplied everything straight back out past the edge — it was the
+      // other half of the clipping, and it made the inset unearnable.
+      zoom: 1,
+    };
+
+    this.seededSeries = series;
+    this.seededLegend = legend;
+
+    return {
+      // The default palette for any mark that arrives without an explicit
+      // fill. Nodes normally take their colour from their category, but a node
+      // with no squad never gets one, and echarts' own default palette is the
+      // cool blue-grey this ramp exists to replace.
+      color: ramp,
+      textStyle: { fontFamily },
       tooltip: {
         trigger: 'item',
         confine: true,
-        extraCssText: 'max-width: 300px; white-space: normal; word-wrap: break-word;',
+        backgroundColor: 'var(--akg-overlay-bg)',
+        borderColor: 'var(--akg-surface-border)',
+        textStyle: { color: 'var(--akg-text)', fontFamily, fontSize: 12 },
+        extraCssText:
+          'max-width: 300px; white-space: normal; word-wrap: break-word;',
         formatter: (params: any) => {
-          if (params.dataType === 'node' && params.data.errorMessage) {
-            const name = makeAgentNameUserFriendly(params.data.actorName);
-            const escaped = params.data.errorMessage
-              .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-            // `var(--akg-danger-fg)`, not the CSS keyword `darkred`. echarts
-            // renders this tooltip as real DOM inside the document, so the
-            // custom property resolves — which means a deployment that
-            // re-points the palette moves this error tone with everything
-            // else. The keyword was the last colour on this surface that no
-            // rebrand could reach.
-            return `<b>${name}</b><br/><span style="color:var(--akg-danger-fg); font-size:11px">${escaped}</span>`;
-          }
-          return '';
+          if (params.dataType !== 'node') return '';
+          // ESCAPED, BOTH OF THEM. echarts renders this tooltip as real DOM
+          // (which is why `var()` resolves in it), so everything interpolated
+          // below is an HTML sink. The name is no safer than the error message
+          // beside it: it comes off `NodeInterface.actorName`, i.e. from the
+          // backend's actor address, and `makeAgentNameUserFriendly` only
+          // reshapes it. While the formatter returned '' for every node without
+          // an error the sink needed an errored agent to reach; now that every
+          // node has a tooltip, hovering is enough.
+          const name = escapeHtml(
+            makeAgentNameUserFriendly(params.data.actorName),
+          );
+          // THE TOOLTIP IS WHERE THE FULL NAME LIVES NOW. Labels on the canvas
+          // are capped and ellipsised (`label.width`, above) because an
+          // uncapped one ran off the edge of a 310px pane and was CUT — the
+          // user's screenshot shows `#KnowledgeGraphToo` and `#VectorSt`. A
+          // truncation the user can un-truncate is a different thing from a
+          // clip; this is the un-truncating. It used to return `''` for every
+          // node without an error, so there was nowhere to read the rest.
+          const escaped = escapeHtml(params.data.errorMessage ?? '');
+          return escaped
+            ? `<b>${name}</b><br/><span style="color:var(--akg-danger-fg); font-size:11px">${escaped}</span>`
+            : `<b>${name}</b>`;
         },
       },
-      legend: [{ data: categories.map((c) => c.name), top: '8px' }],
-      series: [
-        {
-          type: 'graph',
-          layout: 'force',
-          roam: true,
-          draggable: true,
-          force: {
-            repulsion: 200,
-            edgeLength: [50, 150],
-          },
-          label: {
-            show: true,
-            position: 'top',
-            formatter: labelFormatter,
-          },
-          symbol: 'roundRect',
-          symbolSize: [15, 15],
-          edgeSymbol: ['none', 'arrow'],
-          edgeSymbolSize: 10,
-          lineStyle: {
-            curveness: 0.1,
-            width: 2,
-            type: 'solid',
-          },
-          emphasis: {
-            focus: 'adjacency',
-            lineStyle: { width: 3 },
-          },
-          data: nodes,
-          links: edges,
-          categories: categories,
-          zoom: 1.5,
-        },
-      ],
+      legend: [legend],
+      series: [series],
     };
-
-    this.graphOptions = chartOptions;
-    if (this.echartsInstance) {
-      this.echartsInstance.setOption(chartOptions);
-    }
-    this.chartCreated = true;
   }
 
+  /**
+   * THE ONLY CHANNEL DATA TAKES INTO THE CHART.
+   *
+   * MERGING, deliberately — a `notMerge` replace would rebuild the whole
+   * option, which restarts the force layout and throws away the user's pan and
+   * zoom on every single message. What merge does NOT do is leave stale marks
+   * behind: echarts replaces an array-valued key outright rather than
+   * concatenating, so handing it an empty `data` clears the canvas. That is
+   * asserted rather than assumed (`graph-canvas.spec.ts`), because the
+   * alternative — a chart that keeps its last drawing after the team goes away
+   * — is invisible next to an empty-state overlay saying there is nothing
+   * there, which is exactly how this pane hid a bug for a release.
+   */
   private updateChart() {
-    if (!this.echartsInstance) return;
-
-    // Ensure arrays are initialized, use empty arrays as fallback
     const nodes = this.nodes || [];
     const edges = this.edges || [];
     const categories = this.categories || [];
+    const names = categories.map((c) => c.name);
 
-    // Only update the data, not the entire chart configuration
-    // This prevents the repositioning/sliding effect
+    if (!this.echartsInstance) {
+      // No canvas yet — see `seededSeries`. Written in place so the option's
+      // identity does not change; a new `[options]` reference would be answered
+      // with a notMerge replace the moment change detection next ran.
+      if (this.seededSeries && this.seededLegend) {
+        this.seededSeries.data = nodes;
+        this.seededSeries.links = edges;
+        this.seededSeries.categories = categories;
+        this.seededLegend.data = names;
+      }
+      return;
+    }
+
     this.echartsInstance.setOption({
-      legend: [{ data: categories.map((c) => c.name) }],
+      legend: [{ data: names }],
       series: [
         {
           data: nodes,

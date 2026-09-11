@@ -328,4 +328,176 @@ describe('ConsoleInspectorComponent', () => {
       expect(bare.swapLabelKey).toBe('inspector.moveLeft');
     });
   });
+
+  /**
+   * W17 — a pane too narrow for a panel says so instead of drawing it.
+   *
+   * These drive the REAL `ResizeObserver`, by setting a width on the pane and
+   * waiting for the measurement to arrive. A stubbed observer would assert that
+   * a boolean renders, which is the part that cannot be wrong; the part that
+   * can is whether the pane measures the right box and notices at all.
+   */
+  describe('(W17) the narrow-pane message', () => {
+    function inspector(): ConsoleInspectorComponent {
+      return fixture.debugElement.query(By.directive(ConsoleInspectorComponent))
+        .componentInstance as ConsoleInspectorComponent;
+    }
+
+    function notice(): HTMLElement | null {
+      return inspectorEl().querySelector('[data-test="inspector-narrow-notice"]');
+    }
+
+    function body(): HTMLElement {
+      return inspectorEl().querySelector('.inspector__body') as HTMLElement;
+    }
+
+    /**
+     * Poll a real layout change into view.
+     *
+     * `ResizeObserver` delivers on a later frame and nothing in Angular knows
+     * it is coming, so there is no `whenStable` to await. The loop gives up
+     * after ~500ms and lets the assertion that follows fail on its own terms —
+     * it never masks a miss by returning early.
+     */
+    async function until(condition: () => boolean): Promise<void> {
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        fixture.detectChanges();
+        if (condition()) {
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      fixture.detectChanges();
+    }
+
+    /**
+     * Size the PANE, as a drag or a rail collapse does, and wait for the
+     * measurement rather than for a frame count.
+     *
+     * The `expect` inside a helper is deliberate: every spec below depends on
+     * the observer having fired, and a helper that returned quietly on a
+     * timeout would turn "the pane never measured itself" into "the message
+     * correctly did not appear".
+     */
+    async function widthOf(px: number, expectNarrow: boolean): Promise<void> {
+      inspectorEl().style.width = `${px}px`;
+      await until(() => inspector().isNarrow() === expectNarrow);
+      expect(inspector().isNarrow())
+        .withContext(`pane measured itself at ${px}px`)
+        .toBe(expectNarrow);
+    }
+
+    it('replaces a panel that needs room once the pane gets narrow', async () => {
+      setTestTranslations({
+        inspector: { narrow: { title: '<<narrow>>', blurb: '<<widen>>' } },
+      });
+      host.mode = 'hierarchy';
+      render();
+
+      // Wide: the panel is what the pane shows.
+      expect(notice()).toBeNull();
+      expect(inspectorEl().querySelector('.projected-panel')).not.toBeNull();
+
+      await widthOf(250, true);
+
+      expect(notice()).not.toBeNull();
+      expect(notice()!.textContent).toContain('<<narrow>>');
+      expect(notice()!.textContent).toContain('<<widen>>');
+    });
+
+    /**
+     * REPLACES, not overlays. The projected panel keeps its place in the DOM —
+     * remounting the graph on a drag is exactly what `.moved-offscreen` exists
+     * to avoid — but it gives up the lane and the tab order, so there is no
+     * message printed over a drawing nobody can read.
+     */
+    it('hides the panel it stands in for, without unmounting it', async () => {
+      host.mode = 'hierarchy';
+      render();
+
+      await widthOf(250, true);
+
+      expect(body().classList).toContain('inspector__body--replaced');
+      expect(body().hasAttribute('inert')).toBeTrue();
+      expect(getComputedStyle(body()).display).toBe('none');
+      // Still mounted: the panel is hidden, not destroyed.
+      expect(inspectorEl().querySelector('.projected-panel')).not.toBeNull();
+    });
+
+    /** The user's way out is not only the divider: the strip stays live. */
+    it('leaves the tab strip usable so a narrow-friendly panel is one click away', async () => {
+      host.mode = 'hierarchy';
+      render();
+
+      await widthOf(250, true);
+
+      const tabs = inspectorEl().querySelectorAll<HTMLButtonElement>('[role="tab"]');
+      expect(tabs.length).toBe(2);
+
+      tabs[1].click();
+      fixture.detectChanges();
+      expect(host.seen).toEqual(['member']);
+    });
+
+    it('says nothing for a panel that reads fine narrow', async () => {
+      host.mode = 'team';
+      render();
+
+      await widthOf(250, true);
+
+      expect(notice()).toBeNull();
+      expect(body().classList).not.toContain('inspector__body--replaced');
+      expect(getComputedStyle(body()).display).not.toBe('none');
+    });
+
+    it('withdraws the message the moment the pane is widened again', async () => {
+      host.mode = 'hierarchy';
+      render();
+
+      await widthOf(250, true);
+      expect(notice()).not.toBeNull();
+
+      await widthOf(700, false);
+
+      expect(notice()).toBeNull();
+      expect(getComputedStyle(body()).display).not.toBe('none');
+    });
+
+    /**
+     * Switching TO a panel that needs room, while already narrow, has to show
+     * the message too — the width has not changed, so nothing re-measures. This
+     * is the case a width-only implementation gets wrong.
+     */
+    it('answers a tab change as well as a width change', async () => {
+      host.mode = 'team';
+      render();
+
+      await widthOf(250, true);
+      expect(notice()).toBeNull();
+
+      host.mode = 'knowledge-graph';
+      fixture.detectChanges();
+
+      expect(notice()).not.toBeNull();
+    });
+
+    /**
+     * A pane being CLOSED is not a pane that is cramped. The collapse is
+     * animated, so it passes through every width on the way to zero; without
+     * the collapsed gate the user would watch the graph swap itself for a
+     * message on the way out of a pane they just shut.
+     */
+    it('stays quiet while the pane is collapsed', async () => {
+      host.mode = 'hierarchy';
+      render();
+
+      await widthOf(250, true);
+      expect(notice()).not.toBeNull();
+
+      collapsed$.next(true);
+      fixture.detectChanges();
+
+      expect(notice()).toBeNull();
+    });
+  });
 });

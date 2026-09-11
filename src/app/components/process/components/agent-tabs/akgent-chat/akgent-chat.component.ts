@@ -13,15 +13,10 @@ import {
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { CommonModule } from '@angular/common';
+import { TranslatePipe } from '@ngx-translate/core';
 import { FormsModule } from '@angular/forms';
 
-import { ButtonModule } from 'primeng/button';
-import { CardModule } from 'primeng/card';
-import { FieldsetModule } from 'primeng/fieldset';
-import { FloatLabelModule } from 'primeng/floatlabel';
 import { PopoverModule } from 'primeng/popover';
-import { ProgressSpinnerModule } from 'primeng/progressspinner';
-import { TableModule } from 'primeng/table';
 import { TextareaModule } from 'primeng/textarea';
 import { MentionModule } from 'angular-mentions';
 
@@ -55,21 +50,20 @@ import { CopyButtonComponent } from '../../../../../shared/components/copy-butto
 
 @Component({
   selector: 'app-akgent-chat',
+  // Six PrimeNG modules came out with the chrome that used them: the table
+  // that held the trace, the fieldset per message, the card and spinner that
+  // nothing rendered, the float label whose caption was the words "Chat input",
+  // and the button directive on two controls that state their own appearance.
   imports: [
     CommonModule,
-    TableModule,
-    CardModule,
-    FieldsetModule,
     FormsModule,
     TextareaModule,
-    FloatLabelModule,
-    ButtonModule,
     PopoverModule,
-    ProgressSpinnerModule,
     MentionModule,
     CapitalizePipe,
     TokenCountPipe,
     CopyButtonComponent,
+    TranslatePipe,
   ],
   templateUrl: './akgent-chat.component.html',
   styleUrl: './akgent-chat.component.scss',
@@ -528,13 +522,26 @@ export class AkgentChatComponent implements OnInit, OnChanges {
    *  which momentarily shrinks scrollHeight, clamps scrollTop down, and fires a
    *  spurious scroll event that looks like a user scroll-up (turning off follow
    *  mid-stream). Index-based identity preserves the DOM on append. */
-  trackByIndex = (index: number): number => index;
 
-  // --- follow mode + "Messages" status pill (simplified member-chat scroll) ----
+  // --- follow mode + status pill (simplified member-chat scroll) -------------
+  /**
+   * The two states the pill can be in, as TRANSLATION KEYS.
+   *
+   * They were the literal English sentences "Auto scrolling" and "Messages",
+   * rendered straight into the template — the last untranslated copy in this
+   * pane. The main transcript's identical control already had keys for both, so
+   * this is a reuse rather than new copy, and `indicatorLabel` now holds a key
+   * the template resolves. Constants rather than inline strings because
+   * `indicatorIcon` has to compare against one of them, and a comparison
+   * against a repeated string literal is a rename waiting to go wrong.
+   */
+  static readonly FOLLOWING_KEY = 'chat.autoScrolling';
+  static readonly BEHIND_KEY = 'chat.messages';
+
   /** FOLLOW mode: auto-scroll to the bottom on every new message. */
   following = false;
-  /** Status-pill label: 'Auto scrolling' (following + running), 'Messages'
-   *  (newest below the fold, not following), or null (hidden). */
+  /** Status-pill label KEY: `chat.autoScrolling` (following + running),
+   *  `chat.messages` (newest below the fold, not following), or null (hidden). */
   indicatorLabel: string | null = null;
   /** Last scrollTop — tells a user scroll-UP from our own smooth scroll. */
   private lastScrollTop = 0;
@@ -576,15 +583,19 @@ export class AkgentChatComponent implements OnInit, OnChanges {
    *  running; otherwise "Messages" when the newest message is below the fold. */
   private updateIndicator(): void {
     if (this.following && this.contextService.currentTeamRunning$.value) {
-      this.indicatorLabel = 'Auto scrolling';
+      this.indicatorLabel = AkgentChatComponent.FOLLOWING_KEY;
     } else {
-      this.indicatorLabel = this.newestBelowFold() ? 'Messages' : null;
+      this.indicatorLabel = this.newestBelowFold()
+        ? AkgentChatComponent.BEHIND_KEY
+        : null;
     }
   }
 
   /** Icon for the pill — a "following" glyph while auto scrolling, else a down-arrow. */
   get indicatorIcon(): string {
-    return this.indicatorLabel === 'Auto scrolling' ? 'pi-sync' : 'pi-arrow-down';
+    return this.indicatorLabel === AkgentChatComponent.FOLLOWING_KEY
+      ? 'pi-sync'
+      : 'pi-arrow-down';
   }
 
   private scrollToBottom(): void {

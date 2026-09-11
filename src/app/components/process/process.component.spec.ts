@@ -38,6 +38,7 @@ import {
   provideTranslateTesting,
   setTestTranslations,
 } from '../../../testing/i18n-testing';
+import { ConfigService } from '../../core/config/config.service';
 import { ProcessComponent } from './process.component';
 
 // --------------------------------------------------------------------
@@ -1646,5 +1647,139 @@ describe('ProcessComponent (R3 — arrangeable, resizable panes)', () => {
 
     expect(row.classList.contains('console-panes--swapped')).toBeTrue();
     expect(pane.style.getPropertyValue('--akg-inspector-basis')).toBe('40%');
+  });
+});
+
+/**
+ * W18(b) — the deployment filter, wired through the component rather than
+ * exercised as a pure function.
+ *
+ * `inspector-tabs.registry.spec.ts` already pins `visibleInspectorTabs` and
+ * `resolveInspectorTab` on their own. What it CANNOT pin is that
+ * `ProcessComponent` actually reads `ConfigService.hiddenInspectorTabs` and
+ * actually routes the active mode through the resolver — the wiring is the
+ * half that silently does nothing if somebody drops the argument, and a green
+ * registry spec would not notice.
+ */
+describe('ProcessComponent — hiding inspector tabs per deployment (W18b)', () => {
+  async function mountWithHidden(
+    hidden: readonly string[],
+  ): Promise<ProcessComponent> {
+    // Same stubs the suite's main bed uses; only ConfigService differs.
+    const contextService = {
+      currentProcessId$: new BehaviorSubject<string>(''),
+      getCurrentTeam: jasmine
+        .createSpy('getCurrentTeam')
+        .and.callFake(async () => makeTeam()),
+      navigateHome: jasmine.createSpy('navigateHome').and.resolveTo(true),
+    };
+    const ingestionService = {
+      init: jasmine.createSpy('init').and.returnValue(Promise.resolve()),
+      close: jasmine.createSpy('close'),
+    };
+    const akgentService = {
+      unselect: jasmine.createSpy('unselect'),
+      selectedAkgent$: new BehaviorSubject<NodeInterface | null>(null),
+    };
+    const graphDataService = {
+      isLoading$: new BehaviorSubject<boolean>(false),
+      nodes$: new BehaviorSubject<NodeInterface[]>([]),
+    };
+    const chatService = { messages$: new BehaviorSubject<unknown[]>([]) };
+
+    await TestBed.configureTestingModule({
+      imports: [ProcessComponent, NoopAnimationsModule],
+      providers: [
+        provideTranslateTesting(),
+        MessageLogService,
+        ToolPresenceService,
+        KGStateReducer,
+        WorkspaceRegistryService,
+        { provide: ContextService, useValue: contextService },
+        { provide: IngestionService, useValue: ingestionService },
+        { provide: AkgentService, useValue: akgentService },
+        { provide: GraphDataService, useValue: graphDataService },
+        { provide: ChatService, useValue: chatService },
+        {
+          provide: SelectionService,
+          useValue: { handleSelection: jasmine.createSpy('handleSelection') },
+        },
+        { provide: FeedbackService, useValue: {} },
+        {
+          provide: ViewService,
+          useValue: { isRightColumnCollapsed$: new BehaviorSubject<boolean>(false) },
+        },
+        {
+          provide: Router,
+          useValue: {
+            navigate: jasmine
+              .createSpy('navigate')
+              .and.returnValue(Promise.resolve(true)),
+          },
+        },
+        {
+          provide: ActivatedRoute,
+          useValue: {
+            snapshot: { params: { id: 'team-1' } },
+            params: of({ id: 'team-1' }),
+          },
+        },
+        // The whole point of the fixture: a deployment's config.json.
+        { provide: ConfigService, useValue: { hiddenInspectorTabs: hidden } },
+      ],
+    })
+      .overrideComponent(ProcessComponent, {
+        set: {
+          imports: [CommonModule, TranslatePipe, SplitDividerComponent],
+          providers: [],
+          schemas: [CUSTOM_ELEMENTS_SCHEMA],
+        },
+      })
+      .compileComponents();
+
+    const fixture = TestBed.createComponent(ProcessComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture.componentInstance;
+  }
+
+  afterEach(() => TestBed.resetTestingModule());
+
+  it('drops a tab this deployment switched off', async () => {
+    const component = await mountWithHidden(['messages']);
+
+    const options = await firstValue(component.visualizationOptions$);
+    expect(options.some((o) => o.value === 'messages')).toBeFalse();
+    // The rest of the strip is untouched — hiding is a filter, not a rebuild.
+    expect(options.some((o) => o.value === 'team')).toBeTrue();
+    expect(options.some((o) => o.value === 'hierarchy')).toBeTrue();
+  });
+
+  it('IGNORES an id that names no tab, rather than throwing', async () => {
+    // Hand-written JSON naming a tab that was renamed or never existed. The
+    // console must still boot: the correct response to "hide something that is
+    // not there" is that it is already not there.
+    const component = await mountWithHidden(['not-a-tab', 'messages']);
+
+    const options = await firstValue(component.visualizationOptions$);
+    expect(options.length).toBeGreaterThan(0);
+    expect(options.some((o) => o.value === 'messages')).toBeFalse();
+    expect(options.some((o) => o.value === 'team')).toBeTrue();
+  });
+
+  it('moves off a hidden ACTIVE tab instead of leaving a blank pane', async () => {
+    const component = await mountWithHidden(['team']);
+
+    const options = await firstValue(component.visualizationOptions$);
+    expect(options.some((o) => o.value === 'team')).toBeFalse();
+    // `team` is the component's initial mode, so this is the case where the
+    // deployment hid the tab the user is standing on. It must land on a
+    // VISIBLE one — and specifically not on the hard-coded 'team' the two
+    // guards this replaced both snapped back to.
+    expect(component.currentVisualizationMode).not.toBe('team');
+    expect(
+      options.some((o) => o.value === component.currentVisualizationMode),
+    ).toBeTrue();
   });
 });

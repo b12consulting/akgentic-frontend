@@ -172,3 +172,27 @@
     transition: none;
   }
 }
+
+/* W17 — the narrow-pane message, standing IN PLACE OF the panels rather than
+   over them.
+   
+   `flex: 1` plus a hidden body is what makes it a replacement: the body is the
+   element that owns the lane, so it has to give the lane up. `display: none`
+   and not `visibility: hidden`, because a hidden-but-laid-out panel still
+   reserves the height and the message would be pushed off the bottom of a pane
+   that is, by definition, already short of room.
+   
+   `display: none` is also SAFE for the echarts panels behind it, which is worth
+   recording because it is the thing that would break silently: `ngx-echarts`
+   observes its own element with a ResizeObserver, so the panel collapses to 0
+   and resizes back when the pane is widened again. A window-resize listener
+   would not have. */
+.inspector__body--replaced {
+  display: none;
+}
+
+.inspector__narrow {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}

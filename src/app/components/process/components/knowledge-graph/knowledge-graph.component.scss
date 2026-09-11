@@ -300,10 +300,6 @@
     font-size: 1.1rem;
 }
 
-.dialog-refresh-button {
-    margin-right: 0.5rem;
-}
-
 // Modal app component styling
 .modal-app-component {
     width: 100%;
@@ -311,224 +307,145 @@
     display: flex;
 }
 
-// Modal header bar styling
-.modal-header-bar {
+/* DELETED with the rest of the dead ladder: `.dialog-refresh-button` and
+ * `.modal-header-bar` styled a refresh control and a modal header bar this
+ * template has neither of. */
+
+/*
+ * The panel's own column: toolbar, then the chosen view.
+ *
+ * `.knowledge-graph-content` used to sit between the two doing nothing but
+ * restating `display: flex` — it went with the tab strip that was its only
+ * child.
+ */
+.knowledge-graph-container {
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/*
+ * DELETED: `.tab-content-wrapper`, `.content-area`, the
+ * loading/error/empty `-overlay`, `-content` and `-state` ladders.
+ *
+ * Ninety lines styling eleven class names that appear nowhere in this
+ * component's template — a loading state this panel never renders (it has no
+ * loading flag), an error state bound to an `error$` nothing subscribes to, and
+ * an empty state that is now `<app-inspector-empty-state>`. Dead CSS is not
+ * inert: it is a description of a panel that does not exist, and the next
+ * person to restyle "the empty state" restyles the wrong one.
+ */
+
+/*
+ * THE PANEL HEADER: the two views, and the way out.
+ *
+ * This replaces ~60 lines of `::ng-deep` aimed at `<p-tabView>`'s Aura nav.
+ * Overriding a deprecated library component's internals to make it look like
+ * something else is a bet that its internals do not change, renewed on every
+ * upgrade — and it still left the Expand control with nowhere to sit but
+ * `position: absolute` over the strip. Two buttons own their own appearance and
+ * leave room beside them.
+ */
+.kg-toolbar {
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 15px;
-    border-bottom: 1px solid var(--akg-surface-border);
-    background: var(--akg-surface-muted);
-    min-height: 50px;
-
-    .modal-title {
-        font-weight: 600;
-        font-size: 1.1rem;
-        color: var(--akg-text);
-    }
+    gap: 8px;
+    padding: 4px 2px 0;
+    border-bottom: 1px solid var(--akg-hairline);
 }
 
-.knowledge-graph-container {
-    height: 100%;
+.kg-views {
     display: flex;
-    flex-direction: column;
-    padding: 0rem;
-    background: var(--akg-overlay-bg);
-    border-radius: 8px;
-    box-shadow: var(--akg-overlay-shadow);
+    align-items: stretch;
+    /* The tabs may shrink; the Expand control must not, or the one affordance
+       that gets an unreadable graph out of a 310px pane is the first thing to
+       be clipped out of it. */
+    min-width: 0;
 }
 
-// Spinner animation for refresh buttons
-.pi-spin {
-    animation: spin 1s linear infinite;
+/*
+ * A view tab. The selected one is marked by the ACCENT UNDERLINE, not by a
+ * filled pill: this row sits directly above the content it switches, and a
+ * filled control there reads as a second surface starting.
+ */
+.kg-view-tab {
+    flex: 0 1 auto;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--akg-text-muted);
+    font-family: var(--akg-font-ui);
+    font-size: var(--akg-font-size-control);
+    font-weight: 400;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
 }
 
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+.kg-view-tab:hover {
+    color: var(--akg-text);
 }
 
-.knowledge-graph-content {
+.kg-view-tab.selected {
+    color: var(--akg-accent-fg);
+    border-bottom-color: var(--akg-accent-fg);
+}
+
+.kg-view-tab:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+}
+
+/*
+ * The way out of the pane. Quiet — it is not the panel's primary action — but
+ * always legible and never revealed on hover: the user who needs it is the one
+ * who has just failed to read the graph, and hunting for a control is not the
+ * recovery they want.
+ */
+.kg-expand {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 2px;
+    padding: 5px 10px;
+    border: 1px solid var(--akg-control-border);
+    border-radius: var(--akg-control-radius);
+    background: var(--akg-control-bg);
+    color: var(--akg-control-fg);
+    font-family: var(--akg-font-ui);
+    font-size: var(--akg-font-size-meta);
+    cursor: pointer;
+}
+
+.kg-expand:hover {
+    background: var(--akg-control-hover-bg);
+}
+
+.kg-expand:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+}
+
+.kg-expand .pi {
+    font-size: 11px;
+}
+
+/* The switched content. `min-height: 0` because the graph below is a flex
+   child that must be allowed to shrink — without it the canvas keeps its
+   intrinsic height and the raw-data list scrolls the pane instead of itself. */
+.kg-view {
     flex: 1;
-    display: flex;
-    flex-direction: column;
     min-height: 0;
-}
-
-// New overlay-based styling
-.tab-content-wrapper {
-    position: relative;
-    height: 100%;
-    min-height: 400px;
     display: flex;
     flex-direction: column;
-}
-
-.content-area {
-    flex: 1;
-    transition: none;
-}
-
-.loading-overlay,
-.error-overlay,
-.empty-overlay {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    min-height: 400px;
-    background: var(--akg-overlay-bg);
-}
-
-.loading-content,
-.error-content,
-.empty-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 1rem;
-    padding: 2rem;
-    text-align: center;
-    
-    i {
-        font-size: 2rem;
-        color: var(--akg-accent-fg);
-    }
-    
-    p {
-        margin: 0;
-        font-size: 1rem;
-        color: var(--akg-text-muted);
-    }
-}
-
-.error-content i {
-    color: var(--akg-danger-fg);
-}
-
-.empty-content i {
-    color: var(--akg-text-muted);
-}
-
-.loading-state,
-.error-state,
-.empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    flex: 1;
-    gap: 1rem;
-    color: var(--akg-text-muted);
-
-    i {
-        font-size: 2rem;
-        color: var(--akg-accent-fg);
-    }
-
-    p {
-        margin: 0;
-        font-size: 1rem;
-        text-align: center;
-    }
-}
-
-.error-state i {
-    color: var(--akg-danger-fg);
-}
-
-.empty-state i {
-    color: var(--akg-text-muted);
-}
-
-// Tab view styling
-.flex-tabs {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    
-    ::ng-deep {
-        .p-tabview {
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-        }
-        
-        // Aura's default nav is a white bar with a blue ink line and 1rem
-        // labels — the loudest thing in a 310px pane, and the last strip in
-        // the inspector a rebrand could not move. Restated in the palette's
-        // terms, at the size the rest of the console uses, with the accent
-        // carrying the selection instead of the library's own blue.
-        .p-tabview-nav {
-            flex-shrink: 0;
-            border-color: var(--akg-hairline);
-            background: transparent;
-        }
-
-        .p-tabview-nav-link {
-            padding: 8px 12px;
-            border: 0;
-            background: transparent;
-            color: var(--akg-text-muted);
-            font-family: var(--akg-font-ui);
-            font-size: 12px;
-            font-weight: 400;
-        }
-
-        .p-tabview-nav li.p-highlight .p-tabview-nav-link {
-            color: var(--akg-accent-fg);
-            border-color: var(--akg-accent-fg);
-        }
-
-        .p-tabview-nav-link:focus-visible {
-            outline: none;
-            box-shadow: var(--akg-focus-ring);
-        }
-        
-        .p-tabview-panels {
-            flex: 1;
-            padding: 0;
-            background: transparent;
-        }
-        
-        // 1rem on four sides is 32px of a ~278px lane. The pane already insets
-        // itself; a second inset here is the pane's width spent twice.
-        .p-tabview-panel {
-            height: 100%;
-            padding: 10px 0 0;
-        }
-    }
-}
-
-// Button positioning for tabs
-.tabs-header-container {
-    position: relative;
-    height: 100%;
-}
-
-.tabs-with-button {
-    position: relative;
-    height: 100%;
-
-    .flex-tabs {
-        height: 100%;
-    }
-
-    .external-expand-button {
-        position: absolute;
-        top: 0.75rem;
-        right: 1rem;
-        z-index: 10;
-        margin-left: 0.5rem;
-    }
-
-    .external-refresh-button {
-        position: absolute;
-        top: 0.75rem;
-        right: 1rem;
-        z-index: 10;
-    }
+    padding-top: 10px;
 }
 
 // Z-Index Management for Proper Layering
@@ -662,61 +579,25 @@
         min-height: 350px;
     }
 
-    // The console's empty-state idiom, drawn here rather than imported.
-    //
-    // `<app-inspector-empty-state>` is the shared component and is what this
-    // block reproduces — the well tile, the display-face headline, the muted
-    // line. It is not USED because this panel's three empty sentences are
-    // hardcoded English with no locale keys behind them, and adopting a
-    // key-taking component would mean inventing copy in a file this change does
-    // not own. The shapes match so that when the keys land, the swap is a
-    // markup change and not a redesign.
-    //
-    // The dashed 2px border and the 3.5rem glyph are gone outright: a dashed box
-    // reads as a drop target, and nothing here accepts one.
+    /*
+     * The overlay SHELL. Everything the empty state looks like now lives in
+     * `<app-inspector-empty-state>`; what is left here is where it sits.
+     *
+     * The ~50 lines this replaces were a hand-drawn copy of that component,
+     * kept in sync by hand, justified in a comment by the panel having no
+     * locale keys. It has had them since `knowledgeGraph.emptyTitle` landed.
+     *
+     * Not `pointer-events: none`: the canvas underneath has nothing on it to
+     * interact with while this is up, and a transparent overlay that swallowed
+     * a click would be the harder bug to find.
+     */
     .kg-graph-empty {
         position: absolute;
         inset: 0;
         display: flex;
         flex-direction: column;
-        align-items: center;
         justify-content: center;
-        text-align: center;
-        gap: 0;
-        padding: 0 18px;
-        color: var(--akg-text-muted);
-        // Not `pointer-events: none`: the canvas underneath has nothing on it
-        // to interact with while this is up, and a transparent overlay that
-        // swallowed a click would be the harder bug to find.
         background: transparent;
-
-        &-icon {
-            display: grid;
-            place-items: center;
-            width: 44px;
-            height: 44px;
-            margin-bottom: 14px;
-            border-radius: 14px;
-            background: var(--akg-well-bg);
-            color: var(--akg-glyph-quiet);
-            font-size: 18px;
-        }
-
-        &-title {
-            margin-bottom: 6px;
-            font-family: var(--akg-font-display);
-            font-size: 15px;
-            font-weight: 300;
-            color: var(--akg-text);
-        }
-
-        &-desc {
-            max-width: 320px;
-            font-size: 12px;
-            font-weight: 300;
-            line-height: 1.6;
-            color: var(--akg-text-muted);
-        }
     }
 }
 
@@ -997,25 +878,10 @@
     min-height: 240px;
 }
 
-.tab-mode .tab-content-wrapper,
-.tab-mode .loading-overlay,
-.tab-mode .error-overlay,
-.tab-mode .empty-overlay {
-    min-height: 0;
-}
-
-/*
- * The pane is the scroll region's parent, not a second scroll region. The
- * container drew a card shadow and a radius as if it were floating on a page;
- * inside the inspector it IS the pane, so both are noise — and the shadow was
- * drawn over the tab strip above it.
- */
-.knowledge-graph-container {
-    box-shadow: none;
-    border-radius: 0;
-    background: transparent;
-    min-height: 0;
-}
+/* The card shadow, radius and ground the container used to draw are not
+ * overridden back off down here any more — they are simply not declared. A rule
+ * whose whole job is to cancel a rule 500 lines above it is two people
+ * disagreeing in one file, and the reader has to find both to know what wins. */
 
 /*
  * The entity and relation cards, in the palette's terms. PrimeNG's `p-card`

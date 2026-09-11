@@ -192,6 +192,24 @@ export class ConfigService {
     return this.config.initRailCollapsed ?? false;
   }
 
+  /**
+   * Inspector tabs this deployment has switched off. See
+   * `Environment.hiddenInspectorTabs`.
+   *
+   * `?? []` rather than a non-null assertion, for the reason spelled out on
+   * `initRailCollapsed`: the key post-dates every `config.json` in the field
+   * and `load()` fills no gaps, so reading it raw hands `undefined` to a
+   * `Set` constructor that would then hide nothing — right by accident, until
+   * somebody iterated it.
+   *
+   * `readonly` on the way out because the array is the LIVE config object's,
+   * not a copy: a caller that sorted or spliced it would be editing the
+   * deployment's configuration for the rest of the session.
+   */
+  get hiddenInspectorTabs(): readonly string[] {
+    return this.config.hiddenInspectorTabs ?? [];
+  }
+
   get userInputEnterKeySubmit(): boolean {
     return this.config.userInputEnterKeySubmit;
   }

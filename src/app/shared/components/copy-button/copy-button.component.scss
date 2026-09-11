@@ -1,9 +1,18 @@
+/*
+ * AN UNPOSITIONED, INLINE CONTROL. Where it sits is the CALLER's business.
+ *
+ * This block used to carry `margin: -4px -50px`, `float: right`, `top: -22px`,
+ * `right: 50px` and a hardcoded `background-color: white` — geometry tuned to
+ * hang the control off the border of a PrimeNG `<p-fieldset>`, back when both
+ * callers drew one. Neither does any more: the Messages tab quotes its rows
+ * between hairlines and the Member panel draws inset wells, and both had begun
+ * cancelling these six declarations from the outside. A shared control that
+ * every caller has to un-style is not shared geometry, it is a shared bug.
+ *
+ * The `white` is the other half of why it had to go: it was one of the last
+ * colour literals in `src/` that no deployment could re-point, and on a dark
+ * surface it painted a white plate behind a transparent button.
+ */
 .copy-button {
-  margin: -4px -50px;
-  position: relative;
-  display: block;
-  float: right;
-  top: -22px;
-  right: 50px;
-  background-color: white;
+  display: inline-block;
 }

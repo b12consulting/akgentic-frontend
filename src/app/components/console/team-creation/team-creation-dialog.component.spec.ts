@@ -46,6 +46,16 @@ function ns(
   };
 }
 
+/**
+ * A LIBRARY namespace — prompts, tools or knowledge, with no team to
+ * instantiate. The two the catalog ships everywhere ("Global Library",
+ * "Global Tools") are exactly this, and `ns` above cannot express it: its
+ * `team: true` is what every other spec in this file needs.
+ */
+function libNs(namespace: string): NamespaceSummary {
+  return ns(namespace, { team: false });
+}
+
 describe('TeamCreationDialogComponent', () => {
   let fixture: ComponentFixture<TeamCreationDialogComponent>;
   let component: TeamCreationDialogComponent;
@@ -171,6 +181,46 @@ describe('TeamCreationDialogComponent', () => {
 
     expect(typeRadio('alpha')).toBeTruthy();
     expect(typeRadio('beta')).toBeTruthy();
+  });
+
+  // -------------------------------------------------------------------------
+  // W19a — a LIBRARY namespace is not a team type.
+  //
+  // `GET /admin/catalog/namespaces` lists every namespace the account can see,
+  // and only some declare a team: the catalog ships "Global Library" and
+  // "Global Tools" to every deployment with `team: false`. This dialog rendered
+  // that list verbatim, so both appeared under "choose the type of team to
+  // create", selectable, with Create live behind them.
+  //
+  // These fail on a dialog that fetches through `ApiService` and renders what
+  // it gets; they pass on one that asks `TeamTypeCatalog` for team types.
+  // -------------------------------------------------------------------------
+
+  it('does NOT offer a library namespace as a type of team to create', async () => {
+    await render([libNs('global-library'), ns('agent-team-v1'), libNs('global-tools')]);
+
+    expect(typeRadio('agent-team-v1')).toBeTruthy();
+    expect(typeRadio('global-library')).toBeNull();
+    expect(typeRadio('global-tools')).toBeNull();
+  });
+
+  it('never PRESELECTS a library namespace, however the endpoint ordered the list', async () => {
+    // The preselection is what the primary button acts on before the user has
+    // touched anything, so `[0]` landing on a library row is the shortest path
+    // from this defect to a created-into-nothing team.
+    await render([libNs('global-library'), ns('agent-team-v1')]);
+
+    expect(component.selected()?.namespace).toBe('agent-team-v1');
+  });
+
+  it('says there is nothing to create when the catalog holds ONLY libraries', async () => {
+    // Honest, and the state the user can act on: a settled, empty type list.
+    // The alternative is what shipped — two uncreatable rows and a live button.
+    await render([libNs('global-library'), libNs('global-tools')]);
+
+    expect(component.typesState()).toBe('empty');
+    expect(el('team-creation-empty')).toBeTruthy();
+    expect(primary().disabled).toBe(true);
   });
 
   it('names a type by its catalog name, falling back to the namespace id', async () => {
@@ -672,6 +722,23 @@ describe('TeamCreationDialogComponent', () => {
     // answer: a row the owner-scoped list did not contain.
     expect(el('creation-foreign-theirs')).toBeTruthy();
     expect(el('creation-foreign-mine')).toBeNull();
+  });
+
+  it('filters the WIDENED list too — the firehose is wider, not looser', async () => {
+    // The admin toggle widens WHOSE namespaces are listed. It does not change
+    // what a team can be created from, and a rule applied to one fetch and not
+    // the other is the same defect with an extra step in front of it.
+    user$.next({ roles: ['admin'] });
+    await render([ns('mine')]);
+    apiSpy.getNamespaces.and.returnValue(
+      Promise.resolve([ns('mine'), ns('theirs'), libNs('their-library')]),
+    );
+
+    await component.onToggleShowAll(true);
+    await settle();
+
+    expect(typeRadio('theirs')).toBeTruthy();
+    expect(typeRadio('their-library')).toBeNull();
   });
 
   it('fetches the widened list once, however often the switch is flipped', async () => {

@@ -22,7 +22,6 @@ import { ScrollPanelModule } from 'primeng/scrollpanel';
 import { TooltipModule } from 'primeng/tooltip';
 import { CardModule } from 'primeng/card';
 import { ToolbarModule } from 'primeng/toolbar';
-import { DividerModule } from 'primeng/divider';
 import { TagModule } from 'primeng/tag';
 import { MarkdownModule } from 'ngx-markdown';
 import { TranslatePipe } from '@ngx-translate/core';
@@ -39,6 +38,7 @@ import {
   WorkspaceInvalidationService,
 } from '../../selectors/workspace-invalidation.selector';
 import { UploadModalComponent } from './upload-modal/upload-modal.component';
+import { InspectorEmptyStateComponent } from '../../../console/inspector/inspector-empty-state.component';
 
 /**
  * Outcome of one declarative root-tree load. `switchMap` maps each
@@ -191,11 +191,11 @@ export class DelayedIndicator {
     TooltipModule,
     CardModule,
     ToolbarModule,
-    DividerModule,
     TagModule,
     MarkdownModule,
     TranslatePipe,
     UploadModalComponent,
+    InspectorEmptyStateComponent,
   ],
   templateUrl: './workspace-explorer.component.html',
   styleUrls: ['./workspace-explorer.component.scss'],

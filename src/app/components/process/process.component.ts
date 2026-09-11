@@ -27,6 +27,7 @@ import {
 } from '../../core/ui/pane-layout';
 import { PaneLayoutService } from '../../core/ui/pane-layout.service';
 import { ViewService } from '../../core/ui/view.service';
+import { ConfigService } from '../../core/config/config.service';
 import { ContextService } from '../../core/context/context.service';
 import { KGStateReducer } from './selectors/knowledge-graph.selector';
 import { ConnectionToast } from './event/connection-toast';
@@ -65,6 +66,10 @@ import { ConversationHeaderComponent } from '../console/conversation/conversatio
 import { ConsoleInspectorComponent } from '../console/inspector/console-inspector.component';
 import { InspectorTeamPanelComponent } from '../console/inspector/team-panel/inspector-team-panel.component';
 import { VisualizationOption } from '../console/inspector/inspector-tabs.component';
+import {
+  resolveInspectorTab,
+  visibleInspectorTabs,
+} from '../console/inspector/inspector-tabs.registry';
 import { SplitDividerComponent } from '../../shared/components/split-divider/split-divider.component';
 
 @Component({
@@ -198,6 +203,7 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
   private readonly selectionService = inject(SelectionService);
   toolPresenceService: ToolPresenceService = inject(ToolPresenceService);
   private readonly workspaceRegistry = inject(WorkspaceRegistryService);
+  private readonly config: ConfigService = inject(ConfigService);
 
   /**
    * How the two panes are arranged (R3): which side the inspector is on, and
@@ -312,59 +318,24 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
 
   visualizationMode$ = new BehaviorSubject<string>('team');
 
-  private readonly allVisualizationOptions: VisualizationOption[] = [
-    { labelKey: 'visualization.team', value: 'team', icon: 'pi pi-users' },
-    // Epic 56 / H2. The redesign gave `team` a new panel — roster, tools,
-    // spend — and that panel deliberately does NOT carry the team tree or the
-    // echarts graph. Those two are a real capability, so they get a tab of
-    // their own rather than being folded in behind the Member tab: `member` is
-    // "one agent, in detail", and hiding a team-wide tree under it would make
-    // the tab strip lie about what each entry shows. It is the only arrangement
-    // where every pre-Epic-56 view keeps a name.
-    //
-    // A CORRECTION, because the note that stood here was wrong and load-bearing
-    // in the wrong direction: it said a sixth entry "costs nothing — the strip
-    // scrolls". It did not. The captioned strip overflowed its lane at this tab
-    // count in English and comfortably before it in French, and the overflow
-    // was a horizontal scroll that hid the last tab rather than a layout that
-    // absorbed it. The strip is icon-only now and fits in one row at any width
-    // the divider can be dragged to; see `inspector-tabs.component.scss`. Adding
-    // a SEVENTH entry is still a decision to take against that arithmetic, not
-    // a free one.
-    {
-      labelKey: 'visualization.hierarchy',
-      value: 'hierarchy',
-      icon: 'pi pi-share-alt',
-    },
-    // `pi-id-card`, NOT `pi-user`. Beside `pi-users` on the Team tab the two
-    // were one head against two at 13px — a difference a reader has to hunt
-    // for, on a strip where the glyph is the primary way five of the six tabs
-    // are told apart. A card silhouette differs in OUTLINE rather than in
-    // count, which is what survives at this size.
-    { labelKey: 'visualization.member', value: 'member', icon: 'pi pi-id-card' },
-    {
-      labelKey: 'visualization.knowledgeGraph',
-      value: 'knowledge-graph',
-      icon: 'pi pi-sitemap',
-    },
-    { labelKey: 'visualization.workspaces', value: 'workspace', icon: 'pi pi-folder-open' },
-    { labelKey: 'visualization.messages', value: 'messages', icon: 'pi pi-envelope' },
-  ];
-
   /**
-   * Reactive, filtered list of visualization options. Recomputed whenever
-   * `hasKnowledgeGraph$` or `hasWorkspace$` emits — the Knowledge graph and
-   * Workspaces tabs each appear only when their tool is present.
+   * The tabs this deployment, for this team, offers.
+   *
+   * The set itself moved to `inspector-tabs.registry.ts` (W18a): a tab is one
+   * declarative entry there, and both filters that can remove it live beside
+   * it — the team's capabilities, which change while the user watches, and the
+   * deployment's `hiddenInspectorTabs`, which is fixed for the page. Keeping
+   * the array here meant the caption, the capability rule and the narrow-pane
+   * rule were stated in three places that could disagree.
    */
   visualizationOptions$: Observable<VisualizationOption[]> = combineLatest([
     this.toolPresenceService.hasKnowledgeGraph$,
     this.hasWorkspace$,
   ]).pipe(
-    map(([hasKG, hasWS]) =>
-      this.allVisualizationOptions.filter(
-        (option) =>
-          (option.value !== 'knowledge-graph' || hasKG) &&
-          (option.value !== 'workspace' || hasWS),
+    map(([knowledgeGraph, workspace]) =>
+      visibleInspectorTabs(
+        { knowledgeGraph, workspace },
+        this.config.hiddenInspectorTabs,
       ),
     ),
   );
@@ -457,7 +428,6 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
 
 
   private presenceSub: Subscription | null = null;
-  private workspaceSub: Subscription | null = null;
   private animationTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
@@ -484,22 +454,20 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
   private paneTrackObserver: ResizeObserver | null = null;
 
   constructor() {
-    // Active-mode reset guard (AC3 last clause, AC8): if the user is viewing
-    // the KG tab when presence flips to `false`, snap back to 'team' so we
-    // never leave the user on a hidden-mode blank panel.
-    this.presenceSub = this.toolPresenceService.hasKnowledgeGraph$.subscribe(
-      (hasKG) => {
-        if (!hasKG && this.currentVisualizationMode === 'knowledge-graph') {
-          this.visualizationMode$.next('team');
-        }
-      },
-    );
-
-    // Same guard for the Workspaces tab: if it disappears (last workspace tool
-    // removed) while the user is viewing it, snap back to 'team'.
-    this.workspaceSub = this.hasWorkspace$.subscribe((hasWS) => {
-      if (!hasWS && this.currentVisualizationMode === 'workspace') {
-        this.visualizationMode$.next('team');
+    // Active-mode reset guard (AC3 last clause, AC8), generalised: ONE rule for
+    // "the tab the user is on stopped existing", whatever removed it — a tool
+    // that stopped, or a deployment that hid it. The two hand-written guards
+    // this replaces both snapped back to a hard-coded 'team', which is the
+    // wrong answer on a deployment whose `hiddenInspectorTabs` hides 'team'.
+    // `resolveInspectorTab` falls back to the first VISIBLE tab instead, which
+    // is still 'team' everywhere that has not hidden it.
+    this.presenceSub = this.visualizationOptions$.subscribe((options) => {
+      const resolved = resolveInspectorTab(
+        this.currentVisualizationMode,
+        options,
+      );
+      if (resolved !== this.currentVisualizationMode) {
+        this.visualizationMode$.next(resolved);
       }
     });
   }
@@ -685,8 +653,6 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
     this.akgentService.unselect();
     this.presenceSub?.unsubscribe();
     this.presenceSub = null;
-    this.workspaceSub?.unsubscribe();
-    this.workspaceSub = null;
     this.routeSub?.unsubscribe();
     this.routeSub = null;
     // Story 52-1 (trap T3): the single writer retracts its own value. Nothing

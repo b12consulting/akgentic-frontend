@@ -18,11 +18,44 @@ import {
   StopMessage,
 } from '../../../protocol/message.types';
 import { EdgeInterface, NodeInterface } from '../models/types';
-import { CategoryService } from '../../../core/ui/category.service';
+import { CategoryService, readToken } from '../../../core/ui/category.service';
 import { MessageLogService } from '../event/message-log.service';
 
 export const HUMAN_ROLE = 'Human';
 export const ORCHESTRATOR_CLASS = 'akgentic.core.orchestrator.Orchestrator';
+
+/**
+ * The ink an ERRORED or a THINKING node is drawn in, resolved to a literal.
+ *
+ * This used to be the CSS keyword `darkred`, which is the one colour on this
+ * canvas no deployment could re-point — a rebrand moved every other mark and
+ * left failure painted in a keyword from 1996. It is `--akg-danger-fg` now,
+ * the same token the Messages tab paints an error severity in, so "this went
+ * wrong" is one colour across the console rather than two that happen to both
+ * be red.
+ *
+ * RESOLVED IN JS, not handed over as `var()`: echarts draws this series with
+ * the canvas renderer and a canvas has no cascade (see `readToken`).
+ *
+ * MEMOISED because this is called from the fold, which re-runs over the WHOLE
+ * log on every websocket frame, and `getComputedStyle` flushes layout.
+ *
+ * FALLS BACK to the old keyword when the token is undeclared. `readToken`
+ * returns `''` for a missing property, and `''` as a fill is not "no colour" —
+ * it is a parse failure that would leave a failed agent indistinguishable from
+ * a healthy one. A stylesheet that never loaded should degrade to the previous
+ * behaviour, not to silence.
+ */
+let dangerInkCache: string | null = null;
+export function dangerInk(): string {
+  dangerInkCache ??= readToken('--akg-danger-fg') || 'darkred';
+  return dangerInkCache;
+}
+
+/** Test seam: drop the memo so a spec can change the token and re-read it. */
+export function resetDangerInk(): void {
+  dangerInkCache = null;
+}
 
 /**
  * Helper class to build nodes/edges from messages.
@@ -144,11 +177,15 @@ export const EMPTY_GRAPH: GraphState = { nodes: [], edges: [], squad: [] };
 // SAME state reference for no-op cases (AC7 reference-equality contract) and a
 // fresh object with ONLY changed slices replaced for changes.
 //
-// Path 1 (Task 1.4): `CategoryService` is passed through as a companion DI
-// dependency. `squadDict` / `nodes` mutations on the service are documented
-// side effects (idempotent — same squadId always maps to the same index).
-// External consumers (MessageListComponent, tree/graph components) continue
-// to read `categoryService.squadDict` / `.COLORS` / `.nodes` as before.
+// `CategoryService` is passed through as a companion DI dependency, but the
+// per-message helpers only READ from it (`COLORS`). Everything the service
+// carries FOR other components — `.nodes`, `.squadDict`, the legend selection —
+// is republished once per fold by `syncCategoryCompanions`, from the fold's
+// result. It used to be written per message from inside `applyStartMessage`,
+// which re-ran it on every frame (the fold replays the whole log each emission)
+// and skipped it entirely for a log that folds to nothing. External consumers
+// (MessageListComponent, tree/graph components) read the same properties as
+// before.
 // ---------------------------------------------------------------------------
 
 function applyStartMessage(
@@ -160,37 +197,49 @@ function applyStartMessage(
 
   const builder = new GraphBuilder(msg);
   const node = builder.buildNode();
-  const nextNodes = [...state.nodes, node];
 
-  const existingCat = state.squad.find((c) => c.squadId === node.squadId);
+  // An agent that announces itself again without an intervening `StopMessage`
+  // is the SAME participant, not a second one. Appending unconditionally put
+  // two nodes carrying the same `name` into the echarts series, where names are
+  // the node key: the pair draws on top of each other, edge endpoints resolve
+  // ambiguously, and `applyStopMessage` — which splices the FIRST match — later
+  // leaves a ghost of a stopped agent on the canvas for ever.
+  if (state.nodes.some((n) => n.name === node.name)) return state;
+
+  // The category IS the index into `state.squad`: squads are only ever appended,
+  // and a new one takes `state.squad.length`. So the fold reads its own state
+  // here rather than `categoryService.squadDict`. That lookup made a
+  // component-scoped fold depend on root-scoped mutable state it had itself
+  // written on an earlier frame, and returned `undefined` whenever the two had
+  // drifted apart (e.g. across a team switch, which resets the log but not the
+  // root-scoped service).
   let nextSquad = state.squad;
-  if (existingCat && node.squadId) {
-    node.category = categoryService.squadDict[node.squadId];
-  } else if (node.squadId) {
-    const newIndex = state.squad.length;
-    node.category = newIndex;
-    nextSquad = [
-      ...state.squad,
-      {
-        name: `Team ${newIndex}`,
-        squadId: node.squadId,
-        itemStyle: { color: categoryService.COLORS[newIndex] },
-      },
-    ];
-    categoryService.squadDict[node.squadId] = newIndex;
-    const selectedSquad = categoryService.getSelectedCategory();
-    if (selectedSquad) {
-      selectedSquad.push(true);
-      categoryService.setSelectedCategory(selectedSquad);
+  if (node.squadId) {
+    const existingIdx = state.squad.findIndex((c) => c.squadId === node.squadId);
+    if (existingIdx !== -1) {
+      node.category = existingIdx;
+    } else {
+      const newIndex = state.squad.length;
+      node.category = newIndex;
+      nextSquad = [
+        ...state.squad,
+        {
+          name: `Team ${newIndex}`,
+          squadId: node.squadId,
+          // Wrapped, because a deployment with more concurrent squads than the
+          // palette has entries otherwise hands echarts `color: undefined` and
+          // silently falls back to ITS built-in palette — the one visual escape
+          // hatch through which un-themed colour reaches this canvas.
+          itemStyle: {
+            color:
+              categoryService.COLORS[newIndex % categoryService.COLORS.length],
+          },
+        },
+      ];
     }
   }
 
-  // Keep companion `categoryService.nodes` in sync with the fold state so
-  // downstream components that read from it (MessageListComponent) stay
-  // consistent with `graph$.nodes` (Path 1 — Task 1.5 kept-stateful branch).
-  categoryService.nodes = nextNodes;
-
-  return { ...state, nodes: nextNodes, squad: nextSquad };
+  return { ...state, nodes: [...state.nodes, node], squad: nextSquad };
 }
 
 function applySentMessage(state: GraphState, msg: SentMessage): GraphState {
@@ -239,7 +288,7 @@ function applyReceivedMessage(
     ...target,
     itemStyle: {
       ...(target.itemStyle || {}),
-      borderColor: 'darkred',
+      borderColor: dangerInk(),
       borderWidth: 3,
     },
   };
@@ -286,7 +335,7 @@ function applyErrorMessage(state: GraphState, msg: ErrorMessage): GraphState {
   const updated: NodeInterface = {
     ...target,
     errorMessage: msg.content || msg.content_type || 'Error',
-    itemStyle: { ...(target.itemStyle || {}), color: 'darkred' },
+    itemStyle: { ...(target.itemStyle || {}), color: dangerInk() },
   };
   const nextNodes = [
     ...state.nodes.slice(0, idx),
@@ -331,18 +380,67 @@ export function graphStep(
 }
 
 /**
+ * Republish the companion state `CategoryService` carries for the components
+ * that read it imperatively instead of subscribing to `graph$`
+ * (`MessageListComponent` reads `.nodes` and `.squadDict` during rendering).
+ *
+ * WHY this runs once per FOLD, over the fold's RESULT, rather than once per
+ * message inside `applyStartMessage` where it used to live:
+ *
+ *  - `graph$` re-folds the WHOLE log from `EMPTY_GRAPH` on every `log$`
+ *    emission, so a per-message mutation re-ran for every message on every
+ *    frame. The legend-selection array in particular was `push`ed once per
+ *    squad per frame and grew without bound for the whole life of the tab.
+ *  - It ran only on the branch that added a node, so a log that folds to
+ *    nothing — an empty log after `reset()`, i.e. every team switch — left the
+ *    PREVIOUS team's roster in place, and a `StopMessage` removing a node never
+ *    reached it at all. Two surfaces reading the same team then disagreed about
+ *    who was in it.
+ *
+ * Derived from `state`, the companions are a projection of the fold and cannot
+ * drift from it; that is the only definition under which they can't disagree.
+ */
+function syncCategoryCompanions(
+  state: GraphState,
+  categoryService: CategoryService,
+): void {
+  categoryService.nodes = state.nodes;
+
+  const squadDict: { [key: string]: number } = {};
+  state.squad.forEach((c, i) => {
+    if (c?.squadId) squadDict[c.squadId] = i;
+  });
+  categoryService.squadDict = squadDict;
+
+  // The legend selection is indexed BY CATEGORY, so its length has to track the
+  // category count and a newly-appeared squad defaults to visible. Republished
+  // only on a genuine length change: `selectedSquad$` feeds a `combineLatest` in
+  // `MessageListComponent`, so an emission per websocket frame is a re-filter
+  // and a re-scroll of the table for no new information. `?? true` rather than
+  // `|| true` keeps a squad the user explicitly deselected deselected.
+  const selected = categoryService.getSelectedCategory();
+  if (selected && selected.length !== state.squad.length) {
+    categoryService.setSelectedCategory(
+      Array.from({ length: state.squad.length }, (_, i) => selected[i] ?? true),
+    );
+  }
+}
+
+/**
  * Pure fold over the full log (Task 1.4). `categoryService` is an injected
- * companion dependency (Path 1 — kept-stateful `squadDict` mutation). The
- * fold is pure w.r.t. the `(log, categoryService)` pair.
+ * companion dependency: `graphStep` reads `COLORS` from it, and the fold
+ * republishes its derived companion state once the reduce has settled.
  */
 export function graphFold(
   log: AkgenticMessage[],
   categoryService: CategoryService,
 ): GraphState {
-  return log.reduce(
+  const state = log.reduce(
     (s, m) => graphStep(s, m, categoryService),
     EMPTY_GRAPH,
   );
+  syncCategoryCompanions(state, categoryService);
+  return state;
 }
 
 /**

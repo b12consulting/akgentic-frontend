@@ -28,6 +28,43 @@ import { FeedbackComponent } from './feedback.component';
  */
 const REQUEST_PREVIEW_CHARS = 240;
 
+/**
+ * The longest rule-5 announcement that can still be a CAPTION.
+ *
+ * Rule 5 is "the system said something", and two very different things arrive
+ * under it: a three-word status line ("Team started"), and a team's WELCOME
+ * MESSAGE, which the catalog lets a deployment author as multi-paragraph
+ * markdown — "General Team" ships one. The divider treatment below (a centred
+ * caption between two hairlines) is built for the first and destroys the
+ * second: a flex row collapses its newlines, `white-space: nowrap` refuses to
+ * wrap it, and the overflow is simply clipped.
+ *
+ * WHY 80. The caption is one un-wrapped line inside a chat panel the user can
+ * narrow to a few hundred pixels (the pane is draggable). At the caption's
+ * 11.5px that is already about the most that fits in a comfortable panel, and
+ * far more than fits in a narrow one — past it the row is not "a long caption",
+ * it is a caption that is being cut off. The exact number is a judgement, but
+ * the SIDE it errs on is not: over-estimating truncates a team's welcome, while
+ * under-estimating shows a slightly-too-long status line as a small block,
+ * which loses nothing.
+ */
+const SYSTEM_CAPTION_MAX_CHARS = 80;
+
+/**
+ * Markdown, in text short enough to otherwise pass as a caption.
+ *
+ * A caption is INTERPOLATED — it has to be, since a divider is an inline row —
+ * so any markdown in it reaches the user as its own source. `**Welcome**` is
+ * eleven characters and would clear the length test comfortably. These markers
+ * are the ones that carry no meaning in a plain status line: a heading, an
+ * emphasis run, code, a quote, a link, or a leading list bullet.
+ *
+ * `-` is matched ONLY as a leading bullet: a hyphen mid-sentence is punctuation
+ * ("Team started - 3 agents"), and treating that as markdown would push
+ * ordinary announcements into the block treatment for nothing.
+ */
+const MARKDOWN_MARKERS = /[#*`>[\]]|^\s*[-+]\s/;
+
 @Component({
   selector: 'app-chat-message',
   standalone: true,
@@ -229,6 +266,36 @@ export class ChatMessageComponent {
    * — is how the answer starts differing between surfaces.
    */
   readonly rateable = computed(() => isRateable(this.message()));
+
+  /**
+   * Is this rule-5 message a CAPTION, or an announcement with a body?
+   *
+   * TWO SHAPES FOR ONE RULE, told apart once. "Team started" is chrome and gets
+   * the divider it was designed for. A team's welcome message is CONTENT — it
+   * is authored as markdown by the deployment, it is the first thing a user
+   * reads, and it arrived interpolated into a nowrap span inside a flex row:
+   * raw markup, newlines collapsed, clipped at the panel's edge. It gets a
+   * block that wraps and goes through the same `ngx-markdown` path every agent
+   * turn already uses.
+   *
+   * Three tests, all of them about whether the text CAN be a caption rather
+   * than about what the message means: a caption is one line (no newline), it
+   * is short (`SYSTEM_CAPTION_MAX_CHARS`), and it is plain (no markdown, which
+   * an interpolated caption would leak as source). Any of them failing is
+   * enough — a welcome fails all three, and anything that fails even one is
+   * something the divider cannot render honestly.
+   *
+   * Trimmed first, so a status line with a trailing newline — which the divider
+   * renders perfectly well — is not promoted to a block by whitespace alone.
+   */
+  readonly isSystemCaption = computed<boolean>(() => {
+    const text = (this.message().content ?? '').trim();
+    return (
+      !text.includes('\n') &&
+      text.length <= SYSTEM_CAPTION_MAX_CHARS &&
+      !MARKDOWN_MARKERS.test(text)
+    );
+  });
 
   /** True for the synthetic context-management markers (Epic 29 / ADR-010):
    *  rule 6 = compaction fold, rule 7 = clear line. */

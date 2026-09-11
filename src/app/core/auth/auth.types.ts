@@ -35,6 +35,24 @@ export interface Environment {
    * only route between teams hidden behind a control the user has not met.
    */
   initRailCollapsed?: boolean;
+  /**
+   * Inspector tabs this deployment does not want, by their `value`
+   * ('team', 'hierarchy', 'member', 'knowledge-graph', 'workspace',
+   * 'messages' — the ids in `inspector-tabs.registry.ts`).
+   *
+   * The framework ships every tab, because the framework does not know which
+   * ones a product wants to stand behind: sdworx presents a team as one
+   * assistant (see `hideAgentNames`), and a raw message log or a member-by-member
+   * inspector is a developer's view of that, not a customer's.
+   *
+   * OPTIONAL, like `initRailCollapsed` and for the same reason: it post-dates
+   * every `config.json` in the field, so its absence has to mean "show them
+   * all" rather than "show none". An id nobody recognises is ignored, and a
+   * list that would hide EVERY tab is ignored wholesale — see
+   * `visibleInspectorTabs`, which owns both rules so this is a declaration and
+   * not a second implementation of them.
+   */
+  hiddenInspectorTabs?: string[];
   userInputEnterKeySubmit: boolean;
   favicon: string;
   /**

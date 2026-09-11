@@ -151,7 +151,8 @@
     }
   },
   "messageList": {
-    "broadcast": "Tous",
+    "routeTo": "à",
+    "broadcast": "tout le monde",
     "relaunch": "Relancer (N/D)",
     "emptyTitle": "Aucun message à afficher",
     "emptyDesc": "Les messages échangés entre agents apparaîtront ici."
@@ -251,11 +252,21 @@
     "anonymous": "Anonyme"
   },
   "inspector": {
+    "trace": {
+      "args": "Arguments",
+      "result": "Résultat",
+      "model": "Modèle",
+      "contextWindow": "Fenêtre de contexte"
+    },
     "title": "Détails de l'équipe",
     "close": "Masquer les détails",
     "moveLeft": "Déplacer les détails à gauche",
     "moveRight": "Déplacer les détails à droite",
     "tablist": "Sections des détails de l'équipe",
+    "narrow": {
+      "title": "Ce panneau manque de place",
+      "blurb": "Faites glisser la séparation pour élargir le panneau, ou repliez la liste des équipes. Les autres sections tiennent ici."
+    },
     "human": "@Humain",
     "humanSub": "Vous · Équipe {{team}}",
     "role": {

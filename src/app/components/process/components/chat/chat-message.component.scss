@@ -556,3 +556,53 @@
   font-weight: 300;
   white-space: nowrap;
 }
+
+/*
+ * THE SAME ANNOUNCEMENT WHEN IT HAS A BODY.
+ *
+ * A team's welcome message arrives on rule 5 like "Team started" does, but it
+ * is prose — authored as markdown, often several paragraphs. The rule above
+ * cannot hold it: `.system-rule` is a flex row (newlines collapse), its label
+ * is `nowrap` (no wrapping), and it is interpolated (markdown shown as source).
+ * Everything here is the negation of one of those three.
+ *
+ * The MARKER palette, not the bubble's. `--akg-marker-bg` / `--akg-marker-border`
+ * are what rules 6 and 7 already use for "the transcript's own chrome", which is
+ * exactly what this is — the alternative, borrowing the turn bubble, would make
+ * the system look like a participant with the loudest opening line on the page.
+ * A solid border rather than the marker's dashed one: dashed says "a fold you
+ * can open", and there is nothing folded here.
+ *
+ * No `max-height`. The compaction summary is capped because it is a machine
+ * digest nobody reads in full; a welcome is addressed to the reader, and a
+ * welcome you have to scroll inside a box is the clipping bug with a scrollbar.
+ */
+.system-announcement {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--akg-marker-border);
+  border-radius: var(--akg-card-radius);
+  background-color: var(--akg-marker-bg);
+  color: var(--akg-text);
+  font-size: var(--akg-turn-font-size);
+  line-height: var(--akg-turn-line-height);
+  /* An unbroken URL or token in a welcome must not push the block past the
+     reading column — the same guard the user's own turn carries. */
+  overflow-wrap: anywhere;
+}
+
+/* The block IS the body, so the 4px that separates a turn's prose from the
+   sender's name above it has nothing to separate here. */
+.system-announcement .markdown-content {
+  margin-top: 0;
+}
+
+/* ngx-markdown's first and last block carry their own margins, which would
+   read as uneven padding against the box. */
+:host ::ng-deep .system-announcement .markdown-content > markdown > *:first-child {
+  margin-top: 0;
+}
+
+:host ::ng-deep .system-announcement .markdown-content > markdown > *:last-child {
+  margin-bottom: 0;
+}

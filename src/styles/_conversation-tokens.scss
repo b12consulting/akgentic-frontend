@@ -511,4 +511,79 @@
   // so a deep tree stops indenting instead of marching off the side of a 310px
   // pane.
   --akg-member-indent: 16px;
+
+  // --- The hierarchy graph ------------------------------------------------
+  //
+  // WHY THE GRAPH NEEDS TOKENS OF ITS OWN, AND WHY THEY ARE READ FROM
+  // JAVASCRIPT RATHER THAN FROM CSS.
+  //
+  // echarts draws the hierarchy tab onto a CANVAS. A canvas has no cascade and
+  // no `var()`: a fill of `"var(--akg-accent-fg)"` is not an unknown colour to
+  // it, it is an unparseable string. So the component RESOLVES these names
+  // through `getComputedStyle` and hands echarts the literal — which is why
+  // `graphCategoryColors()` lives beside the service that owns the legend, and
+  // why `graph.component.spec.ts` asserts that no colour reaching the canvas is
+  // still a `var(...)` string. The one place `var()` does work is the tooltip,
+  // which echarts renders as real DOM.
+  //
+  // Until this block existed the graph carried ten raw hexes in
+  // `category.service.ts` — a cool blue-grey ramp (`#6A9BB6`, `#fac858`,
+  // `#ee6666`, …) lifted from an echarts sample. Against this warm neutral
+  // console it read as a screenshot of a different application, and no
+  // rebrand could reach it.
+
+  // THE CATEGORICAL RAMP. One stop per squad, assigned in discovery order.
+  //
+  // TEN SEPARATE VALUES, NOT TEN TINTS OF THE ACCENT. A categorical ramp's
+  // entire job is telling categories apart; collapsing it onto one hue would
+  // make the legend decorative. The constraint it is built to is therefore
+  // TWO-SIDED, and both sides are measured in `category.service.spec.ts`:
+  //   - every stop clears 3:1 on `--akg-panel-bg`, the inspector's ground, as
+  //     a meaningful non-text mark under WCAG 1.4.11. They all in fact clear
+  //     4.5:1 (worst case 4.86), so a stop is also safe to set type in;
+  //   - every PAIR is at least 25 apart in CIE76 ΔE, so no two squads read as
+  //     the same colour. The measured minimum is 25.1, between 6 and 8.
+  //
+  // DELIBERATELY NOT ALIASED to `--akg-accent-fg` / `--akg-tool-accent` /
+  // `--akg-danger-fg`, even where a value coincides. An alias would let a
+  // rebrand move one stop onto another and silently destroy the separation
+  // this ramp exists for — and stop 1 matching the accent today is a
+  // coincidence worth keeping, not a dependency worth creating.
+  //
+  // NO RED, and that is the reason there are two purples and a rose instead.
+  // `graph.selector.ts` paints a node that has ERRORED red. A squad that
+  // happened to draw the red stop would be indistinguishable from a failure,
+  // and "this agent is broken" is the one thing on this canvas that must never
+  // be ambiguous.
+  --akg-graph-category-1: #005d46;
+  --akg-graph-category-2: #6434da;
+  --akg-graph-category-3: #1f4fa8;
+  --akg-graph-category-4: #8a5b00;
+  --akg-graph-category-5: #a32a7a;
+  --akg-graph-category-6: #00707e;
+  --akg-graph-category-7: #55701a;
+  --akg-graph-category-8: #42506b;
+  --akg-graph-category-9: #c2185b;
+  --akg-graph-category-10: #8a5f4a;
+
+  // The ground the canvas is drawn ON. It is `--akg-panel-bg` because that is
+  // what the inspector paints behind it, and the graph needs the value as a
+  // COLOUR rather than as a backdrop: nodes carry a ring of it so two
+  // overlapping squares still read as two, and labels carry a halo of it so a
+  // name crossing an edge stays legible. Both are cut-outs, and a cut-out that
+  // does not match its ground is a visible outline.
+  --akg-graph-ground: var(--akg-panel-bg);
+
+  // The message arrows. `--akg-glyph-quiet` is already the palette's "present
+  // but not speaking" tone and measures 3.26:1 on the ground above, which is
+  // the 1.4.11 bar for a mark that carries meaning — and these do: an edge is
+  // the only thing on the canvas that says who talked to whom. echarts'
+  // untouched default here is `#aaa`, a cool grey, and it was one of the two
+  // reasons the graph read as foreign.
+  --akg-graph-edge: var(--akg-glyph-quiet);
+
+  // The agent names. Full-strength `--akg-text`, not the muted step: on this
+  // canvas the name IS the content, and there is no heading above it for the
+  // muted tone to be quiet relative to.
+  --akg-graph-label: var(--akg-text);
 }

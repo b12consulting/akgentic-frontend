@@ -4,7 +4,7 @@
   that button reveals. Renaming it silently breaks that link, since nothing
   errors when `aria-controls` names an element that does not exist.
 -->
-<aside id="console-inspector" class="inspector">
+<aside #inspectorFrame id="console-inspector" class="inspector">
   <div class="inspector__title">
     <span class="inspector__title-text">{{ 'inspector.title' | translate }}</span>
     <span class="inspector__title-spacer"></span>
@@ -56,7 +56,42 @@
     (modeChange)="modeChange.emit($event)"
   ></app-inspector-tabs>
 
-  <div class="inspector__body">
+  <!--
+    W17. Below `INSPECTOR_NARROW_MAX_PX` the panels that need two dimensions
+    (hierarchy, knowledge graph, workspaces — `needsRoom` in the registry) are
+    REPLACED by a sentence, not overlaid with one. An overlay over a drawing
+    nobody can read is how "No agents available" printed over a full graph
+    stayed invisible for a release.
+
+    The strip above stays live, so the way out is never only "drag the
+    divider": the three panels that read fine narrow are one click away.
+
+    It reuses `app-inspector-empty-state` rather than growing a second centred
+    glyph-and-sentence layout. Five panels already draw their own empty
+    reasons through it, and "there is no room to draw this" is one more reason
+    a pane can have nothing to show.
+  -->
+  @if (showNarrowNotice) {
+    <div class="inspector__narrow" data-test="inspector-narrow-notice">
+      <app-inspector-empty-state
+        titleKey="inspector.narrow.title"
+        blurbKey="inspector.narrow.blurb"
+      ></app-inspector-empty-state>
+    </div>
+  }
+
+  <!--
+    `inert` AS WELL AS the class that hides it. The class is a CSS fact and
+    `display: none` does take the panels off the a11y tree — but the stylesheet
+    is not what a keyboard user's focus obeys in a component whose styles could
+    be overridden by a deployment, and the panels behind it hold a file tree
+    and a graph's controls. One of the two is a promise; the other is a paint.
+  -->
+  <div
+    class="inspector__body"
+    [class.inspector__body--replaced]="showNarrowNotice"
+    [attr.inert]="showNarrowNotice ? '' : null"
+  >
     <ng-content></ng-content>
   </div>
 </aside>

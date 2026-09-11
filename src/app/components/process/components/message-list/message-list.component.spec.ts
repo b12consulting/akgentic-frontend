@@ -8,7 +8,12 @@ import { MessageListComponent } from './message-list.component';
 import { MessageLogService } from '../../event/message-log.service';
 import { AkgenticMessage, SentMessage } from '../../../../protocol/message.types';
 
-import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
+import { CategoryService } from '../../../../core/ui/category.service';
+
+import {
+  provideTranslateTesting,
+  setTestTranslations,
+} from '../../../../../testing/i18n-testing';
 
 // ---------------------------------------------------------------------------
 // Fixture helpers
@@ -144,12 +149,45 @@ function notification(
   } as unknown as AkgenticMessage;
 }
 
-/** The three severity colours, declared once (AC #7). */
-const NOTIFICATION_COLORS = {
-  error: 'rgb(169, 68, 66)',
-  warn: 'rgb(138, 109, 59)',
-  info: 'rgb(49, 112, 143)',
+/**
+ * The three severity colours, READ FROM THE PALETTE rather than restated here.
+ *
+ * UPDATED THIS ROUND, deliberately. It used to pin three rgb literals —
+ * `rgb(169, 68, 66)` / `rgb(138, 109, 59)` / `rgb(49, 112, 143)` — which were
+ * the component's own `--akg-error-color` / `--akg-warning-color` /
+ * `--akg-notification-color`, three hexes declared on `:host` where
+ * `token-contrast.spec.ts` (which reads `:root`) could not see them and where a
+ * deployment re-pointing the palette could not move them. The panel now paints
+ * from `--akg-danger-fg` / `--akg-attention-fg` / `--akg-accent-fg`, all three
+ * of which that spec already measures against every declared ground.
+ *
+ * The ASSERTION is unchanged in strength: each severity still has to resolve to
+ * one specific, named colour, and the three still have to differ. What changed
+ * is WHICH colour — so the expectation names the token instead of transcribing
+ * its value, which is the only way this spec stops needing an edit every time
+ * the palette moves while still failing if a severity is wired to the wrong
+ * token.
+ */
+const SEVERITY_TOKEN = {
+  error: '--akg-danger-fg',
+  warn: '--akg-attention-fg',
+  info: '--akg-accent-fg',
 } as const;
+
+/** A `:root` custom property's value, as the browser resolves it. */
+function tokenColor(token: string): string {
+  const probe = document.createElement('span');
+  probe.style.color = `var(${token})`;
+  document.body.appendChild(probe);
+  const resolved = getComputedStyle(probe).color;
+  probe.remove();
+  return resolved;
+}
+
+/** The expected computed colour of a severity body. */
+function severityColor(severity: keyof typeof SEVERITY_TOKEN): string {
+  return tokenColor(SEVERITY_TOKEN[severity]);
+}
 
 describe('MessageListComponent (Story 2.6, AC8)', () => {
   let component: MessageListComponent;
@@ -349,9 +387,19 @@ describe('MessageListComponent notification rendering (Story 31-2)', () => {
     return el!;
   }
 
-  function legendTextOf(host: HTMLElement): string {
-    const el = host.querySelector<HTMLElement>('.p-fieldset-legend');
-    expect(el).withContext('no .p-fieldset-legend rendered').toBeTruthy();
+  /**
+ * The severity label of the rendered row.
+ *
+ * UPDATED THIS ROUND: the selector moved from `.p-fieldset-legend` to
+ * `.row-legend`. The panel no longer draws a PrimeNG `<p-fieldset>` — an
+ * outlined box around every notification, in a stream whose other lines had no
+ * outline — and renders the legend as the console's own micro-label instead.
+ * Every assertion that uses this helper is untouched, including the one that
+ * requires an EMPTY legend to still be an element (NFR2).
+ */
+function legendTextOf(host: HTMLElement): string {
+    const el = host.querySelector<HTMLElement>('.row-legend');
+    expect(el).withContext('no .row-legend rendered').toBeTruthy();
     return (el!.textContent ?? '').trim();
   }
 
@@ -413,19 +461,31 @@ describe('MessageListComponent notification rendering (Story 31-2)', () => {
 
   // --- computed colour, one spec per severity (AC #7) ----------------------
 
-  it('renders an ErrorMessage body in pastel red', () => {
+  it('paints an ErrorMessage body in the palette\'s danger colour', () => {
     const host = renderOne(notification('e1', 'ErrorMessage', 'RuntimeError', 'boom'));
-    expect(getComputedStyle(bodyOf(host)).color).toBe(NOTIFICATION_COLORS.error);
+    expect(getComputedStyle(bodyOf(host)).color).toBe(severityColor('error'));
   });
 
-  it('renders a WarningMessage body in pastel yellow', () => {
+  it('paints a WarningMessage body in the palette\'s attention colour', () => {
     const host = renderOne(notification('w1', 'WarningMessage', null, 'careful'));
-    expect(getComputedStyle(bodyOf(host)).color).toBe(NOTIFICATION_COLORS.warn);
+    expect(getComputedStyle(bodyOf(host)).color).toBe(severityColor('warn'));
   });
 
-  it('renders a bare NotificationMessage body in pastel blue', () => {
+  it('paints a bare NotificationMessage body in the palette\'s accent', () => {
     const host = renderOne(notification('n1', 'NotificationMessage', null, 'fyi'));
-    expect(getComputedStyle(bodyOf(host)).color).toBe(NOTIFICATION_COLORS.info);
+    expect(getComputedStyle(bodyOf(host)).color).toBe(severityColor('info'));
+  });
+
+  // The three must still be TELLING APART, which is the whole job of a severity
+  // ramp — a palette refactor that collapsed two of them onto one token would
+  // satisfy every assertion above and destroy the feature.
+  it('keeps the three severities visually distinct from one another', () => {
+    const painted = new Set([
+      severityColor('error'),
+      severityColor('warn'),
+      severityColor('info'),
+    ]);
+    expect(painted.size).toBe(3);
   });
 
   // --- rendered values, not mere presence (AC #8) --------------------------
@@ -435,6 +495,34 @@ describe('MessageListComponent notification rendering (Story 31-2)', () => {
       notification('e1', 'ErrorMessage', 'RuntimeError', 'kaboom happened'),
     );
     expect(bodyOf(host).textContent).toBe('kaboom happened');
+  });
+
+  it('shows a notification body as TEXT, markup and all', () => {
+    // This branch used to be `[innerHTML]="message.content"`. `content` is
+    // typed `string` on all three notification models (`message.types.ts`) —
+    // there is no markup contract on it — and the strings that arrive are
+    // backend error text, which routinely contains angle brackets it did not
+    // mean as tags: a Python `TypeError: expected <class 'Foo'>` lost the type
+    // name entirely, because the browser parsed it as an unknown element.
+    //
+    // The same sink is also how model output reaches the DOM as markup, since
+    // an error message commonly quotes what the model produced. Pinned here so
+    // that "render it as HTML" is a decision someone has to take against a
+    // failing spec rather than a convenience someone restores.
+    const host = renderOne(
+      notification(
+        'e1',
+        'ErrorMessage',
+        'TypeError',
+        "expected <class 'Foo'>, got <b>bar</b>",
+      ),
+    );
+    expect(bodyOf(host).textContent).toBe(
+      "expected <class 'Foo'>, got <b>bar</b>",
+    );
+    expect(bodyOf(host).querySelector('b'))
+      .withContext('the body is text, not parsed markup')
+      .toBeNull();
   });
 
   it('renders a non-null error content_type as the legend, capitalized', () => {
@@ -644,7 +732,267 @@ describe('MessageListComponent row padding (Story 31-6)', () => {
     const host = fixture.nativeElement as HTMLElement;
     const body = host.querySelector<HTMLElement>('.text-container')!;
     expect(body.className).toContain('notification-body--warn');
-    expect(getComputedStyle(body).color).toBe(NOTIFICATION_COLORS.warn);
+    expect(getComputedStyle(body).color).toBe(severityColor('warn'));
     expect(component).toBeTruthy();
   });
 });
+
+// ---------------------------------------------------------------------------
+// W16 — the Messages tab, redesigned as THE RAW LOG
+//
+// The tab was considered for removal and deliberately kept: it is the only
+// place every message appears in one chronological stream, and the sub-agent
+// reader is per-participant. These specs pin the three things that follow from
+// calling it a log rather than a table of cards — a stamp, a route that reads
+// as a sentence, and a body that is quoted rather than re-rendered — plus the
+// one copy control per line that makes a log usable.
+// ---------------------------------------------------------------------------
+
+describe('MessageListComponent as the raw log (W16)', () => {
+  let component: MessageListComponent;
+  let fixture: ComponentFixture<MessageListComponent>;
+  let log: MessageLogService;
+  let categories: CategoryService;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [MessageListComponent, NoopAnimationsModule],
+      providers: [
+        provideTranslateTesting(),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        MessageService,
+        MessageLogService,
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(MessageListComponent);
+    component = fixture.componentInstance;
+    log = TestBed.inject(MessageLogService);
+    categories = TestBed.inject(CategoryService);
+    // Synthetic, never the shipped copy: the assertions below are about the
+    // preposition and the broadcast word REACHING the line, and the no-op
+    // loader would echo the bare key for both whether they did or not.
+    setTestTranslations({
+      messageList: { routeTo: '<<to>>', broadcast: '<<everyone>>' },
+    });
+  });
+
+  function render(...msgs: AkgenticMessage[]): HTMLElement {
+    log.appendAll(msgs);
+    fixture.detectChanges();
+    return fixture.nativeElement as HTMLElement;
+  }
+
+  /** Collapse the whitespace the template's line breaks introduce. */
+  function prose(el: Element | null): string {
+    return (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
+  }
+
+  // --- the stamp -----------------------------------------------------------
+
+  describe('stamps every line', () => {
+    it('renders the wall-clock time of the message, scannable and zero-padded', () => {
+      const host = render(workerSent('s1') as AkgenticMessage);
+
+      const stamp = host.querySelector<HTMLElement>('.log-time');
+      expect(stamp).withContext('no timestamp on the line').not.toBeNull();
+      // The fixture is an ISO instant; the panel renders it in the reader's own
+      // zone, so the DIGITS are not predictable but the SHAPE is — and the
+      // shape is the point: a column that lines up under itself.
+      expect(stamp!.textContent!.trim()).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+    });
+
+    it('carries the full instant in `datetime`, for anything that reads the DOM', () => {
+      const host = render(workerSent('s1') as AkgenticMessage);
+
+      expect(
+        host.querySelector('.log-time')!.getAttribute('datetime'),
+      ).toBe('2026-05-18T00:00:00Z');
+    });
+
+    it('shows no stamp rather than "Invalid Date" for an unreadable timestamp', () => {
+      const broken = workerSent('s1') as AkgenticMessage;
+      (broken as { timestamp: string }).timestamp = 'not-a-date';
+
+      const host = render(broken);
+      expect(host.querySelector('.log-time')!.textContent!.trim()).toBe('');
+    });
+  });
+
+  // --- the route, as prose -------------------------------------------------
+
+  describe('reads the route as a sentence', () => {
+    it('joins sender and recipient with a TRANSLATED preposition, not an arrow', () => {
+      const host = render(workerSent('s1') as AkgenticMessage);
+
+      // The whole line, in order. `◼︎ @Worker ➔ ◼︎ @Manager` cannot satisfy this:
+      // the connector has to come out of the locale files.
+      expect(prose(host.querySelector('.log-route'))).toBe(
+        '@Worker <<to>> @Manager',
+      );
+    });
+
+    it('names the broadcast case in words rather than leaving it blank', () => {
+      // A notification carries no recipient — the case that used to render as
+      // the bare `messageList.broadcast` label with no preposition in front.
+      const host = render(notification('n1', 'NotificationMessage', null, 'fyi'));
+
+      expect(prose(host.querySelector('.log-route'))).toBe(
+        '@Worker <<to>> <<everyone>>',
+      );
+    });
+
+    it('draws one dot for a broadcast and two for a directed message', () => {
+      const host = render(
+        workerSent('s1') as AkgenticMessage,
+        notification('n1', 'NotificationMessage', null, 'fyi'),
+      );
+
+      const rows = Array.from(host.querySelectorAll('.message-card'));
+      expect(rows.length).toBe(2);
+      expect(rows[0].querySelectorAll('.route-dot').length)
+        .withContext('sender and recipient')
+        .toBe(2);
+      expect(rows[1].querySelectorAll('.route-dot').length)
+        .withContext('"everyone" is a description, not a party with a node')
+        .toBe(1);
+    });
+  });
+
+  // --- the dot ties the line back to the graph -----------------------------
+
+  describe('ties each party to its node in the hierarchy graph', () => {
+    it('paints the dot in the colour the graph draws that agent in', () => {
+      // The same array the graph itself renders from, so a line's dot and its
+      // node cannot disagree.
+      categories.nodes = [
+        { name: 'worker-1', category: 2 },
+        { name: 'manager-1', category: 0 },
+      ];
+
+      const host = render(workerSent('s1') as AkgenticMessage);
+      const dots = host.querySelectorAll<HTMLElement>('.route-dot');
+
+      expect(dots.length).toBe(2);
+      expect(dots[0].style.backgroundColor)
+        .withContext('sender dot')
+        .toBe(toRgb(categories.COLORS[2]));
+      expect(dots[1].style.backgroundColor)
+        .withContext('recipient dot')
+        .toBe(toRgb(categories.COLORS[0]));
+    });
+
+    it('leaves the dot to the stylesheet when the graph has not placed the agent', () => {
+      // A line can arrive before its agent's node exists (or after it stops).
+      // No inline colour means the neutral `--akg-dot-idle` shows through,
+      // rather than the line borrowing whichever category happens to be first.
+      categories.nodes = [];
+
+      const host = render(workerSent('s1') as AkgenticMessage);
+      for (const dot of Array.from(
+        host.querySelectorAll<HTMLElement>('.route-dot'),
+      )) {
+        expect(dot.style.backgroundColor).toBe('');
+      }
+    });
+  });
+
+  // --- the body is QUOTED, not re-rendered ---------------------------------
+
+  describe('quotes the payload instead of re-rendering it', () => {
+    it('renders markup in a message as the characters that were sent', () => {
+      const msg = workerSent('s1') as SentMessage;
+      (msg.message as { content: string }).content =
+        '<b>not bold</b> & <script>x</script>';
+
+      const host = render(msg as AkgenticMessage);
+      const body = host.querySelector<HTMLElement>('.text-container')!;
+
+      // `[innerHTML]` parsed this: the <b> became an element and the text lost
+      // its tags. A log that re-renders what it is quoting is not quoting it.
+      expect(body.querySelector('b')).withContext('markup was parsed').toBeNull();
+      expect(body.textContent).toBe('<b>not bold</b> & <script>x</script>');
+    });
+
+    it('does the same on the notification branch', () => {
+      const host = render(
+        notification('e1', 'ErrorMessage', 'RuntimeError', '<i>boom</i>'),
+      );
+      const body = host.querySelector<HTMLElement>('.text-container')!;
+
+      expect(body.querySelector('i')).toBeNull();
+      expect(body.textContent).toBe('<i>boom</i>');
+    });
+
+    it('keeps the newlines a multi-line payload depends on', () => {
+      const msg = workerSent('s1') as SentMessage;
+      (msg.message as { content: string }).content = 'first\n\nsecond';
+
+      const host = render(msg as AkgenticMessage);
+      const body = host.querySelector<HTMLElement>('.text-container')!;
+
+      expect(body.textContent).toBe('first\n\nsecond');
+      // Without this the two paragraphs collapse onto one line, which is what
+      // made a long payload unreadable here.
+      expect(getComputedStyle(body).whiteSpace).toBe('pre-wrap');
+    });
+  });
+
+  // --- one copy control per line -------------------------------------------
+
+  describe('offers one copy control per line', () => {
+    it('copies the payload of an ordinary message', () => {
+      const copy = spyOn(component.utilService, 'copyToClipboard');
+      const host = render(workerSent('s1') as AkgenticMessage);
+
+      host.querySelector<HTMLElement>('.log-copy')!.click();
+      expect(copy).toHaveBeenCalledOnceWith('ordinary message');
+    });
+
+    it('copies the body of a notification, which had no copy control at all', () => {
+      const copy = spyOn(component.utilService, 'copyToClipboard');
+      const host = render(notification('e1', 'ErrorMessage', null, 'kaboom'));
+
+      const control = host.querySelector<HTMLElement>('.log-copy');
+      expect(control).withContext('no copy control on a notification').not.toBeNull();
+      control!.click();
+      expect(copy).toHaveBeenCalledOnceWith('kaboom');
+    });
+
+    it('yields the empty string rather than throwing for a row with no text', () => {
+      expect(component.copyableText({})).toBe('');
+      expect(component.copyableText(undefined)).toBe('');
+    });
+  });
+
+  // --- the panel paints from the palette, not from private hexes -----------
+
+  it('declares no private severity palette of its own', () => {
+    const host = render(notification('w1', 'WarningMessage', null, 'careful'));
+    const card = host.querySelector<HTMLElement>('.message-card')!;
+
+    // These three were declared on `:host` — outside `:root`, so
+    // `token-contrast.spec.ts` never measured them, and outside the reach of a
+    // deployment re-pointing the palette.
+    for (const dead of [
+      '--akg-error-color',
+      '--akg-warning-color',
+      '--akg-notification-color',
+    ]) {
+      expect(getComputedStyle(card).getPropertyValue(dead).trim())
+        .withContext(dead)
+        .toBe('');
+    }
+  });
+});
+
+/** A hex as the browser reports it back from a computed style. */
+function toRgb(color: string): string {
+  const probe = document.createElement('span');
+  probe.style.backgroundColor = color;
+  document.body.appendChild(probe);
+  const resolved = getComputedStyle(probe).backgroundColor;
+  probe.remove();
+  return resolved;
+}

@@ -77,6 +77,25 @@ function nsSummary(
   return summary;
 }
 
+/**
+ * The same fixture, but a namespace the catalog says a team can be MADE from.
+ *
+ * `nsSummary` yields `team: false`, which is right for most of this file — the
+ * dropdown is a namespace picker and libraries belong in it. It is wrong for
+ * any spec about CREATING, and W19a is the bug that came of the two being the
+ * same fixture: the gesture-less hideHome route was pinned creating from a
+ * namespace named "Agent Team" that the catalog reported was not a team type.
+ * The specs below say what they mean now.
+ */
+function teamSummary(
+  namespace: string,
+  name: string,
+  description: string,
+  teamMetadata?: TeamMetadataContract | null,
+): NamespaceSummary {
+  return { ...nsSummary(namespace, name, description, teamMetadata), team: true };
+}
+
 /** One declared field; all four properties are always present on the wire. */
 function field(
   key: string,
@@ -1727,11 +1746,11 @@ describe('HomeComponent', () => {
       // clears it to null and the create branch has no namespace to use).
       apiSpy.getNamespaces.and.returnValue(
         Promise.resolve([
-          nsSummary('agent-team-v1', 'Agent Team', 'd'),
+          teamSummary('agent-team-v1', 'Agent Team', 'd'),
         ]),
       );
       component.selectedNamespace$.next(
-        nsSummary('agent-team-v1', 'Agent Team', 'd'),
+        teamSummary('agent-team-v1', 'Agent Team', 'd'),
       );
       // Seed an EMPTY page so the create branch runs.
       contextSpy.loadTeamsPage.and.callFake(async () => {
@@ -1749,16 +1768,67 @@ describe('HomeComponent', () => {
       );
     });
 
+    // W19a, the half of it that lives here. The wizard was fixed by routing its
+    // fetch through `TeamTypeCatalog`; THIS route never fetches — it creates
+    // from whatever the management dropdown happens to be showing, and that
+    // dropdown legitimately lists libraries (#350 sections them under
+    // "Library"). With no user gesture in the loop there is nobody to notice it
+    // picked one, which is what makes this the worse of the two surfaces.
+    it('never auto-creates from a LIBRARY namespace, and falls back to a real team type', async () => {
+      const library = nsSummary('global-library', 'Global Library', 'd');
+      const team = teamSummary('agent-team-v1', 'Agent Team', 'd');
+      apiSpy.getNamespaces.and.returnValue(Promise.resolve([library, team]));
+      // The selection a `restoreNamespace` from the URL, or the user's last
+      // pick in the picker, could perfectly well leave behind.
+      component.selectedNamespace$.next(library);
+      contextSpy.loadTeamsPage.and.callFake(async () => {
+        teams$.next([]);
+        return { teams: [], total_count: 0 };
+      });
+
+      const init = component.ngOnInit();
+      await component.loadPage({ first: 0, rows: 250 });
+      await init;
+
+      expect(contextSpy.createTeam).not.toHaveBeenCalledWith(
+        'global-library',
+        jasmine.anything(),
+      );
+      expect(contextSpy.createTeam).toHaveBeenCalledOnceWith(
+        'agent-team-v1',
+        undefined,
+      );
+    });
+
+    // The other side of the same rule: when there is no team type to fall back
+    // to, the route creates NOTHING rather than creating the wrong thing. A
+    // library-only deployment gets an empty page, which is honest.
+    it('creates nothing at all when the catalog offers no team type', async () => {
+      const library = nsSummary('global-library', 'Global Library', 'd');
+      apiSpy.getNamespaces.and.returnValue(Promise.resolve([library]));
+      component.selectedNamespace$.next(library);
+      contextSpy.loadTeamsPage.and.callFake(async () => {
+        teams$.next([]);
+        return { teams: [], total_count: 0 };
+      });
+
+      const init = component.ngOnInit();
+      await component.loadPage({ first: 0, rows: 250 });
+      await init;
+
+      expect(contextSpy.createTeam).not.toHaveBeenCalled();
+    });
+
     it('(Epic 52) hideHome STILL ROUTES a created team to the full-page view', async () => {
       // Not an exception to "open beside the list" but the same rule applied:
       // with `hideHome` on there IS no list to sit beside, so the full-page view
       // is the only place the new team can appear. Dropping this branch would
       // leave the auto-create route selecting a team on a page nobody sees.
       apiSpy.getNamespaces.and.returnValue(
-        Promise.resolve([nsSummary('agent-team-v1', 'Agent Team', 'd')]),
+        Promise.resolve([teamSummary('agent-team-v1', 'Agent Team', 'd')]),
       );
       component.selectedNamespace$.next(
-        nsSummary('agent-team-v1', 'Agent Team', 'd'),
+        teamSummary('agent-team-v1', 'Agent Team', 'd'),
       );
       contextSpy.loadTeamsPage.and.callFake(async () => {
         teams$.next([]);
@@ -2148,7 +2218,7 @@ describe('HomeComponent', () => {
       // The whole reason the gesture-less route gates. Nobody pressed anything,
       // so a mandatory field skipped here is skipped in silence.
       apiSpy.getNamespaces.and.returnValue(
-        Promise.resolve([nsSummary('acme-cases', 'Acme Cases', 'd', asking)]),
+        Promise.resolve([teamSummary('acme-cases', 'Acme Cases', 'd', asking)]),
       );
       contextSpy.createTeam.calls.reset();
 
@@ -2162,7 +2232,7 @@ describe('HomeComponent', () => {
 
     it('(AC15) a selection that asks NOTHING creates and navigates with (namespace, undefined)', async () => {
       apiSpy.getNamespaces.and.returnValue(
-        Promise.resolve([nsSummary('agent-team-v1', 'Agent Team', 'd')]),
+        Promise.resolve([teamSummary('agent-team-v1', 'Agent Team', 'd')]),
       );
       contextSpy.createTeam.calls.reset();
 
@@ -2181,7 +2251,7 @@ describe('HomeComponent', () => {
       // so an end-state assertion would pass on a route wrongly marked
       // `'gesture'`.
       apiSpy.getNamespaces.and.returnValue(
-        Promise.resolve([nsSummary('agent-team-v1', 'Agent Team', 'd')]),
+        Promise.resolve([teamSummary('agent-team-v1', 'Agent Team', 'd')]),
       );
       let release: () => void = () => undefined;
       contextSpy.createTeam.and.returnValue(
@@ -2205,7 +2275,7 @@ describe('HomeComponent', () => {
 
     it('(AC15) a gated arrival never spins the Create button either', async () => {
       apiSpy.getNamespaces.and.returnValue(
-        Promise.resolve([nsSummary('acme-cases', 'Acme Cases', 'd', asking)]),
+        Promise.resolve([teamSummary('acme-cases', 'Acme Cases', 'd', asking)]),
       );
 
       await arriveOnTheRoute();
@@ -2216,7 +2286,7 @@ describe('HomeComponent', () => {
 
     it('(AC15) confirming from the gesture-less route creates and navigates', async () => {
       apiSpy.getNamespaces.and.returnValue(
-        Promise.resolve([nsSummary('acme-cases', 'Acme Cases', 'd', asking)]),
+        Promise.resolve([teamSummary('acme-cases', 'Acme Cases', 'd', asking)]),
       );
 
       await arriveOnTheRoute();
@@ -2240,7 +2310,7 @@ describe('HomeComponent', () => {
 
     it('(AC15) cancelling from the gesture-less route creates nothing', async () => {
       apiSpy.getNamespaces.and.returnValue(
-        Promise.resolve([nsSummary('acme-cases', 'Acme Cases', 'd', asking)]),
+        Promise.resolve([teamSummary('acme-cases', 'Acme Cases', 'd', asking)]),
       );
 
       await arriveOnTheRoute();
