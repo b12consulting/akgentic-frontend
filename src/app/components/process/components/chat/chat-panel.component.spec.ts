@@ -334,21 +334,47 @@ describe('ChatPanelComponent', () => {
       expect(component.readerVisible).toBe(true);
     });
 
+    function graphNode(name: string, actorName: string, role = 'Worker'): NodeInterface {
+      return {
+        name,
+        role,
+        actorName,
+        parentId: '',
+        squadId: 'squad-1',
+        symbol: 'roundRect',
+        category: 0,
+        userMessage: false,
+      };
+    }
+
+    // UPDATED, deliberately: this asserted `toBe(nodes)` — the reader's list was
+    // the graph's array by IDENTITY. It no longer can be, because tools are now
+    // filtered out of it, and a filter returns a new array. The rule the test
+    // was really protecting ("no second source of truth about who is on the
+    // team") still holds and is still asserted: the CONTENT comes from the
+    // graph nodes and nothing else.
     it('takes its agent list from the graph nodes, not a list of its own', () => {
+      const nodes: NodeInterface[] = [graphNode('mgr-1', '@Manager', 'Manager')];
+      nodesSubject.next(nodes);
+      expect(component.readerAgents).toEqual(nodes);
+    });
+
+    it('OFFERS ONLY AGENTS — tools are not readable', () => {
+      // `#VectorStore` has no conversation to open and no inbox to send to, so
+      // a row for it in the reader can only disappoint. The graph still draws
+      // it; the reader does not offer it.
       const nodes: NodeInterface[] = [
-        {
-          name: 'mgr-1',
-          role: 'Manager',
-          actorName: '@Manager',
-          parentId: '',
-          squadId: 'squad-1',
-          symbol: 'roundRect',
-          category: 0,
-          userMessage: false,
-        },
+        graphNode('mgr-1', '@Manager', 'Manager'),
+        graphNode('vs-1', '#VectorStore', 'Tool'),
+        graphNode('kg-1', '#KnowledgeGraphTool', 'Tool'),
+        graphNode('exp-1', '@Expert'),
       ];
       nodesSubject.next(nodes);
-      expect(component.readerAgents).toBe(nodes);
+
+      expect(component.readerAgents.map((a) => a.actorName)).toEqual([
+        '@Manager',
+        '@Expert',
+      ]);
     });
 
     it('follows the app selection rather than keeping its own', () => {

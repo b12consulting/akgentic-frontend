@@ -26,6 +26,7 @@ import { ChatService, ThinkingState } from '../../selectors/chat.selector';
 import { IngestionService } from '../../event/ingestion.service';
 import { ContextService } from '../../../../core/context/context.service';
 import { AkgentService } from '../../../../core/ui/akgent.service';
+import { isToolActor } from '../../selectors/actor-kind';
 import { GraphDataService } from '../../selectors/graph.selector';
 import { NodeInterface } from '../../models/types';
 import { Selectable, SelectionService } from '../../ui-state/selection.service';
@@ -205,7 +206,14 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     // truth about who is on the team), and its selected agent IS the app's.
     this.readerSubscriptions.add(
       this.graphDataService.nodes$.subscribe((nodes) => {
-        this.readerAgents = nodes;
+        // TOOLS ARE NOT READABLE. The graph's node list is everything on the
+        // team — agents, the human, and the tools that back them — because the
+        // drawing needs all of it. The reader does not: `#VectorStore` has no
+        // conversation to open and no inbox to send to, so offering it is a row
+        // that can only disappoint. The rule lives in `isToolActor` rather than
+        // inline, because the Member picker asks the same question and two
+        // copies of it would eventually disagree.
+        this.readerAgents = nodes.filter((n) => !isToolActor(n.actorName));
       }),
     );
     this.readerSubscriptions.add(

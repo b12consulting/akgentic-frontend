@@ -20,6 +20,7 @@ import {
   GraphDataService,
   HUMAN_ROLE as HUMAN_PROXY_ROLE,
 } from '../../selectors/graph.selector';
+import { isToolActor } from '../../selectors/actor-kind';
 
 import { IngestionService } from '../../event/ingestion.service';
 
@@ -251,7 +252,7 @@ export class AgentTabsComponent implements OnInit {
     const filteredAgents = agents.filter(
       (a) =>
         (a.role || '') !== HUMAN_PROXY_ROLE &&
-        !String(a.actorName ?? '').startsWith('#'),
+        !isToolActor(a.actorName),
     );
 
     const toOption = (a: GraphAgent): AgentOption => ({
