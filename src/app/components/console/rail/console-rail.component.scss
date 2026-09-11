@@ -161,6 +161,54 @@
   height: 15px;
 }
 
+// --- The way back -----------------------------------------------------
+
+// Aligned with `.rail__primary` above it rather than with the list below, so
+// the button and this row share a left edge — they are the two things the eye
+// lands on first and a 4px disagreement between them reads as a mistake.
+.rail__nav {
+  flex: 0 0 auto;
+  padding: 0 14px 10px;
+}
+
+// The LIST's idiom, deliberately: same radius, same hover ground, same type
+// size as `rail-team-row`. This row is navigation, and the recents below it are
+// navigation, so it should read as the first of them rather than as a second
+// primary action competing with Create.
+.rail__nav-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  font-family: var(--akg-font-ui);
+  font-size: 13.5px;
+  color: var(--akg-text);
+  cursor: pointer;
+  text-align: left;
+
+  &:hover {
+    background: var(--akg-panel-hover);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+  }
+}
+
+.rail__nav-glyph {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  // One step quieter than the label: the glyph identifies the row, the word
+  // names it, and a full-strength icon at this size pulls harder than the text.
+  color: var(--akg-glyph-quiet);
+}
+
 // --- The list ----------------------------------------------------------
 
 // The rail's only scroll region: everything above and below it is

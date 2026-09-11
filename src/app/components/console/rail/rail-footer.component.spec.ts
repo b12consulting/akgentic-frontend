@@ -87,24 +87,12 @@ describe('RailFooterComponent', () => {
     expect(text('.rail-footer__name')).toBe('rail.anonymous');
   });
 
-  it('offers the way back to the teams list as a real BUTTON', async () => {
-    // Not an `<a>` without an href — that is neither focusable nor announced,
-    // and it would inherit the prototype's bright-green link hover.
-    await render();
-    const link = fixture.debugElement.query(By.css('.rail-footer__link'));
-    expect(link.nativeElement.tagName).toBe('BUTTON');
-    expect((link.nativeElement.textContent as string).trim()).toBe('rail.allTeams');
-
-    link.nativeElement.click();
-    expect(contextSpy.navigateHome).toHaveBeenCalledTimes(1);
-  });
-
-  it('suppresses the teams-list link on a hideHome deployment', async () => {
-    config.hideHome = true;
-    await render();
-    expect(fixture.debugElement.query(By.css('.rail-footer__link'))).toBeNull();
-    expect(component.showAllTeams).toBeFalse();
-  });
+  // THE WAY BACK MOVED TO THE RAIL ITSELF and its assertions moved with it —
+  // see console-rail.component.spec.ts ("the way back to the teams list"). Two
+  // tests lived here: that the control is a real <button>, and that a
+  // `hideHome` deployment does not get one. Both still hold; neither is this
+  // component's responsibility any more. They are not deleted, they are
+  // relocated, and the footer no longer injects ContextService at all.
 
   it('gives the account control an accessible name — the prototype ships an inert glyph', async () => {
     await render();

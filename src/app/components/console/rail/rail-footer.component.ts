@@ -12,7 +12,6 @@ import { map, Observable } from 'rxjs';
 
 import { AuthService } from '../../../core/auth/auth.service';
 import { ConfigService } from '../../../core/config/config.service';
-import { ContextService } from '../../../core/context/context.service';
 import { IconButtonComponent } from '../../../shared/components/icon-button/icon-button.component';
 
 /** What the footer needs to know about the signed-in user, and nothing else. */
@@ -55,7 +54,6 @@ export interface RailFooterUser {
 export class RailFooterComponent {
   private readonly authService = inject(AuthService);
   private readonly configService = inject(ConfigService);
-  private readonly contextService = inject(ContextService);
   private readonly translate = inject(TranslateService);
 
   @ViewChild(Menu) private menu?: Menu;
@@ -95,15 +93,6 @@ export class RailFooterComponent {
    * `hideHome` deployments have no management view to go back to, and the
    * menubar's Home entry was filtered out on exactly this flag.
    */
-  get showAllTeams(): boolean {
-    return !this.configService.hideHome;
-  }
-
-  /** Back to the list as the user left it — filter, page and all. */
-  goToAllTeams(): void {
-    void this.contextService.navigateHome();
-  }
-
   /**
    * Open the account menu, rebuilding its model first.
    *

@@ -82,6 +82,40 @@
     </button>
   </div>
 
+  <!--
+    THE WAY BACK, and it sits with the other navigation rather than in the
+    footer.
+
+    `onManage()` is the same call the footer's link made — `navigateHome()`,
+    which restores the list as the user left it, filter and page included — so
+    this is a promotion, not a new behaviour. Gated on the same `!hideHome`.
+
+    A row in the list's own idiom, not a second button: the rail already has
+    exactly one primary action and a second filled control beneath it would
+    compete with it. This reads as the first entry in the navigation the
+    recents below continue.
+  -->
+  @if (showAllTeams) {
+    <div class="rail__nav">
+      <button type="button" class="rail__nav-row" (click)="onManage()">
+        <svg
+          class="rail__nav-glyph"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.7"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="3" y="4" width="18" height="7" rx="2" />
+          <rect x="3" y="13" width="18" height="7" rx="2" />
+        </svg>
+        {{ 'rail.allTeams' | translate }}
+      </button>
+    </div>
+  }
+
   <app-rail-search
     [value]="(query$ | async) ?? ''"
     (valueChange)="onQueryChange($event)"

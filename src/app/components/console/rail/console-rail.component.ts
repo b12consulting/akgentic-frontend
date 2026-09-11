@@ -145,6 +145,18 @@ export class ConsoleRailComponent implements OnInit {
   readonly brandLogo: string | null = inject(ConfigService).brandLogo;
 
   /**
+   * Whether the rail offers a way back to the teams list.
+   *
+   * The SAME gate the footer used to carry (`!hideHome`), moved with the
+   * control rather than re-derived: a deployment that hides the teams page must
+   * not be given a row that navigates to it. The control itself moved up here
+   * because a link buried under the account block, styled as small text, lost
+   * every contest against the full-width Create button above it — returning to
+   * your teams read as fine print while making a new one read as the point.
+   */
+  readonly showAllTeams: boolean = !inject(ConfigService).hideHome;
+
+  /**
    * What is typed into the search box.
    *
    * PUBLIC and bound back into `<app-rail-search [value]>`, so the box is a

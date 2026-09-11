@@ -414,6 +414,57 @@ describe('ConsoleRailComponent', () => {
    * two assertions that matter are therefore the NEGATIVE ones — that neither
    * branch leaves the other on screen.
    */
+  // RELOCATED FROM rail-footer.component.spec.ts. The control is the same one
+  // and calls the same `navigateHome()`; what changed is where it lives and how
+  // much it looks like a control. It had been a link-styled button beneath the
+  // account block, losing every contest against the full-width Create button
+  // above it.
+  describe('the way back to the teams list', () => {
+    it('offers it as a real BUTTON, not a link', async () => {
+      // Not an `<a>` without an href — that is neither focusable nor announced.
+      await render();
+      const row = q('.rail__nav-row');
+
+      expect(row).not.toBeNull();
+      expect(row.nativeElement.tagName).toBe('BUTTON');
+      expect((row.nativeElement.textContent as string).trim()).toBe(
+        'rail.allTeams',
+      );
+
+      row.nativeElement.click();
+      expect(contextSpy.navigateHome).toHaveBeenCalledTimes(1);
+    });
+
+    it('sits ABOVE the search box, where the eye already is', async () => {
+      // The point of the move. Asserted on document order rather than on a
+      // style, because "more obvious" here means "before the list, with the
+      // other navigation" — a rule a stylesheet change cannot quietly undo.
+      await render();
+      const host = fixture.nativeElement as HTMLElement;
+      const nav = host.querySelector('.rail__nav-row');
+      const search = host.querySelector('app-rail-search');
+
+      expect(nav).not.toBeNull();
+      expect(search).not.toBeNull();
+      expect(
+        nav!.compareDocumentPosition(search!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      )
+        .withContext('the way back must precede the search and the recents')
+        .toBeTruthy();
+    });
+
+    it('suppresses it on a hideHome deployment', async () => {
+      // A deployment that hides the teams page must not be given a row that
+      // navigates to it.
+      configStub.hideHome = true;
+      await render();
+
+      expect(q('.rail__nav-row')).toBeNull();
+      expect(component.showAllTeams).toBeFalse();
+    });
+  });
+
   describe('(W9c) the brand mark', () => {
     it('sets the wordmark in type when no deployment mark is configured', async () => {
       await render();

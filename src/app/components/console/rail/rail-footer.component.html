@@ -11,18 +11,6 @@
       user.displayName ?? ('rail.anonymous' | translate)
     }}</span>
 
-    @if (showAllTeams) {
-      <!--
-        A BUTTON styled as a link, not an `<a>`: it runs a navigation with
-        query parameters rather than pointing at a URL, and an `<a>` without
-        an `href` is neither focusable nor announced. It also sidesteps the
-        prototype's global `a:hover { color: #21e467 }` — that green is a
-        signal colour, ~1.8:1 on white, and never legitimate as text.
-      -->
-      <button type="button" class="rail-footer__link" (click)="goToAllTeams()">
-        {{ 'rail.allTeams' | translate }}
-      </button>
-    }
   </span>
 
   <!--
