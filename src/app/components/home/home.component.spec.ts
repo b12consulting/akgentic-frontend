@@ -30,6 +30,7 @@ import {
   TeamMetadataContract,
 } from '../../protocol/catalog.interface';
 import { HomeComponent } from './home.component';
+import { HomeGreetingComponent } from './greeting/home-greeting.component';
 import { TeamCreationService } from './team-creation/team-creation.service';
 import { TeamFilterComponent } from './team-filter/team-filter.component';
 import { TeamMetadataModalComponent } from './team-metadata-modal/team-metadata-modal.component';
@@ -3038,6 +3039,238 @@ describe('HomeComponent', () => {
         type: 'acme-cases',
         'meta.case_id': 'C-1234',
       });
+    });
+  });
+
+  // =======================================================================
+  // The greeting header (W12)
+  //
+  // WHERE it sits is the load-bearing part, and it is load-bearing for a
+  // reason that has nothing to do with taste: `.content > .main-container` is
+  // the chain that bounds the table's `scrollHeight="flex"` scroll region and
+  // pins the ADR-032 paginator to the bottom of it. A greeting that WRAPPED
+  // the card would still look right and would silently unpin the paginator.
+  //
+  // WHAT it says is asserted in `greeting/home-greeting.component.spec.ts`,
+  // against the component's own inputs. Re-asserting the copy here would pin
+  // the same sentence twice and pay for it twice.
+  // =======================================================================
+
+  describe('the greeting header (W12)', () => {
+    async function render(): Promise<void> {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    /**
+     * Pin the child's clock, then make it re-answer.
+     *
+     * The greeting reads the wall clock ONCE, at construction, and the child is
+     * constructed by the first `detectChanges()` — so the instance only exists
+     * after a render. Re-pushing the (unchanged) user is what makes its
+     * `currentUser$`-driven projection re-evaluate against the pinned clock.
+     * Without this every assertion below would pass or fail on the hour CI
+     * happened to run at.
+     */
+    function pinClock(hour: number, user: unknown): void {
+      const greeting = fixture.debugElement.query(
+        By.directive(HomeGreetingComponent),
+      ).componentInstance as HomeGreetingComponent;
+      greeting.now = new Date(2026, 8, 11, hour, 0, 0, 0);
+      currentUser$.next(user);
+      fixture.detectChanges();
+    }
+
+    function greetingText(): string {
+      return (
+        fixture.nativeElement.querySelector('app-home-greeting')
+          .textContent as string
+      ).trim();
+    }
+
+    it('renders ABOVE the list, as a sibling of the card and not a wrapper', async () => {
+      await render();
+
+      const greeting = fixture.nativeElement.querySelector(
+        '.content > app-home-greeting',
+      ) as HTMLElement | null;
+      expect(greeting)
+        .withContext('the greeting must be a direct child of .content')
+        .not.toBeNull();
+
+      // The direct-child relationship the scroll chain depends on, restated
+      // from this side: inserting the greeting must not have re-parented the
+      // card.
+      expect(
+        fixture.nativeElement.querySelector('.content > .main-container'),
+      ).not.toBeNull();
+      expect(greeting!.querySelector('.main-container'))
+        .withContext('the greeting must not wrap the table card')
+        .toBeNull();
+
+      // ABOVE, not below. `compareDocumentPosition` rather than an index into
+      // `children`, so this keeps meaning the same thing if a third child is
+      // ever added between them.
+      const card = fixture.nativeElement.querySelector('.main-container');
+      expect(
+        greeting!.compareDocumentPosition(card) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    it('stays out of the control row, which the rail toggle is found in', async () => {
+      // `.home-controls app-icon-button` is how two other specs find the way
+      // back to a collapsed rail. A greeting dropped inside that row would put
+      // a second element in the same query's path.
+      await render();
+
+      expect(
+        fixture.nativeElement.querySelector('.home-controls app-home-greeting'),
+      ).toBeNull();
+      expect(
+        fixture.nativeElement.querySelector('.main-container app-home-greeting'),
+      ).toBeNull();
+    });
+
+    it('greets the anonymous visitor without printing the sentinel', async () => {
+      // The default user in every spec in this file is `{ user_id: 'anonymous' }`,
+      // and on a community-tier deployment that is the session most users have.
+      // `AuthService` names it with the untranslated English literal
+      // 'Anonymous'; the page must never put that on screen.
+      await render();
+      pinClock(9, { user_id: 'anonymous' });
+
+      expect(greetingText()).toBe('home.greeting.morning');
+      expect(fixture.nativeElement.textContent as string).not.toContain(
+        'Anonymous',
+      );
+    });
+
+    it('addresses a signed-in user by name once /auth/me resolves', async () => {
+      // No existing spec in this file pushes a NAMED user — every one of the
+      // seven that push a user pushes roles only — so the addressed branch has
+      // no incidental coverage at all and this is where it gets some.
+      //
+      // The clock is set on the child instance rather than left to the wall
+      // clock: a suite run at 20:00 would otherwise assert the evening key and
+      // a run at 09:00 the morning one, and both would pass.
+      currentUser$.next({ user_id: 'u-1', name: 'Ada', roles: [] });
+      await render();
+      pinClock(9, { user_id: 'u-1', name: 'Ada', roles: [] });
+
+      expect(greetingText()).toBe('home.greeting.morningNamed');
+    });
+
+    it('changes sentence with the hour, on the same page and the same user', async () => {
+      // The three sentences are one decision, and the decision is the clock's.
+      // `greeting.spec.ts` owns the boundaries; what this adds is that the
+      // decision survives the trip through the page's template at all.
+      currentUser$.next({ user_id: 'u-1', name: 'Ada', roles: [] });
+      await render();
+
+      pinClock(14, { user_id: 'u-1', name: 'Ada', roles: [] });
+      expect(greetingText()).toBe('home.greeting.afternoonNamed');
+
+      pinClock(20, { user_id: 'u-1', name: 'Ada', roles: [] });
+      expect(greetingText()).toBe('home.greeting.eveningNamed');
+    });
+
+    it('shows no welcome line for a deployment that declared none', async () => {
+      // This file's `ConfigService` stub is a bare `{ hideHome: false }`, so
+      // `declaredWelcomeMessage` reads `undefined` here. The block must
+      // collapse to one line rather than render the word "undefined" — and one
+      // line is also what keeps the table where it was on a laptop.
+      await render();
+
+      expect(
+        fixture.nativeElement.querySelector('.home-greeting__welcome'),
+      ).toBeNull();
+      expect(fixture.nativeElement.textContent as string).not.toContain(
+        'undefined',
+      );
+    });
+  });
+
+  // =======================================================================
+  // The control row's restyle (W10)
+  //
+  // The toolbar is native `<button>` + tokens now rather than `pButton` +
+  // Aura's `severity` ramp. Two things about that are behaviour rather than
+  // appearance and are pinned here: the buttons are still BUTTONS that report
+  // their own disabled state, and the Filters control still says — in a way a
+  // reader can see — that a collapsed row is narrowing the list.
+  // =======================================================================
+
+  describe('the control row (W10)', () => {
+    async function render(): Promise<void> {
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    function filtersButton(): HTMLButtonElement {
+      return fixture.nativeElement.querySelector(
+        'button[data-test="toggle-filters-btn"]',
+      ) as HTMLButtonElement;
+    }
+
+    it('states every control in the console idiom, not in PrimeNG severities', async () => {
+      // `p-button`/`pButton` gone from this row means no control here resolves
+      // its colour off Aura's cool-grey `secondary` ramp, which is the single
+      // biggest reason the toolbar read as a different application from the
+      // rail beside it. Asserted as an ABSENCE because a half-converted row —
+      // two tokenised buttons and one Aura one — is the state that looks fine
+      // in a diff.
+      await render();
+
+      const controls = fixture.nativeElement.querySelector('.home-controls');
+      expect(controls.querySelectorAll('p-button').length).toBe(0);
+      expect(controls.querySelectorAll('button.home-control').length).toBe(3);
+    });
+
+    it('keeps the Configuration control a real button that reports disabled', async () => {
+      // The restyle must not turn a control into a styled <div>: the page's own
+      // specs query `button[data-test=...]` and read `.disabled` off it, and
+      // more importantly a non-button is not focusable or announced.
+      component.selectedNamespace$.next(null);
+      await render();
+
+      const configure = fixture.nativeElement.querySelector(
+        '[data-test="edit-namespace-yaml-btn"]',
+      ) as HTMLButtonElement;
+      expect(configure.tagName).toBe('BUTTON');
+      expect(configure.disabled).toBeTrue();
+    });
+
+    it('marks the Filters control when a COLLAPSED row is still narrowing', async () => {
+      // The one state in this toolbar that carries information rather than
+      // emphasis, and the reason it could not simply join the greys when
+      // `severity="warn"` was dropped: without it the table is filtered with
+      // its cause off screen and nothing on the page explains it.
+      await render();
+      expect(filtersButton().classList).not.toContain('home-control--attention');
+
+      component.onFilterChanged({ meta: { case_id: 'C-1234' }, catalogNamespace: null });
+      fixture.detectChanges();
+
+      expect(component.filtersVisible).toBeFalse();
+      expect(filtersButton().classList).toContain('home-control--attention');
+    });
+
+    it('drops the mark again as soon as the row is opened', async () => {
+      // The mark means "you cannot see the cause from here". Opening the row
+      // makes the cause visible, so keeping it would be the same lie pointed
+      // the other way.
+      await render();
+      component.onFilterChanged({ meta: { case_id: 'C-1234' }, catalogNamespace: null });
+      fixture.detectChanges();
+
+      component.toggleFilters();
+      fixture.detectChanges();
+
+      expect(component.filtersVisible).toBeTrue();
+      expect(filtersButton().classList).not.toContain('home-control--attention');
     });
   });
 });

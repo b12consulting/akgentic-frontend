@@ -410,6 +410,95 @@
   --akg-section-label-size: 10.5px;
   --akg-section-label-tracking: 0.1em;
 
+  // --- Console shell: data rows -------------------------------------------
+  // The teams table is the console's only DENSE list, and until now it had no
+  // rhythm of its own: PrimeNG's Aura padding decided the row height and the
+  // rail's 9px/11px was written as px literals a table stylesheet could not
+  // see. These are that rhythm, named once so the rail and the table can stop
+  // agreeing by coincidence.
+  //
+  // Vertical is the rail's own 9px. Horizontal is WIDER than the rail's 11px:
+  // a rail row is one column of text in a 268px lane, a table row is six
+  // columns that need a gutter between them rather than only at the edges.
+  --akg-row-padding-y: 9px;
+  --akg-row-padding-x: 12px;
+
+  // THE THREE ROW STATES, and they are NOT the rail's three.
+  //
+  // The rail paints its rows on `--akg-panel-bg`; the table paints its rows on
+  // `--akg-overlay-bg` (white). `--akg-panel-hover` is sized for the tinted
+  // ground — on white it lands four steps down the ramp and reads as a PRESS
+  // rather than as a pointer passing over. So each state is re-based one step
+  // lighter, and the ORDER is what is preserved rather than the values.
+  //
+  // The order is the rail's inversion rule (see `--akg-panel-active-hover`
+  // below): hovering a selected row must go FURTHER FORWARD, never fade. A
+  // table that reused `--akg-row-selected` for its hover would reintroduce
+  // exactly the defect the rail fixed, one surface over.
+  --akg-row-hover: var(--akg-hairline);
+  --akg-row-selected: var(--akg-panel-hover);
+  --akg-row-selected-hover: var(--akg-panel-active);
+
+  // --- The type scale ------------------------------------------------------
+  // Three steps, and they are the sizes the console already ships — the rail's
+  // row name, its meta line, and the control captions between them. They were
+  // px literals repeated across five stylesheets, so "match the rail" meant
+  // copying a number and hoping. `--akg-section-label-size` below is the
+  // fourth step and predates these; it keeps its own name because it carries a
+  // tracking value with it and is a treatment rather than a size.
+  //
+  // px, not rem: `html { font-size: 13px }` in `styles.scss` already re-bases
+  // the root, so a rem scale here would be a second multiplier on a number
+  // that is not 16 and reads as though it were.
+  --akg-font-size-body: 13.5px;
+  --akg-font-size-control: 12.5px;
+  --akg-font-size-meta: 11.5px;
+
+  // --- Console shell: quiet controls ---------------------------------------
+  // The pair a low-emphasis button rests on. `--akg-control-fg` above is
+  // already "things you click"; these are the ground and the edge under it.
+  //
+  // A WHITE CHIP ON THE TINTED PANEL, not a grey one. The teams page's
+  // controls sit on `--akg-panel-bg` furniture, and a grey button on a grey
+  // card has to be outlined hard enough to be found — which is how a toolbar
+  // ends up louder than the table it operates on. Lifting the control to the
+  // overlay ground lets the edge stay a hairline.
+  --akg-control-bg: var(--akg-overlay-bg);
+  --akg-control-border: var(--akg-surface-border);
+  --akg-control-hover-bg: var(--akg-panel-hover);
+  // The same corner as an icon button, because on the teams page they sit in
+  // one row and a 6px caption button beside a 9px icon button reads as two
+  // libraries.
+  --akg-control-radius: var(--akg-icon-button-radius);
+
+  // A switch that is OFF. `--akg-dot-idle` is already the palette's "present
+  // but not running" tone and that is exactly what an off switch is; aliased
+  // rather than duplicated so the next reader does not invent a second grey.
+  --akg-switch-off-bg: var(--akg-dot-idle);
+
+  // --- Attention -----------------------------------------------------------
+  // NOT an error, and that is the whole reason it exists. Two surfaces need a
+  // tone that means "something here is on and you cannot see it from here" —
+  // the teams page's Filters control while the filter row is hidden AND
+  // narrowing the list, and the config dialog's unsaved-changes dot. Both
+  // reached past this file for it: `severity="warn"` resolved to Aura's amber,
+  // which nothing here names, and the dirty dot carried a literal `#f59e0b`.
+  //
+  // `--akg-attention-fg` is DARK amber, not the signal amber those two used.
+  // #f59e0b measures 2.57:1 on white — fine for a decorative dot, illegal for
+  // the button caption that also needs this tone. #7a4b00 clears 4.5:1 on
+  // every ground this palette declares (worst case 5.15 on
+  // `--akg-panel-active-hover`), so ONE token can carry both the glyph and the
+  // label instead of the surface splitting into a legible tone and a pretty
+  // one. `token-contrast.spec.ts` measures it as TEXT.
+  //
+  // The ground is the same bargain `--akg-danger-bg` makes: 1.02:1 against
+  // `--akg-panel-bg`, so the control reads as a TINT of the surface rather
+  // than as a second card, while still carrying 6.64:1 for the caption on it.
+  --akg-attention-fg: #7a4b00;
+  --akg-attention-bg: #fdf1de;
+  --akg-attention-border: #f4e2c6;
+
   // One step of team hierarchy in the inspector, and the SOLE owner of that
   // number. `member-card` binds its depth as `--akg-depth` and its stylesheet
   // multiplies the two, so re-pointing this genuinely moves the indent.

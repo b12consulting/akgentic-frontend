@@ -1,6 +1,7 @@
 {
   "common": {
     "cancel": "Cancel",
+    "copiedToClipboard": "Content copied to the clipboard",
     "create": "Create",
     "next": "Next",
     "refresh": "Refresh"
@@ -16,6 +17,14 @@
     "hideFiltersTitle": "Hide the filter row",
     "showFiltersTitle": "Show the filter row",
     "unsavedChanges": "Unsaved changes",
+    "greeting": {
+      "morning": "Good morning",
+      "afternoon": "Good afternoon",
+      "evening": "Good evening",
+      "morningNamed": "Good morning, {{name}}",
+      "afternoonNamed": "Good afternoon, {{name}}",
+      "eveningNamed": "Good evening, {{name}}"
+    },
     "filter": {
       "thisTeamTypeOnly": "This team type only",
       "thisTeamTypeOnlyTitle": "Show only teams created from the selected team type",
@@ -272,14 +281,14 @@
     "apiKeyPlaceholder": "Paste your API key",
     "providers": {
       "google": "Google",
-      "azure": "Azure AD",
+      "azure_ad": "Azure AD",
       "apikey": "API key",
       "default": "Single sign-on",
       "custom": "{{provider}}"
     },
     "submit": {
       "google": "Continue with Google",
-      "azure": "Continue with Azure AD",
+      "azure_ad": "Continue with Azure AD",
       "apikey": "Sign in with API key",
       "default": "Continue with single sign-on",
       "custom": "Continue with {{provider}}"

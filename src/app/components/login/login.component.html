@@ -53,8 +53,19 @@
         A DEPLOYMENT's sentence, rendered verbatim. `config.json` is not a locale
         file, so this cannot go through the pipe — and replacing it with framework
         copy would silently overwrite what a deployment chose to say.
+
+        `[innerHTML]`, not interpolation, because "verbatim" includes the markup:
+        real deployments put some in (sdworx-sme says "Welcome to SDWorx
+        Akgents<sup>&reg;</sup>"), and interpolation escapes it, so the tag names
+        appear on screen as literal text. This is a RESTORATION of what the
+        deployed frontend does, not a new sink — Angular's DomSanitizer still
+        runs on the way in (no `bypassSecurityTrustHtml` anywhere near it), so a
+        script or an inline handler in the string is stripped before it lands.
+        That is what makes the value safe enough to trust: it is sanitized, AND
+        it comes from a file the deployment ships rather than from anything a
+        user can type.
       -->
-      <p class="login__blurb">{{ welcomeMessage }}</p>
+      <p class="login__blurb" [innerHTML]="welcomeMessage"></p>
     }
 
     @if (providers.length === 0) {

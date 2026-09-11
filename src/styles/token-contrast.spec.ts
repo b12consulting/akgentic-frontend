@@ -50,6 +50,12 @@ const TEXT: readonly Foreground[] = [
   { token: '--akg-control-fg', ratio: 4.5 },
   { token: '--akg-accent-fg', ratio: 4.5 },
   { token: '--akg-danger-fg', ratio: 4.5 },
+  // Measured as TEXT rather than as a glyph on one ground, because it carries
+  // both: the Filters control's caption while a hidden filter is narrowing the
+  // list, and the config dialog's unsaved-changes dot. The dot alone would only
+  // owe 3:1 — the caption is what sets the bar, and one token covering both is
+  // what stops the surface splitting into a legible amber and a pretty one.
+  { token: '--akg-attention-fg', ratio: 4.5 },
 ];
 
 /**
@@ -120,6 +126,7 @@ const GROUNDS: readonly string[] = [
   '--akg-well-bg',
   '--akg-accent-bg',
   '--akg-danger-bg',
+  '--akg-attention-bg',
 ];
 
 /** The resolved value of a custom property on `:root`. */

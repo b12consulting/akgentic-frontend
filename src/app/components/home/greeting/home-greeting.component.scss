@@ -1,0 +1,58 @@
+// A HEADER ABOVE THE LIST, and deliberately a short one.
+//
+// `flex: 0 0 auto` because this is a child of `.content`, whose other child
+// (`.main-container`) is the bounded scroll region the table's
+// `scrollHeight="flex"` body needs. Growing here would take that height from
+// the table; the greeting must cost its own two lines and nothing more.
+//
+// The bottom padding is the whole gap to the card below — `.main-container` has
+// no top margin of its own — so it is the single number that decides how many
+// rows this block costs. 14px is one line of the meta step: enough that the
+// heading is not sitting on the card, small enough that a laptop keeps the same
+// rows it had.
+:host {
+  display: block;
+  flex: 0 0 auto;
+  padding: 2px 2px 14px;
+}
+
+// The login page's heading treatment, restated rather than re-derived: display
+// face, light weight, `--akg-text`. The two are the same moment in the product
+// — the app addressing the person in front of it — so they read as one voice.
+//
+// `--akg-font-display` is Merriweather, and the rail's brand row
+// (`console-rail.component.scss`) already pulls it on this route, so the face
+// is in the document by the time this paints. It is self-hosted via
+// `@fontsource` (see `styles.scss`), not fetched from a third party.
+.home-greeting__salutation {
+  margin: 0;
+  font-family: var(--akg-font-display);
+  font-weight: 300;
+  font-size: 20px;
+  line-height: 1.35;
+  color: var(--akg-text);
+}
+
+// One step quieter and one step smaller. The hierarchy between the two lines is
+// carried by SIZE, WEIGHT and FACE rather than by a third text tone, because
+// there is no legible step below `--akg-text-muted` on these grounds — see the
+// note beside it in `_conversation-tokens.scss`.
+.home-greeting__welcome {
+  margin: 3px 0 0;
+  font-family: var(--akg-font-ui);
+  font-weight: 300;
+  font-size: var(--akg-font-size-control);
+  line-height: 1.5;
+  color: var(--akg-text-muted);
+}
+
+// The welcome sentence arrives through [innerHTML], so its children are NOT
+// stamped with this component's encapsulation attribute and no ordinary rule
+// here can reach them. `::ng-deep` under a host-scoped ancestor stays scoped to
+// this block in the emitted CSS — it is not a global.
+//
+// A deployment's sentence may carry a link, and an unstyled `<a>` is the UA's
+// blue: the one colour on this page that belongs to no token at all.
+.home-greeting__welcome ::ng-deep a {
+  color: var(--akg-accent-fg);
+}

@@ -79,6 +79,13 @@
     permanently visible reset on an empty form is a control that does nothing on
     most of the visits it is seen.
   -->
+  <!--
+    `extra-small-button` is gone from this class list. It was defined nowhere in
+    `src/` — not in this stylesheet, not in `styles.scss`, not in a theme — so
+    it styled nothing and merely read as though a size were being applied. The
+    three occurrences on the teams page went with the control-row restyle; this
+    was the last one.
+  -->
   <button
     *ngIf="isNarrowing"
     pButton
@@ -90,7 +97,7 @@
     [text]="true"
     [title]="'home.filter.resetTitle' | translate"
     (click)="reset()"
-    class="extra-small-button team-filter__reset"
+    class="team-filter__reset"
     data-test="reset-filter-btn"
   ></button>
 </div>

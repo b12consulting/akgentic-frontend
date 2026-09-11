@@ -24,7 +24,10 @@ import {
 import { NamespaceSummary } from '../../protocol/catalog.interface';
 
 import { CommonModule } from '@angular/common';
-import { ButtonModule } from 'primeng/button';
+// `ButtonModule` is gone: the three toolbar buttons are native `<button>`s
+// wearing `.home-control` now, so nothing on this page asks PrimeNG for a
+// `severity` off Aura's cool-grey ramp. See the comment beside them in the
+// template.
 import { SelectModule } from 'primeng/select';
 import { TableLazyLoadEvent } from 'primeng/table';
 import { DialogModule } from 'primeng/dialog';
@@ -47,6 +50,7 @@ import {
   TeamMetadataModalComponent,
 } from './team-metadata-modal/team-metadata-modal.component';
 import { TeamFilterComponent } from './team-filter/team-filter.component';
+import { HomeGreetingComponent } from './greeting/home-greeting.component';
 import { TeamCreationService } from './team-creation/team-creation.service';
 import {
   TeamDescriptionSave,
@@ -96,7 +100,6 @@ function sortNamespaces(namespaces: NamespaceSummary[]): NamespaceSummary[] {
   imports: [
     FormsModule,
     SelectModule,
-    ButtonModule,
     CommonModule,
     DialogModule,
     ToggleSwitchModule,
@@ -105,6 +108,7 @@ function sortNamespaces(namespaces: NamespaceSummary[]): NamespaceSummary[] {
     TeamFilterComponent,
     TeamTableComponent,
     IconButtonComponent,
+    HomeGreetingComponent,
     TranslatePipe,
   ],
   templateUrl: './home.component.html',

@@ -104,8 +104,54 @@ export class ConfigService {
       : null;
   }
 
+  /**
+   * The configured welcome sentence, defaults included.
+   *
+   * This is the value the LOGIN page wants: a signed-out visitor is being
+   * greeted by the product, and the product has a sentence of its own to say
+   * when a deployment chose none. Callers that are greeting a user BY NAME want
+   * `declaredWelcomeMessage` instead — see the rule there.
+   */
   get welcomeMessage(): string {
     return this.config.welcomeMessage;
+  }
+
+  /**
+   * The deployment's OWN welcome sentence, or `null` when it never set one.
+   *
+   * Same rule as `brandLogo`, for the same reason and via the same `declared`
+   * bookkeeping: after the merge a framework default and a deployment's choice
+   * are indistinguishable, and there are surfaces where only one of them earns
+   * a line. "Good morning, Hugo. Welcome to the Akgentic Framework." over a
+   * teams list is the framework introducing itself to the people who maintain
+   * it — a sentence nobody wrote, taking a line from a table that has to stay
+   * above the fold. A deployment that DID write one ("Welcome to SDWorx
+   * Akgents<sup>&reg;</sup>") has said something worth the line.
+   *
+   * "DECLARED" means the same thing as it does for the logo: `config.json`
+   * mentions the key with a non-blank value. Not "differs from the built-in
+   * string" — that would need a second copy of `environment.welcomeMessage`
+   * here to compare against, which goes stale the day somebody edits one of
+   * them. Blank is `null` and not `''` so a whitespace-only declaration
+   * collapses the block rather than drawing an empty paragraph.
+   *
+   * The local-dev trade is `brandLogo`'s: `declared` is only filled when the
+   * fetch succeeds, so a developer running without a served `config.json` gets
+   * `null` — the same answer a deployment that configured nothing gets, which
+   * is the answer that matches what they configured.
+   *
+   * `welcomeMessage` deliberately stays as it is. The login page must go on
+   * showing the framework default it shows today; switching that read too would
+   * silently blank a sentence on every unconfigured deployment.
+   */
+  get declaredWelcomeMessage(): string | null {
+    if (!this.declared.has('welcomeMessage')) {
+      return null;
+    }
+    const configured = this.config.welcomeMessage;
+    return typeof configured === 'string' && configured.trim().length > 0
+      ? configured
+      : null;
   }
 
   get loginProviders(): AuthProvider[] {

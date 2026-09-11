@@ -28,6 +28,7 @@ import {
   CommandDescriptor,
   LlmContextCompactedEvent,
 } from '../../../../../protocol/message.types';
+import { provideTranslateTesting } from '../../../../../../testing/i18n-testing';
 
 /**
  * Story 26-2 — the component injects the component-scoped TokenUsageSelector for
@@ -77,6 +78,10 @@ describe('AkgentChatComponent — slash-command mention (Story 15-1 / 17-3)', ()
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         { provide: ApiService, useValue: { sendMessage: jasmine.createSpy('sendMessage').and.resolveTo(undefined) } },
         { provide: UtilService, useValue: {} },
         {
@@ -326,6 +331,10 @@ describe('AkgentChatComponent — head system block (Story 16-2)', () => {
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         {
           provide: ApiService,
           useValue: {
@@ -609,6 +618,10 @@ describe('AkgentChatComponent — never-run backstory head block (Story 20-1)', 
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         {
           provide: ApiService,
           useValue: {
@@ -741,6 +754,10 @@ describe('AkgentChatComponent — never-run backstory head block (Story 20-1)', 
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         {
           provide: ApiService,
           useValue: {
@@ -797,6 +814,10 @@ describe('AkgentChatComponent — follow mode + status pill', () => {
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         {
           provide: ApiService,
           useValue: {
@@ -974,6 +995,10 @@ describe('AkgentChatComponent — keyboard submit parity', () => {
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         {
           provide: ApiService,
           useValue: {
@@ -1088,6 +1113,10 @@ describe('AkgentChatComponent — token-usage pill (Story 26-2)', () => {
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         {
           provide: ApiService,
           useValue: {
@@ -1312,6 +1341,10 @@ describe('AkgentChatComponent — usage popover (Story 30-2)', () => {
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         {
           provide: ApiService,
           useValue: {
@@ -1485,6 +1518,10 @@ describe('AkgentChatComponent — folded compaction summary (Story 29-3)', () =>
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         {
           provide: ApiService,
           useValue: {
@@ -1631,6 +1668,10 @@ describe('AkgentChatComponent — OnPush regression (Story 30-3)', () => {
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         {
           provide: ApiService,
           useValue: {

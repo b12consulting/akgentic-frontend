@@ -52,8 +52,20 @@ export interface ProviderOption {
   readonly name: string;
 }
 
-/** The providers the framework ships copy for. Anything else is a deployment's own. */
-const KNOWN_PROVIDERS: readonly AuthProvider[] = ['azure_ad', 'google', 'apikey', 'default'];
+/**
+ * The providers the framework ships copy for. Anything else is a deployment's own.
+ *
+ * EXPORTED so a spec can assert the other half of the claim. "Ships copy for"
+ * is a promise about `en.json`, and nothing structural was keeping it: these
+ * ids are composed into `login.providers.${id}` at runtime, which puts the
+ * whole subtree behind `tools/i18n-usage-audit.mjs`'s COMPOSED_PREFIXES
+ * allow-list, and `locale-parity.spec.ts` only compares the two locales to each
+ * other. So renaming a slug here without renaming the key was invisible to both
+ * guards — which is exactly what happened when `azure` became `azure_ad`, and
+ * every Azure deployment's button read `login.providers.azure_ad` until it was
+ * caught by eye. The spec that closes that hole needs this list.
+ */
+export const KNOWN_PROVIDERS: readonly AuthProvider[] = ['azure_ad', 'google', 'apikey', 'default'];
 
 @Component({
   selector: 'app-login',
@@ -65,11 +77,25 @@ const KNOWN_PROVIDERS: readonly AuthProvider[] = ['azure_ad', 'google', 'apikey'
 export class LoginComponent {
   private config = inject(ConfigService);
 
-  // `welcomeMessage` is a deployment's own string and is rendered VERBATIM —
-  // `config.json` is not a locale file and cannot be translated, so a
-  // deployment that set a welcome sentence keeps reading its sentence rather
-  // than having the framework overwrite it with copy of its own.
-  //
+  /**
+   * A deployment's own sentence, rendered VERBATIM through `[innerHTML]`.
+   *
+   * `config.json` is not a locale file and cannot be translated, so a
+   * deployment that set a welcome sentence keeps reading its sentence rather
+   * than having the framework overwrite it with copy of its own. Verbatim
+   * includes the MARKUP: deployments write it (sdworx-sme's value is "Welcome
+   * to SDWorx Akgents<sup>&reg;</sup>"), and under interpolation those tags are
+   * escaped and read as literal angle brackets on screen. The template binds
+   * `innerHTML` so the sanitizer — which still runs, see the template comment —
+   * decides what survives.
+   *
+   * `welcomeMessage` and NOT `ConfigService.declaredWelcomeMessage`, which is
+   * the getter added for the home page's greeting: a signed-out visitor is
+   * being greeted by the product, and the product has something to say even
+   * when a deployment chose nothing. Reading the declared form here would blank
+   * this line on every deployment that never configured one — a change nobody
+   * asked for. The two reads differ on purpose.
+   */
   welcomeMessage: string = this.config.welcomeMessage;
   apiBaseUrl: string = this.config.api;
 

@@ -105,15 +105,168 @@
     flex-direction: column;
 }
 
+// The console's SECTION-LABEL idiom, the same treatment the rail gives its
+// group headers and the inspector gives TOOLS / USAGE. The repetition is the
+// language: one treatment means "this names the thing under it". It replaces a
+// bare `0.85rem`, which on this page's re-based root (`html { font-size: 13px }`)
+// was an 11px sentence-case caption that matched nothing else in the app.
+//
+// `text-transform` only — the element's textContent is untouched, which the
+// page's own spec depends on (the caption must stay exactly `home.teamType`).
 .home-controls__label {
-    font-size: 0.85rem;
+    font-family: var(--akg-font-ui);
+    font-size: var(--akg-section-label-size);
+    letter-spacing: var(--akg-section-label-tracking);
+    text-transform: uppercase;
+    font-weight: 500;
+    color: var(--akg-text-muted);
+}
+
+// ---------------------------------------------------------------------------
+// The toolbar's buttons.
+//
+// A QUIET WHITE CHIP on the tinted `.main-container`, edged with a hairline —
+// the `--akg-control-*` trio. Not a filled accent button: none of the three is
+// the thing to do on this page (the table is), and three filled buttons above a
+// list is a toolbar shouting over its own content.
+//
+// The hover/pressed rhythm is `app-icon-button`'s, deliberately: the rail
+// re-open control sits in this very row, and two controls one gap apart that
+// respond differently to the same pointer read as two applications.
+// ---------------------------------------------------------------------------
+.home-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 11px;
+    border: 1px solid var(--akg-control-border);
+    border-radius: var(--akg-control-radius);
+    background: var(--akg-control-bg);
+    font-family: var(--akg-font-ui);
+    font-size: var(--akg-font-size-control);
+    font-weight: 400;
+    line-height: 1.2;
+    color: var(--akg-control-fg);
+    cursor: pointer;
+    white-space: nowrap;
+    transition:
+        background var(--akg-pane-transition-duration) ease,
+        border-color var(--akg-pane-transition-duration) ease,
+        color var(--akg-pane-transition-duration) ease;
+
+    &:hover:not(:disabled) {
+        background: var(--akg-control-hover-bg);
+        border-color: var(--akg-control-hover-bg);
+        color: var(--akg-text);
+    }
+
+    // The console's one focus ring, unmodified. The mock ships `outline: none`
+    // and no `:focus-visible` rule anywhere, which is a keyboard user with no
+    // way to see where they are.
+    &:focus-visible {
+        outline: none;
+        box-shadow: var(--akg-focus-ring);
+    }
+
+    // Quiet rather than half-erased: `--akg-glyph-quiet` clears 3:1 on every
+    // ground the palette declares, which is the bar 1.4.11 sets for a disabled
+    // control that still has to be findable.
+    &:disabled {
+        color: var(--akg-glyph-quiet);
+        background: transparent;
+        border-color: var(--akg-hairline);
+        cursor: default;
+    }
+}
+
+// A filter is narrowing the list from behind a collapsed row. The ONE state in
+// this toolbar that carries information rather than emphasis, which is why it
+// keeps a hue of its own instead of joining the greys.
+.home-control--attention {
+    background: var(--akg-attention-bg);
+    border-color: var(--akg-attention-border);
+    color: var(--akg-attention-fg);
+
+    &:hover:not(:disabled) {
+        background: var(--akg-attention-bg);
+        border-color: var(--akg-attention-fg);
+        color: var(--akg-attention-fg);
+    }
+}
+
+// primeicons sets its own font; only the size and tone belong to us. Sized a
+// step under the caption so the glyph supports the word rather than competing
+// with it.
+.home-control__icon {
+    font-size: var(--akg-font-size-meta);
+    line-height: 1;
 }
 
 .show-all-namespaces {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
+    font-family: var(--akg-font-ui);
+    font-size: var(--akg-font-size-control);
+    color: var(--akg-text-muted);
     vertical-align: middle;
+}
+
+// ---------------------------------------------------------------------------
+// The two PrimeNG controls this row still has, brought onto the palette.
+//
+// `:host ::ng-deep` rather than a theme preset: `app.theme.ts` re-points
+// PrimeNG's `primary` ramp for the whole app, so a change there to suit this
+// toolbar would move every button, tab and highlight in the console with it.
+// These rules are scoped to this component's view and reach only the two
+// elements below.
+// ---------------------------------------------------------------------------
+
+// The team-type select's TRIGGER. Same chip as `.home-control`, because the two
+// sit in one row and the select is a control you press like the rest.
+:host ::ng-deep .p-select {
+    background: var(--akg-control-bg);
+    border-color: var(--akg-control-border);
+    border-radius: var(--akg-control-radius);
+    font-family: var(--akg-font-ui);
+    color: var(--akg-text);
+    box-shadow: none;
+
+    &:not(.p-disabled):hover {
+        border-color: var(--akg-panel-hover);
+    }
+
+    &:not(.p-disabled).p-focus {
+        outline: none;
+        border-color: var(--akg-control-border);
+        box-shadow: var(--akg-focus-ring);
+    }
+}
+
+:host ::ng-deep .p-select-label {
+    font-size: var(--akg-font-size-control);
+    color: var(--akg-text);
+}
+
+// The placeholder is text, so it takes the text tone rather than the glyph one.
+:host ::ng-deep .p-select-label.p-placeholder {
+    color: var(--akg-text-muted);
+}
+
+// A caret repeats a state the open panel already shows — non-text, 3:1.
+:host ::ng-deep .p-select-dropdown {
+    color: var(--akg-glyph-quiet);
+}
+
+// The admin "show all" switch. Its ON ground already follows `primary` through
+// `app.theme.ts`; only the OFF ground was Aura's cool slate in a warm palette.
+:host ::ng-deep .p-toggleswitch .p-toggleswitch-slider {
+    background: var(--akg-switch-off-bg);
+}
+
+:host ::ng-deep .p-toggleswitch:not(.p-disabled):has(.p-toggleswitch-input:focus-visible) .p-toggleswitch-slider {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
 }
 
 // Story 11.7 AC 8, 9 — dirty-state indicator next to the namespace name in
@@ -124,13 +277,79 @@
 // rely on the global stylesheet and pair the visual `●` with an
 // aria-label for non-color signal.
 ::ng-deep .namespace-panel__dirty-indicator {
-  // PrimeNG amber-500 (#f59e0b) — meets WCAG AA against the dialog header
-  // background (white #fff, contrast ratio ≈ 2.57:1 — non-text decorative
-  // glyph; the aria-label carries the semantic meaning so contrast on the
-  // glyph is informational rather than load-bearing).
-  color: #f59e0b;
+  // `--akg-attention-fg`, not the literal `#f59e0b` that was here. That hex was
+  // PrimeNG's amber-500 and measured 2.57:1 on the dialog's white header —
+  // excused at the time as a decorative glyph with an aria-label carrying the
+  // meaning, which is true and is also how a palette forks one component at a
+  // time. The token is the same ROLE ("something here is on and unsaved"), is
+  // shared with the Filters control's active state, and is dark enough that the
+  // excuse is no longer needed: 4.5:1 on every ground the palette declares.
+  color: var(--akg-attention-fg);
   font-weight: 700;
   margin-left: 0.4rem;
   font-size: 1rem;
   vertical-align: middle;
+}
+
+// ---------------------------------------------------------------------------
+// The team-type select's OVERLAY.
+//
+// UNSCOPED `::ng-deep`, like the dirty indicator above, and for the identical
+// reason: PrimeNG teleports the panel to the body's overlay container, so it is
+// not in this component's view and a `:host`-prefixed rule matches nothing.
+// The leak is bounded by the class name, which only this page's
+// `panelStyleClass` applies.
+//
+// THE SECTION HEADERS IN HERE ARE #350's Teams / Library split. They are the
+// one part of that feature that is purely presentational, and they were the one
+// part still rendering as Aura: styled to the console's section-label idiom,
+// the sectioning finally reads as sectioning rather than as two odd rows.
+// ---------------------------------------------------------------------------
+::ng-deep .home-teamtype-panel {
+  border: 1px solid var(--akg-surface-border);
+  border-radius: var(--akg-card-radius);
+  background: var(--akg-overlay-bg);
+  box-shadow: var(--akg-overlay-shadow);
+  font-family: var(--akg-font-ui);
+
+  .p-select-option-group {
+    padding: 10px 12px 4px;
+    background: transparent;
+    font-size: var(--akg-section-label-size);
+    letter-spacing: var(--akg-section-label-tracking);
+    text-transform: uppercase;
+    font-weight: 500;
+    color: var(--akg-text-muted);
+  }
+
+  .p-select-option {
+    padding: var(--akg-row-padding-y) var(--akg-row-padding-x);
+    border-radius: 8px;
+    margin: 0 6px;
+    font-size: var(--akg-font-size-control);
+    color: var(--akg-text);
+  }
+
+  // The rail's inversion rule, one surface over: hover must always mean
+  // "further forward", so a selected row hovers to a DARKER step and never
+  // fades. Reusing the selected ground for hover is the defect
+  // `--akg-panel-active-hover` exists to have fixed.
+  .p-select-option:not(.p-disabled):not(.p-select-option-selected):hover {
+    background: var(--akg-row-hover);
+  }
+
+  .p-select-option.p-select-option-selected {
+    background: var(--akg-row-selected);
+    color: var(--akg-text);
+  }
+
+  .p-select-option.p-select-option-selected:not(.p-disabled):hover {
+    background: var(--akg-row-selected-hover);
+  }
+
+  .p-select-empty-message {
+    padding: var(--akg-row-padding-y) var(--akg-row-padding-x);
+    font-size: var(--akg-font-size-control);
+    color: var(--akg-text-muted);
+  }
 }

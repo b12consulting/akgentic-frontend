@@ -1,7 +1,18 @@
+<!--
+  The label is a KEY, not the English word it used to be.
+
+  This button reached production reading a hardcoded `label="Copy"`, which is
+  bare copy past ngx-translate: neither `locale-parity.spec.ts` nor
+  `tools/i18n-usage-audit.mjs` can see a string that is not a key, so a French
+  session read "Copy" and nothing failed. `chat.action.copy` already existed for
+  the feedback bar's copy control — the same word for the same act — so this
+  reuses it rather than declaring a second key that would have to be translated
+  twice and could drift.
+-->
 <p-button
   class="copy-button"
   size="small"
-  label="Copy"
+  [label]="'chat.action.copy' | translate"
   variant="outlined"
   severity="secondary"
 ></p-button>

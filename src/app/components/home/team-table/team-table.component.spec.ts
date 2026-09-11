@@ -115,13 +115,20 @@ describe('TeamTableComponent', () => {
    * The action controls of one row, in template order: the stop-or-restore
    * control first, the delete control second.
    *
-   * Queried by position inside the actions cell rather than by title, so the
-   * assertions do not depend on how PrimeNG chooses to surface a `title` on
-   * its own host element.
+   * Queried by position INSIDE the actions cell rather than by title, so the
+   * assertions do not depend on how the control surfaces its `title`. The CELL
+   * is found by `data-test`, not as `cells[cells.length - 1]`: the old form
+   * encoded "the actions are the last column" as an unwritten contract between
+   * this helper and the template, and W11's column change is exactly the kind
+   * of edit that silently rewrites it. Five specs depend on this returning the
+   * right cell; none of them is about where the cell sits.
    */
   function actionButtons(row: HTMLTableRowElement): HTMLButtonElement[] {
-    const cells = Array.from(row.querySelectorAll('td'));
-    return Array.from(cells[cells.length - 1].querySelectorAll('button'));
+    const cell = row.querySelector('[data-test="row-actions"]');
+    if (cell === null) {
+      throw new Error('no [data-test="row-actions"] cell in this row');
+    }
+    return Array.from(cell.querySelectorAll('button'));
   }
 
   function tableInstance(): Table {
@@ -136,7 +143,14 @@ describe('TeamTableComponent', () => {
 
   // --- What it renders -----------------------------------------------------
 
-  it('(AC1) renders one row per team, with today\'s six columns', async () => {
+  it('(AC1, W11) renders one row per team, with five columns — Team ID is not one', async () => {
+    // UPDATED FOR W11, deliberately. This used to assert six keys ending
+    // `team.table.id`, and that assertion pinned the thing the round set out to
+    // change: a full uuid given a column of its own, at full width, in every
+    // row. The id is DEMOTED rather than dropped — it is the quietest line of
+    // the Name cell now — so what this spec still owns is that the heading row
+    // says what the columns are, and the spec below owns that the id is still
+    // there and still complete.
     await render([
       makeTeam({ team_id: 't-1', name: 'Alpha' }),
       makeTeam({ team_id: 't-2', name: 'Beta' }),
@@ -151,9 +165,10 @@ describe('TeamTableComponent', () => {
       'team.table.metadata',
       'team.table.createdAt',
       'team.table.status',
-      'team.table.id',
       '',
     ]);
+    // Demoted, not deleted: both ids are still rendered TEXT on the page. The
+    // home page's own spec asserts the same thing from outside this component.
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('t-1');
     expect(text).toContain('t-2');
@@ -164,7 +179,8 @@ describe('TeamTableComponent', () => {
     await render([]);
 
     expect(rows().length).toBe(0);
-    expect(headerCells().length).toBe(6);
+    // Five since W11 — see the column spec above for why the sixth went.
+    expect(headerCells().length).toBe(5);
     expect(
       fixture.nativeElement.querySelector('p-paginator, .p-paginator'),
     ).not.toBeNull();
@@ -201,9 +217,21 @@ describe('TeamTableComponent', () => {
 
   // --- The status column: working / idle / unknown (55.1) ------------------
 
-  /** The status cell of one row — the fourth column. */
+  /**
+   * The status cell of one row.
+   *
+   * BY `data-test`, not by `querySelectorAll('td')[3]`. Ten specs in this file
+   * read the status through this helper, and every one of them would have gone
+   * red — reporting "no status tag" rather than "the column moved" — the
+   * moment W11 took a column out to its left. The index was a contract nobody
+   * had written down; this is the same contract, stated.
+   */
   function statusCell(row: HTMLTableRowElement): HTMLElement {
-    return Array.from(row.querySelectorAll('td'))[3];
+    const cell = row.querySelector('[data-test="row-status"]');
+    if (cell === null) {
+      throw new Error('no [data-test="row-status"] cell in this row');
+    }
+    return cell as HTMLElement;
   }
 
   /** The `data-test` marker of whichever status tag a row rendered. */
@@ -549,6 +577,122 @@ describe('TeamTableComponent', () => {
     expect(title.textContent!.trim()).toBe(injected);
     expect(title.querySelector('img')).toBeNull();
     expect(title.children.length).toBe(0);
+  });
+
+  // --- The demoted Team ID (W11) -------------------------------------------
+
+  /**
+   * A token's value as the BROWSER resolves it, round-tripped through a real
+   * element so the comparison is in one colour syntax whatever syntax the token
+   * is written in. The same trick the header-ground spec below uses, lifted so
+   * two specs do not each carry a copy.
+   */
+  function resolvedColour(token: string): string {
+    const probe = document.createElement('div');
+    probe.style.backgroundColor = getComputedStyle(document.documentElement)
+      .getPropertyValue(token)
+      .trim();
+    document.body.appendChild(probe);
+    const value = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return value;
+  }
+
+  it('(W11) keeps the WHOLE team id, as text, in the name cell', async () => {
+    // THE DEMOTION'S WHOLE CONTRACT. A uuid is only useful pasted somewhere
+    // else, so an id that is truncated for display, hidden behind a tooltip or
+    // moved into a modal is an id the user can no longer do what they did
+    // yesterday with. What moved is its WEIGHT and its COLUMN, not its
+    // presence: it is a line of the Name cell now, and it is the complete
+    // value.
+    const uuid = '505835a6-f63e-4b5a-842f-e294c4ffa0d5';
+    await render([makeTeam({ team_id: uuid, name: 'Alpha' })]);
+
+    const nameCell = rows()[0].querySelectorAll('td')[0];
+    const id = nameCell.querySelector('[data-test="row-team-id"]') as HTMLElement;
+
+    expect(id).withContext('the id lives in the name cell now').not.toBeNull();
+    // EQUALS, not contains: a "505835a6…" that reads as complete is worse than
+    // one that is plainly cut, because it is only found out on paste.
+    expect(id.textContent!.trim()).toBe(uuid);
+  });
+
+  it('(W11) names the demoted id with the heading its column used to carry', async () => {
+    // With the column gone the value would otherwise be an unlabelled 36-char
+    // string. `team.table.id` is the label that already exists and is already
+    // translated; keeping it referenced is also what stops the i18n usage audit
+    // reporting it as a key naming a surface nobody can reach.
+    await render([makeTeam({ team_id: 't-1' })]);
+
+    const id = rows()[0].querySelector('[data-test="row-team-id"]');
+
+    expect(id?.getAttribute('title')).toBe('team.table.id');
+    // And the heading is genuinely gone from the header row, rather than
+    // rendered blank — a blank <th> would still cost the column its width.
+    expect(
+      headerCells().map((th) => th.textContent?.trim()),
+    ).not.toContain('team.table.id');
+  });
+
+  it('(W11) renders the id ONCE per row — it is demoted, not duplicated', async () => {
+    // The failure mode of a "move it under the name" change is leaving the old
+    // cell behind: the row then reads as two ids, which is how a demotion turns
+    // into extra noise.
+    await render([
+      makeTeam({ team_id: 't-1' }),
+      makeTeam({ team_id: 't-2' }),
+    ]);
+
+    for (const row of rows()) {
+      expect(row.querySelectorAll('[data-test="row-team-id"]').length).toBe(1);
+    }
+  });
+
+  // --- The restyle (W10) ---------------------------------------------------
+
+  it('(W10) paints the selected row from the panel ladder, not Aura\'s highlight', async () => {
+    // The rail and this list are two views of one set of teams, so "the one I
+    // am in" has to look the same in both. Left to PrimeNG, a selected row
+    // resolves through `highlight` to the accent tint — a pale GREEN row in a
+    // list whose rail paints the same state a warm grey.
+    //
+    // The VALUE is read from the token rather than written here as a hex (R5):
+    // re-pointing the palette must not turn into a red spec about a table row.
+    // What is pinned is the AGREEMENT — the row's ground is the same token the
+    // rail's hover/active ladder is built from.
+    component.selectedTeamId = 't-1';
+    await render([makeTeam({ team_id: 't-1' }), makeTeam({ team_id: 't-2' })]);
+
+    const selectedRow = rows()[0];
+    expect(selectedRow.classList).toContain('p-datatable-row-selected');
+    expect(getComputedStyle(selectedRow).backgroundColor).toBe(
+      resolvedColour('--akg-panel-hover'),
+    );
+  });
+
+  it('(W10) the row actions are real buttons, each with an accessible name', async () => {
+    // They were `<p-button severity="secondary">`, and a severity resolves off
+    // Aura's cool surface ramp which `app.theme.ts` re-points for `primary` and
+    // nothing else — so these were the last cool grey controls in a warm
+    // palette. Restated natively they take the console's icon-button treatment
+    // from tokens.
+    //
+    // Two things must survive that swap and neither is cosmetic: they have to
+    // stay real <button>s, because `disabled` is what the in-flight specs read
+    // and only a button has it; and the glyph is the only label they carry, so
+    // each needs a name of its own or the row is three unlabelled marks to a
+    // screen reader.
+    await render([makeTeam({ team_id: 'row-1', status: 'running' })]);
+
+    const buttons = actionButtons(rows()[0]);
+    expect(buttons.length).toBe(2);
+    for (const button of buttons) {
+      expect(button.tagName).toBe('BUTTON');
+      // `type` matters inside a table that also holds an editor input: a
+      // button with no type defaults to submit.
+      expect(button.getAttribute('type')).toBe('button');
+      expect(button.getAttribute('aria-label')).toBeTruthy();
+    }
   });
 
   // --- The paginator contract ----------------------------------------------

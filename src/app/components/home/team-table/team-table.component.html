@@ -22,6 +22,18 @@
   table scrolling, NOT virtual scroll: no [virtualScroll]/@angular/cdk
   (forbidden by ADR-032 §"What we will not do"; [scrollable] is explicitly
   allowed).
+
+  FIVE COLUMNS, NOT SIX (W11). The Team ID had a column of its own and spent it
+  on a 36-character uuid repeated down every row — the widest thing on screen
+  and the least often read. It is DEMOTED, not deleted: it now sits as the
+  quietest line of the Name cell, still rendered as selectable text, still the
+  complete value, so copying it is the same gesture it always was. See
+  `.team-id` in the stylesheet for why it is not truncated.
+
+  Every cell that a spec addresses by POSITION now carries a `data-test`
+  instead. Column indices are a contract between a template and a test helper
+  that neither of them states, and the first column change turns ten status
+  specs red with a message about a missing tag.
 -->
 <p-table
   [value]="teams"
@@ -48,7 +60,6 @@
       <th>{{ "team.table.metadata" | translate }}</th>
       <th>{{ "team.table.createdAt" | translate }}</th>
       <th>{{ "team.table.status" | translate }}</th>
-      <th>{{ "team.table.id" | translate }}</th>
       <th></th>
     </tr>
   </ng-template>
@@ -131,20 +142,48 @@
               [autofocus]="true"
             />
             <button
-              pButton
-              icon="pi pi-check"
+              type="button"
+              class="row-action description-save-btn"
               (click)="saveDescription(ctx.team_id)"
-              class="description-save-btn"
-              rounded
-            ></button>
+            >
+              <i class="pi pi-check" aria-hidden="true"></i>
+            </button>
             <button
-              pButton
-              icon="pi pi-times"
+              type="button"
+              class="row-action description-cancel-btn"
               (click)="cancelEditDescription()"
-              severity="secondary"
-              class="description-cancel-btn"
-              rounded
-            ></button>
+            >
+              <i class="pi pi-times" aria-hidden="true"></i>
+            </button>
+          </div>
+
+          <!--
+            THE TEAM ID, DEMOTED (W11) — the quietest line of the row, not a
+            column of its own.
+
+            Still the WHOLE uuid, still ordinary selectable text, and
+            deliberately NOT ellipsised: a truncated id looks copied until it
+            is pasted, and the one job this value has is being pasted
+            somewhere else. What changes is its weight — mono at the section
+            label's size in the muted tone — so the eye passes over it on the
+            way down the Name column instead of being dragged across the row
+            by it.
+
+            `title` carries the COLUMN HEADING that used to name this value.
+            With the column gone the string would otherwise be an unlabelled
+            uuid, and `team.table.id` is the label that already exists and is
+            already translated. It is a tooltip rather than visible text
+            because a repeated "Team ID" prefix down 250 rows costs more room
+            than the demotion buys back, and rather than a visually-hidden
+            span because that would join the id in a text selection and paste
+            the label along with the value.
+          -->
+          <div
+            class="team-id"
+            data-test="row-team-id"
+            [title]="'team.table.id' | translate"
+          >
+            {{ ctx.team_id }}
           </div>
         </div>
       </td>
@@ -166,6 +205,12 @@
         here as well it would appear twice in one row, which reads as a
         data bug rather than as a layout choice. When no field is
         nominated the argument is `null` and every key stays.
+
+        DEMOTED, NOT MOVED (W11). The chips are unchanged as DATA — same
+        pipe, same one-per-answered-field, same `data-test` per key — and
+        restated as quiet wells instead of outlined boxes. They read as the
+        row's supporting detail rather than as a second headline; the
+        stylesheet carries the argument.
       -->
       <td class="team-metadata-cell">
         <span
@@ -179,7 +224,7 @@
           >{{ entry.value }}</span
         >
       </td>
-      <td>{{ ctx.created_at | date: "short" }}</td>
+      <td class="team-created-cell">{{ ctx.created_at | date: "short" }}</td>
       <!--
         The status column — four renderings from ONE derivation.
 
@@ -211,7 +256,7 @@
         promising live truth would over-promise; nothing polls to keep it
         fresh.
       -->
-      <td>
+      <td data-test="row-status">
         <ng-container *ngIf="teamActivity(ctx) as state">
           <p-tag
             *ngIf="state === 'stopped'"
@@ -247,44 +292,68 @@
           </p-tag>
         </ng-container>
       </td>
-      <td>{{ ctx.team_id }}</td>
-      <td>
-        <p-button
-          *ngIf="isRunning(ctx)"
-          [icon]="
-            isStopping(ctx.team_id)
-              ? 'pi pi-spinner pi-spin'
-              : 'pi pi-stop-circle'
-          "
-          (click)="onStop(ctx.team_id)"
-          severity="secondary"
-          rounded
-          [style]="{ 'margin-right': '0.5rem' }"
-          [title]="'team.action.stop' | translate"
-          [disabled]="isStopping(ctx.team_id)"
-        />
-        <p-button
-          *ngIf="!isRunning(ctx)"
-          [icon]="
-            isRestoring(ctx.team_id)
-              ? 'pi pi-spinner pi-spin'
-              : 'pi pi-replay'
-          "
-          (click)="onRestore(ctx.team_id)"
-          severity="secondary"
-          rounded
-          [style]="{ 'margin-right': '0.5rem' }"
-          [title]="'team.action.restore' | translate"
-          [disabled]="isRestoring(ctx.team_id)"
-        />
-        &nbsp;
-        <p-button
-          icon="pi pi-times"
-          (click)="onDelete(ctx.team_id)"
-          severity="secondary"
-          rounded
-          [title]="'team.action.delete' | translate"
-        />
+      <!--
+        The row actions.
+
+        NATIVE <button>s, not `<p-button severity="secondary">`. A PrimeNG
+        severity resolves off Aura's own surface ramp — a cool grey — and
+        `app.theme.ts` re-points `primary` and nothing else, so these three
+        controls were the last cool tone left in a warm palette, for the same
+        reason the status tags were before R5. Stated natively they are the
+        console's icon button (`icon-button.component.scss`) reached from
+        inside a table cell, which is what makes the list and the rail agree
+        about what a quiet control looks like.
+
+        Nothing about the BEHAVIOUR moves: same outputs, same per-row busy
+        marks, same `disabled` while work is in flight. The spacing that used
+        to be an inline `margin-right` and a literal `&nbsp;` is a flex gap.
+      -->
+      <td data-test="row-actions">
+        <div class="row-actions">
+          <button
+            *ngIf="isRunning(ctx)"
+            type="button"
+            class="row-action"
+            (click)="onStop(ctx.team_id)"
+            [title]="'team.action.stop' | translate"
+            [attr.aria-label]="'team.action.stop' | translate"
+            [disabled]="isStopping(ctx.team_id)"
+          >
+            <i
+              class="pi"
+              [class.pi-spinner]="isStopping(ctx.team_id)"
+              [class.pi-spin]="isStopping(ctx.team_id)"
+              [class.pi-stop-circle]="!isStopping(ctx.team_id)"
+              aria-hidden="true"
+            ></i>
+          </button>
+          <button
+            *ngIf="!isRunning(ctx)"
+            type="button"
+            class="row-action"
+            (click)="onRestore(ctx.team_id)"
+            [title]="'team.action.restore' | translate"
+            [attr.aria-label]="'team.action.restore' | translate"
+            [disabled]="isRestoring(ctx.team_id)"
+          >
+            <i
+              class="pi"
+              [class.pi-spinner]="isRestoring(ctx.team_id)"
+              [class.pi-spin]="isRestoring(ctx.team_id)"
+              [class.pi-replay]="!isRestoring(ctx.team_id)"
+              aria-hidden="true"
+            ></i>
+          </button>
+          <button
+            type="button"
+            class="row-action row-action--danger"
+            (click)="onDelete(ctx.team_id)"
+            [title]="'team.action.delete' | translate"
+            [attr.aria-label]="'team.action.delete' | translate"
+          >
+            <i class="pi pi-times" aria-hidden="true"></i>
+          </button>
+        </div>
       </td>
     </tr>
   </ng-template>

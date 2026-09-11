@@ -1,6 +1,7 @@
 {
   "common": {
     "cancel": "Annuler",
+    "copiedToClipboard": "Contenu copié dans le presse-papiers",
     "create": "Créer",
     "next": "Suivant",
     "refresh": "Actualiser"
@@ -16,6 +17,14 @@
     "hideFiltersTitle": "Masquer la ligne de filtres",
     "showFiltersTitle": "Afficher la ligne de filtres",
     "unsavedChanges": "Modifications non enregistrées",
+    "greeting": {
+      "morning": "Bonjour",
+      "afternoon": "Bon après-midi",
+      "evening": "Bonsoir",
+      "morningNamed": "Bonjour, {{name}}",
+      "afternoonNamed": "Bon après-midi, {{name}}",
+      "eveningNamed": "Bonsoir, {{name}}"
+    },
     "filter": {
       "thisTeamTypeOnly": "Ce type d'équipe uniquement",
       "thisTeamTypeOnlyTitle": "N'afficher que les équipes créées à partir du type sélectionné",
@@ -272,14 +281,14 @@
     "apiKeyPlaceholder": "Collez votre clé d'API",
     "providers": {
       "google": "Google",
-      "azure": "Azure AD",
+      "azure_ad": "Azure AD",
       "apikey": "Clé d'API",
       "default": "Authentification unique",
       "custom": "{{provider}}"
     },
     "submit": {
       "google": "Continuer avec Google",
-      "azure": "Continuer avec Azure AD",
+      "azure_ad": "Continuer avec Azure AD",
       "apikey": "Se connecter avec une clé d'API",
       "default": "Continuer avec l'authentification unique",
       "custom": "Continuer avec {{provider}}"

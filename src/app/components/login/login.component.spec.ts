@@ -6,8 +6,8 @@ import { AuthService } from '../../core/auth/auth.service';
 import { ConfigService } from '../../core/config/config.service';
 import { AuthProvider } from '../../core/auth/auth.types';
 import { provideTranslateTesting } from '../../../testing/i18n-testing';
-import { environment } from '../../../environments/environment';
-import { LoginComponent } from './login.component';
+import { KNOWN_PROVIDERS, LoginComponent } from './login.component';
+import en from '../../core/i18n/locales/en.json';
 
 /**
  * Specs for {@link LoginComponent}.
@@ -353,15 +353,15 @@ describe('LoginComponent', () => {
     it('leaves a DIFFERENT provider clickable while one redirect is out', () => {
       // The binding used to be `oauthPending !== null`, which let one method's
       // in-flight redirect disable every other method's button too.
-      setup({ loginProviders: ['google', 'azure'] });
+      setup({ loginProviders: ['google', 'azure_ad'] });
       fixture.detectChanges();
 
-      component.oauthPending = 'azure';
+      component.oauthPending = 'azure_ad';
       component.selectProvider('google');
       // `selectProvider` clears the flag, so put it back: what is under test is
       // the BINDING, not the clearing, and the two would otherwise mask
       // each other.
-      component.oauthPending = 'azure';
+      component.oauthPending = 'azure_ad';
       fixture.detectChanges();
 
       const submit = query<HTMLButtonElement>('.login__submit');
@@ -446,6 +446,58 @@ describe('LoginComponent', () => {
       expect(query('.login__blurb')?.textContent?.trim()).toBe('Welcome to Contoso');
     });
 
+    // --- The sentence is HTML, and it is sanitized -------------------------
+    //
+    // The assertion above passes identically under interpolation and under
+    // `[innerHTML]`, because its fixture has no markup in it — so on its own it
+    // proves nothing about which binding the template uses. These three are the
+    // ones that can tell, and they are a matched set: the first says the markup
+    // a deployment wrote RENDERS, the other two say the markup an attacker
+    // would write DOES NOT. Weakening either half turns the restoration into
+    // the sink it deliberately is not.
+
+    it('renders the markup a deployment put in its sentence, not its angle brackets', () => {
+      // Shaped like sdworx-sme's real value, which today shows the tag names on
+      // screen as text because the sentence was being interpolated.
+      setup({ welcomeMessage: 'Welcome to SDWorx Akgents<sup>&reg;</sup>' });
+      fixture.detectChanges();
+
+      const blurb = query('.login__blurb');
+      expect(blurb?.innerHTML).toContain('<sup>');
+      // The escaped form is what interpolation produces: asserting its ABSENCE
+      // is what makes this spec fail if the binding is ever reverted.
+      expect(blurb?.innerHTML).not.toContain('&lt;sup&gt;');
+      // The entity resolves too, so the mark reads as one character.
+      expect(blurb?.textContent).toContain('Akgents\u00ae');
+    });
+
+    it('strips a script from the sentence rather than mounting it', () => {
+      // Angular's DomSanitizer, unaided — the binding is plain `[innerHTML]`
+      // with no `bypassSecurityTrustHtml`. If a later pass reaches for the
+      // bypass to "fix" some markup the sanitizer dropped, this is the spec
+      // that says no.
+      setup({ welcomeMessage: '<script>alert(1)</script>Welcome to Contoso' });
+      fixture.detectChanges();
+
+      const blurb = query('.login__blurb');
+      expect(blurb?.innerHTML).not.toContain('<script');
+      expect(blurb?.querySelector('script')).toBeNull();
+      // The script's CONTENTS are gone as well, not merely inert: a sanitizer
+      // that kept the text would still be handing the payload to the next thing
+      // that re-parses this node.
+      expect(blurb?.textContent).not.toContain('alert(1)');
+      expect(blurb?.textContent?.trim()).toBe('Welcome to Contoso');
+    });
+
+    it('drops an inline event handler while keeping the element it sat on', () => {
+      setup({ welcomeMessage: '<span onclick="alert(1)">Welcome</span>' });
+      fixture.detectChanges();
+
+      const span = query('.login__blurb')?.querySelector('span');
+      expect(span).not.toBeNull();
+      expect(span?.getAttribute('onclick')).toBeNull();
+    });
+
     it('omits the blurb rather than reserving space for a sentence nobody set', () => {
       setup();
       fixture.detectChanges();
@@ -503,72 +555,65 @@ describe('LoginComponent', () => {
     });
   });
 
+  // The RULE behind `brandLogo` — how that answer is reached, as opposed to
+  // what the masthead does with it — now lives in
+  // `src/app/core/config/config.service.spec.ts`, next to the
+  // `declaredWelcomeMessage` rule it is the model for. It moved verbatim; the
+  // note that used to stand here said there was nowhere else to put it, and
+  // now there is.
+
   /**
-   * The rule itself, exercised through the REAL `ConfigService`.
+   * The composed provider keys are REAL keys in `en.json`.
    *
-   * The block above stubs the service, so it asserts what the masthead does
-   * with an answer; this asserts how the answer is reached. Both halves matter
-   * and they fail differently: stub the wrong shape and the first block goes
-   * green on a service that cannot produce it.
+   * This is the one relation neither existing guard can see, and the gap is
+   * structural rather than an oversight in either. `login.providers.` and
+   * `login.submit.` are in `tools/i18n-usage-audit.mjs`'s COMPOSED_PREFIXES,
+   * because the leaves are built at runtime and a literal grep cannot find
+   * them — so the audit skips the whole subtree and neither a dead leaf nor a
+   * missing one is a finding. `locale-parity.spec.ts` compares `fr.json` to
+   * `en.json`, so a key renamed in NEITHER locale is perfectly parallel.
    *
-   * There is no `config.service.spec.ts` to put this in yet — see the report's
-   * follow-ups. It lives here because the login masthead is one of the two
-   * consumers of the rule, and the only one in this builder's scope.
+   * Between them, renaming a slug in `KNOWN_PROVIDERS` without renaming its
+   * key ships a login button reading `login.providers.<slug>` and fails
+   * nothing. That is not hypothetical: #348 renamed `azure` to `azure_ad` in
+   * this file and left both locales on `azure`.
+   *
+   * Asserted against the REAL `en.json`, deliberately — `provideTranslateTesting`
+   * serves synthetic `<<key>>` strings and echoes back whatever it is handed,
+   * so a fixture-based assertion here would pass against a key that does not
+   * exist. This is the one place in the login suite that must read the
+   * shipped document.
+   *
+   * Values are not asserted, only presence — pinning the English copy is the
+   * complaint `locale-parity.spec.ts` documents at length.
    */
-  describe('ConfigService.brandLogo — what counts as "a deployment set one"', () => {
-    /** Boot a real service against a fetched `config.json`, or against none. */
-    async function loadConfig(runtime: object | null): Promise<ConfigService> {
-      const service = new ConfigService();
-      spyOn(window, 'fetch').and.returnValue(
-        runtime === null
-          ? Promise.reject(new TypeError('Failed to fetch'))
-          : Promise.resolve({
-              ok: true,
-              json: () => Promise.resolve(runtime),
-            } as Response),
-      );
-      await service.load();
-      return service;
+  describe('the copy a known provider composes', () => {
+    const providers = en.login.providers as Record<string, string>;
+    const submits = en.login.submit as Record<string, string>;
+
+    for (const id of KNOWN_PROVIDERS) {
+      it(`declares both keys for "${id}"`, () => {
+        expect(providers[id as string])
+          .withContext(`en.json has no login.providers.${id}`)
+          .toBeDefined();
+        expect(submits[id as string])
+          .withContext(`en.json has no login.submit.${id}`)
+          .toBeDefined();
+      });
     }
 
-    it('reports no mark when config.json never mentions one', async () => {
-      const config = await loadConfig({ api: 'http://backend.test' });
-
-      // The framework default is still READABLE — nothing about it changed —
-      // it just is not a deployment's own mark.
-      expect(config.logo).toBe(environment.logo);
-      expect(config.brandLogo).toBeNull();
+    it('declares the custom fallback the unknown-provider path composes', () => {
+      expect(providers['custom']).toBeDefined();
+      expect(submits['custom']).toBeDefined();
     });
 
-    it('reports the mark a deployment did declare', async () => {
-      // sdworx-sme's config.json, reduced to the key under test.
-      const config = await loadConfig({ logo: 'sdworx-logo.svg' });
-
-      expect(config.brandLogo).toBe('sdworx-logo.svg');
-    });
-
-    it('honours a declaration that happens to name the framework default', async () => {
-      // Explicit is explicit. The result is still ONE brand on screen — the
-      // raster instead of the type — which is what the deployment asked for.
-      const config = await loadConfig({ logo: 'akgent_logo.png' });
-
-      expect(config.brandLogo).toBe('akgent_logo.png');
-    });
-
-    it('treats a blank declaration as no mark, not as <img src="">', async () => {
-      // An empty `src` re-requests the current document: a broken image and a
-      // wasted round trip, rather than "this deployment has no logo".
-      const config = await loadConfig({ logo: '   ' });
-
-      expect(config.brandLogo).toBeNull();
-    });
-
-    it('reports no mark when config.json cannot be fetched at all', async () => {
-      // Local dev, where the file is not served. The build-time defaults stand,
-      // and a build-time default is by definition not a deployment's choice.
-      const config = await loadConfig(null);
-
-      expect(config.brandLogo).toBeNull();
+    it('carries no key for a slug nothing composes', () => {
+      // The other direction, and the half that catches a RENAME rather than an
+      // addition: a leaf left behind under these prefixes is invisible to the
+      // usage audit forever, so it has to be caught here or not at all.
+      const composable = new Set<string>([...KNOWN_PROVIDERS as readonly string[], 'custom']);
+      expect(Object.keys(providers).filter((key) => !composable.has(key))).toEqual([]);
+      expect(Object.keys(submits).filter((key) => !composable.has(key))).toEqual([]);
     });
   });
 

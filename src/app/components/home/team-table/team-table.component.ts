@@ -10,7 +10,6 @@ import {
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
-import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import {
   TableLazyLoadEvent,
@@ -75,7 +74,6 @@ export interface TeamDescriptionSave {
     FormsModule,
     TableModule,
     TagModule,
-    ButtonModule,
     InputTextModule,
     TeamMetadataPipe,
     TeamTitlePipe,

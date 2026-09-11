@@ -12,6 +12,20 @@
     flex-direction: column;
     flex: 1;
     min-height: 0;
+
+    // THE ROW LADDER is NOT declared here. It is the `--akg-row-*` family in
+    // `_conversation-tokens.scss`, which states the reasoning in full: the
+    // table paints its rows on `--akg-overlay-bg` rather than on the rail's
+    // `--akg-panel-bg`, so each state is re-based one step lighter and it is
+    // the ORDER — hover always further forward, never fading — that is
+    // preserved rather than the values.
+    //
+    // This block used to alias those three steps onto local names, because the
+    // token file was owned by another builder for one round. Keeping both
+    // would have been two sources of truth for one rhythm, and the failure is
+    // silent in the worst way: a deployment re-pointing the `:root` trio would
+    // move the rail and leave this table on the old values, with nothing red
+    // anywhere to say so.
 }
 
 // Moved out of the page's `.home-table p-table` descendant rule, which stops
@@ -25,14 +39,36 @@ p-table {
     min-height: 0;
 }
 
+// --- The table as a CARD (W10) ----------------------------------------------
+//
+// `.main-container` around it is `--akg-panel-bg`, the console's furniture
+// tint. Before this the table was a bare white rectangle butted against that
+// tint with no edge of its own, which is what made the page read as the old
+// design under a new rail: everything else on screen that holds content — the
+// composer, the inspector's cards, the metadata dialog — is a bordered,
+// rounded surface, and this was the one that was not.
+//
+// NO `overflow: hidden` to clip the rounded corners. The header cells and the
+// paginator below are painted the SAME `--akg-overlay-bg` as this card, so
+// there is nothing square to clip; and `overflow` on this element sits
+// directly above PrimeNG's own flex-scrollable body, which is the one place a
+// stray clip would silently cost the table its bounded scroll region.
+:host ::ng-deep .p-datatable {
+    background: var(--akg-overlay-bg);
+    border: 1px solid var(--akg-surface-border);
+    border-radius: var(--akg-card-radius);
+    font-family: var(--akg-font-ui);
+    color: var(--akg-text);
+}
+
 // Story 28.4 — opaque sticky header. 28.3's [scrollable] gave the table a
 // sticky thead for free, but the app theme sets the datatable header-cell
 // background to `transparent` (app.theme.ts), so scrolling rows bleed through
-// behind the pinned "Name / Creation Date / Status / Team ID" labels. Paint the
-// sticky thead (and its cells) white — matching the row surface — so rows are
-// masked as they scroll under it. PrimeNG renders the datatable header INSIDE
-// this component's view, so `::ng-deep` is needed to pierce encapsulation;
-// `:host` keeps the rule scoped here and off every other datatable (the global
+// behind the pinned "Name / Creation Date / Status" labels. Paint the sticky
+// thead (and its cells) white — matching the row surface — so rows are masked
+// as they scroll under it. PrimeNG renders the datatable header INSIDE this
+// component's view, so `::ng-deep` is needed to pierce encapsulation; `:host`
+// keeps the rule scoped here and off every other datatable (the global
 // `transparent` preset is intentionally untouched). PrimeNG's sticky thead
 // already wins the stacking, so no z-index is needed.
 //
@@ -50,15 +86,79 @@ p-table {
     background: var(--akg-overlay-bg);
 }
 
+// The column headings, restated in the console's SECTION-LABEL idiom — the
+// same uppercase micro-label the rail's group headers and the inspector's
+// TOOLS / USAGE are set in. The repetition is the language: one treatment
+// means "a new group starts here", and a table's headings are exactly that.
+// The px literals match the rail rather than being tokenised, because the
+// console's type scale is written as literals everywhere (13.5 / 11.5 / 10.5)
+// and half-tokenising it would leave two conventions on one screen.
+:host ::ng-deep .p-datatable-thead > tr > th {
+    padding: 9px 14px;
+    font-size: var(--akg-section-label-size);
+    font-weight: 600;
+    letter-spacing: var(--akg-section-label-tracking);
+    text-transform: uppercase;
+    color: var(--akg-text-muted);
+    border-bottom: 1px solid var(--akg-surface-border);
+}
+
+// Row rhythm. 9px of vertical padding is the rail's row padding
+// (`rail-team-row.component.scss`), so a team occupies the same band of space
+// in the list as it does in the rail beside it.
+:host ::ng-deep .p-datatable-tbody > tr > td {
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--akg-hairline);
+    color: var(--akg-text);
+    vertical-align: top;
+}
+
+// The last row draws no rule: a separator under the final row is a line
+// against the card's own edge, which reads as a doubled border.
+:host ::ng-deep .p-datatable-tbody > tr:last-child > td {
+    border-bottom: 0;
+}
+
+// Rest, hover, selected, selected-while-hovered. Written against
+// `.p-datatable-tbody > tr` rather than left to PrimeNG's
+// `rowHoverBackground`, which resolves off Aura's cool surface ramp.
+:host ::ng-deep .p-datatable-tbody > tr {
+    background: transparent;
+    transition: background var(--akg-pane-transition-duration) ease;
+}
+
+:host ::ng-deep .p-datatable-tbody > tr:hover {
+    background: var(--akg-row-hover);
+}
+
+:host ::ng-deep .p-datatable-tbody > tr.p-datatable-row-selected {
+    background: var(--akg-row-selected);
+    color: var(--akg-text);
+}
+
+:host ::ng-deep .p-datatable-tbody > tr.p-datatable-row-selected:hover {
+    background: var(--akg-row-selected-hover);
+}
+
+:host ::ng-deep .p-datatable-tbody > tr:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+}
+
 .team-info {
     display: flex;
     flex-direction: column;
-    gap: 0.25rem;
+    gap: 3px;
+    min-width: 0;
 }
 
+// The line the eye lands on. The rail's name size and weight, so the same team
+// reads the same in both lists.
 .team-name {
-    font-weight: 600;
-    font-size: 1rem;
+    font-size: 13.5px;
+    font-weight: 500;
+    line-height: 1.35;
+    color: var(--akg-text);
 }
 
 // The generated title (Epic 53, FR6).
@@ -82,82 +182,193 @@ p-table {
 }
 
 // The team TYPE, demoted to a second line once a title sits above it. Present
-// and readable, and plainly not the line being scanned.
+// and readable, and plainly not the line being scanned. The rail's meta step.
 .team-type {
-    font-size: 0.8125rem;
-    color: #6c757d;
+    font-size: 11.5px;
+    font-weight: 300;
+    line-height: 1.35;
+    color: var(--akg-text-muted);
+}
+
+// THE DEMOTED TEAM ID (W11).
+//
+// Mono, because the shape of the characters is the information — the same
+// argument `--akg-font-mono` exists for. Set at the section label's size in
+// the muted tone: the quietest thing in the row, and still the only one a
+// person ever copies.
+//
+// NOT ELLIPSISED, deliberately, unlike `.team-title` above. A title is prose
+// and reads fine cut short; an identifier cut short is indistinguishable from
+// a complete one until it is pasted somewhere and rejected. `user-select: all`
+// makes the whole value one click to select, which is strictly more than the
+// old full-width column offered.
+.team-id {
+    font-family: var(--akg-font-mono);
+    font-size: var(--akg-section-label-size);
+    line-height: 1.4;
+    color: var(--akg-text-muted);
+    user-select: all;
+    overflow-wrap: anywhere;
 }
 
 .team-description {
-    font-size: 0.875rem;
-    color: #666;
+    font-size: 11.5px;
+    line-height: 1.35;
+    color: var(--akg-text-muted);
     cursor: pointer;
-    padding: 0.25rem;
-    border-radius: 4px;
-    transition: background-color 0.2s;
+    padding: 2px 4px;
+    margin-left: -4px;
+    border-radius: 6px;
+    transition: background var(--akg-pane-transition-duration) ease;
     max-width: 300px;
 
     &:hover {
-        background-color: #f5f5f5;
+        background: var(--akg-well-bg);
     }
 }
 
 .description-text {
-    color: #333;
+    color: var(--akg-text);
 }
 
 .description-placeholder {
-    color: #999;
+    color: var(--akg-text-muted);
     font-style: italic;
 }
 
 .description-editor {
     display: flex;
-    gap: 0.5rem;
+    gap: 6px;
     align-items: center;
 
     .description-input {
         flex: 1;
         max-width: 300px;
-        font-size: 0.875rem;
+        font-size: 11.5px;
+        font-family: var(--akg-font-ui);
+        color: var(--akg-text);
+        border-radius: 8px;
+    }
+}
+
+// --- Quiet controls ---------------------------------------------------------
+//
+// The row actions and the two description-editor controls, stated as the
+// console's icon button rather than as a PrimeNG `severity="secondary"`. Same
+// geometry tokens the shared `app-icon-button` reads, so a control in a table
+// cell and a control in the rail are the same object at the same size.
+//
+// They are NOT `app-icon-button` itself: that component projects an inline
+// <svg> and these carry PrimeIcons glyphs, and swapping the icon set is a
+// change to what the row LOOKS like rather than to what it does. The shared
+// component is where they should converge once the table's icons move to the
+// same <svg> set as the rail's — noted in the report rather than done here.
+.row-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.row-action {
+    display: grid;
+    place-items: center;
+    width: var(--akg-icon-button-size-sm);
+    height: var(--akg-icon-button-size-sm);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    border-radius: var(--akg-icon-button-radius);
+    color: var(--akg-text-muted);
+    cursor: pointer;
+    transition:
+        background var(--akg-pane-transition-duration) ease,
+        color var(--akg-pane-transition-duration) ease;
+
+    i {
+        font-size: 12px;
+        line-height: 1;
     }
 
-    .description-save-btn,
-    .description-cancel-btn {
-        width: 2rem;
-        height: 2rem;
-        padding: 0;
-
-        i {
-            font-size: 0.65rem;
-        }
+    &:hover:not(:disabled) {
+        background: var(--akg-panel-hover);
+        color: var(--akg-text);
     }
+
+    &:focus-visible {
+        outline: none;
+        box-shadow: var(--akg-focus-ring);
+    }
+
+    &:disabled {
+        color: var(--akg-glyph-quiet);
+        cursor: default;
+    }
+}
+
+// Delete states its consequence on hover rather than at rest. At rest it is as
+// quiet as the control beside it — a permanently red glyph in every row reads
+// as an alarm about the team rather than as an action available on it.
+.row-action--danger:hover:not(:disabled) {
+    background: var(--akg-danger-bg);
+    color: var(--akg-danger-fg);
+}
+
+.description-save-btn:hover:not(:disabled) {
+    background: var(--akg-accent-bg);
+    color: var(--akg-accent-fg);
 }
 
 // Metadata column — one chip per answered field. Wraps rather than truncates:
 // a case reference cut off mid-string is worse than a taller row, and a team
 // declares a handful of fields, not dozens.
+//
+// DEMOTED (W11). These were outlined boxes at 0.9rem: a border, a fill and a
+// near-black label, repeated four or five times per row and near-identically
+// down the column, which gave the second column more ink than the first. They
+// are now WELLS — `--akg-well-bg` is the palette's name for a recessed ground
+// with no outline, the same treatment the rail's search field uses — set at
+// the rail's meta size. The label keeps the muted tone and the value takes
+// `--akg-text`, so the part that differs between rows is the part that is
+// dark. No third, lighter step: there is none below `--akg-text-muted` that
+// clears AA on these grounds (see `_conversation-tokens.scss`), so the
+// hierarchy is carried by weight.
+//
+// The cell is width-capped so a chatty contract cannot push the Creation Date
+// and Status columns off to the right — the exact complaint W11 opens with.
 .team-metadata-cell {
+  max-width: 26ch;
+
   .team-metadata-chip {
     display: inline-block;
-    font-size: 0.9rem;
-    color: #495057;
-    background: #eef1f4;
-    border: 1px solid #dee2e6;
-    border-radius: 4px;
-    padding: 0.1rem 0.4rem;
-    margin: 0.1rem 0.25rem 0.1rem 0;
+    font-size: 11.5px;
+    line-height: 1.35;
+    color: var(--akg-text);
+    background: var(--akg-well-bg);
+    border-radius: 6px;
+    padding: 2px 6px;
+    margin: 2px 4px 2px 0;
     max-width: 100%;
     overflow-wrap: anywhere;
 
     .team-metadata-chip__label {
-      color: #6c757d;
+      font-weight: 300;
+      color: var(--akg-text-muted);
 
       &::after {
         content: ": ";
       }
     }
   }
+}
+
+// The creation date is reference data, not a headline: same quiet step as the
+// row's second line, and tabular figures so the column reads as a column.
+.team-created-cell {
+    font-size: 11.5px;
+    line-height: 1.35;
+    color: var(--akg-text-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
 }
 
 // The loading overlay.
@@ -195,11 +406,11 @@ p-table {
     transform: translate(-50%, -50%);
     width: 6.5rem;
     height: 6.5rem;
-    border-radius: 12px;
-    background: #f1f3f5;
-    border: 1px solid #dee2e6;
+    border-radius: var(--akg-card-radius);
+    background: var(--akg-overlay-bg);
+    border: 1px solid var(--akg-surface-border);
     // Lifts it off the rows without the heavy shadow of a dialog.
-    box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
+    box-shadow: var(--akg-overlay-shadow);
 }
 
 :host ::ng-deep .p-datatable-loading-icon {
@@ -207,11 +418,60 @@ p-table {
     position: relative;
     // Large and light, like the chat panel's loading placeholder — and a fixed
     // neutral colour, so it never lands on one of the theme spinner's four
-    // animated stops. Red in particular reads as an error here.
+    // animated stops. Red in particular reads as an error here. The token is
+    // the palette's non-text quiet step: a spinner is a glyph, and 1.4.11's
+    // 3:1 is the bar it has to clear rather than 4.5:1.
     font-size: 3rem;
     width: 3rem;
     height: 3rem;
-    color: #94a3b8;
+    color: var(--akg-glyph-quiet);
+}
+
+// --- The paginator ----------------------------------------------------------
+//
+// IT STAYS, AND IT STAYS CLASSIC AND NUMBERED (ADR-032 §Decision 3; the
+// template's own header comment carries the decision). What changes is only
+// its palette: Aura draws the resting page numbers off its cool surface ramp,
+// which `app.theme.ts` re-points for `primary` and nothing else, so the one
+// control pinned to the bottom of the page was also the last cool grey on it.
+//
+// The SELECTED page is deliberately left alone. It already resolves through
+// `highlight` -> `--akg-accent-bg` / `--akg-accent-hover` in `app.theme.ts`,
+// which is the accent by construction; restating it here would be a second
+// source of truth for one colour.
+:host ::ng-deep .p-paginator {
+    background: var(--akg-overlay-bg);
+    border-top: 1px solid var(--akg-surface-border);
+    border-radius: 0 0 var(--akg-card-radius) var(--akg-card-radius);
+    padding: 6px 10px;
+    color: var(--akg-text-muted);
+}
+
+:host ::ng-deep .p-paginator-current {
+    font-size: 11.5px;
+    color: var(--akg-text-muted);
+}
+
+:host ::ng-deep .p-paginator .p-paginator-page,
+:host ::ng-deep .p-paginator .p-paginator-first,
+:host ::ng-deep .p-paginator .p-paginator-prev,
+:host ::ng-deep .p-paginator .p-paginator-next,
+:host ::ng-deep .p-paginator .p-paginator-last {
+    min-width: var(--akg-icon-button-size-sm);
+    height: var(--akg-icon-button-size-sm);
+    border-radius: var(--akg-icon-button-radius);
+    font-size: 12.5px;
+    color: var(--akg-text-muted);
+    transition: background var(--akg-pane-transition-duration) ease;
+}
+
+:host ::ng-deep .p-paginator .p-paginator-page:not(.p-paginator-page-selected):hover,
+:host ::ng-deep .p-paginator .p-paginator-first:not(:disabled):hover,
+:host ::ng-deep .p-paginator .p-paginator-prev:not(:disabled):hover,
+:host ::ng-deep .p-paginator .p-paginator-next:not(:disabled):hover,
+:host ::ng-deep .p-paginator .p-paginator-last:not(:disabled):hover {
+    background: var(--akg-panel-hover);
+    color: var(--akg-text);
 }
 
 // The status tag's palette (R5).
@@ -239,6 +499,15 @@ p-table {
 // COLOUR IS SET ONCE, on the tag, and inherited: neither `.p-tag-label` nor
 // `.p-tag-icon` declares one, so the icon can never drift away from the word
 // beside it.
+:host ::ng-deep .team-status-tag {
+    font-size: 11.5px;
+    font-weight: 400;
+    line-height: 1.35;
+    padding: 2px 8px;
+    border-radius: var(--akg-pill-radius);
+    white-space: nowrap;
+}
+
 :host ::ng-deep .team-status-tag--stopped {
     background: var(--akg-status-neutral-bg);
     color: var(--akg-status-neutral-fg);
@@ -253,4 +522,12 @@ p-table {
 :host ::ng-deep .team-status-tag--idle {
     background: var(--akg-status-live-bg);
     color: var(--akg-status-live-fg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :host ::ng-deep .p-datatable-tbody > tr,
+    .row-action,
+    .team-description {
+        transition: none;
+    }
 }

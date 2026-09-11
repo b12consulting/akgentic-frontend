@@ -1,10 +1,23 @@
 <section class="content">
   <!--
-    A single child. The split row and list wrapper that used to sit here are
-    gone with Epic 52: opening a team is a navigation to `/process/:id` again,
-    so there is no second pane for this page to make room for and no divider
-    between them. `.main-container` bounds the table's scroll region straight
-    off `.content`.
+    The greeting HEADER. A preceding SIBLING of `.main-container`, never a
+    wrapper around it: the table's bounded scroll region is the
+    `.content > .main-container` chain, and a div inserted between the two
+    would break both the CSS (`min-height: 0` has to reach the card) and the
+    spec that pins the direct-child relationship.
+
+    It belongs to THIS page, not to the shell. Mounted in `console-shell` it
+    would reappear over every conversation, and a greeting you are shown on
+    your way back from somewhere is a banner.
+  -->
+  <app-home-greeting />
+
+  <!--
+    Two children now — the greeting above and this. The split row and list
+    wrapper that used to sit here are gone with Epic 52: opening a team is a
+    navigation to `/process/:id` again, so there is no second pane for this
+    page to make room for and no divider between them. `.main-container` bounds
+    the table's scroll region straight off `.content`.
   -->
   <div class="main-container">
     <!--
@@ -54,9 +67,18 @@
     -->
     <span class="home-controls__group">
     <label for="namespace-select" class="home-controls__label">{{ "home.teamType" | translate }}</label>
+    <!--
+      `panelStyleClass` is how the OVERLAY gets restyled at all. PrimeNG
+      teleports the panel to the body's overlay container, so it leaves this
+      component's view and no `:host ::ng-deep` rule can reach it — including
+      the Teams / Library section headers, which live only there. The class
+      names the rules in this component's stylesheet that are emitted unscoped
+      for exactly that reason.
+    -->
     <p-select
       size="small"
       inputId="namespace-select"
+      panelStyleClass="home-teamtype-panel"
       [options]="(namespaceGroups$ | async) || []"
       [group]="true"
       optionGroupLabel="label"
@@ -102,42 +124,71 @@
       the filter row, the row title column and the Configuration dialog derive
       from.
     -->
-    <!-- Edit Configuration button; opens the Monaco panel in a dialog. -->
+    <!--
+      THE THREE CONTROL BUTTONS ARE NATIVE `<button>`s, not `pButton`.
+
+      Their look is `.home-control` in this component's stylesheet, built from
+      the same tokens as the rail's `app-icon-button` — so the toolbar and the
+      list beside it are one design language rather than Aura's cool-grey
+      `severity="secondary"` sitting under a warm redesign. Restyling pButton
+      instead would mean overriding Aura's own ramp through `::ng-deep` on
+      every state, which is more CSS for a worse result and leaves the
+      `severity` vocabulary in the markup implying a palette that no longer
+      exists.
+
+      Nothing is lost by dropping the directive: these carry a label, an icon,
+      a disabled state and a click, and a native button does all four — and
+      does the last two BETTER, since `[disabled]` lands on the element the
+      specs query rather than being propagated onto an inner one.
+
+      `extra-small-button` is gone with it. It was defined nowhere in `src/`:
+      dead markup that read like a style hook.
+    -->
+    <!-- Edit Configuration; opens the Monaco panel in a dialog. -->
     <button
-      pButton
-      size="small"
       type="button"
-      [label]="'home.configuration' | translate"
-      icon="pi pi-pencil"
+      class="home-control"
       [disabled]="!(selectedNamespace$ | async)"
       (click)="namespacePanelVisible = true"
-      class="extra-small-button"
       data-test="edit-namespace-yaml-btn"
-    ></button>
+    >
+      <i class="pi pi-pencil home-control__icon" aria-hidden="true"></i>
+      <span>{{ "home.configuration" | translate }}</span>
+    </button>
     <button
-      pButton
-      size="small"
       type="button"
-      [label]="'common.refresh' | translate"
-      [icon]="isRefreshing ? 'pi pi-spinner pi-spin' : 'pi pi-refresh'"
+      class="home-control"
       [disabled]="isRefreshing"
       (click)="refreshContext()"
-      class="extra-small-button"
-    ></button>
+      data-test="refresh-teams-btn"
+    >
+      <i
+        class="pi home-control__icon"
+        [ngClass]="isRefreshing ? 'pi-spinner pi-spin' : 'pi-refresh'"
+        aria-hidden="true"
+      ></i>
+      <span>{{ "common.refresh" | translate }}</span>
+    </button>
     <!--
       Show/hide the filter row. Presentation only — it never clears the filter,
       so a HIDDEN row can still be narrowing the list. `hasActiveFilter` is what
       stops that being a lie: while the row is hidden AND filtering, the control
-      changes severity and says so in its title, because otherwise the table is
-      filtered with its cause off screen and nothing on the page explains it.
+      takes the attention tone and says so in its title, because otherwise the
+      table is filtered with its cause off screen and nothing on the page
+      explains it.
+    -->
+    <!--
+      `severity="warn"` became `.home-control--attention`, and the token behind
+      it is `--akg-attention-fg/-bg` rather than Aura's amber. The MEANING is
+      unchanged and is the reason this state cannot simply become grey with the
+      rest: it says a filter is narrowing the list from off screen. The tone is
+      dark enough to carry the caption (4.5:1 on every ground the palette
+      declares) where the signal amber it replaces measured 2.57:1 on white.
     -->
     <button
-      pButton
-      size="small"
       type="button"
-      [label]="(filtersVisible ? 'home.hideFilters' : 'home.filters') | translate"
-      [icon]="filtersVisible ? 'pi pi-filter-slash' : 'pi pi-filter'"
-      [severity]="!filtersVisible && hasActiveFilter ? 'warn' : 'secondary'"
+      class="home-control"
+      [class.home-control--attention]="!filtersVisible && hasActiveFilter"
       [attr.aria-expanded]="filtersVisible"
       aria-controls="home-filter-row"
       [attr.title]="
@@ -147,9 +198,17 @@
         ) | translate
       "
       (click)="toggleFilters()"
-      class="extra-small-button"
       data-test="toggle-filters-btn"
-    ></button>
+    >
+      <i
+        class="pi home-control__icon"
+        [ngClass]="filtersVisible ? 'pi-filter-slash' : 'pi-filter'"
+        aria-hidden="true"
+      ></i>
+      <span>{{
+        (filtersVisible ? "home.hideFilters" : "home.filters") | translate
+      }}</span>
+    </button>
     </div>
 
     <!--
