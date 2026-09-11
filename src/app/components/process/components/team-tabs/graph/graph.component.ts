@@ -83,10 +83,32 @@ export class GraphComponent {
       this.graphDataService.edges$,
       this.graphDataService.categories$,
     ]).subscribe(([updatedNodes, updatedEdges, updatedCats]) => {
-      this.nodes = updatedNodes;
-      this.edges = updatedEdges;
-      this.categories = updatedCats;
-      this.updateChart();
+      // INSIDE THE ZONE, and this is load-bearing rather than defensive.
+      //
+      // The chart is driven IMPERATIVELY — `updateChart()` hands echarts a new
+      // option object — so for most of this component's life nothing in the
+      // template depended on `nodes` and a missed change-detection pass was
+      // invisible: the canvas redrew itself either way.
+      //
+      // The `@if (nodes.length === 0)` empty-state overlay changed that. It is
+      // an ordinary template binding and only re-evaluates when Angular runs a
+      // tick, and these emissions originate on the websocket feed, outside the
+      // Angular zone. So the overlay rendered once against the initial empty
+      // array and then never re-evaluated: the canvas filled with agents and
+      // "No agents available" stayed on top of them, permanently, on every
+      // team. `onChartInit`'s legend handler already reaches for `zone.run`
+      // for the same underlying reason.
+      //
+      // The whole assignment goes inside, not just the flag: `edges` and
+      // `categories` feed `<app-human-request [nodes]>` and the legend, and a
+      // half-zoned update is the version that works until someone binds the
+      // next field.
+      this.zone.run(() => {
+        this.nodes = updatedNodes;
+        this.edges = updatedEdges;
+        this.categories = updatedCats;
+        this.updateChart();
+      });
     });
   }
 
