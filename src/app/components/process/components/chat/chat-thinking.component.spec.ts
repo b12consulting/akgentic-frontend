@@ -304,6 +304,98 @@ describe('ChatThinkingComponent — the activity fold', () => {
     );
   });
 
+  /**
+   * THE CLOSED ROW NAMES EVERYONE IT ASKED.
+   *
+   * It used to name `latest().tool_name` — the LAST step — so a manager that
+   * asked two agents in one run reported only the second. Opening the fold
+   * showed "Asked @Assistant / Asked @Expert" under a closed line that had said
+   * "contacted @Expert", and the count beside it ("2 steps") announced the row
+   * was incomplete without saying what it had left out.
+   */
+  describe('a run that contacted several agents', () => {
+    beforeEach(() => {
+      setTestTranslations({
+        chat: { activity: { latestContactDone: '<<contacted:{{tool}}>>' } },
+      });
+    });
+
+    function latestText(): string {
+      return el().querySelector('.activity-latest')?.textContent ?? '';
+    }
+
+    it('names every agent, not just the last one reached', () => {
+      setInputs(
+        makeState({
+          final: true,
+          tools: [contact('m1', '@Assistant'), contact('m2', '@Expert')],
+        }),
+      );
+
+      expect(latestText()).toContain('@Assistant');
+      expect(latestText()).toContain('@Expert');
+    });
+
+    /**
+     * `Intl.ListFormat`, not `join(' and ')` — the conjunction belongs to the
+     * locale. Asserted through the platform's own formatter rather than against
+     * the literal "and", so the spec states the RULE and cannot disagree with
+     * the browser running it.
+     */
+    it('joins them the way the active locale joins a list', () => {
+      setInputs(
+        makeState({
+          final: true,
+          tools: [contact('m1', '@Assistant'), contact('m2', '@Expert')],
+        }),
+      );
+
+      const expected = new Intl.ListFormat(undefined, {
+        style: 'long',
+        type: 'conjunction',
+      }).format(['@Assistant', '@Expert']);
+
+      expect(latestText()).toContain(expected);
+    });
+
+    it('names an agent asked twice in one run once', () => {
+      setInputs(
+        makeState({
+          final: true,
+          tools: [
+            contact('m1', '@Expert'),
+            contact('m2', '@Expert'),
+            contact('m3', '@Assistant'),
+          ],
+        }),
+      );
+
+      // Two names in the row, not three — a repeat is one relationship.
+      expect(latestText().match(/@Expert/g)?.length).toBe(1);
+      expect(latestText()).toContain('@Assistant');
+    });
+
+    /**
+     * The other branch, which the fix must not have swallowed: when the latest
+     * step is a TOOL the row still names that tool, and names no agent — the
+     * run may well have contacted someone earlier.
+     */
+    it('still names the tool when the latest step is a tool call', () => {
+      setTestTranslations({
+        chat: { activity: { latestDone: '<<used:{{tool}}>>' } },
+      });
+      setInputs(
+        makeState({
+          final: true,
+          tools: [contact('m1', '@Assistant'), tool('c1', 'read_mailbox', true)],
+        }),
+      );
+
+      expect(latestText()).toContain('read_mailbox');
+      expect(latestText()).not.toContain('@Assistant');
+    });
+  });
+
   it('trackByToolId returns the tool_call_id', () => {
     expect(component.trackByToolId(0, tool('call-9', 'foo'))).toBe('call-9');
   });

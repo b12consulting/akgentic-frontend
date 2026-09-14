@@ -1,7 +1,8 @@
 import { CommonModule } from '@angular/common';
-import { Component, computed, input, output, signal } from '@angular/core';
+import { Component, computed, inject, input, output, signal } from '@angular/core';
 import { TranslatePipe } from '@ngx-translate/core';
 
+import { I18nService } from '../../../../core/i18n/i18n.service';
 import { ThinkingState, ThinkingToolEntry } from '../../selectors/chat.selector';
 import { describeStep, StepNarration } from '../../selectors/step-narration';
 
@@ -40,6 +41,8 @@ export class ChatThinkingComponent {
   expanded = input<boolean>(false);
   toggleExpanded = output<string>();
 
+  private readonly i18n = inject(I18nService);
+
   /** The step shown while collapsed. Last-in wins: the row reports what the
    *  agent is doing NOW, not what it started with. */
   latest = computed<ThinkingToolEntry | null>(() => {
@@ -48,6 +51,55 @@ export class ChatThinkingComponent {
   });
 
   stepCount = computed<number>(() => this.state().tools.length);
+
+  /**
+   * WHO THE RUN CONTACTED — all of them, in the order first reached.
+   *
+   * The row used to name `latest().tool_name`, which is the LAST step, so a
+   * manager that asked two agents in one run reported only the second: "asked
+   * @Assistant / asked @Expert" opened out of a fold whose closed line said
+   * "contacted @Expert". The count beside it ("2 steps") said the row was
+   * incomplete without saying what it had left out.
+   *
+   * Distinct, because asking the same agent twice in one run is one
+   * relationship, not two — and a name repeated in a list reads as a bug.
+   *
+   * `Intl.ListFormat` rather than `join(' and ')`: the conjunction and the
+   * comma rules are the locale's, not this component's, and this file has no
+   * business deciding that French says "et". The language comes from
+   * `I18nService`, the same one the pipes resolve against, so the row cannot
+   * disagree with the sentence around it.
+   */
+  contactedAgents = computed<string>(() => {
+    const names = [
+      ...new Set(
+        this.state()
+          .tools.filter((step) => step.kind === 'contact')
+          .map((step) => step.tool_name),
+      ),
+    ];
+    return this.listFormatter().format(names);
+  });
+
+  /**
+   * What the collapsed row names: every agent contacted, or the latest tool.
+   *
+   * One expression rather than a branch in the template, because the two cases
+   * fill the SAME `{{tool}}` placeholder — `latestKey` has already decided
+   * which sentence is being spoken, and this decides what goes in its one slot.
+   */
+  latestSubject = computed<string>(() => {
+    const step = this.latest();
+    return step?.kind === 'contact' ? this.contactedAgents() : (step?.tool_name ?? '');
+  });
+
+  private listFormatter = computed<Intl.ListFormat>(
+    () =>
+      new Intl.ListFormat(this.i18n.currentLanguage || undefined, {
+        style: 'long',
+        type: 'conjunction',
+      }),
+  );
 
   /** Copy for the collapsed row: what kind of step, and whether it is still
    *  running. Four keys rather than a built string, so a translator sees whole

@@ -43,8 +43,11 @@
 
     <span class="activity-agent">{{ state().agent_name }}</span>
 
-    <span class="activity-latest" *ngIf="latest() as l">{{
-      latestKey() | translate: { tool: l.tool_name }
+    <!-- `latestSubject()`, not `l.tool_name`: a run that contacted two agents
+         named only the second one here, while the count beside it said the row
+         was incomplete without saying what it had left out. -->
+    <span class="activity-latest" *ngIf="latest()">{{
+      latestKey() | translate: { tool: latestSubject() }
     }}</span>
 
     <span class="activity-count" *ngIf="stepCount() > 1">{{
