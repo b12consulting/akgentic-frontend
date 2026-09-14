@@ -173,12 +173,16 @@ describe('ChatThinkingComponent — the activity fold', () => {
     // A real button: the fold's row is a div, so this is the only thing on it a
     // keyboard can land on.
     expect(closed?.tagName.toLowerCase()).toBe('button');
-    expect(closed?.textContent?.trim()).toBe('<<open>>');
+    // THE NAME MOVED TO `aria-label` when the visible words came off. The
+    // control is a caret now, like every other fold on the surface — but an
+    // icon-only button with no name is unusable by a screen reader, so the two
+    // words it used to show are what it is now called.
+    expect(closed?.getAttribute('aria-label')).toBe('<<open>>');
     expect(closed?.getAttribute('aria-expanded')).toBe('false');
 
     setInputs(makeState({ tools: [tool('c1', 'search_web')] }), true);
     const open = el().querySelector<HTMLButtonElement>('.activity-toggle');
-    expect(open?.textContent?.trim()).toBe('<<close>>');
+    expect(open?.getAttribute('aria-label')).toBe('<<close>>');
     expect(open?.getAttribute('aria-expanded')).toBe('true');
   });
 
@@ -265,7 +269,15 @@ describe('ChatThinkingComponent — the activity fold', () => {
     );
   });
 
-  it('raw payloads are hidden until asked for, and reset when the fold closes', () => {
+  it('raw payloads are hidden until asked for, and reset when the fold closes', async () => {
+    /** The step list animates out and its removal flushes on a macrotask, so
+     *  "the list is gone" is a claim about where the reveal ENDS. */
+    const settle = async (): Promise<void> => {
+      fixture.detectChanges();
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+      fixture.detectChanges();
+    };
+
     setInputs(makeState({ tools: [tool('c1', 'hire_members')] }), true);
     expect(el().querySelector('.activity-raw')).toBeNull();
 
@@ -280,9 +292,9 @@ describe('ChatThinkingComponent — the activity fold', () => {
     // greet you with JSON you asked for three runs ago.
     (el().querySelector('.activity') as HTMLElement).click();
     fixture.componentRef.setInput('expanded', false);
-    fixture.detectChanges();
+    await settle();
     fixture.componentRef.setInput('expanded', true);
-    fixture.detectChanges();
+    await settle();
     expect(el().querySelector('.activity-raw')).toBeNull();
   });
 

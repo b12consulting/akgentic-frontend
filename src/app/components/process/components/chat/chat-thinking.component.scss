@@ -38,11 +38,12 @@
    * is the correct side for it to hang: the text is what a reader aligns on,
    * and the border is chrome around it.
    *
-   * The inset is named rather than written twice, so the two cannot drift.
+   * The inset is the SHARED `--akg-fold-inset-x`, which the folded notification
+ * reads too — the two hover grounds have to be the same width, and they were
+ * not when each row carried its own copy of the number.
    */
-  --akg-activity-inset-x: 13px;
-  margin-left: calc(var(--akg-avatar-gutter) - var(--akg-activity-inset-x));
-  padding: 10px var(--akg-activity-inset-x);
+  margin-left: calc(var(--akg-avatar-gutter) - var(--akg-fold-inset-x));
+  padding: 10px var(--akg-fold-inset-x);
   border: 1px solid var(--akg-hairline);
   border-radius: 12px;
   background: var(--akg-surface-muted);
@@ -136,6 +137,9 @@
  */
 .activity-toggle {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -182,7 +186,10 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  animation: activity-reveal 140ms ease-out;
+  /* NO `animation` HERE. The list's reveal is `stepsReveal` in the component,
+     which animates height as well as opacity and plays in BOTH directions — a
+     keyframe on enter could only ever fade the list in, and stacked on top of
+     the trigger it ran a second, shorter motion against it. */
 }
 
 /*
@@ -303,17 +310,6 @@
   }
 }
 
-@keyframes activity-reveal {
-  from {
-    opacity: 0;
-    transform: translateY(-2px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
 /* Motion here is decoration — the pulse says "working", which the text already
  * says. Honour the OS preference and drop it. */
 @media (prefers-reduced-motion: reduce) {
@@ -328,4 +324,11 @@
   .activity-toggle {
     transition: none;
   }
+}
+
+/* The caret beside the toggle's words. Same quiet step and same size as the
+   transcript's other fold carets, so the three read as one control. */
+.activity-caret {
+  font-size: 0.7rem;
+  color: var(--akg-glyph-quiet);
 }

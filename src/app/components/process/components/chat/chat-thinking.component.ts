@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { animate, style, transition, trigger } from '@angular/animations';
 import { TranslatePipe } from '@ngx-translate/core';
 
 import { I18nService } from '../../../../core/i18n/i18n.service';
@@ -29,12 +30,42 @@ export interface NarratedStep extends StepNarration {
  * `anchor_message_id`; the parent owns the expansion Set so it survives
  * re-emissions of `thinkingAgents$`.
  */
+/**
+ * Opening and closing the step list.
+ *
+ * THIS ONE ANIMATES CLEANLY BECAUSE NOTHING SWAPS. The summary line stays put
+ * and the list appears beneath it, so there is only ever one element entering
+ * or leaving and no second row whose height has to be reconciled with it. The
+ * notification row could not be animated this way, which is why it opens its
+ * text in place instead.
+ *
+ * Height AND opacity: height alone slides fully-drawn rows through a moving
+ * window, which reads as a clipping fault rather than as an opening.
+ */
+const STEPS_REVEAL = trigger('stepsReveal', [
+  transition(':enter', [
+    style({ height: 0, opacity: 0, overflow: 'hidden' }),
+    animate(
+      '210ms cubic-bezier(0.22, 0.61, 0.36, 1)',
+      style({ height: '*', opacity: 1 }),
+    ),
+  ]),
+  transition(':leave', [
+    style({ height: '*', opacity: 1, overflow: 'hidden' }),
+    animate(
+      '210ms cubic-bezier(0.22, 0.61, 0.36, 1)',
+      style({ height: 0, opacity: 0 }),
+    ),
+  ]),
+]);
+
 @Component({
   selector: 'app-chat-thinking',
   standalone: true,
   imports: [CommonModule, TranslatePipe],
   templateUrl: './chat-thinking.component.html',
   styleUrl: './chat-thinking.component.scss',
+  animations: [STEPS_REVEAL],
 })
 export class ChatThinkingComponent {
   state = input.required<ThinkingState>();
