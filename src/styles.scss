@@ -178,9 +178,64 @@ span.p-fieldset-legend-label {
 // of the built-in one — and the `2.5rem` was hand-calibrated to a trigger height
 // the composer redesign changed anyway.
 
-// ADR-013: slash-command mention dropdown rows. The `angular-mentions`
-// `mention-list` component is created via ViewContainerRef, so its rows live
-// outside the input component's scoped styles — these rules are global.
+// ADR-013: the `@`-mention and `/`-command dropdown.
+//
+// `angular-mentions` creates `mention-list` through a `ViewContainerRef`, so its
+// rows live outside the composer's scoped styles — these rules are global by
+// necessity, not by preference.
+//
+// THE LIBRARY SHIPS ITS OWN LOOK, AND IT IS NOT OURS. Its component styles state
+// a white ground, a black-alpha border and `#337ab7` — Bootstrap 3's blue — for
+// the selected row. Against this console that reads as a control borrowed from a
+// different application, which is precisely what the token file exists to
+// prevent. Overriding it needs a compound selector: the library's rules are
+// emulated-encapsulated, so they carry an attribute of their own and a bare
+// `.mention-menu` loses to them.
+//
+// A TINTED SELECTION, NOT A FILLED ONE. The old fill forced white text, which in
+// turn forced a lighter grey for the args hint and the description so they
+// stayed legible on it — a second palette maintained only for the highlighted
+// row. The accent tint keeps every row's colours the same whether it is selected
+// or not, so that whole branch is gone rather than re-tokenised.
+// WHERE THE CLASSES ACTUALLY SIT, because they are not on the same element:
+// `.mention-active` marks the `<li>`, `.mention-item` marks the `<a>` inside it.
+// A selector that puts both on one compound matches nothing at all — which is
+// how the first attempt at this left the blue exactly where it was.
+//
+// The specificity has to clear the library's, not merely equal it. Its rules
+// are emulated-encapsulated, so `.mention-menu` reads as `.mention-menu[_ngc]`
+// and a two-class selector of ours only TIES — and a tie is decided by source
+// order, which the component wins because its styles are injected when it first
+// renders, long after this file.
+ul.dropdown-menu.mention-menu.scrollable-menu {
+  padding: 4px;
+  border: 1px solid var(--akg-surface-border);
+  border-radius: var(--akg-card-radius);
+  background-color: var(--akg-overlay-bg);
+  box-shadow: var(--akg-overlay-shadow);
+  color: var(--akg-text);
+  font-family: var(--akg-font-ui);
+  font-size: 13px;
+}
+
+ul.mention-menu > li > a.dropdown-item.mention-item {
+  padding: 5px 10px;
+  border-radius: 6px;
+  color: var(--akg-text);
+  cursor: pointer;
+}
+
+ul.mention-menu > li > a.dropdown-item.mention-item:hover {
+  background-color: var(--akg-panel-hover);
+  color: var(--akg-text);
+}
+
+ul.mention-menu > li.mention-active > a.dropdown-item.mention-item,
+ul.mention-menu > li.active > a.dropdown-item.mention-item {
+  background-color: var(--akg-accent-bg);
+  color: var(--akg-accent-fg);
+}
+
 // `@` rows carry only `.mention-item-name`; `/` command rows add an args hint
 // and a secondary description line.
 .mention-item-name {
@@ -190,8 +245,8 @@ span.p-fieldset-legend-label {
 .mention-item-args {
   margin-left: 0.4rem;
   font-size: 0.8rem;
-  color: #64748b;
-  font-family: monospace;
+  color: var(--akg-text-muted);
+  font-family: var(--akg-font-mono);
 }
 
 .mention-item-desc {
@@ -208,19 +263,7 @@ span.p-fieldset-legend-label {
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 0.8rem;
-  color: #64748b;
-}
-
-// On the selected (active) row, `angular-mentions` paints the row's `<a>` white
-// on a blue background (`.mention-active>a { color:#fff }`). Our explicit grey
-// on the args hint and description overrides that inherited white and becomes
-// unreadable on the blue fill — restore a readable light tone for the secondary
-// text on the active row only (the bold name already inherits white).
-.mention-active > a {
-  .mention-item-args,
-  .mention-item-desc {
-    color: #e2e8f0;
-  }
+  color: var(--akg-text-muted);
 }
 
 /* Markdown styles.
