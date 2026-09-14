@@ -1086,6 +1086,84 @@ describe('ProcessUserInputComponent', () => {
       expect(at!.allowSpace).toBeTrue();
     });
 
+    /**
+     * THE CONFIG OBJECT MUST NOT CHURN.
+     *
+     * `[mentionConfig]` is an Angular input, so the directive's `ngOnChanges`
+     * fires on a new object IDENTITY — and `addConfig` ends by calling
+     * `updateSearchList()` when the open dropdown's trigger matches. A getter
+     * that rebuilt every change-detection pass therefore rebuilt the open
+     * list's items and reset its scroll on every pass; scrolling the dropdown
+     * is itself zone activity, so it triggered the pass that undid it. The list
+     * flickered and could not reach its end.
+     *
+     * Asserted as reference equality rather than deep equality on purpose: the
+     * contents were never wrong, and a `toEqual` here would have passed
+     * throughout the bug.
+     */
+    describe('mentionConfig identity', () => {
+      it('hands back the SAME object while nothing it depends on has changed', () => {
+        component.userInput = '';
+        expect(component.mentionConfig).toBe(component.mentionConfig);
+      });
+
+      it('rebuilds when the armed state changes, and not otherwise', () => {
+        component.userInput = '';
+        const armed = component.mentionConfig;
+
+        component.userInput = 'a sentence';
+        const disarmed = component.mentionConfig;
+        expect(disarmed).not.toBe(armed);
+
+        component.userInput = 'a sentence, still';
+        expect(component.mentionConfig)
+          .withContext('still disarmed — nothing to rebuild for')
+          .toBe(disarmed);
+      });
+    });
+
+    /**
+     * A `/` OPENS THE COMMAND LIST ONLY AS THE FIRST CHARACTER.
+     *
+     * `angular-mentions` has no notion of position — it opens on any occurrence
+     * of a trigger char — so a URL or an ordinary `and/or` popped the command
+     * menu mid-sentence. There is no config flag for it, so the entry is
+     * withheld from the config when it must not fire, and these specs pin both
+     * halves: that it is there when it should be, and gone when it should not.
+     */
+    describe('the / trigger is armed only at the start of a message', () => {
+      function triggers(): (string | undefined)[] {
+        return component.mentionConfig.mentions.map((m) => m.triggerChar);
+      }
+
+      it('is armed on an empty message — the next character lands at position 0', () => {
+        component.userInput = '';
+        expect(triggers()).toContain('/');
+      });
+
+      it('stays armed while the command name is being typed', () => {
+        // Or the list would shut on the first keystroke after the slash.
+        component.userInput = '/cle';
+        expect(triggers()).toContain('/');
+      });
+
+      it('is disarmed mid-sentence, so a URL cannot open it', () => {
+        component.userInput = 'see http://example.com';
+        expect(triggers()).not.toContain('/');
+      });
+
+      it('is disarmed once the user is into the arguments', () => {
+        // A later slash there is part of what they are writing.
+        component.userInput = '/switch_model gpt-5';
+        expect(triggers()).not.toContain('/');
+      });
+
+      it('never disarms the @ trigger, which is for mid-sentence use', () => {
+        component.userInput = 'ask @Exp';
+        expect(triggers()).toContain('@');
+      });
+    });
+
     it('AC-7: selectAgent behavior is unchanged (inserts friendly name + space)', () => {
       expect(component.selectAgent({ name: 'Manager [Manager]' })).toBe(
         'Manager [Manager] ',
