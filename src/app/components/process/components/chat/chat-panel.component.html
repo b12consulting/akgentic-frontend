@@ -3,7 +3,6 @@
     <div
       class="message-list"
       #scrollContainer
-      (click)="onBackgroundClick()"
       (scroll)="onScroll()"
     >
       <ng-container *ngFor="let item of displayItems; trackBy: trackByDisplayItem">
@@ -11,11 +10,9 @@
           *ngIf="item.kind === 'message'"
           [attr.data-message-id]="item.data.id"
           [message]="item.data"
-          [selected]="item.data.id === selectedMessageId"
           [notification]="hasNotification(item.data)"
           (messageSelected)="onMessageSelected($event)"
           (toggleCollapse)="onToggleCollapse($event)"
-          (bubbleClicked)="onBubbleClicked($event)"
           (rule3Clicked)="onRule3Clicked($event)"
         ></app-chat-message>
         <!-- Epic 54: the calendar-day rule. Chrome, not a message — a plain

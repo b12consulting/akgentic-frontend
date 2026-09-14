@@ -512,92 +512,66 @@ describe('ChatMessageComponent', () => {
     });
   });
 
-  describe('bubbleClicked output', () => {
-    it('should emit bubbleClicked for Rule 1 bubble click', () => {
-      const msg = makeChatMessage({
-        rule: 1,
-        alignment: 'right',
-        color: '#efeeee',
-        label: 'You ⇒ Manager',
+  /**
+   * A TURN IS NOT A BUTTON, and the cursor must not say it is.
+   *
+   * Rules 1 and 2 used to answer a click by emitting `bubbleClicked`, which the
+   * panel recorded as `selectedMessageId`, which drew
+   * `border: 2px solid var(--primary-color)` — a custom property this
+   * application defines nowhere, so the declaration was invalid and nothing
+   * appeared. Every ordinary turn in the conversation therefore carried a
+   * pointer cursor promising a result no user could ever see.
+   *
+   * The fold toggle on rules 3 and 4 is the real behaviour and stays. These
+   * two halves are tested together on purpose: "no handler anywhere" would
+   * have been the easy over-correction, and it would have taken the toggle
+   * with it.
+   */
+  describe('clicking a turn', () => {
+    function messageEl(): HTMLElement {
+      return fixture.nativeElement.querySelector('.message');
+    }
+
+    for (const rule of [1, 2] as const) {
+      it(`leaves a rule-${rule} turn inert, cursor included`, () => {
+        fixture.componentRef.setInput(
+          'message',
+          makeChatMessage({
+            rule,
+            alignment: rule === 1 ? 'right' : 'left',
+          }),
+        );
+        fixture.detectChanges();
+
+        spyOn(component.toggleCollapse, 'emit');
+
+        // The POINTER is the half the user reads BEFORE clicking, so an inert
+        // handler alone would not fix what they reported.
+        expect(messageEl().classList.contains('clickable')).toBe(false);
+
+        messageEl().click();
+        expect(component.toggleCollapse.emit).not.toHaveBeenCalled();
       });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
+    }
 
-      spyOn(component.bubbleClicked, 'emit');
-      const messageEl = fixture.nativeElement.querySelector('.message');
-      messageEl.click();
+    for (const rule of [3, 4] as const) {
+      it(`still shuts an expanded rule-${rule} fold`, () => {
+        const msg = makeChatMessage({
+          rule,
+          alignment: 'left',
+          collapsed: false,
+        });
+        fixture.componentRef.setInput('message', msg);
+        fixture.detectChanges();
 
-      expect(component.bubbleClicked.emit).toHaveBeenCalledWith(msg);
-    });
+        spyOn(component.toggleCollapse, 'emit');
 
-    it('should emit bubbleClicked for Rule 2 bubble click', () => {
-      const msg = makeChatMessage({ rule: 2, alignment: 'left' });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
+        expect(messageEl().classList.contains('clickable')).toBe(true);
 
-      spyOn(component.bubbleClicked, 'emit');
-      const messageEl = fixture.nativeElement.querySelector('.message');
-      messageEl.click();
-
-      expect(component.bubbleClicked.emit).toHaveBeenCalledWith(msg);
-    });
-
-    it('should NOT emit bubbleClicked for Rule 4 bubble click', () => {
-      const msg = makeChatMessage({ rule: 4, collapsed: false });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      spyOn(component.bubbleClicked, 'emit');
-      const messageEl = fixture.nativeElement.querySelector('.message');
-      messageEl.click();
-
-      expect(component.bubbleClicked.emit).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('rule3Clicked output', () => {
-    it('should NOT emit bubbleClicked for Rule 3 bubble click', () => {
-      const msg = makeChatMessage({ rule: 3, alignment: 'left', collapsed: false });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      spyOn(component.bubbleClicked, 'emit');
-      const messageEl = fixture.nativeElement.querySelector('.message');
-      messageEl.click();
-
-      expect(component.bubbleClicked.emit).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('selected input', () => {
-    it('should apply .selected class when selected is true', () => {
-      const msg = makeChatMessage({ rule: 2 });
-      fixture.componentRef.setInput('message', msg);
-      fixture.componentRef.setInput('selected', true);
-      fixture.detectChanges();
-
-      const bubble = fixture.nativeElement.querySelector('.message-bubble');
-      expect(bubble.classList.contains('selected')).toBe(true);
-    });
-
-    it('should NOT apply .selected class when selected is false', () => {
-      const msg = makeChatMessage({ rule: 2 });
-      fixture.componentRef.setInput('message', msg);
-      fixture.componentRef.setInput('selected', false);
-      fixture.detectChanges();
-
-      const bubble = fixture.nativeElement.querySelector('.message-bubble');
-      expect(bubble.classList.contains('selected')).toBe(false);
-    });
-
-    it('should default selected to false', () => {
-      const msg = makeChatMessage({ rule: 2 });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      const bubble = fixture.nativeElement.querySelector('.message-bubble');
-      expect(bubble.classList.contains('selected')).toBe(false);
-    });
+        messageEl().click();
+        expect(component.toggleCollapse.emit).toHaveBeenCalledWith(msg);
+      });
+    }
   });
 
   // --- W2b: the ambient notification row -----------------------------------
@@ -858,11 +832,9 @@ describe('ChatMessageComponent', () => {
       fixture.componentRef.setInput('message', makeRule5());
       fixture.detectChanges();
 
-      spyOn(component.bubbleClicked, 'emit');
       spyOn(component.toggleCollapse, 'emit');
       fixture.nativeElement.querySelector('.system-rule').click();
 
-      expect(component.bubbleClicked.emit).not.toHaveBeenCalled();
       expect(component.toggleCollapse.emit).not.toHaveBeenCalled();
     });
 
@@ -973,7 +945,6 @@ describe('ChatMessageComponent', () => {
       // Rule 5 is inert (ADR-011 Decision 3), and gaining a body must not have
       // turned it into a participant.
       const el = await renderRule5(WELCOME);
-      spyOn(component.bubbleClicked, 'emit');
       spyOn(component.toggleCollapse, 'emit');
       spyOn(component.messageSelected, 'emit');
 
@@ -982,7 +953,6 @@ describe('ChatMessageComponent', () => {
       expect(el.querySelector('.message-bubble')).toBeNull();
       expect(el.querySelector('.turn-avatar')).toBeNull();
       expect(el.querySelector('app-feedback')).toBeNull();
-      expect(component.bubbleClicked.emit).not.toHaveBeenCalled();
       expect(component.toggleCollapse.emit).not.toHaveBeenCalled();
       expect(component.messageSelected.emit).not.toHaveBeenCalled();
     });
@@ -1529,18 +1499,15 @@ describe('ChatMessageComponent', () => {
       }
     });
 
-    it('does not select the turn when the control is clicked', () => {
-      // The bubble is itself a click target. Without stopPropagation, opening
-      // the feedback dialog would also select the message behind it.
-      const spy = jasmine.createSpy('bubbleClicked');
-      component.bubbleClicked.subscribe(spy);
-      const control = renderRule(2);
-
-      control.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-      fixture.detectChanges();
-
-      expect(spy).not.toHaveBeenCalled();
-    });
+    /*
+     * DELETED: 'does not select the turn when the control is clicked'.
+     *
+     * It guarded the rating control's click against reaching the turn behind
+     * it and selecting the message. There is no selection any more, and the
+     * turns the control renders on — the rateable ones, rule 2 — are inert, so
+     * there is nothing left for the click to escape into. The template still
+     * stops the event; what is gone is the thing it was stopping it from.
+     */
 
     it('keeps the control inside the turn it rates', () => {
       // Not a cosmetic assertion: a control rendered as a sibling of the

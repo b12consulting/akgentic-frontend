@@ -82,10 +82,8 @@ const MARKDOWN_MARKERS = /[#*`>[\]]|^\s*[-+]\s/;
 export class ChatMessageComponent {
   @Output() messageSelected = new EventEmitter<ChatMessage>();
   @Output() toggleCollapse = new EventEmitter<ChatMessage>();
-  @Output() bubbleClicked = new EventEmitter<ChatMessage>();
   @Output() rule3Clicked = new EventEmitter<ChatMessage>();
   message = input.required<ChatMessage>();
-  selected = input<boolean>(false);
   /**
    * May a turn be rated HERE?
    *
@@ -336,21 +334,30 @@ export class ChatMessageComponent {
     }
   }
 
-  onBubbleClick(event: Event): void {
-    event.stopPropagation();
-    const msg = this.message();
-    // Rule 5 (welcome) is behaviourally inert (ADR-011 Decision 3).
-    if (msg.rule === 5) return;
-    switch (msg.rule) {
-      case 1:
-      case 2:
-        this.bubbleClicked.emit(msg);
-        break;
-      case 3:
-      case 4:
-        this.onToggleCollapse();
-        break;
-    }
+  /**
+   * Whether this turn can be clicked shut, which is the only thing clicking a
+   * turn has ever usefully done.
+   *
+   * Rules 3 and 4 are the only turns that COLLAPSE. Rules 1 and 2 are the
+   * conversation itself — an agent's answer and the user's own words — and
+   * there is nothing to open or close about them.
+   *
+   * IT DRIVES THE CURSOR, and that is the point of it existing separately from
+   * the guard inside `onToggleCollapse`. Rules 1 and 2 used to answer a click
+   * here by emitting `bubbleClicked`, which the panel recorded as
+   * `selectedMessageId`, which drew `border: 2px solid var(--primary-color)` —
+   * a custom property this application defines nowhere, so the declaration was
+   * invalid and nothing appeared. The click was already harmless; what the
+   * user saw was the POINTER, promising a result that did not exist.
+   *
+   * The rest of that chain — the output, the panel's state, the
+   * background-click and Escape handlers that cleared it, the CSS rule — is
+   * deleted rather than left dormant, so nobody has to work out later which
+   * half of a selection feature was the real one.
+   */
+  isCollapsible(): boolean {
+    const rule = this.message().rule;
+    return rule === 3 || rule === 4;
   }
 
   onOpenModal(event: Event): void {

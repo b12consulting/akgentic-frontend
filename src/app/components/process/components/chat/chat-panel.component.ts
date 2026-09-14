@@ -3,7 +3,6 @@ import {
   AfterViewChecked,
   Component,
   ElementRef,
-  HostListener,
   inject,
   Input,
   OnDestroy,
@@ -161,7 +160,6 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   private expandedMessageIds = new Set<string>();
   /** Story 4-8: per-bubble expansion state. */
   private thinkingExpanded = new Set<string>();
-  selectedMessageId: string | null = null;
   pendingNotifications: Set<string> = new Set();
 
   // --- scroll state -----------------------------------------------------------
@@ -563,10 +561,6 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
    * Bubble click updates the visual selection highlight only. Routing is driven
    * exclusively by the Send-to dropdown in `user-input.component` (Story 4-11).
    */
-  onBubbleClicked(chatMsg: ChatMessage): void {
-    this.selectedMessageId = chatMsg.id;
-  }
-
   /** Open the Rule 3 modal with every still-unanswered message from the clicked
    *  bubble's agent pair. */
   onRule3Clicked(chatMsg: ChatMessage): void {
@@ -639,15 +633,6 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
         return reply ? { request, reply } : null;
       })
       .filter((x): x is AnsweredRequest => x !== null);
-  }
-
-  onBackgroundClick(): void {
-    this.selectedMessageId = null;
-  }
-
-  @HostListener('document:keydown.escape')
-  onEscapePress(): void {
-    this.selectedMessageId = null;
   }
 
   /**

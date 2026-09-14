@@ -186,8 +186,8 @@
   class="message"
   [class.right]="message().alignment === 'right'"
   [class.left]="message().alignment === 'left'"
-  (click)="onBubbleClick($event)"
-  [class.clickable]="true"
+  (click)="onToggleCollapse()"
+  [class.clickable]="isCollapsible()"
 >
   <!-- The speaker's mark, on their side only. The user's own turn is already
        identified by being a bubble on the right, so a second marker there would
@@ -201,7 +201,6 @@
   <div
     class="message-bubble"
     [class.own-turn]="message().rule === 1"
-    [class.selected]="selected()"
     [style.background-color]="message().color"
   >
     <!--
