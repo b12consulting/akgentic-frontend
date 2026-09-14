@@ -1090,6 +1090,43 @@ describe('ChatMessageComponent', () => {
       expect(el.querySelector('.message-bubble')).not.toBeNull();
     });
 
+    /**
+     * THE HEADER WENT; THE CLOCK CAME BACK ON ITS OWN TERMS.
+     *
+     * Dropping the header took the stamp with it, and that left the user's own
+     * message as the ONE item in the transcript with no time on it — every
+     * other row carries one. It returns UNDER the words instead of heading
+     * them, which is the position that does not push the message down.
+     */
+    it('Rule 1 stamps the time after the words, not above them', () => {
+      fixture.componentRef.setInput('message', makeExpanded(1));
+      fixture.detectChanges();
+
+      const el: HTMLElement = fixture.nativeElement;
+      const stamp = el.querySelector('.own-timestamp');
+
+      expect(stamp).not.toBeNull();
+      expect(stamp!.textContent!.trim()).toMatch(/^\d{2}:\d{2}$/);
+
+      // After the words, in document order — the whole point of the position.
+      const body = el.querySelector('.own-text')!;
+      expect(
+        body.compareDocumentPosition(stamp!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    /** And it belongs to the user's own turn alone: every other rule states
+     *  the time in its header, and two clocks on one row is a defect. */
+    for (const rule of [2, 3, 4] as const) {
+      it(`Rule ${rule} carries no trailing stamp — its header already has one`, () => {
+        fixture.componentRef.setInput('message', makeExpanded(rule));
+        fixture.detectChanges();
+
+        expect(fixture.nativeElement.querySelector('.own-timestamp')).toBeNull();
+      });
+    }
+
     it('Rule 1 renders the user\'s words as text, never through markdown', () => {
       // A `#` a user typed is a `#`, not a heading. Rendering their own typing
       // through the markdown pipeline silently rewrites it and gives them no
@@ -1529,6 +1566,55 @@ describe('ChatMessageComponent', () => {
 
       expect(fixture.nativeElement.querySelector('.collapsed-line')).not.toBeNull();
       expect(fixture.nativeElement.querySelector('app-feedback')).toBeNull();
+    });
+  });
+
+  /**
+   * WHAT THE LIST NEEDS IN ORDER TO SPACE THIS ROW.
+   *
+   * The transcript spaces turns like paragraphs and runs quiet one-liners
+   * together, and the rule that does it (`.quiet-line + .quiet-line`) lives in
+   * the LIST's stylesheet — so it can only match the element the list has as a
+   * child, which is this component's host. The class is on the host for that
+   * reason rather than as a styling convenience.
+   */
+  describe('the quiet-line host class', () => {
+    function host(): HTMLElement {
+      return fixture.nativeElement as HTMLElement;
+    }
+
+    function setRule(rule: ChatMessage['rule'], collapsed: boolean): void {
+      fixture.componentRef.setInput('message', makeChatMessage({ rule, collapsed }));
+      fixture.detectChanges();
+    }
+
+    it('marks a folded notice, which is the row that runs together', () => {
+      setRule(4, true);
+      expect(host().classList.contains('quiet-line')).toBe(true);
+    });
+
+    it('does not mark a turn, which is a paragraph and keeps its air', () => {
+      setRule(2, false);
+      expect(host().classList.contains('quiet-line')).toBe(false);
+    });
+
+    /**
+     * An EXPANDED rule 4 is no longer one line — it is a bubble with a body,
+     * and stacking it against its neighbour would read as a rendering fault.
+     */
+    it('drops the mark once the notice is expanded', () => {
+      setRule(4, false);
+      expect(host().classList.contains('quiet-line')).toBe(false);
+    });
+
+    /**
+     * A FOLDED RULE 3 is not one of these. It is the request card — filled,
+     * bordered, with a body and a button — and closing two of those up against
+     * each other would merge them into one shape.
+     */
+    it('does not mark a folded request, which is a card rather than a line', () => {
+      setRule(3, true);
+      expect(host().classList.contains('quiet-line')).toBe(false);
     });
   });
 });

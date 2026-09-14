@@ -261,6 +261,29 @@
     -->
     <div class="markdown-content" *ngIf="message().rule === 1; else renderedBody">
       <div class="own-text">{{ message().content }}</div>
+      <!--
+        THE CLOCK, AFTER THE WORDS RATHER THAN ABOVE THEM.
+
+        Rule 1 has no `.bubble-header` — see above — and the reason still
+        holds: every other child of that row is gated to a rule that is not 1,
+        so on the user's own turn it rendered as a bare clock sitting between
+        the bubble's top edge and their message.
+
+        What did not hold is dropping the stamp with it. Every other row in the
+        transcript carries one — the agent's turn, the folded notice, the
+        activity fold — so the user's own message was the single item in the
+        sequence with no time on it, which is the same defect the activity
+        fold's own clock exists to avoid.
+
+        At the END of the message and inside the bubble, so it is a footnote to
+        what was said rather than a heading over it: it takes width the last
+        line was not using and costs the turn no height. A step smaller than
+        the stamp in an agent's header, because that one shares a row with the
+        speaker's name while this one sits inside the sentence.
+      -->
+      <span class="own-timestamp">{{
+        timestampOrNull() | date : "HH:mm"
+      }}</span>
     </div>
     <ng-template #renderedBody>
       <div class="markdown-content">

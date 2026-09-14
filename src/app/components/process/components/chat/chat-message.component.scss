@@ -363,14 +363,15 @@
   }
 }
 
+/* `gap` and `margin-bottom` were each declared twice here, 0.5rem then 8px and
+   4px then 6px. The later pair won, so these are those values — a rule that
+   contradicts itself is two people disagreeing in one block, and the reader has
+   to find both lines to know which one is in force. */
 .bubble-header {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 4px;
-
-  margin-bottom: 6px;
   gap: 8px;
+  margin-bottom: 6px;
 
   .bubble-timestamp {
     font-size: 11px;
@@ -398,13 +399,27 @@
  * it is the way into the sub-agent reader — so it keeps a hover and a focus
  * ring; it just stops shouting while idle.
  */
+/*
+ * THE SPEAKER, AT READING SIZE.
+ *
+ * This is the one piece of metadata on a turn that is not metadata: it names
+ * who is talking to you. At 12.5px it sat between the 11px timestamp beside it
+ * and the 14.5px paragraph below, which put it on the same step as the clock —
+ * a caption over the words rather than the person saying them.
+ *
+ * `--akg-turn-font-size`, not a number of its own, so the name and the words
+ * stay one size: a deployment that re-points the transcript's type scale moves
+ * both, and the name can never end up smaller than the sentence it introduces.
+ * The weight is what separates them — 600 against the body's normal, which is
+ * how a speaker reads as a heading without shouting.
+ */
 .label-pill {
   background-color: transparent;
   border: none;
   padding: 0;
   border-radius: 4px;
-  font-size: 12.5px;
-  font-weight: 500;
+  font-size: var(--akg-turn-font-size);
+  font-weight: 600;
   letter-spacing: 0;
   color: var(--akg-text);
   cursor: pointer;
@@ -458,6 +473,31 @@
 .own-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  /* `inline`, so the stamp after it sits on the END of the last line rather
+     than claiming a line of its own. `pre-wrap` still holds the user's
+     newlines, which is the whole point of this element. */
+  display: inline;
+}
+
+/*
+ * The user's own clock, at the end of the message rather than under it.
+ *
+ * On the right and on the same line: the stamp finishes the sentence on the
+ * edge the bubble already ends on, and takes width the last line was not using
+ * — so it costs the turn no height at all. Given a line to itself it read as a
+ * second, very short message instead of as a mark on the one above it.
+ *
+ * A step below the header stamp's 11px. That one shares a row with the
+ * speaker's name and is the small end of it; this one sits INSIDE the
+ * sentence, where the same size would compete with the words it is annotating.
+ */
+.own-timestamp {
+  margin-left: 8px;
+  font-size: 10px;
+  font-weight: 300;
+  color: var(--akg-text-muted);
+  white-space: nowrap;
+  user-select: none;
 }
 
 /* Context-management markers (Epic 29 / ADR-010) — inert, centered system rows.
