@@ -173,9 +173,13 @@
   // you tell who is speaking without reading a label.
   --akg-turn-radius: 18px 18px 6px 18px;
   --akg-turn-padding: 12px 16px;
-  // 26px between turns. The old 8px packed a conversation into a block; this is
-  // the single value most responsible for it reading as a transcript.
-  --akg-turn-gap: 26px;
+  // 18px between turns. The original 8px packed a conversation into a block and
+  // this is still the single value most responsible for it reading as a
+  // transcript — but 26px was measured against a transcript of speech, and most
+  // rows are not. Activity folds and system notices are single quiet lines, and
+  // at 26px a run of them was mostly gap, which reads as unrelated items rather
+  // than as one agent working. Enough to separate, not enough to disown.
+  --akg-turn-gap: 18px;
   --akg-turn-font-size: 14.5px;
   --akg-turn-line-height: 1.65;
 
