@@ -30,6 +30,7 @@ import {
 } from '../../selectors/token-usage.selector';
 
 import { ENTRY_POINT_NAME } from '../../selectors/chat-message.model';
+import { defaultRecipientName } from '../../selectors/actor-kind';
 import { CommandDescriptor } from '../../../../protocol/message.types';
 import { NodeInterface } from '../../models/types';
 
@@ -396,16 +397,11 @@ export class ProcessUserInputComponent implements OnInit {
    * and to null when no candidate agent exists.
    */
   private defaultSupervisorTarget(): string | null {
-    const candidates = this.nodes.filter(
-      (n) => n.actorName.startsWith('@') && n.actorName !== ENTRY_POINT_NAME,
-    );
-    if (candidates.length === 0) return null;
-    const entry = this.nodes.find((n) => n.actorName === ENTRY_POINT_NAME);
-    if (entry) {
-      const child = candidates.find((n) => n.parentId === entry.name);
-      if (child) return child.actorName;
-    }
-    return candidates[0].actorName;
+    // The rule moved to `defaultRecipientName` when the transcript started
+    // asking it too — the composer asks in order to ROUTE, the transcript in
+    // order to decide whether a recipient is worth naming. Two copies would
+    // caption ordinary turns and fall silent on deliberate ones.
+    return defaultRecipientName(this.nodes, ENTRY_POINT_NAME);
   }
 
   /**

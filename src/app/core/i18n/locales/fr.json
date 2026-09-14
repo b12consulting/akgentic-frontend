@@ -73,6 +73,7 @@
     "newMessages": "Nouveaux messages",
     "messages": "Messages",
     "reply": "Répondre",
+    "sentTo": "Envoyé à {{agent}}",
     "messageForYou": "Message pour vous",
     "teamMessage": "Message d'équipe",
     "input": {

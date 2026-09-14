@@ -73,6 +73,7 @@
     "newMessages": "New messages",
     "messages": "Messages",
     "reply": "Reply",
+    "sentTo": "Sent to {{agent}}",
     "messageForYou": "Message for you",
     "teamMessage": "Team message",
     "input": {

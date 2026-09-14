@@ -1578,6 +1578,86 @@ describe('ChatMessageComponent', () => {
    * child, which is this component's host. The class is on the host for that
    * reason rather than as a styling convenience.
    */
+  /**
+   * WHERE THE USER'S MESSAGE WENT — on the turns where that is not obvious.
+   *
+   * Two identical "Hello" bubbles three minutes apart went to two different
+   * agents and rendered the same. The only cue available was the name on the
+   * reply below, and that inference is wrong exactly when the team does the
+   * interesting thing: address @Manager, watch it delegate, read @Expert.
+   *
+   * The three-way rule is the whole design, and the SILENT arm is the one worth
+   * guarding hardest: a label that appears on every turn is a label nobody
+   * reads by the fourth one, which would cost precisely the turns it exists for.
+   */
+  describe('the recipient on the user\'s own turn', () => {
+    function ownTurnTo(recipient: string, theDefault: string | null): void {
+      fixture.componentRef.setInput(
+        'message',
+        makeChatMessage({
+          rule: 1,
+          alignment: 'right',
+          recipient: makeAddress({ name: recipient }),
+        }),
+      );
+      fixture.componentRef.setInput('defaultRecipient', theDefault);
+      fixture.detectChanges();
+    }
+
+    function shown(): string | null {
+      const el = fixture.nativeElement.querySelector('.own-recipient');
+      return el ? el.textContent.replace(/\s+/g, ' ').trim() : null;
+    }
+
+    it('names an agent the user chose over the default', () => {
+      ownTurnTo('@Expert', '@Manager');
+      expect(shown()).toContain('@Expert');
+    });
+
+    it('says nothing when the message went to the default', () => {
+      ownTurnTo('@Manager', '@Manager');
+      expect(shown()).toBeNull();
+    });
+
+    /** No roster yet is not "not the default" — it is "we do not know", and a
+     *  guess here would caption every turn during startup. */
+    it('says nothing while the default is still unknown', () => {
+      ownTurnTo('@Expert', null);
+      expect(shown()).toBeNull();
+    });
+
+    it('says nothing on the entry point itself', () => {
+      ownTurnTo('@Human', '@Manager');
+      expect(shown()).toBeNull();
+    });
+
+    /** An agent's turn already names its speaker in the header; a second
+     *  address on it would be describing the wrong direction. */
+    for (const rule of [2, 3, 4] as const) {
+      it(`says nothing on a rule-${rule} turn, which is not the user's`, () => {
+        fixture.componentRef.setInput(
+          'message',
+          makeChatMessage({ rule, recipient: makeAddress({ name: '@Expert' }) }),
+        );
+        fixture.componentRef.setInput('defaultRecipient', '@Manager');
+        fixture.detectChanges();
+
+        expect(shown()).toBeNull();
+      });
+    }
+
+    /** The arrow is for the eye. "right-arrow at Expert" is not a sentence, so
+     *  the accessible name carries the same fact in words. */
+    it('states it in words for a screen reader, not as a glyph', () => {
+      setTestTranslations({ chat: { sentTo: '<<to:{{agent}}>>' } });
+      ownTurnTo('@Expert', '@Manager');
+
+      const el = fixture.nativeElement.querySelector('.own-recipient');
+      expect(el.getAttribute('aria-label')).toBe('<<to:@Expert>>');
+      expect(el.querySelector('[aria-hidden="true"]')).not.toBeNull();
+    });
+  });
+
   describe('the quiet-line host class', () => {
     function host(): HTMLElement {
       return fixture.nativeElement as HTMLElement;

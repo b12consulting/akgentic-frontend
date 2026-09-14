@@ -12,7 +12,11 @@ import { ButtonModule } from 'primeng/button';
 import { TranslatePipe } from '@ngx-translate/core';
 import { MarkdownModule } from 'ngx-markdown';
 import { ConfigService } from '../../../../core/config/config.service';
-import { buildPreview, ChatMessage } from '../../selectors/chat-message.model';
+import {
+  buildPreview,
+  ChatMessage,
+  ENTRY_POINT_NAME,
+} from '../../selectors/chat-message.model';
 import { isRateable } from '../../selectors/rateable';
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 import { FeedbackComponent } from './feedback.component';
@@ -121,6 +125,56 @@ export class ChatMessageComponent {
    * longer means "say nothing" — it means "claim this was answered".
    */
   notification = input<boolean>(false);
+
+  /**
+   * The agent a message goes to when the user names nobody.
+   *
+   * Passed IN rather than derived here: it is a fact about the team's shape,
+   * which lives on the graph, and a turn has no business holding the graph to
+   * answer a question about itself. The panel resolves it once per emission
+   * through the same `defaultRecipientName` the composer routes on.
+   *
+   * Null while the roster is still empty, which reads as "no default known" and
+   * makes `ownRecipient` fall silent rather than guess.
+   */
+  defaultRecipient = input<string | null>(null);
+
+  /**
+   * WHO THE USER SENT THIS TO, when that is worth saying — otherwise null.
+   *
+   * Two identical "Hello" bubbles three minutes apart went to two different
+   * agents and rendered the same, so the only way to tell them apart was to
+   * read the REPLY underneath and reason backwards. That inference is not just
+   * awkward, it is wrong exactly when the team does the interesting thing: ask
+   * @Manager, watch @Manager delegate, and the reply carries @Expert.
+   *
+   * NOT ON EVERY TURN. The composer's "Send to" is optional, and an empty one
+   * routes to the entry supervisor — so on most turns the user chose nobody and
+   * naming the recipient would caption an ordinary message with "nothing
+   * unusual happened here". A label that appears on everything is a label
+   * nobody reads by the fourth turn, which would cost exactly the turns this
+   * exists for. So: shown when the recipient is not the default, silent when
+   * it is.
+   *
+   * A broadcast needs no special case — the composer sends one message per
+   * recipient, so each bubble already carries a single, real addressee.
+   */
+  readonly ownRecipient = computed<string | null>(() => {
+    const msg = this.message();
+    if (msg.rule !== 1) return null;
+
+    const recipient = msg.recipient?.name;
+    if (!recipient || recipient === ENTRY_POINT_NAME) return null;
+
+    // NO ROSTER YET IS NOT "NOT THE DEFAULT". Until the graph arrives there is
+    // nothing to compare against, and treating unknown as different would
+    // caption every turn on the surface for as long as startup takes — the one
+    // outcome this whole rule exists to avoid.
+    const fallback = this.defaultRecipient();
+    if (fallback === null || recipient === fallback) return null;
+
+    return makeAgentNameUserFriendly(recipient);
+  });
 
   private readonly config = inject(ConfigService);
 

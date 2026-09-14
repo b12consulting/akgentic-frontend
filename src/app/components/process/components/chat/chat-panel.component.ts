@@ -25,7 +25,7 @@ import { ChatService, ThinkingState } from '../../selectors/chat.selector';
 import { IngestionService } from '../../event/ingestion.service';
 import { ContextService } from '../../../../core/context/context.service';
 import { AkgentService } from '../../../../core/ui/akgent.service';
-import { isToolActor } from '../../selectors/actor-kind';
+import { defaultRecipientName, isToolActor } from '../../selectors/actor-kind';
 import { GraphDataService } from '../../selectors/graph.selector';
 import { NodeInterface } from '../../models/types';
 import { Selectable, SelectionService } from '../../ui-state/selection.service';
@@ -151,6 +151,17 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
    *  Mirrors the guard `akgent-chat` already applies to its own per-agent box. */
   readerCanSend = false;
 
+  /**
+   * The agent an unaddressed message routes to — see `defaultRecipientName`,
+   * which the composer routes on and this reads for the same answer.
+   *
+   * The transcript names a turn's recipient only when it is NOT this, so that
+   * the label marks a choice the user made rather than captioning every message
+   * with the default. Null until the roster arrives, which reads as "no default
+   * known" and keeps the transcript silent rather than guessing.
+   */
+  defaultRecipient: string | null = null;
+
   private subscription!: Subscription;
   private readerSubscriptions = new Subscription();
   private notificationSubscription!: Subscription;
@@ -212,6 +223,13 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
         // inline, because the Member picker asks the same question and two
         // copies of it would eventually disagree.
         this.readerAgents = nodes.filter((n) => !isToolActor(n.actorName));
+
+        // Resolved HERE, once per roster change, rather than by each turn: it
+        // is a fact about the team's shape and a turn holding the graph to ask
+        // about itself would be the wrong thing owning it. The transcript uses
+        // it to decide whether a turn's recipient is worth naming — see
+        // `ChatMessageComponent.ownRecipient`.
+        this.defaultRecipient = defaultRecipientName(nodes, ENTRY_POINT_NAME);
       }),
     );
     this.readerSubscriptions.add(

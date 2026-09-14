@@ -10,6 +10,7 @@
           *ngIf="item.kind === 'message'"
           [attr.data-message-id]="item.data.id"
           [message]="item.data"
+          [defaultRecipient]="defaultRecipient"
           [notification]="hasNotification(item.data)"
           (messageSelected)="onMessageSelected($event)"
           (toggleCollapse)="onToggleCollapse($event)"

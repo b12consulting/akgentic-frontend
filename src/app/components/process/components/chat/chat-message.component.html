@@ -281,6 +281,27 @@
         the stamp in an agent's header, because that one shares a row with the
         speaker's name while this one sits inside the sentence.
       -->
+      <!--
+        WHERE IT WENT, when that is not the obvious answer.
+
+        Two identical "Hello" bubbles that went to two different agents were
+        indistinguishable, and the only cue available — the name on the reply
+        below — is wrong the moment the agent you addressed delegates.
+
+        `ownRecipient()` is null on an ordinary turn, so this is silent on the
+        messages where the user chose nobody: a caption on every turn is a
+        caption nobody reads by the fourth one.
+
+        The arrow is for the eye and is `aria-hidden`; the accessible name
+        carries the same fact in words, because "right-arrow at Expert" is not
+        a sentence.
+      -->
+      <span
+        *ngIf="ownRecipient() as recipient"
+        class="own-recipient"
+        [attr.aria-label]="'chat.sentTo' | translate : { agent: recipient }"
+        ><span aria-hidden="true">→ </span>{{ recipient }}</span
+      >
       <span class="own-timestamp">{{
         timestampOrNull() | date : "HH:mm"
       }}</span>

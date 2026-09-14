@@ -491,6 +491,24 @@
  * speaker's name and is the small end of it; this one sits INSIDE the
  * sentence, where the same size would compete with the words it is annotating.
  */
+/*
+ * The addressee, when the turn has one worth naming.
+ *
+ * Shares the trailing row with the clock and reads at the same quiet step, so a
+ * turn that carries it costs no more height than one that does not — which is
+ * what lets it appear and disappear between messages without the column
+ * jumping. It sits BEFORE the time because it is the more interesting of the
+ * two: you scan for who, then for when.
+ */
+.own-recipient {
+  margin-left: 8px;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--akg-text-muted);
+  white-space: nowrap;
+  user-select: none;
+}
+
 .own-timestamp {
   margin-left: 8px;
   font-size: 10px;
