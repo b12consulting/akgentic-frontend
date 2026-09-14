@@ -371,14 +371,29 @@ describe('the hierarchy canvas — how it is painted', () => {
     expect(series.zoom).toBe(1);
   });
 
+  /**
+   * One inspector, one mark size. The shape already distinguishes the two
+   * graphs — a roundRect for an agent here, a circle for an entity there — and
+   * drawing one at 15px and the other at 26px made them read as two different
+   * applications a tab apart.
+   */
+  it('draws its nodes and captions at the knowledge graph\'s size', () => {
+    const series = (graph().graphOptions as any).series[0];
+    expect(series.symbolSize).toEqual([26, 26]);
+    expect(series.label.fontSize).toBe(12.5);
+    // The truncation cap is in pixels, so it moves with the font or it
+    // truncates more at the larger size rather than the same.
+    expect(series.label.width).toBe(120);
+  });
+
   it('spreads the graph through the distance params, and runs the layout out', () => {
     const force = (graph().graphOptions as any).series[0].force;
 
     // `edgeLength` and `repulsion` are what echarts offers for "further
     // apart". Repulsion rises as the SQUARE of the distance wanted: it falls
     // off as `rep / d` where gravity rises as `gravity * d`.
-    expect(force.edgeLength).toEqual([120, 280]);
-    expect(force.repulsion).toBe(720);
+    expect(force.edgeLength).toEqual([150, 350]);
+    expect(force.repulsion).toBe(1125);
 
     // THE ONE THAT MUST NOT BE SET. In `forceHelper` friction scales every
     // displacement and decays 0.992 per step until `friction < 0.01` ends the

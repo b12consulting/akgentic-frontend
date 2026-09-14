@@ -294,21 +294,23 @@ export class GraphComponent {
       // where that job actually belongs.
       top: 40,
       force: {
-        // THE DISTANCE PARAMS THEMSELVES, doubled. `edgeLength` is the target
-        // length of an edge in pixels and `repulsion` the strength that sets
-        // how far apart unrelated nodes settle — they are what "spread the
-        // graph out" means to echarts. Nothing else grows: a node, an arrow
-        // and a stroke are read at whatever size they are drawn and have no
-        // reason to follow how far apart things sit.
+        // THE DISTANCE PARAMS THEMSELVES — 2.5x the 60 / 140 this started
+        // from. `edgeLength` is the target length of an edge in pixels and
+        // `repulsion` the strength that sets how far apart unrelated nodes
+        // settle; between them they are what "spread the graph out" means to
+        // echarts. Nothing else follows them: a node, an arrowhead and a
+        // stroke are read at the size they are drawn whatever the distances
+        // around them, and `zoom` is the user's.
         //
-        // `repulsion` is not doubled but quadrupled, and that is arithmetic
-        // rather than taste: in `forceHelper` the repulsive displacement is
-        // `(n1.rep + n2.rep) / d / d` applied along the UN-normalised
-        // separation, so it falls off as `rep / d` while gravity rises as
-        // `gravity * d`. Equilibrium at twice the distance therefore needs
-        // four times the repulsion.
-        repulsion: 720,
-        edgeLength: [120, 280],
+        // `repulsion` rises as the SQUARE of the distance wanted, which is
+        // arithmetic rather than taste: in `forceHelper` the repulsive
+        // displacement is `(n1.rep + n2.rep) / d / d` applied along the
+        // UN-normalised separation, so it falls off as `rep / d` while gravity
+        // rises as `gravity * d`. 2.5x the distance therefore needs 6.25x the
+        // repulsion — 180 to 1125, the same figure the knowledge graph
+        // arrives at from its own starting point.
+        repulsion: 1125,
+        edgeLength: [150, 350],
         // GRAVITY IS THE SCATTER FIX. A force layout only holds a graph
         // together through its EDGES; a node with none feels nothing but
         // repulsion and drifts until it hits the edge of the lane — tools
@@ -327,15 +329,22 @@ export class GraphComponent {
       label: {
         show: true,
         position: 'top',
-        distance: 6,
+        distance: 8,
         formatter: labelFormatter,
         color: labelColor,
         fontFamily,
-        fontSize: 11,
+        // 12.5 AND 120, the knowledge graph's figures. Two graphs one tab
+        // apart captioning their nodes at different sizes reads as two
+        // applications, the same reason the mark is 26 in both.
+        //
+        // `width` moves with the font rather than staying at 96: it is a cap
+        // in PIXELS on how much of a name survives, so holding it still at a
+        // larger size would truncate more, not the same.
+        fontSize: 12.5,
         // Capped and ellipsised rather than allowed to run. `truncate` ends the
         // name with an ellipsis, which READS as shortened; the canvas edge
         // cutting it mid-glyph reads as broken. Full name in the tooltip.
-        width: 96,
+        width: 120,
         overflow: 'truncate',
         // A halo in the ground colour, so a name that crosses an edge or
         // another node stays legible without the labels needing their own
@@ -344,7 +353,11 @@ export class GraphComponent {
         textBorderWidth: 3,
       },
       symbol: 'roundRect',
-      symbolSize: [15, 15],
+      // 26, THE SAME MARK THE KNOWLEDGE GRAPH DRAWS. Two graphs an inspector
+      // tab apart, drawing an entity at 26px and an agent at 15px, read as two
+      // applications; the shape already says which is which (a roundRect here,
+      // a circle there) and it does not need the size saying it a second time.
+      symbolSize: [26, 26],
       itemStyle: {
         // A cut-out ring, not an outline: matching the ground is what makes two
         // overlapping nodes read as two.
