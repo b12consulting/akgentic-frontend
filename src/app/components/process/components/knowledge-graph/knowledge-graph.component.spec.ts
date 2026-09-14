@@ -130,7 +130,7 @@ describe('KnowledgeGraphComponent', () => {
    * read as a screenshot of a different application.
    */
   describe('the chart chrome', () => {
-    it('draws labels and edges in the palette, and holds the layout off the container edge', () => {
+    it('draws labels and edges in the palette, and insets only for the legend', () => {
       knowledgeGraph$.next({
         nodes: [entity('Alpha', 'tool'), entity('Beta', 'doc')],
         edges: [],
@@ -149,25 +149,67 @@ describe('KnowledgeGraphComponent', () => {
       expect(series?.label?.color).toBe(token('--akg-graph-label'));
       expect(series?.lineStyle?.color).toBe(token('--akg-graph-edge'));
 
-      // The label-clipping fix: a node that can reach the container edge draws
-      // its (wider) label outside the canvas.
-      expect(series?.left).toBeGreaterThan(0);
-      expect(series?.right).toBeGreaterThan(0);
+      // `top` clears the legend: the rect is where nodes START and where
+      // gravity PULLS, and both want to be under the legend rather than
+      // through it.
       expect(series?.top).toBeGreaterThan(0);
-      expect(series?.bottom).toBeGreaterThan(0);
+
+      // THE OTHER THREE MUST STAY OFF. They were added as a label-clipping
+      // guard and ECharts' force layout has no such guard to arm: the rect
+      // sets the gravity centre and the initial scatter, and the stepper never
+      // clamps to it. What they did do was take 112px of width out of a ~310px
+      // pane and squeeze the simulation into a column.
+      expect(series?.left).toBeUndefined();
+      expect(series?.right).toBeUndefined();
+      expect(series?.bottom).toBeUndefined();
     });
 
-    it('pulls unconnected nodes toward the centre instead of letting them fall into the corners', () => {
+    it('spreads nodes with repulsion, and lets the simulation run to completion', () => {
       const force = (
         component.graphOptions as {
-          series?: { force?: { gravity?: number; repulsion?: number } }[];
+          series?: {
+            force?: {
+              gravity?: number;
+              repulsion?: number;
+              friction?: number;
+            };
+          }[];
         }
       ).series?.[0]?.force;
 
-      // A node with no edge feels repulsion only; gravity is the single lever
-      // that gives it somewhere to fall back to.
-      expect(force?.gravity).toBeGreaterThan(0.2);
-      expect(force?.repulsion).toBeLessThan(300);
+      // Repulsion acts between EVERY pair, so it is the force that makes the
+      // spacing look even; edgeLength speaks only for pairs sharing an edge.
+      expect(force?.repulsion).toBeGreaterThanOrEqual(500);
+
+      // A node with no edge feels repulsion only, so gravity has to give it
+      // somewhere to fall back to — without being strong enough to collapse
+      // the connected cluster onto the centre.
+      expect(force?.gravity).toBeGreaterThan(0.1);
+      expect(force?.gravity).toBeLessThan(0.2);
+
+      // THE ONE THAT MUST NOT BE SET. In `forceHelper`, friction scales every
+      // displacement and decays 0.992 per step until `friction < 0.01` ends
+      // the run — so lowering it does not damp the layout, it truncates it.
+      // At 0.3 the simulation froze roughly half-relaxed.
+      expect(force?.friction).toBeUndefined();
+    });
+
+    /**
+     * `labelLayout` is series-wide and cannot be scoped: ECharts registers
+     * every label — node AND edge — as soon as the option is a function or a
+     * non-empty object, then forces each one out of its host's local space and
+     * restores the position captured at first render. An edge label is
+     * positioned in its LINE'S coordinate space, so that detaches it, and roam
+     * re-applies the stale value on every zoom.
+     */
+    it('sets no labelLayout, which would detach every edge label from its edge', () => {
+      const series = (
+        component.graphOptions as {
+          series?: { labelLayout?: unknown }[];
+        }
+      ).series?.[0];
+
+      expect(series?.labelLayout).toBeUndefined();
     });
   });
 

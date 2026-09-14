@@ -113,17 +113,28 @@ const CHROME_TOKENS = {
 } as const;
 
 /**
- * The layout box the force simulation is confined to, as ECharts insets.
+ * The one inset the force layout has any business carrying: legend clearance.
  *
- * THIS IS THE LABEL-CLIPPING FIX. Node labels are drawn BELOW their node and
- * are wider than it, so a simulation allowed to place a node against the
- * container edge draws half its label outside the canvas — which is how
- * `#KnowledgeGraphToo` and `#VectorSt` lost their tails. ECharts has no
- * "keep the label inside" option; the only lever is to stop the NODE from
- * reaching the edge, which is what these insets do. The top inset also clears
- * the legend rather than letting nodes drift under it.
+ * THIS IS NOT A CLIPPING GUARD, and it never was. The four-sided version that
+ * stood here claimed the insets "stop the NODE from reaching the edge" so its
+ * wider label could not spill off the canvas. ECharts does no such thing:
+ * `forceLayout` hands the coordinate system's rect to the stepper, and
+ * `forceHelper` uses it for exactly two purposes —
+ *
+ *     center = [rect.x + width / 2, rect.y + height / 2];   // the gravity target
+ *     n.p = width * (Math.random() - 0.5) + center[0], ...  // the initial scatter
+ *
+ * — with no clamping anywhere in the loop. Nodes leave the rect freely, and
+ * roam moves the viewport independently of it. So `left` / `right` / `bottom`
+ * bought nothing and cost a great deal: 112px of width out of a ~310px
+ * inspector pane left the simulation a tall narrow column and dragged the
+ * gravity centre into it, which is most of why the layout stopped looking
+ * evenly spread.
+ *
+ * `top` survives because the two things the rect DOES control — where nodes
+ * start and where gravity pulls them — are both better off below the legend.
  */
-const LAYOUT_INSETS = { left: 56, right: 56, top: 44, bottom: 34 } as const;
+const LAYOUT_TOP_INSET = 44;
 
 @Component({
   selector: 'app-knowledge-graph',
@@ -363,28 +374,34 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
       layout: 'force',
       roam: true,
       draggable: true,
-      // Keeping the simulation off the container edge is what stops the
-      // labels being clipped — see LAYOUT_INSETS.
-      left: LAYOUT_INSETS.left,
-      right: LAYOUT_INSETS.right,
-      top: LAYOUT_INSETS.top,
-      bottom: LAYOUT_INSETS.bottom,
+      // Legend clearance, and nothing else — see LAYOUT_TOP_INSET for why the
+      // other three sides came off.
+      top: LAYOUT_TOP_INSET,
       force: {
-        // WHY THESE THREE MOVED. `repulsion: 500` with `gravity: 0.1` is a
-        // simulation with almost no centre: a node with no edge feels only
-        // repulsion, so every DISCONNECTED entity is pushed to a corner and
-        // the connected part — the part with the information in it — is
-        // squeezed into the middle. Raising gravity gives the unconnected
-        // nodes somewhere to fall back to; lowering repulsion stops the
-        // connected cluster from exploding once they are no longer in the
-        // corners.
-        repulsion: 220,
-        edgeLength: [60, 140],
-        gravity: 0.28,
-        // Settle rather than jitter: the default keeps nudging nodes long
-        // after the layout is readable, which in a narrow pane reads as the
-        // panel being unable to make up its mind.
-        friction: 0.3,
+        // REPULSION IS WHAT MAKES THE SPACING LOOK DELIBERATE. It is the only
+        // force acting between every pair of nodes, so it is the one that
+        // spreads them evenly; `edgeLength` speaks only for pairs that share
+        // an edge and `gravity` only toward the centre. Dropping it to 220 let
+        // those two dominate and the result read as arbitrary. 500 and
+        // [50, 200] are the values the panel shipped with before the redesign,
+        // restored.
+        repulsion: 500,
+        edgeLength: [50, 200],
+        // Half-way, on purpose. The redesign raised this to 0.28 for a real
+        // reason — an entity with no relation feels repulsion only, so at 0.1
+        // it drifts into a corner and the part of the graph carrying the
+        // information is squeezed into the middle — but 0.28 against a full
+        // width rect collapses the connected cluster instead. 0.15 keeps the
+        // unconnected node a way back without flattening the rest.
+        gravity: 0.15,
+        // NO `friction` OVERRIDE. It reads like a damping knob and is not one:
+        // in `forceHelper` it scales every displacement AND decays 0.992 per
+        // step until `friction < 0.01` ENDS the simulation. Setting 0.3 halved
+        // the step size and cut ~90 steps off the run, so the layout was
+        // frozen roughly half-relaxed — nodes left wherever the initial random
+        // scatter put them. That is not settling; it is stopping early, and it
+        // is what "the force is no longer uniform" looked like. The default
+        // 0.6 runs the simulation to completion.
       },
       label: {
         show: true,
@@ -394,14 +411,41 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
         color: chrome.label,
         // A label crossing an edge or another label is unreadable at 10px.
         // The chip ground gives it something to sit on; truncation caps how
-        // far a long entity name can reach toward the insets above.
+        // far a long entity name can reach. These two ARE the de-cluttering —
+        // see below for the option that used to claim the job.
         backgroundColor: chrome.labelGround,
         padding: [2, 4],
         borderRadius: 4,
         width: 96,
         overflow: 'truncate',
       },
-      labelLayout: { hideOverlap: true },
+      // NO `labelLayout`. `labelLayout: { hideOverlap: true }` stood here and
+      // it cannot be used on a `graph` series without detaching every EDGE
+      // label from its edge.
+      //
+      // The option is series-wide and there is no way to scope it. ECharts
+      // registers labels for layout the moment the option is a function or a
+      // non-empty object, and only treemap opts out:
+      //
+      //     if (!(isFunction(layoutOption) || keys(layoutOption).length)) return;
+      //     if (textEl && !textEl.disableLabelLayout) this._addLabel(...);
+      //
+      // Every registered label then goes through `updateLayoutConfig`, which
+      // forces it out of its host's local space and restores the position
+      // captured at FIRST render:
+      //
+      //     hostEl.setTextConfig({ local: false, ... });
+      //     label.x = defaultLabelAttr.x;  label.y = defaultLabelAttr.y;
+      //
+      // An edge label is positioned by `Line.setLinePoints`, which writes
+      // `label.x/y/rotation` in the LINE'S OWN coordinate space from its
+      // endpoints. Overwriting those with stale global values severs the two.
+      // Zoom makes it obvious rather than causing it: `GraphView` recomputes
+      // the correct local positions via `_lineDraw.updateLayout()` and then
+      // calls `api.updateLabelLayout()`, which overwrites them again.
+      //
+      // A callback form is not an escape hatch — a function is "non-empty" by
+      // the test above, so edge labels are still registered and still moved.
       edgeLabel: {
         show: true,
         fontSize: 9,
