@@ -136,6 +136,42 @@ const CHROME_TOKENS = {
  */
 const LAYOUT_TOP_INSET = 44;
 
+/**
+ * How much bigger the drawing is than the layout it grew out of.
+ *
+ * SCALED IN THE LAYOUT, NOT IN `zoom`. Making the graph bigger by shipping
+ * `zoom: 1.5` is one character and wrong: `zoom` is the USER'S control — roam
+ * owns it — so the size would survive exactly until the first scroll and then
+ * never come back. It also scales unevenly, because node symbols follow zoom
+ * through `nodeScaleRatio` (0.6 by default) rather than one-for-one, so the
+ * nodes would grow by 1.3 while the distances between them grew by 1.5.
+ *
+ * Scaling the geometry instead means the layout is genuinely larger and the
+ * user's zoom still starts where they expect.
+ *
+ * `repulsion` is the one that does NOT scale linearly. In `forceHelper` the
+ * repulsive displacement is `(n1.rep + n2.rep) / d / d` applied along the
+ * UN-normalised separation, so its magnitude falls off as `rep / d`, while
+ * gravity's rises as `gravity * d`. Holding gravity fixed and asking for
+ * equilibrium at `SCALE * d` therefore needs `SCALE²` times the repulsion —
+ * which is why 500 becomes 1125 rather than 750.
+ */
+const GRAPH_SCALE = 1.5;
+
+/**
+ * How much bigger the graph's text is, independently of the geometry.
+ *
+ * Separate from `GRAPH_SCALE` on purpose: a label is read at whatever size it
+ * is drawn, and it does not want to be tied to how far apart the nodes sit.
+ * `width` moves with this one — it caps how much of an entity name survives
+ * truncation, and that cap is in pixels, so leaving it behind would truncate
+ * MORE at a larger font.
+ */
+const LABEL_SCALE = 1.25;
+
+/** Joins the two ends of a directed pair into one map key. See `buildLinks`. */
+const PAIR_SEPARATOR = '\u0000';
+
 @Component({
   selector: 'app-knowledge-graph',
   imports: [
@@ -385,8 +421,10 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
         // those two dominate and the result read as arbitrary. 500 and
         // [50, 200] are the values the panel shipped with before the redesign,
         // restored.
-        repulsion: 500,
-        edgeLength: [50, 200],
+        // `GRAPH_SCALE²` for repulsion, `GRAPH_SCALE` for the spring — see
+        // GRAPH_SCALE for why the two exponents differ.
+        repulsion: 500 * GRAPH_SCALE * GRAPH_SCALE,
+        edgeLength: [50 * GRAPH_SCALE, 200 * GRAPH_SCALE],
         // Half-way, on purpose. The redesign raised this to 0.28 for a real
         // reason — an entity with no relation feels repulsion only, so at 0.1
         // it drifts into a corner and the part of the graph carrying the
@@ -406,17 +444,17 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
       label: {
         show: true,
         position: 'bottom',
-        distance: 6,
-        fontSize: 10,
+        distance: 6 * LABEL_SCALE,
+        fontSize: 10 * LABEL_SCALE,
         color: chrome.label,
-        // A label crossing an edge or another label is unreadable at 10px.
-        // The chip ground gives it something to sit on; truncation caps how
-        // far a long entity name can reach. These two ARE the de-cluttering —
-        // see below for the option that used to claim the job.
+        // A label crossing an edge or another label is unreadable at this
+        // size. The chip ground gives it something to sit on; truncation caps
+        // how far a long entity name can reach. These two ARE the
+        // de-cluttering — see below for the option that used to claim the job.
         backgroundColor: chrome.labelGround,
         padding: [2, 4],
         borderRadius: 4,
-        width: 96,
+        width: 96 * LABEL_SCALE,
         overflow: 'truncate',
       },
       // NO `labelLayout`. `labelLayout: { hideOverlap: true }` stood here and
@@ -448,28 +486,32 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
       // the test above, so edge labels are still registered and still moved.
       edgeLabel: {
         show: true,
-        fontSize: 9,
+        fontSize: 9 * LABEL_SCALE,
         color: chrome.edgeLabel,
+        // Two relations between the same pair arrive here as ONE caption with
+        // a newline in it — see `processGraphData`. Pinning the line height
+        // keeps that stack tight enough to read as one label rather than two
+        // that happen to be near each other.
+        lineHeight: 9 * LABEL_SCALE * 1.2,
       },
       symbol: 'circle',
-      symbolSize: 26,
+      symbolSize: 26 * GRAPH_SCALE,
       edgeSymbol: ['none', 'arrow'],
-      edgeSymbolSize: 8,
+      edgeSymbolSize: 8 * GRAPH_SCALE,
       lineStyle: {
         color: chrome.edge,
         opacity: 0.55,
-        width: 1.5,
+        width: 1.5 * GRAPH_SCALE,
         curveness: 0.1,
       },
       emphasis: {
         focus: 'adjacency',
         lineStyle: {
-          width: 2.5,
+          width: 2.5 * GRAPH_SCALE,
           opacity: 1,
         },
         label: {
-          // The hovered label has to win against whatever it overlaps, and
-          // `hideOverlap` may have hidden it entirely.
+          // The hovered label has to win against whatever it overlaps.
           show: true,
         },
       },
@@ -572,27 +614,17 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
       category: entity.entity_type || 'unknown',
       itemStyle: {
         color: this.getNodeColor(entityTypes, entity.entity_type || 'unknown'),
-        // A hairline of the pane's own ground around each node: at 26px two
+        // A hairline of the pane's own ground around each node: two
         // same-category nodes that touch otherwise read as one blob.
         borderColor: chrome.nodeBorder,
-        borderWidth: 1.5,
+        borderWidth: 1.5 * GRAPH_SCALE,
       },
       // Add description as additional data for tooltips
       description: entity.description,
       observations: entity.observations,
     }));
 
-    // Transform relations into ECharts links format
-    const links = (data.edges || []).map((relation, index) => ({
-      id: `relation-${index}`,
-      source: relation.from_entity || '',
-      target: relation.to_entity || '',
-      name: relation.relation_type || 'relation',
-      label: {
-        show: true,
-        formatter: relation.relation_type || '',
-      },
-    }));
+    const links = this.buildLinks(data.edges || []);
 
     const categories = entityTypes.map((type) => ({
       name: type,
@@ -602,6 +634,62 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
     }));
 
     return { nodes, links, categories, entityTypes };
+  }
+
+  /**
+   * One drawn edge per DIRECTED PAIR, carrying every relation that runs along
+   * it, stacked one caption per line.
+   *
+   * Two relations between the same two entities were two links with the same
+   * endpoints and the same `curveness`, so ECharts drew them as the same
+   * stroke — and their captions at the same point, one printed over the other.
+   * `earned_degree_from` and `invited_lecturer_at` between the same pair came
+   * out as a single illegible smear. Merging them into one caption with a
+   * newline is what makes both readable, and it is honest about the drawing:
+   * there was only ever one line there to label.
+   *
+   * DIRECTED, so the key is the ORDERED pair. A→B and B→A stay two edges:
+   * they carry an arrowhead each and `curveness: 0.1` bows them apart, so they
+   * are genuinely two strokes with room for two captions. Folding them
+   * together would put a caption on an arrow that does not mean it.
+   *
+   * Nothing is hidden by this. The Raw data view lists every relation
+   * individually, which is where the full set is read.
+   */
+  private buildLinks(edges: KnowledgeGraphRelation[]): any[] {
+    const byPair = new Map<
+      string,
+      { source: string; target: string; types: string[] }
+    >();
+
+    for (const relation of edges) {
+      const source = relation.from_entity || '';
+      const target = relation.to_entity || '';
+      // A separator no entity name can contain, so `"A|B" -> "C"` cannot
+      // collide with `"A" -> "B|C"` the way it would under any printable one.
+      const key = `${source}${PAIR_SEPARATOR}${target}`;
+      const type = relation.relation_type || 'relation';
+      const pair = byPair.get(key);
+
+      if (!pair) {
+        byPair.set(key, { source, target, types: [type] });
+      } else if (!pair.types.includes(type)) {
+        // The same relation twice over the same pair is one fact reported
+        // twice; printing it twice would only make the stack taller.
+        pair.types.push(type);
+      }
+    }
+
+    return [...byPair.values()].map((pair, index) => ({
+      id: `relation-${index}`,
+      source: pair.source,
+      target: pair.target,
+      name: pair.types.join(', '),
+      label: {
+        show: true,
+        formatter: pair.types.join('\n'),
+      },
+    }));
   }
 
   /**

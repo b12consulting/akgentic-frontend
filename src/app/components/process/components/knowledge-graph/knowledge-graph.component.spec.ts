@@ -214,6 +214,93 @@ describe('KnowledgeGraphComponent', () => {
   });
 
   /**
+   * Two relations between the same pair used to be two links with the same
+   * endpoints and the same curveness — one stroke, and both captions printed
+   * at the same point, on top of each other.
+   */
+  describe('relations that share a pair', () => {
+    function links(): { source: string; target: string;
+      label: { formatter: string } }[] {
+      return (
+        component.graphOptions as {
+          series?: { links: { source: string; target: string;
+            label: { formatter: string } }[] }[];
+        }
+      ).series?.[0]?.links ?? [];
+    }
+
+    function edge(from: string, to: string, type: string) {
+      return { from_entity: from, to_entity: to, relation_type: type };
+    }
+
+    it('stacks both captions on the one edge that is actually drawn', () => {
+      knowledgeGraph$.next({
+        nodes: [entity('Person', 'person'), entity('School', 'org')],
+        edges: [
+          edge('Person', 'School', 'earned_degree_from'),
+          edge('Person', 'School', 'invited_lecturer_at'),
+        ],
+      });
+      fixture.detectChanges();
+
+      expect(links().length).toBe(1);
+      // A newline, NOT a comma: read one below the other, as two captions.
+      expect(links()[0].label.formatter).toBe(
+        'earned_degree_from\ninvited_lecturer_at'
+      );
+    });
+
+    it('keeps the two directions apart — an arrow must not carry the other way round', () => {
+      knowledgeGraph$.next({
+        nodes: [entity('Person', 'person'), entity('School', 'org')],
+        edges: [
+          edge('Person', 'School', 'studied_at'),
+          edge('School', 'Person', 'awarded'),
+        ],
+      });
+      fixture.detectChanges();
+
+      expect(links().length).toBe(2);
+      expect(links().map((l) => l.label.formatter).sort()).toEqual([
+        'awarded',
+        'studied_at',
+      ]);
+    });
+
+    it('prints a relation reported twice over one pair once', () => {
+      knowledgeGraph$.next({
+        nodes: [entity('Person', 'person'), entity('School', 'org')],
+        edges: [
+          edge('Person', 'School', 'studied_at'),
+          edge('Person', 'School', 'studied_at'),
+        ],
+      });
+      fixture.detectChanges();
+
+      expect(links()[0].label.formatter).toBe('studied_at');
+    });
+
+    /**
+     * A map keyed on a printable separator would fold `"A|B" -> "C"` into
+     * `"A" -> "B|C"`, silently drawing one edge where there are two.
+     */
+    it('does not confuse two pairs whose names run together', () => {
+      knowledgeGraph$.next({
+        nodes: [
+          entity('A B', 'x'),
+          entity('C', 'x'),
+          entity('A', 'x'),
+          entity('B C', 'x'),
+        ],
+        edges: [edge('A B', 'C', 'one'), edge('A', 'B C', 'two')],
+      });
+      fixture.detectChanges();
+
+      expect(links().length).toBe(2);
+    });
+  });
+
+  /**
    * The two readings, after the `<p-tabView>` came out. The strip was replaced,
    * NOT dropped: both views are still reachable and the panel still opens on
    * the graph.
