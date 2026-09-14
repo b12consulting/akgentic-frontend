@@ -101,6 +101,11 @@
   .composer-pill {
     display: flex;
     align-items: center;
+    /* The anchor the "Send as" panel is positioned against — see
+       `.p-select-overlay` below. PrimeNG walks up for the nearest `relative`
+       ancestor and falls back to the document, so without this the panel would
+       be placed in page coordinates and the rule below could not reach it. */
+    position: relative;
     gap: 7px;
     flex: 0 0 auto;
     min-width: 0;
@@ -167,9 +172,37 @@
      now, so anything it draws of its own is a second outline inside the first.
      `::ng-deep` is the only reach into a library's internals; the values are
      all `none`, which is what keeps this from becoming a re-skin that has to
-     track PrimeNG's own styling. */
-  :host ::ng-deep .p-select,
-  :host ::ng-deep .p-multiselect {
+     track PrimeNG's own styling.
+   *
+   * `::ng-deep` WITHOUT `:host`, and the difference is not cosmetic. These
+   * rules are nested inside `.input-container`, so `:host ::ng-deep X` compiled
+   * to `.input-container[_ngcontent] [_nghost] X` — which asks for the
+   * component's own host element to be a descendant of its own template. That
+   * can never be true, so every rule in this group was INERT: the padding,
+   * border and background they claim to strip were being drawn by PrimeNG the
+   * whole time. Dropping `:host` scopes them to `.input-container` instead,
+   * which is what was meant and which does match. */
+  ::ng-deep .p-select,
+  ::ng-deep .p-multiselect {
+    /*
+     * RE-POINT THE TOKENS, don't override the rules they feed.
+     *
+     * Aura's 2.5rem chevron is a hit target sized for a standalone form field.
+     * Inside a pill the PILL is the target and this is a mark on it, so 40px
+     * was a fraction of "All (supervisors)" and most of "You" — one absolute
+     * value, two controls that looked nothing alike side by side.
+     *
+     * Setting the VARIABLE rather than overriding `.p-select-dropdown`'s width
+     * matters because the token has more than one consumer: anything else
+     * PrimeNG positions from the dropdown's width stays agreed with it by
+     * construction instead of being left behind. The padding token goes the
+     * same way rather than being zeroed rule by rule.
+     */
+    --p-select-dropdown-width: 16px;
+    --p-select-padding-x: 0;
+    --p-multiselect-dropdown-width: 16px;
+    --p-multiselect-padding-x: 0;
+
     min-width: 0;
     padding: 0;
     border: 0;
@@ -187,17 +220,56 @@
     }
   }
 
-  :host ::ng-deep .p-select-label,
-  :host ::ng-deep .p-multiselect-label {
+  ::ng-deep .p-select-label,
+  ::ng-deep .p-multiselect-label {
     padding: 0;
     font-size: 12px;
     color: inherit;
+  }
+
+
+  /* THE CHEVRON IS A 2.5rem BUTTON by Aura's `select.dropdown.width`. That is a
+     sensible hit target for a standalone form field; inside a pill the PILL is
+     the target and this is a mark on it. At 40px it was a fraction of
+     "All (supervisors)" and most of "You" — one absolute value, two controls
+     that looked nothing alike side by side. Sized to its glyph instead, and the
+     glyph itself dropped to match the 12px type it sits in. */
+  ::ng-deep .p-select-dropdown,
+  ::ng-deep .p-multiselect-dropdown {
+    color: var(--akg-glyph-quiet);
+
+    svg {
+      width: 11px;
+      height: 11px;
+    }
   }
 
   p-dropdown,
   p-multiSelect {
     min-width: 0;
     flex: 0 1 auto;
+  }
+
+  /*
+   * THE "SEND AS" PANEL OPENS UPWARD, ALWAYS.
+   *
+   * PrimeNG has no option for this. `DomHandler.alignOverlay` flips a panel
+   * only when it does not fit below — which is why "Send to" already opens up
+   * (six agents) and "Send as" did not (two). The composer is the last thing on
+   * the page, so a panel opening downward runs off the end of it.
+   *
+   * Two halves, and both are needed. `appendTo="body"` is dropped from the
+   * control, because a panel in `<body>` is positioned in page coordinates and
+   * no rule here could move it; and the inline `top` that `relativePosition`
+   * writes has to be beaten, which is the one `!important` in this file that is
+   * not fighting `autoResize`.
+   *
+   * Safe to un-append only for THIS pill: the clipping risk is
+   * `.composer-pill--grow`'s `overflow: hidden`, and that is the other one.
+   */
+  ::ng-deep .p-select-overlay {
+    top: auto !important;
+    bottom: calc(100% + 10px);
   }
 
   /* The single piece of give in the row. */

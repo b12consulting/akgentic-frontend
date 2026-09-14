@@ -839,13 +839,29 @@ describe('ProcessUserInputComponent', () => {
       fixture.detectChanges();
     });
 
-    it('renders p-dropdown with appendTo="body" (AC #14)', () => {
+    /**
+     * AC #14 REVISED: the Send-as panel is NOT appended to the body.
+     *
+     * The requirement it served — the panel must not open off the bottom of the
+     * screen — is unchanged. Its stated reasoning was not: "PrimeNG already
+     * flips a body-appended overlay above its trigger when there is no room
+     * below, which is every time for a composer pinned to the bottom". That is
+     * only true when the list is TALL. `DomHandler.alignOverlay` flips on
+     * whether the panel fits, so "Send to" with six agents flipped and
+     * "Send as" with two did not — it opened downward off the end of the page,
+     * which is the defect AC #14 existed to prevent.
+     *
+     * PrimeNG offers no way to force a side, and a panel in `<body>` is
+     * positioned in page coordinates where no rule of ours can reach it. So the
+     * control keeps its overlay in place and the stylesheet positions it above
+     * the pill. Un-appending is safe for THIS pill specifically: the clipping
+     * risk is `.composer-pill--grow`'s `overflow: hidden`, and that is the
+     * other one.
+     */
+    it('keeps the Send-as overlay in place so it can be positioned above (AC #14, revised)', () => {
       const dropdown = fixture.nativeElement.querySelector('p-dropdown');
       expect(dropdown).not.toBeNull();
-      // In Angular dev-mode runtime, string inputs appear as DOM attributes.
-      // `appendTo` is bound as a literal string on the template, so it
-      // surfaces as an attribute on the <p-dropdown> element.
-      expect(dropdown.getAttribute('appendTo')).toBe('body');
+      expect(dropdown.getAttribute('appendTo')).toBeNull();
     });
 
     // UPDATED, deliberately. This asserted `[panelStyleClass]="send-as-panel-up"`,
