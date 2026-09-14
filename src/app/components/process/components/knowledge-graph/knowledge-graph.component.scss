@@ -99,18 +99,45 @@
     }
 }
 
-// Host component styling - ensure full dimensions in modal mode
+/*
+ * THE HOST TAKES ITS SIZE FROM ITS CONTAINER. It does not declare one.
+ *
+ * `height: 100%; width: 100%` stood here and was the source of both scrollbars
+ * on the inspector's Knowledge graph tab. The inspector lays its panels out
+ * absolutely — `.inspector-panels > * { position: absolute; inset: 4px 16px
+ * 18px }` in `process.component.scss` — and for an absolutely positioned box
+ * `top` + `bottom` + `height` is OVER-CONSTRAINED: CSS resolves it by ignoring
+ * `bottom`. So the panel was sized to the FULL height of its container while
+ * still starting 4px down, and ran 22px past the bottom. `width: 100%` against
+ * `left: 16px` + `right: 16px` did the same 16px over on the right, which is
+ * what clipped the Expand control and gave the pane a horizontal scrollbar.
+ *
+ * With no width or height declared, `inset` sizes the box on its own — which
+ * is what it was written to do — and in the dialog the flex chain does.
+ * Everything below is `flex: 1` + `min-height: 0` down to the canvas, so the
+ * graph gets exactly the room its pane has and no viewport arithmetic decides
+ * anything.
+ */
 :host {
-    display: block;
-    height: 100%;
-    width: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
+/*
+ * THE DIALOG IS THE OTHER CONTEXT, and it needs the opposite of the above.
+ *
+ * In the inspector the host is absolutely positioned and `inset` gives it a
+ * box, so declaring a height over-constrains it. Inside `<p-dialog>` the host
+ * is an ordinary in-flow child of the dialog's content box, which has a height
+ * and hands out none of it on its own — so here `height: 100%` is what starts
+ * the chain rather than what breaks it. Getting this wrong in the other
+ * direction is visible immediately: the canvas collapses to its content and
+ * the graph is drawn clipped at the top and bottom of a short box.
+ */
 :host(.modal-mode) {
-    display: flex;
-    height: 100%;
-    width: 100%;
     flex: 1;
+    height: 100%;
 }
 
 // Ensure modal content containers take full space
@@ -118,15 +145,26 @@
     display: flex;
     width: 100%;
     height: 100%; // Full height since dialog header is handled by PrimeNG
+    min-height: 0;
     flex: 1;
 }
 
 // Modal layout sections
+//
+// A FLEX COLUMN, and `overflow: hidden` rather than `auto`. The section used to
+// scroll because the canvas inside it was `calc(90vh - 40px)` — taller than the
+// box on purpose. Now the canvas is `flex: 1` of this column, so there is
+// nothing to scroll and `auto` would only ever mean "something has gone wrong
+// below"; `min-height: 0` is what lets the column actually shrink to the
+// dialog rather than to the graph.
 .modal-graph-section {
     flex: 1.6;
     min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
     border-right: 1px solid var(--akg-hairline);
-    overflow: auto;
+    overflow: hidden;
     padding: 10px;
 }
 
@@ -319,7 +357,7 @@
  * child.
  */
 .knowledge-graph-container {
-    height: 100%;
+    flex: 1;
     min-height: 0;
     display: flex;
     flex-direction: column;
@@ -478,38 +516,26 @@
     }
 }
 
+/*
+ * NO PER-MODE HEIGHTS LEFT. Both branches that used to sit here — modal's
+ * `calc(90vh - 40px)` and tab's `height: 100% + min-height: 240px` — were
+ * answering the same question the flex chain now answers on its own, and the
+ * viewport one answered it wrong: 90vh is a number about the WINDOW, and the
+ * dialog's content box is smaller than the window by its own header, tab strip
+ * and padding, so the canvas ran past the bottom of the box it lives in.
+ *
+ * The px floors went with them. They were there because echarts measures its
+ * container on init and lays out for nothing if it catches a zero-height box —
+ * but ngx-echarts runs a `ResizeObserver` on the element with `autoResize` on
+ * by default, so a box that starts at zero and grows is resized for us. A
+ * floor taller than the pane does not protect that case; it just guarantees
+ * overflow in the case that actually happens.
+ */
 .graph-visualization {
     flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    min-height: 0;
-    height: 100%;
-
-    // Modal mode: optimized for side-by-side layout
-    &.modal-mode {
-        .graph-canvas {
-            .echarts-container {
-                height: calc(90vh - 40px);
-            }
-        }
-    }
-
-    // Tab mode: sized by the PANE, not the window.
-    //
-    // `calc(100vh - 260px)` was the chrome budget of the layout this panel used
-    // to own. Since Epic 56 "tab mode" means "inside the 310px inspector",
-    // where the panel box already has a height and a viewport-derived one is
-    // simply a bigger number — so the canvas ran past the bottom of its own
-    // panel. The `min-height` floor is for echarts, which measures its
-    // container once on init and lays out for nothing if it catches it at zero.
-    &.tab-mode {
-        .graph-canvas {
-            .echarts-container {
-                height: 100%;
-                min-height: 240px;
-            }
-        }
-    }
 }
 
 .raw-data-content {
@@ -565,18 +591,20 @@
 
 .graph-canvas {
     flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
     border: 1px solid var(--akg-surface-border);
     border-radius: var(--akg-card-radius);
     background: var(--akg-surface-muted);
     overflow: hidden;
+    /* Containing block for `.kg-graph-empty`, which is `inset: 0` over the
+       canvas rather than beside it. */
     position: relative;
-    height: 100%;
-    min-height: 350px;
 
     .echarts-container {
-        width: 100%;
-        height: 100%;
-        min-height: 350px;
+        flex: 1;
+        min-height: 0;
     }
 
     /*
@@ -860,23 +888,16 @@
 }
 
 /*
- * TAB MODE IS A 310px PANE, and three floors here were written for a panel that
- * owned the page.
+ * DELETED: the `.tab-mode .graph-canvas { min-height: 240px }` floor.
  *
- * `.graph-canvas`'s 350px and `.tab-content-wrapper`'s 400px are TALLER than
- * the pane is on a laptop, so the canvas pushed its own controls off the bottom
- * and the region that should have scrolled could not, because its content had a
- * minimum larger than its box. The echarts floor stays (240px, stated in the
- * `.tab-mode` block above) because echarts measures once on init and lays out
- * for nothing if it catches a zero-height container; the BOX floors go.
- *
- * Scoped to `.tab-mode` rather than lowered outright: the expanded modal is
- * 96vh and the larger numbers are right there.
+ * It was the last survivor of three px floors written for a panel that owned
+ * the page, kept because echarts lays out for nothing if it measures a
+ * zero-height container on init. ngx-echarts observes the element with a
+ * `ResizeObserver` and resizes when the box grows, so the floor guarded
+ * against something that cannot happen while making the canvas taller than
+ * its pane in the case that does. The canvas is `flex: 1` of a bounded
+ * column now — see `.graph-canvas`.
  */
-.tab-mode .graph-canvas,
-.tab-mode.graph-visualization .graph-canvas {
-    min-height: 240px;
-}
 
 /* The card shadow, radius and ground the container used to draw are not
  * overridden back off down here any more — they are simply not declared. A rule

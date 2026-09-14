@@ -136,39 +136,6 @@ const CHROME_TOKENS = {
  */
 const LAYOUT_TOP_INSET = 44;
 
-/**
- * How much bigger the drawing is than the layout it grew out of.
- *
- * SCALED IN THE LAYOUT, NOT IN `zoom`. Making the graph bigger by shipping
- * `zoom: 1.5` is one character and wrong: `zoom` is the USER'S control — roam
- * owns it — so the size would survive exactly until the first scroll and then
- * never come back. It also scales unevenly, because node symbols follow zoom
- * through `nodeScaleRatio` (0.6 by default) rather than one-for-one, so the
- * nodes would grow by 1.3 while the distances between them grew by 1.5.
- *
- * Scaling the geometry instead means the layout is genuinely larger and the
- * user's zoom still starts where they expect.
- *
- * `repulsion` is the one that does NOT scale linearly. In `forceHelper` the
- * repulsive displacement is `(n1.rep + n2.rep) / d / d` applied along the
- * UN-normalised separation, so its magnitude falls off as `rep / d`, while
- * gravity's rises as `gravity * d`. Holding gravity fixed and asking for
- * equilibrium at `SCALE * d` therefore needs `SCALE²` times the repulsion —
- * which is why 500 becomes 1125 rather than 750.
- */
-const GRAPH_SCALE = 1.5;
-
-/**
- * How much bigger the graph's text is, independently of the geometry.
- *
- * Separate from `GRAPH_SCALE` on purpose: a label is read at whatever size it
- * is drawn, and it does not want to be tied to how far apart the nodes sit.
- * `width` moves with this one — it caps how much of an entity name survives
- * truncation, and that cap is in pixels, so leaving it behind would truncate
- * MORE at a larger font.
- */
-const LABEL_SCALE = 1.25;
-
 /** Joins the two ends of a directed pair into one map key. See `buildLinks`. */
 const PAIR_SEPARATOR = '\u0000';
 
@@ -421,10 +388,21 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
         // those two dominate and the result read as arbitrary. 500 and
         // [50, 200] are the values the panel shipped with before the redesign,
         // restored.
-        // `GRAPH_SCALE²` for repulsion, `GRAPH_SCALE` for the spring — see
-        // GRAPH_SCALE for why the two exponents differ.
-        repulsion: 500 * GRAPH_SCALE * GRAPH_SCALE,
-        edgeLength: [50 * GRAPH_SCALE, 200 * GRAPH_SCALE],
+        // THE DISTANCE PARAMS THEMSELVES, half again. `edgeLength` is the
+        // target length of an edge in pixels; `repulsion` sets how far apart
+        // nodes with no edge between them settle. Between them they are what
+        // "spread the graph out" means to echarts, and nothing else grows: a
+        // node, an arrowhead and a stroke are read at the size they are drawn,
+        // whatever the distances around them.
+        //
+        // `repulsion` goes up by the SQUARE, and that is arithmetic rather
+        // than taste. In `forceHelper` the repulsive displacement is
+        // `(n1.rep + n2.rep) / d / d` applied along the UN-normalised
+        // separation, so it falls off as `rep / d` while gravity rises as
+        // `gravity * d`. Equilibrium at 1.5x the distance therefore needs
+        // 2.25x the repulsion — 1125, not 750.
+        repulsion: 1125,
+        edgeLength: [75, 300],
         // Half-way, on purpose. The redesign raised this to 0.28 for a real
         // reason — an entity with no relation feels repulsion only, so at 0.1
         // it drifts into a corner and the part of the graph carrying the
@@ -444,8 +422,8 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
       label: {
         show: true,
         position: 'bottom',
-        distance: 6 * LABEL_SCALE,
-        fontSize: 10 * LABEL_SCALE,
+        distance: 8,
+        fontSize: 12.5,
         color: chrome.label,
         // A label crossing an edge or another label is unreadable at this
         // size. The chip ground gives it something to sit on; truncation caps
@@ -454,7 +432,7 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
         backgroundColor: chrome.labelGround,
         padding: [2, 4],
         borderRadius: 4,
-        width: 96 * LABEL_SCALE,
+        width: 120,
         overflow: 'truncate',
       },
       // NO `labelLayout`. `labelLayout: { hideOverlap: true }` stood here and
@@ -486,28 +464,28 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
       // the test above, so edge labels are still registered and still moved.
       edgeLabel: {
         show: true,
-        fontSize: 9 * LABEL_SCALE,
+        fontSize: 11.25,
         color: chrome.edgeLabel,
         // Two relations between the same pair arrive here as ONE caption with
         // a newline in it — see `processGraphData`. Pinning the line height
         // keeps that stack tight enough to read as one label rather than two
         // that happen to be near each other.
-        lineHeight: 9 * LABEL_SCALE * 1.2,
+        lineHeight: 13.5,
       },
       symbol: 'circle',
-      symbolSize: 26 * GRAPH_SCALE,
+      symbolSize: 26,
       edgeSymbol: ['none', 'arrow'],
-      edgeSymbolSize: 8 * GRAPH_SCALE,
+      edgeSymbolSize: 8,
       lineStyle: {
         color: chrome.edge,
         opacity: 0.55,
-        width: 1.5 * GRAPH_SCALE,
+        width: 1.5,
         curveness: 0.1,
       },
       emphasis: {
         focus: 'adjacency',
         lineStyle: {
-          width: 2.5 * GRAPH_SCALE,
+          width: 2.5,
           opacity: 1,
         },
         label: {
@@ -617,7 +595,7 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
         // A hairline of the pane's own ground around each node: two
         // same-category nodes that touch otherwise read as one blob.
         borderColor: chrome.nodeBorder,
-        borderWidth: 1.5 * GRAPH_SCALE,
+        borderWidth: 1.5,
       },
       // Add description as additional data for tooltips
       description: entity.description,
