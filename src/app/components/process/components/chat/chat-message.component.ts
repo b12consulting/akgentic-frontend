@@ -2,6 +2,7 @@ import { CommonModule, DatePipe } from '@angular/common';
 import {
   Component,
   computed,
+  HostBinding,
   EventEmitter,
   inject,
   input,
@@ -196,6 +197,26 @@ export class ChatMessageComponent {
   readonly isNoticeFold = computed(
     () => this.message().rule === 4 && this.message().collapsed,
   );
+
+  /**
+   * A QUIET ONE-LINE ROW, announced on the host so the list can space it.
+   *
+   * The transcript's gap is uniform — `gap` cannot tell a paragraph from a
+   * one-liner — and a run of folded notices at turn spacing reads as a list of
+   * unrelated events rather than as one agent working. The list closes
+   * consecutive quiet rows up to nothing (`.quiet-line + .quiet-line`), and
+   * that rule needs to know which rows are which.
+   *
+   * ON THE HOST, and that is the point rather than an implementation detail.
+   * The class the panel matches has to be on the element the panel actually
+   * has as a child, which is `<app-chat-message>` — `.collapsed-notice` is
+   * inside this component's encapsulation, where a selector written in the
+   * panel's stylesheet cannot reach it without `::ng-deep`. The component that
+   * knows its own rule states the fact; the list decides what to do about it.
+   */
+  @HostBinding('class.quiet-line') get isQuietLine(): boolean {
+    return this.isNoticeFold();
+  }
 
   /**
    * The two parties, separately.

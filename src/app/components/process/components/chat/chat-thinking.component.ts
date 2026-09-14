@@ -52,6 +52,23 @@ export class ChatThinkingComponent {
 
   stepCount = computed<number>(() => this.state().tools.length);
 
+  /*
+   * NOT A `quiet-line`, deliberately.
+   *
+   * The transcript runs consecutive quiet rows together — see
+   * `ChatMessageComponent.isQuietLine` — and this fold looks like one of them
+   * while collapsed: a single line saying what an agent did. It is not one.
+   *
+   * The rows that run together are what an agent's work PRODUCED — a string of
+   * notices reporting the same piece of work. The fold is the work itself, and
+   * it is the row a reader uses to tell where one agent's turn ends and the
+   * next begins. Closing the notices up against it merges those two things into
+   * one block and loses exactly the boundary the fold exists to draw.
+   *
+   * So the fold keeps a full turn's gap on both sides, and the notices beneath
+   * it stack against each other.
+   */
+
   /**
    * WHO THE RUN CONTACTED — all of them, in the order first reached.
    *

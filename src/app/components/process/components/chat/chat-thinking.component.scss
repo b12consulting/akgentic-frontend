@@ -20,12 +20,29 @@
    * to be. Muted type carries it, and a hover tint supplies the affordance the
    * border was doing by accident.
    */
-  /* Indented into the avatar gutter so the work an agent did lines up under
-     the agent that did it — one spine down the transcript instead of two
-     margins. A card rather than a bare row, so the fold is legible as one
-     object when it is open and holding four steps. */
-  margin-left: var(--akg-avatar-gutter);
-  padding: 10px 13px;
+  /*
+   * ON THE TRANSCRIPT'S SPINE — its TEXT, not its border.
+   *
+   * Every row indents its content to `--akg-avatar-gutter`, so the work an
+   * agent did lines up under the agent that did it: one spine down the
+   * transcript instead of two margins. The folded notice does it with
+   * `padding-left`, so its glyph sits exactly on the gutter.
+   *
+   * This row is a CARD — it has to be, so the fold reads as one object when it
+   * is open and holding four steps — and a card has padding of its own. Putting
+   * its MARGIN on the gutter therefore pushed its contents a further 13px right
+   * and the fold's text sat off the column every other row is on.
+   *
+   * Pulling the card back by exactly its own inset puts the content box where
+   * the gutter is and leaves the card's edge hanging to the left of it, which
+   * is the correct side for it to hang: the text is what a reader aligns on,
+   * and the border is chrome around it.
+   *
+   * The inset is named rather than written twice, so the two cannot drift.
+   */
+  --akg-activity-inset-x: 13px;
+  margin-left: calc(var(--akg-avatar-gutter) - var(--akg-activity-inset-x));
+  padding: 10px var(--akg-activity-inset-x);
   border: 1px solid var(--akg-hairline);
   border-radius: 12px;
   background: var(--akg-surface-muted);

@@ -1090,6 +1090,127 @@ describe('ChatPanelComponent', () => {
     });
   });
 
+  /**
+   * THE SPACING, MEASURED RATHER THAN DESCRIBED.
+   *
+   * A turn is a paragraph and wants air; a run of folded system notices is one
+   * agent working and wants none. The rule that says so lives in the panel's
+   * stylesheet and depends on a class the CHILD puts on its own host, so the
+   * only place the two halves meet is the rendered DOM. Asserting the computed
+   * style is what makes this a test of the surface rather than of either file.
+   */
+  describe('the space between rows', () => {
+    function hosts(): HTMLElement[] {
+      return Array.from(
+        (fixture.nativeElement as HTMLElement).querySelectorAll(
+          '.message-list > app-chat-message',
+        ),
+      );
+    }
+
+    function marginTopOf(el: HTMLElement): number {
+      return parseFloat(getComputedStyle(el).marginTop);
+    }
+
+    /** Two agent-to-agent messages, which the classifier folds as rule 4. */
+    function twoNotices(): void {
+      messagesSubject.next([
+        makeSentMessage(
+          { name: '#NotificationTool', role: 'Tool' },
+          { name: '@Manager', role: 'Manager' },
+          'first notice',
+          'n-1',
+        ),
+        makeSentMessage(
+          { name: '#NotificationTool', role: 'Tool' },
+          { name: '@Manager', role: 'Manager' },
+          'second notice',
+          'n-2',
+        ),
+      ]);
+      fixture.detectChanges();
+    }
+
+    it('folds two notices as quiet lines', () => {
+      twoNotices();
+
+      expect(component.chatMessages.map((m) => m.rule)).toEqual([4, 4]);
+      expect(component.chatMessages.every((m) => m.collapsed)).toBeTrue();
+      expect(hosts().length).toBe(2);
+      expect(hosts()[1].classList.contains('quiet-line')).toBeTrue();
+    });
+
+    it('runs two quiet lines together', () => {
+      twoNotices();
+
+      // The first keeps whatever separates it from what came before; only the
+      // SECOND closes up against its neighbour.
+      expect(marginTopOf(hosts()[1])).toBe(0);
+    });
+
+    /**
+     * THE FOLD IS A BOUNDARY, NOT A QUIET LINE — and it looks like one, which
+     * is why this is asserted rather than left to read off the code.
+     *
+     * The rows that run together are what an agent's work PRODUCED: a string of
+     * notices reporting one piece of work. The fold is the work itself, and it
+     * is what a reader uses to tell where one agent's turn ends and the next
+     * begins. Closing the notices up against it merges the two and loses
+     * exactly the boundary the fold is there to draw — so it keeps a full turn's
+     * gap on both sides while the notices beneath it stack.
+     */
+    it('keeps a full gap under the fold, and stacks the notices beneath it', () => {
+      const turn = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'go on then',
+        'm-1',
+      );
+      turn.timestamp = '2026-04-12T10:00:00Z';
+      const notice = makeSentMessage(
+        { name: '#NotificationTool', role: 'Tool' },
+        { name: '@Manager', role: 'Manager' },
+        'a notice',
+        'n-1',
+      );
+      notice.timestamp = '2026-04-12T10:00:10Z';
+
+      messagesSubject.next([turn, notice]);
+      (TestBed.inject(ChatService) as any).thinkingAgents$.next([
+        {
+          agent_id: 'a1',
+          agent_name: '@Manager',
+          start_time: new Date('2026-04-12T10:00:05Z'),
+          tools: [],
+          // Anchored on the user's own turn, so the run is in scope for the
+          // main transcript on its merits rather than on the fail-open.
+          anchor_message_id: 'inner-m-1',
+          final: true,
+        },
+      ]);
+      fixture.detectChanges();
+
+      const rows = Array.from(
+        (fixture.nativeElement as HTMLElement).querySelectorAll(
+          '.message-list > app-chat-message, .message-list > app-chat-thinking',
+        ),
+      ) as HTMLElement[];
+
+      expect(rows.map((r) => r.tagName.toLowerCase())).toEqual([
+        'app-chat-message',
+        'app-chat-thinking',
+        'app-chat-message',
+      ]);
+
+      // The fold is NOT a quiet line, however much it looks like one.
+      expect(rows[1].classList.contains('quiet-line')).toBeFalse();
+      expect(marginTopOf(rows[1])).toBeGreaterThan(0);
+
+      // And the notice under it keeps the boundary the fold draws.
+      expect(marginTopOf(rows[2])).toBeGreaterThan(0);
+    });
+  });
+
   describe('displayItems merge (Story 4-8)', () => {
     function getThinkingSubj(): BehaviorSubject<ThinkingState[]> {
       const svc = TestBed.inject(ChatService) as any;
