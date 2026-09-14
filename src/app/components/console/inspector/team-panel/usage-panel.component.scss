@@ -53,19 +53,42 @@
  * card already has an outline and repeating that value here would draw the
  * heavier of the two lines in the lighter of the two roles.
  */
+/*
+ * ONE GRID OVER THE WHOLE BREAKDOWN, not a flex row per model — and that is
+ * what puts the figures in line.
+ *
+ * Each row used to be its own flex container packing three figures against the
+ * right edge. Only the LAST of the three therefore landed anywhere
+ * predictable: `↑690.1k` and `⚡630.7k` sat wherever the widths before them
+ * happened to leave them, in line with nothing, and with two models on a team
+ * they did not even line up with each other. The eye is being asked to compare
+ * `in` against `in` down the column, which is the same reason the three totals
+ * above are a column rather than a sentence.
+ *
+ * Four columns shared by every row: the name takes what is left
+ * (`minmax(0, 1fr)` so it can shrink and ellipsise), and each figure column is
+ * `auto` — as wide as the widest figure in it, across all rows. The rows
+ * `display: contents` so their spans become items of THIS grid rather than of
+ * a box of their own; the vertical padding they used to carry moves onto the
+ * cells, since an element with `display: contents` has no box to pad. Its
+ * inherited type still reaches them, which is why the size and weight stay
+ * here.
+ */
 .usage-models {
   margin-top: 10px;
   padding-top: 9px;
   border-top: 1px solid var(--akg-hairline);
-}
-
-.usage-model-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  column-gap: 7px;
   align-items: baseline;
-  gap: 10px;
-  padding: 3px 0;
   font-size: 11.5px;
   font-weight: 300;
+}
+
+.usage-model-row,
+.usage-model-figures {
+  display: contents;
 }
 
 /*
@@ -75,18 +98,28 @@
  * an elided number is worse than no number.
  */
 .usage-model-name {
-  flex: 1 1 auto;
   min-width: 0;
+  padding: 3px 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--akg-text-muted);
 }
 
-.usage-model-figures {
-  flex: 0 0 auto;
-  display: flex;
-  gap: 7px;
+/*
+ * `justify-self: end` rather than a centred or stretched cell: these are
+ * numbers of different lengths in a column, and a number column is read off
+ * its LAST digit. `tabular-nums` is the other half — proportional digits make
+ * `690.1k` and `630.7k` different widths and the column ragged even once the
+ * cells line up.
+ *
+ * The blank placeholder is styled with them so it occupies its column at the
+ * same height rather than collapsing the row.
+ */
+.usage-model-figure,
+.usage-model-blank {
+  justify-self: end;
+  padding: 3px 0;
   color: var(--akg-text);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
