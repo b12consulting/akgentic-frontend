@@ -1099,6 +1099,89 @@ describe('ChatPanelComponent', () => {
    * only place the two halves meet is the rendered DOM. Asserting the computed
    * style is what makes this a test of the surface rather than of either file.
    */
+  /**
+   * A NOTICE IS ONE ROW IN EITHER STATE — the same row, with more of its text.
+   *
+   * It used to SWAP for a full bubble, and the duplicate-row defect these specs
+   * were written for came out of that: two renderings gated on one field, read
+   * through two mechanisms with different staleness, so both appeared at once.
+   * The swap is gone. Opening a notification lets its sentence finish; nothing
+   * enters or leaves the layout, so there is no second row to get out of step.
+   */
+  describe('expanding a folded notice', () => {
+    function rows(): { collapsed: number; expanded: number } {
+      const el = fixture.nativeElement as HTMLElement;
+      return {
+        collapsed: el.querySelectorAll('.collapsed-notice').length,
+        expanded: el.querySelectorAll('.message').length,
+      };
+    }
+
+    function oneNotice(): void {
+      messagesSubject.next([
+        makeSentMessage(
+          { name: '@Manager', role: 'Manager' },
+          { name: '@Assistant', role: 'Assistant' },
+          'Done — I sent @Human a joke directly.',
+          'n-1',
+        ),
+      ]);
+      fixture.detectChanges();
+    }
+
+    function noticeText(): string {
+      const el = fixture.nativeElement as HTMLElement;
+      return (
+        el.querySelector('.collapsed-notice .collapsed-preview')?.textContent ??
+        ''
+      ).trim();
+    }
+
+    it('shows the folded line and nothing else while collapsed', () => {
+      oneNotice();
+
+      expect(component.chatMessages[0].rule).toBe(4);
+      expect(rows()).toEqual({ collapsed: 1, expanded: 0 });
+    });
+
+    /**
+     * THE SAME ROW, WITH MORE OF ITS TEXT. Not a second row, and emphatically
+     * not both: the defect this was written for put the folded line and a full
+     * bubble on screen together, and the shape that made that possible — two
+     * renderings for one message — is what is gone.
+     */
+    it('opens the text in place, still as one row', () => {
+      oneNotice();
+
+      component.onToggleCollapse(component.chatMessages[0]);
+      fixture.detectChanges();
+
+      expect(rows()).toEqual({ collapsed: 1, expanded: 0 });
+      expect(noticeText()).toContain('joke directly');
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector(
+          '.notice-text.expanded',
+        ),
+      ).not.toBeNull();
+    });
+
+    it('clips it again when closed', () => {
+      oneNotice();
+
+      component.onToggleCollapse(component.chatMessages[0]);
+      fixture.detectChanges();
+      component.onToggleCollapse(component.chatMessages[0]);
+      fixture.detectChanges();
+
+      expect(rows()).toEqual({ collapsed: 1, expanded: 0 });
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector(
+          '.notice-text.expanded',
+        ),
+      ).toBeNull();
+    });
+  });
+
   describe('the space between rows', () => {
     function hosts(): HTMLElement[] {
       return Array.from(

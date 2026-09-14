@@ -99,7 +99,7 @@
   (click)="onToggleCollapse()"
 >
   <i class="pi notice-icon" [ngClass]="noticeIcon()" aria-hidden="true"></i>
-  <span class="notice-text">
+  <span class="notice-text" [class.expanded]="!message().collapsed">
     <ng-container *ngIf="showAgentNames; else noticeAnonymous">
       <span class="notice-subject">{{ senderName() }}</span>
       <span class="notice-verb">{{
@@ -109,11 +109,42 @@
     <ng-template #noticeAnonymous>
       <span class="notice-subject">{{ collapsedFallback() | translate }}</span>
     </ng-template>
-    <span *ngIf="preview().length > 0" class="collapsed-preview">{{
-      preview()
+    <!-- THE WHOLE MESSAGE, always. `.notice-text` clips it to one line while
+         the row is shut; swapping in a shorter string instead is what stopped
+         the row animating closed, because the content finished changing before
+         the height transition could start. -->
+    <span *ngIf="message().content" class="collapsed-preview">{{
+      message().content
     }}</span>
+    <!--
+      THE RATING, REVEALED WITH THE TEXT.
+
+      Rule 4 is rateable by design — `isRateable` states it in as many words and
+      argues the case — and the control used to live in the expanded BUBBLE.
+      That bubble is gone, so without this the predicate and the rendering would
+      disagree and rule 4 would quietly stop being rateable: a designed feature
+      lost as a side effect of a layout change.
+
+      PRESENT WHILE FOLDED, NOT ABSENT. Gating it on `collapsed` removed it from
+      the DOM at the moment of the toggle, which dropped the row's content
+      height in one frame and left the closing transition nothing to animate.
+      It stays, clipped by the row's own height, and `inert` is what keeps it
+      out of the tab order and the accessibility tree while it cannot be seen —
+      a control hidden by a clip is still focusable without it.
+    -->
+    <app-feedback
+      *ngIf="rateable() && ratingEnabled()"
+      class="notice-feedback"
+      [message]="message()"
+      [attr.inert]="message().collapsed ? '' : null"
+      (click)="$event.stopPropagation()"
+    ></app-feedback>
   </span>
-  <i class="pi pi-chevron-right collapsed-caret" aria-hidden="true"></i>
+  <i
+    class="pi collapsed-caret"
+    [ngClass]="message().collapsed ? 'pi-chevron-right' : 'pi-chevron-down'"
+    aria-hidden="true"
+  ></i>
   <span class="collapsed-timestamp">{{
     timestampOrNull() | date : "HH:mm"
   }}</span>
@@ -182,7 +213,7 @@
 
 <!-- Expanded bubble (Rules 1/2, or Rule 3/4 expanded) -->
 <div
-  *ngIf="!isMarker() && message().rule !== 5 && ((message().rule !== 3 && message().rule !== 4) || !message().collapsed)"
+  *ngIf="!isMarker() && message().rule !== 5 && message().rule !== 4 && (message().rule !== 3 || !message().collapsed)"
   class="message"
   [class.right]="message().alignment === 'right'"
   [class.left]="message().alignment === 'left'"

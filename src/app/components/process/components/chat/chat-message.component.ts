@@ -232,7 +232,6 @@ export class ChatMessageComponent {
     this.message().rule === 3 ? 'chat.messageForYou' : 'chat.teamMessage',
   );
 
-  readonly preview = computed(() => buildPreview(this.message().content));
 
   /**
    * The two folds, told apart once.
@@ -243,14 +242,56 @@ export class ChatMessageComponent {
    * classifier's fall-through, i.e. ambient traffic nobody is waiting on. The
    * predicates live here rather than in two template expressions so the pair
    * stays mutually exclusive by construction: a message cannot render as both.
+   *
+   * METHODS, NOT `computed()`, AND THAT IS LOAD-BEARING.
+   *
+   * `collapsed` is TOGGLED IN PLACE by the panel — `chatMsg.collapsed =
+   * !chatMsg.collapsed` — so the object's identity never changes. A signal
+   * input does not notify on a mutated property, so a `computed()` over it is
+   * memoised on the value `collapsed` had at first render and never
+   * recalculates.
+   *
+   * That made opening a fold show BOTH rows. The expanded bubble's `*ngIf`
+   * reads `message().collapsed` directly, and a template expression is
+   * re-evaluated on every change-detection pass whether or not a signal fired —
+   * so the bubble appeared while the folded line, gated on the stale computed,
+   * stayed exactly where it was. The two halves of a pair that is supposed to
+   * be mutually exclusive were reading the same field through two mechanisms
+   * with different staleness.
+   *
+   * A method is re-evaluated per pass like the template expression beside it,
+   * which is what makes the pair exclusive again. The deeper fix is for the
+   * panel to replace the message rather than mutate it; until it does, nothing
+   * in this component may memoise anything derived from `collapsed`.
    */
-  readonly isRequestFold = computed(
-    () => this.message().rule === 3 && this.message().collapsed,
-  );
+  isRequestFold(): boolean {
+    return this.message().rule === 3 && this.message().collapsed;
+  }
 
-  readonly isNoticeFold = computed(
-    () => this.message().rule === 4 && this.message().collapsed,
-  );
+  /**
+   * RULE 4 IS ALWAYS THIS ROW — open or shut.
+   *
+   * It used to SWAP: the folded line was replaced by a full bubble with an
+   * avatar, a name pill and a markdown body. Two rows for one message, each a
+   * different shape and a different height, which is what every attempt at
+   * animating the change ran aground on — during a swap both are in flow, so
+   * their heights add, and the transcript either dipped, bulged, or jumped.
+   *
+   * A notification does not need a second shape. Everything the bubble added is
+   * already on this row except the words themselves, and the words are only
+   * missing because they are ELLIPSED. So opening it reveals the text in place:
+   * same row, same indent, same subject and verb, same clock. The only thing
+   * that changes is how much of the sentence is shown, and the row grows by
+   * however many lines that takes.
+   *
+   * `collapsed` therefore no longer selects between two renderings — it selects
+   * between clipped and whole — the row renders the WHOLE message either way
+   * and `.notice-text` clips it by height.
+   */
+  isNoticeFold(): boolean {
+    return this.message().rule === 4;
+  }
+
 
   /**
    * A QUIET ONE-LINE ROW, announced on the host so the list can space it.
@@ -271,6 +312,7 @@ export class ChatMessageComponent {
   @HostBinding('class.quiet-line') get isQuietLine(): boolean {
     return this.isNoticeFold();
   }
+
 
   /**
    * The two parties, separately.

@@ -193,6 +193,15 @@
   --akg-avatar-size: 28px;
   --akg-avatar-gutter: 42px;
 
+  // A FOLD'S OWN HORIZONTAL INSET, read by both rows that fold into the gutter.
+  //
+  // The activity fold and the folded notification each sit on the transcript's
+  // spine the same way: the box is pulled back by this much and pads it out
+  // again, so the CONTENT lands on `--akg-avatar-gutter` while the hover ground
+  // starts and ends on the same edges for both. Written twice, the two grounds
+  // were visibly different widths the moment one of the numbers moved.
+  --akg-fold-inset-x: 13px;
+
   // --- Collapsed rows and markers -----------------------------------------
   // The agent-to-agent lines the conversation folds away, and the synthetic
   // context-management markers. Quieter than a turn by design: they are what
