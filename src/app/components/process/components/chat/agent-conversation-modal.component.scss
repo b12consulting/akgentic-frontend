@@ -27,6 +27,26 @@
     border-bottom: 1px solid var(--akg-hairline);
   }
 
+  // THE BOTTOM CORNERS, which the frame above cannot round on its own.
+  //
+  // `.p-dialog-content` carries no ground of its own — Aura's preset gives it
+  // padding and nothing else — so it looks like it could not be what squares
+  // the frame off. What it carries is the CLIP: `[contentStyle]` sets
+  // `overflow: hidden` on it, and a clip with no radius is a rectangle. The
+  // two children that do paint, `.agent-list` on its muted ground and the
+  // conversation column on the overlay ground, are therefore cut square and
+  // fill the corners the dialog's own `border-radius` had rounded.
+  //
+  // Only the bottom two: the header owns the top edge and is already inside
+  // the frame. And a step smaller than the frame's, because the dialog draws a
+  // 1px border and an inner radius equal to the outer one leaves a hairline of
+  // border showing past the curve — inner = outer − border-width is the whole
+  // of that rule.
+  .p-dialog-content {
+    border-bottom-left-radius: calc(var(--akg-card-radius) - 1px);
+    border-bottom-right-radius: calc(var(--akg-card-radius) - 1px);
+  }
+
   // The header states WHICH agent is open, so it is naming a participant rather
   // than labelling a window. Same treatment as the team-creation dialog's title
   // so the two read as one product.
