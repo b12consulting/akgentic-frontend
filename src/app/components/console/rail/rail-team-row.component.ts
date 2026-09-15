@@ -25,7 +25,7 @@ import {
   TeamActivity,
 } from '../../../core/context/team.interface';
 import { IconButtonComponent } from '../../../shared/components/icon-button/icon-button.component';
-import { RailTeamRow } from './rail-teams.selector';
+import { RailTeamRow } from '../../../features/console/rail/rail-teams.selector';
 
 /** Which `team.status.*` key describes each activity, including its "as of the
  *  last refresh" hedge. Frozen because it is a lookup table, not state. */

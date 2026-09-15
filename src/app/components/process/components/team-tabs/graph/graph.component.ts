@@ -33,14 +33,14 @@ import {
 } from '../../../../../core/ui/category.service';
 
 // Import the shared GraphDataService
-import { isToolNode } from '../../../selectors/actor-kind';
-import { agentColours } from '../../../selectors/agent-colour';
+import { isToolNode } from '../../../../../features/process/selectors/actor-kind';
+import { agentColours } from '../../../../../features/process/selectors/agent-colour';
 import { makeAgentNameUserFriendly } from '../../../../../shared/util/util';
-import { GraphDataService } from '../../../selectors/graph.selector';
+import { GraphDataService } from '../../../../../features/process/selectors/graph.selector';
 import {
   Selectable,
   SelectionService,
-} from '../../../ui-state/selection.service';
+} from '../../../../../features/process/ui-state/selection.service';
 import { HumanRequestComponent } from '../../human-request/human-request.component';
 import { InspectorEmptyStateComponent } from '../../../../console/inspector/inspector-empty-state.component';
 

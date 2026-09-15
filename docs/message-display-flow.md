@@ -185,7 +185,8 @@ Two of these gates carry a decision that is easy to undo by accident:
 ## Where the colour comes from
 
 Orthogonal to the rules, and deliberately so: an agent's colour is a fact about the **roster**, not
-about any message. `agentColours(nodes, palette)` in `agent-colour.ts` assigns each addressable
+about any message. `agentColours(nodes, palette)` in `features/process/selectors/agent-colour.ts`
+assigns each addressable
 agent one stop of `--akg-graph-category-1..10` in discovery order, skipping the tools and the human
 so neither consumes a stop. The hierarchy graph, the transcript's speaker mark and name pills, and
 the inspector's member tiles all call that one function over the same node list — which is what
@@ -197,14 +198,17 @@ drawn as plain text and ignores a click, with no second rule anywhere saying so.
 
 ## The files
 
+Paths are relative to `src/app/`. The split is deliberate: `components/` holds the views,
+`features/` holds the logic those views read — see the *Layout* section of the README.
+
 | File | What it owns |
 |---|---|
-| `selectors/chat.selector.ts` | the fold; run lifecycle; tool entries; contact absorption |
-| `selectors/chat-message.model.ts` | `classifyRule`, `buildLabel`, alignment, fill, collapse, markers |
-| `selectors/rateable.ts` | whether a rule is an answer that can be judged |
-| `selectors/display-items.ts` | the merge, the sort, run scoping |
-| `selectors/day-separator.ts` | the calendar-day arithmetic |
-| `selectors/actor-kind.ts` | tool / human / addressable-agent predicates |
-| `selectors/agent-colour.ts` | one colour per agent, shared by three surfaces |
-| `components/chat/chat-message.component.*` | every rule's rendering |
-| `components/chat/chat-thinking.component.*` | the activity fold |
+| `features/process/selectors/chat.selector.ts` | the fold; run lifecycle; tool entries; contact absorption |
+| `features/process/selectors/chat-message.model.ts` | `classifyRule`, `buildLabel`, alignment, fill, collapse, markers |
+| `features/process/selectors/rateable.ts` | whether a rule is an answer that can be judged |
+| `features/process/selectors/display-items.ts` | the merge, the sort, run scoping |
+| `features/process/selectors/day-separator.ts` | the calendar-day arithmetic |
+| `features/process/selectors/actor-kind.ts` | tool / human / addressable-agent predicates |
+| `features/process/selectors/agent-colour.ts` | one colour per agent, shared by three surfaces |
+| `components/process/components/chat/chat-message.component.*` | every rule's rendering |
+| `components/process/components/chat/chat-thinking.component.*` | the activity fold |

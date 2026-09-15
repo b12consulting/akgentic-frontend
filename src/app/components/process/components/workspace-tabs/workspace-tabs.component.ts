@@ -9,11 +9,11 @@ import { combineLatest, map, Observable } from 'rxjs';
 import {
   AgentsById,
   AgentsByIdService,
-} from '../../selectors/agents-by-id.selector';
+} from '../../../../features/process/selectors/agents-by-id.selector';
 import {
   WorkspaceDescriptor,
   WorkspaceRegistryService,
-} from '../../selectors/workspace-registry.selector';
+} from '../../../../features/process/selectors/workspace-registry.selector';
 import { WorkspaceExplorerComponent } from '../workspace-explorer/workspace-explorer.component';
 import { TranslatePipe } from '@ngx-translate/core';
 

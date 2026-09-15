@@ -1,4 +1,52 @@
-import { VisualizationOption } from './inspector-tabs.component';
+/**
+ * One entry in the inspector's tab strip.
+ *
+ * IT LIVES HERE, beside the tab SET it describes, rather than in
+ * `ProcessComponent` (which builds the list) or in `ConsoleInspectorComponent`
+ * (which passes it through). Both of those would make the import graph a
+ * cycle — `ProcessComponent` imports the inspector, the inspector imports the
+ * tabs — and a cycle between files that carry Angular decorators is the kind of
+ * thing that works until a bundler changes evaluation order.
+ *
+ * It used to live in `inspector-tabs.component.ts`, the leaf that renders it,
+ * on the same no-outgoing-edges argument. This module satisfies that argument
+ * more strictly: it is pure data with no decorator and no template, and it has
+ * no outgoing edge into `components/` at all. The old arrangement had this
+ * registry importing a type out of the component that renders it — the logic
+ * tier depending on the view tier, legal only because both sat inside one
+ * `boundaries` element and the edge was therefore invisible.
+ *
+ * `inspector-tabs.component.ts` re-exports it, so nothing that imported it from
+ * there had to change.
+ */
+export interface VisualizationOption {
+  /**
+   * A translation KEY, not a caption.
+   *
+   * This component's template resolves it. Held as copy it would be an English
+   * string travelling through an `[options]` binding from a component that
+   * knows nothing about a translation layer — and `value` below is the identity
+   * every rule keys off, so the caption never has to be matched on.
+   */
+  labelKey: string;
+  value: string;
+
+  /**
+   * The tab's visible content wherever it is NOT the selected one — which is
+   * five of the six at any moment.
+   *
+   * It stopped being an ornament beside a caption when the strip stopped
+   * drawing six of them (see `inspector-tabs.component.scss` for why six
+   * labelled tabs cannot fit the pane). So the host's obligation changed with
+   * it: two entries sharing a glyph are two tabs a sighted user cannot tell
+   * apart until they select one, where before the caption disambiguated them
+   * at rest. Pick glyphs that differ in OUTLINE, not in count — `pi-user`
+   * against `pi-users` is one head against two and reads as the same mark at
+   * 13px.
+   */
+  icon: string;
+}
+
 
 /**
  * THE INSPECTOR'S TAB SET, AS DATA.

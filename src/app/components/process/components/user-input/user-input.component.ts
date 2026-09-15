@@ -19,20 +19,20 @@ import { ConfigService } from '../../../../core/config/config.service';
 
 import { ApiService } from '../../../../core/http/api.service';
 import { FetchFailure } from '../../../../core/http/fetch.service';
-import { ChatService } from '../../selectors/chat.selector';
+import { ChatService } from '../../../../features/process/selectors/chat.selector';
 import { ContextService } from '../../../../core/context/context.service';
-import { GraphDataService, HUMAN_ROLE } from '../../selectors/graph.selector';
-import { IngestionService } from '../../event/ingestion.service';
+import { GraphDataService, HUMAN_ROLE } from '../../../../features/process/selectors/graph.selector';
+import { IngestionService } from '../../../../features/process/event/ingestion.service';
 
 import {
   TeamTokenTotals,
   TokenUsageSelector,
-} from '../../selectors/token-usage.selector';
+} from '../../../../features/process/selectors/token-usage.selector';
 
-import { ENTRY_POINT_NAME } from '../../selectors/chat-message.model';
-import { defaultRecipientName } from '../../selectors/actor-kind';
+import { ENTRY_POINT_NAME } from '../../../../features/process/selectors/chat-message.model';
+import { defaultRecipientName } from '../../../../features/process/selectors/actor-kind';
 import { CommandDescriptor } from '../../../../protocol/message.types';
-import { NodeInterface } from '../../models/types';
+import { NodeInterface } from '../../../../features/process/models/types';
 
 /**
  * MATCH ANYWHERE IN THE NAME, not just at the front.

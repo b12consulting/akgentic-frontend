@@ -7,19 +7,19 @@ import { Tabs } from 'primeng/tabs';
 import { BehaviorSubject, Subject } from 'rxjs';
 
 import { ContextService } from '../../../../core/context/context.service';
-import { WorkspaceService } from '../../workspace/workspace.service';
+import { WorkspaceService } from '../../../../features/process/workspace/workspace.service';
 import {
   AgentsById,
   AgentsByIdService,
-} from '../../selectors/agents-by-id.selector';
+} from '../../../../features/process/selectors/agents-by-id.selector';
 import {
   WorkspaceInvalidation,
   WorkspaceInvalidationService,
-} from '../../selectors/workspace-invalidation.selector';
+} from '../../../../features/process/selectors/workspace-invalidation.selector';
 import {
   WorkspaceDescriptor,
   WorkspaceRegistryService,
-} from '../../selectors/workspace-registry.selector';
+} from '../../../../features/process/selectors/workspace-registry.selector';
 import { WorkspaceExplorerComponent } from '../workspace-explorer/workspace-explorer.component';
 import { WorkspaceTabsComponent } from './workspace-tabs.component';
 

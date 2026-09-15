@@ -4,8 +4,8 @@ import { animate, style, transition, trigger } from '@angular/animations';
 import { TranslatePipe } from '@ngx-translate/core';
 
 import { I18nService } from '../../../../core/i18n/i18n.service';
-import { ThinkingState, ThinkingToolEntry } from '../../selectors/chat.selector';
-import { describeStep, StepNarration } from '../../selectors/step-narration';
+import { ThinkingState, ThinkingToolEntry } from '../../../../features/process/selectors/chat.selector';
+import { describeStep, StepNarration } from '../../../../features/process/selectors/step-narration';
 
 /** A step plus the sentence it renders as. */
 export interface NarratedStep extends StepNarration {

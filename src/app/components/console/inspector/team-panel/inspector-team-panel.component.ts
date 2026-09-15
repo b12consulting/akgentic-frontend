@@ -9,19 +9,19 @@ import {
 import { TranslatePipe } from '@ngx-translate/core';
 import { distinctUntilChanged, map, Observable, shareReplay } from 'rxjs';
 
-import { GraphDataService } from '../../../process/selectors/graph.selector';
+import { GraphDataService } from '../../../../features/process/selectors/graph.selector';
 import {
   buildInspectorTeam,
   inspectorTeamsEqual,
   InspectorTeamView,
-} from './team-members.selector';
+} from '../../../../features/console/inspector/team-panel/team-members.selector';
 import { InspectorEmptyStateComponent } from '../inspector-empty-state.component';
 import { MemberCardComponent } from './member-card.component';
 import { ToolChipsComponent } from './tool-chips.component';
 import { UsagePanelComponent } from './usage-panel.component';
 import { AgentReaderService } from '../../../../core/ui/agent-reader.service';
 import { CategoryService } from '../../../../core/ui/category.service';
-import { agentColours } from '../../../process/selectors/agent-colour';
+import { agentColours } from '../../../../features/process/selectors/agent-colour';
 
 /**
  * The inspector's Team panel: who is on this team, what it can use, what it has

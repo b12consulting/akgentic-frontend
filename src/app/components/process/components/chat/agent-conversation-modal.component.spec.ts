@@ -8,9 +8,9 @@ import {
   AgentRef,
   ReaderSendRequest,
 } from './agent-conversation-modal.component';
-import { ChatMessage } from '../../selectors/chat-message.model';
-import { ThinkingState } from '../../selectors/chat.selector';
-import { NodeInterface } from '../../models/types';
+import { ChatMessage } from '../../../../features/process/selectors/chat-message.model';
+import { ThinkingState } from '../../../../features/process/selectors/chat.selector';
+import { NodeInterface } from '../../../../features/process/models/types';
 import { ActorAddress } from '../../../../protocol/message.types';
 
 import {

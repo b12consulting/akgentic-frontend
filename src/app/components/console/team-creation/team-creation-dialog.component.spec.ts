@@ -8,7 +8,7 @@ import { AuthService } from '../../../core/auth/auth.service';
 import { ContextService } from '../../../core/context/context.service';
 import { ApiService } from '../../../core/http/api.service';
 import { TeamCreationLauncher } from '../../../core/ui/team-creation-launcher.service';
-import { TeamCreationService } from '../../home/team-creation/team-creation.service';
+import { TeamCreationService } from '../../../features/home/team-creation/team-creation.service';
 import {
   NamespaceSummary,
   TeamMetadataContract,

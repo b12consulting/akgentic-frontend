@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import { MemberCardComponent } from './member-card.component';
-import { InspectorMember } from './team-members.selector';
+import { InspectorMember } from '../../../../features/console/inspector/team-panel/team-members.selector';
 import {
   provideTranslateTesting,
   setTestTranslations,

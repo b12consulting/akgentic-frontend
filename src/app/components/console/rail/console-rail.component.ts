@@ -20,7 +20,7 @@ import { IconButtonComponent } from '../../../shared/components/icon-button/icon
 import { RailFooterComponent } from './rail-footer.component';
 import { RailSearchComponent } from './rail-search.component';
 import { RailTeamRowComponent } from './rail-team-row.component';
-import { railGroups, RailTeamGroup } from './rail-teams.selector';
+import { railGroups, RailTeamGroup } from '../../../features/console/rail/rail-teams.selector';
 
 /**
  * What the list region is showing.

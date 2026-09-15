@@ -5,8 +5,8 @@ import { BehaviorSubject } from 'rxjs';
 import { UtilService } from '../../../../core/ui/utils.service';
 import { ActorAddress } from '../../../../protocol/message.types';
 import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
-import { ChatMessage } from '../../selectors/chat-message.model';
-import { Feedback, FeedbackService } from '../../ui-state/feedback.service';
+import { ChatMessage } from '../../../../features/process/selectors/chat-message.model';
+import { Feedback, FeedbackService } from '../../../../features/process/ui-state/feedback.service';
 import { FeedbackComponent } from './feedback.component';
 
 /**

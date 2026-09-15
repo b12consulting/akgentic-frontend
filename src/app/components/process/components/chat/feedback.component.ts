@@ -16,9 +16,9 @@ import { Textarea } from 'primeng/textarea';
 import { BehaviorSubject, Subscription } from 'rxjs';
 import { UtilService } from '../../../../core/ui/utils.service';
 import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
-import { ChatMessage } from '../../selectors/chat-message.model';
-import { isRateable } from '../../selectors/rateable';
-import { Feedback, FeedbackService } from '../../ui-state/feedback.service';
+import { ChatMessage } from '../../../../features/process/selectors/chat-message.model';
+import { isRateable } from '../../../../features/process/selectors/rateable';
+import { Feedback, FeedbackService } from '../../../../features/process/ui-state/feedback.service';
 
 /**
  * The turn's action row: copy, and the two thumbs.

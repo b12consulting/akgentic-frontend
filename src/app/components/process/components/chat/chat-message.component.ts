@@ -16,12 +16,12 @@ import {
   buildPreview,
   ChatMessage,
   ENTRY_POINT_NAME,
-} from '../../selectors/chat-message.model';
-import { isRateable } from '../../selectors/rateable';
+} from '../../../../features/process/selectors/chat-message.model';
+import { isRateable } from '../../../../features/process/selectors/rateable';
 import {
   AgentColours,
   NO_AGENT_COLOURS,
-} from '../../selectors/agent-colour';
+} from '../../../../features/process/selectors/agent-colour';
 import type { AgentRef } from '../../../../core/ui/agent-reader.service';
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 import { FeedbackComponent } from './feedback.component';

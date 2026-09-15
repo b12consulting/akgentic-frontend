@@ -5,23 +5,23 @@ import { WebSocketSubject } from 'rxjs/webSocket';
 
 import { AgentTabsComponent } from './agent-tabs.component';
 import { Akgent, AkgentService } from '../../../../core/ui/akgent.service';
-import { GraphDataService } from '../../selectors/graph.selector';
-import { IngestionService } from '../../event/ingestion.service';
-import { MessageLogService } from '../../event/message-log.service';
-import { PerAgentStoreRegistry } from '../../event/per-agent-store';
-import { ProcessStores } from '../../event/process-stores';
-import { ReplaySeeder } from '../../event/replay-seeder';
-import { ConnectionToast } from '../../event/connection-toast';
-import { NotificationToasts } from '../../event/notification-toasts';
-import { LogFeeder } from '../../event/log-feeder';
-import { TeamSocket } from '../../event/team-socket';
-import { LoadingIndicator } from '../../event/loading-indicator';
-import { TeamStatusReactor } from '../../event/team-status-reactor';
+import { GraphDataService } from '../../../../features/process/selectors/graph.selector';
+import { IngestionService } from '../../../../features/process/event/ingestion.service';
+import { MessageLogService } from '../../../../features/process/event/message-log.service';
+import { PerAgentStoreRegistry } from '../../../../features/process/event/per-agent-store';
+import { ProcessStores } from '../../../../features/process/event/process-stores';
+import { ReplaySeeder } from '../../../../features/process/event/replay-seeder';
+import { ConnectionToast } from '../../../../features/process/event/connection-toast';
+import { NotificationToasts } from '../../../../features/process/event/notification-toasts';
+import { LogFeeder } from '../../../../features/process/event/log-feeder';
+import { TeamSocket } from '../../../../features/process/event/team-socket';
+import { LoadingIndicator } from '../../../../features/process/event/loading-indicator';
+import { TeamStatusReactor } from '../../../../features/process/event/team-status-reactor';
 import { ContextService } from '../../../../core/context/context.service';
-import { ChatService } from '../../selectors/chat.selector';
+import { ChatService } from '../../../../features/process/selectors/chat.selector';
 import { ApiService } from '../../../../core/http/api.service';
-import { SystemPromptSelector } from '../../selectors/system-prompt.selector';
-import { TokenUsageSelector } from '../../selectors/token-usage.selector';
+import { SystemPromptSelector } from '../../../../features/process/selectors/system-prompt.selector';
+import { TokenUsageSelector } from '../../../../features/process/selectors/token-usage.selector';
 
 import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
 

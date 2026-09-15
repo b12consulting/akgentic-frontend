@@ -4,7 +4,7 @@ import { ActivatedRoute } from '@angular/router';
 import { BehaviorSubject } from 'rxjs';
 
 import { KnowledgeGraphComponent } from './knowledge-graph.component';
-import { KGStateReducer } from '../../selectors/knowledge-graph.selector';
+import { KGStateReducer } from '../../../../features/process/selectors/knowledge-graph.selector';
 import { GRAPH_CATEGORY_COUNT } from '../../../../core/ui/category.service';
 import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
 

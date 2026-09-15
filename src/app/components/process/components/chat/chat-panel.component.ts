@@ -12,32 +12,32 @@ import {
 import { TranslatePipe } from '@ngx-translate/core';
 import { combineLatest, Subscription } from 'rxjs';
 
-import { ChatMessage, ENTRY_POINT_NAME } from '../../selectors/chat-message.model';
+import { ChatMessage, ENTRY_POINT_NAME } from '../../../../features/process/selectors/chat-message.model';
 import {
   buildDisplayItems,
   DisplayItem,
   mainTranscriptRuns,
   trackDisplayItem,
-} from '../../selectors/display-items';
+} from '../../../../features/process/selectors/display-items';
 import { ActorAddress } from '../../../../protocol/message.types';
 import { ApiService } from '../../../../core/http/api.service';
-import { ChatService, ThinkingState } from '../../selectors/chat.selector';
-import { IngestionService } from '../../event/ingestion.service';
+import { ChatService, ThinkingState } from '../../../../features/process/selectors/chat.selector';
+import { IngestionService } from '../../../../features/process/event/ingestion.service';
 import { ContextService } from '../../../../core/context/context.service';
 import { AkgentService } from '../../../../core/ui/akgent.service';
 import { CategoryService } from '../../../../core/ui/category.service';
 import {
   defaultRecipientName,
   isAddressableAgent,
-} from '../../selectors/actor-kind';
+} from '../../../../features/process/selectors/actor-kind';
 import {
   AgentColours,
   agentColours,
   NO_AGENT_COLOURS,
-} from '../../selectors/agent-colour';
-import { GraphDataService } from '../../selectors/graph.selector';
-import { NodeInterface } from '../../models/types';
-import { Selectable, SelectionService } from '../../ui-state/selection.service';
+} from '../../../../features/process/selectors/agent-colour';
+import { GraphDataService } from '../../../../features/process/selectors/graph.selector';
+import { NodeInterface } from '../../../../features/process/models/types';
+import { Selectable, SelectionService } from '../../../../features/process/ui-state/selection.service';
 import {
   AnsweredRequest,
   ChatHumanModalComponent,
@@ -61,7 +61,7 @@ import { ProcessUserInputComponent } from '../user-input/user-input.component';
  * declared by one of them. Re-exported here so existing importers of the panel
  * keep compiling.
  */
-export type { DisplayItem, TurnDisplayItem } from '../../selectors/display-items';
+export type { DisplayItem, TurnDisplayItem } from '../../../../features/process/selectors/display-items';
 
 /**
  * Chat panel scroll model (ADR-016, simplified rewrite).

@@ -31,7 +31,7 @@ import {
 } from '../../protocol/catalog.interface';
 import { HomeComponent } from './home.component';
 import { HomeGreetingComponent } from './greeting/home-greeting.component';
-import { TeamCreationService } from './team-creation/team-creation.service';
+import { TeamCreationService } from '../../features/home/team-creation/team-creation.service';
 import { TeamFilterComponent } from './team-filter/team-filter.component';
 import { TeamMetadataModalComponent } from './team-metadata-modal/team-metadata-modal.component';
 import {

@@ -9,7 +9,7 @@ import { ConfigService } from '../../../core/config/config.service';
 import { ContextService } from '../../../core/context/context.service';
 import { TeamContext } from '../../../core/context/team.interface';
 import { TeamCreationLauncher } from '../../../core/ui/team-creation-launcher.service';
-import { TeamCreationService } from '../../home/team-creation/team-creation.service';
+import { TeamCreationService } from '../../../features/home/team-creation/team-creation.service';
 import { ViewService } from '../../../core/ui/view.service';
 import {
   provideTranslateTesting,

@@ -19,10 +19,10 @@ import { AkgentService } from '../../../../core/ui/akgent.service';
 import {
   GraphDataService,
   HUMAN_ROLE as HUMAN_PROXY_ROLE,
-} from '../../selectors/graph.selector';
-import { isToolActor } from '../../selectors/actor-kind';
+} from '../../../../features/process/selectors/graph.selector';
+import { isToolActor } from '../../../../features/process/selectors/actor-kind';
 
-import { IngestionService } from '../../event/ingestion.service';
+import { IngestionService } from '../../../../features/process/event/ingestion.service';
 
 import { AkgentChatComponent } from './akgent-chat/akgent-chat.component';
 import { InspectorEmptyStateComponent } from '../../../console/inspector/inspector-empty-state.component';

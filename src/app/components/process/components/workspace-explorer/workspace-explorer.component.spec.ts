@@ -17,12 +17,12 @@ import { ContextService } from '../../../../core/context/context.service';
 import {
   WorkspaceInvalidation,
   WorkspaceInvalidationService,
-} from '../../selectors/workspace-invalidation.selector';
+} from '../../../../features/process/selectors/workspace-invalidation.selector';
 import {
   FileContent,
   FileNode,
   WorkspaceService,
-} from '../../workspace/workspace.service';
+} from '../../../../features/process/workspace/workspace.service';
 import { UploadModalComponent } from './upload-modal/upload-modal.component';
 // The two parameter-free placeholders in this pane are the console's SHARED
 // empty state now, and every `overrideComponent` below REPLACES the

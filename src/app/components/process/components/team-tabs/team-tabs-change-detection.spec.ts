@@ -7,9 +7,9 @@ import { GraphComponent } from './graph/graph.component';
 import { ApiService } from '../../../../core/http/api.service';
 import { AkgentService } from '../../../../core/ui/akgent.service';
 import { CategoryService } from '../../../../core/ui/category.service';
-import { GraphDataService } from '../../selectors/graph.selector';
-import { SelectionService } from '../../ui-state/selection.service';
-import { NodeInterface } from '../../models/types';
+import { GraphDataService } from '../../../../features/process/selectors/graph.selector';
+import { SelectionService } from '../../../../features/process/ui-state/selection.service';
+import { NodeInterface } from '../../../../features/process/models/types';
 import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
 
 /**

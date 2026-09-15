@@ -1,3 +1,4 @@
+import type { VisualizationOption } from '../../../features/console/inspector/inspector-tabs.registry';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -12,41 +13,22 @@ import { TranslatePipe } from '@ngx-translate/core';
 /**
  * One entry in the inspector's tab strip.
  *
- * It lives HERE, in the leaf that renders it, rather than in
- * `ProcessComponent` (which builds the list) or in `ConsoleInspectorComponent`
- * (which passes it through). Both of those would make the import graph a
- * cycle — `ProcessComponent` imports the inspector, the inspector imports the
- * tabs — and a cycle between files that carry Angular decorators is the kind
- * of thing that works until a bundler changes evaluation order. The leaf has
- * no outgoing edges, so nothing can point back at it.
+ * IT MOVED TO THE REGISTRY, and is re-exported here so no importer had to
+ * change. The reason it was in this leaf was to keep the import graph acyclic:
+ * `ProcessComponent` imports the inspector and the inspector imports these
+ * tabs, so declaring it in either of those would have closed a loop, and a
+ * cycle between files carrying Angular decorators works until a bundler changes
+ * evaluation order.
+ *
+ * The registry satisfies that requirement better than this file does. It is
+ * where the tab SET is already declared, it is pure data with no decorator and
+ * no template, and — now that it lives under `features/` — it has no outgoing
+ * edge into `components/` at all. The old arrangement had the registry
+ * importing a type out of the component that renders it, which is the logic
+ * tier depending on the view tier: legal only because both sat inside one
+ * `boundaries` element and the edge was therefore invisible.
  */
-export interface VisualizationOption {
-  /**
-   * A translation KEY, not a caption.
-   *
-   * This component's template resolves it. Held as copy it would be an English
-   * string travelling through an `[options]` binding from a component that
-   * knows nothing about a translation layer — and `value` below is the identity
-   * every rule keys off, so the caption never has to be matched on.
-   */
-  labelKey: string;
-  value: string;
-
-  /**
-   * The tab's visible content wherever it is NOT the selected one — which is
-   * five of the six at any moment.
-   *
-   * It stopped being an ornament beside a caption when the strip stopped
-   * drawing six of them (see `inspector-tabs.component.scss` for why six
-   * labelled tabs cannot fit the pane). So the host's obligation changed with
-   * it: two entries sharing a glyph are two tabs a sighted user cannot tell
-   * apart until they select one, where before the caption disambiguated them
-   * at rest. Pick glyphs that differ in OUTLINE, not in count — `pi-user`
-   * against `pi-users` is one head against two and reads as the same mark at
-   * 13px.
-   */
-  icon: string;
-}
+export type { VisualizationOption } from '../../../features/console/inspector/inspector-tabs.registry';
 
 /**
  * The inspector's tab strip (Epic 56).

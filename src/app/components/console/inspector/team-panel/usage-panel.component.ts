@@ -7,7 +7,7 @@ import {
   ModelTokenTotals,
   TeamTokenTotals,
   TokenUsageSelector,
-} from '../../../process/selectors/token-usage.selector';
+} from '../../../../features/process/selectors/token-usage.selector';
 import { TokenCountPipe } from '../../../../shared/pipes/token-count.pipe';
 
 /**

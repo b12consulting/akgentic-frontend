@@ -209,6 +209,41 @@ CI (see *CI and releasing*).
 npm run lint                         # eslint over src/**/*.ts
 ```
 
+## Layout
+
+`src/app/` separates the views from the logic they read, and the split is by DIRECTORY rather than
+by naming convention so it cannot quietly erode:
+
+| Folder | What lives there |
+|---|---|
+| `components/` | **UI only** — components, their templates and their stylesheets |
+| `features/` | the logic one feature's views read: selectors, stores, event plumbing, feature-scoped services and models |
+| `core/` | app-wide services with no feature of their own: auth, config, http, i18n, shell UI state |
+| `shared/` | reusable presentational pieces, pipes and pure utilities |
+| `protocol/` | the wire types — the contract with `akgentic-infra`, and nothing else |
+
+`components/` and `features/` mirror each other's top-level names (`process`, `console`, `home`,
+`catalog`), so a view and the logic behind it sit at the same path in two trees.
+
+Anything under `components/` that is not a component belongs in `features/`. That rule is what keeps
+a selector from acquiring a template, and a component from acquiring a fold — and it is the rule
+that had already been broken 41 times before it was written down.
+
+It has exactly one exception, and the exception is the shape of the rule rather than a hole in it:
+`namespace-panel.guard.ts` is a `CanDeactivateFn<NamespacePanelRouteComponent>`, so it is typed on
+the very component it guards. A route guard for one component is not logic that component reads —
+it is part of how that component is mounted — and moving it would only have turned a local import
+into a cross-tree one pointing the wrong way.
+
+`eslint.config.js` enforces the direction with `boundaries`: each feature's views and its logic are
+separate element *types* (`console` / `console-logic`, and so on) precisely because a shared type
+would make every edge legal in both directions. Views may read their logic tier; the logic tier may
+read only `core`, `shared` and `protocol`. Nothing states the reverse edge, and the rule set
+defaults to `disallow`, so it stays forbidden by omission rather than by anyone remembering it.
+
+`docs/message-display-flow.md` traces one of these boundaries end to end: how a frame on the socket
+becomes a row in the transcript, and which file owns each stage.
+
 ## Working in this repository
 
 This package is a git submodule of the

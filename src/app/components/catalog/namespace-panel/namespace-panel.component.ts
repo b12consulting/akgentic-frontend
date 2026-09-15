@@ -39,7 +39,7 @@ import {
   rewriteNamespaceInYaml,
   suggestDestName,
   suggestDestNamespace,
-} from '../yaml-clone.helper';
+} from '../../../features/catalog/yaml-clone.helper';
 import { ValidationReportComponent } from './validation-report/validation-report.component';
 
 /**

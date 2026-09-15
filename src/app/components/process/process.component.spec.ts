@@ -9,21 +9,21 @@ import { BehaviorSubject, of } from 'rxjs';
 
 import { StartMessage, StopMessage } from '../../protocol/message.types';
 import { AkgentService } from '../../core/ui/akgent.service';
-import { ChatService } from './selectors/chat.selector';
+import { ChatService } from '../../features/process/selectors/chat.selector';
 import { ContextService } from '../../core/context/context.service';
-import { FeedbackService } from './ui-state/feedback.service';
-import { GraphDataService } from './selectors/graph.selector';
-import { KGStateReducer } from './selectors/knowledge-graph.selector';
-import { MessageLogService } from './event/message-log.service';
-import { IngestionService } from './event/ingestion.service';
-import { SelectionService } from './ui-state/selection.service';
+import { FeedbackService } from '../../features/process/ui-state/feedback.service';
+import { GraphDataService } from '../../features/process/selectors/graph.selector';
+import { KGStateReducer } from '../../features/process/selectors/knowledge-graph.selector';
+import { MessageLogService } from '../../features/process/event/message-log.service';
+import { IngestionService } from '../../features/process/event/ingestion.service';
+import { SelectionService } from '../../features/process/ui-state/selection.service';
 import {
   KG_ACTOR_NAME,
   ToolPresenceService,
-} from './selectors/tool-presence.selector';
-import { WorkspaceRegistryService } from './selectors/workspace-registry.selector';
+} from '../../features/process/selectors/tool-presence.selector';
+import { WorkspaceRegistryService } from '../../features/process/selectors/workspace-registry.selector';
 import { TeamContext } from '../../core/context/team.interface';
-import { NodeInterface } from './models/types';
+import { NodeInterface } from '../../features/process/models/types';
 import { ViewService } from '../../core/ui/view.service';
 import { PaneLayoutService } from '../../core/ui/pane-layout.service';
 import {

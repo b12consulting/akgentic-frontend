@@ -29,17 +29,17 @@ import { ApiService } from '../../../../../core/http/api.service';
 import { UtilService } from '../../../../../core/ui/utils.service';
 import { ContextService } from '../../../../../core/context/context.service';
 import { ConfigService } from '../../../../../core/config/config.service';
-import { IngestionService } from '../../../event/ingestion.service';
+import { IngestionService } from '../../../../../features/process/event/ingestion.service';
 import {
   SystemPromptRow,
   SystemPromptSelector,
   systemPromptLabel,
-} from '../../../selectors/system-prompt.selector';
-import { TokenUsageSelector } from '../../../selectors/token-usage.selector';
+} from '../../../../../features/process/selectors/system-prompt.selector';
+import { TokenUsageSelector } from '../../../../../features/process/selectors/token-usage.selector';
 import {
   AgentTokenUsage,
   CONVERSATION_SUMMARY_PREFIX,
-} from '../../../event/per-agent-specs';
+} from '../../../../../features/process/event/per-agent-specs';
 import { CommandDescriptor } from '../../../../../protocol/message.types';
 
 import { CopyButtonComponent } from '../../../../../shared/components/copy-button/copy-button.component';

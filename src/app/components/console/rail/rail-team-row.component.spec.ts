@@ -10,7 +10,7 @@ import {
   setTestTranslations,
 } from '../../../../testing/i18n-testing';
 import { RailTeamRowComponent } from './rail-team-row.component';
-import { RailTeamRow } from './rail-teams.selector';
+import { RailTeamRow } from '../../../features/console/rail/rail-teams.selector';
 
 function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
   return {

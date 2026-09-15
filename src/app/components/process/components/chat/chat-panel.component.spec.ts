@@ -19,17 +19,17 @@ import {
   ChatService,
   computePendingNotifications,
   ThinkingState,
-} from '../../selectors/chat.selector';
-import { SelectionService } from '../../ui-state/selection.service';
+} from '../../../../features/process/selectors/chat.selector';
+import { SelectionService } from '../../../../features/process/ui-state/selection.service';
 import { ActorAddress, EventMessage, HandledMessage, ReceivedMessage, SentMessage, AkgenticMessage, StartMessage, isSentMessage } from '../../../../protocol/message.types';
-import { ChatMessage, classifyMessage } from '../../selectors/chat-message.model';
+import { ChatMessage, classifyMessage } from '../../../../features/process/selectors/chat-message.model';
 import { ApiService } from '../../../../core/http/api.service';
 import { AkgentService } from '../../../../core/ui/akgent.service';
-import { GraphDataService } from '../../selectors/graph.selector';
-import { NodeInterface } from '../../models/types';
+import { GraphDataService } from '../../../../features/process/selectors/graph.selector';
+import { NodeInterface } from '../../../../features/process/models/types';
 import { ContextService } from '../../../../core/context/context.service';
-import { IngestionService } from '../../event/ingestion.service';
-import { Feedback, FeedbackService } from '../../ui-state/feedback.service';
+import { IngestionService } from '../../../../features/process/event/ingestion.service';
+import { Feedback, FeedbackService } from '../../../../features/process/ui-state/feedback.service';
 
 import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
 

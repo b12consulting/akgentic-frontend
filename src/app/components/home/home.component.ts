@@ -51,8 +51,8 @@ import {
 } from './team-metadata-modal/team-metadata-modal.component';
 import { TeamFilterComponent } from './team-filter/team-filter.component';
 import { HomeGreetingComponent } from './greeting/home-greeting.component';
-import { TeamCreationService } from './team-creation/team-creation.service';
-import { TeamTypeCatalog } from './team-creation/team-type-catalog.service';
+import { TeamCreationService } from '../../features/home/team-creation/team-creation.service';
+import { TeamTypeCatalog } from '../../features/home/team-creation/team-type-catalog.service';
 import {
   TeamDescriptionSave,
   TeamRowAction,

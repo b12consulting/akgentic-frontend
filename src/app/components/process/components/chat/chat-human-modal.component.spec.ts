@@ -7,7 +7,7 @@ import {
   ChatHumanModalComponent,
   HumanModalReply,
 } from './chat-human-modal.component';
-import { ChatMessage } from '../../selectors/chat-message.model';
+import { ChatMessage } from '../../../../features/process/selectors/chat-message.model';
 import { ActorAddress } from '../../../../protocol/message.types';
 
 import { provideTranslateTesting } from '../../../../../testing/i18n-testing';

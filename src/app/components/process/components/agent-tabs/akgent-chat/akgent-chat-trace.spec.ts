@@ -6,17 +6,17 @@ import { AkgentChatComponent } from './akgent-chat.component';
 import { ApiService } from '../../../../../core/http/api.service';
 import { UtilService } from '../../../../../core/ui/utils.service';
 import { ContextService } from '../../../../../core/context/context.service';
-import { IngestionService } from '../../../event/ingestion.service';
-import { MessageLogService } from '../../../event/message-log.service';
-import { PerAgentStoreRegistry } from '../../../event/per-agent-store';
+import { IngestionService } from '../../../../../features/process/event/ingestion.service';
+import { MessageLogService } from '../../../../../features/process/event/message-log.service';
+import { PerAgentStoreRegistry } from '../../../../../features/process/event/per-agent-store';
 import {
   SystemPromptSelector,
   SystemPromptValue,
   systemPromptMatch,
   systemPromptReduce,
-} from '../../../selectors/system-prompt.selector';
-import { TokenUsageSelector } from '../../../selectors/token-usage.selector';
-import { AgentTokenUsage } from '../../../event/per-agent-specs';
+} from '../../../../../features/process/selectors/system-prompt.selector';
+import { TokenUsageSelector } from '../../../../../features/process/selectors/token-usage.selector';
+import { AgentTokenUsage } from '../../../../../features/process/event/per-agent-specs';
 import { provideTranslateTesting } from '../../../../../../testing/i18n-testing';
 
 /**

@@ -5,9 +5,9 @@ import { MessageService } from 'primeng/api';
 import { BehaviorSubject } from 'rxjs';
 import { ConfigService } from '../../../../core/config/config.service';
 import { ChatMessageComponent } from './chat-message.component';
-import { ChatMessage } from '../../selectors/chat-message.model';
-import { isRateable } from '../../selectors/rateable';
-import { Feedback, FeedbackService } from '../../ui-state/feedback.service';
+import { ChatMessage } from '../../../../features/process/selectors/chat-message.model';
+import { isRateable } from '../../../../features/process/selectors/rateable';
+import { Feedback, FeedbackService } from '../../../../features/process/ui-state/feedback.service';
 import { ActorAddress } from '../../../../protocol/message.types';
 
 import {

@@ -6,8 +6,8 @@ import { Dropdown } from 'primeng/dropdown';
 
 import { AgentTabsComponent } from './agent-tabs.component';
 import { Akgent, AkgentService } from '../../../../core/ui/akgent.service';
-import { GraphDataService } from '../../selectors/graph.selector';
-import { IngestionService } from '../../event/ingestion.service';
+import { GraphDataService } from '../../../../features/process/selectors/graph.selector';
+import { IngestionService } from '../../../../features/process/event/ingestion.service';
 import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
 
 /**

@@ -9,20 +9,20 @@ import {
 } from '@angular/core';
 import { DialogModule } from 'primeng/dialog';
 
-import { agentConversation } from '../../selectors/agent-conversation.selector';
-import { ChatMessage } from '../../selectors/chat-message.model';
-import { ThinkingState } from '../../selectors/chat.selector';
+import { agentConversation } from '../../../../features/process/selectors/agent-conversation.selector';
+import { ChatMessage } from '../../../../features/process/selectors/chat-message.model';
+import { ThinkingState } from '../../../../features/process/selectors/chat.selector';
 import {
   agentRuns,
   buildDisplayItems,
   DisplayItem,
   trackDisplayItem,
-} from '../../selectors/display-items';
-import { NodeInterface } from '../../models/types';
+} from '../../../../features/process/selectors/display-items';
+import { NodeInterface } from '../../../../features/process/models/types';
 import {
   AgentColours,
   NO_AGENT_COLOURS,
-} from '../../selectors/agent-colour';
+} from '../../../../features/process/selectors/agent-colour';
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 import { TranslatePipe } from '@ngx-translate/core';
 

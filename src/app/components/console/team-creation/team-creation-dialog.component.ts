@@ -16,8 +16,8 @@ import { map } from 'rxjs/operators';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 
-import { TeamCreationService } from '../../home/team-creation/team-creation.service';
-import { TeamTypeCatalog } from '../../home/team-creation/team-type-catalog.service';
+import { TeamCreationService } from '../../../features/home/team-creation/team-creation.service';
+import { TeamTypeCatalog } from '../../../features/home/team-creation/team-type-catalog.service';
 import { TeamMetadataModalComponent } from '../../home/team-metadata-modal/team-metadata-modal.component';
 import { AuthService } from '../../../core/auth/auth.service';
 import { TeamCreationLauncher } from '../../../core/ui/team-creation-launcher.service';

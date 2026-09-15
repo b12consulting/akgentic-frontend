@@ -29,24 +29,24 @@ import { PaneLayoutService } from '../../core/ui/pane-layout.service';
 import { ViewService } from '../../core/ui/view.service';
 import { ConfigService } from '../../core/config/config.service';
 import { ContextService } from '../../core/context/context.service';
-import { KGStateReducer } from './selectors/knowledge-graph.selector';
-import { ConnectionToast } from './event/connection-toast';
-import { NotificationToasts } from './event/notification-toasts';
-import { LoadingIndicator } from './event/loading-indicator';
-import { LogFeeder } from './event/log-feeder';
-import { MessageLogService } from './event/message-log.service';
-import { IngestionService } from './event/ingestion.service';
-import { PerAgentStoreRegistry } from './event/per-agent-store';
-import { ProcessStores } from './event/process-stores';
-import { ReplaySeeder } from './event/replay-seeder';
-import { SystemPromptSelector } from './selectors/system-prompt.selector';
-import { TeamSocket } from './event/team-socket';
-import { TeamStatusReactor } from './event/team-status-reactor';
-import { TokenUsageSelector } from './selectors/token-usage.selector';
-import { ToolPresenceService } from './selectors/tool-presence.selector';
-import { WorkspaceInvalidationService } from './selectors/workspace-invalidation.selector';
-import { WorkspaceRegistryService } from './selectors/workspace-registry.selector';
-import { AgentsByIdService } from './selectors/agents-by-id.selector';
+import { KGStateReducer } from '../../features/process/selectors/knowledge-graph.selector';
+import { ConnectionToast } from '../../features/process/event/connection-toast';
+import { NotificationToasts } from '../../features/process/event/notification-toasts';
+import { LoadingIndicator } from '../../features/process/event/loading-indicator';
+import { LogFeeder } from '../../features/process/event/log-feeder';
+import { MessageLogService } from '../../features/process/event/message-log.service';
+import { IngestionService } from '../../features/process/event/ingestion.service';
+import { PerAgentStoreRegistry } from '../../features/process/event/per-agent-store';
+import { ProcessStores } from '../../features/process/event/process-stores';
+import { ReplaySeeder } from '../../features/process/event/replay-seeder';
+import { SystemPromptSelector } from '../../features/process/selectors/system-prompt.selector';
+import { TeamSocket } from '../../features/process/event/team-socket';
+import { TeamStatusReactor } from '../../features/process/event/team-status-reactor';
+import { TokenUsageSelector } from '../../features/process/selectors/token-usage.selector';
+import { ToolPresenceService } from '../../features/process/selectors/tool-presence.selector';
+import { WorkspaceInvalidationService } from '../../features/process/selectors/workspace-invalidation.selector';
+import { WorkspaceRegistryService } from '../../features/process/selectors/workspace-registry.selector';
+import { AgentsByIdService } from '../../features/process/selectors/agents-by-id.selector';
 
 import { AgentTabsComponent } from './components/agent-tabs/agent-tabs.component';
 import { TeamTabsComponent } from './components/team-tabs/team-tabs.component';
@@ -57,10 +57,10 @@ import { WorkspaceTabsComponent } from './components/workspace-tabs/workspace-ta
 import { BehaviorSubject, combineLatest, Observable, Subscription } from 'rxjs';
 import { distinctUntilChanged, map, take } from 'rxjs/operators';
 import { ChatPanelComponent } from './components/chat/chat-panel.component';
-import { ChatService } from './selectors/chat.selector';
-import { FeedbackService } from './ui-state/feedback.service';
-import { GraphDataService } from './selectors/graph.selector';
-import { SelectionService } from './ui-state/selection.service';
+import { ChatService } from '../../features/process/selectors/chat.selector';
+import { FeedbackService } from '../../features/process/ui-state/feedback.service';
+import { GraphDataService } from '../../features/process/selectors/graph.selector';
+import { SelectionService } from '../../features/process/ui-state/selection.service';
 
 import { ConversationHeaderComponent } from '../console/conversation/conversation-header.component';
 import { ConsoleInspectorComponent } from '../console/inspector/console-inspector.component';
@@ -69,7 +69,7 @@ import { VisualizationOption } from '../console/inspector/inspector-tabs.compone
 import {
   resolveInspectorTab,
   visibleInspectorTabs,
-} from '../console/inspector/inspector-tabs.registry';
+} from '../../features/console/inspector/inspector-tabs.registry';
 import { SplitDividerComponent } from '../../shared/components/split-divider/split-divider.component';
 
 @Component({

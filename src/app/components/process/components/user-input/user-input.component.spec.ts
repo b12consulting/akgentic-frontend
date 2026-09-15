@@ -7,16 +7,16 @@ import { BehaviorSubject } from 'rxjs';
 import { ProcessUserInputComponent } from './user-input.component';
 import { ApiService } from '../../../../core/http/api.service';
 import { HttpError, NetworkError } from '../../../../core/http/fetch.service';
-import { ChatService } from '../../selectors/chat.selector';
+import { ChatService } from '../../../../features/process/selectors/chat.selector';
 import { ContextService } from '../../../../core/context/context.service';
-import { GraphDataService } from '../../selectors/graph.selector';
-import { IngestionService } from '../../event/ingestion.service';
+import { GraphDataService } from '../../../../features/process/selectors/graph.selector';
+import { IngestionService } from '../../../../features/process/event/ingestion.service';
 import {
   TeamTokenTotals,
   TokenUsageSelector,
-} from '../../selectors/token-usage.selector';
+} from '../../../../features/process/selectors/token-usage.selector';
 import { ActorAddress, CommandDescriptor } from '../../../../protocol/message.types';
-import { NodeInterface } from '../../models/types';
+import { NodeInterface } from '../../../../features/process/models/types';
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 
 import {

@@ -32,7 +32,7 @@ import { EChartsCoreOption } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { NgxEchartsDirective, provideEchartsCore } from 'ngx-echarts';
 
-import { KGStateReducer } from '../../selectors/knowledge-graph.selector';
+import { KGStateReducer } from '../../../../features/process/selectors/knowledge-graph.selector';
 import { graphCategoryColors, readToken } from '../../../../core/ui/category.service';
 import { InspectorEmptyStateComponent } from '../../../console/inspector/inspector-empty-state.component';
 

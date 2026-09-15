@@ -88,13 +88,20 @@ module.exports = tseslint.config(
         // workspace exactly like the nested presentation components do (ADR-015
         // §7 "components/ (presentation)"). The nested process/components/ folder
         // shares the same element type.
+        //
+        // The four non-presentation tiers now live under `features/process/`,
+        // where `components/` holds only components. The TYPES are unchanged and
+        // so is every rule below — this is where the tier is, not what it is
+        // allowed to import. Keeping the type names is deliberate: renaming them
+        // alongside the move would have made a pure relocation look like a
+        // change to the DAG.
         { type: 'proc-components', pattern: 'src/app/components/process/components' },
-        { type: 'proc-event', pattern: 'src/app/components/process/event' },
-        { type: 'proc-selectors', pattern: 'src/app/components/process/selectors' },
-        { type: 'proc-ui-state', pattern: 'src/app/components/process/ui-state' },
-        { type: 'proc-workspace', pattern: 'src/app/components/process/workspace' },
-        { type: 'proc-models', pattern: 'src/app/components/process/models' },
         { type: 'proc-components', pattern: 'src/app/components/process' },
+        { type: 'proc-event', pattern: 'src/app/features/process/event' },
+        { type: 'proc-selectors', pattern: 'src/app/features/process/selectors' },
+        { type: 'proc-ui-state', pattern: 'src/app/features/process/ui-state' },
+        { type: 'proc-workspace', pattern: 'src/app/features/process/workspace' },
+        { type: 'proc-models', pattern: 'src/app/features/process/models' },
 
         // --- The console shell (Epic 56) ---
         // Rail, conversation header and inspector: the chrome the redesign put
@@ -109,6 +116,18 @@ module.exports = tseslint.config(
         // checked the direction. That is the largest new folder in the tree, so
         // leaving it unknown would have opted the redesign out of ADR-015 §7.
         { type: 'console', pattern: 'src/app/components/console' },
+        //
+        // ITS OWN TYPE, not a second pattern on `console`. Two patterns sharing
+        // one type would make every edge between them legal in BOTH directions,
+        // because `boundaries` cannot express direction within a type — and the
+        // whole point of the views and the logic being in two trees is that one
+        // of those directions is wrong. A separate type is what lets the rule
+        // below say `console -> console-logic` and stay silent on the reverse.
+        //
+        // Before the split these edges were not merely unchecked, they were
+        // invisible: both sides were inside one element, and `boundaries` does
+        // not examine dependencies within an element at all.
+        { type: 'console-logic', pattern: 'src/app/features/console' },
 
         // --- catalog is a REUSABLE feature, not a leaf page ---
         // Its namespace-panel dialog is intentionally embedded by other pages
@@ -117,6 +136,7 @@ module.exports = tseslint.config(
         // This is NOT a general page->page edge: feature-catalog is the only
         // page-level element other pages may import (ADR-015 §7).
         { type: 'feature-catalog', pattern: 'src/app/components/catalog' },
+        { type: 'feature-catalog-logic', pattern: 'src/app/features/catalog' },
 
         // --- team creation is a REUSABLE feature, not a home-page leaf ---
         // Same carve-out as feature-catalog above, and for the same reason: R2
@@ -136,7 +156,7 @@ module.exports = tseslint.config(
         // `TeamCreationService` was extracted to remove.
         {
           type: 'feature-team-creation',
-          pattern: 'src/app/components/home/team-creation',
+          pattern: 'src/app/features/home/team-creation',
         },
         {
           type: 'feature-team-creation',
@@ -147,6 +167,7 @@ module.exports = tseslint.config(
         // Listing distinct types (page-home, page-login, ...) means page->page
         // edges are simply absent from the allow list and therefore forbidden.
         { type: 'page-home', pattern: 'src/app/components/home' },
+        { type: 'page-home-logic', pattern: 'src/app/features/home' },
         { type: 'page-login', pattern: 'src/app/components/login' },
       ],
     },
@@ -179,6 +200,7 @@ module.exports = tseslint.config(
                     'protocol',
                     'feature-catalog',
                     'feature-team-creation',
+                    'page-home-logic',
                   ],
                 },
               },
@@ -189,7 +211,34 @@ module.exports = tseslint.config(
             // above from becoming page<->page edges by the back door.
             {
               from: { type: ['feature-catalog', 'feature-team-creation'] },
+              allow: {
+                to: { type: ['core', 'shared', 'protocol', 'feature-catalog-logic'] },
+              },
+            },
+
+            // The logic tiers: core, shared, protocol and nothing else. NOT the
+            // views they belong to — that is the edge the split exists to
+            // forbid, and it stays forbidden by omission rather than by anyone
+            // remembering it. `console-logic` additionally reads the two process
+            // layers the inspector's own selectors resolve against, exactly as
+            // `console` does.
+            {
+              from: { type: ['feature-catalog-logic', 'page-home-logic'] },
               allow: { to: { type: ['core', 'shared', 'protocol'] } },
+            },
+            {
+              from: { type: 'console-logic' },
+              allow: {
+                to: {
+                  type: [
+                    'core',
+                    'shared',
+                    'protocol',
+                    'proc-selectors',
+                    'proc-models',
+                  ],
+                },
+              },
             },
 
             // console -> core, shared, protocol, the reusable
@@ -217,6 +266,7 @@ module.exports = tseslint.config(
                     'shared',
                     'protocol',
                     'feature-team-creation',
+                    'console-logic',
                     'proc-selectors',
                     'proc-models',
                   ],
@@ -240,6 +290,13 @@ module.exports = tseslint.config(
                     // here — both sit either side of, or read, this view's
                     // component-scoped providers, which resolve nowhere else.
                     'console',
+                    // And the tab SET it hands that frame, which is data rather
+                    // than a component: `ProcessComponent` builds the inspector's
+                    // list of tabs from `inspector-tabs.registry`. The same
+                    // relationship as the line above — this view composes the
+                    // console chrome — reaching the chrome's logic tier instead
+                    // of its views.
+                    'console-logic',
                     'proc-ui-state',
                     'proc-selectors',
                     'proc-event',

@@ -10,7 +10,7 @@ import { map, Observable } from 'rxjs';
 
 import { AuthService } from '../../../core/auth/auth.service';
 import { ConfigService } from '../../../core/config/config.service';
-import { greetableNameOf, greetingKeyFor } from './greeting';
+import { greetableNameOf, greetingKeyFor } from '../../../features/home/greeting/greeting';
 
 /** The salutation, reduced to what the template threads into one pipe. */
 export interface GreetingLine {

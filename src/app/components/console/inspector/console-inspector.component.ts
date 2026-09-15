@@ -28,7 +28,7 @@ import {
 import {
   INSPECTOR_NARROW_MAX_PX,
   inspectorTabNeedsRoom,
-} from './inspector-tabs.registry';
+} from '../../../features/console/inspector/inspector-tabs.registry';
 
 // Re-exported so a consumer that renders `<app-console-inspector>` has one
 // import to make. `export type` rather than a bare re-export: `isolatedModules`

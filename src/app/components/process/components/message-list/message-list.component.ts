@@ -12,7 +12,7 @@ import { UtilService } from '../../../../core/ui/utils.service';
 
 import { combineLatest, Subscription } from 'rxjs';
 import { AkgentService } from '../../../../core/ui/akgent.service';
-import { MessageLogService } from '../../event/message-log.service';
+import { MessageLogService } from '../../../../features/process/event/message-log.service';
 import {
   ActorAddress,
   BaseMessage,
