@@ -2,8 +2,8 @@ import { ChangeDetectorRef, Component, NgZone } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 
-import { TeamTabsComponent } from '../../../ui/process/team-tabs/team-tabs.component';
-import { GraphComponent } from '../../../ui/process/team-tabs/graph/graph.component';
+import { TeamTabsComponent } from './team-tabs.component';
+import { GraphComponent } from './graph/graph.component';
 import { AkgentService } from '../../../core/ui/akgent.service';
 import { ApiService } from '../../../core/http/api.service';
 import { CategoryService } from '../../../core/ui/category.service';
