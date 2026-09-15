@@ -370,6 +370,42 @@ export class TeamCreationDialogComponent implements OnInit {
     this.selected.set(ns);
   }
 
+  /**
+   * A TYPE WAS CLICKED — that IS the choice, so go on to the next step.
+   *
+   * Picking a type and then confirming the pick was two gestures for one
+   * decision: the list is single-select, the primary button is enabled the
+   * moment anything is selected, and there is nothing to review in between.
+   * Clicking a row now selects it AND does what the button would have done.
+   *
+   * ONLY FOR A POINTER, and this is the whole subtlety. Native radios are what
+   * give this group arrow-key navigation for free, and arrow-keying through a
+   * radio group fires a `click` on each radio it lands on — so advancing from
+   * the raw event would make the FIRST arrow press leave the step, and a
+   * keyboard user could never reach the second option. `detail` is the
+   * discriminator the DOM already provides: it counts the clicks in a pointer
+   * activation and is 0 for one the browser synthesised, which covers both
+   * arrow-key navigation and Space on a focused radio.
+   *
+   * So the two routes stay different on purpose, and both are the conventional
+   * shape: pointer picks and proceeds in one gesture; keyboard arrows to a
+   * choice and confirms with the button, which keeps its Next / Create label
+   * and stays the only thing that commits.
+   *
+   * The button is NOT removed. It is what a keyboard user activates, it is what
+   * carries the spinner while an ungated create is in flight, and it is what
+   * says which of the two things is about to happen.
+   */
+  onTypeActivated(ns: NamespaceSummary, event: MouseEvent): void {
+    // Selection first and unconditionally: a synthesised click still means the
+    // row was chosen, it just must not also commit.
+    this.selected.set(ns);
+    if (event.detail === 0) {
+      return;
+    }
+    void this.onPrimary();
+  }
+
   /** Is this the chosen type? Compared by namespace id, never by reference. */
   isSelected(ns: NamespaceSummary): boolean {
     return this.selected()?.namespace === ns.namespace;

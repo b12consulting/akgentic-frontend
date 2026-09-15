@@ -90,9 +90,16 @@
         </legend>
 
         @for (ns of namespaces(); track ns.namespace) {
+          <!--
+            THE ROW ADVANCES. Clicking a type is the choice — see
+            `onTypeActivated`, which explains why this is on the label's click
+            rather than on the input's `change`, and why a keyboard activation
+            deliberately does not follow it through.
+          -->
           <label
             class="team-creation__type"
             [class.team-creation__type--selected]="isSelected(ns)"
+            (click)="onTypeActivated(ns, $event)"
           >
             <input
               type="radio"
