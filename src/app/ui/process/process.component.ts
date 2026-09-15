@@ -18,7 +18,6 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 
-import { isRunning } from '../../core/context/team.interface';
 import { AkgentService } from '../../core/ui/akgent.service';
 import {
   inspectorPercentFromLeading,
@@ -27,6 +26,7 @@ import {
 } from '../../core/ui/pane-layout';
 import { PaneLayoutService } from '../../core/ui/pane-layout.service';
 import { ViewService } from '../../core/ui/view.service';
+import { TeamSessionService } from '../../services/process/session/team-session.service';
 import { ConfigService } from '../../core/config/config.service';
 import { ContextService } from '../../core/context/context.service';
 import { IngestionService } from '../../services/process/event/ingestion.service';
@@ -84,6 +84,9 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
   router: Router = inject(Router);
 
   akgentService: AkgentService = inject(AkgentService);
+  /** The team's open/close ritual, owned by the data layer so a second
+   *  frontend inherits it instead of having to rediscover it. */
+  private readonly session = inject(TeamSessionService);
   contextService: ContextService = inject(ContextService);
   ingestionService: IngestionService = inject(IngestionService);
   graphDataService: GraphDataService = inject(GraphDataService);
@@ -400,94 +403,50 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
   }
 
   /**
-   * Close whatever is open and open the team the current id names.
+   * Open the team the current id names, then apply this console's policy to
+   * what came back.
    *
-   * The teardown happens HERE and up front, not inside the next
-   * `ingestionService.init()`: `getCurrentTeam` is awaited below, and across
-   * that await the previous team's socket would otherwise still be writing
-   * into the log the new team is about to inherit (FR2, trap T2).
+   * THE MECHANISM MOVED to `TeamSessionService` — teardown-before-await, the
+   * epoch guard, publishing `currentProcessId$`, starting the pipeline. It was
+   * the one thing a second frontend could not discover by reading the layers it
+   * reuses, because it lived in the file such a frontend deletes.
+   *
+   * What is left here is policy: which tab to default to, and what to do about
+   * a team that is gone.
    */
   private async openTeam(): Promise<void> {
     const teamId = this.resolveTeamId();
-    if (this.opened && teamId === this.processId) {
-      return;
-    }
-    this.opened = true;
-    const epoch = ++this.openEpoch;
+    const outcome = await this.session.open(teamId);
+    this.processId = this.session.openTeamId;
 
-    this.closeOpenTeam();
-
-    this.processId = teamId;
-    // Trap T3: this view is the ONLY writer of a team id on the global
-    // subject. The host selects by binding `teamId` and reads the id back from
-    // here — a host that also wrote here would make the agent tabs and the
-    // workspace follow whichever of the two wrote last.
-    this.contextService.currentProcessId$.next(teamId);
-
-    if (teamId === '') {
+    // 'superseded' — a newer selection won the race and has already published
+    // its own id and torn this one down. Doing anything here would act on a
+    // team nobody is looking at.
+    if (outcome === 'superseded' || outcome === 'cleared') {
       return;
     }
 
-    const useCache = false;
-    const currentProcess = await this.contextService.getCurrentTeam(
-      teamId,
-      useCache
-    );
-
-    // A newer selection won the race while this fetch was in flight. It has
-    // already published its own id and torn this one down; finishing here
-    // would initialise the pipeline for a team nobody is looking at.
-    if (epoch !== this.openEpoch) {
-      return;
-    }
-
-    // Ensure we always have a visualization mode selected
+    // Ensure we always have a visualization mode selected. A VIEW preference:
+    // it stays here because the session layer has no tabs.
     if (!this.visualizationMode$.value) {
       this.visualizationMode$.next('team');
     }
 
-    if (currentProcess === null) {
+    if (outcome === 'missing') {
       // The team is gone. Two answers, and after R1 only the second one is ever
       // given: a HOST (if one is ever bound again) owns the selection and has
       // to be told it is dangling, while the route mode this view now always
       // runs in has nobody to tell and navigates home instead. The emit is
       // unconditional because a dangling team is a fact about the team, not
       // about who asked; with no subscriber it costs nothing.
+      //
+      // POLICY, which is why it did not move: "gone, so go home" is this
+      // console's answer, not the only one.
       this.teamUnavailable.emit(teamId);
       if (this.teamId === null) {
         void this.contextService.navigateHome();
       }
-      return;
     }
-
-    // KG presence is reactive (Story 5-3 / ADR-004 §Decision 4): the
-    // `hasKnowledgeGraph$` observable flips based on `#KnowledgeGraphTool`
-    // `StartMessage` / `StopMessage` on the replay + live streams. Workspace
-    // presence remains static until a future story reactivates it.
-
-    await this.ingestionService.init(teamId, isRunning(currentProcess));
-  }
-
-  /**
-   * Release everything that belongs to the team currently open.
-   *
-   * Two things outlive a team switch and so have to be named here. The
-   * ingestion pipeline is one — `close()` disposes the cycle AND empties the
-   * log, which is what unmounts the knowledge-graph and workspace panels,
-   * because their presence is a fold over that log. `AkgentService` is the
-   * other: it is root-scoped, so the previous team's selected agent survives
-   * a switch that destroys nothing.
-   *
-   * The visualization mode is deliberately NOT reset. It is a view preference,
-   * not team state, and the presence guards in the constructor already snap it
-   * back to `team` when the tab it names does not exist for the new team.
-   */
-  private closeOpenTeam(): void {
-    if (this.processId === '') {
-      return;
-    }
-    this.akgentService.unselect();
-    this.ingestionService.close();
   }
 
   ngAfterViewInit(): void {
@@ -537,7 +496,6 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
     // that outlived its element would bound the next divider against the last
     // team's row — most visibly when the rail collapsed in between.
     this.paneLayout.setTrackWidth(null);
-    this.akgentService.unselect();
     this.presenceSub?.unsubscribe();
     this.presenceSub = null;
     this.routeSub?.unsubscribe();
@@ -547,7 +505,11 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
     // action and its details toggle all read that subject. Before the split it
     // was `AppComponent`'s navigation handlers that cleared it, which worked
     // only because leaving the view was always a navigation.
-    this.contextService.currentProcessId$.next('');
+    //
+    // The retraction, and dropping the root-scoped agent selection with it,
+    // belong to the session rather than to this view: they are what "no team is
+    // open" MEANS, not what this particular console does about it.
+    this.session.dispose();
   }
 
   setVisualizationMode(mode: string): void {

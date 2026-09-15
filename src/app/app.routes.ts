@@ -7,6 +7,7 @@ import { namespacePanelCanDeactivate } from './ui/catalog/namespace-panel/namesp
 import { AsyncPipe } from '@angular/common';
 import { ConnectionToast } from './services/process/event/connection-toast';
 import { IngestionService } from './services/process/event/ingestion.service';
+import { TeamSessionService } from './services/process/session/team-session.service';
 import { LoadingIndicator } from './services/process/event/loading-indicator';
 import { LogFeeder } from './services/process/event/log-feeder';
 import { MessageLogService } from './services/process/event/message-log.service';
@@ -47,7 +48,7 @@ import { SelectionService } from './services/process/ui-state/selection.service'
 /**
  * THE TEAM'S SERVICES, SCOPED TO THE ROUTE RATHER THAN TO A COMPONENT.
  *
- * All twenty-three used to be `ProcessComponent.providers`, and every component
+ * All twenty-three used to be the `process/:id` route's providers, and every component
  * that wanted one injected it bare — which meant every one of them could only
  * ever be mounted inside that component. That is the coupling in the way of
  * reusing a panel anywhere else, and of anybody assembling a second UI out of
@@ -74,7 +75,13 @@ import { SelectionService } from './services/process/ui-state/selection.service'
  * chain and nothing more. Kept as written rather than sorted, because the
  * chain it traces is genuinely useful.
  */
-const PROCESS_PROVIDERS = [
+/**
+ * EXPORTED, and that is not incidental. A developer who clones this repo to
+ * build a different console needs this array verbatim — it is the team's whole
+ * service stack — and an unexported `const` left them copying twenty-three
+ * entries by hand, in order, from the file they were about to replace.
+ */
+export const PROCESS_PROVIDERS = [
   AsyncPipe,
   MessageLogService,
   // Epic 23 (ADR-019): route-scoped registry that folds the message log
@@ -157,6 +164,9 @@ const PROCESS_PROVIDERS = [
   // team's frames into the next team's log.
   LogFeeder,
   IngestionService,
+  // The open/close ritual itself. Provided AFTER IngestionService for the same
+  // reading-order reason as everything else here; it injects it.
+  TeamSessionService,
   // Epic 26 (ADR-022): route-scoped read surface over the `tokenUsage`
   // PerAgentStore. Provided AFTER IngestionService (which it injects); never
   // `providedIn: 'root'` — it shares the team-scoped log lifecycle, so a team

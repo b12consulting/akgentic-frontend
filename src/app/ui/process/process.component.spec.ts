@@ -15,6 +15,7 @@ import { FeedbackService } from '../../services/process/ui-state/feedback.servic
 import { GraphDataService } from '../../services/process/selectors/graph.selector';
 import { KGStateReducer } from '../../services/process/selectors/knowledge-graph.selector';
 import { MessageLogService } from '../../services/process/event/message-log.service';
+import { TeamSessionService } from '../../services/process/session/team-session.service';
 import { IngestionService } from '../../services/process/event/ingestion.service';
 import { SelectionService } from '../../services/process/ui-state/selection.service';
 import {
@@ -209,6 +210,11 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
         WorkspaceRegistryService,
         { provide: ContextService, useValue: contextService },
         { provide: IngestionService, useValue: ingestionService },
+        // The REAL session service over the doubled dependencies above: it is
+        // the unit under test's collaborator, not a seam these specs mock —
+        // they assert on `ingestionService.init` and `currentProcessId$`, which
+        // are exactly what it drives.
+        TeamSessionService,
         { provide: AkgentService, useValue: akgentService },
         { provide: GraphDataService, useValue: graphDataService },
         { provide: ChatService, useValue: chatService },
@@ -664,6 +670,11 @@ describe('ProcessComponent (Story 10-2 — single-fetch navigation)', () => {
         WorkspaceRegistryService,
         { provide: ContextService, useValue: contextService },
         { provide: IngestionService, useValue: ingestionService },
+        // The REAL session service over the doubled dependencies above: it is
+        // the unit under test's collaborator, not a seam these specs mock —
+        // they assert on `ingestionService.init` and `currentProcessId$`, which
+        // are exactly what it drives.
+        TeamSessionService,
         { provide: AkgentService, useValue: akgentService },
         { provide: GraphDataService, useValue: graphDataService },
         { provide: ChatService, useValue: chatService },
@@ -789,6 +800,11 @@ describe('ProcessComponent (Story 52-1 — team id as an input)', () => {
         WorkspaceRegistryService,
         { provide: ContextService, useValue: context },
         { provide: IngestionService, useValue: ingestion },
+        // The REAL session service over the doubled dependencies above: it is
+        // the unit under test's collaborator, not a seam these specs mock —
+        // they assert on `ingestionService.init` and `currentProcessId$`, which
+        // are exactly what it drives.
+        TeamSessionService,
         { provide: AkgentService, useValue: akgent },
         {
           provide: GraphDataService,
@@ -1078,6 +1094,11 @@ describe('ProcessComponent (R3 — arrangeable, resizable panes)', () => {
             close: jasmine.createSpy('close'),
           },
         },
+        // The REAL session service over the doubled dependencies above: it is
+        // the unit under test's collaborator, not a seam these specs mock —
+        // they assert on `ingestionService.init` and `currentProcessId$`, which
+        // are exactly what it drives.
+        TeamSessionService,
         {
           provide: AkgentService,
           useValue: {
@@ -1697,6 +1718,11 @@ describe('ProcessComponent — hiding inspector tabs per deployment (W18b)', () 
         WorkspaceRegistryService,
         { provide: ContextService, useValue: contextService },
         { provide: IngestionService, useValue: ingestionService },
+        // The REAL session service over the doubled dependencies above: it is
+        // the unit under test's collaborator, not a seam these specs mock —
+        // they assert on `ingestionService.init` and `currentProcessId$`, which
+        // are exactly what it drives.
+        TeamSessionService,
         { provide: AkgentService, useValue: akgentService },
         { provide: GraphDataService, useValue: graphDataService },
         { provide: ChatService, useValue: chatService },
