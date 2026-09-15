@@ -34,6 +34,23 @@ import { FeedbackComponent } from './feedback.component';
 const REQUEST_PREVIEW_CHARS = 240;
 
 /**
+ * How long a notification has to be before the folded row marks it as cut.
+ *
+ * 60 is `buildPreview`'s own default — the length at which the row used to
+ * truncate the string outright. Keeping the number means the ellipsis appears
+ * on exactly the messages it always appeared on; what changed underneath is
+ * that the row now clips by HEIGHT and shows the whole message when opened.
+ *
+ * AN APPROXIMATION OF THE VISUAL CLIP, deliberately. The row is cut when the
+ * text wraps past one line, which depends on the pane's width, and CSS cannot
+ * test for overflow — the honest alternatives are measuring the element on
+ * every resize, or a length. A narrow pane can therefore clip a shorter message
+ * without marking it, which errs on the side of not claiming something is
+ * truncated when it is not.
+ */
+const NOTICE_CLIP_CHARS = 60;
+
+/**
  * The longest rule-5 announcement that can still be a CAPTION.
  *
  * Rule 5 is "the system said something", and two very different things arrive
@@ -290,6 +307,18 @@ export class ChatMessageComponent {
    */
   isNoticeFold(): boolean {
     return this.message().rule === 4;
+  }
+
+  /**
+   * Is there more of this notification than the folded row can show?
+   *
+   * Drives the ellipsis, which was appearing on EVERY folded row — including
+   * ones whose message fits in full, where it claimed a truncation that had not
+   * happened. See `NOTICE_CLIP_CHARS` for why this is a length rather than a
+   * measurement.
+   */
+  isNoticeClipped(): boolean {
+    return (this.message().content?.length ?? 0) > NOTICE_CLIP_CHARS;
   }
 
 

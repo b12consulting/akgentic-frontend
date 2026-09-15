@@ -99,7 +99,11 @@
   (click)="onToggleCollapse()"
 >
   <i class="pi notice-icon" [ngClass]="noticeIcon()" aria-hidden="true"></i>
-  <span class="notice-text" [class.expanded]="!message().collapsed">
+  <span
+    class="notice-text"
+    [class.expanded]="!message().collapsed"
+    [class.clipped]="isNoticeClipped()"
+  >
     <ng-container *ngIf="showAgentNames; else noticeAnonymous">
       <span class="notice-subject">{{ senderName() }}</span>
       <span class="notice-verb">{{
