@@ -7,8 +7,8 @@ import {
 } from '@angular/core';
 import { TranslatePipe } from '@ngx-translate/core';
 
-import { InspectorMember } from '../../../../features/console/inspector/team-panel/team-members.selector';
-import { IconButtonComponent } from '../../../../shared/components/icon-button/icon-button.component';
+import { InspectorMember } from '../../../../services/console/inspector/team-panel/team-members.selector';
+import { IconButtonComponent } from '../../../common/icon-button/icon-button.component';
 
 /**
  * One member of the team, as a row in the inspector.

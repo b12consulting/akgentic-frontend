@@ -1,4 +1,4 @@
-import type { VisualizationOption } from '../../../features/console/inspector/inspector-tabs.registry';
+import type { VisualizationOption } from '../../../services/console/inspector/inspector-tabs.registry';
 import {
   ChangeDetectionStrategy,
   Component,
@@ -28,7 +28,7 @@ import { TranslatePipe } from '@ngx-translate/core';
  * tier depending on the view tier: legal only because both sat inside one
  * `boundaries` element and the edge was therefore invisible.
  */
-export type { VisualizationOption } from '../../../features/console/inspector/inspector-tabs.registry';
+export type { VisualizationOption } from '../../../services/console/inspector/inspector-tabs.registry';
 
 /**
  * The inspector's tab strip (Epic 56).

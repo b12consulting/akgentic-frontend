@@ -9,8 +9,8 @@ import { MessageService } from 'primeng/api';
 import { BehaviorSubject, of } from 'rxjs';
 
 import { AppComponent } from './app.component';
-import { ConsoleShellComponent } from './components/console/console-shell.component';
-import { TeamCreationDialogComponent } from './components/console/team-creation/team-creation-dialog.component';
+import { ConsoleShellComponent } from './ui/console/console-shell.component';
+import { TeamCreationDialogComponent } from './ui/console/team-creation/team-creation-dialog.component';
 import { TeamContext } from './core/context/team.interface';
 import { ApiService } from './core/http/api.service';
 import { AuthService } from './core/auth/auth.service';

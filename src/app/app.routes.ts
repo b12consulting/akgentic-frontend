@@ -1,32 +1,32 @@
 import { Routes } from '@angular/router';
 import { AuthGuard } from './core/auth/auth.guard';
-import { HomeComponent } from './components/home/home.component';
-import { LoginComponent } from './components/login/login.component';
-import { ProcessComponent } from './components/process/process.component';
-import { namespacePanelCanDeactivate } from './components/catalog/namespace-panel/namespace-panel.guard';
+import { HomeComponent } from './ui/home/home.component';
+import { LoginComponent } from './ui/login/login.component';
+import { ProcessComponent } from './ui/process/process.component';
+import { namespacePanelCanDeactivate } from './ui/catalog/namespace-panel/namespace-panel.guard';
 import { AsyncPipe } from '@angular/common';
-import { ConnectionToast } from './features/process/event/connection-toast';
-import { IngestionService } from './features/process/event/ingestion.service';
-import { LoadingIndicator } from './features/process/event/loading-indicator';
-import { LogFeeder } from './features/process/event/log-feeder';
-import { MessageLogService } from './features/process/event/message-log.service';
-import { NotificationToasts } from './features/process/event/notification-toasts';
-import { PerAgentStoreRegistry } from './features/process/event/per-agent-store';
-import { ProcessStores } from './features/process/event/process-stores';
-import { ReplaySeeder } from './features/process/event/replay-seeder';
-import { TeamSocket } from './features/process/event/team-socket';
-import { TeamStatusReactor } from './features/process/event/team-status-reactor';
-import { AgentsByIdService } from './features/process/selectors/agents-by-id.selector';
-import { ChatService } from './features/process/selectors/chat.selector';
-import { GraphDataService } from './features/process/selectors/graph.selector';
-import { KGStateReducer } from './features/process/selectors/knowledge-graph.selector';
-import { SystemPromptSelector } from './features/process/selectors/system-prompt.selector';
-import { TokenUsageSelector } from './features/process/selectors/token-usage.selector';
-import { ToolPresenceService } from './features/process/selectors/tool-presence.selector';
-import { WorkspaceInvalidationService } from './features/process/selectors/workspace-invalidation.selector';
-import { WorkspaceRegistryService } from './features/process/selectors/workspace-registry.selector';
-import { FeedbackService } from './features/process/ui-state/feedback.service';
-import { SelectionService } from './features/process/ui-state/selection.service';
+import { ConnectionToast } from './services/process/event/connection-toast';
+import { IngestionService } from './services/process/event/ingestion.service';
+import { LoadingIndicator } from './services/process/event/loading-indicator';
+import { LogFeeder } from './services/process/event/log-feeder';
+import { MessageLogService } from './services/process/event/message-log.service';
+import { NotificationToasts } from './services/process/event/notification-toasts';
+import { PerAgentStoreRegistry } from './services/process/event/per-agent-store';
+import { ProcessStores } from './services/process/event/process-stores';
+import { ReplaySeeder } from './services/process/event/replay-seeder';
+import { TeamSocket } from './services/process/event/team-socket';
+import { TeamStatusReactor } from './services/process/event/team-status-reactor';
+import { AgentsByIdService } from './services/process/selectors/agents-by-id.selector';
+import { ChatService } from './services/process/selectors/chat.selector';
+import { GraphDataService } from './services/process/selectors/graph.selector';
+import { KGStateReducer } from './services/process/selectors/knowledge-graph.selector';
+import { SystemPromptSelector } from './services/process/selectors/system-prompt.selector';
+import { TokenUsageSelector } from './services/process/selectors/token-usage.selector';
+import { ToolPresenceService } from './services/process/selectors/tool-presence.selector';
+import { WorkspaceInvalidationService } from './services/process/selectors/workspace-invalidation.selector';
+import { WorkspaceRegistryService } from './services/process/selectors/workspace-registry.selector';
+import { FeedbackService } from './services/process/ui-state/feedback.service';
+import { SelectionService } from './services/process/ui-state/selection.service';
 
 /**
  * The app's routes. Epic 56 changed none of the paths: `''` stays
@@ -190,7 +190,7 @@ export const routes: Routes = [
     path: 'admin/catalog/namespace/:namespace',
     loadComponent: () =>
       import(
-        './components/catalog/namespace-panel/namespace-panel-route.component'
+        './ui/catalog/namespace-panel/namespace-panel-route.component'
       ).then((m) => m.NamespacePanelRouteComponent),
     title: 'title.catalogNamespace',
     canActivate: [AuthGuard],

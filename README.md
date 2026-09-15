@@ -211,38 +211,54 @@ npm run lint                         # eslint over src/**/*.ts
 
 ## Layout
 
-`src/app/` separates the views from the logic they read, and the split is by DIRECTORY rather than
-by naming convention so it cannot quietly erode:
+`src/app/` is three layers, split by DIRECTORY rather than by naming convention so the split cannot
+erode quietly:
 
-| Folder | What lives there |
-|---|---|
-| `components/` | **UI only** — components, their templates and their stylesheets |
-| `features/` | the logic one feature's views read: selectors, stores, event plumbing, feature-scoped services and models |
-| `core/` | app-wide services with no feature of their own: auth, config, http, i18n, shell UI state |
-| `shared/` | reusable presentational pieces, pipes and pure utilities |
-| `protocol/` | the wire types — the contract with `akgentic-infra`, and nothing else |
+| Folder | What lives there | May import |
+|---|---|---|
+| `ui/` | **assemblies** — the views that inject services and wire components together | everything below, and each other |
+| `components/` | **presentational** — renders what it is given, fetches nothing | `components`, `core`, `shared`, `protocol`, and the TYPES its inputs are declared in |
+| `services/` | **data** — selectors, stores, event plumbing, feature-scoped services and models | `core`, `shared`, `protocol` |
+| `core/` | app-wide services with no feature of their own: auth, config, http, i18n, shell UI state | `shared`, `protocol` |
+| `shared/` | pipes and pure utilities | `protocol` |
+| `protocol/` | the wire types — the contract with `akgentic-infra` | nothing |
 
-`components/` and `features/` mirror each other's top-level names (`process`, `console`, `home`,
-`catalog`), so a view and the logic behind it sit at the same path in two trees.
+`ui/`, `components/` and `services/` mirror each other's feature names (`process`, `console`,
+`home`, `catalog`), so a view, the pieces it renders and the data behind it sit at the same path in
+three trees. `components/common/` holds the cross-feature primitives.
 
-Anything under `components/` that is not a component belongs in `features/`. That rule is what keeps
-a selector from acquiring a template, and a component from acquiring a fold — and it is the rule
-that had already been broken 41 times before it was written down.
+**`ui/` is the layer you replace.** Nothing may import back into it — the rule set defaults to
+`disallow` and no rule grants that edge — so a second console can be built by writing a new `ui/`
+against the same `components/` and `services/`, which is the whole reason for the split.
 
-It has exactly one exception, and the exception is the shape of the rule rather than a hole in it:
-`namespace-panel.guard.ts` is a `CanDeactivateFn<NamespacePanelRouteComponent>`, so it is typed on
-the very component it guards. A route guard for one component is not logic that component reads —
-it is part of how that component is mounted — and moving it would only have turned a local import
-into a cross-tree one pointing the wrong way.
+### Which layer does a component belong to?
 
-`eslint.config.js` enforces the direction with `boundaries`: each feature's views and its logic are
-separate element *types* (`console` / `console-logic`, and so on) precisely because a shared type
-would make every edge legal in both directions. Views may read their logic tier; the logic tier may
-read only `core`, `shared` and `protocol`. Nothing states the reverse edge, and the rule set
-defaults to `disallow`, so it stays forbidden by omission rather than by anyone remembering it.
+It is `ui/` if it injects a service that carries **data**, or if it mounts something that does.
+Injecting `ConfigService`, `TranslateService` or `ViewService` does not count: those are config and
+chrome, not data. The "mounts something that does" half is transitive and is what keeps the boundary
+honest — a shell that renders a data-bound child is an assembly however little it injects itself.
 
-`docs/message-display-flow.md` traces one of these boundaries end to end: how a frame on the socket
-becomes a row in the transcript, and which file owns each stage.
+Two rules cover the team's services and are worth knowing before adding one:
+
+- They are provided on the **`process/:id` route**, not on `ProcessComponent`. A component that
+  silently requires a particular ancestor is not a component you can place, and that ancestor
+  requirement was the thing standing between these panels and being reusable.
+- Never `providedIn: 'root'`. The route injector dies when you leave the route; a root one would
+  carry one team's socket, log and per-agent stores into the next.
+
+### What the lint gate does and does not catch
+
+`eslint.config.js` enforces the direction with `boundaries`, and each layer is its own element
+**type** — a shared type would make every edge legal in both directions, because the plugin cannot
+express direction within a type.
+
+It catches a component importing `ui/`, a selector importing `ui-state`, a service importing a view.
+It does **not** catch a dumb component injecting a data service, and cannot: an `@Input` is typed by
+the selector that produces it, so a type import and a service injection are the same edge to the
+linter. That half is a review rule, and the classification above is how it is applied.
+
+`docs/message-display-flow.md` traces one boundary end to end: how a frame on the socket becomes a
+row in the transcript, and which file owns each stage.
 
 ## Working in this repository
 

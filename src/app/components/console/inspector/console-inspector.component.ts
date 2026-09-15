@@ -19,7 +19,7 @@ import { TranslatePipe } from '@ngx-translate/core';
 
 import { InspectorSide } from '../../../core/ui/pane-layout';
 import { ViewService } from '../../../core/ui/view.service';
-import { IconButtonComponent } from '../../../shared/components/icon-button/icon-button.component';
+import { IconButtonComponent } from '../../common/icon-button/icon-button.component';
 import { InspectorEmptyStateComponent } from './inspector-empty-state.component';
 import {
   InspectorTabsComponent,
@@ -28,7 +28,7 @@ import {
 import {
   INSPECTOR_NARROW_MAX_PX,
   inspectorTabNeedsRoom,
-} from '../../../features/console/inspector/inspector-tabs.registry';
+} from '../../../services/console/inspector/inspector-tabs.registry';
 
 // Re-exported so a consumer that renders `<app-console-inspector>` has one
 // import to make. `export type` rather than a bare re-export: `isolatedModules`

@@ -6,8 +6,8 @@ import { Toast, ToastModule } from 'primeng/toast';
 import { Observable, combineLatest } from 'rxjs';
 import { distinctUntilChanged, filter, map, startWith } from 'rxjs/operators';
 
-import { ConsoleShellComponent } from './components/console/console-shell.component';
-import { TeamCreationDialogComponent } from './components/console/team-creation/team-creation-dialog.component';
+import { ConsoleShellComponent } from './ui/console/console-shell.component';
+import { TeamCreationDialogComponent } from './ui/console/team-creation/team-creation-dialog.component';
 import { ApiService } from './core/http/api.service';
 import { AuthService } from './core/auth/auth.service';
 import { ConfigService } from './core/config/config.service';
