@@ -120,13 +120,20 @@ function toMember(
     roleKey,
     kind,
     depth,
-    // Presence IS liveness. `nodes$` is folded from the message log by
-    // `graphFold`, and `applyStopMessage` SPLICES a stopped agent's node out of
-    // it — so a node being in this array is the signal that the agent is still
-    // on the team. There is no separate activity field on `NodeInterface`, and
-    // inventing an idle state from `errorMessage` or `humanRequests` would be
-    // fabricating a status out of two fields that mean other things.
-    active: true,
+    // WORKING RIGHT NOW, which is what the dot and its two titles always
+    // claimed to mean.
+    //
+    // This was `true` for everybody, on the reasoning that presence is liveness:
+    // `applyStopMessage` splices a stopped agent out of `nodes$`, so being in
+    // the array means being on the team. That reasoning was sound about the
+    // array and wrong about the word — a member list where every dot is lit
+    // says nothing, and "active / idle" was already the copy beside it.
+    //
+    // The fact it wanted existed the whole time; it was only readable as the
+    // colour the canvas painted a border. `node.thinking` states it now, from
+    // the same `ReceivedMessage` → `ProcessedMessage` window the deleted tree
+    // pulsed its highlight over.
+    active: node.thinking === true,
   };
 }
 

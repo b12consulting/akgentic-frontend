@@ -137,9 +137,13 @@
 }
 
 /*
- * Presence, in six pixels. Bright means the agent is on the team right now;
- * the idle value exists so the element does not have to disappear and reflow
- * the row if a liveness signal ever arrives.
+ * Liveness, in six pixels. Bright means the agent is WORKING; idle means it is
+ * on the team and waiting.
+ *
+ * It used to mean "on the team", full stop — `active` was hardcoded true, so
+ * every dot was lit and the pair said nothing. The signal the comment here was
+ * waiting for has arrived: `node.thinking`, folded from the
+ * `ReceivedMessage` → `ProcessedMessage` window.
  */
 .member-dot {
   flex: 0 0 auto;
@@ -151,6 +155,52 @@
 
 .member-dot.idle {
   background: var(--akg-dot-idle);
+}
+
+/*
+ * AN AGENT THAT IS WORKING, as a slow pulse around its row.
+ *
+ * RESTORED, not invented. The tree the redesign deleted marked the running
+ * agent exactly this way, and it is what testers noticed was gone: a 5s cycle,
+ * an inset 2px ring, fading up and back twice per turn. The timing is the
+ * point and the original numbers are kept — fast enough to read as alive, slow
+ * enough that four agents working is not a strobe.
+ *
+ * `box-shadow: inset`, NOT `border`. A border changes the box, so every row
+ * would shift 2px the moment an agent started and back when it stopped. An
+ * inset shadow is painted inside the padding and costs no layout, which is what
+ * lets this sit on a list re-rendered on every message frame.
+ *
+ * ON THE LIVE ACCENT rather than the tree's dark red. Red is the ink the graph
+ * paints a FAILED actor in, so the state you want to notice and the state you
+ * have to act on looked alike.
+ *
+ * `prefers-reduced-motion` drops the animation and leaves the ring at full
+ * strength: the information survives, the movement does not. A slow pulse is
+ * precisely the vestibular trigger that setting exists for.
+ */
+.member-card.working {
+  box-shadow: inset 0 0 0 2px transparent;
+  animation: member-working 5s linear infinite;
+}
+
+@keyframes member-working {
+  0%,
+  50%,
+  100% {
+    box-shadow: inset 0 0 0 2px transparent;
+  }
+  25%,
+  75% {
+    box-shadow: inset 0 0 0 2px var(--akg-status-live-fg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .member-card.working {
+    animation: none;
+    box-shadow: inset 0 0 0 2px var(--akg-status-live-fg);
+  }
 }
 
 /*

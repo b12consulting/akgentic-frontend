@@ -391,7 +391,7 @@ describe('graphFold / graphStep (pure)', () => {
     expect(s.edges.length).toBe(1);
   });
 
-  it('ReceivedMessage sets borderColor on matching node', () => {
+  it('ReceivedMessage marks the matching node as working', () => {
     const s = graphFold(
       [
         makeStart({ sender: makeAddress({ agent_id: 'a1' }) }),
@@ -399,7 +399,10 @@ describe('graphFold / graphStep (pure)', () => {
       ],
       cs,
     );
-    expect(s.nodes[0].itemStyle?.borderColor).toBe(dangerInk());
+    // A FACT, not a border. The fold used to write `itemStyle.borderColor`
+    // here, which made "is this agent working?" answerable only by something
+    // that knew how echarts paints. The canvas derives its ring from this.
+    expect(s.nodes[0].thinking).toBeTrue();
   });
 
   it('ReceivedMessage from Human sender does NOT change state', () => {
@@ -410,10 +413,10 @@ describe('graphFold / graphStep (pure)', () => {
       ],
       cs,
     );
-    expect(s.nodes[0].itemStyle?.borderColor).toBeUndefined();
+    expect(s.nodes[0].thinking).toBeFalsy();
   });
 
-  it('ProcessedMessage clears borderColor', () => {
+  it('ProcessedMessage marks it done', () => {
     const s = graphFold(
       [
         makeStart({ sender: makeAddress({ agent_id: 'a1' }) }),
@@ -422,7 +425,7 @@ describe('graphFold / graphStep (pure)', () => {
       ],
       cs,
     );
-    expect(s.nodes[0].itemStyle?.borderColor).toBeUndefined();
+    expect(s.nodes[0].thinking).toBeFalse();
   });
 
   it('(AC6 / FR11) UnknownFutureMessage interleaved is a pure no-op', () => {
@@ -470,11 +473,11 @@ describe('graphFold / graphStep (pure)', () => {
     expect(after.edges).toBe(before.edges);
     expect(after.squad).toBe(before.squad);
     // Original node object MUST NOT be mutated (immutability guard).
-    expect(before.nodes[0].itemStyle?.borderColor).toBeUndefined();
-    expect(after.nodes[0].itemStyle?.borderColor).toBe(dangerInk());
+    expect(before.nodes[0].thinking).toBeFalsy();
+    expect(after.nodes[0].thinking).toBeTrue();
   });
 
-  it('(AC7) ProcessedMessage clearing border emits a NEW nodes reference', () => {
+  it('(AC7) ProcessedMessage finishing a run emits a NEW nodes reference', () => {
     const before: GraphState = graphFold(
       [
         makeStart({ sender: makeAddress({ agent_id: 'a1' }) }),
@@ -484,9 +487,9 @@ describe('graphFold / graphStep (pure)', () => {
     );
     const after = graphStep(before, makeProcessed('a1'), cs);
     expect(after.nodes).not.toBe(before.nodes);
-    // Prior snapshot retains the border (no retroactive mutation).
-    expect(before.nodes[0].itemStyle?.borderColor).toBe(dangerInk());
-    expect(after.nodes[0].itemStyle?.borderColor).toBeUndefined();
+    // Prior snapshot still says working (no retroactive mutation).
+    expect(before.nodes[0].thinking).toBeTrue();
+    expect(after.nodes[0].thinking).toBeFalse();
   });
 
   it('(AC7) ErrorMessage emits a NEW nodes reference and preserves previous snapshot', () => {
@@ -500,7 +503,7 @@ describe('graphFold / graphStep (pure)', () => {
     expect(after.nodes[0].itemStyle?.color).toBe(dangerInk());
   });
 
-  it('(AC7) ProcessedMessage on node with no border is a same-reference no-op', () => {
+  it('(AC7) ProcessedMessage on a node that was not running is a same-reference no-op', () => {
     const before: GraphState = graphFold(
       [makeStart({ sender: makeAddress({ agent_id: 'a1' }) })],
       cs,
@@ -512,19 +515,18 @@ describe('graphFold / graphStep (pure)', () => {
 
   // Story 44-1 (ADR-032 §D7) — a deliberate NON-change, pinned.
   //
-  // The thinking border is set on ReceivedMessage and cleared on
-  // ProcessedMessage, and an absorbed message emits neither: the pairing is
-  // already balanced. A HandledMessage arm here would clear a border no message
-  // set. `graphStep` switches on the class-name suffix, so it falls to `default`.
-  it('a HandledMessage sets no thinking border', () => {
+  // `thinking` is set on ReceivedMessage and cleared on ProcessedMessage, and
+  // an absorbed message emits neither: the pairing is already balanced. A
+  // HandledMessage arm here would end a run no message had started. `graphStep` switches on the class-name suffix, so it falls to `default`.
+  it('a HandledMessage does not mark a node as working', () => {
     const s = graphFold(
       [makeStart({ sender: makeAddress({ agent_id: 'a1' }) }), makeHandled('a1')],
       cs,
     );
-    expect(s.nodes[0].itemStyle?.borderColor).toBeUndefined();
+    expect(s.nodes[0].thinking).toBeFalsy();
   });
 
-  it('a HandledMessage after a ReceivedMessage neither clears nor sets the border, by identity', () => {
+  it('a HandledMessage after a ReceivedMessage neither starts nor ends a run, by identity', () => {
     const before: GraphState = graphFold(
       [
         makeStart({ sender: makeAddress({ agent_id: 'a1' }) }),
@@ -535,7 +537,7 @@ describe('graphFold / graphStep (pure)', () => {
     const after = graphStep(before, makeHandled('a1'), cs);
     expect(after).toBe(before);
     expect(after.nodes).toBe(before.nodes);
-    expect(after.nodes[0].itemStyle?.borderColor).toBe(dangerInk());
+    expect(after.nodes[0].thinking).toBeTrue();
   });
 });
 

@@ -31,11 +31,18 @@
   too.
 -->
 <div class="member-row">
+  <!--
+    `.working` carries the slow pulse that marks the agent currently running —
+    see the stylesheet. On the ROW rather than on the status dot: the row is
+    what you scan, and a 6px dot changing opacity is not something the eye
+    catches in a list of ten.
+  -->
   <button
     type="button"
     class="member-card"
     [class.supervisor]="member.kind === 'supervisor'"
     [class.worker]="member.kind === 'worker'"
+    [class.working]="member.active"
     [style.--akg-depth]="member.depth"
     [attr.aria-haspopup]="'dialog'"
     [attr.aria-label]="'inspector.readConversationOf' | translate : { agent: member.label }"

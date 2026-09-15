@@ -291,14 +291,13 @@ function applyReceivedMessage(
   const idx = state.nodes.findIndex((n) => n.name === msg.sender?.agent_id);
   if (idx === -1) return state;
   const target = state.nodes[idx];
-  const updated: NodeInterface = {
-    ...target,
-    itemStyle: {
-      ...(target.itemStyle || {}),
-      borderColor: dangerInk(),
-      borderWidth: 3,
-    },
-  };
+  if (target.thinking) return state;
+  // A FACT, NOT A BORDER. This used to write `itemStyle.borderColor` — the
+  // colour the canvas draws — which made "is this agent working?" a question
+  // only something that knew how echarts paints could answer. The graph derives
+  // its border from this flag now, and so does every other surface that wants
+  // to say the same thing.
+  const updated: NodeInterface = { ...target, thinking: true };
   const nextNodes = [
     ...state.nodes.slice(0, idx),
     updated,
@@ -314,12 +313,10 @@ function applyProcessedMessage(
   const idx = state.nodes.findIndex((n) => n.name === msg.sender?.agent_id);
   if (idx === -1) return state;
   const target = state.nodes[idx];
-  if (!target.itemStyle) return state;
-  // Strip thinking-border properties without mutating the existing itemStyle.
-  const { borderColor: _bc, borderWidth: _bw, ...restStyle } = target.itemStyle;
-  // No-op if neither border property was set — preserve slice identity.
-  if (_bc === undefined && _bw === undefined) return state;
-  const updated: NodeInterface = { ...target, itemStyle: restStyle };
+  // No-op if it was not running — preserve slice identity, which is what stops
+  // an OnPush repaint per frame on a busy team.
+  if (!target.thinking) return state;
+  const updated: NodeInterface = { ...target, thinking: false };
   const nextNodes = [
     ...state.nodes.slice(0, idx),
     updated,

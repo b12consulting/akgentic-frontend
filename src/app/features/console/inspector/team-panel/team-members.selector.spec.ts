@@ -206,15 +206,35 @@ describe('buildInspectorTeam', () => {
       expect(view.members[0].initial).toBe('R');
     });
 
-    it('marks every present node active, because presence is the liveness signal', () => {
-      // `applyStopMessage` splices a stopped agent OUT of `nodes$`; a node that
-      // is here is running. There is no idle state to fabricate.
+    /**
+     * ACTIVE MEANS WORKING, which is what the dot's two titles always said.
+     *
+     * It used to mean "on the team": `active` was hardcoded true on the
+     * reasoning that `applyStopMessage` splices a stopped agent out of
+     * `nodes$`, so being in the array is being alive. True about the array,
+     * wrong about the word — every dot was lit, and a list where nothing is
+     * ever idle tells you nothing. `node.thinking` carries the real window now.
+     */
+    it('marks the node that is working, and only it', () => {
       const view = buildInspectorTeam([
-        node({ name: 'a', actorName: 'A' }),
+        node({ name: 'a', actorName: 'A', thinking: true }),
+        node({ name: 'b', actorName: 'B' }),
+      ]);
+
+      expect(view.members.find((m) => m.id === 'a')?.active).toBeTrue();
+      expect(view.members.find((m) => m.id === 'b')?.active).toBeFalse();
+    });
+
+    it('does not read an error as activity', () => {
+      // `errorMessage` says the agent failed, not that it is busy. Deriving a
+      // status from it is fabricating one out of a field that means something
+      // else — the trap the previous hardcoded `true` was avoiding by refusing
+      // to derive anything at all.
+      const view = buildInspectorTeam([
         node({ name: 'b', actorName: 'B', errorMessage: 'boom' }),
       ]);
 
-      expect(view.members.every((m) => m.active)).toBe(true);
+      expect(view.members[0].active).toBeFalse();
     });
 
     it('gives the human a neutral role key rather than a structural one', () => {

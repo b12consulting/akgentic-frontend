@@ -70,6 +70,20 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/**
+ * The ink a WORKING actor is ringed in, resolved to a literal.
+ *
+ * The canvas has no cascade — see `category.service.ts` — so a `var()` handed to
+ * echarts is an unparseable fill rather than a colour. Memoised for the same
+ * reason `dangerInk` is: `getComputedStyle` flushes layout, and this is read
+ * once per node per render.
+ */
+let liveInkCache: string | null = null;
+function liveInk(): string {
+  liveInkCache ??= readToken('--akg-status-live-fg') || '#005d46';
+  return liveInkCache;
+}
+
 @Component({
   selector: 'app-graph',
   imports: [
@@ -484,11 +498,28 @@ export class GraphComponent {
      * "this agent is @Manager" is never worth more than "this agent failed".
      */
     const colours = agentColours(this.nodes || [], this.categoryService.COLORS);
+    const live = liveInk();
     const painted = nodes.map((n) => {
       const signal = n.itemStyle?.color;
       const own = colours.of(n.actorName);
-      if (signal || !own) return n;
-      return { ...n, itemStyle: { ...(n.itemStyle || {}), color: own } };
+      /*
+       * A RING WHILE IT IS WORKING, derived from `node.thinking` rather than
+       * read back out of the style the fold used to write there. The fold now
+       * states the fact and this decides how the canvas says it — which is why
+       * the ring could change colour here without touching the fold at all.
+       *
+       * NOT the danger ink it used to be. "Working" and "failed" were drawn in
+       * the same red, so the one state you want to notice looked exactly like
+       * the one you want to act on. The live accent is what the rest of the
+       * console already uses to mean "this is running".
+       */
+      const ring = n.thinking
+        ? { borderColor: live, borderWidth: 3 }
+        : undefined;
+      if (signal || !own) {
+        return ring ? { ...n, itemStyle: { ...(n.itemStyle || {}), ...ring } } : n;
+      }
+      return { ...n, itemStyle: { ...(n.itemStyle || {}), color: own, ...ring } };
     });
 
     const categories = this.categories || [];
