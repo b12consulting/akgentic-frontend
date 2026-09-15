@@ -27,6 +27,26 @@
     border-bottom: 1px solid var(--akg-hairline);
   }
 
+  // THE BOTTOM CORNERS, which the frame above cannot round on its own.
+  //
+  // `.p-dialog-content` carries no ground of its own — Aura's preset gives it
+  // padding and nothing else — so it looks like it could not be what squares
+  // the frame off. What it carries is the CLIP: `[contentStyle]` sets
+  // `overflow: hidden` on it, and a clip with no radius is a rectangle. The
+  // two children that do paint, `.agent-list` on its muted ground and the
+  // conversation column on the overlay ground, are therefore cut square and
+  // fill the corners the dialog's own `border-radius` had rounded.
+  //
+  // Only the bottom two: the header owns the top edge and is already inside
+  // the frame. And a step smaller than the frame's, because the dialog draws a
+  // 1px border and an inner radius equal to the outer one leaves a hairline of
+  // border showing past the curve — inner = outer − border-width is the whole
+  // of that rule.
+  .p-dialog-content {
+    border-bottom-left-radius: calc(var(--akg-card-radius) - 1px);
+    border-bottom-right-radius: calc(var(--akg-card-radius) - 1px);
+  }
+
   // The header states WHICH agent is open, so it is naming a participant rather
   // than labelling a window. Same treatment as the team-creation dialog's title
   // so the two read as one product.
@@ -139,7 +159,6 @@
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: var(--akg-turn-gap);
   /* Vertical rhythm from the shared tokens; the horizontal inset is the
      dialog's own, since the main chat's padding reserves a lane for the
      panel-toggle rail that does not exist inside a modal. */
@@ -152,6 +171,19 @@
     max-width: var(--akg-conversation-max-width);
     margin-left: auto;
     margin-right: auto;
+  }
+
+  /* The same two spacing rules the main transcript uses, for the same reason
+     and on the same rows — this column renders `<app-chat-message>` too, so a
+     run of folded notices reads here exactly as it does there. See
+     `chat-panel.component.scss` for why the spacing sits between siblings
+     rather than in a `gap`. */
+  > * + * {
+    margin-top: var(--akg-turn-gap);
+  }
+
+  > .quiet-line + .quiet-line {
+    margin-top: 0;
   }
 }
 

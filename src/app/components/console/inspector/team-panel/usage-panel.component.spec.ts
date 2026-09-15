@@ -189,6 +189,47 @@ describe('UsagePanelComponent', () => {
     ]);
   });
 
+  /**
+   * THE FIGURES ARE A COLUMN, and a column only lines up if every row puts a
+   * cell in it.
+   *
+   * The breakdown is one grid spanning all the model rows, so the three figure
+   * columns are as wide as their widest entry and the numbers line up down the
+   * card — `in` under `in`, the way the three totals above are read. A model
+   * that read no cache still shows no ⚡ figure, but it contributes a BLANK
+   * cell in that column; drop the blank and its `↓` slides left into the cache
+   * column and takes the column out of line for every row.
+   */
+  it('gives every model row the same cells, so the figures stay in column', async () => {
+    await setup(
+      totals({ totalSent: 13_000, totalReceived: 150, totalCacheRead: 10_000 }),
+      [GPT, LLAMA],
+    );
+
+    const cellsPerRow = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll(
+        '.usage-model-row',
+      ),
+    ).map(
+      (row) =>
+        row.querySelectorAll(
+          '.usage-model-name, .usage-model-figure, .usage-model-blank',
+        ).length,
+    );
+
+    expect(cellsPerRow).toEqual([4, 4]);
+
+    // And the blank is on the row that earned it — the one with no cache read
+    // — not on both, which would mean the ⚡ figure had stopped rendering.
+    const rows = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll(
+        '.usage-model-row',
+      ),
+    );
+    expect(rows[0].querySelector('.usage-model-blank')).toBeNull();
+    expect(rows[1].querySelector('.usage-model-blank')).not.toBeNull();
+  });
+
   it('omits the whole block — rule included — for a team that has run no model', async () => {
     // `teamByModel$` drops agents with no `lastModelName`, so an untouched team
     // yields []. Drawing the separator over an empty list would announce a

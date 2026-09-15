@@ -1,13 +1,17 @@
 <!--
   Monogram, name over role, status dot — and a trailing action.
 
-  TWO CONTROLS, NOT ONE CONTROL DOING TWO THINGS. The row already means "show me
-  this member in the Member tab" and has meant it since Epic 56. Reading the
-  member's conversation is a different destination — a dialog over the whole
-  view — and hanging it on the same click would switch the tab behind and then
-  cover it, so the user would land somewhere they never asked for as soon as
-  they dismissed the dialog. A second affordance says which is which, and keeps
-  the first one doing exactly what it did.
+  TWO CONTROLS, NOT ONE CONTROL DOING TWO THINGS. Hanging both destinations on
+  one click would switch the tab behind and then cover it with a dialog, so the
+  user would land somewhere they never asked for the moment they dismissed it.
+  A second affordance says which is which.
+
+  THE ROW OPENS THE READER; THE BUBBLE GOES TO THE MEMBER TAB. The two were the
+  other way round until the list grew to a full roster of specialists, and at
+  that size the weighting was backwards: reading what a member said is the thing
+  you want from a list of members, and it was the one behind the 14px target,
+  while the tab switch — the cheaper, more reversible move — had the whole row.
+  A destination that costs a dismissal belongs on the control you cannot miss.
 
   The action button is a SIBLING of the card, not a child of it: a `<button>`
   inside a `<button>` is invalid, and the browsers that tolerate it disagree
@@ -33,7 +37,9 @@
     [class.supervisor]="member.kind === 'supervisor'"
     [class.worker]="member.kind === 'worker'"
     [style.--akg-depth]="member.depth"
-    (click)="onSelect()"
+    [attr.aria-haspopup]="'dialog'"
+    [attr.aria-label]="'inspector.readConversationOf' | translate : { agent: member.label }"
+    (click)="onRead()"
   >
     <!-- Decorative: the name beside it is what a screen reader should read, and
          an initial announced on its own is a letter with no meaning. -->
@@ -57,11 +63,13 @@
   <app-icon-button
     class="member-read"
     size="sm"
-    [label]="'inspector.readConversation' | translate"
-    (pressed)="onRead()"
+    [label]="'inspector.openMemberTab' | translate"
+    (pressed)="onSelect()"
   >
-    <!-- A speech bubble: the reader shows what this member said, so the mark is
-         the transcript rather than the member. -->
+    <!-- A speech bubble: the Member tab is this agent's own chat, so the mark is
+         a conversation rather than the member. It stays the same glyph it was
+         when the two controls traded places — what changed is which pane it
+         opens, not what it is a picture of. -->
     <svg
       width="14"
       height="14"

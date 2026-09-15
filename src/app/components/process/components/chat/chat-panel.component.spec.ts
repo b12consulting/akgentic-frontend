@@ -532,80 +532,7 @@ describe('ChatPanelComponent', () => {
   // observable over `MessageLogService.log$`; `chatFold` owns the
   // classification. Coverage moved to `chat.service.spec.ts`.
 
-  describe('bubble selection (Story 4-11 — routing retired)', () => {
-    it('onBubbleClicked should update selectedMessageId only (no chatService call)', () => {
-      const chatMsg: ChatMessage = {
-        id: 'msg-reply',
-        message_id: 'msg-reply',
-        parent_id: null,
-        content: 'test',
-        sender: makeAddress({ name: '@Manager', agent_id: 'mgr-1' }),
-        recipient: makeAddress({ name: '@Human' }),
-        timestamp: new Date(),
-        rule: 2,
-        alignment: 'left',
-        color: '#9ebbcb',
-        collapsed: false,
-        label: 'Manager',
-      };
-      const svc = TestBed.inject(ChatService) as any;
-      // The retired API must not be present on the service mock.
-      expect(svc.setReplyContext).toBeUndefined();
-      expect(svc.replyContext$).toBeUndefined();
-
-      component.onBubbleClicked(chatMsg);
-      expect(component.selectedMessageId).toBe('msg-reply');
-    });
-
-    it('onBackgroundClick should clear selectedMessageId locally', () => {
-      component.selectedMessageId = 'msg-abc';
-      component.onBackgroundClick();
-      expect(component.selectedMessageId).toBeNull();
-    });
-
-    it('onEscapePress should clear selectedMessageId locally', () => {
-      component.selectedMessageId = 'msg-abc';
-      component.onEscapePress();
-      expect(component.selectedMessageId).toBeNull();
-    });
-
-    it('clicking different bubble should switch selectedMessageId', () => {
-      const msg1: ChatMessage = {
-        id: 'msg-1',
-        message_id: 'msg-1',
-        parent_id: null,
-        content: 'first',
-        sender: makeAddress({ name: '@Agent1' }),
-        recipient: makeAddress({ name: '@Human' }),
-        timestamp: new Date(),
-        rule: 2,
-        alignment: 'left',
-        color: '#9ebbcb',
-        collapsed: false,
-        label: 'Agent1',
-      };
-      const msg2: ChatMessage = {
-        id: 'msg-2',
-        message_id: 'msg-2',
-        parent_id: null,
-        content: 'second',
-        sender: makeAddress({ name: '@Agent2' }),
-        recipient: makeAddress({ name: '@Human' }),
-        timestamp: new Date(),
-        rule: 2,
-        alignment: 'left',
-        color: '#9ebbcb',
-        collapsed: false,
-        label: 'Agent2',
-      };
-
-      component.onBubbleClicked(msg1);
-      expect(component.selectedMessageId).toBe('msg-1');
-
-      component.onBubbleClicked(msg2);
-      expect(component.selectedMessageId).toBe('msg-2');
-    });
-
+  describe('the rule-3 request modal', () => {
     it('onRule3Clicked should open modal with pending messages', () => {
       // Set up a Rule 3 message
       const rule3Msg = makeSentMessage(
@@ -1160,6 +1087,210 @@ describe('ChatPanelComponent', () => {
       });
       component.onToggleCollapse(clear);
       expect(clear.collapsed).toBe(true);
+    });
+  });
+
+  /**
+   * THE SPACING, MEASURED RATHER THAN DESCRIBED.
+   *
+   * A turn is a paragraph and wants air; a run of folded system notices is one
+   * agent working and wants none. The rule that says so lives in the panel's
+   * stylesheet and depends on a class the CHILD puts on its own host, so the
+   * only place the two halves meet is the rendered DOM. Asserting the computed
+   * style is what makes this a test of the surface rather than of either file.
+   */
+  /**
+   * A NOTICE IS ONE ROW IN EITHER STATE — the same row, with more of its text.
+   *
+   * It used to SWAP for a full bubble, and the duplicate-row defect these specs
+   * were written for came out of that: two renderings gated on one field, read
+   * through two mechanisms with different staleness, so both appeared at once.
+   * The swap is gone. Opening a notification lets its sentence finish; nothing
+   * enters or leaves the layout, so there is no second row to get out of step.
+   */
+  describe('expanding a folded notice', () => {
+    function rows(): { collapsed: number; expanded: number } {
+      const el = fixture.nativeElement as HTMLElement;
+      return {
+        collapsed: el.querySelectorAll('.collapsed-notice').length,
+        expanded: el.querySelectorAll('.message').length,
+      };
+    }
+
+    function oneNotice(): void {
+      messagesSubject.next([
+        makeSentMessage(
+          { name: '@Manager', role: 'Manager' },
+          { name: '@Assistant', role: 'Assistant' },
+          'Done — I sent @Human a joke directly.',
+          'n-1',
+        ),
+      ]);
+      fixture.detectChanges();
+    }
+
+    function noticeText(): string {
+      const el = fixture.nativeElement as HTMLElement;
+      return (
+        el.querySelector('.collapsed-notice .collapsed-preview')?.textContent ??
+        ''
+      ).trim();
+    }
+
+    it('shows the folded line and nothing else while collapsed', () => {
+      oneNotice();
+
+      expect(component.chatMessages[0].rule).toBe(4);
+      expect(rows()).toEqual({ collapsed: 1, expanded: 0 });
+    });
+
+    /**
+     * THE SAME ROW, WITH MORE OF ITS TEXT. Not a second row, and emphatically
+     * not both: the defect this was written for put the folded line and a full
+     * bubble on screen together, and the shape that made that possible — two
+     * renderings for one message — is what is gone.
+     */
+    it('opens the text in place, still as one row', () => {
+      oneNotice();
+
+      component.onToggleCollapse(component.chatMessages[0]);
+      fixture.detectChanges();
+
+      expect(rows()).toEqual({ collapsed: 1, expanded: 0 });
+      expect(noticeText()).toContain('joke directly');
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector(
+          '.notice-text.expanded',
+        ),
+      ).not.toBeNull();
+    });
+
+    it('clips it again when closed', () => {
+      oneNotice();
+
+      component.onToggleCollapse(component.chatMessages[0]);
+      fixture.detectChanges();
+      component.onToggleCollapse(component.chatMessages[0]);
+      fixture.detectChanges();
+
+      expect(rows()).toEqual({ collapsed: 1, expanded: 0 });
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector(
+          '.notice-text.expanded',
+        ),
+      ).toBeNull();
+    });
+  });
+
+  describe('the space between rows', () => {
+    function hosts(): HTMLElement[] {
+      return Array.from(
+        (fixture.nativeElement as HTMLElement).querySelectorAll(
+          '.message-list > app-chat-message',
+        ),
+      );
+    }
+
+    function marginTopOf(el: HTMLElement): number {
+      return parseFloat(getComputedStyle(el).marginTop);
+    }
+
+    /** Two agent-to-agent messages, which the classifier folds as rule 4. */
+    function twoNotices(): void {
+      messagesSubject.next([
+        makeSentMessage(
+          { name: '#NotificationTool', role: 'Tool' },
+          { name: '@Manager', role: 'Manager' },
+          'first notice',
+          'n-1',
+        ),
+        makeSentMessage(
+          { name: '#NotificationTool', role: 'Tool' },
+          { name: '@Manager', role: 'Manager' },
+          'second notice',
+          'n-2',
+        ),
+      ]);
+      fixture.detectChanges();
+    }
+
+    it('folds two notices as quiet lines', () => {
+      twoNotices();
+
+      expect(component.chatMessages.map((m) => m.rule)).toEqual([4, 4]);
+      expect(component.chatMessages.every((m) => m.collapsed)).toBeTrue();
+      expect(hosts().length).toBe(2);
+      expect(hosts()[1].classList.contains('quiet-line')).toBeTrue();
+    });
+
+    it('runs two quiet lines together', () => {
+      twoNotices();
+
+      // The first keeps whatever separates it from what came before; only the
+      // SECOND closes up against its neighbour.
+      expect(marginTopOf(hosts()[1])).toBe(0);
+    });
+
+    /**
+     * THE FOLD IS A BOUNDARY, NOT A QUIET LINE — and it looks like one, which
+     * is why this is asserted rather than left to read off the code.
+     *
+     * The rows that run together are what an agent's work PRODUCED: a string of
+     * notices reporting one piece of work. The fold is the work itself, and it
+     * is what a reader uses to tell where one agent's turn ends and the next
+     * begins. Closing the notices up against it merges the two and loses
+     * exactly the boundary the fold is there to draw — so it keeps a full turn's
+     * gap on both sides while the notices beneath it stack.
+     */
+    it('keeps a full gap under the fold, and stacks the notices beneath it', () => {
+      const turn = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'go on then',
+        'm-1',
+      );
+      turn.timestamp = '2026-04-12T10:00:00Z';
+      const notice = makeSentMessage(
+        { name: '#NotificationTool', role: 'Tool' },
+        { name: '@Manager', role: 'Manager' },
+        'a notice',
+        'n-1',
+      );
+      notice.timestamp = '2026-04-12T10:00:10Z';
+
+      messagesSubject.next([turn, notice]);
+      (TestBed.inject(ChatService) as any).thinkingAgents$.next([
+        {
+          agent_id: 'a1',
+          agent_name: '@Manager',
+          start_time: new Date('2026-04-12T10:00:05Z'),
+          tools: [],
+          // Anchored on the user's own turn, so the run is in scope for the
+          // main transcript on its merits rather than on the fail-open.
+          anchor_message_id: 'inner-m-1',
+          final: true,
+        },
+      ]);
+      fixture.detectChanges();
+
+      const rows = Array.from(
+        (fixture.nativeElement as HTMLElement).querySelectorAll(
+          '.message-list > app-chat-message, .message-list > app-chat-thinking',
+        ),
+      ) as HTMLElement[];
+
+      expect(rows.map((r) => r.tagName.toLowerCase())).toEqual([
+        'app-chat-message',
+        'app-chat-thinking',
+        'app-chat-message',
+      ]);
+
+      // The fold is NOT a quiet line, however much it looks like one.
+      expect(rows[1].classList.contains('quiet-line')).toBeFalse();
+      expect(marginTopOf(rows[1])).toBeGreaterThan(0);
+
+      // And the notice under it keeps the boundary the fold draws.
+      expect(marginTopOf(rows[2])).toBeGreaterThan(0);
     });
   });
 

@@ -27,7 +27,6 @@
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: var(--akg-turn-gap);
     padding: var(--akg-conversation-padding-top) var(--akg-conversation-padding-x)
       var(--akg-conversation-padding-bottom);
 
@@ -36,6 +35,41 @@
       max-width: var(--akg-conversation-max-width);
       margin-left: auto;
       margin-right: auto;
+    }
+
+    /*
+     * SPACING BELONGS TO THE PAIR, so it is written between rows rather than
+     * as a `gap` on the list.
+     *
+     * A flex `gap` is one value for every pair, and the two kinds of row on
+     * this surface want different things. A turn is a paragraph and wants air.
+     * A folded system notice is one line saying something happened, and a run
+     * of them is ONE agent working — at paragraph spacing they read as a list
+     * of unrelated events.
+     *
+     * Stating it between siblings lets both cases be a plain declaration: this
+     * is the space after a row, and the next rule overrides it for the one pair
+     * that wants less. With `gap` the second rule could only have been a
+     * negative margin cancelling the first.
+     */
+    > * + * {
+      margin-top: var(--akg-turn-gap);
+    }
+
+    /*
+     * Two quiet rows run together.
+     *
+     * A PAIR rule, not a property of the row: the first quiet row after a turn
+     * keeps its full separation from the conversation, and only a second one
+     * closes up against it.
+     *
+     * `.quiet-line` is set by `ChatMessageComponent` on its own host — see
+     * `isQuietLine` there. On the host because that is the element this list
+     * has as a child; the row's own class lives inside the child's style
+     * encapsulation, where a selector written here cannot reach it.
+     */
+    > .quiet-line + .quiet-line {
+      margin-top: 0;
     }
   }
 

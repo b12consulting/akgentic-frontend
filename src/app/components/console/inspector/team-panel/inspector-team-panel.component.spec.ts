@@ -241,7 +241,8 @@ describe('InspectorTeamPanelComponent', () => {
       const seen: string[] = [];
       fixture.componentInstance.memberSelected.subscribe((id) => seen.push(id));
 
-      host().querySelector<HTMLButtonElement>('.member-card')?.click();
+      // The ICON carries the selection now; the row opens the reader.
+      host().querySelector<HTMLButtonElement>('.member-read button')?.click();
 
       expect(seen).toEqual(['boss']);
     });
@@ -256,10 +257,11 @@ describe('InspectorTeamPanelComponent', () => {
   // quietly rerouted into it.
   // ==========================================================================
   describe('opening the reader', () => {
+    /** THE ROW is the read action now; the icon carries the tab switch. */
     function readAction(): HTMLButtonElement {
-      const el = host().querySelector<HTMLButtonElement>('.member-read button');
+      const el = host().querySelector<HTMLButtonElement>('.member-card');
       if (el === null) {
-        throw new Error('the read action did not render');
+        throw new Error('the member row did not render');
       }
       return el;
     }
@@ -291,10 +293,10 @@ describe('InspectorTeamPanelComponent', () => {
       expect(selected).toEqual([]);
     });
 
-    it('leaves the row click alone: it selects and asks for no reader', async () => {
-      // The Epic-56 path is the one thing this feature must not cost. A row
-      // that started opening a dialog would remove the only click-through to
-      // the Member tab.
+    it('leaves the icon alone: it selects and asks for no reader', async () => {
+      // The Epic-56 path is the one thing this change must not cost. It moved
+      // from the row to the icon; what must not happen is it disappearing, or
+      // both destinations firing from one press.
       await setup([node({ name: 'boss', actorName: 'Manager-Supervisor-0' })]);
       const asked: AgentRef[] = [];
       const selected: string[] = [];
@@ -303,7 +305,7 @@ describe('InspectorTeamPanelComponent', () => {
         selected.push(id),
       );
 
-      host().querySelector<HTMLButtonElement>('.member-card')?.click();
+      host().querySelector<HTMLButtonElement>('.member-read button')?.click();
 
       expect(selected).toEqual(['boss']);
       expect(asked).toEqual([]);
@@ -317,11 +319,9 @@ describe('InspectorTeamPanelComponent', () => {
       const asked: AgentRef[] = [];
       TestBed.inject(AgentReaderService).open$.subscribe((a) => asked.push(a));
 
-      const actions = host().querySelectorAll<HTMLButtonElement>(
-        '.member-read button',
-      );
-      expect(actions.length).toBe(2);
-      actions[1].click();
+      const rows = host().querySelectorAll<HTMLButtonElement>('.member-card');
+      expect(rows.length).toBe(2);
+      rows[1].click();
 
       expect(asked).toEqual([
         { agentId: 'w1', actorName: 'Alpha-Worker-0' },

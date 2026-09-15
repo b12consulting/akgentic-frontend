@@ -90,9 +90,7 @@
         [disabled]="!canChooseSender"
         [ariaLabel]="'chat.input.sendAs' | translate"
         [placeholder]="'chat.input.sendAsSelf' | translate"
-        [showClear]="canChooseSender"
         size="small"
-        appendTo="body"
       ></p-dropdown>
     </div>
 
@@ -115,7 +113,6 @@
         optionValue="value"
         [ariaLabel]="'chat.input.sendTo' | translate"
         [placeholder]="'chat.input.allSupervisors' | translate"
-        [showClear]="true"
         size="small"
         display="chip"
         appendTo="body"

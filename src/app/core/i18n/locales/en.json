@@ -73,6 +73,7 @@
     "newMessages": "New messages",
     "messages": "Messages",
     "reply": "Reply",
+    "sentTo": "Sent to {{agent}}",
     "messageForYou": "Message for you",
     "teamMessage": "Team message",
     "input": {
@@ -281,7 +282,9 @@
     "tokensIn": "Tokens in",
     "cached": "Cached",
     "tokensOut": "Tokens out",
-    "readConversation": "Read the conversation"
+    "readConversation": "Read the conversation",
+    "readConversationOf": "Read {{agent}}'s conversation",
+    "openMemberTab": "Open in the Member tab"
   },
   "login": {
     "heading": "Sign in",

@@ -20,12 +20,30 @@
    * to be. Muted type carries it, and a hover tint supplies the affordance the
    * border was doing by accident.
    */
-  /* Indented into the avatar gutter so the work an agent did lines up under
-     the agent that did it — one spine down the transcript instead of two
-     margins. A card rather than a bare row, so the fold is legible as one
-     object when it is open and holding four steps. */
-  margin-left: var(--akg-avatar-gutter);
-  padding: 10px 13px;
+  /*
+   * ON THE TRANSCRIPT'S SPINE — its TEXT, not its border.
+   *
+   * Every row indents its content to `--akg-avatar-gutter`, so the work an
+   * agent did lines up under the agent that did it: one spine down the
+   * transcript instead of two margins. The folded notice does it with
+   * `padding-left`, so its glyph sits exactly on the gutter.
+   *
+   * This row is a CARD — it has to be, so the fold reads as one object when it
+   * is open and holding four steps — and a card has padding of its own. Putting
+   * its MARGIN on the gutter therefore pushed its contents a further 13px right
+   * and the fold's text sat off the column every other row is on.
+   *
+   * Pulling the card back by exactly its own inset puts the content box where
+   * the gutter is and leaves the card's edge hanging to the left of it, which
+   * is the correct side for it to hang: the text is what a reader aligns on,
+   * and the border is chrome around it.
+   *
+   * The inset is the SHARED `--akg-fold-inset-x`, which the folded notification
+ * reads too — the two hover grounds have to be the same width, and they were
+ * not when each row carried its own copy of the number.
+   */
+  margin-left: calc(var(--akg-avatar-gutter) - var(--akg-fold-inset-x));
+  padding: 10px var(--akg-fold-inset-x);
   border: 1px solid var(--akg-hairline);
   border-radius: 12px;
   background: var(--akg-surface-muted);
@@ -119,6 +137,9 @@
  */
 .activity-toggle {
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -165,7 +186,10 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  animation: activity-reveal 140ms ease-out;
+  /* NO `animation` HERE. The list's reveal is `stepsReveal` in the component,
+     which animates height as well as opacity and plays in BOTH directions — a
+     keyframe on enter could only ever fade the list in, and stacked on top of
+     the trigger it ran a second, shorter motion against it. */
 }
 
 /*
@@ -286,17 +310,6 @@
   }
 }
 
-@keyframes activity-reveal {
-  from {
-    opacity: 0;
-    transform: translateY(-2px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
 /* Motion here is decoration — the pulse says "working", which the text already
  * says. Honour the OS preference and drop it. */
 @media (prefers-reduced-motion: reduce) {
@@ -311,4 +324,11 @@
   .activity-toggle {
     transition: none;
   }
+}
+
+/* The caret beside the toggle's words. Same quiet step and same size as the
+   transcript's other fold carets, so the three read as one control. */
+.activity-caret {
+  font-size: 0.7rem;
+  color: var(--akg-glyph-quiet);
 }

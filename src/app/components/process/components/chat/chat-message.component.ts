@@ -2,6 +2,7 @@ import { CommonModule, DatePipe } from '@angular/common';
 import {
   Component,
   computed,
+  HostBinding,
   EventEmitter,
   inject,
   input,
@@ -11,7 +12,11 @@ import { ButtonModule } from 'primeng/button';
 import { TranslatePipe } from '@ngx-translate/core';
 import { MarkdownModule } from 'ngx-markdown';
 import { ConfigService } from '../../../../core/config/config.service';
-import { buildPreview, ChatMessage } from '../../selectors/chat-message.model';
+import {
+  buildPreview,
+  ChatMessage,
+  ENTRY_POINT_NAME,
+} from '../../selectors/chat-message.model';
 import { isRateable } from '../../selectors/rateable';
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 import { FeedbackComponent } from './feedback.component';
@@ -82,10 +87,8 @@ const MARKDOWN_MARKERS = /[#*`>[\]]|^\s*[-+]\s/;
 export class ChatMessageComponent {
   @Output() messageSelected = new EventEmitter<ChatMessage>();
   @Output() toggleCollapse = new EventEmitter<ChatMessage>();
-  @Output() bubbleClicked = new EventEmitter<ChatMessage>();
   @Output() rule3Clicked = new EventEmitter<ChatMessage>();
   message = input.required<ChatMessage>();
-  selected = input<boolean>(false);
   /**
    * May a turn be rated HERE?
    *
@@ -122,6 +125,56 @@ export class ChatMessageComponent {
    * longer means "say nothing" — it means "claim this was answered".
    */
   notification = input<boolean>(false);
+
+  /**
+   * The agent a message goes to when the user names nobody.
+   *
+   * Passed IN rather than derived here: it is a fact about the team's shape,
+   * which lives on the graph, and a turn has no business holding the graph to
+   * answer a question about itself. The panel resolves it once per emission
+   * through the same `defaultRecipientName` the composer routes on.
+   *
+   * Null while the roster is still empty, which reads as "no default known" and
+   * makes `ownRecipient` fall silent rather than guess.
+   */
+  defaultRecipient = input<string | null>(null);
+
+  /**
+   * WHO THE USER SENT THIS TO, when that is worth saying — otherwise null.
+   *
+   * Two identical "Hello" bubbles three minutes apart went to two different
+   * agents and rendered the same, so the only way to tell them apart was to
+   * read the REPLY underneath and reason backwards. That inference is not just
+   * awkward, it is wrong exactly when the team does the interesting thing: ask
+   * @Manager, watch @Manager delegate, and the reply carries @Expert.
+   *
+   * NOT ON EVERY TURN. The composer's "Send to" is optional, and an empty one
+   * routes to the entry supervisor — so on most turns the user chose nobody and
+   * naming the recipient would caption an ordinary message with "nothing
+   * unusual happened here". A label that appears on everything is a label
+   * nobody reads by the fourth turn, which would cost exactly the turns this
+   * exists for. So: shown when the recipient is not the default, silent when
+   * it is.
+   *
+   * A broadcast needs no special case — the composer sends one message per
+   * recipient, so each bubble already carries a single, real addressee.
+   */
+  readonly ownRecipient = computed<string | null>(() => {
+    const msg = this.message();
+    if (msg.rule !== 1) return null;
+
+    const recipient = msg.recipient?.name;
+    if (!recipient || recipient === ENTRY_POINT_NAME) return null;
+
+    // NO ROSTER YET IS NOT "NOT THE DEFAULT". Until the graph arrives there is
+    // nothing to compare against, and treating unknown as different would
+    // caption every turn on the surface for as long as startup takes — the one
+    // outcome this whole rule exists to avoid.
+    const fallback = this.defaultRecipient();
+    if (fallback === null || recipient === fallback) return null;
+
+    return makeAgentNameUserFriendly(recipient);
+  });
 
   private readonly config = inject(ConfigService);
 
@@ -179,7 +232,6 @@ export class ChatMessageComponent {
     this.message().rule === 3 ? 'chat.messageForYou' : 'chat.teamMessage',
   );
 
-  readonly preview = computed(() => buildPreview(this.message().content));
 
   /**
    * The two folds, told apart once.
@@ -190,14 +242,77 @@ export class ChatMessageComponent {
    * classifier's fall-through, i.e. ambient traffic nobody is waiting on. The
    * predicates live here rather than in two template expressions so the pair
    * stays mutually exclusive by construction: a message cannot render as both.
+   *
+   * METHODS, NOT `computed()`, AND THAT IS LOAD-BEARING.
+   *
+   * `collapsed` is TOGGLED IN PLACE by the panel — `chatMsg.collapsed =
+   * !chatMsg.collapsed` — so the object's identity never changes. A signal
+   * input does not notify on a mutated property, so a `computed()` over it is
+   * memoised on the value `collapsed` had at first render and never
+   * recalculates.
+   *
+   * That made opening a fold show BOTH rows. The expanded bubble's `*ngIf`
+   * reads `message().collapsed` directly, and a template expression is
+   * re-evaluated on every change-detection pass whether or not a signal fired —
+   * so the bubble appeared while the folded line, gated on the stale computed,
+   * stayed exactly where it was. The two halves of a pair that is supposed to
+   * be mutually exclusive were reading the same field through two mechanisms
+   * with different staleness.
+   *
+   * A method is re-evaluated per pass like the template expression beside it,
+   * which is what makes the pair exclusive again. The deeper fix is for the
+   * panel to replace the message rather than mutate it; until it does, nothing
+   * in this component may memoise anything derived from `collapsed`.
    */
-  readonly isRequestFold = computed(
-    () => this.message().rule === 3 && this.message().collapsed,
-  );
+  isRequestFold(): boolean {
+    return this.message().rule === 3 && this.message().collapsed;
+  }
 
-  readonly isNoticeFold = computed(
-    () => this.message().rule === 4 && this.message().collapsed,
-  );
+  /**
+   * RULE 4 IS ALWAYS THIS ROW — open or shut.
+   *
+   * It used to SWAP: the folded line was replaced by a full bubble with an
+   * avatar, a name pill and a markdown body. Two rows for one message, each a
+   * different shape and a different height, which is what every attempt at
+   * animating the change ran aground on — during a swap both are in flow, so
+   * their heights add, and the transcript either dipped, bulged, or jumped.
+   *
+   * A notification does not need a second shape. Everything the bubble added is
+   * already on this row except the words themselves, and the words are only
+   * missing because they are ELLIPSED. So opening it reveals the text in place:
+   * same row, same indent, same subject and verb, same clock. The only thing
+   * that changes is how much of the sentence is shown, and the row grows by
+   * however many lines that takes.
+   *
+   * `collapsed` therefore no longer selects between two renderings — it selects
+   * between clipped and whole — the row renders the WHOLE message either way
+   * and `.notice-text` clips it by height.
+   */
+  isNoticeFold(): boolean {
+    return this.message().rule === 4;
+  }
+
+
+  /**
+   * A QUIET ONE-LINE ROW, announced on the host so the list can space it.
+   *
+   * The transcript's gap is uniform — `gap` cannot tell a paragraph from a
+   * one-liner — and a run of folded notices at turn spacing reads as a list of
+   * unrelated events rather than as one agent working. The list closes
+   * consecutive quiet rows up to nothing (`.quiet-line + .quiet-line`), and
+   * that rule needs to know which rows are which.
+   *
+   * ON THE HOST, and that is the point rather than an implementation detail.
+   * The class the panel matches has to be on the element the panel actually
+   * has as a child, which is `<app-chat-message>` — `.collapsed-notice` is
+   * inside this component's encapsulation, where a selector written in the
+   * panel's stylesheet cannot reach it without `::ng-deep`. The component that
+   * knows its own rule states the fact; the list decides what to do about it.
+   */
+  @HostBinding('class.quiet-line') get isQuietLine(): boolean {
+    return this.isNoticeFold();
+  }
+
 
   /**
    * The two parties, separately.
@@ -336,21 +451,30 @@ export class ChatMessageComponent {
     }
   }
 
-  onBubbleClick(event: Event): void {
-    event.stopPropagation();
-    const msg = this.message();
-    // Rule 5 (welcome) is behaviourally inert (ADR-011 Decision 3).
-    if (msg.rule === 5) return;
-    switch (msg.rule) {
-      case 1:
-      case 2:
-        this.bubbleClicked.emit(msg);
-        break;
-      case 3:
-      case 4:
-        this.onToggleCollapse();
-        break;
-    }
+  /**
+   * Whether this turn can be clicked shut, which is the only thing clicking a
+   * turn has ever usefully done.
+   *
+   * Rules 3 and 4 are the only turns that COLLAPSE. Rules 1 and 2 are the
+   * conversation itself — an agent's answer and the user's own words — and
+   * there is nothing to open or close about them.
+   *
+   * IT DRIVES THE CURSOR, and that is the point of it existing separately from
+   * the guard inside `onToggleCollapse`. Rules 1 and 2 used to answer a click
+   * here by emitting `bubbleClicked`, which the panel recorded as
+   * `selectedMessageId`, which drew `border: 2px solid var(--primary-color)` —
+   * a custom property this application defines nowhere, so the declaration was
+   * invalid and nothing appeared. The click was already harmless; what the
+   * user saw was the POINTER, promising a result that did not exist.
+   *
+   * The rest of that chain — the output, the panel's state, the
+   * background-click and Escape handlers that cleared it, the CSS rule — is
+   * deleted rather than left dormant, so nobody has to work out later which
+   * half of a selection feature was the real one.
+   */
+  isCollapsible(): boolean {
+    const rule = this.message().rule;
+    return rule === 3 || rule === 4;
   }
 
   onOpenModal(event: Event): void {

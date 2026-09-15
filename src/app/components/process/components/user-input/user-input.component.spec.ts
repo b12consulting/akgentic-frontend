@@ -839,13 +839,29 @@ describe('ProcessUserInputComponent', () => {
       fixture.detectChanges();
     });
 
-    it('renders p-dropdown with appendTo="body" (AC #14)', () => {
+    /**
+     * AC #14 REVISED: the Send-as panel is NOT appended to the body.
+     *
+     * The requirement it served — the panel must not open off the bottom of the
+     * screen — is unchanged. Its stated reasoning was not: "PrimeNG already
+     * flips a body-appended overlay above its trigger when there is no room
+     * below, which is every time for a composer pinned to the bottom". That is
+     * only true when the list is TALL. `DomHandler.alignOverlay` flips on
+     * whether the panel fits, so "Send to" with six agents flipped and
+     * "Send as" with two did not — it opened downward off the end of the page,
+     * which is the defect AC #14 existed to prevent.
+     *
+     * PrimeNG offers no way to force a side, and a panel in `<body>` is
+     * positioned in page coordinates where no rule of ours can reach it. So the
+     * control keeps its overlay in place and the stylesheet positions it above
+     * the pill. Un-appending is safe for THIS pill specifically: the clipping
+     * risk is `.composer-pill--grow`'s `overflow: hidden`, and that is the
+     * other one.
+     */
+    it('keeps the Send-as overlay in place so it can be positioned above (AC #14, revised)', () => {
       const dropdown = fixture.nativeElement.querySelector('p-dropdown');
       expect(dropdown).not.toBeNull();
-      // In Angular dev-mode runtime, string inputs appear as DOM attributes.
-      // `appendTo` is bound as a literal string on the template, so it
-      // surfaces as an attribute on the <p-dropdown> element.
-      expect(dropdown.getAttribute('appendTo')).toBe('body');
+      expect(dropdown.getAttribute('appendTo')).toBeNull();
     });
 
     // UPDATED, deliberately. This asserted `[panelStyleClass]="send-as-panel-up"`,
@@ -1084,6 +1100,84 @@ describe('ProcessUserInputComponent', () => {
       const at = component.mentionConfig.mentions.find((m) => m.triggerChar === '@');
       expect(at!.mentionSelect).toBe(component.selectAgent);
       expect(at!.allowSpace).toBeTrue();
+    });
+
+    /**
+     * THE CONFIG OBJECT MUST NOT CHURN.
+     *
+     * `[mentionConfig]` is an Angular input, so the directive's `ngOnChanges`
+     * fires on a new object IDENTITY — and `addConfig` ends by calling
+     * `updateSearchList()` when the open dropdown's trigger matches. A getter
+     * that rebuilt every change-detection pass therefore rebuilt the open
+     * list's items and reset its scroll on every pass; scrolling the dropdown
+     * is itself zone activity, so it triggered the pass that undid it. The list
+     * flickered and could not reach its end.
+     *
+     * Asserted as reference equality rather than deep equality on purpose: the
+     * contents were never wrong, and a `toEqual` here would have passed
+     * throughout the bug.
+     */
+    describe('mentionConfig identity', () => {
+      it('hands back the SAME object while nothing it depends on has changed', () => {
+        component.userInput = '';
+        expect(component.mentionConfig).toBe(component.mentionConfig);
+      });
+
+      it('rebuilds when the armed state changes, and not otherwise', () => {
+        component.userInput = '';
+        const armed = component.mentionConfig;
+
+        component.userInput = 'a sentence';
+        const disarmed = component.mentionConfig;
+        expect(disarmed).not.toBe(armed);
+
+        component.userInput = 'a sentence, still';
+        expect(component.mentionConfig)
+          .withContext('still disarmed — nothing to rebuild for')
+          .toBe(disarmed);
+      });
+    });
+
+    /**
+     * A `/` OPENS THE COMMAND LIST ONLY AS THE FIRST CHARACTER.
+     *
+     * `angular-mentions` has no notion of position — it opens on any occurrence
+     * of a trigger char — so a URL or an ordinary `and/or` popped the command
+     * menu mid-sentence. There is no config flag for it, so the entry is
+     * withheld from the config when it must not fire, and these specs pin both
+     * halves: that it is there when it should be, and gone when it should not.
+     */
+    describe('the / trigger is armed only at the start of a message', () => {
+      function triggers(): (string | undefined)[] {
+        return component.mentionConfig.mentions.map((m) => m.triggerChar);
+      }
+
+      it('is armed on an empty message — the next character lands at position 0', () => {
+        component.userInput = '';
+        expect(triggers()).toContain('/');
+      });
+
+      it('stays armed while the command name is being typed', () => {
+        // Or the list would shut on the first keystroke after the slash.
+        component.userInput = '/cle';
+        expect(triggers()).toContain('/');
+      });
+
+      it('is disarmed mid-sentence, so a URL cannot open it', () => {
+        component.userInput = 'see http://example.com';
+        expect(triggers()).not.toContain('/');
+      });
+
+      it('is disarmed once the user is into the arguments', () => {
+        // A later slash there is part of what they are writing.
+        component.userInput = '/switch_model gpt-5';
+        expect(triggers()).not.toContain('/');
+      });
+
+      it('never disarms the @ trigger, which is for mid-sentence use', () => {
+        component.userInput = 'ask @Exp';
+        expect(triggers()).toContain('@');
+      });
     });
 
     it('AC-7: selectAgent behavior is unchanged (inserts friendly name + space)', () => {

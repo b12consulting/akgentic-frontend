@@ -219,6 +219,45 @@ describe('the hierarchy canvas', () => {
     expect(drawn().legend).toEqual(['Team 0']);
     expect(fixture.nativeElement.querySelector('.graph-empty')).toBeNull();
   });
+
+  /**
+   * A tool is not an actor. The pane answers "who is on this team and who
+   * talks to whom"; a tool is something an agent HOLDS, and it is listed as
+   * such on the Team panel. On the canvas it was noise the force layout could
+   * only push around, since an unused tool has no edge at all.
+   */
+  describe('tools', () => {
+    it('draws the actors and leaves the #-prefixed tools off', async () => {
+      nodes$.next([node('@Manager'), node('#VectorStore'), node('@Expert')]);
+      await quiesce();
+
+      expect(drawn().nodes).toBe(2);
+    });
+
+    it('drops an edge with a tool at either end rather than leaving it dangling', async () => {
+      nodes$.next([node('@Manager'), node('#VectorStore'), node('@Expert')]);
+      edges$.next([
+        { source: '@Manager', target: '@Expert' },
+        { source: '@Manager', target: '#VectorStore' },
+        { source: '#VectorStore', target: '@Expert' },
+      ]);
+      await quiesce();
+
+      expect(drawn().links).toBe(1);
+    });
+
+    /**
+     * FILTERED FOR THE CANVAS ONLY. `nodes` is also what the human-request
+     * panel reads and what the empty-state overlay counts — a team of one
+     * agent and six tools is not an empty team.
+     */
+    it('keeps every actor on the component, tools included', async () => {
+      nodes$.next([node('@Manager'), node('#VectorStore')]);
+      await quiesce();
+
+      expect(graph().nodes.length).toBe(2);
+    });
+  });
 });
 
 describe('the hierarchy canvas — how it is painted', () => {
@@ -309,22 +348,58 @@ describe('the hierarchy canvas — how it is painted', () => {
   });
 
   it('leaves the labels somewhere to go', () => {
-    // The clipped-label fix, stated as the two numbers that cause it. A label
-    // is drawn CENTRED on its node, so a node at the edge of the layout lane
-    // puts half a name past the edge of the canvas, where the canvas cuts it —
-    // `#KnowledgeGraphToo`, `#VectorSt`, `ert` for `@Expert`.
     const series = (graph().graphOptions as any).series[0];
-    expect(series.left)
-      .withContext('a gutter wide enough for half a label')
-      .toBeGreaterThanOrEqual(40);
-    expect(series.right).toBeGreaterThanOrEqual(40);
-    // `zoom` scales the laid-out graph about its centre AFTER the lane is
-    // computed, so anything above 1 multiplies the gutter straight back out.
-    expect(series.zoom).toBe(1);
-    // And the name that is still too long ends in an ellipsis rather than mid
-    // glyph. The full name is in the tooltip.
+
+    // TRUNCATION IS THE CLIPPED-LABEL FIX, and it is the only one available.
+    // A name too long for its lane ends in an ellipsis rather than mid glyph;
+    // the full name is in the tooltip.
     expect(series.label.overflow).toBe('truncate');
     expect(series.label.width).toBeGreaterThan(0);
+
+    // NOT LAYOUT INSETS. `left` / `right` / `bottom` stood here claiming to
+    // keep a node off the canvas edge so its label could not spill. echarts'
+    // force layout takes the rect for the gravity centre and the initial
+    // scatter and never clamps to it, so they held nothing back and only
+    // narrowed the simulation.
+    expect(series.left).toBeUndefined();
+    expect(series.right).toBeUndefined();
+    expect(series.bottom).toBeUndefined();
+
+    // `zoom` scales the laid-out graph about its centre after the fact and is
+    // the user's own control through roam. Spread belongs in the distance
+    // params, not here.
+    expect(series.zoom).toBe(1);
+  });
+
+  /**
+   * One inspector, one mark size. The shape already distinguishes the two
+   * graphs — a roundRect for an agent here, a circle for an entity there — and
+   * drawing one at 15px and the other at 26px made them read as two different
+   * applications a tab apart.
+   */
+  it('draws its nodes and captions at the knowledge graph\'s size', () => {
+    const series = (graph().graphOptions as any).series[0];
+    expect(series.symbolSize).toEqual([26, 26]);
+    expect(series.label.fontSize).toBe(12.5);
+    // The truncation cap is in pixels, so it moves with the font or it
+    // truncates more at the larger size rather than the same.
+    expect(series.label.width).toBe(120);
+  });
+
+  it('spreads the graph through the distance params, and runs the layout out', () => {
+    const force = (graph().graphOptions as any).series[0].force;
+
+    // `edgeLength` and `repulsion` are what echarts offers for "further
+    // apart". Repulsion rises as the SQUARE of the distance wanted: it falls
+    // off as `rep / d` where gravity rises as `gravity * d`.
+    expect(force.edgeLength).toEqual([150, 350]);
+    expect(force.repulsion).toBe(1125);
+
+    // THE ONE THAT MUST NOT BE SET. In `forceHelper` friction scales every
+    // displacement and decays 0.992 per step until `friction < 0.01` ends the
+    // run, so lowering it truncates the simulation rather than damping it. At
+    // 0.15 this layout stopped a long way short of relaxed.
+    expect(force.friction).toBeUndefined();
   });
 
   it('pulls disconnected nodes back toward the middle', () => {

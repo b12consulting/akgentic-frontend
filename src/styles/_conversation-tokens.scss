@@ -173,9 +173,18 @@
   // you tell who is speaking without reading a label.
   --akg-turn-radius: 18px 18px 6px 18px;
   --akg-turn-padding: 12px 16px;
-  // 26px between turns. The old 8px packed a conversation into a block; this is
-  // the single value most responsible for it reading as a transcript.
-  --akg-turn-gap: 26px;
+  // 18px between turns, down from 26px.
+  //
+  // 26px was the right ORDER for two turns — a turn is a paragraph and
+  // paragraphs want air — but it was measured against a transcript of speech,
+  // and it sits on top of each turn's own `--akg-turn-padding`.
+  //
+  // THE SPACE BETWEEN TWO TURNS, which is not the only spacing on the surface.
+  // A run of one-line system notices is one agent working rather than a list of
+  // unrelated events, and those close up against each other instead — see
+  // `.quiet-line + .quiet-line` in `chat-panel.component.scss`. Stating that
+  // exception there is what lets this value stay about turns.
+  --akg-turn-gap: 18px;
   --akg-turn-font-size: 14.5px;
   --akg-turn-line-height: 1.65;
 
@@ -183,6 +192,15 @@
   // has one spine instead of two margins.
   --akg-avatar-size: 28px;
   --akg-avatar-gutter: 42px;
+
+  // A FOLD'S OWN HORIZONTAL INSET, read by both rows that fold into the gutter.
+  //
+  // The activity fold and the folded notification each sit on the transcript's
+  // spine the same way: the box is pulled back by this much and pads it out
+  // again, so the CONTENT lands on `--akg-avatar-gutter` while the hover ground
+  // starts and ends on the same edges for both. Written twice, the two grounds
+  // were visibly different widths the moment one of the numbers moved.
+  --akg-fold-inset-x: 13px;
 
   // --- Collapsed rows and markers -----------------------------------------
   // The agent-to-agent lines the conversation folds away, and the synthetic

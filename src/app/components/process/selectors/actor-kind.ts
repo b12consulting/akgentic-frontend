@@ -30,3 +30,37 @@
 export function isToolActor(actorName: string | null | undefined): boolean {
   return String(actorName ?? '').startsWith('#');
 }
+
+/**
+ * The agent a message goes to when the user names nobody.
+ *
+ * The composer's "Send to" field is optional: leave it empty and the message
+ * routes to the team's entry supervisor — the agent whose parent is the
+ * `@Human` node — falling back to the first agent when that link is absent.
+ *
+ * SHARED, because two surfaces now ask it and they must not disagree. The
+ * composer asks in order to route; the transcript asks in order to decide
+ * whether a turn's recipient is worth NAMING — a recipient the user did not
+ * choose is not news, and labelling every turn with it trains the reader to
+ * stop seeing the label on the turns that matter. If the two definitions ever
+ * drift, the transcript starts captioning ordinary turns and falls silent on
+ * deliberate ones, which is precisely backwards.
+ *
+ * Returns the ACTOR NAME (`@Manager`), the same key the composer routes on.
+ */
+export function defaultRecipientName(
+  nodes: readonly { actorName: string; name: string; parentId?: string }[],
+  entryPointName: string,
+): string | null {
+  const candidates = nodes.filter(
+    (n) => n.actorName.startsWith('@') && n.actorName !== entryPointName,
+  );
+  if (candidates.length === 0) return null;
+
+  const entry = nodes.find((n) => n.actorName === entryPointName);
+  const child = entry
+    ? candidates.find((n) => n.parentId === entry.name)
+    : undefined;
+
+  return (child ?? candidates[0]).actorName;
+}

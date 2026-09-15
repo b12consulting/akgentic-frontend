@@ -361,8 +361,11 @@ describe('AgentConversationModalComponent', () => {
       component.onToggleCollapse(component.conversation()[0]);
       fixture.detectChanges();
 
-      expect(document.querySelector('.collapsed-line')).toBeNull();
-      expect(document.querySelector('.message-bubble')).not.toBeNull();
+      // THE SAME ROW, opened. A notification no longer swaps for a bubble — it
+      // lets its own sentence finish — so what proves it expanded is the text
+      // being unclipped, not a different element appearing.
+      expect(document.querySelector('.collapsed-line')).not.toBeNull();
+      expect(document.querySelector('.notice-text.expanded')).not.toBeNull();
       expect(folded.collapsed)
         .withContext('the shared message object must be untouched')
         .toBe(true);

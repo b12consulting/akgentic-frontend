@@ -67,6 +67,20 @@
                     ><span aria-hidden="true">⚡</span
                     >{{ model.totalCacheRead | tokenCount }}</span
                   >
+                } @else {
+                  <!--
+                    AN EMPTY CELL, NOT A MISSING ONE. A model that read no
+                    cache still shows no ⚡ figure — a permanent zero reads as
+                    a broken meter — but the figures are a shared grid across
+                    every model row, so a cell that is absent rather than
+                    blank lets the ↓ figure below it slide left into the cache
+                    column and takes the whole column out of line.
+
+                    Its own class, so it is not one of the `.usage-model-figure`
+                    cells a reader (or a test) counts, and `aria-hidden`
+                    because there is nothing here to announce.
+                  -->
+                  <span class="usage-model-blank" aria-hidden="true"></span>
                 }
                 <span
                   class="usage-model-figure"

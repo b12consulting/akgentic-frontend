@@ -68,6 +68,30 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/**
+ * The mark that tells a tool from an agent on the wire.
+ *
+ * `actorName` carries it: agents arrive as `@Manager`, tools as
+ * `#VectorStore`. It is a display convention rather than a typed field, which
+ * is why this is a prefix test and not a `kind === 'tool'` — there is no such
+ * field to read.
+ */
+const TOOL_ACTOR_PREFIX = '#';
+
+/**
+ * Whether a node is a tool rather than an actor.
+ *
+ * TOOLS ARE NOT DRAWN ON THIS GRAPH. The pane answers "who is on this team and
+ * who talks to whom"; a tool is neither — it is something an agent HOLDS, and
+ * it is listed as such on the Team panel. On the canvas it was noise with a
+ * specific cost: an unused tool has no edge at all, so it is a node the force
+ * layout can only push around, and half the graph was these. The Team panel is
+ * where the full inventory stays.
+ */
+function isToolNode(node: { actorName?: string }): boolean {
+  return (node.actorName ?? '').startsWith(TOOL_ACTOR_PREFIX);
+}
+
 @Component({
   selector: 'app-graph',
   imports: [
@@ -260,48 +284,67 @@ export class GraphComponent {
       layout: 'force',
       roam: true,
       draggable: true,
-      // THE LANE, INSET FROM THE CANVAS — this is the clipped-label fix.
-      //
-      // Left to itself the force layout uses (near enough) the whole canvas,
-      // and a label is drawn CENTRED ON ITS NODE: a node sitting legitimately
-      // at the edge of the lane puts half its name outside the canvas, where
-      // the canvas cuts it. So the lane is narrower than the canvas by about
-      // half a label on each side, and the names have somewhere to go.
-      //
-      // Pixels rather than percentages: the gutter has to hold a label, and a
-      // label is a fixed number of pixels wide whatever the pane is. `top`
-      // also clears the legend above.
-      left: 52,
-      right: 52,
+      // LEGEND CLEARANCE ONLY. `left` / `right` / `bottom` stood here too, as
+      // a clipped-label fix, and echarts' force layout has no such fix to
+      // offer: `forceHelper` takes the rect for the gravity centre and the
+      // initial scatter and never clamps to it, so a node reaches the canvas
+      // edge whatever the insets say. What they did do was narrow the
+      // simulation by 104px of a pane that has few to spare. Labels are kept
+      // legible by `width` + `truncate` and the text halo below, which is
+      // where that job actually belongs.
       top: 40,
-      bottom: 16,
       force: {
-        repulsion: 180,
-        edgeLength: [60, 140],
+        // THE DISTANCE PARAMS THEMSELVES — 2.5x the 60 / 140 this started
+        // from. `edgeLength` is the target length of an edge in pixels and
+        // `repulsion` the strength that sets how far apart unrelated nodes
+        // settle; between them they are what "spread the graph out" means to
+        // echarts. Nothing else follows them: a node, an arrowhead and a
+        // stroke are read at the size they are drawn whatever the distances
+        // around them, and `zoom` is the user's.
+        //
+        // `repulsion` rises as the SQUARE of the distance wanted, which is
+        // arithmetic rather than taste: in `forceHelper` the repulsive
+        // displacement is `(n1.rep + n2.rep) / d / d` applied along the
+        // UN-normalised separation, so it falls off as `rep / d` while gravity
+        // rises as `gravity * d`. 2.5x the distance therefore needs 6.25x the
+        // repulsion — 180 to 1125, the same figure the knowledge graph
+        // arrives at from its own starting point.
+        repulsion: 1125,
+        edgeLength: [150, 350],
         // GRAVITY IS THE SCATTER FIX. A force layout only holds a graph
-        // together through its EDGES; a node with none — which is what every
-        // unused tool is — feels nothing but repulsion and drifts until it
-        // hits the edge of the lane. The user's screenshots show exactly that:
-        // tools pinned in the corners, agents crushed into the middle. Gravity
-        // is a pull toward the centre of the lane that every node feels,
-        // connected or not, so an isolated node settles at a readable distance
-        // instead of at infinity. echarts' default is 0.1, which is too weak
-        // to matter against this repulsion.
+        // together through its EDGES; a node with none feels nothing but
+        // repulsion and drifts until it hits the edge of the lane — tools
+        // pinned in the corners, agents crushed into the middle. Gravity is a
+        // pull toward the centre that every node feels, connected or not, so
+        // an isolated node settles at a readable distance instead of at
+        // infinity. echarts' default is 0.1, too weak to matter here.
         gravity: 0.25,
-        friction: 0.15,
+        // NO `friction`. It is not a damping knob: in `forceHelper` it scales
+        // every displacement AND decays 0.992 per step until `friction < 0.01`
+        // ENDS the run. At 0.15 the simulation moved a quarter as far as the
+        // 0.6 default over ~340 steps instead of ~510 — it stopped a long way
+        // short of relaxed, which is why the layout looked arbitrary rather
+        // than settled.
       },
       label: {
         show: true,
         position: 'top',
-        distance: 6,
+        distance: 8,
         formatter: labelFormatter,
         color: labelColor,
         fontFamily,
-        fontSize: 11,
+        // 12.5 AND 120, the knowledge graph's figures. Two graphs one tab
+        // apart captioning their nodes at different sizes reads as two
+        // applications, the same reason the mark is 26 in both.
+        //
+        // `width` moves with the font rather than staying at 96: it is a cap
+        // in PIXELS on how much of a name survives, so holding it still at a
+        // larger size would truncate more, not the same.
+        fontSize: 12.5,
         // Capped and ellipsised rather than allowed to run. `truncate` ends the
         // name with an ellipsis, which READS as shortened; the canvas edge
         // cutting it mid-glyph reads as broken. Full name in the tooltip.
-        width: 96,
+        width: 120,
         overflow: 'truncate',
         // A halo in the ground colour, so a name that crosses an edge or
         // another node stays legible without the labels needing their own
@@ -310,7 +353,11 @@ export class GraphComponent {
         textBorderWidth: 3,
       },
       symbol: 'roundRect',
-      symbolSize: [15, 15],
+      // 26, THE SAME MARK THE KNOWLEDGE GRAPH DRAWS. Two graphs an inspector
+      // tab apart, drawing an entity at 26px and an agent at 15px, read as two
+      // applications; the shape already says which is which (a roundRect here,
+      // a circle there) and it does not need the size saying it a second time.
+      symbolSize: [26, 26],
       itemStyle: {
         // A cut-out ring, not an outline: matching the ground is what makes two
         // overlapping nodes read as two.
@@ -334,10 +381,12 @@ export class GraphComponent {
       data: [] as unknown[],
       links: [] as unknown[],
       categories: [] as unknown[],
-      // ZOOM 1, NOT 1.5. `zoom` scales the laid-out graph about the centre
-      // AFTER the lane has been computed, so 1.5 took the inset above and
-      // multiplied everything straight back out past the edge — it was the
-      // other half of the clipping, and it made the inset unearnable.
+      // STILL 1, and the graph is still twice as spread out — the distance
+      // params above did that. `zoom` scales the laid-out graph about its
+      // centre AFTER the fact, and it is the USER'S control through roam: a
+      // larger number here would be undone by their first scroll, and on the
+      // way it would magnify the nodes and the strokes too, which is not what
+      // was asked for.
       zoom: 1,
     };
 
@@ -404,8 +453,21 @@ export class GraphComponent {
    * there, which is exactly how this pane hid a bug for a release.
    */
   private updateChart() {
-    const nodes = this.nodes || [];
-    const edges = this.edges || [];
+    // FILTERED FOR THE CANVAS ONLY. `this.nodes` keeps every actor, because it
+    // is also what `<app-human-request [nodes]>` reads and what the empty-state
+    // overlay counts — a team of one agent and six tools is not an empty team,
+    // and a human request raised by an agent must still be findable.
+    const nodes = (this.nodes || []).filter((n) => !isToolNode(n));
+
+    // Edges are keyed on `name` (the agent_id), not on `actorName`. An edge to
+    // a node that is no longer in `data` is not ignored by echarts — it warns
+    // and drops it — so the ends are filtered with the nodes rather than left
+    // to be cleaned up downstream.
+    const drawn = new Set(nodes.map((n) => n.name));
+    const edges = (this.edges || []).filter(
+      (e) => drawn.has(e.source) && drawn.has(e.target)
+    );
+
     const categories = this.categories || [];
     const names = categories.map((c) => c.name);
 

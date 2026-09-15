@@ -73,6 +73,7 @@
     "newMessages": "Nouveaux messages",
     "messages": "Messages",
     "reply": "Répondre",
+    "sentTo": "Envoyé à {{agent}}",
     "messageForYou": "Message pour vous",
     "teamMessage": "Message d'équipe",
     "input": {
@@ -281,7 +282,9 @@
     "tokensIn": "Jetons entrants",
     "cached": "En cache",
     "tokensOut": "Jetons sortants",
-    "readConversation": "Lire la conversation"
+    "readConversation": "Lire la conversation",
+    "readConversationOf": "Lire la conversation de {{agent}}",
+    "openMemberTab": "Ouvrir dans l'onglet Membre"
   },
   "login": {
     "heading": "Connexion",

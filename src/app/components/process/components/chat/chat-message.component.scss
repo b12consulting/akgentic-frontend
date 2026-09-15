@@ -173,9 +173,21 @@
  */
 .collapsed-notice {
   display: flex;
+  /* BASELINE, which already means the FIRST line's. A flex item that is a block
+     of several lines contributes its first line box's baseline, so the glyph,
+     the caret and the clock sit against the opening line of a notification that
+     has been expanded — `flex-start` put them against the top of the box, a
+     fraction above the text they belong to. */
   align-items: baseline;
   gap: 8px;
-  padding: 3px 8px 3px var(--akg-avatar-gutter);
+  /* THE SAME BOX THE ACTIVITY FOLD DRAWS. Both rows sit on the transcript's
+     spine: content at `--akg-avatar-gutter`, with the row's own inset pulled
+     back out of it so the two hover grounds start and end on the same edges.
+     Stating the inset here rather than padding all the way to the gutter is
+     what makes the widths match — see `.activity` in
+     `chat-thinking.component.scss`, which is sized the same way. */
+  margin-left: calc(var(--akg-avatar-gutter) - var(--akg-fold-inset-x));
+  padding: 3px var(--akg-fold-inset-x);
   border-radius: 6px;
   font-size: 12.5px;
   line-height: 1.5;
@@ -192,12 +204,124 @@
   color: var(--akg-glyph-quiet);
 }
 
+/*
+ * One line, clipped — until it is opened.
+ *
+ * THE ELLIPSIS IS THE FOLD. Opening this row used to replace it with a bubble
+ * of a different shape and height; now it simply lets the sentence finish. The
+ * row keeps its indent, its subject, its verb and its clock, and grows by
+ * however many lines the text needs — so there is nothing entering or leaving
+ * the layout and no second shape to reconcile.
+ */
 .notice-text {
   flex: 1 1 auto;
   min-width: 0;
-  white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+
+  /*
+   * WRAPPED IN BOTH STATES, AND CLIPPED BY HEIGHT — which is what lets the
+   * CLOSING animate too.
+   *
+   * The obvious shape is `nowrap` + `text-overflow: ellipsis` when shut and
+   * `pre-wrap` when open, and it animates in one direction only. `white-space`
+   * is a DISCRETE property: it flips in a single frame. Opening still looks
+   * right because the text reflows to its full height behind a box that is
+   * still one line tall, and the height then grows to reveal it — but closing
+   * reflows the text back to one line instantly, so the box has nothing left to
+   * shrink past and the transition plays over an already-finished picture.
+   *
+   * Keeping the text wrapped always and clipping with `height` + `overflow`
+   * means nothing discrete changes in either direction, so both animate.
+   *
+   * The ellipsis is not lost with `text-overflow`: the collapsed string comes
+   * from `preview()`, which truncates and appends its own — the cue is in the
+   * DATA rather than in the clip.
+   */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+
+  /*
+   * THE ROW GROWS INSTEAD OF SNAPPING.
+   *
+   * This is animatable now only because the swap is gone: one element, whose
+   * height changes because its own text stopped being clipped. Every earlier
+   * attempt was trying to animate BETWEEN two elements, and during a swap both
+   * are in flow and their heights add — which is what made the transcript dip,
+   * bulge, or jump no matter how the timing was arranged.
+   *
+   * `1lh` is exactly one line of this row's own type, so the closed state is
+   * the height it already had. `interpolate-size` is what lets it animate to
+   * `auto`: without it `auto` is not an interpolable value and the browser
+   * jumps straight there. Where it is unsupported the row simply opens at once
+   * — the same behaviour as before this rule, so nothing is worse off.
+   */
+  interpolate-size: allow-keywords;
+  height: 1lh;
+  transition: height 210ms cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  &.expanded {
+    height: auto;
+  }
+
+  /*
+   * THE ELLIPSIS, AS A PAINTED MARK RATHER THAN AS CHARACTERS IN THE STRING.
+   *
+   * It used to come from `preview()`, which returned a SHORTER string while the
+   * row was shut — and that is what stopped the row animating closed, because
+   * the content finished shrinking in the frame the toggle fired and the height
+   * transition had nothing left to cover.
+   *
+   * Absolutely positioned, so it contributes no layout: the row's height is
+   * still just `1lh` against the full text, and the transition is untouched.
+   * The `padding-right` opposite reserves its lane so it never lands on top of
+   * a word — that costs a little width, which only affects where the clipped
+   * line happens to break, and the line is being cut anyway.
+   *
+   * `bottom: 0` is the only visible line while the row is shut, which is what
+   * makes this correct without knowing how many lines the message really has.
+   */
+  &:not(.expanded) {
+    position: relative;
+    padding-right: 1.2em;
+
+    &::after {
+      content: '…';
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      color: var(--akg-text-muted);
+    }
+  }
+}
+
+/*
+ * The rating, under the opened text rather than beside it.
+ *
+ * A block, so it starts on its own line. The spacing is CLOSER ABOVE THAN
+ * BELOW: the control belongs to the sentence it rates, so it should sit under
+ * it rather than float between that sentence and the bottom of the row. The
+ * shared `.action-row` carries 10px above and nothing below, which is the wrong
+ * way round here — inside a bubble it is separating two blocks, on this row it
+ * is the last thing in the box.
+ */
+/*
+ * `fit-content`, and that is a CLICK-TARGET fix rather than a cosmetic one.
+ *
+ * This element carries `stopPropagation` so rating a notification does not also
+ * fold it. As a full-width block it therefore swallowed every click across its
+ * whole band — the three icons are 90px wide, but the dead strip beside them
+ * ran the width of the row, and the row is the fold's own toggle. Shrunk to its
+ * contents, only the icons stop the click and the rest of the box folds as it
+ * looks like it should.
+ */
+.notice-feedback {
+  display: block;
+  width: fit-content;
+  margin-bottom: 6px;
+}
+
+:host ::ng-deep .notice-feedback .action-row {
+  margin-top: 4px;
 }
 
 /* The tool or agent that spoke, as the subject of the sentence. It is the only
@@ -335,10 +459,6 @@
     line-height: 1.55;
   }
 
-  &.selected {
-    border: 2px solid var(--primary-color);
-  }
-
   /*
    * THE RATING CONTROL IS QUIET.
    *
@@ -367,14 +487,15 @@
   }
 }
 
+/* `gap` and `margin-bottom` were each declared twice here, 0.5rem then 8px and
+   4px then 6px. The later pair won, so these are those values — a rule that
+   contradicts itself is two people disagreeing in one block, and the reader has
+   to find both lines to know which one is in force. */
 .bubble-header {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 4px;
-
-  margin-bottom: 6px;
   gap: 8px;
+  margin-bottom: 6px;
 
   .bubble-timestamp {
     font-size: 11px;
@@ -402,13 +523,27 @@
  * it is the way into the sub-agent reader — so it keeps a hover and a focus
  * ring; it just stops shouting while idle.
  */
+/*
+ * THE SPEAKER, AT READING SIZE.
+ *
+ * This is the one piece of metadata on a turn that is not metadata: it names
+ * who is talking to you. At 12.5px it sat between the 11px timestamp beside it
+ * and the 14.5px paragraph below, which put it on the same step as the clock —
+ * a caption over the words rather than the person saying them.
+ *
+ * `--akg-turn-font-size`, not a number of its own, so the name and the words
+ * stay one size: a deployment that re-points the transcript's type scale moves
+ * both, and the name can never end up smaller than the sentence it introduces.
+ * The weight is what separates them — 600 against the body's normal, which is
+ * how a speaker reads as a heading without shouting.
+ */
 .label-pill {
   background-color: transparent;
   border: none;
   padding: 0;
   border-radius: 4px;
-  font-size: 12.5px;
-  font-weight: 500;
+  font-size: var(--akg-turn-font-size);
+  font-weight: 600;
   letter-spacing: 0;
   color: var(--akg-text);
   cursor: pointer;
@@ -462,6 +597,49 @@
 .own-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  /* `inline`, so the stamp after it sits on the END of the last line rather
+     than claiming a line of its own. `pre-wrap` still holds the user's
+     newlines, which is the whole point of this element. */
+  display: inline;
+}
+
+/*
+ * The user's own clock, at the end of the message rather than under it.
+ *
+ * On the right and on the same line: the stamp finishes the sentence on the
+ * edge the bubble already ends on, and takes width the last line was not using
+ * — so it costs the turn no height at all. Given a line to itself it read as a
+ * second, very short message instead of as a mark on the one above it.
+ *
+ * A step below the header stamp's 11px. That one shares a row with the
+ * speaker's name and is the small end of it; this one sits INSIDE the
+ * sentence, where the same size would compete with the words it is annotating.
+ */
+/*
+ * The addressee, when the turn has one worth naming.
+ *
+ * Shares the trailing row with the clock and reads at the same quiet step, so a
+ * turn that carries it costs no more height than one that does not — which is
+ * what lets it appear and disappear between messages without the column
+ * jumping. It sits BEFORE the time because it is the more interesting of the
+ * two: you scan for who, then for when.
+ */
+.own-recipient {
+  margin-left: 8px;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--akg-text-muted);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.own-timestamp {
+  margin-left: 8px;
+  font-size: 10px;
+  font-weight: 300;
+  color: var(--akg-text-muted);
+  white-space: nowrap;
+  user-select: none;
 }
 
 /* Context-management markers (Epic 29 / ADR-010) — inert, centered system rows.

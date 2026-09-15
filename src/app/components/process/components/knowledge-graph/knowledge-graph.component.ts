@@ -113,17 +113,31 @@ const CHROME_TOKENS = {
 } as const;
 
 /**
- * The layout box the force simulation is confined to, as ECharts insets.
+ * The one inset the force layout has any business carrying: legend clearance.
  *
- * THIS IS THE LABEL-CLIPPING FIX. Node labels are drawn BELOW their node and
- * are wider than it, so a simulation allowed to place a node against the
- * container edge draws half its label outside the canvas — which is how
- * `#KnowledgeGraphToo` and `#VectorSt` lost their tails. ECharts has no
- * "keep the label inside" option; the only lever is to stop the NODE from
- * reaching the edge, which is what these insets do. The top inset also clears
- * the legend rather than letting nodes drift under it.
+ * THIS IS NOT A CLIPPING GUARD, and it never was. The four-sided version that
+ * stood here claimed the insets "stop the NODE from reaching the edge" so its
+ * wider label could not spill off the canvas. ECharts does no such thing:
+ * `forceLayout` hands the coordinate system's rect to the stepper, and
+ * `forceHelper` uses it for exactly two purposes —
+ *
+ *     center = [rect.x + width / 2, rect.y + height / 2];   // the gravity target
+ *     n.p = width * (Math.random() - 0.5) + center[0], ...  // the initial scatter
+ *
+ * — with no clamping anywhere in the loop. Nodes leave the rect freely, and
+ * roam moves the viewport independently of it. So `left` / `right` / `bottom`
+ * bought nothing and cost a great deal: 112px of width out of a ~310px
+ * inspector pane left the simulation a tall narrow column and dragged the
+ * gravity centre into it, which is most of why the layout stopped looking
+ * evenly spread.
+ *
+ * `top` survives because the two things the rect DOES control — where nodes
+ * start and where gravity pulls them — are both better off below the legend.
  */
-const LAYOUT_INSETS = { left: 56, right: 56, top: 44, bottom: 34 } as const;
+const LAYOUT_TOP_INSET = 44;
+
+/** Joins the two ends of a directed pair into one map key. See `buildLinks`. */
+const PAIR_SEPARATOR = '\u0000';
 
 @Component({
   selector: 'app-knowledge-graph',
@@ -363,49 +377,100 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
       layout: 'force',
       roam: true,
       draggable: true,
-      // Keeping the simulation off the container edge is what stops the
-      // labels being clipped — see LAYOUT_INSETS.
-      left: LAYOUT_INSETS.left,
-      right: LAYOUT_INSETS.right,
-      top: LAYOUT_INSETS.top,
-      bottom: LAYOUT_INSETS.bottom,
+      // Legend clearance, and nothing else — see LAYOUT_TOP_INSET for why the
+      // other three sides came off.
+      top: LAYOUT_TOP_INSET,
       force: {
-        // WHY THESE THREE MOVED. `repulsion: 500` with `gravity: 0.1` is a
-        // simulation with almost no centre: a node with no edge feels only
-        // repulsion, so every DISCONNECTED entity is pushed to a corner and
-        // the connected part — the part with the information in it — is
-        // squeezed into the middle. Raising gravity gives the unconnected
-        // nodes somewhere to fall back to; lowering repulsion stops the
-        // connected cluster from exploding once they are no longer in the
-        // corners.
-        repulsion: 220,
-        edgeLength: [60, 140],
-        gravity: 0.28,
-        // Settle rather than jitter: the default keeps nudging nodes long
-        // after the layout is readable, which in a narrow pane reads as the
-        // panel being unable to make up its mind.
-        friction: 0.3,
+        // REPULSION IS WHAT MAKES THE SPACING LOOK DELIBERATE. It is the only
+        // force acting between every pair of nodes, so it is the one that
+        // spreads them evenly; `edgeLength` speaks only for pairs that share
+        // an edge and `gravity` only toward the centre. Dropping it to 220 let
+        // those two dominate and the result read as arbitrary. 500 and
+        // [50, 200] are the values the panel shipped with before the redesign,
+        // restored.
+        // THE DISTANCE PARAMS THEMSELVES, half again. `edgeLength` is the
+        // target length of an edge in pixels; `repulsion` sets how far apart
+        // nodes with no edge between them settle. Between them they are what
+        // "spread the graph out" means to echarts, and nothing else grows: a
+        // node, an arrowhead and a stroke are read at the size they are drawn,
+        // whatever the distances around them.
+        //
+        // `repulsion` goes up by the SQUARE, and that is arithmetic rather
+        // than taste. In `forceHelper` the repulsive displacement is
+        // `(n1.rep + n2.rep) / d / d` applied along the UN-normalised
+        // separation, so it falls off as `rep / d` while gravity rises as
+        // `gravity * d`. Equilibrium at 1.5x the distance therefore needs
+        // 2.25x the repulsion — 1125, not 750.
+        repulsion: 1125,
+        edgeLength: [75, 300],
+        // Half-way, on purpose. The redesign raised this to 0.28 for a real
+        // reason — an entity with no relation feels repulsion only, so at 0.1
+        // it drifts into a corner and the part of the graph carrying the
+        // information is squeezed into the middle — but 0.28 against a full
+        // width rect collapses the connected cluster instead. 0.15 keeps the
+        // unconnected node a way back without flattening the rest.
+        gravity: 0.15,
+        // NO `friction` OVERRIDE. It reads like a damping knob and is not one:
+        // in `forceHelper` it scales every displacement AND decays 0.992 per
+        // step until `friction < 0.01` ENDS the simulation. Setting 0.3 halved
+        // the step size and cut ~90 steps off the run, so the layout was
+        // frozen roughly half-relaxed — nodes left wherever the initial random
+        // scatter put them. That is not settling; it is stopping early, and it
+        // is what "the force is no longer uniform" looked like. The default
+        // 0.6 runs the simulation to completion.
       },
       label: {
         show: true,
         position: 'bottom',
-        distance: 6,
-        fontSize: 10,
+        distance: 8,
+        fontSize: 12.5,
         color: chrome.label,
-        // A label crossing an edge or another label is unreadable at 10px.
-        // The chip ground gives it something to sit on; truncation caps how
-        // far a long entity name can reach toward the insets above.
+        // A label crossing an edge or another label is unreadable at this
+        // size. The chip ground gives it something to sit on; truncation caps
+        // how far a long entity name can reach. These two ARE the
+        // de-cluttering — see below for the option that used to claim the job.
         backgroundColor: chrome.labelGround,
         padding: [2, 4],
         borderRadius: 4,
-        width: 96,
+        width: 120,
         overflow: 'truncate',
       },
-      labelLayout: { hideOverlap: true },
+      // NO `labelLayout`. `labelLayout: { hideOverlap: true }` stood here and
+      // it cannot be used on a `graph` series without detaching every EDGE
+      // label from its edge.
+      //
+      // The option is series-wide and there is no way to scope it. ECharts
+      // registers labels for layout the moment the option is a function or a
+      // non-empty object, and only treemap opts out:
+      //
+      //     if (!(isFunction(layoutOption) || keys(layoutOption).length)) return;
+      //     if (textEl && !textEl.disableLabelLayout) this._addLabel(...);
+      //
+      // Every registered label then goes through `updateLayoutConfig`, which
+      // forces it out of its host's local space and restores the position
+      // captured at FIRST render:
+      //
+      //     hostEl.setTextConfig({ local: false, ... });
+      //     label.x = defaultLabelAttr.x;  label.y = defaultLabelAttr.y;
+      //
+      // An edge label is positioned by `Line.setLinePoints`, which writes
+      // `label.x/y/rotation` in the LINE'S OWN coordinate space from its
+      // endpoints. Overwriting those with stale global values severs the two.
+      // Zoom makes it obvious rather than causing it: `GraphView` recomputes
+      // the correct local positions via `_lineDraw.updateLayout()` and then
+      // calls `api.updateLabelLayout()`, which overwrites them again.
+      //
+      // A callback form is not an escape hatch — a function is "non-empty" by
+      // the test above, so edge labels are still registered and still moved.
       edgeLabel: {
         show: true,
-        fontSize: 9,
+        fontSize: 11.25,
         color: chrome.edgeLabel,
+        // Two relations between the same pair arrive here as ONE caption with
+        // a newline in it — see `processGraphData`. Pinning the line height
+        // keeps that stack tight enough to read as one label rather than two
+        // that happen to be near each other.
+        lineHeight: 13.5,
       },
       symbol: 'circle',
       symbolSize: 26,
@@ -424,8 +489,7 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
           opacity: 1,
         },
         label: {
-          // The hovered label has to win against whatever it overlaps, and
-          // `hideOverlap` may have hidden it entirely.
+          // The hovered label has to win against whatever it overlaps.
           show: true,
         },
       },
@@ -528,7 +592,7 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
       category: entity.entity_type || 'unknown',
       itemStyle: {
         color: this.getNodeColor(entityTypes, entity.entity_type || 'unknown'),
-        // A hairline of the pane's own ground around each node: at 26px two
+        // A hairline of the pane's own ground around each node: two
         // same-category nodes that touch otherwise read as one blob.
         borderColor: chrome.nodeBorder,
         borderWidth: 1.5,
@@ -538,17 +602,7 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
       observations: entity.observations,
     }));
 
-    // Transform relations into ECharts links format
-    const links = (data.edges || []).map((relation, index) => ({
-      id: `relation-${index}`,
-      source: relation.from_entity || '',
-      target: relation.to_entity || '',
-      name: relation.relation_type || 'relation',
-      label: {
-        show: true,
-        formatter: relation.relation_type || '',
-      },
-    }));
+    const links = this.buildLinks(data.edges || []);
 
     const categories = entityTypes.map((type) => ({
       name: type,
@@ -558,6 +612,62 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
     }));
 
     return { nodes, links, categories, entityTypes };
+  }
+
+  /**
+   * One drawn edge per DIRECTED PAIR, carrying every relation that runs along
+   * it, stacked one caption per line.
+   *
+   * Two relations between the same two entities were two links with the same
+   * endpoints and the same `curveness`, so ECharts drew them as the same
+   * stroke — and their captions at the same point, one printed over the other.
+   * `earned_degree_from` and `invited_lecturer_at` between the same pair came
+   * out as a single illegible smear. Merging them into one caption with a
+   * newline is what makes both readable, and it is honest about the drawing:
+   * there was only ever one line there to label.
+   *
+   * DIRECTED, so the key is the ORDERED pair. A→B and B→A stay two edges:
+   * they carry an arrowhead each and `curveness: 0.1` bows them apart, so they
+   * are genuinely two strokes with room for two captions. Folding them
+   * together would put a caption on an arrow that does not mean it.
+   *
+   * Nothing is hidden by this. The Raw data view lists every relation
+   * individually, which is where the full set is read.
+   */
+  private buildLinks(edges: KnowledgeGraphRelation[]): any[] {
+    const byPair = new Map<
+      string,
+      { source: string; target: string; types: string[] }
+    >();
+
+    for (const relation of edges) {
+      const source = relation.from_entity || '';
+      const target = relation.to_entity || '';
+      // A separator no entity name can contain, so `"A|B" -> "C"` cannot
+      // collide with `"A" -> "B|C"` the way it would under any printable one.
+      const key = `${source}${PAIR_SEPARATOR}${target}`;
+      const type = relation.relation_type || 'relation';
+      const pair = byPair.get(key);
+
+      if (!pair) {
+        byPair.set(key, { source, target, types: [type] });
+      } else if (!pair.types.includes(type)) {
+        // The same relation twice over the same pair is one fact reported
+        // twice; printing it twice would only make the stack taller.
+        pair.types.push(type);
+      }
+    }
+
+    return [...byPair.values()].map((pair, index) => ({
+      id: `relation-${index}`,
+      source: pair.source,
+      target: pair.target,
+      name: pair.types.join(', '),
+      label: {
+        show: true,
+        formatter: pair.types.join('\n'),
+      },
+    }));
   }
 
   /**

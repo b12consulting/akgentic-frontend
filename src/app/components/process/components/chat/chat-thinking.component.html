@@ -43,8 +43,11 @@
 
     <span class="activity-agent">{{ state().agent_name }}</span>
 
-    <span class="activity-latest" *ngIf="latest() as l">{{
-      latestKey() | translate: { tool: l.tool_name }
+    <!-- `latestSubject()`, not `l.tool_name`: a run that contacted two agents
+         named only the second one here, while the count beside it said the row
+         was incomplete without saying what it had left out. -->
+    <span class="activity-latest" *ngIf="latest()">{{
+      latestKey() | translate: { tool: latestSubject() }
     }}</span>
 
     <span class="activity-count" *ngIf="stepCount() > 1">{{
@@ -54,27 +57,18 @@
     <span class="activity-spacer"></span>
 
     <!--
-      The start time, BEFORE the toggle rather than after it.
+      A CARET, like every other fold on the surface.
 
-      The mock draws no clock here at all, and the toggle label owns the
-      trailing edge. The clock is kept because every other row in the transcript
-      carries one — the collapsed agent-to-agent line, the compaction marker,
-      the agent's own turn — and a fold that sits between two timestamped rows
-      without one reads as an item with no place in the sequence. What it does
-      NOT do is take the trailing slot: that is the toggle's, because the
-      trailing edge is where the eye goes for "and then what".
-    -->
-    <span class="activity-time">{{ state().start_time | date: "HH:mm" }}</span>
+      This row used to spell the action out — "What happened" / "Hide" — on the
+      argument that its text is a SUMMARY, so what opening it gives you is not
+      deducible the way it is on a row whose text is already the thing you would
+      read. The words went because uniformity won: four kinds of row fold in
+      this transcript and the other three are a caret, so a fifth reading of the
+      same control was the odd one out rather than the helpful one.
 
-    <!--
-      A LABEL, not a chevron.
-
-      The transcript's other two folds (the rule-6 marker, the collapsed
-      rule-3/4 row) keep their carets, and this one departs on purpose: those
-      are rows whose text is already the thing you would read, so a caret only
-      has to say "there is more of this". This fold's text is a SUMMARY, and
-      what opening it gives you — the steps the agent took — is not deducible
-      from it. The label says it in two words, which a chevron cannot.
+      Nothing is lost to a screen reader — the words were only ever visual.
+      `aria-label` names the action and `aria-expanded` carries the state, which
+      is more than the visible label said.
 
       A real `<button>`: the fold's own row is clickable, but a click target
       with no focusable element in it is unreachable from a keyboard, and this
@@ -85,13 +79,33 @@
       type="button"
       class="activity-toggle"
       [attr.aria-expanded]="expanded()"
+      [attr.aria-label]="
+        (expanded() ? 'chat.activity.collapse' : 'chat.activity.expand')
+          | translate
+      "
       (click)="onToggleFromLabel($event)"
     >
-      {{
-        (expanded() ? "chat.activity.collapse" : "chat.activity.expand")
-          | translate
-      }}
+      <i
+        class="pi activity-caret"
+        [ngClass]="expanded() ? 'pi-chevron-down' : 'pi-chevron-right'"
+        aria-hidden="true"
+      ></i>
     </button>
+
+    <!--
+      THE CLOCK LAST, which is where every other row in the transcript puts it.
+
+      A folded notice ends `caret, time`; the compaction marker ends with its
+      time; a turn's header ends with its time. This row used to end
+      `time, label, caret`, so the one element common to every row in the
+      sequence sat in a different place here than everywhere else — and the eye
+      looking down the right-hand edge for "when" found it only on some rows.
+
+      The comment this replaces argued the trailing edge belonged to the toggle,
+      because that is where the eye goes for "and then what". True in isolation;
+      wrong against four other rows that had already settled the question.
+    -->
+    <span class="activity-time">{{ state().start_time | date: "HH:mm" }}</span>
   </div>
 
   <!--
@@ -100,7 +114,11 @@
     debugging a run needs it, and hidden, because nobody reading the
     conversation does.
   -->
-  <ol class="activity-list" *ngIf="expanded() && stepCount() > 0">
+  <ol
+    class="activity-list"
+    *ngIf="expanded() && stepCount() > 0"
+    @stepsReveal
+  >
     <li
       class="activity-entry"
       *ngFor="let n of narratedSteps(); trackBy: trackByStepId"
