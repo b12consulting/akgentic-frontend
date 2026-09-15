@@ -233,9 +233,8 @@
    * Keeping the text wrapped always and clipping with `height` + `overflow`
    * means nothing discrete changes in either direction, so both animate.
    *
-   * The ellipsis is not lost with `text-overflow`: the collapsed string comes
-   * from `preview()`, which truncates and appends its own — the cue is in the
-   * DATA rather than in the clip.
+   * The ellipsis is not lost with `text-overflow`: it is painted by the
+   * `.clipped` rule below instead.
    */
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -279,8 +278,15 @@
    *
    * `bottom: 0` is the only visible line while the row is shut, which is what
    * makes this correct without knowing how many lines the message really has.
+   *
+   * `.clipped` is what keeps it off the rows that have nothing to cut. Without
+   * it the mark appeared on every shut row, short ones included, announcing a
+   * truncation that had not happened. CSS cannot ask whether a box is
+   * overflowing, so the test has to come from outside it — the component sets
+   * the class from the message's length; see `NOTICE_CLIP_CHARS` for why a
+   * length rather than a measurement.
    */
-  &:not(.expanded) {
+  &.clipped:not(.expanded) {
     position: relative;
     padding-right: 1.2em;
 

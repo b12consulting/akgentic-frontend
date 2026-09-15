@@ -744,6 +744,28 @@ describe('ChatMessageComponent', () => {
       expect(getComputedStyle(clipped, '::after').content).toContain('…');
     });
 
+    /**
+     * AND ONLY WHEN THERE IS SOMETHING TO CUT.
+     *
+     * The painted mark started life unconditional, so it also appeared on the
+     * short rows that show their message in full — claiming a truncation that
+     * had not happened. CSS cannot ask whether a box overflows, so the test is
+     * the message's own length, matching what the row truncated at before it
+     * learned to open in place.
+     */
+    it('leaves a body that fits unmarked', () => {
+      const body = 'Verified: the applicant.';
+      fixture.componentRef.setInput(
+        'message',
+        makeChatMessage({ rule: 4, collapsed: true, content: body }),
+      );
+      fixture.detectChanges();
+
+      const row = fixture.nativeElement.querySelector('.notice-text');
+      expect(row.textContent).toContain(body);
+      expect(getComputedStyle(row, '::after').content).not.toContain('…');
+    });
+
     it('drops the ellipsis once the row is opened', () => {
       fixture.componentRef.setInput(
         'message',
