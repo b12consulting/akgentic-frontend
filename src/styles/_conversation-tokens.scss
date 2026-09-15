@@ -1,0 +1,607 @@
+// Conversation surface tokens.
+//
+// SEMANTIC, NOT BRAND. Every name here says what a thing IS — the surface a
+// turn sits on, the width of the reading column, the muted step of the type
+// scale — so a deployment can re-point a value without reading the CSS that
+// consumes it.
+//
+// The defaults are a neutral slate, and are meant to look finished on their
+// own rather than act as a placeholder: a framework that ships obviously
+// unstyled defaults pushes every consumer into forking the stylesheet, which is
+// the outcome these tokens exist to avoid.
+//
+// To rebrand, re-declare any of these in your own global stylesheet AFTER this
+// file. Nothing here is `!important` and nothing is nested, so a plain `:root`
+// block wins.
+//
+// THE ONE STATED EXCEPTION TO "NO HARDCODED HEX IN `src/`".
+//
+// Third-party TRADEMARKS are not palette and must not be tokenised. The Google
+// and Microsoft marks on the sign-in buttons
+// (`login.component.html`, inside `.login__chip`) carry their four official
+// hexes inline for exactly that reason: a token is a thing a deployment is
+// invited to re-point, and re-pointing the accent must not recolour somebody
+// else's logo — that is a trademark violation, not a theme. They are also the
+// reason those marks sit on a white chip rather than being tinted to suit the
+// button they are on.
+//
+// The boundary is narrow and deliberate: a vendor's registered mark, reproduced
+// verbatim. Anything that is part of THIS product's surface — any ground, text,
+// border, accent or state colour — belongs in this file with no exceptions. A
+// hex in `src/` that is not one of those eight is a bug.
+
+:root {
+  // --- The reading column -------------------------------------------------
+  // The message list and the input box both read this, so the input always
+  // lines up with the messages it belongs to.
+  //
+  // 780px, not 1100px. Legibility research puts a comfortable line at 45-75
+  // characters; at this type size 1100px runs to about 130, so the eye loses
+  // its place on the return sweep and long answers read as a wall. Every chat
+  // UI worth copying sits in the same band — ChatGPT ~768px, Claude ~740px,
+  // Open WebUI similar — and they sit there for this reason, not for fashion.
+  //
+  // The pane being wide is not a reason to use the width: past ~75 characters
+  // the extra pixels cost reading speed rather than buying it. What the wider
+  // pane buys is margin, and margin is what makes a column look deliberate.
+  --akg-conversation-max-width: 760px;
+
+  // Reserves the panel-toggle rail's lane. Kept SYMMETRIC on purpose: the
+  // messages and the input below them are both centred columns, so padding one
+  // side only would slide the messages off the input's axis.
+  //
+  // FLUID, not fixed. A flat 72px was sized for a full-width conversation and
+  // did not know when it had been squeezed into a third of the screen: in the
+  // list + conversation + details split the pane is ~490px, so 144px of it —
+  // nearly a third — went to padding and the reading column never reached its
+  // 1100px cap. The turns wrapped every six words while the cap sat unused.
+  // The clamp keeps the full lane whenever the pane can afford it and yields it
+  // first when the pane is narrow, which is the correct order of sacrifice:
+  // breathing room is worth less than the words.
+  --akg-conversation-padding-x: clamp(16px, 4%, 72px);
+  --akg-conversation-padding-top: 24px;
+  --akg-conversation-padding-bottom: 24px;
+
+  // --- Typefaces ----------------------------------------------------------
+  // Inter for the interface, Merriweather for the few display moments that
+  // want a voice, JetBrains Mono where the shape of the characters is the
+  // information. Each falls back to a stack that needs no network.
+  --akg-font-ui: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --akg-font-display: Merriweather, Georgia, "Times New Roman", serif;
+  --akg-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  // --- Surfaces -----------------------------------------------------------
+  // A warm neutral ground rather than a cool one. The conversation sits on
+  // white so it reads as the page; the rails sit on the tint so they read as
+  // furniture around it.
+  --akg-page-bg: #f8f5f5;
+  --akg-panel-bg: #f4f0ed;
+  --akg-panel-hover: #e8e2dd;
+  --akg-panel-active: #e4ded8;
+  --akg-surface: #f4f0ed;
+  --akg-surface-border: #ece6e1;
+  --akg-surface-muted: #fcfbfa;
+  // Lighter than the border: separators inside a surface, not around one.
+  --akg-hairline: #f0ece9;
+
+  // --- Type ---------------------------------------------------------------
+  // TWO TEXT TONES, AND THE SECOND ONE IS AS LIGHT AS TEXT IS ALLOWED TO GET.
+  //
+  // This started life as a four-step ramp lifted off the mock — soft, meta,
+  // faint, hint, each a little lighter than the last. All four failed WCAG 2.1
+  // AA (1.4.3) on both console grounds: against `--akg-panel-bg` they measured
+  // 3.13 / 2.75 / 2.46 / 1.96 to one, where 4.5 is the bar for text this size,
+  // and they were carrying 36 real translated strings — rail group headers, the
+  // rail's empty and loading notices, the inspector's blurb, member metadata,
+  // the composer's hint line. Quiet is a design intention; unreadable is not.
+  //
+  // THE RAMP CANNOT BE RESCUED BY NUDGING IT, WHICH IS WHY IT IS GONE. A grey
+  // of this hue has to reach roughly #736d67 to clear 4.5:1 on the panel, and
+  // all four steps collapse onto that one value — a "four-step ramp" of four
+  // identical greys. There is no room below `--akg-text-muted` for a second
+  // legible step, so the hierarchy below the heading tone is carried by SIZE
+  // and WEIGHT instead, which the stylesheets were already doing (11px/300
+  // against 13.5px/500) and which costs no contrast at all.
+  //
+  // `--akg-text-muted` is DARKER than the value it replaces (#6f6a66). 4.72:1
+  // on `--akg-panel-bg` passes, but the rail draws its rows on
+  // `--akg-panel-hover` and `--akg-panel-active-hover` too, and there the old
+  // value fell to 4.16 and 3.71 — so the one place this tone is used most was
+  // the one place it failed. #5e5a57 is the step that clears 4.5:1 on EVERY
+  // ground this palette declares; the worst case is 4.74 and the best 6.8.
+  // `token-contrast.spec.ts` asserts exactly that, ground by ground, so the
+  // next palette refresh cannot quietly undo it.
+  --akg-text: #101413;
+  --akg-text-muted: #5e5a57;
+
+  // NOT A TEXT COLOUR. The light end of the old ramp survives for the things
+  // WCAG measures differently: an icon with an accessible name beside it, a
+  // caret that repeats a state already written out, the rail's busy spinner,
+  // a disabled control. Non-text contrast (1.4.11) asks 3:1 rather than 4.5:1,
+  // and purely decorative marks are exempt outright — so this can stay quiet
+  // where text cannot.
+  //
+  // #78736e clears 3:1 on every ground above (worst case 3.26), so it is safe
+  // even for the glyphs that DO carry meaning. If you are reaching for it for a
+  // string, you want `--akg-text-muted`: the name says "glyph" because that is
+  // the only thing it is allowed to colour.
+  --akg-glyph-quiet: #78736e;
+
+  // --- Accent -------------------------------------------------------------
+  // A deep green that carries small type at contrast, and one bright step used
+  // only for signals — a live dot, an avatar glyph — never for text.
+  //
+  // FOUR OF THESE ARE ALSO RAMP STOPS. `app.theme.ts` feeds PrimeNG's `primary`
+  // palette, and four of its eleven stops were byte-identical copies of the
+  // values below — two sources of truth for one colour, so re-pointing the
+  // accent here silently left every PrimeNG button, tab and highlight on the
+  // old green. The theme now points at these, and the seven stops it needs that
+  // the product surfaces never use are declared underneath, so the whole ramp
+  // lives in one file. The names carry BOTH readings deliberately: what the
+  // colour is for (`-fg`, `-hover`) and where it sits in the ramp (700, 800).
+  --akg-accent-bg: #eef8f2;      // ramp 50
+  --akg-accent-border: #d9ede3;  // ramp 100
+  --akg-accent-fg: #005d46;      // ramp 700
+  --akg-accent-hover: #01462f;   // ramp 800
+  --akg-accent-bright: #21e467;
+
+  // The intermediate rungs. NOTHING IN THE APP READS THESE DIRECTLY and nothing
+  // should: they exist because PrimeNG's palette contract is eleven stops, and a
+  // component library asked for four of them would interpolate the rest against
+  // Aura's own sky-blue defaults. Aliased rather than duplicated so a rebrand is
+  // one file, and named `--akg-accent-<n>` rather than by role because these
+  // have no role — they are positions on a curve.
+  --akg-accent-200: #a9d8c3;
+  --akg-accent-300: #6fc4a1;
+  --akg-accent-400: #2fa87b;
+  --akg-accent-500: #0b8a5f;
+  --akg-accent-600: #00714e;
+  --akg-accent-900: #013525;
+  --akg-accent-950: #012418;
+
+  // Tools get their own hue so a step is identifiable at a glance without
+  // reading it. Deliberately NOT the accent: the accent means "the product is
+  // doing something", this means "a tool ran".
+  --akg-tool-accent: #6434da;
+
+  // The ground a person's own words sit on.
+  --akg-user-bubble-bg: #f0ece9;
+
+  // --- Turn geometry ------------------------------------------------------
+  // A person's turn is a bubble with one corner squared off toward its own
+  // side; an agent's turn is not a bubble at all. The asymmetry is what lets
+  // you tell who is speaking without reading a label.
+  --akg-turn-radius: 18px 18px 6px 18px;
+  --akg-turn-padding: 12px 16px;
+  // 18px between turns, down from 26px.
+  //
+  // 26px was the right ORDER for two turns — a turn is a paragraph and
+  // paragraphs want air — but it was measured against a transcript of speech,
+  // and it sits on top of each turn's own `--akg-turn-padding`.
+  //
+  // THE SPACE BETWEEN TWO TURNS, which is not the only spacing on the surface.
+  // A run of one-line system notices is one agent working rather than a list of
+  // unrelated events, and those close up against each other instead — see
+  // `.quiet-line + .quiet-line` in `chat-panel.component.scss`. Stating that
+  // exception there is what lets this value stay about turns.
+  --akg-turn-gap: 18px;
+  --akg-turn-font-size: 14.5px;
+  --akg-turn-line-height: 1.65;
+
+  // The avatar gutter. The fold indents by exactly this much so the transcript
+  // has one spine instead of two margins.
+  --akg-avatar-size: 28px;
+  --akg-avatar-gutter: 42px;
+
+  // A FOLD'S OWN HORIZONTAL INSET, read by both rows that fold into the gutter.
+  //
+  // The activity fold and the folded notification each sit on the transcript's
+  // spine the same way: the box is pulled back by this much and pads it out
+  // again, so the CONTENT lands on `--akg-avatar-gutter` while the hover ground
+  // starts and ends on the same edges for both. Written twice, the two grounds
+  // were visibly different widths the moment one of the numbers moved.
+  --akg-fold-inset-x: 13px;
+
+  // --- Collapsed rows and markers -----------------------------------------
+  // The agent-to-agent lines the conversation folds away, and the synthetic
+  // context-management markers. Quieter than a turn by design: they are what
+  // happened, not what was said.
+  --akg-collapsed-border: #ece6e1;
+  --akg-collapsed-hover: #f8f5f5;
+  --akg-marker-border: #e2dcd7;
+  --akg-marker-bg: #fcfbfa;
+  --akg-marker-hover: #f4f0ed;
+
+  // --- Overlays -----------------------------------------------------------
+  // The scroll-to-bottom control and the "new messages" pill float over the
+  // conversation, so they need a ground of their own and a lift off it.
+  --akg-overlay-bg: #ffffff;
+  --akg-overlay-shadow: 0 6px 24px -14px rgb(16 20 19 / 22%);
+  --akg-overlay-shadow-strong: 0 8px 28px -12px rgb(16 20 19 / 30%);
+
+  // --- Status -------------------------------------------------------------
+  // One hue for "something arrived": the notification glyph.
+  --akg-notify-fg: var(--akg-accent-bright);
+
+  // The first ERROR tone the palette has ever owned. Everything red on screen
+  // until now reached PAST this file for it — the metadata modal asks PrimeNG
+  // for `var(--p-red-500, #e24c4c)` and elsewhere writes the CSS keyword
+  // `darkred` — which means a deployment could re-point every value here and
+  // its validation copy would still be the component library's red. Dark
+  // enough to carry small type on the light surfaces above, because error text
+  // has to be READ, not merely noticed.
+  --akg-danger-fg: #b42318;
+
+  // The ground that tone sits ON when the error is a BADGE rather than a line
+  // of prose — the wizard's "somebody else owns this" marker (ADR-028). Chosen
+  // so that `--akg-danger-fg` on it measures 5.65:1, above AA for the ~10.5px
+  // type a badge is set in, and so that the badge still reads as a tint of the
+  // surface rather than as a second card: it is 1.03:1 against
+  // `--akg-panel-bg`, which is a hue change and not a step in the light ramp.
+  --akg-danger-bg: #fbeae8;
+
+  // Four aliases that name the ROLE rather than repeat the value.
+  //
+  // A team's state is drawn in two places — the teams table's row tag and the
+  // conversation header's pill — and until now the two agreed only by
+  // accident: the header picked its pair by hand, the table asked PrimeNG for
+  // a `severity` and got Aura's blue and green, which `app.theme.ts` re-points
+  // for `primary` and for nothing else. These point at the exact pair the
+  // header already uses (conversation-header.component.scss), so the two
+  // surfaces now agree BY CONSTRUCTION — re-point the accent and both move.
+  //
+  // "live" covers running, working AND idle: all three ARE running, and only
+  // the label and the icon separate them. Recolouring idle toward the neutral
+  // would read as a lesser kind of stopped, which it is not. "neutral" is
+  // stopped — present, not an error, and deliberately not the danger tone.
+  --akg-status-neutral-bg: var(--akg-hairline);
+  --akg-status-neutral-fg: var(--akg-text-muted);
+  --akg-status-live-bg: var(--akg-accent-bg);
+  --akg-status-live-fg: var(--akg-accent-fg);
+
+  // --- Console shell: the second type step ---------------------------------
+  // The agent turn's prose. Deliberately one step off --akg-text: the darker
+  // value is reserved for headings and labels, so a paragraph set in it reads
+  // as a title the length of a page. The mock also carried a separate #2b302e
+  // for a tool-step title; that is this value with a rounding error on it, and
+  // shipping both would ask every future reader to tell them apart. Collapsed.
+  --akg-turn-fg: #1b211f;
+
+  // NOTE — `--akg-text-meta` and `--akg-text-hint` used to live here, as the
+  // two lightest rungs of a four-step text ramp. They were deleted rather than
+  // re-pointed: every rung below `--akg-text-muted` fails AA on this palette's
+  // grounds, so a token named for text that no text may use is a trap with a
+  // helpful-sounding name. Second lines and hint text are `--akg-text-muted`
+  // set smaller and lighter; see the note beside it above.
+
+  // Quiet CONTROL text — a composer pill, an inspector tool chip, a worker
+  // avatar's glyph. Darker than the meta steps above on purpose: these are
+  // things you click, and a control that reads as supporting text does not
+  // look clickable.
+  --akg-control-fg: #4b4844;
+
+  // --- Console shell: signals ---------------------------------------------
+  // A dot that is PRESENT but not live: a stopped team in the rail, an idle
+  // member, a tool-step bullet. It exists so "not running" has a mark of its
+  // own rather than being the absence of one — an empty slot reads as a
+  // rendering bug, a grey dot reads as a state.
+  --akg-dot-idle: #cfc8c2;
+
+  // --- Console shell: avatars ---------------------------------------------
+  // The only warm tone in the palette, and that is the whole of its job: this
+  // turn is a PERSON, not an agent. Nothing else in the console is allowed to
+  // be warm, so the distinction survives without a label.
+  --akg-avatar-human-bg: #c4a892;
+  // A DEEP BROWN INITIAL, not white. The mock draws white, and white on this
+  // warm tone measures 2.24:1 — the person's own initial was the least legible
+  // text in the console. Darkening the GROUND instead would have cost the warm
+  // tone its warmth, which is the whole of its job; inverting the mark keeps
+  // the identity and buys 5.6:1. Same hue family as the ground, so it still
+  // reads as one object rather than as a colour pairing.
+  --akg-avatar-human-fg: #42301f;
+
+  // A worker's avatar is an ALIAS, not a new colour: the mock fills it with a
+  // hover ground. Naming the role is what stops the next reader inventing a
+  // hex for it and quietly forking the palette in one component.
+  --akg-avatar-worker-bg: var(--akg-panel-hover);
+  --akg-avatar-worker-fg: var(--akg-control-fg);
+
+  // The transcript's 28px avatar (--akg-avatar-size) anchors the 42px gutter
+  // and must not move. The inspector's member cards are a denser list with no
+  // gutter to honour, so they get their own smaller step.
+  --akg-avatar-size-sm: 26px;
+
+  // --- Console shell: wells and fills --------------------------------------
+  // Another alias: a BORDER value used as a FILL. The rail's search field and
+  // the empty-state glyph tile are inset wells — a recessed ground with no
+  // outline — rather than outlined boxes, and the border tone is exactly the
+  // depth that reads as recessed against the panel.
+  --akg-well-bg: var(--akg-surface-border);
+
+  // NOT from the mock. The mock's rail hover (#e8e2dd, --akg-panel-hover) is
+  // LIGHTER than its active row (#e4ded8, --akg-panel-active), so pointing at
+  // the team you are already in makes it fade — the one row that must not move
+  // is the one that visibly retreats. This is the darker step the active row
+  // hovers TO, so hover always means "further forward".
+  --akg-panel-active-hover: #ddd6cf;
+
+  // The composer's edge. One step darker than --akg-surface-border because the
+  // composer is a raised card sitting ON the conversation, not an inset field
+  // cut into it; the border tone is what carries that difference at rest.
+  --akg-composer-border: var(--akg-panel-hover);
+
+  // --- Console shell: focus ------------------------------------------------
+  // NOT from the mock either, which ships `outline: none` and no
+  // `:focus-visible` rule anywhere — i.e. a keyboard user cannot see where
+  // they are. Two rings rather than one: the inner ring is the surface colour,
+  // so the accent ring reads as a ring at any size and against any ground it
+  // is drawn over, instead of merging with a dark control. Every interactive
+  // element in the console uses this, unmodified.
+  --akg-focus-ring: 0 0 0 2px var(--akg-overlay-bg), 0 0 0 4px var(--akg-accent-fg);
+
+  // --- Console shell: pane geometry ----------------------------------------
+  // Fixed widths with a viewport cap. The fixed value is what the panes want;
+  // the vw cap is what stops two of them eating a small laptop's screen and
+  // leaving the conversation — the thing the app is for — as a slot.
+  // THE RAIL IS RESIZABLE NOW, so both of these have a TypeScript counterpart
+  // and every edit here is a paired edit. The cascade applies the token, the
+  // drag arithmetic runs in `core/ui/pane-layout.ts`, and neither side can read
+  // the other — so the numbers are written down twice on purpose and stay in
+  // step only because this comment says they must. Same bargain, and the same
+  // convention, as `--akg-inspector-min-width` below.
+  //   --akg-rail-width     <-> RAIL_DEFAULT_WIDTH_PX
+  //   --akg-rail-max-width <-> RAIL_MAX_TRACK_PERCENT (26vw === 26%)
+  // Move one and you must move the other: whenever they disagree the drag has a
+  // dead zone at that end, where the handle keeps tracking the pointer and the
+  // boundary stops.
+  --akg-rail-width: 268px;
+  --akg-rail-max-width: 26vw;
+  --akg-inspector-width: 310px;
+
+  // The inspector is RESIZABLE now, so --akg-inspector-width stopped being
+  // "the width" and became only the DEFAULT basis — what the pane falls back to
+  // before any drag has happened, via
+  // `flex: 0 0 var(--akg-inspector-basis, var(--akg-inspector-width))`.
+  //
+  // There is deliberately NO vw maximum here any more. A `max-width` on the
+  // pane silently wins against a dragged flex-basis: past the cap the divider
+  // keeps moving and the pane stops, which reads as a broken drag and would
+  // never surface as a failing test. The cap lives in exactly one place now —
+  // INSPECTOR_MAX_PERCENT in `pane-layout.ts` — where it is also the number the
+  // divider clamps to, so the handle cannot travel anywhere the pane will not
+  // follow.
+  //
+  // A PIXEL floor, which is the one guarantee a percentage cannot make: 18% of
+  // a 900px pane row is 162px, and the inspector's tab strip needs ~206px to
+  // seat its six tabs on one line (five glyphs plus the selected tab, which is
+  // laid out at a zero basis and paid for out of the leftover — the arithmetic
+  // is in `inspector-tabs.component.scss`). 240px clears that with room over,
+  // so the strip never wraps and the selected tab's caption has somewhere to
+  // grow into.
+  //
+  // THIS FLOOR IS NOT A SMALL-VIEWPORT SPECIAL CASE. It outranks the
+  // percentage preference — `min-width` beats `flex-basis` — at every viewport
+  // below roughly 1600px, which includes the 1440px width the console was
+  // drawn against: there the row is 1180px, 18% of it is 212px, and this
+  // number is what the pane actually adopts. An earlier draft of this comment
+  // said "on a small viewport", which reads as a rare case and is not one.
+  //
+  // BECAUSE IT USUALLY WINS, THE DIVIDER HAS TO KNOW ABOUT IT. Its clamp is
+  // the higher of `INSPECTOR_MIN_PERCENT` and this value converted at the
+  // measured row width — see `INSPECTOR_MIN_WIDTH_PX` in
+  // `core/ui/pane-layout.ts`, which is this number's other half and the only
+  // other place it is written down. Move one and you must move the other:
+  // whenever they disagree the drag has a dead zone at its narrow end, where
+  // the handle keeps tracking the pointer and the boundary stops.
+  --akg-inspector-min-width: 240px;
+
+  // Both rails collapse on the same clock, so the shell reads as one object
+  // moving rather than two panels racing. Honour `prefers-reduced-motion` at
+  // the CONSUMER: a token cannot carry a media query, and a motion preference
+  // is about the animation, not about the duration value.
+  --akg-pane-transition-duration: 180ms;
+
+  // --- Console shell: controls ---------------------------------------------
+  // One size pair for every icon button in the console. The mock drew its
+  // three near-identical icon buttons at 30/32px with 8/9px radii; those
+  // deltas are drawing noise, and reproducing them would spend a reader's
+  // attention looking for a distinction that was never intended.
+  --akg-icon-button-size: 30px;
+  --akg-icon-button-size-sm: 28px;
+  --akg-icon-button-radius: 9px;
+
+  // A pill is fully round; a card is squared enough to still read as a panel.
+  --akg-pill-radius: 999px;
+  --akg-card-radius: 12px;
+
+  // The composer rests at one row and grows to here. The old 400px cap meant
+  // four resting rows of furniture under every conversation on every screen —
+  // a text box sized for the longest message anyone might write rather than
+  // for the one being written.
+  --akg-composer-max-height: 180px;
+
+  // --- Console shell: section labels ---------------------------------------
+  // The uppercase micro-label shared by the rail's group headers, the
+  // inspector's TOOLS and its USAGE. The repetition IS the language: one
+  // treatment means "a new group starts here", so a second treatment would
+  // dilute it rather than add anything.
+  --akg-section-label-size: 10.5px;
+  --akg-section-label-tracking: 0.1em;
+
+  // --- Console shell: data rows -------------------------------------------
+  // The teams table is the console's only DENSE list, and until now it had no
+  // rhythm of its own: PrimeNG's Aura padding decided the row height and the
+  // rail's 9px/11px was written as px literals a table stylesheet could not
+  // see. These are that rhythm, named once so the rail and the table can stop
+  // agreeing by coincidence.
+  //
+  // Vertical is the rail's own 9px. Horizontal is WIDER than the rail's 11px:
+  // a rail row is one column of text in a 268px lane, a table row is six
+  // columns that need a gutter between them rather than only at the edges.
+  --akg-row-padding-y: 9px;
+  --akg-row-padding-x: 12px;
+
+  // THE THREE ROW STATES, and they are NOT the rail's three.
+  //
+  // The rail paints its rows on `--akg-panel-bg`; the table paints its rows on
+  // `--akg-overlay-bg` (white). `--akg-panel-hover` is sized for the tinted
+  // ground — on white it lands four steps down the ramp and reads as a PRESS
+  // rather than as a pointer passing over. So each state is re-based one step
+  // lighter, and the ORDER is what is preserved rather than the values.
+  //
+  // The order is the rail's inversion rule (see `--akg-panel-active-hover`
+  // below): hovering a selected row must go FURTHER FORWARD, never fade. A
+  // table that reused `--akg-row-selected` for its hover would reintroduce
+  // exactly the defect the rail fixed, one surface over.
+  --akg-row-hover: var(--akg-hairline);
+  --akg-row-selected: var(--akg-panel-hover);
+  --akg-row-selected-hover: var(--akg-panel-active);
+
+  // --- The type scale ------------------------------------------------------
+  // Three steps, and they are the sizes the console already ships — the rail's
+  // row name, its meta line, and the control captions between them. They were
+  // px literals repeated across five stylesheets, so "match the rail" meant
+  // copying a number and hoping. `--akg-section-label-size` below is the
+  // fourth step and predates these; it keeps its own name because it carries a
+  // tracking value with it and is a treatment rather than a size.
+  //
+  // px, not rem: `html { font-size: 13px }` in `styles.scss` already re-bases
+  // the root, so a rem scale here would be a second multiplier on a number
+  // that is not 16 and reads as though it were.
+  --akg-font-size-body: 13.5px;
+  --akg-font-size-control: 12.5px;
+  --akg-font-size-meta: 11.5px;
+
+  // --- Console shell: quiet controls ---------------------------------------
+  // The pair a low-emphasis button rests on. `--akg-control-fg` above is
+  // already "things you click"; these are the ground and the edge under it.
+  //
+  // A WHITE CHIP ON THE TINTED PANEL, not a grey one. The teams page's
+  // controls sit on `--akg-panel-bg` furniture, and a grey button on a grey
+  // card has to be outlined hard enough to be found — which is how a toolbar
+  // ends up louder than the table it operates on. Lifting the control to the
+  // overlay ground lets the edge stay a hairline.
+  --akg-control-bg: var(--akg-overlay-bg);
+  --akg-control-border: var(--akg-surface-border);
+  --akg-control-hover-bg: var(--akg-panel-hover);
+  // The same corner as an icon button, because on the teams page they sit in
+  // one row and a 6px caption button beside a 9px icon button reads as two
+  // libraries.
+  --akg-control-radius: var(--akg-icon-button-radius);
+
+  // A switch that is OFF. `--akg-dot-idle` is already the palette's "present
+  // but not running" tone and that is exactly what an off switch is; aliased
+  // rather than duplicated so the next reader does not invent a second grey.
+  --akg-switch-off-bg: var(--akg-dot-idle);
+
+  // --- Attention -----------------------------------------------------------
+  // NOT an error, and that is the whole reason it exists. Two surfaces need a
+  // tone that means "something here is on and you cannot see it from here" —
+  // the teams page's Filters control while the filter row is hidden AND
+  // narrowing the list, and the config dialog's unsaved-changes dot. Both
+  // reached past this file for it: `severity="warn"` resolved to Aura's amber,
+  // which nothing here names, and the dirty dot carried a literal `#f59e0b`.
+  //
+  // `--akg-attention-fg` is DARK amber, not the signal amber those two used.
+  // #f59e0b measures 2.57:1 on white — fine for a decorative dot, illegal for
+  // the button caption that also needs this tone. #7a4b00 clears 4.5:1 on
+  // every ground this palette declares (worst case 5.15 on
+  // `--akg-panel-active-hover`), so ONE token can carry both the glyph and the
+  // label instead of the surface splitting into a legible tone and a pretty
+  // one. `token-contrast.spec.ts` measures it as TEXT.
+  //
+  // The ground is the same bargain `--akg-danger-bg` makes: 1.02:1 against
+  // `--akg-panel-bg`, so the control reads as a TINT of the surface rather
+  // than as a second card, while still carrying 6.64:1 for the caption on it.
+  --akg-attention-fg: #7a4b00;
+  --akg-attention-bg: #fdf1de;
+  --akg-attention-border: #f4e2c6;
+
+  // One step of team hierarchy in the inspector, and the SOLE owner of that
+  // number. `member-card` binds its depth as `--akg-depth` and its stylesheet
+  // multiplies the two, so re-pointing this genuinely moves the indent.
+  //
+  // It used to be mirrored by a `MEMBER_INDENT_PX` constant in
+  // `team-members.selector.ts` that the card actually multiplied by — which
+  // made this token dead: a deployment could re-declare it and nothing in the
+  // app would read it. The constant is gone. What the selector still owns is
+  // the DEPTH, and the cap on it: three steps, enforced there rather than here,
+  // so a deep tree stops indenting instead of marching off the side of a 310px
+  // pane.
+  --akg-member-indent: 16px;
+
+  // --- The hierarchy graph ------------------------------------------------
+  //
+  // WHY THE GRAPH NEEDS TOKENS OF ITS OWN, AND WHY THEY ARE READ FROM
+  // JAVASCRIPT RATHER THAN FROM CSS.
+  //
+  // echarts draws the hierarchy tab onto a CANVAS. A canvas has no cascade and
+  // no `var()`: a fill of `"var(--akg-accent-fg)"` is not an unknown colour to
+  // it, it is an unparseable string. So the component RESOLVES these names
+  // through `getComputedStyle` and hands echarts the literal — which is why
+  // `graphCategoryColors()` lives beside the service that owns the legend, and
+  // why `graph.component.spec.ts` asserts that no colour reaching the canvas is
+  // still a `var(...)` string. The one place `var()` does work is the tooltip,
+  // which echarts renders as real DOM.
+  //
+  // Until this block existed the graph carried ten raw hexes in
+  // `category.service.ts` — a cool blue-grey ramp (`#6A9BB6`, `#fac858`,
+  // `#ee6666`, …) lifted from an echarts sample. Against this warm neutral
+  // console it read as a screenshot of a different application, and no
+  // rebrand could reach it.
+
+  // THE CATEGORICAL RAMP. One stop per squad, assigned in discovery order.
+  //
+  // TEN SEPARATE VALUES, NOT TEN TINTS OF THE ACCENT. A categorical ramp's
+  // entire job is telling categories apart; collapsing it onto one hue would
+  // make the legend decorative. The constraint it is built to is therefore
+  // TWO-SIDED, and both sides are measured in `category.service.spec.ts`:
+  //   - every stop clears 3:1 on `--akg-panel-bg`, the inspector's ground, as
+  //     a meaningful non-text mark under WCAG 1.4.11. They all in fact clear
+  //     4.5:1 (worst case 4.86), so a stop is also safe to set type in;
+  //   - every PAIR is at least 25 apart in CIE76 ΔE, so no two squads read as
+  //     the same colour. The measured minimum is 25.1, between 6 and 8.
+  //
+  // DELIBERATELY NOT ALIASED to `--akg-accent-fg` / `--akg-tool-accent` /
+  // `--akg-danger-fg`, even where a value coincides. An alias would let a
+  // rebrand move one stop onto another and silently destroy the separation
+  // this ramp exists for — and stop 1 matching the accent today is a
+  // coincidence worth keeping, not a dependency worth creating.
+  //
+  // NO RED, and that is the reason there are two purples and a rose instead.
+  // `graph.selector.ts` paints a node that has ERRORED red. A squad that
+  // happened to draw the red stop would be indistinguishable from a failure,
+  // and "this agent is broken" is the one thing on this canvas that must never
+  // be ambiguous.
+  --akg-graph-category-1: #005d46;
+  --akg-graph-category-2: #6434da;
+  --akg-graph-category-3: #1f4fa8;
+  --akg-graph-category-4: #8a5b00;
+  --akg-graph-category-5: #a32a7a;
+  --akg-graph-category-6: #00707e;
+  --akg-graph-category-7: #55701a;
+  --akg-graph-category-8: #42506b;
+  --akg-graph-category-9: #c2185b;
+  --akg-graph-category-10: #8a5f4a;
+
+  // The ground the canvas is drawn ON. It is `--akg-panel-bg` because that is
+  // what the inspector paints behind it, and the graph needs the value as a
+  // COLOUR rather than as a backdrop: nodes carry a ring of it so two
+  // overlapping squares still read as two, and labels carry a halo of it so a
+  // name crossing an edge stays legible. Both are cut-outs, and a cut-out that
+  // does not match its ground is a visible outline.
+  --akg-graph-ground: var(--akg-panel-bg);
+
+  // The message arrows. `--akg-glyph-quiet` is already the palette's "present
+  // but not speaking" tone and measures 3.26:1 on the ground above, which is
+  // the 1.4.11 bar for a mark that carries meaning — and these do: an edge is
+  // the only thing on the canvas that says who talked to whom. echarts'
+  // untouched default here is `#aaa`, a cool grey, and it was one of the two
+  // reasons the graph read as foreign.
+  --akg-graph-edge: var(--akg-glyph-quiet);
+
+  // The agent names. Full-strength `--akg-text`, not the muted step: on this
+  // canvas the name IS the content, and there is no heading above it for the
+  // muted tone to be quiet relative to.
+  --akg-graph-label: var(--akg-text);
+}

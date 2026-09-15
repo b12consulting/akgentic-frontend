@@ -134,6 +134,21 @@ export class FetchService {
    *
    * @param responseType `'json'` (default) returns `response.json()`;
    *   `'text'` returns `response.text()` as a string.
+   *
+   * @param silent Suppress the failure toast. THE THROW IS UNCHANGED.
+   *
+   *   For a request whose failure is an EXPECTED ANSWER rather than a fault —
+   *   a capability probe against a backend that may not implement the route.
+   *   The feedback endpoints are the live case: no released server tier serves
+   *   `/get-feedback`, so every rateable turn raised its own "Request failed:
+   *   Not Found" and the user got a wall of them for a feature they had not
+   *   touched.
+   *
+   *   This does NOT weaken the contract above. `FetchFailure` still means "the
+   *   caller must handle this"; `silent` changes only whether the USER was
+   *   told, and a caller passing it takes on the duty of saying something
+   *   useful instead — normally by disabling the feature ONCE rather than
+   *   reporting the same absence per item.
    */
   async fetch({
     url,
@@ -141,12 +156,14 @@ export class FetchService {
     successMessage,
     errorMessage,
     responseType = 'json',
+    silent = false,
   }: {
     url: string;
     options?: RequestInit;
     successMessage?: string;
     errorMessage?: string;
     responseType?: FetchResponseType;
+    silent?: boolean;
   }): Promise<any> {
     options = this.config.hideLogin
       ? options
@@ -164,7 +181,9 @@ export class FetchService {
       const message =
         errorMessage || 'Server unreachable. Check your connection.';
       console.error('Network error: server unreachable');
-      this.showNotification(message, 'error');
+      if (!silent) {
+        this.showNotification(message, 'error');
+      }
       throw new NetworkError(message, { cause });
     }
 
@@ -186,7 +205,9 @@ export class FetchService {
         errorMessage ||
         `Request failed: ${response.statusText}\n\n${errorDetail}`;
 
-      this.showNotification(resolvedErrorMessage, 'error');
+      if (!silent) {
+        this.showNotification(resolvedErrorMessage, 'error');
+      }
 
       // Throw an HttpError carrying the status + parsed body so callers that
       // need to branch (e.g. 422 vs 5xx) can inspect `.status` / `.body`.

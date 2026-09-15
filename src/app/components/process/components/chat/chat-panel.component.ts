@@ -3,35 +3,56 @@ import {
   AfterViewChecked,
   Component,
   ElementRef,
-  HostListener,
   inject,
   Input,
   OnDestroy,
   OnInit,
   ViewChild,
 } from '@angular/core';
+import { TranslatePipe } from '@ngx-translate/core';
 import { combineLatest, Subscription } from 'rxjs';
 
 import { ChatMessage, ENTRY_POINT_NAME } from '../../selectors/chat-message.model';
+import {
+  buildDisplayItems,
+  DisplayItem,
+  mainTranscriptRuns,
+  trackDisplayItem,
+} from '../../selectors/display-items';
 import { ActorAddress } from '../../../../protocol/message.types';
 import { ApiService } from '../../../../core/http/api.service';
 import { ChatService, ThinkingState } from '../../selectors/chat.selector';
 import { IngestionService } from '../../event/ingestion.service';
 import { ContextService } from '../../../../core/context/context.service';
+import { AkgentService } from '../../../../core/ui/akgent.service';
+import { defaultRecipientName, isToolActor } from '../../selectors/actor-kind';
+import { GraphDataService } from '../../selectors/graph.selector';
+import { NodeInterface } from '../../models/types';
 import { Selectable, SelectionService } from '../../ui-state/selection.service';
 import {
   AnsweredRequest,
   ChatHumanModalComponent,
   HumanModalReply,
 } from './chat-human-modal.component';
+import {
+  AgentConversationModalComponent,
+  ReaderSendRequest,
+} from './agent-conversation-modal.component';
+import {
+  AgentReaderService,
+  AgentRef,
+} from '../../../../core/ui/agent-reader.service';
 import { ChatMessageComponent } from './chat-message.component';
 import { ChatThinkingComponent } from './chat-thinking.component';
 import { ProcessUserInputComponent } from '../user-input/user-input.component';
 
-/** Discriminated-union item rendered inline in the chat panel. */
-export type DisplayItem =
-  | { kind: 'message'; data: ChatMessage }
-  | { kind: 'thinking'; data: ThinkingState };
+/**
+ * The transcript row types now live in `../../selectors/display-items` — the
+ * reader renders the same list, and one shape rendered by two views cannot be
+ * declared by one of them. Re-exported here so existing importers of the panel
+ * keep compiling.
+ */
+export type { DisplayItem, TurnDisplayItem } from '../../selectors/display-items';
 
 /**
  * Chat panel scroll model (ADR-016, simplified rewrite).
@@ -62,6 +83,15 @@ export type DisplayItem =
  * The per-agent `akgent-chat` trace keeps its own stick-to-bottom autoscroll —
  * the two surfaces diverge on purpose (see `akgent-chat.component.ts#scroll()`).
  */
+/**
+ * The status pill's key while the view is following the newest turn.
+ *
+ * A named constant because TWO rules read it: the pill's own label and the glyph
+ * `indicatorIcon` picks. A literal repeated in both is a rename away from an
+ * icon that quietly stops matching its label.
+ */
+const AUTO_SCROLLING_KEY = 'chat.autoScrolling';
+
 @Component({
   selector: 'app-chat-panel',
   standalone: true,
@@ -70,7 +100,9 @@ export type DisplayItem =
     ChatMessageComponent,
     ChatThinkingComponent,
     ChatHumanModalComponent,
+    AgentConversationModalComponent,
     ProcessUserInputComponent,
+    TranslatePipe,
   ],
   templateUrl: './chat-panel.component.html',
   styleUrl: './chat-panel.component.scss',
@@ -90,6 +122,9 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   selectionService: SelectionService = inject(SelectionService);
   apiService: ApiService = inject(ApiService);
   private contextService: ContextService = inject(ContextService);
+  private akgentService: AkgentService = inject(AkgentService);
+  private graphDataService: GraphDataService = inject(GraphDataService);
+  private agentReader: AgentReaderService = inject(AgentReaderService);
 
   chatMessages: ChatMessage[] = [];
   thinkingStates: ThinkingState[] = [];
@@ -103,7 +138,32 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   modalPendingMessages: ChatMessage[] = [];
   modalAnsweredMessages: AnsweredRequest[] = [];
 
+  // --- sub-agent conversation reader (Epic 51) --------------------------------
+  // The reader owns ONLY its own visibility. Which agent it shows is the app's
+  // selection, read back off `AkgentService` — the same value that drives the
+  // agent tabs — so opening the reader on one agent and closing it can never
+  // leave the right-hand panel pointing at another.
+  readerVisible = false;
+  readerAgents: NodeInterface[] = [];
+  readerSelectedAgentId: string | null = null;
+  /** Gates the reader's composer. A stopped team accepts no message, and an
+   *  enabled control that silently does nothing is worse than a disabled one.
+   *  Mirrors the guard `akgent-chat` already applies to its own per-agent box. */
+  readerCanSend = false;
+
+  /**
+   * The agent an unaddressed message routes to — see `defaultRecipientName`,
+   * which the composer routes on and this reads for the same answer.
+   *
+   * The transcript names a turn's recipient only when it is NOT this, so that
+   * the label marks a choice the user made rather than captioning every message
+   * with the default. Null until the roster arrives, which reads as "no default
+   * known" and keeps the transcript silent rather than guessing.
+   */
+  defaultRecipient: string | null = null;
+
   private subscription!: Subscription;
+  private readerSubscriptions = new Subscription();
   private notificationSubscription!: Subscription;
   private justSentSubscription!: Subscription;
   private runningSubscription!: Subscription;
@@ -111,7 +171,6 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   private expandedMessageIds = new Set<string>();
   /** Story 4-8: per-bubble expansion state. */
   private thinkingExpanded = new Set<string>();
-  selectedMessageId: string | null = null;
   pendingNotifications: Set<string> = new Set();
 
   // --- scroll state -----------------------------------------------------------
@@ -152,6 +211,41 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   private readonly TOP_PAD = 8;
 
   ngOnInit(): void {
+    // The reader's agent list IS the graph's node list (no second source of
+    // truth about who is on the team), and its selected agent IS the app's.
+    this.readerSubscriptions.add(
+      this.graphDataService.nodes$.subscribe((nodes) => {
+        // TOOLS ARE NOT READABLE. The graph's node list is everything on the
+        // team — agents, the human, and the tools that back them — because the
+        // drawing needs all of it. The reader does not: `#VectorStore` has no
+        // conversation to open and no inbox to send to, so offering it is a row
+        // that can only disappoint. The rule lives in `isToolActor` rather than
+        // inline, because the Member picker asks the same question and two
+        // copies of it would eventually disagree.
+        this.readerAgents = nodes.filter((n) => !isToolActor(n.actorName));
+
+        // Resolved HERE, once per roster change, rather than by each turn: it
+        // is a fact about the team's shape and a turn holding the graph to ask
+        // about itself would be the wrong thing owning it. The transcript uses
+        // it to decide whether a turn's recipient is worth naming — see
+        // `ChatMessageComponent.ownRecipient`.
+        this.defaultRecipient = defaultRecipientName(nodes, ENTRY_POINT_NAME);
+      }),
+    );
+    this.readerSubscriptions.add(
+      this.akgentService.selectedAkgent$.subscribe((akgent) => {
+        this.readerSelectedAgentId = akgent?.agentId ?? null;
+      }),
+    );
+    // W5a: the reader is hosted here (it is bound to this panel's message list),
+    // but the inspector's member cards are the natural place to open it from.
+    // `AgentReaderService` carries the single bit those callers cannot reach —
+    // "show it" — while WHICH agent still travels the app's one selection path,
+    // so the reader and the right-hand panel can never point at two agents.
+    this.readerSubscriptions.add(
+      this.agentReader.open$.subscribe((agent) => this.openReaderOn(agent)),
+    );
+
     this.notificationSubscription = this.chatService.pendingNotifications$.subscribe(
       (pending) => {
         this.pendingNotifications = pending;
@@ -178,6 +272,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.runningSubscription = this.contextService.currentTeamRunning$.subscribe(
       (running) => {
         if (!running) this.following = false;
+        this.readerCanSend = running;
         this.updateIndicator();
       },
     );
@@ -193,6 +288,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     this.notificationSubscription?.unsubscribe();
     this.justSentSubscription?.unsubscribe();
     this.runningSubscription?.unsubscribe();
+    this.readerSubscriptions.unsubscribe();
   }
 
   // ---------------------------------------------------------------------------
@@ -217,7 +313,13 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
 
     this.chatMessages = classified;
     this.thinkingStates = thinking;
-    this.displayItems = this.buildDisplayItems(classified, thinking);
+    // W3: the panel subscribes to EVERY agent's runs (one stream, one
+    // subscription) and scopes them here. The scoping is a pure step
+    // downstream, not a different subscription — see `mainTranscriptRuns`.
+    this.displayItems = buildDisplayItems(
+      classified,
+      mainTranscriptRuns(classified, thinking),
+    );
 
     // The user's just-sent message arrived → pin it to the top (done in
     // ngAfterViewChecked once it has rendered). The baseline distinguishes the
@@ -307,7 +409,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   onJumpToLatest(): void {
     this.following = true;
     this.unseen = false;
-    this.indicatorLabel = 'Auto scrolling';
+    this.indicatorLabel = AUTO_SCROLLING_KEY;
     this.anchorId = null;
     this.clearSpacer();
     this.scrollToBottom();
@@ -402,21 +504,29 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     return messagesBottom > c.scrollTop + c.clientHeight + 4;
   }
 
-  /** The status-pill label for the current state (pure). */
+  /**
+   * The status pill's translation KEY for the current state (pure).
+   *
+   * A key rather than a sentence, and not only because the template needs one:
+   * `indicatorIcon` below picks the glyph by comparing against this value. Held
+   * as copy, that comparison would have broken the moment the pill was
+   * translated — the icon would silently fall through to the down-arrow in every
+   * language but English, and nothing would have failed to say so.
+   */
   private computeIndicatorLabel(belowFold = this.newestMessageBelowFold()): string | null {
-    // "Auto scrolling" only while the process is RUNNING — a stopped team has
+    // Auto-scrolling only while the process is RUNNING — a stopped team has
     // nothing to follow.
     if (this.following && this.contextService.currentTeamRunning$.value) {
-      return 'Auto scrolling';
+      return AUTO_SCROLLING_KEY;
     }
     if (!belowFold) return null;
-    return this.unseen ? 'New messages' : 'Messages';
+    return this.unseen ? 'chat.newMessages' : 'chat.messages';
   }
 
   /** Icon class for the status pill — a "following" glyph while auto scrolling,
-   *  a down-arrow for the jump-to-latest states (keyed off the shown label). */
+   *  a down-arrow for the jump-to-latest states (keyed off the shown state). */
   get indicatorIcon(): string {
-    return this.indicatorLabel === 'Auto scrolling' ? 'pi-sync' : 'pi-arrow-down';
+    return this.indicatorLabel === AUTO_SCROLLING_KEY ? 'pi-sync' : 'pi-arrow-down';
   }
 
   /** Apply the pill label; clears `unseen` once the user is at the bottom
@@ -469,10 +579,6 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
    * Bubble click updates the visual selection highlight only. Routing is driven
    * exclusively by the Send-to dropdown in `user-input.component` (Story 4-11).
    */
-  onBubbleClicked(chatMsg: ChatMessage): void {
-    this.selectedMessageId = chatMsg.id;
-  }
-
   /** Open the Rule 3 modal with every still-unanswered message from the clicked
    *  bubble's agent pair. */
   onRule3Clicked(chatMsg: ChatMessage): void {
@@ -547,22 +653,69 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
       .filter((x): x is AnsweredRequest => x !== null);
   }
 
-  onBackgroundClick(): void {
-    this.selectedMessageId = null;
-  }
-
-  @HostListener('document:keydown.escape')
-  onEscapePress(): void {
-    this.selectedMessageId = null;
-  }
-
+  /**
+   * The identity badge on a turn was clicked.
+   *
+   * It selects the agent, as it always has — and now also opens the reader on
+   * it, which is the only place in the app where that agent's own two-sided
+   * conversation can be read as a conversation. `ChatMessageComponent` refuses
+   * to emit for the user's own turn and for the system announcement, so the
+   * reader can never open on an actor that is not an agent.
+   */
   onMessageSelected(chatMsg: ChatMessage): void {
+    this.openReaderOn({
+      agentId: chatMsg.sender.agent_id,
+      actorName: chatMsg.sender.name,
+    });
+  }
+
+  /** An agent was picked from the reader's own list. */
+  onReaderAgentSelected(agent: AgentRef): void {
+    this.selectAgent(agent.agentId, agent.actorName);
+  }
+
+  onReaderVisibleChange(visible: boolean): void {
+    this.readerVisible = visible;
+  }
+
+  /** Open the reader on an agent — the one place that does both halves, so a
+   *  caller cannot show the dialog without moving the selection it reads. */
+  private openReaderOn(agent: AgentRef): void {
+    this.selectAgent(agent.agentId, agent.actorName);
+    this.readerVisible = true;
+  }
+
+  /**
+   * The reader's composer asked to message the agent it is showing.
+   *
+   * This is the EXISTING send path, at the main composer's "Send to @Expert934"
+   * priority: one named recipient, the default human sender. The path segment
+   * is the ACTOR NAME, not the `agent_id` — `/teams/{id}/message/{agentName}` —
+   * and the reader carries both precisely so this call does not have to guess.
+   *
+   * Deliberately NOT `chatService.emitJustSent()`: that signal pins the MAIN
+   * transcript's scroll to the echo of a send, and a message sent from the
+   * reader may not even be rendered there under the scoping rule.
+   */
+  onReaderSend(request: ReaderSendRequest): void {
+    this.apiService
+      .sendMessage(this.processId, request.content, request.actorName)
+      .catch((err) => console.error('Failed to send message to agent:', err));
+  }
+
+  /**
+   * Route an agent choice through the app's ONE selection path.
+   *
+   * The `Selectable` deliberately carries the identity only, never the graph
+   * node: a node drags its `humanRequests` along, and `SelectionService` opens
+   * the human-input dialog for those. The reader has a composer of its own now,
+   * but that is a message TO the agent — choosing an agent to read must not put
+   * somebody else's pending request on the screen on top of it.
+   */
+  private selectAgent(agentId: string, actorName: string): void {
     const selectable: Selectable = {
       type: 'message',
-      data: {
-        name: chatMsg.sender.agent_id,
-        actorName: chatMsg.sender.name,
-      },
+      data: { name: agentId, actorName },
     };
     this.selectionService.handleSelection(selectable);
   }
@@ -571,13 +724,10 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     return item.id;
   }
 
-  /** Stable tracking key for the mixed display list. */
-  trackByDisplayItem(_: number, item: DisplayItem): string {
-    return (
-      item.kind +
-      ':' +
-      (item.kind === 'message' ? item.data.id : item.data.anchor_message_id)
-    );
+  /** Delegates to the shared key function so the panel and the reader can
+   *  never key the same row differently. */
+  trackByDisplayItem(index: number, item: DisplayItem): string {
+    return trackDisplayItem(index, item);
   }
 
   isThinkingExpanded(state: ThinkingState): boolean {
@@ -590,26 +740,5 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
     } else {
       this.thinkingExpanded.add(anchorId);
     }
-  }
-
-  /** Merge chat messages + thinking states into one chronologically sorted list. */
-  private buildDisplayItems(
-    messages: ChatMessage[],
-    thinking: ThinkingState[],
-  ): DisplayItem[] {
-    const items: DisplayItem[] = [];
-    for (const m of messages) items.push({ kind: 'message', data: m });
-    for (const t of thinking) items.push({ kind: 'thinking', data: t });
-    items.sort((a, b) => {
-      const ta =
-        a.kind === 'message' ? a.data.timestamp.getTime() : a.data.start_time.getTime();
-      const tb =
-        b.kind === 'message' ? b.data.timestamp.getTime() : b.data.start_time.getTime();
-      if (ta !== tb) return ta - tb;
-      // Tie-break: messages before thinking bubbles.
-      if (a.kind === b.kind) return 0;
-      return a.kind === 'message' ? -1 : 1;
-    });
-    return items;
   }
 }

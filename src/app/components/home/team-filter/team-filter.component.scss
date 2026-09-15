@@ -8,14 +8,24 @@
     align-items: flex-end;
     gap: 0.75rem 1rem;
     margin-bottom: 0.75rem;
-    border: 1px solid #dee2e6;
-    border-radius: 6px;
-    background: #ffffff;
+    // The same card the TABLE below is now drawn as, and for the same reason:
+    // this row sits between the restyled control row and the restyled table,
+    // so the two literals that used to be here (`#dee2e6`, `#ffffff`) were the
+    // last untokenised seam on the page — a panel that would not follow a
+    // rebrand the surfaces either side of it did follow.
+    border: 1px solid var(--akg-surface-border);
+    border-radius: var(--akg-card-radius);
+    background: var(--akg-overlay-bg);
     padding: 0.75rem 0.9rem;
     min-height: 55px;
 
     label {
-        font-size: 0.85rem;
+        // The control row's caption step, not a second 0.85rem scale. These
+        // labels name the same kind of thing its buttons do and sit one gap
+        // away from them.
+        font-family: var(--akg-font-ui);
+        font-size: var(--akg-font-size-control);
+        color: var(--akg-text-muted);
     }
 }
 

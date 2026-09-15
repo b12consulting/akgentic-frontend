@@ -20,6 +20,7 @@ import {
   ChatState,
   chatStep,
   computePendingNotifications,
+  contactStepMessageIds,
   EMPTY_CHAT,
 } from './chat.selector';
 import { MessageLogService } from '../event/message-log.service';
@@ -281,6 +282,99 @@ describe('chatFold / chatStep (pure)', () => {
     expect(state.thinkingAgents[0].tools[0].tool_call_id).toBe('call-1');
     expect(state.thinkingAgents[0].tools[0].done).toBe(false);
     expect(state.thinkingAgents[0].tools[0].arguments_preview.length).toBeGreaterThan(0);
+  });
+
+  // --- a send either ends the run or is a step inside it ---------------------
+
+  it('a send to another AGENT is a step, and does NOT end the run', () => {
+    const rcv = makeReceived({
+      sender: makeAddress({ name: '@Manager', agent_id: 'manager-1' }),
+    });
+    const contact = makeSent({
+      id: 'contact-1',
+      sender: makeAddress({ name: '@Manager', role: 'Manager', agent_id: 'manager-1' }),
+      recipient: makeAddress({ name: '@Expert', role: 'Expert', agent_id: 'expert-1' }),
+      message: makeInnerBase({ id: 'inner-c1', content: 'can you help' }),
+    });
+    const state = chatFold([rcv, contact]);
+
+    // Still open: the agent delegated and is waiting, which is the middle of a
+    // run, not the end of one. Closing here is what used to push the contact out
+    // of the fold and render it as a row of its own.
+    expect(state.thinkingAgents.length).toBe(1);
+    expect(state.thinkingAgents[0].final).toBeFalse();
+    expect(state.thinkingAgents[0].tools.length).toBe(1);
+    expect(state.thinkingAgents[0].tools[0].kind).toBe('contact');
+    expect(state.thinkingAgents[0].tools[0].tool_name).toBe('@Expert');
+    // Complete on send — there is no second event to wait for.
+    expect(state.thinkingAgents[0].tools[0].done).toBeTrue();
+  });
+
+  it('a send to a HUMAN is the answer, and ends the run', () => {
+    const rcv = makeReceived({
+      sender: makeAddress({ name: '@Manager', agent_id: 'manager-1' }),
+    });
+    // The sender is an ENVELOPE field: makeEvent(inner, overrides). Passing it
+    // inside `inner` leaves the event addressed to the default agent, the tool
+    // never attaches, and the run is removed as empty instead of finalised.
+    const evt = makeEvent(
+      {
+        __model__: 'akgentic.llm.event.ToolCallEvent',
+        tool_call_id: 'call-1',
+        tool_name: 'search_web',
+        arguments: '{"q":"x"}',
+      },
+      { sender: makeAddress({ name: '@Manager', agent_id: 'manager-1' }) },
+    );
+    const answer = makeSent({
+      sender: makeAddress({ name: '@Manager', role: 'Manager', agent_id: 'manager-1' }),
+      recipient: makeAddress({ name: '@Human', role: 'Human', agent_id: 'human-1' }),
+    });
+    const state = chatFold([rcv, evt, answer]);
+
+    expect(state.thinkingAgents.length).toBe(1);
+    expect(state.thinkingAgents[0].final).toBeTrue();
+  });
+
+  it('a contact with no live run stays a row and is absorbed by nothing', () => {
+    const contact = makeSent({
+      id: 'contact-1',
+      sender: makeAddress({ name: '@Manager', role: 'Manager', agent_id: 'manager-1' }),
+      recipient: makeAddress({ name: '@Expert', role: 'Expert', agent_id: 'expert-1' }),
+      message: makeInnerBase({ id: 'inner-c1', content: 'can you help' }),
+    });
+    const state = chatFold([contact]);
+
+    // No run to join, so nothing swallows it — and the display filter keys on
+    // what a fold actually holds, so the message keeps its own row. Nothing is
+    // ever dropped by this branch.
+    expect(state.thinkingAgents.length).toBe(0);
+    expect(contactStepMessageIds(state.thinkingAgents).size).toBe(0);
+    expect(state.messages.some((m) => m.id === 'contact-1')).toBeTrue();
+  });
+
+  it('contactStepMessageIds names exactly the sends a fold absorbed', () => {
+    const rcv = makeReceived({
+      sender: makeAddress({ name: '@Manager', agent_id: 'manager-1' }),
+    });
+    const contact = makeSent({
+      id: 'contact-1',
+      sender: makeAddress({ name: '@Manager', role: 'Manager', agent_id: 'manager-1' }),
+      recipient: makeAddress({ name: '@Expert', role: 'Expert', agent_id: 'expert-1' }),
+      message: makeInnerBase({ id: 'inner-c1', content: 'can you help' }),
+    });
+    const answer = makeSent({
+      id: 'answer-1',
+      sender: makeAddress({ name: '@Manager', role: 'Manager', agent_id: 'manager-1' }),
+      recipient: makeAddress({ name: '@Human', role: 'Human', agent_id: 'human-1' }),
+      message: makeInnerBase({ id: 'inner-a1', content: 'here you go' }),
+    });
+    const ids = contactStepMessageIds(chatFold([rcv, contact, answer]).thinkingAgents);
+
+    // The contact is on screen inside the fold, so its row is suppressed. The
+    // answer is a turn and must never be suppressed.
+    expect(ids.has('contact-1')).toBeTrue();
+    expect(ids.has('answer-1')).toBeFalse();
   });
 
   it('EventMessage ToolCallEvent with NO active thinking state → no-op, console.debug', () => {

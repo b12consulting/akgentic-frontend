@@ -1,204 +1,404 @@
-.apikey-error {
-  color: #d32f2f;
-  background: #fdeaea;
-  border: 1px solid #f5c6cb;
-  border-radius: 4px;
-  padding: 0.75rem 1rem;
-  margin-bottom: 1rem;
-  font-size: 1rem;
-  text-align: left;
+/*
+ * The login screen, in the console's language.
+ *
+ * There is no login screen in the design mock, so nothing here is transcribed:
+ * every value is derived from a treatment that already exists elsewhere in the
+ * app, and the three places this deviates say why. The rail owns the wordmark,
+ * the composer owns the raised card, the rail's search field owns the input
+ * well, the rail's "New agent team" owns the primary button, and the
+ * inspector's tab strip owns the segmented switch.
+ */
+
+/*
+ * The routed view is a flex child of the shell's `.console-main`, which is
+ * WHITE. The warm ground has to be claimed here or it is not claimed at all —
+ * component style encapsulation means the shell cannot reach in and do it.
+ *
+ * `flex: 1; min-height: 0` is the routed-host idiom the height chain depends
+ * on, and there is deliberately no `100vh`: the shell already fixes the total
+ * at the viewport with `overflow: hidden`, so a second viewport height inside
+ * it is a scrollbar waiting to happen.
+ */
+:host {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--akg-page-bg);
 }
-.apikey-card {
-  background: #fff;
-  border-radius: 8px;
-  padding: 0.5rem;
+
+.login {
+  margin: auto;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-}
-
-.apikey-field {
-  display: flex;
-  flex-direction: column;
-  margin-bottom: 1.5rem;
-}
-
-.apikey-label {
-  font-weight: 500;
-  color: #495057;
-  margin-bottom: 0.5rem;
-  text-align: left;
-}
-
-.apikey-input {
+  gap: 22px;
   width: 100%;
-  padding: 0.75rem 1rem;
-  border: 1px solid #bfc4c9;
-  border-radius: 4px;
-  font-size: 1rem;
-  background: #f8fafc;
-  transition: border-color 0.2s;
-}
-.apikey-input:focus {
-  border-color: #75aecd;
-  outline: none;
+  max-width: 380px;
+  padding: 32px 24px;
 }
 
-.apikey-btn {
+/* --- Masthead ----------------------------------------------------------- */
+
+.login__brand {
   display: flex;
-  align-items: center;
   justify-content: center;
-  gap: 0.5rem;
-  background: #75aecd;
-  color: #fff;
-  border: none;
-  border-radius: 4px;
-  padding: 0.75rem 1.5rem;
-  font-size: 1.1rem;
-  font-weight: 500;
+}
+
+/* `align-items: baseline`, not `center`: the two halves are set at 19px and
+   9px, and centring them would leave the qualifier floating in the middle of
+   the wordmark's x-height instead of sitting on its baseline. The rail makes
+   the same point in the same words. */
+.login__wordmark {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+.login__wordmark-name {
+  font-family: var(--akg-font-display);
+  font-weight: 300;
+  font-size: 19px;
+  letter-spacing: -0.2px;
+  color: var(--akg-text);
+}
+
+.login__wordmark-suffix {
+  font-family: var(--akg-font-ui);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--akg-text-muted);
+}
+
+/*
+ * A deployment's own mark, drawn INSTEAD of the wordmark above.
+ *
+ * Constrained by HEIGHT with `width: auto`, never by a fixed box: the framework
+ * has no idea what shape a deployment's file is. `sdworx-logo.svg` is a wide
+ * lockup and `akgent_logo.png` is nearly square, and a box sized for one
+ * letterboxes the other — or crops it, if the box gets an `object-fit`. Sizing
+ * on one axis and letting the file keep its own ratio is the only rule that
+ * holds for a file this stylesheet has never seen.
+ *
+ * 32px against the wordmark's ~23px (19px type at its normal line box), and the
+ * difference is deliberate rather than sloppy: a mark carries less at a given
+ * height than type set at the same height does. The masthead is ABOVE the card
+ * and the whole page is centred in the viewport, so the few extra pixels move
+ * nothing the user is aiming at.
+ *
+ * `max-width: 100%` caps a very wide lockup at the 380px column rather than
+ * letting it set the page's width.
+ */
+.login__logo {
+  max-height: 32px;
+  max-width: 100%;
+  width: auto;
+}
+
+/* --- The card ------------------------------------------------------------ */
+
+/*
+ * A RAISED card, like the composer, rather than an inset panel like the
+ * inspector's: it sits on the tinted ground and has to lift off it.
+ *
+ * DEVIATION, deliberate: `--akg-surface-border` and `--akg-card-radius` rather
+ * than the composer's `--akg-composer-border` and 24px. The composer is darker
+ * and rounder because it is a raised card on WHITE, where the lighter border
+ * disappears; this one sits on `--akg-page-bg`, where it does not, and a 24px
+ * radius on a 380px box reads as a pill rather than as a panel.
+ */
+.login__card {
+  display: flex;
+  flex-direction: column;
+  background: var(--akg-overlay-bg);
+  border: 1px solid var(--akg-surface-border);
+  border-radius: var(--akg-card-radius);
+  box-shadow: var(--akg-overlay-shadow);
+  padding: 26px 24px 24px;
+}
+
+/* The display face at its lightest weight — the page's one moment with a
+   voice, same treatment as the inspector's empty state. */
+.login__heading {
+  margin: 0;
+  font-family: var(--akg-font-display);
+  font-weight: 300;
+  font-size: 20px;
+  color: var(--akg-text);
+}
+
+.login__blurb {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  font-weight: 300;
+  line-height: 1.6;
+  color: var(--akg-text-muted);
+}
+
+/* --- Method switch ------------------------------------------------------- */
+
+/*
+ * The segmented pill row, not a tab strip with an underline. The console has
+ * one answer to "pick which of these you are looking at" and it is the
+ * inspector's; a second answer would dilute it rather than add anything.
+ */
+.login__methods {
+  display: flex;
+  gap: 2px;
+  margin: 20px 0 0;
+}
+
+.login__method {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 11px;
+  border: 0;
+  border-radius: var(--akg-pill-radius);
+  background: transparent;
+  color: var(--akg-text-muted);
+  font-family: var(--akg-font-ui);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.2;
+  white-space: nowrap;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(117,174,205,0.08);
-  transition: background 0.2s, box-shadow 0.2s;
-  margin-top: 0.5rem;
+
+  &:hover:not(.login__method--selected) {
+    background: var(--akg-panel-hover);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+  }
 }
-.apikey-btn:hover, .apikey-btn:focus {
-  background: #5b8fa8;
-  box-shadow: 0 4px 16px rgba(117,174,205,0.15);
+
+/* The TEXT token used as a fill, matching the inspector: the accent means "the
+   product is doing something", not "you are looking at this", and the primary
+   button below is already spending it. */
+.login__method--selected {
+  background: var(--akg-text);
+  color: var(--akg-overlay-bg);
 }
-.login-container {
+
+/* --- Panels -------------------------------------------------------------- */
+
+.login__panel {
   display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-  background: linear-gradient(135deg, #f0f2f5, #cfd9df);
-  padding: 1rem;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 18px;
 }
 
-.button-container {
-  margin-top: 20px;
+/* --- The API key field --------------------------------------------------- */
+
+.login__field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
 }
 
-.login-card {
-  background: #fff;
-  padding: 2rem;
-  border-radius: 8px;
-  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-  text-align: center;
-  max-width: 400px;
-  width: 100%;
+/* The uppercase micro-label envelope shared by the rail's group headers, the
+   inspector's TOOLS and its USAGE. The repetition IS the language.
+
+   The TONE is the creation dialog's `<legend>`, not the rail's, and the split
+   is the point: those are decorative group headers over content already on
+   screen, whereas this is a `<label for=>` and the only text naming the field
+   under it. The light ramp this was originally set in read at 2.78:1 on the
+   card at 10.5px — below AA for the one element that says what to type. That
+   ramp has since been deleted outright for failing AA everywhere rather than
+   only here (see the Type block in `_conversation-tokens.scss`); this rule was
+   simply the first place it was caught. */
+.login__label {
+  font-size: var(--akg-section-label-size);
+  letter-spacing: var(--akg-section-label-tracking);
+  text-transform: uppercase;
+  font-weight: 500;
+  color: var(--akg-text-muted);
 }
-.login-card h1 {
-  margin-bottom: 0.5rem;
-  font-size: 1.5rem;
-  color: #333;
-}
-.login-card p {
-  margin-bottom: 1.5rem;
-  color: #666;
-}
-.login-button {
+
+/* An INSET WELL, not an outlined field — `--akg-well-bg` is a border value used
+   as a fill, so the box reads as carved out of the card rather than drawn on
+   top of it. Same object as the rail's search. */
+.login__well {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 0.5rem 0.5rem;
-  border: none;
-  border-radius: 4px;
-  color: #fff;
-  font-size: 1rem;
-  cursor: pointer;
-  transition: background-color 0.3s ease;
-  margin: 0 auto;
+  padding: 9px 11px;
+  background: var(--akg-well-bg);
+  border-radius: 10px;
+
+  &:focus-within {
+    box-shadow: var(--akg-focus-ring);
+  }
 }
 
-.apikey {
-  flex-direction: row;
-  background-color: #75aecd;
+.login__well-glyph {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: var(--akg-glyph-quiet);
 }
 
-.form-group {
-  margin-bottom: 1rem;
+.login__input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--akg-font-ui);
+  /* DEVIATION: 14px where the rail's search is 13px. An API key is a string the
+     user has to verify character by character, not a phrase they are scanning. */
+  font-size: 14px;
+  font-weight: 300;
+  color: var(--akg-text);
+
+  /* Suppressed only because the ring on the well above replaces it. Removing it
+     without that rule is the mock's defect, not this one. */
+  &:focus {
+    outline: none;
+  }
+
+  /* `--akg-control-fg`, the CONTROL step, rather than the text step the rail
+     search's placeholder uses. The well ground is `--akg-surface-border`, which
+     is darker than the panel, and a placeholder is the only instruction
+     attached to the only input on the page — the credential it asks for is not
+     guessable from context, so it gets the tone that reads best on the ground
+     it actually sits on rather than the one used for a filter over a list the
+     user can already see. */
+  &::placeholder {
+    color: var(--akg-control-fg);
+  }
+
+  &:disabled {
+    /* The field goes quiet with the button while a request is out, so the whole
+       method reads as busy rather than half of it. */
+    opacity: 0.5;
+  }
 }
 
-.login-button:hover {
-  background-color: #6A9BB6;
-}
+/* --- Primary action ------------------------------------------------------ */
 
-.logo {
-  height: 40px;
-  margin-bottom: 1rem;
-}
-
-// Tab navigation
-.provider-tabs {
+/*
+ * The rail's "New agent team", raised one step.
+ *
+ * DEVIATION: 12px/14px rather than the rail's 10px/13.5px, and centred rather
+ * than left-aligned. In the rail this is one affordance among many; here it is
+ * the subject of the screen.
+ */
+.login__submit {
   display: flex;
+  align-items: center;
   justify-content: center;
-  gap: 8px;
-  margin-top: 24px;
-  margin-bottom: 24px;
-  border-bottom: 2px solid #e0e0e0;
-}
-
-.tab-button {
-  padding: 12px 24px;
-  background: none;
-  border: none;
-  border-bottom: 3px solid transparent;
-  cursor: pointer;
+  gap: 9px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: var(--akg-card-radius);
+  background: var(--akg-accent-fg);
+  /* The token, not a raw `#fff`: the console's "on a dark fill" white is the
+     same value everywhere and is named once. */
+  color: var(--akg-overlay-bg);
+  font-family: var(--akg-font-ui);
   font-size: 14px;
   font-weight: 500;
-  color: #666;
-  transition: all 0.2s ease;
+  cursor: pointer;
 
-  &:hover {
-    color: #333;
-    background-color: #f5f5f5;
+  &:hover:not(:disabled) {
+    background: var(--akg-accent-hover);
   }
 
-  &.active {
-    color: #1976d2;
-    border-bottom-color: #1976d2;
-    font-weight: 600;
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+  }
+
+  /*
+   * NO OPACITY, deliberately, and this is the one place the console's
+   * fade-to-say-busy idiom does not transfer.
+   *
+   * Opacity composites the whole button over the card, so fading a WHITE label
+   * on a deep-green fill moves both toward white: 0.55 — the composer pill's
+   * value — takes "Signing in…" from 7.91:1 to 2.75:1, well under AA for 14px
+   * at weight 500. The pill survives that number because it is dark text
+   * fading on a light ground, which is the opposite composite. Since the label
+   * here is the only thing saying what is happening, it is the one thing that
+   * must not fade.
+   *
+   * Nothing is lost by dropping it: this state already announces itself four
+   * ways — `disabled`, `aria-busy`, the swapped label, and the spinner.
+   */
+  &:disabled {
+    cursor: default;
   }
 }
 
-// Provider content
-.provider-content {
-  min-height: 140px;
+.login__glyph {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+
+.login__spinner {
+  font-size: 14px;
+}
+
+/* A spinner is decoration that moves. Honour the preference at the consumer —
+   the composer does the same for its send spinner. */
+@media (prefers-reduced-motion: reduce) {
+  .login__spinner {
+    animation: none;
+  }
+}
+
+/* The white chip behind a vendor mark. Neither official mark is legible against
+   the deep green, and re-tinting one to fix that would be modifying somebody
+   else's trademark. */
+.login__chip {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: var(--akg-pill-radius);
+  background: var(--akg-overlay-bg);
+}
+
+.login__mark {
+  width: 14px;
+  height: 14px;
+}
+
+/* --- Failure states ------------------------------------------------------ */
+
+/*
+ * Red TEXT, no tinted ground and no left-border bar.
+ *
+ * The bar is the bootstrap-era idiom both of this page's old error blocks used,
+ * and the console has no tinted-error surface anywhere to follow instead. The
+ * restraint is the language: `--akg-danger-fg` is dark enough to carry 12.5px
+ * on both light grounds, so the colour alone does the work.
+ *
+ * A scoped class name on purpose. `src/styles.scss` ships global `.error` and
+ * `.error-message` rules from the bootstrap era — the old template used the
+ * second one and was silently picking up a raw `red` from it.
+ */
+.login__error,
+.login__notice {
   display: flex;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 18px 0 0;
+  font-size: 12.5px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--akg-danger-fg);
 }
 
-.provider-panel {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 16px;
+.login__error-glyph {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  /* Nudged onto the first line's optical centre rather than its cap height. */
+  margin-top: 1px;
 }
-
-// Provider-specific button styles
-.login-button {
-  &.azure-button {
-    // Azure AD specific styles
-  }
-
-  &.google-button {
-    // Google specific styles
-  }
-}
-
-// Error message styling
-.error-message {
-  padding: 16px;
-  background-color: #ffebee;
-  border-left: 4px solid #f44336;
-  color: #c62828;
-  border-radius: 4px;
-  margin: 16px 0;
-
-  p {
-    margin: 0;
-  }
-}
-

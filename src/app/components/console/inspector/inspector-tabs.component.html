@@ -1,0 +1,58 @@
+<!--
+  `(keydown)` sits on the LIST rather than on each tab: the handler needs to
+  know where focus is among the whole set, and one listener on the container
+  sees every tab's keys without six identical bindings drifting apart.
+-->
+<div
+  class="inspector-tabs"
+  role="tablist"
+  [attr.aria-label]="'inspector.tablist' | translate"
+  (keydown)="onKeydown($event)"
+>
+  @for (option of options; track option.value) {
+    <!--
+      ICONS, PLUS THE CAPTION OF THE ONE YOU ARE ON.
+
+      Six labelled tabs need 632px of a 310px pane and 732px in French (the
+      budget is worked out in inspector-tabs.component.scss), so six captions
+      cannot be drawn. Drawing NONE of them is the other extreme, and it costs
+      more than it looks: `title` is the only sighted affordance a hover
+      produces, and a touch user has no hover — so on a tablet the strip becomes
+      six unnamed glyphs. One caption, on the selected tab, is what fits: it
+      restores a visible name, it says which tab is current in words rather than
+      only in fill, and only one of the six can ever be showing, so the width it
+      costs is bounded by construction.
+
+      `aria-label` and `title` stay on EVERY tab, selected or not. They resolve
+      the same key the caption renders, so the accessible name and the visible
+      text are one string — never two that could drift — and the five tabs with
+      no caption are still named.
+    -->
+    <button
+      #tab
+      type="button"
+      role="tab"
+      class="inspector-tabs__tab"
+      [class.inspector-tabs__tab--selected]="option.value === mode"
+      [id]="'inspector-tab-' + option.value"
+      [attr.aria-label]="option.labelKey | translate"
+      [attr.title]="option.labelKey | translate"
+      [attr.aria-selected]="option.value === mode"
+      [attr.aria-controls]="'inspector-panel-' + option.value"
+      [attr.tabindex]="option.value === mode ? 0 : -1"
+      (click)="select(option.value)"
+    >
+      <!--
+        Still `aria-hidden`, and so is the caption: both are decorative RELATIVE
+        TO the button's own `aria-label`, which is the single name this control
+        announces. Left exposed, the selected tab would be read out twice.
+      -->
+      <i [class]="option.icon" aria-hidden="true"></i>
+      @if (option.value === mode) {
+        <span class="inspector-tabs__caption" aria-hidden="true">{{
+          option.labelKey | translate
+        }}</span>
+      }
+    </button>
+  }
+</div>

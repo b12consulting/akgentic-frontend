@@ -3,7 +3,7 @@ import { BehaviorSubject } from 'rxjs';
 import { ConfigService } from '../../../core/config/config.service';
 import { ChatMessage } from '../selectors/chat-message.model';
 import { chatFold } from '../selectors/chat.selector';
-import { FetchService } from '../../../core/http/fetch.service';
+import { FetchService, HttpError } from '../../../core/http/fetch.service';
 import { MessageLogService } from '../event/message-log.service';
 
 export interface Feedback {
@@ -34,9 +34,38 @@ export class FeedbackService {
 
   feedbacks$: BehaviorSubject<Feedback[]> = new BehaviorSubject<Feedback[]>([]);
 
+  /**
+   * Does this backend serve the feedback routes at all?
+   *
+   * `/get-feedback` and `/set-feedback` are served by NO released server tier —
+   * they are absent from the community tier's OpenAPI entirely. So the honest
+   * default is "assume yes, find out once, and remember the answer": a 404 is
+   * this backend saying the feature does not exist here, which is a fact about
+   * the deployment and not about the message being rated.
+   *
+   * Latched to FALSE ON 404 ONLY. A 500 or a dropped connection is a fault, not
+   * an answer — latching on those would disable ratings for the session because
+   * one request happened to fail, and the user would have no way to get them
+   * back short of a reload.
+   *
+   * Without this the cost was one request and one error toast PER RATEABLE TURN,
+   * every time a control mounted: a wall of "Request failed: Not Found" raised
+   * by a feature nobody had touched, which is also what buried any real error
+   * next to it.
+   */
+  private supported = true;
+
+  /** False once the backend has told us these routes do not exist. */
+  get feedbackSupported(): boolean {
+    return this.supported;
+  }
+
   async getFeedback(run_id: string): Promise<any> {
+    // `silent`: the failure is expected on a backend without the routes, and
+    // this service reports the absence once (above) rather than per turn.
     const response = await this.fetchService.fetch({
       url: `${this.config.api}/get-feedback?run_id=${run_id}`,
+      silent: true,
     });
     return response;
   }
@@ -82,22 +111,84 @@ export class FeedbackService {
     };
   }
 
-  async loadFeedback() {
-    // Feedback loading is deferred — derived chat state may be empty until
-    // feedback integration is wired in a future story.
+  /**
+   * The one in-flight (or completed) load, or `null` if none has started.
+   *
+   * `loadFeedback` used to be called from nowhere at all. It is now called by
+   * every rating control that mounts — one per rateable turn — and each call
+   * walks the WHOLE message list issuing a request per message. Left
+   * unguarded that is quadratic: a forty-turn conversation would open with
+   * sixteen hundred requests for the same forty answers.
+   *
+   * Sharing the promise is not merely cheaper, it is also right: a message
+   * that arrives after the load cannot already carry a rating from an earlier
+   * visit, and the rating the user gives it in this session is pushed onto
+   * `feedbacks$` by `setFeedback`.
+   *
+   * The scope is one process view — this service is provided by
+   * `ProcessComponent`, so opening another team constructs a new instance and
+   * loads again.
+   */
+  private pendingLoad: Promise<void> | null = null;
+
+  async loadFeedback(): Promise<void> {
+    // Asked and answered: this backend has no feedback routes, so there is
+    // nothing to load and no point rediscovering that per mount.
+    if (!this.supported) return;
+
+    if (this.pendingLoad) return this.pendingLoad;
+
+    // Nothing derived yet: do NOT latch. Latching an empty load would let the
+    // first control to mount win a race against the log and leave every
+    // previously-given rating invisible for the rest of the session (FR8).
     const messages = this.currentMessages();
     if (messages.length === 0) return;
 
-    const feedbacks = await Promise.all(
-      messages.map(async (message) => {
-        const feedback: FeedbackBackend = await this.getFeedback(message.id);
-        if (!feedback?.score) return null;
-        return this.backendFeedbackToFrontendFeedback(message.id, feedback);
-      })
-    );
+    this.pendingLoad = this.fetchAllFeedback(messages);
+    return this.pendingLoad;
+  }
 
-    const filteredFeedbacks = feedbacks.filter((feedback) => feedback !== null);
+  private async fetchAllFeedback(messages: ChatMessage[]): Promise<void> {
+    const toFeedback = (id: string, loaded: FeedbackBackend | null) =>
+      loaded?.score ? this.backendFeedbackToFrontendFeedback(id, loaded) : null;
 
-    this.feedbacks$.next(filteredFeedbacks);
+    try {
+      // ONE request, awaited alone, BEFORE the fan-out below. This endpoint is
+      // per-message, so a conversation of N turns costs N requests — and on a
+      // backend that does not serve the route, all N are 404s. Learning that
+      // from the first one makes the answer cost a single request instead of a
+      // screenful, which is what the network tab actually showed.
+      const [probe, ...rest] = messages;
+      const probed: FeedbackBackend = await this.getFeedback(probe.id);
+
+      const restFeedbacks = await Promise.all(
+        rest.map(async (message) => {
+          const feedback: FeedbackBackend = await this.getFeedback(message.id);
+          return toFeedback(message.id, feedback);
+        })
+      );
+
+      const feedbacks = [toFeedback(probe.id, probed), ...restFeedbacks];
+
+      this.feedbacks$.next(feedbacks.filter((feedback) => feedback !== null));
+    } catch (err) {
+      if (err instanceof HttpError && err.status === 404) {
+        // NOT a fault — the deployment does not have this feature. Latch it and
+        // stop asking; the latch is deliberately NOT released, because retrying
+        // is what produced a fresh wall of 404s on every control that mounted.
+        this.supported = false;
+        console.debug(
+          '[FeedbackService] backend serves no feedback routes — ratings inert',
+        );
+        return;
+      }
+      // Release the latch so a later mount can retry. `FetchService` has
+      // already raised the toast, and a conversation whose ratings failed to
+      // load is still a usable conversation — so nothing is rethrown into the
+      // controls' `ngOnInit`, where it would surface as an unhandled rejection
+      // once per rateable turn.
+      this.pendingLoad = null;
+      console.debug('[FeedbackService.loadFeedback] load failed', err);
+    }
   }
 }

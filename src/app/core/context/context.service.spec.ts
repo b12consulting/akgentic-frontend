@@ -176,26 +176,39 @@ describe('ContextService', () => {
 
   // --- AC4 ---------------------------------------------------------------
 
-  it('(AC4) createTeamAndNavigate grows _context$.value by one and calls router.navigate', async () => {
+  it('(AC4) createTeam grows _context$.value by one and RETURNS the new id', async () => {
     const existing = [makeTeam('a')];
     apiSpy.getTeams.and.returnValue(Promise.resolve(existing));
     await service.getTeams();
 
     const response = makeTeamResponse('new');
     apiSpy.createTeam.and.returnValue(Promise.resolve(response));
-    routerSpy.navigate.and.returnValue(Promise.resolve(true));
 
-    await service.createTeamAndNavigate('cat-1');
+    const teamId = await service.createTeam('cat-1');
 
     const next = await firstValueFrom(service.teams$);
     expect(next.length).toBe(existing.length + 1);
     expect(next[next.length - 1].team_id).toBe('new');
-    expect(routerSpy.navigate).toHaveBeenCalledWith(['/process', 'new']);
+    expect(teamId).toBe('new');
   });
 
-  // --- Story 10.4 — reload-free createTeamAndNavigate --------------------
+  it('(AC4) createTeam DOES NOT NAVIGATE — the destination is the caller\'s', async () => {
+    // This spec is the fix, stated as a property. `createTeamAndNavigate` ended
+    // in `router.navigate(['/process', id])`, so creating a team threw the
+    // teams list away — on a page that, since Epic 52, keeps the list when you
+    // merely click a row. Putting the navigation back turns this red.
+    apiSpy.getTeams.and.returnValue(Promise.resolve([]));
+    await service.getTeams();
+    apiSpy.createTeam.and.returnValue(Promise.resolve(makeTeamResponse('new')));
 
-  it('(AC2 10.4) createTeamAndNavigate does not drive a reload', async () => {
+    await service.createTeam('cat-1');
+
+    expect(routerSpy.navigate).not.toHaveBeenCalled();
+  });
+
+  // --- Story 10.4 — reload-free createTeam --------------------
+
+  it('(AC2 10.4) createTeam does not drive a reload', async () => {
     const existing = [makeTeam('a')];
     apiSpy.getTeams.and.returnValue(Promise.resolve(existing));
     await service.getTeams();
@@ -210,49 +223,49 @@ describe('ContextService', () => {
     // longer contains any path that would trigger it.
     const reloadSpy = jasmine.createSpy('reloadFn');
 
-    await service.createTeamAndNavigate('cat-1');
+    await service.createTeam('cat-1');
 
     expect(reloadSpy).not.toHaveBeenCalled();
-    // Two arguments, not one: `createTeamAndNavigate` forwards `metadata`
+    // Two arguments, not one: `createTeam` forwards `metadata`
     // UNCONDITIONALLY (Story 43.1), so an omitted metadata reaches the api
     // service as an explicit `undefined`. Jasmine compares the whole argument
     // array, so the recorded call is ['cat-1', undefined]. The emptiness rule
     // lives in exactly one place — `apiService.createTeam` — and the body it
     // produces is pinned in api.service.spec.ts.
     expect(apiSpy.createTeam).toHaveBeenCalledOnceWith('cat-1', undefined);
-    expect(routerSpy.navigate).toHaveBeenCalledOnceWith(['/process', 'new']);
+    expect(routerSpy.navigate).not.toHaveBeenCalled();
   });
 
   // --- Story 43.1 — metadata forwarding ----------------------------------
 
-  it('(43.1 AC7) createTeamAndNavigate forwards metadata unchanged to apiService.createTeam', async () => {
+  it('(43.1 AC7) createTeam forwards metadata unchanged to apiService.createTeam', async () => {
     apiSpy.getTeams.and.returnValue(Promise.resolve([]));
     await service.getTeams();
 
     apiSpy.createTeam.and.returnValue(Promise.resolve(makeTeamResponse('new')));
     routerSpy.navigate.and.returnValue(Promise.resolve(true));
 
-    await service.createTeamAndNavigate('cat-1', { tenant: 'acme' });
+    await service.createTeam('cat-1', { tenant: 'acme' });
 
     expect(apiSpy.createTeam).toHaveBeenCalledOnceWith('cat-1', {
       tenant: 'acme',
     });
   });
 
-  it('(43.1 AC7) forwarding metadata leaves the cache append and navigation unchanged', async () => {
+  it('(43.1 AC7) forwarding metadata leaves the cache append and the returned id unchanged', async () => {
     const existing = [makeTeam('a')];
     apiSpy.getTeams.and.returnValue(Promise.resolve(existing));
     await service.getTeams();
 
     apiSpy.createTeam.and.returnValue(Promise.resolve(makeTeamResponse('new')));
-    routerSpy.navigate.and.returnValue(Promise.resolve(true));
 
-    await service.createTeamAndNavigate('cat-1', { tenant: 'acme' });
+    const teamId = await service.createTeam('cat-1', { tenant: 'acme' });
 
     const next = await firstValueFrom(service.teams$);
     expect(next.length).toBe(existing.length + 1);
     expect(next[next.length - 1].team_id).toBe('new');
-    expect(routerSpy.navigate).toHaveBeenCalledOnceWith(['/process', 'new']);
+    expect(teamId).toBe('new');
+    expect(routerSpy.navigate).not.toHaveBeenCalled();
   });
 
   it('(43.1 AC7) an EMPTY metadata object is forwarded as-is — no gate of its own', async () => {
@@ -262,7 +275,7 @@ describe('ContextService', () => {
     apiSpy.createTeam.and.returnValue(Promise.resolve(makeTeamResponse('new')));
     routerSpy.navigate.and.returnValue(Promise.resolve(true));
 
-    await service.createTeamAndNavigate('cat-1', {});
+    await service.createTeam('cat-1', {});
 
     // NOT normalised to `undefined` here: the "only when non-empty" rule
     // belongs to `apiService.createTeam` alone, so this service must hand it
@@ -270,7 +283,7 @@ describe('ContextService', () => {
     expect(apiSpy.createTeam).toHaveBeenCalledOnceWith('cat-1', {});
   });
 
-  it('(AC1 10.4) createTeamAndNavigate preserves immutability on append', async () => {
+  it('(AC1 10.4) createTeam preserves immutability on append', async () => {
     const existing = [makeTeam('a'), makeTeam('b')];
     apiSpy.getTeams.and.returnValue(Promise.resolve(existing));
     await service.getTeams();
@@ -282,7 +295,7 @@ describe('ContextService', () => {
     apiSpy.createTeam.and.returnValue(Promise.resolve(makeTeamResponse('new')));
     routerSpy.navigate.and.returnValue(Promise.resolve(true));
 
-    await service.createTeamAndNavigate('cat-1');
+    await service.createTeam('cat-1');
 
     const next = await firstValueFrom(service.teams$);
     expect(next).not.toBe(prev);
@@ -300,7 +313,7 @@ describe('ContextService', () => {
     apiSpy.createTeam.and.returnValue(Promise.resolve(newTeamResponse));
     routerSpy.navigate.and.returnValue(Promise.resolve(true));
 
-    await service.createTeamAndNavigate('cat-1');
+    await service.createTeam('cat-1');
 
     // The method itself does NOT set currentProcessId$; ProcessComponent.ngOnInit
     // does that in production. Simulate it here to exercise the derived pipeline.
@@ -700,7 +713,7 @@ describe('ContextService', () => {
       'getCurrentTeam',
       'deleteTeam',
       'clear',
-      'createTeamAndNavigate',
+      'createTeam',
       'stopTeamAndAwait',
     ];
     for (const name of expected) {
@@ -730,7 +743,7 @@ describe('ContextService', () => {
       'getCurrentTeam',
       'deleteTeam',
       'clear',
-      'createTeamAndNavigate',
+      'createTeam',
       'stopTeamAndAwait',
     ];
     for (const name of expectedObservables) {
@@ -2083,4 +2096,80 @@ describe('ContextService loading', () => {
     tick(50);
     expect(seen[seen.length - 1]).toBeFalse();
   }));
+});
+
+/**
+ * `ensureTeamsLoaded` (rail seed).
+ *
+ * The whole method is a GUARD plus a delegation, and the guard is the part
+ * worth pinning: the rail must never issue a page-1 fetch that races the home
+ * table's own seed, because that seed is the one carrying the filter restored
+ * from the URL.
+ */
+describe('ContextService.ensureTeamsLoaded', () => {
+  let service: ContextService;
+  let apiSpy: jasmine.SpyObj<ApiService>;
+
+  beforeEach(() => {
+    apiSpy = jasmine.createSpyObj('ApiService', ['getTeamsPage']);
+    apiSpy.getTeamsPage.and.returnValue(
+      Promise.resolve({ teams: [], total_count: 0 } as TeamPage),
+    );
+
+    TestBed.configureTestingModule({
+      providers: [
+        ContextService,
+        { provide: ApiService, useValue: apiSpy },
+        { provide: Router, useValue: jasmine.createSpyObj('Router', ['navigate']) },
+      ],
+    });
+    service = TestBed.inject(ContextService);
+  });
+
+  it('fetches page 1 when the cache is empty and nothing is in flight', async () => {
+    await service.ensureTeamsLoaded();
+
+    expect(apiSpy.getTeamsPage).toHaveBeenCalledTimes(1);
+    const [page, size] = apiSpy.getTeamsPage.calls.mostRecent().args;
+    expect(page).toBe(1);
+    expect(size).toBe(250);
+  });
+
+  it('no-ops when the team list is already populated', async () => {
+    apiSpy.getTeamsPage.and.returnValue(
+      Promise.resolve({ teams: [makeTeam('a')], total_count: 1 } as TeamPage),
+    );
+    await service.loadTeamsPage(1, 250);
+    apiSpy.getTeamsPage.calls.reset();
+
+    await service.ensureTeamsLoaded();
+
+    expect(apiSpy.getTeamsPage).not.toHaveBeenCalled();
+  });
+
+  it('no-ops while a fetch is already in flight', async () => {
+    // The home table's seed is exactly this case: issued, not yet resolved,
+    // and carrying a filter this call knows nothing about.
+    let release!: (page: TeamPage) => void;
+    apiSpy.getTeamsPage.and.returnValue(
+      new Promise<TeamPage>((resolve) => (release = resolve)),
+    );
+    const seed = service.loadTeamsPage(1, 250);
+    apiSpy.getTeamsPage.calls.reset();
+
+    await service.ensureTeamsLoaded();
+    expect(apiSpy.getTeamsPage).not.toHaveBeenCalled();
+
+    release({ teams: [], total_count: 0 });
+    await seed;
+  });
+
+  it('goes through loadTeamsPage, so it carries the active filter', async () => {
+    const filter: TeamFilter = { meta: { case_id: 'CS-1' }, catalogNamespace: null };
+    service.restoreFilter(filter);
+
+    await service.ensureTeamsLoaded();
+
+    expect(apiSpy.getTeamsPage.calls.mostRecent().args[2]).toEqual(filter);
+  });
 });

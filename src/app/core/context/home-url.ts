@@ -30,6 +30,21 @@ export interface HomeUrlState {
   filter: TeamFilter;
   page: number;
   namespace: string | null;
+  /**
+   * The team open BESIDE the list (Epic 52), or `null` for a list on its own.
+   *
+   * It travels for the same reason the filter does. Epic 48 put the filter and
+   * the page here so a narrowed list could be shared, bookmarked and survive a
+   * reload; once a team can be open beside that list, the open team is part of
+   * what the page is showing, and leaving it out means a shared link opens
+   * something the sender was not looking at.
+   *
+   * A query parameter and not a path segment: `/process/:id` stays the
+   * standalone route (Epic 52 NFR1), and a second path rendering the same view
+   * would be a second owner of it. It also keeps ONE module that knows what
+   * this page's URL means, which is the whole reason this file exists.
+   */
+  team: string | null;
 }
 
 /** Is anything actually narrowing the list? */
@@ -51,6 +66,14 @@ export function toQueryParams(state: HomeUrlState): Params {
   const params: Params = {};
   if (state.page > 1) {
     params['page'] = String(state.page);
+  }
+  // ABOVE the early return below, deliberately. The open team is an axis of its
+  // own and has nothing to do with whether the list is narrowed — written after
+  // that return it would survive only on a filtered page, which is the sort of
+  // asymmetry nobody notices until a shared link of an unfiltered list opens
+  // with no team in it.
+  if (state.team !== null) {
+    params['team'] = state.team;
   }
   if (!isFiltering(state.filter)) {
     return params;
@@ -104,5 +127,9 @@ export function fromQueryParams(
     filter: { meta, catalogNamespace: only ? namespace : null },
     page: Number.isFinite(page) && page > 1 ? Math.floor(page) : 1,
     namespace,
+    // `|| null` and not `?? null`: an empty `?team=` names no team, and
+    // adopting `''` would put the split on screen around a process view that
+    // has nothing to show.
+    team: params.get('team') || null,
   };
 }

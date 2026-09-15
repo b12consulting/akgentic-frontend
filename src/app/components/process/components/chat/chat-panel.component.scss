@@ -3,18 +3,116 @@
   flex-direction: column;
   flex: 1;
   overflow: hidden;
-  background-color: #f2f7f9;
+  /* One surface. The pane was tinted to separate it from the bubbles; with the
+     bubbles gone there is nothing left to separate it from. */
+  background-color: var(--akg-overlay-bg);
   height: 100%;
   position: relative;
   padding: 1rem;
 
+  /*
+   * The reading column.
+   *
+   * Turns are centred in a bounded column rather than filling the pane. On a
+   * wide monitor a full-width conversation runs to 200+ characters a line,
+   * which is where the eye loses the start of the next one.
+   *
+   * The horizontal padding is SYMMETRIC on purpose. The messages and the input
+   * beneath them are both centred columns, so padding one side only — to clear
+   * a rail, say — slides the messages off the input's axis and the two stop
+   * looking related.
+   */
   .message-list {
     flex: 1;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 0.5rem;
-    padding-bottom: 0.5rem;
+    padding: var(--akg-conversation-padding-top) var(--akg-conversation-padding-x)
+      var(--akg-conversation-padding-bottom);
+
+    > * {
+      width: 100%;
+      max-width: var(--akg-conversation-max-width);
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /*
+     * SPACING BELONGS TO THE PAIR, so it is written between rows rather than
+     * as a `gap` on the list.
+     *
+     * A flex `gap` is one value for every pair, and the two kinds of row on
+     * this surface want different things. A turn is a paragraph and wants air.
+     * A folded system notice is one line saying something happened, and a run
+     * of them is ONE agent working — at paragraph spacing they read as a list
+     * of unrelated events.
+     *
+     * Stating it between siblings lets both cases be a plain declaration: this
+     * is the space after a row, and the next rule overrides it for the one pair
+     * that wants less. With `gap` the second rule could only have been a
+     * negative margin cancelling the first.
+     */
+    > * + * {
+      margin-top: var(--akg-turn-gap);
+    }
+
+    /*
+     * Two quiet rows run together.
+     *
+     * A PAIR rule, not a property of the row: the first quiet row after a turn
+     * keeps its full separation from the conversation, and only a second one
+     * closes up against it.
+     *
+     * `.quiet-line` is set by `ChatMessageComponent` on its own host — see
+     * `isQuietLine` there. On the host because that is the element this list
+     * has as a child; the row's own class lives inside the child's style
+     * encapsulation, where a selector written here cannot reach it.
+     */
+    > .quiet-line + .quiet-line {
+      margin-top: 0;
+    }
+  }
+
+  /*
+   * Epic 54 — the day separator.
+   *
+   * A hairline with the date sitting in it. Deliberately QUIETER than a turn
+   * (NFR3): smaller than the collapsed line's 0.85rem, muted text, and the
+   * marker border rather than the surface border — it is the page telling you
+   * where you are, not something anybody said. All colours come from the Epic 50
+   * conversation tokens; nothing new is introduced.
+   *
+   * Side margins are left to `.message-list > *` (which centres every row in the
+   * reading column) — setting `margin` shorthand here would win on source order
+   * and knock the separator off that axis.
+   */
+  .day-separator {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 10px;
+    margin-bottom: 2px;
+    color: var(--akg-text-muted);
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    /* Chrome, not content: it is not a selectable item of the transcript. */
+    user-select: none;
+    /* Never let the browser's scroll anchoring pin to it — the anchored-send
+       scroll model (ADR-016) measures against messages and the spacer. */
+    overflow-anchor: none;
+
+    &::before,
+    &::after {
+      content: '';
+      flex: 1 1 auto;
+      height: 1px;
+      background-color: var(--akg-marker-border);
+    }
+  }
+
+  .day-separator-label {
+    flex: 0 0 auto;
+    white-space: nowrap;
   }
 
   // Story 19-1 (ADR-016 §Decision 2): trailing spacer — visually inert flex
@@ -28,18 +126,51 @@
 
   // Wraps the input field; the positioning context for the "New messages" pill
   // so the pill sits directly on top of the input regardless of its height.
+  /*
+   * The input shares the messages' reading column.
+   *
+   * It used to span the full pane while the turns above it were capped and
+   * centred, so the two read as unrelated furniture rather than one column you
+   * type into. Same padding token as `.message-list` and the same cap as
+   * `.message-list > *`, so they line up by construction and stay lined up if
+   * either token is re-pointed.
+   *
+   * The padding stays SYMMETRIC: `.jump-to-latest` centres itself here with
+   * `left: 50%`, and uneven padding would slide it off the input it floats over.
+   */
   .input-area {
     flex: 0 0 auto;
     position: relative;
+    padding: 8px var(--akg-conversation-padding-x) 22px;
+    /*
+     * The transcript scrolls out UNDER the composer rather than stopping at a
+     * hard edge above it. The gradient is opaque for the first 55% — the band
+     * the composer card actually occupies — and fades to nothing at the top, so
+     * a turn scrolling past dissolves instead of being clipped by a line.
+     *
+     * This is why the padding is a shorthand and no longer `padding-inline`:
+     * the top and bottom values are what put the card inside the opaque band.
+     * The inline value stays SYMMETRIC — `.jump-to-latest` centres itself in
+     * this box with `left: 50%`, and uneven padding slides it off the composer
+     * it floats over.
+     */
+    background: linear-gradient(to top, var(--akg-overlay-bg) 55%, transparent);
   }
 
+  /*
+   * The composer shares the messages' reading column — the same cap and the
+   * same centring as `.message-list > *`, so the two line up by construction
+   * and stay lined up if either token is re-pointed.
+   *
+   * It no longer carries a background, a shadow or a bottom radius of its own.
+   * Those belonged to the era when the composer was a flat strip that needed
+   * lifting off the pane; the card inside it now brings its own frame and
+   * shadow, and a second shadowed box around it read as two stacked panels.
+   */
   app-user-input {
     display: block;
-    padding: 0.5rem 1.2rem;
-    background-color: #fff;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    border-bottom-left-radius: 6px;
-    border-bottom-right-radius: 6px;
+    max-width: var(--akg-conversation-max-width);
+    margin-inline: auto;
   }
 
   // "New messages" pill — anchored to the TOP edge of the input area
@@ -58,19 +189,19 @@
     padding: 0.35rem 0.9rem;
     border: none;
     border-radius: 999px;
-    background-color: #fff;
-    color: #475569;
+    background-color: var(--akg-overlay-bg);
+    color: var(--akg-text);
     font-size: 0.85rem;
     font-weight: 600;
     cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+    box-shadow: var(--akg-overlay-shadow-strong);
 
     .pi {
       font-size: 0.85rem;
     }
 
     &:hover {
-      background-color: #f2f7f9;
+      background-color: var(--akg-surface);
     }
   }
 }
@@ -90,18 +221,18 @@
 
 .chat-placeholder-icon {
   font-size: 4rem;
-  color: #cbd5e1;
+  color: var(--akg-glyph-quiet);
   margin-bottom: 1rem;
 }
 
 .chat-placeholder-title {
   font-size: 1.25rem;
   font-weight: 600;
-  color: #475569;
+  color: var(--akg-text);
   margin-bottom: 0.5rem;
 }
 
 .chat-placeholder-desc {
   font-size: 0.95rem;
-  color: #94a3b8;
+  color: var(--akg-text-muted);
 }

@@ -13,6 +13,7 @@ import { MessageService } from 'primeng/api';
 import { provideMarkdown } from 'ngx-markdown';
 
 import { ChatPanelComponent } from './chat-panel.component';
+import { AgentReaderService } from '../../../../core/ui/agent-reader.service';
 import {
   chatFold,
   ChatService,
@@ -25,8 +26,26 @@ import { ChatMessage, classifyMessage } from '../../selectors/chat-message.model
 import { ApiService } from '../../../../core/http/api.service';
 import { AkgentService } from '../../../../core/ui/akgent.service';
 import { GraphDataService } from '../../selectors/graph.selector';
+import { NodeInterface } from '../../models/types';
 import { ContextService } from '../../../../core/context/context.service';
 import { IngestionService } from '../../event/ingestion.service';
+import { Feedback, FeedbackService } from '../../ui-state/feedback.service';
+
+import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
+
+/**
+ * Epic 57: each rendered turn now embeds the rating control, which reaches for
+ * `FeedbackService`. A double rather than the real thing — the real service
+ * pulls in `MessageLogService` and `FetchService`, and nothing in this file
+ * asserts on feedback.
+ */
+function makeFeedbackServiceStub(): FeedbackService {
+  return {
+    feedbacks$: new BehaviorSubject<Feedback[]>([]),
+    loadFeedback: () => Promise.resolve(),
+    setFeedback: () => Promise.resolve(),
+  } as unknown as FeedbackService;
+}
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {
@@ -82,10 +101,16 @@ describe('ChatPanelComponent', () => {
   let messagesSubject: BehaviorSubject<AkgenticMessage[]>;
   // Story 19-1 (ADR-016): just-sent side channel feed.
   let justSentSubject: Subject<string>;
+  /** Graph nodes feed — the reader's agent list is this list (Epic 51). */
+  let nodesSubject: BehaviorSubject<NodeInterface[]>;
+  /** The app-wide selected agent, which the reader follows (Epic 51). */
+  let selectedAkgentSubject: BehaviorSubject<any>;
 
   beforeEach(async () => {
     messagesSubject = new BehaviorSubject<AkgenticMessage[]>([]);
     justSentSubject = new Subject<string>();
+    nodesSubject = new BehaviorSubject<NodeInterface[]>([]);
+    selectedAkgentSubject = new BehaviorSubject<any>(null);
 
     // Story 6.4 (AC3): `ChatPanelComponent` no longer injects
     // `IngestionService`. The spec feeds SentMessages via
@@ -121,11 +146,11 @@ describe('ChatPanelComponent', () => {
     apiService.processHumanInput.and.returnValue(Promise.resolve());
 
     const akgentService = {
-      selectedAkgent$: new BehaviorSubject<any>(null),
+      selectedAkgent$: selectedAkgentSubject,
     };
 
     const graphDataService = {
-      nodes$: of([]),
+      nodes$: nodesSubject,
     };
 
     // Story 15-1 (ADR-013) / Epic 17 (ADR-014): the embedded <app-user-input>
@@ -144,7 +169,9 @@ describe('ChatPanelComponent', () => {
     await TestBed.configureTestingModule({
       imports: [ChatPanelComponent, NoopAnimationsModule],
       providers: [
+        provideTranslateTesting(),
         provideMarkdown(),
+        { provide: FeedbackService, useValue: makeFeedbackServiceStub() },
         { provide: ChatService, useValue: chatService },
         { provide: SelectionService, useValue: selectionService },
         { provide: ApiService, useValue: apiService },
@@ -278,6 +305,222 @@ describe('ChatPanelComponent', () => {
     });
   });
 
+  // --- the sub-agent conversation reader (Epic 51) ---------------------------
+  //
+  // The panel is the reader's HOST, not its implementation: it opens it, feeds
+  // it the log and the team it already has, and routes every agent choice
+  // through the app's one selection path.
+  describe('sub-agent conversation reader', () => {
+    function makeAgentTurn(): ChatMessage {
+      return {
+        id: 'msg-1',
+        message_id: 'msg-1',
+        parent_id: null,
+        content: 'test',
+        sender: makeAddress({ name: '@Manager', agent_id: 'mgr-1' }),
+        recipient: makeAddress({ name: '@Human' }),
+        timestamp: new Date(),
+        rule: 2,
+        alignment: 'left',
+        color: 'transparent',
+        collapsed: false,
+        label: 'Manager ⇒ You',
+      };
+    }
+
+    it('opens on the agent whose identity badge was clicked', () => {
+      expect(component.readerVisible).toBe(false);
+      component.onMessageSelected(makeAgentTurn());
+      expect(component.readerVisible).toBe(true);
+    });
+
+    function graphNode(name: string, actorName: string, role = 'Worker'): NodeInterface {
+      return {
+        name,
+        role,
+        actorName,
+        parentId: '',
+        squadId: 'squad-1',
+        symbol: 'roundRect',
+        category: 0,
+        userMessage: false,
+      };
+    }
+
+    // UPDATED, deliberately: this asserted `toBe(nodes)` — the reader's list was
+    // the graph's array by IDENTITY. It no longer can be, because tools are now
+    // filtered out of it, and a filter returns a new array. The rule the test
+    // was really protecting ("no second source of truth about who is on the
+    // team") still holds and is still asserted: the CONTENT comes from the
+    // graph nodes and nothing else.
+    it('takes its agent list from the graph nodes, not a list of its own', () => {
+      const nodes: NodeInterface[] = [graphNode('mgr-1', '@Manager', 'Manager')];
+      nodesSubject.next(nodes);
+      expect(component.readerAgents).toEqual(nodes);
+    });
+
+    it('OFFERS ONLY AGENTS — tools are not readable', () => {
+      // `#VectorStore` has no conversation to open and no inbox to send to, so
+      // a row for it in the reader can only disappoint. The graph still draws
+      // it; the reader does not offer it.
+      const nodes: NodeInterface[] = [
+        graphNode('mgr-1', '@Manager', 'Manager'),
+        graphNode('vs-1', '#VectorStore', 'Tool'),
+        graphNode('kg-1', '#KnowledgeGraphTool', 'Tool'),
+        graphNode('exp-1', '@Expert'),
+      ];
+      nodesSubject.next(nodes);
+
+      expect(component.readerAgents.map((a) => a.actorName)).toEqual([
+        '@Manager',
+        '@Expert',
+      ]);
+    });
+
+    it('follows the app selection rather than keeping its own', () => {
+      // T3: `SelectionService` already drives the agent tabs. A reader with a
+      // second notion of "selected" would leave the two disagreeing the moment
+      // it closes.
+      selectedAkgentSubject.next({ agentId: 'worker-1', name: '@Worker' });
+      expect(component.readerSelectedAgentId).toBe('worker-1');
+      selectedAkgentSubject.next(null);
+      expect(component.readerSelectedAgentId).toBeNull();
+    });
+
+    it('routes a pick from the reader through the ONE selection path', () => {
+      component.onReaderAgentSelected({
+        agentId: 'worker-1',
+        actorName: '@Worker',
+      });
+      const selSvc = TestBed.inject(SelectionService);
+      expect(selSvc.handleSelection).toHaveBeenCalledWith({
+        type: 'message',
+        data: { name: 'worker-1', actorName: '@Worker' },
+      });
+    });
+
+    it('carries no graph node into the selection, so no reply box can open', () => {
+      // NFR1: `SelectionService` opens the human-input dialog for a selectable
+      // that carries `humanRequests`. Reading an agent must never be a write.
+      component.onReaderAgentSelected({
+        agentId: 'worker-1',
+        actorName: '@Worker',
+      });
+      const selSvc = TestBed.inject(SelectionService);
+      const arg = (selSvc.handleSelection as jasmine.Spy).calls.mostRecent()
+        .args[0];
+      expect(arg.data.humanRequests).toBeUndefined();
+    });
+
+    it('leaves the conversation untouched when it closes', () => {
+      const sent = makeSentMessage(
+        { name: '@Manager', role: 'Manager', agent_id: 'mgr-1' },
+        { name: '@Worker', role: 'Worker', agent_id: 'worker-1' },
+        'agent to agent',
+        'm-1',
+      );
+      messagesSubject.next([sent]);
+      fixture.detectChanges();
+      const before = component.chatMessages.map((m) => ({
+        id: m.id,
+        collapsed: m.collapsed,
+      }));
+
+      component.onMessageSelected(makeAgentTurn());
+      component.onReaderVisibleChange(false);
+      fixture.detectChanges();
+
+      expect(component.readerVisible).toBe(false);
+      expect(
+        component.chatMessages.map((m) => ({ id: m.id, collapsed: m.collapsed })),
+      ).toEqual(before);
+    });
+
+    // --- W5a: opened from somewhere that cannot reach this component --------
+    //
+    // The inspector's member cards live under `ProcessComponent`, a sibling.
+    // One bit travels (`show it`); WHICH agent still goes through the app's
+    // single selection path, so the reader and the right-hand panel cannot end
+    // up pointing at two different agents.
+    it('opens on request from AgentReaderService', () => {
+      expect(component.readerVisible).toBe(false);
+
+      TestBed.inject(AgentReaderService).open({
+        agentId: 'worker-1',
+        actorName: '@Worker',
+      });
+
+      expect(component.readerVisible).toBe(true);
+      expect(TestBed.inject(SelectionService).handleSelection).toHaveBeenCalledWith({
+        type: 'message',
+        data: { name: 'worker-1', actorName: '@Worker' },
+      });
+    });
+
+    it('does not replay a stale open request to a later subscriber', () => {
+      // The request is an EVENT, not a state. A replayed last value would
+      // re-open the dialog the user had just dismissed, on the next navigation.
+      const svc = TestBed.inject(AgentReaderService);
+      svc.open({ agentId: 'worker-1', actorName: '@Worker' });
+
+      const late: unknown[] = [];
+      const sub = svc.open$.subscribe((a) => late.push(a));
+      expect(late).toEqual([]);
+      sub.unsubscribe();
+    });
+
+    it('stops listening for open requests once destroyed', () => {
+      fixture.destroy();
+      TestBed.inject(AgentReaderService).open({
+        agentId: 'worker-1',
+        actorName: '@Worker',
+      });
+      expect(component.readerVisible).toBe(false);
+    });
+
+    // --- W5b: the reader's composer ----------------------------------------
+    it('sends the reader draft to that ONE agent, addressed by actor name', () => {
+      // Priority 3 of the main composer's dispatch: one named recipient,
+      // default human sender. The path segment is the actor NAME — an agent_id
+      // there addresses nobody.
+      component.onReaderSend({
+        agentId: 'worker-1',
+        actorName: '@Worker934',
+        content: 'what did you find?',
+      });
+
+      const api = TestBed.inject(ApiService);
+      expect(api.sendMessage).toHaveBeenCalledWith(
+        'test-team',
+        'what did you find?',
+        '@Worker934',
+      );
+    });
+
+    it('does not announce a reader send as a just-sent turn', () => {
+      // `justSent$` pins the MAIN transcript's scroll to the echo of a send.
+      // Under the scoping rule that message may not even be rendered there.
+      const chat = TestBed.inject(ChatService);
+      const spy = spyOn(chat, 'emitJustSent').and.callThrough();
+
+      component.onReaderSend({
+        agentId: 'worker-1',
+        actorName: '@Worker934',
+        content: 'ping',
+      });
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('gates the reader composer on the team actually running', () => {
+      const ctx = TestBed.inject(ContextService);
+      ctx.currentTeamRunning$.next(false);
+      expect(component.readerCanSend).toBe(false);
+      ctx.currentTeamRunning$.next(true);
+      expect(component.readerCanSend).toBe(true);
+    });
+  });
+
   it('trackById should return message id', () => {
     const chatMsg = { id: 'abc-123' } as ChatMessage;
     expect(component.trackById(0, chatMsg)).toBe('abc-123');
@@ -289,80 +532,7 @@ describe('ChatPanelComponent', () => {
   // observable over `MessageLogService.log$`; `chatFold` owns the
   // classification. Coverage moved to `chat.service.spec.ts`.
 
-  describe('bubble selection (Story 4-11 — routing retired)', () => {
-    it('onBubbleClicked should update selectedMessageId only (no chatService call)', () => {
-      const chatMsg: ChatMessage = {
-        id: 'msg-reply',
-        message_id: 'msg-reply',
-        parent_id: null,
-        content: 'test',
-        sender: makeAddress({ name: '@Manager', agent_id: 'mgr-1' }),
-        recipient: makeAddress({ name: '@Human' }),
-        timestamp: new Date(),
-        rule: 2,
-        alignment: 'left',
-        color: '#9ebbcb',
-        collapsed: false,
-        label: 'Manager',
-      };
-      const svc = TestBed.inject(ChatService) as any;
-      // The retired API must not be present on the service mock.
-      expect(svc.setReplyContext).toBeUndefined();
-      expect(svc.replyContext$).toBeUndefined();
-
-      component.onBubbleClicked(chatMsg);
-      expect(component.selectedMessageId).toBe('msg-reply');
-    });
-
-    it('onBackgroundClick should clear selectedMessageId locally', () => {
-      component.selectedMessageId = 'msg-abc';
-      component.onBackgroundClick();
-      expect(component.selectedMessageId).toBeNull();
-    });
-
-    it('onEscapePress should clear selectedMessageId locally', () => {
-      component.selectedMessageId = 'msg-abc';
-      component.onEscapePress();
-      expect(component.selectedMessageId).toBeNull();
-    });
-
-    it('clicking different bubble should switch selectedMessageId', () => {
-      const msg1: ChatMessage = {
-        id: 'msg-1',
-        message_id: 'msg-1',
-        parent_id: null,
-        content: 'first',
-        sender: makeAddress({ name: '@Agent1' }),
-        recipient: makeAddress({ name: '@Human' }),
-        timestamp: new Date(),
-        rule: 2,
-        alignment: 'left',
-        color: '#9ebbcb',
-        collapsed: false,
-        label: 'Agent1',
-      };
-      const msg2: ChatMessage = {
-        id: 'msg-2',
-        message_id: 'msg-2',
-        parent_id: null,
-        content: 'second',
-        sender: makeAddress({ name: '@Agent2' }),
-        recipient: makeAddress({ name: '@Human' }),
-        timestamp: new Date(),
-        rule: 2,
-        alignment: 'left',
-        color: '#9ebbcb',
-        collapsed: false,
-        label: 'Agent2',
-      };
-
-      component.onBubbleClicked(msg1);
-      expect(component.selectedMessageId).toBe('msg-1');
-
-      component.onBubbleClicked(msg2);
-      expect(component.selectedMessageId).toBe('msg-2');
-    });
-
+  describe('the rule-3 request modal', () => {
     it('onRule3Clicked should open modal with pending messages', () => {
       // Set up a Rule 3 message
       const rule3Msg = makeSentMessage(
@@ -920,6 +1090,210 @@ describe('ChatPanelComponent', () => {
     });
   });
 
+  /**
+   * THE SPACING, MEASURED RATHER THAN DESCRIBED.
+   *
+   * A turn is a paragraph and wants air; a run of folded system notices is one
+   * agent working and wants none. The rule that says so lives in the panel's
+   * stylesheet and depends on a class the CHILD puts on its own host, so the
+   * only place the two halves meet is the rendered DOM. Asserting the computed
+   * style is what makes this a test of the surface rather than of either file.
+   */
+  /**
+   * A NOTICE IS ONE ROW IN EITHER STATE — the same row, with more of its text.
+   *
+   * It used to SWAP for a full bubble, and the duplicate-row defect these specs
+   * were written for came out of that: two renderings gated on one field, read
+   * through two mechanisms with different staleness, so both appeared at once.
+   * The swap is gone. Opening a notification lets its sentence finish; nothing
+   * enters or leaves the layout, so there is no second row to get out of step.
+   */
+  describe('expanding a folded notice', () => {
+    function rows(): { collapsed: number; expanded: number } {
+      const el = fixture.nativeElement as HTMLElement;
+      return {
+        collapsed: el.querySelectorAll('.collapsed-notice').length,
+        expanded: el.querySelectorAll('.message').length,
+      };
+    }
+
+    function oneNotice(): void {
+      messagesSubject.next([
+        makeSentMessage(
+          { name: '@Manager', role: 'Manager' },
+          { name: '@Assistant', role: 'Assistant' },
+          'Done — I sent @Human a joke directly.',
+          'n-1',
+        ),
+      ]);
+      fixture.detectChanges();
+    }
+
+    function noticeText(): string {
+      const el = fixture.nativeElement as HTMLElement;
+      return (
+        el.querySelector('.collapsed-notice .collapsed-preview')?.textContent ??
+        ''
+      ).trim();
+    }
+
+    it('shows the folded line and nothing else while collapsed', () => {
+      oneNotice();
+
+      expect(component.chatMessages[0].rule).toBe(4);
+      expect(rows()).toEqual({ collapsed: 1, expanded: 0 });
+    });
+
+    /**
+     * THE SAME ROW, WITH MORE OF ITS TEXT. Not a second row, and emphatically
+     * not both: the defect this was written for put the folded line and a full
+     * bubble on screen together, and the shape that made that possible — two
+     * renderings for one message — is what is gone.
+     */
+    it('opens the text in place, still as one row', () => {
+      oneNotice();
+
+      component.onToggleCollapse(component.chatMessages[0]);
+      fixture.detectChanges();
+
+      expect(rows()).toEqual({ collapsed: 1, expanded: 0 });
+      expect(noticeText()).toContain('joke directly');
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector(
+          '.notice-text.expanded',
+        ),
+      ).not.toBeNull();
+    });
+
+    it('clips it again when closed', () => {
+      oneNotice();
+
+      component.onToggleCollapse(component.chatMessages[0]);
+      fixture.detectChanges();
+      component.onToggleCollapse(component.chatMessages[0]);
+      fixture.detectChanges();
+
+      expect(rows()).toEqual({ collapsed: 1, expanded: 0 });
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector(
+          '.notice-text.expanded',
+        ),
+      ).toBeNull();
+    });
+  });
+
+  describe('the space between rows', () => {
+    function hosts(): HTMLElement[] {
+      return Array.from(
+        (fixture.nativeElement as HTMLElement).querySelectorAll(
+          '.message-list > app-chat-message',
+        ),
+      );
+    }
+
+    function marginTopOf(el: HTMLElement): number {
+      return parseFloat(getComputedStyle(el).marginTop);
+    }
+
+    /** Two agent-to-agent messages, which the classifier folds as rule 4. */
+    function twoNotices(): void {
+      messagesSubject.next([
+        makeSentMessage(
+          { name: '#NotificationTool', role: 'Tool' },
+          { name: '@Manager', role: 'Manager' },
+          'first notice',
+          'n-1',
+        ),
+        makeSentMessage(
+          { name: '#NotificationTool', role: 'Tool' },
+          { name: '@Manager', role: 'Manager' },
+          'second notice',
+          'n-2',
+        ),
+      ]);
+      fixture.detectChanges();
+    }
+
+    it('folds two notices as quiet lines', () => {
+      twoNotices();
+
+      expect(component.chatMessages.map((m) => m.rule)).toEqual([4, 4]);
+      expect(component.chatMessages.every((m) => m.collapsed)).toBeTrue();
+      expect(hosts().length).toBe(2);
+      expect(hosts()[1].classList.contains('quiet-line')).toBeTrue();
+    });
+
+    it('runs two quiet lines together', () => {
+      twoNotices();
+
+      // The first keeps whatever separates it from what came before; only the
+      // SECOND closes up against its neighbour.
+      expect(marginTopOf(hosts()[1])).toBe(0);
+    });
+
+    /**
+     * THE FOLD IS A BOUNDARY, NOT A QUIET LINE — and it looks like one, which
+     * is why this is asserted rather than left to read off the code.
+     *
+     * The rows that run together are what an agent's work PRODUCED: a string of
+     * notices reporting one piece of work. The fold is the work itself, and it
+     * is what a reader uses to tell where one agent's turn ends and the next
+     * begins. Closing the notices up against it merges the two and loses
+     * exactly the boundary the fold is there to draw — so it keeps a full turn's
+     * gap on both sides while the notices beneath it stack.
+     */
+    it('keeps a full gap under the fold, and stacks the notices beneath it', () => {
+      const turn = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'go on then',
+        'm-1',
+      );
+      turn.timestamp = '2026-04-12T10:00:00Z';
+      const notice = makeSentMessage(
+        { name: '#NotificationTool', role: 'Tool' },
+        { name: '@Manager', role: 'Manager' },
+        'a notice',
+        'n-1',
+      );
+      notice.timestamp = '2026-04-12T10:00:10Z';
+
+      messagesSubject.next([turn, notice]);
+      (TestBed.inject(ChatService) as any).thinkingAgents$.next([
+        {
+          agent_id: 'a1',
+          agent_name: '@Manager',
+          start_time: new Date('2026-04-12T10:00:05Z'),
+          tools: [],
+          // Anchored on the user's own turn, so the run is in scope for the
+          // main transcript on its merits rather than on the fail-open.
+          anchor_message_id: 'inner-m-1',
+          final: true,
+        },
+      ]);
+      fixture.detectChanges();
+
+      const rows = Array.from(
+        (fixture.nativeElement as HTMLElement).querySelectorAll(
+          '.message-list > app-chat-message, .message-list > app-chat-thinking',
+        ),
+      ) as HTMLElement[];
+
+      expect(rows.map((r) => r.tagName.toLowerCase())).toEqual([
+        'app-chat-message',
+        'app-chat-thinking',
+        'app-chat-message',
+      ]);
+
+      // The fold is NOT a quiet line, however much it looks like one.
+      expect(rows[1].classList.contains('quiet-line')).toBeFalse();
+      expect(marginTopOf(rows[1])).toBeGreaterThan(0);
+
+      // And the notice under it keeps the boundary the fold draws.
+      expect(marginTopOf(rows[2])).toBeGreaterThan(0);
+    });
+  });
+
   describe('displayItems merge (Story 4-8)', () => {
     function getThinkingSubj(): BehaviorSubject<ThinkingState[]> {
       const svc = TestBed.inject(ChatService) as any;
@@ -952,6 +1326,9 @@ describe('ChatPanelComponent', () => {
       getThinkingSubj().next([
         makeThinking({
           start_time: new Date('2026-04-12T10:00:00Z'),
+          // W3: anchored on the user's own turn, so the run is in scope for
+          // the main transcript on its merits rather than on the fail-open.
+          anchor_message_id: 'inner-m-1',
         }),
       ]);
       fixture.detectChanges();
@@ -971,7 +1348,10 @@ describe('ChatPanelComponent', () => {
       sent.timestamp = '2026-04-12T10:00:00Z';
       messagesSubject.next([sent]);
       getThinkingSubj().next([
-        makeThinking({ start_time: new Date('2026-04-12T10:00:00Z') }),
+        makeThinking({
+          start_time: new Date('2026-04-12T10:00:00Z'),
+          anchor_message_id: 'inner-tie-1',
+        }),
       ]);
       fixture.detectChanges();
 
@@ -1026,12 +1406,242 @@ describe('ChatPanelComponent', () => {
       expect(list!.querySelector('.thinking-animation')).toBeNull();
     });
 
+    // -----------------------------------------------------------------------
+    // W3 — the main transcript is the USER's inbox, not every agent's.
+    //
+    // The panel still subscribes to `thinkingAgents$` wholesale; the scoping is
+    // a pure step over the emitted list. These fixtures pin the seam between
+    // the two, not the rule — the rule's own table lives in
+    // `display-items.spec.ts` with no fixture at all.
+    // -----------------------------------------------------------------------
+    it('shows a run the user triggered', () => {
+      const ask = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'find two people',
+        'ask',
+      );
+      messagesSubject.next([ask]);
+      getThinkingSubj().next([
+        makeThinking({ agent_id: 'manager', anchor_message_id: 'inner-ask' }),
+      ]);
+      fixture.detectChanges();
+
+      expect(component.displayItems.filter((i) => i.kind === 'thinking').length).toBe(1);
+      expect(fixture.nativeElement.querySelectorAll('app-chat-thinking').length).toBe(1);
+    });
+
+    it('does NOT show a run one agent triggered in another', () => {
+      // The reported symptom: with four agents the human read
+      // "@Expert contacted @Manager" in their own transcript.
+      const ask = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        'find two people',
+        'ask',
+      );
+      const delegation = makeSentMessage(
+        { name: '@Manager', role: 'Manager', agent_id: 'manager' },
+        { name: '@Expert', role: 'Worker', agent_id: 'expert' },
+        'look this up',
+        'delegate',
+      );
+      messagesSubject.next([ask, delegation]);
+      getThinkingSubj().next([
+        makeThinking({ agent_id: 'manager', anchor_message_id: 'inner-ask' }),
+        makeThinking({ agent_id: 'expert', anchor_message_id: 'inner-delegate' }),
+      ]);
+      fixture.detectChanges();
+
+      const runs = component.displayItems
+        .filter((i) => i.kind === 'thinking')
+        .map((i) => (i.data as ThinkingState).agent_id);
+      expect(runs).toEqual(['manager']);
+    });
+
+    it('keeps the delegated MESSAGE even though its run is out of scope', () => {
+      // Scoping hides work, never content. The rule-4 line is still the only
+      // thing on screen that explains why the other agent is busy.
+      const delegation = makeSentMessage(
+        { name: '@Manager', role: 'Manager', agent_id: 'manager' },
+        { name: '@Expert', role: 'Worker', agent_id: 'expert' },
+        'look this up',
+        'delegate',
+      );
+      messagesSubject.next([delegation]);
+      getThinkingSubj().next([
+        makeThinking({ agent_id: 'expert', anchor_message_id: 'inner-delegate' }),
+      ]);
+      fixture.detectChanges();
+
+      expect(component.displayItems.map((i) => i.kind)).toEqual(['message']);
+    });
+
+    it('still shows a run whose anchor is not in the log (fail-open)', () => {
+      // History can be truncated by a compaction, or begin mid-conversation on
+      // a REST replay. A live bubble must not vanish because of it.
+      messagesSubject.next([]);
+      getThinkingSubj().next([makeThinking({ anchor_message_id: 'inner-gone' })]);
+      fixture.detectChanges();
+
+      expect(component.displayItems.filter((i) => i.kind === 'thinking').length).toBe(1);
+    });
+
     it('onToggleThinkingExpanded toggles the anchor id in the internal set', () => {
       component.onToggleThinkingExpanded('anc-1');
       const state = makeThinking({ anchor_message_id: 'anc-1' });
       expect(component.isThinkingExpanded(state)).toBe(true);
       component.onToggleThinkingExpanded('anc-1');
       expect(component.isThinkingExpanded(state)).toBe(false);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Epic 54 — the transcript gets day separators.
+  //
+  // The arithmetic itself is proved in `day-separator.spec.ts` without a
+  // fixture (NFR2). What is worth a fixture — and only what is worth one — is
+  // the wiring: that the separator reaches the DOM, that it is NOT a message,
+  // and that its track key is its day.
+  //
+  // Every timestamp here is built from LOCAL components and serialised, so
+  // these expectations hold in any time zone the suite runs in.
+  // -------------------------------------------------------------------------
+  describe('day separators (Epic 54)', () => {
+    function turnOn(
+      id: string,
+      year: number,
+      month1: number,
+      day: number,
+      hour = 10,
+    ): SentMessage {
+      const sent = makeSentMessage(
+        { name: '@Human', role: 'Human' },
+        { name: '@Manager', role: 'Manager' },
+        id,
+        id,
+      );
+      sent.timestamp = new Date(year, month1 - 1, day, hour, 0, 0).toISOString();
+      return sent;
+    }
+
+    function separatorTexts(): string[] {
+      const el: HTMLElement = fixture.nativeElement;
+      return Array.from(el.querySelectorAll('.day-separator')).map((n) =>
+        (n.textContent ?? '').trim(),
+      );
+    }
+
+    it('renders a rule where the calendar day changes (FR1)', () => {
+      messagesSubject.next([turnOn('d1', 2026, 4, 8), turnOn('d2', 2026, 4, 9)]);
+      fixture.detectChanges();
+
+      expect(component.displayItems.map((i) => i.kind)).toEqual([
+        'message',
+        'day',
+        'message',
+      ]);
+      expect(separatorTexts()).toEqual(['2026-04-09']);
+    });
+
+    it('puts no rule above the first turn (FR2)', () => {
+      messagesSubject.next([turnOn('only', 2026, 4, 8)]);
+      fixture.detectChanges();
+
+      expect(component.displayItems.map((i) => i.kind)).toEqual(['message']);
+      expect(separatorTexts()).toEqual([]);
+    });
+
+    it('does not repeat the rule within one day (FR3)', () => {
+      messagesSubject.next([
+        turnOn('a', 2026, 4, 8, 9),
+        turnOn('b', 2026, 4, 9, 9),
+        turnOn('c', 2026, 4, 9, 17),
+      ]);
+      fixture.detectChanges();
+
+      expect(separatorTexts()).toEqual(['2026-04-09']);
+    });
+
+    it('does not let one undated turn split a day in two (FR4/FR5)', () => {
+      const undated = turnOn('mid', 2026, 4, 8, 12);
+      undated.timestamp = 'not a date';
+      messagesSubject.next([
+        turnOn('a', 2026, 4, 8, 9),
+        undated,
+        turnOn('c', 2026, 4, 8, 15),
+      ]);
+      fixture.detectChanges();
+
+      expect(separatorTexts()).toEqual([]);
+      expect(component.displayItems.length).toBe(3);
+    });
+
+    it('is not a message (NFR1)', () => {
+      messagesSubject.next([turnOn('d1', 2026, 4, 8), turnOn('d2', 2026, 4, 9)]);
+      fixture.detectChanges();
+
+      // The classified stream — everything the scroll model, the pill and the
+      // modal read — never sees it.
+      expect(component.chatMessages.length).toBe(2);
+
+      const el: HTMLElement = fixture.nativeElement;
+      const separator = el.querySelector('.day-separator');
+      expect(separator).not.toBeNull();
+      // No sender pill, no collapse affordance, no bubble, no message id.
+      expect(separator!.querySelector('app-chat-message')).toBeNull();
+      expect(separator!.querySelector('.label-pill')).toBeNull();
+      expect(separator!.querySelector('.message-bubble')).toBeNull();
+      expect(separator!.getAttribute('data-message-id')).toBeNull();
+      expect(el.querySelectorAll('app-chat-message').length).toBe(2);
+    });
+
+    it('keys the separator on its day, stably and without collision (T4)', () => {
+      const key = component.trackByDisplayItem(0, {
+        kind: 'day',
+        data: { day: '2026-04-09', label: '2026-04-09' },
+      });
+      const again = component.trackByDisplayItem(7, {
+        kind: 'day',
+        data: { day: '2026-04-09', label: '2026-04-09' },
+      });
+      expect(key).toBe(again);
+      expect(key).toBe('day:2026-04-09');
+      expect(key).not.toBe(
+        component.trackByDisplayItem(0, {
+          kind: 'thinking',
+          data: {
+            agent_id: 'a',
+            agent_name: '@A',
+            start_time: new Date(),
+            tools: [],
+            anchor_message_id: '2026-04-09',
+            final: false,
+          },
+        }),
+      );
+    });
+
+    it('holds the separator key steady as the transcript re-emits (T4)', () => {
+      messagesSubject.next([turnOn('d1', 2026, 4, 8), turnOn('d2', 2026, 4, 9)]);
+      fixture.detectChanges();
+      const before = component.displayItems.map((item, i) =>
+        component.trackByDisplayItem(i, item),
+      );
+
+      messagesSubject.next([
+        turnOn('d1', 2026, 4, 8),
+        turnOn('d2', 2026, 4, 9),
+        turnOn('d3', 2026, 4, 9, 18),
+      ]);
+      fixture.detectChanges();
+      const after = component.displayItems.map((item, i) =>
+        component.trackByDisplayItem(i, item),
+      );
+
+      // Every key that existed before still exists, unchanged and in order —
+      // so Angular re-uses the rows instead of rebuilding the list.
+      expect(after.slice(0, before.length)).toEqual(before);
     });
   });
 
@@ -1217,7 +1827,7 @@ describe('ChatPanelComponent', () => {
 
     // --- status pill: New messages / Messages / Auto scrolling --------
 
-    it('shows "New messages" when a NEW reply arrives below the fold', fakeAsync(() => {
+    it('shows the new-messages pill when a NEW reply arrives below the fold', fakeAsync(() => {
       (component.chatService as any).emitJustSent('k');
       messagesSubject.next([humanTurn('u1')]);
       const { spacerEl } = installClamping(20, 40, 500); // small user message
@@ -1230,32 +1840,32 @@ describe('ChatPanelComponent', () => {
       messagesSubject.next([humanTurn('u1'), agentMsg('a1')]);
       component.ngAfterViewChecked();
       flushMicrotasks(); // the pill update is deferred to a microtask
-      expect(component.indicatorLabel).toBe('New messages');
+      expect(component.indicatorLabel).toBe('chat.newMessages');
     }));
 
-    it('shows "Messages" when merely scrolled up (nothing new)', () => {
+    it('shows the plain messages pill when merely scrolled up (nothing new)', () => {
       installSimple(2000, 500, 1500); // spacer.offsetTop = 2000
       const c = (component as any).scrollContainer.nativeElement;
       c.scrollTop = 200; // user scrolled up, no new message
       component.onScroll();
-      expect(component.indicatorLabel).toBe('Messages');
+      expect(component.indicatorLabel).toBe('chat.messages');
     });
 
-    it('treats the initial history load as "Messages", not "New messages"', () => {
+    it('treats the initial history load as plain messages, not new messages', () => {
       // First non-empty emission = the loaded backlog — it is NOT "new".
       messagesSubject.next([agentMsg('h1'), agentMsg('h2')]);
       const container = installSimple(2000, 500, 0); // at top, backlog below the fold
       container.scrollTop = 0;
       component.onScroll();
       expect((component as any).unseen).toBe(false);
-      expect(component.indicatorLabel).toBe('Messages');
+      expect(component.indicatorLabel).toBe('chat.messages');
     });
 
-    it('shows "Auto scrolling" while following', () => {
+    it('shows the following pill while following', () => {
       installSimple(2000, 500, 1500);
       (component as any).following = true;
       component.onScroll();
-      expect(component.indicatorLabel).toBe('Auto scrolling');
+      expect(component.indicatorLabel).toBe('chat.autoScrolling');
     });
 
     it('does NOT show "Auto scrolling" when the process is stopped', () => {
@@ -1263,26 +1873,26 @@ describe('ChatPanelComponent', () => {
       installSimple(2000, 500, 1500); // at bottom
       (component as any).following = true;
       component.onScroll();
-      expect(component.indicatorLabel).not.toBe('Auto scrolling');
+      expect(component.indicatorLabel).not.toBe('chat.autoScrolling');
     });
 
-    it('reaching the bottom activates follow ("Auto scrolling") and clears "unseen"', () => {
+    it('reaching the bottom activates follow and clears "unseen"', () => {
       const container = installSimple(2000, 500, 200);
       (component as any).unseen = true;
       container.scrollTop = 1500; // distance 2000-1500-500 = 0 → at bottom
       component.onScroll();
       expect((component as any).following).toBe(true);
-      expect(component.indicatorLabel).toBe('Auto scrolling');
+      expect(component.indicatorLabel).toBe('chat.autoScrolling');
       expect((component as any).unseen).toBe(false);
     });
 
     // --- follow mode ---------------------------------------------------------
 
-    it('clicking the pill enters follow mode, scrolls to bottom, shows "Auto scrolling"', () => {
+    it('clicking the pill enters follow mode, scrolls to bottom, shows the following pill', () => {
       const container = installSimple(2000, 500, 100);
       component.onJumpToLatest();
       expect((component as any).following).toBe(true);
-      expect(component.indicatorLabel).toBe('Auto scrolling');
+      expect(component.indicatorLabel).toBe('chat.autoScrolling');
       expect(container.scrollTop).toBe(container.scrollHeight); // jumped to bottom
     });
 
@@ -1301,17 +1911,17 @@ describe('ChatPanelComponent', () => {
       (component as any).lastScrollTop = 1000; // tail animated down the page
       component.onScroll(); // a frame of our own smooth tail (moved down, not up)
       expect((component as any).following).toBe(true);
-      expect(component.indicatorLabel).toBe('Auto scrolling');
+      expect(component.indicatorLabel).toBe('chat.autoScrolling');
     });
 
-    it('a manual upward scroll exits follow mode → "Messages"', () => {
+    it('a manual upward scroll exits follow mode → the plain messages pill', () => {
       const container = installSimple(2000, 500, 1500);
       (component as any).following = true;
       (component as any).lastScrollTop = 1500; // was at the bottom
       container.scrollTop = 200; // user scrolled UP (distance 1300 > 100)
       component.onScroll();
       expect((component as any).following).toBe(false);
-      expect(component.indicatorLabel).toBe('Messages'); // no new msg since
+      expect(component.indicatorLabel).toBe('chat.messages'); // no new msg since
     });
 
     // --- smooth scrolling ----------------------------------------------------
@@ -1506,13 +2116,12 @@ describe('ChatPanelComponent — HandledMessage split, end to end (Story 44-1)',
     agentSent('msg-answer', 'here they are', '2026-04-12T10:00:09Z'),
   ];
 
-  /** `kind:id` for a message, `kind:anchor` for a bubble — the same shape
-   *  `trackByDisplayItem` builds, so the assertion reads as the rendered list. */
+  /** `kind:id` for a message, `kind:anchor` for a bubble, `day:<date>` for a
+   *  day rule — the component's own track key, so the assertion reads as the
+   *  rendered list. (Every message in LOG is on one day, so no rule appears.) */
   function describeItems(): string[] {
-    return component.displayItems.map((item) =>
-      item.kind === 'message'
-        ? 'message:' + item.data.id
-        : 'thinking:' + item.data.anchor_message_id,
+    return component.displayItems.map((item, i) =>
+      component.trackByDisplayItem(i, item),
     );
   }
 
@@ -1529,7 +2138,9 @@ describe('ChatPanelComponent — HandledMessage split, end to end (Story 44-1)',
     await TestBed.configureTestingModule({
       imports: [ChatPanelComponent, NoopAnimationsModule],
       providers: [
+        provideTranslateTesting(),
         provideMarkdown(),
+        { provide: FeedbackService, useValue: makeFeedbackServiceStub() },
         { provide: ChatService, useValue: chatService },
         {
           provide: SelectionService,

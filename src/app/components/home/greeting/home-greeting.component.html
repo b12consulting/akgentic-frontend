@@ -1,0 +1,30 @@
+<!--
+  Two lines at most, and often one. The teams table below owns the fold, so
+  every line here is a row the user cannot see.
+-->
+@if (greeting$ | async; as greeting) {
+  <h1 class="home-greeting__salutation">
+    {{ greeting.key | translate: { name: greeting.name } }}
+  </h1>
+}
+
+<!--
+  [innerHTML], NOT interpolation, and it is a RESTORATION rather than a new
+  sink.
+
+  The deployed frontend renders this value as markup (`<h1 [innerHTML]>`), and
+  real deployments put markup in it: sdworx-sme ships
+  "Welcome to SDWorx Akgents<sup>&reg;</sup>". Interpolated, that renders the
+  tag names as visible literal text — which is the defect on screen today, not
+  a safety feature.
+
+  Angular's DomSanitizer still runs over this binding: `bypassSecurityTrustHtml`
+  is deliberately NOT used, so a `<script>` or an event-handler attribute in
+  `config.json` is stripped before it reaches the DOM. The value is also
+  deployment-owned — it comes from the file the operator ships beside the app,
+  not from anything a user can type — so the trust boundary here is the same one
+  that already decides which API the console talks to.
+-->
+@if (welcomeMessage) {
+  <p class="home-greeting__welcome" [innerHTML]="welcomeMessage"></p>
+}

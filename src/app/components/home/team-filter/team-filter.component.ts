@@ -11,6 +11,7 @@ import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { InputTextModule } from 'primeng/inputtext';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import {
   metadataKeyLabel,
@@ -45,6 +46,7 @@ import {
     ButtonModule,
     InputTextModule,
     ToggleSwitchModule,
+    TranslatePipe,
   ],
   templateUrl: './team-filter.component.html',
   styleUrl: './team-filter.component.scss',

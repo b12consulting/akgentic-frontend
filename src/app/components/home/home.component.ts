@@ -7,23 +7,38 @@ import {
   isFiltering,
   toQueryParams,
 } from '../../core/context/home-url';
-import { BehaviorSubject, firstValueFrom, Observable } from 'rxjs';
+import {
+  BehaviorSubject,
+  firstValueFrom,
+  Observable,
+  Subscription,
+} from 'rxjs';
 import { filter, map, take } from 'rxjs/operators';
 
 import { ApiService, MIN_FILTER_TERM_LENGTH } from '../../core/http/api.service';
-import { NO_TEAM_FILTER, TeamFilter } from '../../core/context/team.interface';
+import {
+  NO_TEAM_FILTER,
+  TeamFilter,
+  titleFieldKey,
+} from '../../core/context/team.interface';
 import { NamespaceSummary } from '../../protocol/catalog.interface';
 
 import { CommonModule } from '@angular/common';
-import { ButtonModule } from 'primeng/button';
+// `ButtonModule` is gone: the three toolbar buttons are native `<button>`s
+// wearing `.home-control` now, so nothing on this page asks PrimeNG for a
+// `severity` off Aura's cool-grey ramp. See the comment beside them in the
+// template.
 import { SelectModule } from 'primeng/select';
 import { TableLazyLoadEvent } from 'primeng/table';
 import { DialogModule } from 'primeng/dialog';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
+import { TranslatePipe } from '@ngx-translate/core';
 
 import { AuthService } from '../../core/auth/auth.service';
 import { ConfigService } from '../../core/config/config.service';
 import { ContextService } from '../../core/context/context.service';
+import { ViewService } from '../../core/ui/view.service';
+import { IconButtonComponent } from '../../shared/components/icon-button/icon-button.component';
 
 // Listed in @Component.imports so Angular's @defer block can resolve
 // <app-namespace-panel>. The `@defer (when ...)` block in the template keeps
@@ -35,7 +50,9 @@ import {
   TeamMetadataModalComponent,
 } from './team-metadata-modal/team-metadata-modal.component';
 import { TeamFilterComponent } from './team-filter/team-filter.component';
+import { HomeGreetingComponent } from './greeting/home-greeting.component';
 import { TeamCreationService } from './team-creation/team-creation.service';
+import { TeamTypeCatalog } from './team-creation/team-type-catalog.service';
 import {
   TeamDescriptionSave,
   TeamRowAction,
@@ -84,7 +101,6 @@ function sortNamespaces(namespaces: NamespaceSummary[]): NamespaceSummary[] {
   imports: [
     FormsModule,
     SelectModule,
-    ButtonModule,
     CommonModule,
     DialogModule,
     ToggleSwitchModule,
@@ -92,6 +108,9 @@ function sortNamespaces(namespaces: NamespaceSummary[]): NamespaceSummary[] {
     TeamMetadataModalComponent,
     TeamFilterComponent,
     TeamTableComponent,
+    IconButtonComponent,
+    HomeGreetingComponent,
+    TranslatePipe,
   ],
   templateUrl: './home.component.html',
   styleUrl: './home.component.scss',
@@ -107,6 +126,15 @@ export class HomeComponent {
   private route: ActivatedRoute = inject(ActivatedRoute);
   authService: AuthService = inject(AuthService);
   private config = inject(ConfigService);
+  /**
+   * Public because the template reads `isRailCollapsed$` and calls
+   * `toggleRail()` on it.
+   *
+   * Root-scoped, so the rail's own collapse control and this page's re-open
+   * control are two controls over ONE piece of state — which is the whole
+   * reason the flag does not live on the rail.
+   */
+  viewService: ViewService = inject(ViewService);
 
   /**
    * The creation gate. PUBLIC because the template binds the dialog straight to
@@ -115,6 +143,7 @@ export class HomeComponent {
    * themselves.
    */
   creation = inject(TeamCreationService);
+  private readonly teamTypes = inject(TeamTypeCatalog);
 
   // Catalog namespaces for the team creation dropdown. Held sorted by
   // `sortNamespaces` (teams first, then library, each alphabetical) — the list
@@ -142,6 +171,21 @@ export class HomeComponent {
     ),
   );
   isRefreshing = false;
+
+  /**
+   * Which metadata key the selected namespace nominates as a team's TITLE, or
+   * `null` when it nominates none (Epic 53). Handed to `<app-team-table>`,
+   * which asks each ROW for its own value under that key.
+   *
+   * DERIVED, never stored. A stored copy is a second thing to keep in step
+   * with the selection, and the moment it would fall out of step — the
+   * namespace panel saving a changed contract, which re-fetches and re-selects
+   * — is the moment the key matters. `titleFieldKey` resolves a malformed
+   * two-title contract in declaration order, so the answer is deterministic.
+   */
+  titleKey$: Observable<string | null> = this.selectedNamespace$.pipe(
+    map((ns) => titleFieldKey(ns?.team_metadata)),
+  );
 
   // Classic paginator state (Epic 28). `rows` feeds [rows]; `first` is the
   // row offset the paginator is parked on; `currentPage` (1-based) is tracked
@@ -269,6 +313,7 @@ export class HomeComponent {
     // first lazy load stays the sole page-1 seed (Story 28.2) and carries the
     // restored filter with it, because `loadTeamsPage` reads that value.
     this.restoreFromUrl();
+    this.trackCreations();
 
     await this.loadNamespaces();
 
@@ -312,14 +357,26 @@ export class HomeComponent {
     await firstValueFrom(this.firstPageLoaded$.pipe(filter((done) => done), take(1)));
     const teams = await firstValueFrom(this.contextService.teams$.pipe(take(1)));
     if (!teams || teams.length === 0) {
+      // W19a, the last creation surface that could disagree with the wizard.
+      // The selection this picks up comes from the management dropdown, which
+      // is a namespace PICKER and legitimately lists library entries — #350
+      // sections them under "Library" precisely because they belong there. So
+      // the auto-route cannot take that selection on trust: it creates with NO
+      // user gesture, which means nobody is looking when it picks the wrong
+      // thing. A library selection (or a URL that named one via
+      // `restoreNamespace`) falls back to the first genuine team type.
       const selected = this.selectedNamespace$.value;
-      if (selected) {
+      const creatable =
+        selected !== null && this.teamTypes.isTeamType(selected)
+          ? selected
+          : (this.teamTypes.teamTypesOf(this.namespaces$.value)[0] ?? null);
+      if (creatable) {
         // Gated like every other creation path, and the gate is TOLD which one
         // this is. `'auto'` runs with NO user gesture, so it must still ask —
         // skipping the dialog here is precisely how a mandatory field would go
         // unfilled without anyone noticing — and it must NOT spin the Create
         // button, which nobody pressed.
-        await this.creation.request(selected, 'auto');
+        await this.creation.request(creatable, 'auto');
       }
       return;
     }
@@ -513,6 +570,12 @@ export class HomeComponent {
       filter: this.contextService.filter,
       page: this.currentPage,
       namespace: this.currentNamespace(),
+      // Always `null` since R1, and the field deliberately STAYS on
+      // `HomeUrlState`. This page no longer opens a team, so it has nothing to
+      // say about one — but `?team=` is still a parameter the mapping knows how
+      // to read and drop, and removing the field would break every call site in
+      // `home-url.spec.ts` for no user-visible gain.
+      team: null,
     });
     // Remembered because the navigations that mean "back to my list" run when
     // this route is no longer active and its parameters are already gone.
@@ -551,6 +614,11 @@ export class HomeComponent {
     this.first = (state.page - 1) * this.rows;
     this.restoredFilter = state.filter;
     this.restoreNamespace = state.namespace;
+    // `state.team` is READ and deliberately IGNORED. Epic 52 made the open team
+    // part of this page's entry state; R1 gave that job back to `/process/:id`,
+    // which is a route rather than a query parameter, so an old bookmark
+    // carrying `?team=` lands on the management view and simply shows the list.
+    // Honouring it here is what produced four panes at once.
     this.contextService.restoreFilter(state.filter);
 
     // The row opens iff it has something to show for itself. Hidden while
@@ -567,6 +635,27 @@ export class HomeComponent {
   }
 
   /**
+   * Listen for creations, wherever they were asked for (Create button, the
+   * metadata dialog's confirm, or the gesture-less `hideHome` route).
+   *
+   * Subscribed rather than awaited because the dialog's confirm is a template
+   * binding whose promise nobody holds — see `TeamCreationService.created$`.
+   * One subscription is what keeps the destination decision in one place.
+   */
+  private createdSub: Subscription | null = null;
+
+  private trackCreations(): void {
+    this.createdSub = this.creation.created$.subscribe((teamId) => {
+      void this.onTeamCreated(teamId);
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.createdSub?.unsubscribe();
+    this.createdSub = null;
+  }
+
+  /**
    * The team type the URL named, pending the namespace list arriving.
    *
    * Consumed once by `loadNamespaces`, which selects it INSTEAD of defaulting
@@ -576,21 +665,14 @@ export class HomeComponent {
   private restoreNamespace: string | null = null;
 
   /**
-   * The Create button's handler. The no-selection guard is the PAGE's — the
-   * dropdown is the page's control and an empty one is not a creation the gate
-   * should ever hear about. Everything past it belongs to the gate: whether
-   * this team type asks something first, the dialog if it does, the POST if it
-   * does not, and the spinner while that POST runs.
+   * `(deleteRequested)` handler. Deletes the team, and that is all it does.
+   *
+   * Under Epic 52 this ALSO had to close the pane beside the list first, or the
+   * deleted team stayed mounted and went on polling a row the server was
+   * removing. R1 removed the pane, so the guard it needed went with it: nothing
+   * on this page is reading the team being deleted, and the management view the
+   * user is working stays exactly where it is.
    */
-  async createTeam(): Promise<void> {
-    const selected = this.selectedNamespace$.value;
-    if (!selected) {
-      console.warn('No namespace selected');
-      return;
-    }
-    await this.creation.request(selected, 'gesture');
-  }
-
   async deleteTeam(teamId: string) {
     await this.contextService.deleteTeam(teamId);
   }
@@ -621,9 +703,20 @@ export class HomeComponent {
    */
   async restoreTeam(teamId: string) {
     try {
-      await this.apiService.restoreTeam(teamId);
-      // Reload the current page (REPLACE — no empty flash); no page jump.
-      await this.contextService.loadTeamsPage(this.currentPage, PAGE_SIZE);
+      // `restoreTeamAndAwait`, not `apiService.restoreTeam` + a page reload.
+      // The bare POST returns as soon as the restore is ACCEPTED, so the row's
+      // spinner cleared while the team was still starting and the reload that
+      // followed fetched the pre-restore status about as often as not — the
+      // team came back looking stopped and the user pressed restore again.
+      // The await polls until the cache says `running`, which is also what
+      // `stopTeamAndAwait` beside it does, what the rail's row does, and what
+      // the composer's restore does. Four surfaces, one definition of "done".
+      //
+      // It replaces the page reload rather than preceding it: the poll feeds
+      // `_context$` through `refreshOneTeam`, so this team's row is already
+      // current when it resolves, and re-fetching the page would only trade a
+      // fresh row for a round trip.
+      await this.contextService.restoreTeamAndAwait(teamId);
     } catch (error) {
       console.error(`Failed to restore team ${teamId}:`, error);
       throw error;
@@ -658,9 +751,43 @@ export class HomeComponent {
     }
   }
 
-  /** `(rowSelected)` handler. A row was picked; this page decides that means go. */
+  /**
+   * `(rowSelected)` handler. A row was picked; this page NAVIGATES to it.
+   *
+   * This reverses Epic 52, and the reason is the rail. The epic embedded the
+   * process view here so that working a list of teams stopped costing a router
+   * round trip per team — a real gain, and it is genuinely given up (see the
+   * cost paragraph below). What it could not survive is a SECOND way in: the
+   * rail's team list now navigates to `/process/:id`, so the same team could be
+   * opened two different ways, and the second of them left four panes on screen
+   * at once — rail, table, conversation, inspector — each competing for the
+   * same width. A team is opened exactly ONE way now, and this is it.
+   *
+   * The cost, stated rather than hidden: working a SERVER-FILTERED set of teams
+   * one at a time is now filter → navigate → back → navigate, where it was zero
+   * navigations. The rail's search is client-side over the loaded page, so it
+   * is not a substitute for the metadata filter here. Both remain possible;
+   * neither remains cheap.
+   */
   onRowSelect(teamId: string) {
-    this.router.navigate(['/process', teamId]);
+    void this.router.navigate(['/process', teamId]);
+  }
+
+  /**
+   * A team was just created. Show it — which means GO TO IT.
+   *
+   * One destination for every creation path, which is the point of the gate
+   * having a single `created$` channel. Epic 52 briefly made this page an
+   * exception (open it beside the list, reload the page of rows behind it) with
+   * `hideHome` as an exception to the exception; R1 removed the pane, so the
+   * exception has nothing left to mean and the `hideHome` branch IS the rule.
+   *
+   * No compensating list reload any more either: the page is being left, so
+   * re-fetching the server-paged slice the user is walking away from would be a
+   * round trip nobody waits for.
+   */
+  private async onTeamCreated(teamId: string): Promise<void> {
+    await this.router.navigate(['/process', teamId]);
   }
 
   /**
@@ -842,6 +969,4 @@ export class HomeComponent {
     }
     return selected.name ?? selected.namespace ?? 'Namespace';
   }
-
-  visible = false;
 }

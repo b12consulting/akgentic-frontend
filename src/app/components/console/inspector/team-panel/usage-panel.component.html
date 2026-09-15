@@ -1,0 +1,98 @@
+<!--
+  A card, and the pane's last block. Three rows, label left and figure right, so
+  the numbers form a column the eye can compare down rather than three values
+  hunted out of three sentences.
+
+  THE PER-MODEL BREAKDOWN IS PART OF THIS CARD NOW (Epic 56 / W6). It used to
+  live in a popover hanging off the team tree's footer, and the team tree has
+  been removed from the hierarchy tab — so without moving it, "which model is
+  this team's spend actually going to" would have become unanswerable. It is
+  laid out flat rather than behind a disclosure because a breakdown of two or
+  three models is shorter than the control that would hide it, and because a
+  popover anchored inside a 310px pane opens over the thing it is describing.
+
+  No section label of its own: the rows sit under the totals they decompose,
+  separated by a rule, and a second uppercase header would read as a new
+  subject rather than as the same one in detail.
+-->
+@if (totals$ | async; as totals) {
+  <div class="usage">
+    <p class="usage-label">{{ "inspector.usage" | translate }}</p>
+
+    <div class="usage-row">
+      <span class="usage-name">{{ "inspector.tokensIn" | translate }}</span>
+      <span class="usage-value">{{ totals.totalSent | tokenCount }}</span>
+    </div>
+
+    <div class="usage-row">
+      <span class="usage-name">{{ "inspector.cached" | translate }}</span>
+      <span class="usage-value">{{ totals.totalCacheRead | tokenCount }}</span>
+    </div>
+
+    <div class="usage-row">
+      <span class="usage-name">{{ "inspector.tokensOut" | translate }}</span>
+      <span class="usage-value">{{ totals.totalReceived | tokenCount }}</span>
+    </div>
+
+    <!--
+      Absent entirely when the team has not run a model yet, rather than shown
+      empty: `teamByModel$` drops agents whose `lastModelName` is '', so an
+      untouched team yields [] and an empty list under a rule is a divider
+      introducing nothing.
+
+      The model NAME is the row's label and is data, not copy — there is
+      nothing here to translate. The three figures carry the existing usage
+      keys as tooltips so a glyph-only column still says what it is; that is
+      also why the arrows are `aria-hidden` and not read out one by one.
+    -->
+    @if (byModel$ | async; as byModel) {
+      @if (byModel.length > 0) {
+        <div class="usage-models">
+          @for (model of byModel; track model.modelName) {
+            <div class="usage-model-row">
+              <span class="usage-model-name" [attr.title]="model.modelName">{{
+                model.modelName
+              }}</span>
+              <span class="usage-model-figures">
+                <span
+                  class="usage-model-figure"
+                  [attr.title]="'inspector.tokensIn' | translate"
+                  ><span aria-hidden="true">↑</span
+                  >{{ model.totalSent | tokenCount }}</span
+                >
+                @if (model.totalCacheRead > 0) {
+                  <span
+                    class="usage-model-figure"
+                    [attr.title]="'inspector.cached' | translate"
+                    ><span aria-hidden="true">⚡</span
+                    >{{ model.totalCacheRead | tokenCount }}</span
+                  >
+                } @else {
+                  <!--
+                    AN EMPTY CELL, NOT A MISSING ONE. A model that read no
+                    cache still shows no ⚡ figure — a permanent zero reads as
+                    a broken meter — but the figures are a shared grid across
+                    every model row, so a cell that is absent rather than
+                    blank lets the ↓ figure below it slide left into the cache
+                    column and takes the whole column out of line.
+
+                    Its own class, so it is not one of the `.usage-model-figure`
+                    cells a reader (or a test) counts, and `aria-hidden`
+                    because there is nothing here to announce.
+                  -->
+                  <span class="usage-model-blank" aria-hidden="true"></span>
+                }
+                <span
+                  class="usage-model-figure"
+                  [attr.title]="'inspector.tokensOut' | translate"
+                  ><span aria-hidden="true">↓</span
+                  >{{ model.totalReceived | tokenCount }}</span
+                >
+              </span>
+            </div>
+          }
+        </div>
+      }
+    }
+  </div>
+}

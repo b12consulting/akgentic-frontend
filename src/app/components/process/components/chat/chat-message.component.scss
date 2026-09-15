@@ -1,39 +1,134 @@
-/* Collapsed line for Rule 3 and Rule 4 */
+/*
+ * THE TWO FOLDS.
+ *
+ * `.collapsed-line` is no longer a look — it is the fact that a row is folded,
+ * which is all the two kinds share (both toggle on click, both carry the caret
+ * and the clock). Everything visual belongs to one of the two modifiers, and
+ * they are deliberately far apart:
+ *
+ *   .collapsed-request  an accent card in the transcript's gutter   LOUDEST
+ *   (an ordinary turn)  prose on the page
+ *   .collapsed-notice   a muted indented line, no fill, no border   QUIETEST
+ *
+ * The ranking is the classifier's, not a preference: rule 3 is the only row
+ * that can be OUTSTANDING (it has a state and an action), rule 4 is the only
+ * one that asks for nothing at all.
+ */
 .collapsed-line {
+  cursor: pointer;
+}
+
+/* --- Rule 3: the request ------------------------------------------------- */
+
+/* The same gutter+gap geometry as `.message`, so the card lines up with the
+   turns around it instead of starting its own column. */
+.collapsed-request {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  width: 100%;
+}
+
+.request-card {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px 12px;
+  border: 1px solid var(--akg-accent-border);
+  /* The accent EDGE, not an accent box. A full accent border draws a rectangle;
+     a weighted left edge points at the text, which is what a callout is for. */
+  border-left: 3px solid var(--akg-accent-fg);
+  border-radius: var(--akg-card-radius);
+  background-color: var(--akg-accent-bg);
+}
+
+.request-head {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 4px 8px;
-  cursor: pointer;
-  color: #334155;
-  font-size: 0.9rem;
-  border-radius: 6px;
-  border: 1px solid rgba(158, 187, 203, 0.5);
+  gap: 8px;
+}
 
-  &:hover {
-    background-color: rgba(0, 0, 0, 0.02);
+.request-asks {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px;
+  /* The label step — the same size and weight as the name above a turn, so the
+     head of the callout reads as attribution rather than as a second heading. */
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1.4;
+}
+
+.request-sender {
+  color: var(--akg-text);
+}
+
+.request-target {
+  color: var(--akg-accent-fg);
+}
+
+/* PENDING vs ANSWERED, said in words.
+   The 🙋 it replaces could only mean "something here"; a reader had to already
+   know that the emoji meant "you". */
+.request-state {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border-radius: var(--akg-pill-radius);
+  font-size: var(--akg-section-label-size);
+  font-weight: 500;
+  letter-spacing: var(--akg-section-label-tracking);
+  text-transform: uppercase;
+  background-color: var(--akg-status-neutral-bg);
+  color: var(--akg-status-neutral-fg);
+  white-space: nowrap;
+
+  &.pending {
+    background-color: var(--akg-accent-fg);
+    color: var(--akg-accent-bright);
   }
 }
 
-.collapsed-label {
-  flex: 1;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+/*
+ * The question, as prose.
+ *
+ * No `nowrap`, no ellipsis: this is the one row on the surface whose CONTENT is
+ * the thing the user has to act on, and a single clipped line of it is a
+ * notification about a question rather than the question. Turn size and turn
+ * leading, so it reads at the same weight as the conversation it sits in.
+ */
+.request-body {
+  margin: 0;
+  font-size: var(--akg-turn-font-size);
+  font-weight: 300;
+  line-height: var(--akg-turn-line-height);
+  color: var(--akg-turn-fg);
+  overflow-wrap: anywhere;
 }
 
-.collapsed-preview {
-  color: #64748b;
-}
+/* ANSWERED: the request recedes to roughly turn weight. It keeps its text and
+   its fold — the exchange still happened — and loses everything that was there
+   to catch the eye. */
+.collapsed-request.answered {
+  .request-card {
+    border-color: var(--akg-collapsed-border);
+    border-left-color: var(--akg-collapsed-border);
+    background-color: transparent;
+  }
 
-.collapsed-timestamp {
-  font-size: 0.8rem;
-  color: #94a3b8;
-  white-space: nowrap;
+  .request-target,
+  .request-body {
+    color: var(--akg-text-muted);
+  }
 }
 
 .open-button {
   flex-shrink: 0;
+  align-self: flex-start;
 }
 
 :host ::ng-deep .open-button .p-button {
@@ -41,9 +136,232 @@
   font-size: 0.8rem;
 }
 
-.collapsed-notification-icon {
-  display: inline;
-  margin-left: 0;
+/* A REAL CONTROL, not a chip. The Reply on the folded request was 2px/8px at
+   0.8rem — smaller than the timestamp beside it — for the one action the
+   transcript ever asks the user to take. The expanded bubble's copy stays
+   small: there the Reply sits in a header row of metadata, not under a
+   question. */
+:host ::ng-deep .collapsed-request .open-button .p-button {
+  padding: 7px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: var(--akg-pill-radius);
+  background-color: var(--akg-accent-fg);
+  border-color: var(--akg-accent-fg);
+  color: var(--akg-accent-bright);
+}
+
+/* ANSWERED: the action recedes with the card. PrimeNG's disabled state only
+   fades what is there, and a faded primary button is still the loudest thing
+   in a row that is finished with. */
+:host ::ng-deep .collapsed-request.answered .open-button .p-button {
+  background-color: transparent;
+  border-color: var(--akg-collapsed-border);
+  color: var(--akg-text-muted);
+}
+
+/* --- Rule 4: the ambient notification ------------------------------------ */
+
+/*
+ * SUBORDINATE, and indented to say so.
+ *
+ * Padding-left is `--akg-avatar-gutter` — the same column the activity fold
+ * uses — so the row starts where an agent's prose starts and is visibly a
+ * consequence of the conversation rather than a participant in it. No fill and
+ * no resting border: the hover is the only chrome, and it only appears once you
+ * are already pointing at it.
+ */
+.collapsed-notice {
+  display: flex;
+  /* BASELINE, which already means the FIRST line's. A flex item that is a block
+     of several lines contributes its first line box's baseline, so the glyph,
+     the caret and the clock sit against the opening line of a notification that
+     has been expanded — `flex-start` put them against the top of the box, a
+     fraction above the text they belong to. */
+  align-items: baseline;
+  gap: 8px;
+  /* THE SAME BOX THE ACTIVITY FOLD DRAWS. Both rows sit on the transcript's
+     spine: content at `--akg-avatar-gutter`, with the row's own inset pulled
+     back out of it so the two hover grounds start and end on the same edges.
+     Stating the inset here rather than padding all the way to the gutter is
+     what makes the widths match — see `.activity` in
+     `chat-thinking.component.scss`, which is sized the same way. */
+  margin-left: calc(var(--akg-avatar-gutter) - var(--akg-fold-inset-x));
+  padding: 3px var(--akg-fold-inset-x);
+  border-radius: 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--akg-text-muted);
+
+  &:hover {
+    background-color: var(--akg-collapsed-hover);
+  }
+}
+
+.notice-icon {
+  flex: 0 0 auto;
+  font-size: 0.75rem;
+  color: var(--akg-glyph-quiet);
+}
+
+/*
+ * One line, clipped — until it is opened.
+ *
+ * THE ELLIPSIS IS THE FOLD. Opening this row used to replace it with a bubble
+ * of a different shape and height; now it simply lets the sentence finish. The
+ * row keeps its indent, its subject, its verb and its clock, and grows by
+ * however many lines the text needs — so there is nothing entering or leaving
+ * the layout and no second shape to reconcile.
+ */
+.notice-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+
+  /*
+   * WRAPPED IN BOTH STATES, AND CLIPPED BY HEIGHT — which is what lets the
+   * CLOSING animate too.
+   *
+   * The obvious shape is `nowrap` + `text-overflow: ellipsis` when shut and
+   * `pre-wrap` when open, and it animates in one direction only. `white-space`
+   * is a DISCRETE property: it flips in a single frame. Opening still looks
+   * right because the text reflows to its full height behind a box that is
+   * still one line tall, and the height then grows to reveal it — but closing
+   * reflows the text back to one line instantly, so the box has nothing left to
+   * shrink past and the transition plays over an already-finished picture.
+   *
+   * Keeping the text wrapped always and clipping with `height` + `overflow`
+   * means nothing discrete changes in either direction, so both animate.
+   *
+   * The ellipsis is not lost with `text-overflow`: the collapsed string comes
+   * from `preview()`, which truncates and appends its own — the cue is in the
+   * DATA rather than in the clip.
+   */
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+
+  /*
+   * THE ROW GROWS INSTEAD OF SNAPPING.
+   *
+   * This is animatable now only because the swap is gone: one element, whose
+   * height changes because its own text stopped being clipped. Every earlier
+   * attempt was trying to animate BETWEEN two elements, and during a swap both
+   * are in flow and their heights add — which is what made the transcript dip,
+   * bulge, or jump no matter how the timing was arranged.
+   *
+   * `1lh` is exactly one line of this row's own type, so the closed state is
+   * the height it already had. `interpolate-size` is what lets it animate to
+   * `auto`: without it `auto` is not an interpolable value and the browser
+   * jumps straight there. Where it is unsupported the row simply opens at once
+   * — the same behaviour as before this rule, so nothing is worse off.
+   */
+  interpolate-size: allow-keywords;
+  height: 1lh;
+  transition: height 210ms cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  &.expanded {
+    height: auto;
+  }
+
+  /*
+   * THE ELLIPSIS, AS A PAINTED MARK RATHER THAN AS CHARACTERS IN THE STRING.
+   *
+   * It used to come from `preview()`, which returned a SHORTER string while the
+   * row was shut — and that is what stopped the row animating closed, because
+   * the content finished shrinking in the frame the toggle fired and the height
+   * transition had nothing left to cover.
+   *
+   * Absolutely positioned, so it contributes no layout: the row's height is
+   * still just `1lh` against the full text, and the transition is untouched.
+   * The `padding-right` opposite reserves its lane so it never lands on top of
+   * a word — that costs a little width, which only affects where the clipped
+   * line happens to break, and the line is being cut anyway.
+   *
+   * `bottom: 0` is the only visible line while the row is shut, which is what
+   * makes this correct without knowing how many lines the message really has.
+   */
+  &:not(.expanded) {
+    position: relative;
+    padding-right: 1.2em;
+
+    &::after {
+      content: '…';
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      color: var(--akg-text-muted);
+    }
+  }
+}
+
+/*
+ * The rating, under the opened text rather than beside it.
+ *
+ * A block, so it starts on its own line. The spacing is CLOSER ABOVE THAN
+ * BELOW: the control belongs to the sentence it rates, so it should sit under
+ * it rather than float between that sentence and the bottom of the row. The
+ * shared `.action-row` carries 10px above and nothing below, which is the wrong
+ * way round here — inside a bubble it is separating two blocks, on this row it
+ * is the last thing in the box.
+ */
+/*
+ * `fit-content`, and that is a CLICK-TARGET fix rather than a cosmetic one.
+ *
+ * This element carries `stopPropagation` so rating a notification does not also
+ * fold it. As a full-width block it therefore swallowed every click across its
+ * whole band — the three icons are 90px wide, but the dead strip beside them
+ * ran the width of the row, and the row is the fold's own toggle. Shrunk to its
+ * contents, only the icons stop the click and the rest of the box folds as it
+ * looks like it should.
+ */
+.notice-feedback {
+  display: block;
+  width: fit-content;
+  margin-bottom: 6px;
+}
+
+:host ::ng-deep .notice-feedback .action-row {
+  margin-top: 4px;
+}
+
+/* The tool or agent that spoke, as the subject of the sentence. It is the only
+   part of the row set in `--akg-text`: you can find WHAT reported without
+   reading the rest, which is the whole job of an ambient line. */
+.notice-subject {
+  font-weight: 500;
+  color: var(--akg-text);
+}
+
+.notice-verb {
+  margin-left: 4px;
+}
+
+/* The body, after the subject. The separator is generated rather than typed
+   into the template so it cannot end up in the accessible name of the row, and
+   so an empty body (no preview element) takes its punctuation with it — the old
+   row could render a dangling " : ". */
+.collapsed-preview {
+  color: var(--akg-text-muted);
+
+  &::before {
+    content: '\00b7';
+    margin: 0 6px;
+    color: var(--akg-glyph-quiet);
+  }
+}
+
+/* Matches .system-marker-caret — the transcript's other fold. */
+.collapsed-caret {
+  font-size: 0.7rem;
+  flex-shrink: 0;
+  color: var(--akg-glyph-quiet);
+}
+
+.collapsed-timestamp {
+  font-size: 0.8rem;
+  color: var(--akg-text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .hand-raised {
@@ -55,6 +373,7 @@
 .message {
   display: flex;
   width: 100%;
+  gap: 14px;
 
   &.right {
     justify-content: flex-end;
@@ -62,6 +381,7 @@
 
   &.left {
     justify-content: flex-start;
+    align-items: flex-start;
   }
 
   &.clickable {
@@ -69,59 +389,171 @@
   }
 }
 
+/*
+ * The speaker's mark.
+ *
+ * A name repeated down the left edge is a label; an initial in a consistent
+ * gutter is a spine — you can find where an agent starts talking without
+ * reading anything. The fold indents by exactly this gutter, so the work an
+ * agent did lines up under the agent that did it.
+ */
+.turn-avatar {
+  flex: 0 0 auto;
+  width: var(--akg-avatar-size);
+  height: var(--akg-avatar-size);
+  margin-top: 2px;
+  border-radius: 9px;
+  background: var(--akg-accent-fg);
+  color: var(--akg-accent-bright);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  user-select: none;
+}
+
+/*
+ * A turn.
+ *
+ * THE AGENT'S TURNS CARRY NO BUBBLE. They sit directly on the page —
+ * transparent, unbordered, unpadded — so a long exchange reads as a document
+ * rather than as a column of tinted boxes. At three or four agents talking to
+ * each other, the boxes were the thing you saw and the words were not.
+ *
+ * The user's OWN turn keeps its bubble, right-aligned. That is what carries the
+ * left/right rhythm now that the fill is gone everywhere else: one shape on the
+ * right, plain text on the left, which is legible at a glance without reading a
+ * single label.
+ */
 .message-bubble {
-  max-width: 80%;
-  padding: 10px 15px 2px;
-  font-size: 1rem;
-  line-height: 1.5;
-  border-radius: 10px;
-  border: 2px solid transparent;
+  max-width: 78%;
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: var(--akg-turn-font-size);
+  font-weight: 300;
+  line-height: var(--akg-turn-line-height);
   word-wrap: break-word;
-  color: black;
+  /* THE PROSE STEP, not the heading step. `--akg-turn-fg` exists for exactly
+     this element and was reaching nothing: the turn was set in `--akg-text`,
+     the darker value the token file reserves for headings and labels, so every
+     answer in the transcript read one step heavier than it was designed to.
+     The sender's name above it keeps `--akg-text` — that IS a label — which is
+     what makes the pair legible as name-then-prose rather than as two
+     paragraphs. */
+  color: var(--akg-turn-fg);
 
-  .right & {
-    border-bottom-right-radius: 0;
+  /* The default: no bubble. */
+  background-color: transparent;
+  border: 2px solid transparent;
+  padding: 0 0 2px;
+
+  /* The exception: the user's own turn. `own-turn` rather than `.right` because
+     alignment is presentation and authorship is not — a deployment that
+     centres its conversation must not lose the distinction with it. */
+  &.own-turn {
+    padding: var(--akg-turn-padding);
+    border-radius: var(--akg-turn-radius);
+    border-color: transparent;
+    background-color: var(--akg-user-bubble-bg);
+    line-height: 1.55;
   }
 
-  .left & {
-    border-bottom-left-radius: 0;
-  }
+  /*
+   * THE RATING CONTROL IS QUIET.
+   *
+   * Epic 50 spent its whole budget making an exchange read as prose. Forty
+   * turns each wearing a permanent pair of thumbs is eighty pieces of
+   * furniture in a document that had none — worse than a transcript with no
+   * feedback mechanism at all, because the noise lands on every line and the
+   * mechanism gets used on almost none of them.
+   *
+   * So the control is revealed by the turn it belongs to: hover it, or reach
+   * it with the keyboard, and it appears. It holds its space either way, so
+   * nothing reflows on the way in. A turn that has ALREADY been rated keeps it
+   * visible — that is FR8, and it is decided in the child, which is the only
+   * thing that knows.
+   *
+   * The handover is a CUSTOM PROPERTY rather than a selector reaching into the
+   * child. `opacity` cannot go on `<app-feedback>` itself: the host also
+   * contains the feedback dialog, which would fade out with it. So the
+   * decision is published here and the child applies it to the icons alone.
+   */
+  --akg-feedback-opacity: 0;
 
-  &.selected {
-    border: 2px solid var(--primary-color);
+  &:hover,
+  &:focus-within {
+    --akg-feedback-opacity: 1;
   }
 }
 
+/* `gap` and `margin-bottom` were each declared twice here, 0.5rem then 8px and
+   4px then 6px. The later pair won, so these are those values — a rule that
+   contradicts itself is two people disagreeing in one block, and the reader has
+   to find both lines to know which one is in force. */
 .bubble-header {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 4px;
+  gap: 8px;
+  margin-bottom: 6px;
 
   .bubble-timestamp {
-    margin-left: auto;
-    font-size: 0.8rem;
-    color: #94a3b8;
+    font-size: 11px;
+    font-weight: 300;
+    color: var(--akg-text-muted);
     white-space: nowrap;
   }
 }
 
+/*
+ * The sender, as a BADGE rather than a filled header bar.
+ *
+ * It was a solid pill at body-text size, which made the loudest thing in every
+ * turn the name of whoever was speaking rather than what they said. Now that
+ * the turn itself has no fill, a quiet badge is enough to attribute it — and
+ * the badge is the only tinted thing left in an agent's turn, so it reads as a
+ * label instead of competing with the prose.
+ */
+/*
+ * The speaker's name, plain.
+ *
+ * It was a filled pill on every single turn, which put a piece of chrome above
+ * every line of the conversation. A name in the type scale says the same thing
+ * and disappears when you are reading rather than scanning. It stays a button —
+ * it is the way into the sub-agent reader — so it keeps a hover and a focus
+ * ring; it just stops shouting while idle.
+ */
+/*
+ * THE SPEAKER, AT READING SIZE.
+ *
+ * This is the one piece of metadata on a turn that is not metadata: it names
+ * who is talking to you. At 12.5px it sat between the 11px timestamp beside it
+ * and the 14.5px paragraph below, which put it on the same step as the clock —
+ * a caption over the words rather than the person saying them.
+ *
+ * `--akg-turn-font-size`, not a number of its own, so the name and the words
+ * stay one size: a deployment that re-points the transcript's type scale moves
+ * both, and the name can never end up smaller than the sentence it introduces.
+ * The weight is what separates them — 600 against the body's normal, which is
+ * how a speaker reads as a heading without shouting.
+ */
 .label-pill {
-  background-color: #6a9bb6;
+  background-color: transparent;
   border: none;
-  padding: 4px 8px;
-  border-radius: 10px;
-  font-size: 1rem;
-  color: white;
+  padding: 0;
+  border-radius: 4px;
+  font-size: var(--akg-turn-font-size);
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--akg-text);
   cursor: pointer;
   align-self: flex-start;
 
   &:hover:not(:disabled) {
-    background-color: #075985;
+    background-color: var(--akg-accent-border);
   }
 
   &:disabled {
-    background-color: #6a9bb6;
     cursor: default;
     opacity: 1;
   }
@@ -132,7 +564,7 @@
 }
 
 .notification-icon {
-  color: #38bdf8;
+  color: var(--akg-notify-fg);
   font-size: 0.9rem;
   animation: bell-pulse 2s ease-in-out infinite;
 }
@@ -146,6 +578,70 @@
   margin-top: 4px;
 }
 
+/* The user's own turn has no header above it any more, so the 4px that used to
+   separate the prose from the sender's name is now 4px between the bubble's
+   padding and its first word. */
+.own-turn .markdown-content {
+  margin-top: 0;
+}
+
+/*
+ * The user's own words, verbatim.
+ *
+ * `pre-wrap` is the whole rule: it keeps the newlines the person typed (which
+ * `normal` would collapse) while still wrapping at the bubble's edge (which
+ * `pre` would not). `overflow-wrap` covers the one case wrapping cannot — an
+ * unbroken URL or token longer than the bubble, which would otherwise push the
+ * bubble past its own max-width.
+ */
+.own-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /* `inline`, so the stamp after it sits on the END of the last line rather
+     than claiming a line of its own. `pre-wrap` still holds the user's
+     newlines, which is the whole point of this element. */
+  display: inline;
+}
+
+/*
+ * The user's own clock, at the end of the message rather than under it.
+ *
+ * On the right and on the same line: the stamp finishes the sentence on the
+ * edge the bubble already ends on, and takes width the last line was not using
+ * — so it costs the turn no height at all. Given a line to itself it read as a
+ * second, very short message instead of as a mark on the one above it.
+ *
+ * A step below the header stamp's 11px. That one shares a row with the
+ * speaker's name and is the small end of it; this one sits INSIDE the
+ * sentence, where the same size would compete with the words it is annotating.
+ */
+/*
+ * The addressee, when the turn has one worth naming.
+ *
+ * Shares the trailing row with the clock and reads at the same quiet step, so a
+ * turn that carries it costs no more height than one that does not — which is
+ * what lets it appear and disappear between messages without the column
+ * jumping. It sits BEFORE the time because it is the more interesting of the
+ * two: you scan for who, then for when.
+ */
+.own-recipient {
+  margin-left: 8px;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--akg-text-muted);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.own-timestamp {
+  margin-left: 8px;
+  font-size: 10px;
+  font-weight: 300;
+  color: var(--akg-text-muted);
+  white-space: nowrap;
+  user-select: none;
+}
+
 /* Context-management markers (Epic 29 / ADR-010) — inert, centered system rows.
    Visually distinct from chat bubbles: muted, full-width, no alignment. */
 .system-marker {
@@ -157,18 +653,18 @@
   align-items: center;
   gap: 0.5rem;
   padding: 4px 10px;
-  color: #64748b;
+  color: var(--akg-text-muted);
   font-size: 0.85rem;
   font-style: italic;
   border-radius: 6px;
-  border: 1px dashed rgba(100, 116, 139, 0.4);
-  background-color: rgba(100, 116, 139, 0.04);
+  border: 1px dashed var(--akg-marker-border);
+  background-color: var(--akg-marker-bg);
 
   &.expandable {
     cursor: pointer;
 
     &:hover {
-      background-color: rgba(100, 116, 139, 0.08);
+      background-color: var(--akg-marker-hover);
     }
   }
 }
@@ -192,7 +688,7 @@
 
 .system-marker-timestamp {
   font-size: 0.8rem;
-  color: #94a3b8;
+  color: var(--akg-text-muted);
   white-space: nowrap;
   flex-shrink: 0;
 }
@@ -206,7 +702,85 @@
   overflow-y: auto;
   font-size: 0.9rem;
   line-height: 1.5;
-  color: #334155;
-  border-left: 2px solid rgba(100, 116, 139, 0.3);
-  background-color: rgba(100, 116, 139, 0.03);
+  color: var(--akg-text);
+  border-left: 2px solid var(--akg-marker-border);
+  background-color: var(--akg-marker-bg);
+}
+
+
+/*
+ * The system rule.
+ *
+ * "Team started · 16:35" is the page telling you where you are. A hairline
+ * either side of it centres it without giving it a voice, and it inherits the
+ * reading column like every other row.
+ */
+.system-rule {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--akg-text-muted);
+}
+
+.system-rule-line {
+  flex: 1;
+  height: 1px;
+  background: var(--akg-hairline);
+}
+
+.system-rule-label {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  font-weight: 300;
+  white-space: nowrap;
+}
+
+/*
+ * THE SAME ANNOUNCEMENT WHEN IT HAS A BODY.
+ *
+ * A team's welcome message arrives on rule 5 like "Team started" does, but it
+ * is prose — authored as markdown, often several paragraphs. The rule above
+ * cannot hold it: `.system-rule` is a flex row (newlines collapse), its label
+ * is `nowrap` (no wrapping), and it is interpolated (markdown shown as source).
+ * Everything here is the negation of one of those three.
+ *
+ * The MARKER palette, not the bubble's. `--akg-marker-bg` / `--akg-marker-border`
+ * are what rules 6 and 7 already use for "the transcript's own chrome", which is
+ * exactly what this is — the alternative, borrowing the turn bubble, would make
+ * the system look like a participant with the loudest opening line on the page.
+ * A solid border rather than the marker's dashed one: dashed says "a fold you
+ * can open", and there is nothing folded here.
+ *
+ * No `max-height`. The compaction summary is capped because it is a machine
+ * digest nobody reads in full; a welcome is addressed to the reader, and a
+ * welcome you have to scroll inside a box is the clipping bug with a scrollbar.
+ */
+.system-announcement {
+  width: 100%;
+  padding: 12px 16px;
+  border: 1px solid var(--akg-marker-border);
+  border-radius: var(--akg-card-radius);
+  background-color: var(--akg-marker-bg);
+  color: var(--akg-text);
+  font-size: var(--akg-turn-font-size);
+  line-height: var(--akg-turn-line-height);
+  /* An unbroken URL or token in a welcome must not push the block past the
+     reading column — the same guard the user's own turn carries. */
+  overflow-wrap: anywhere;
+}
+
+/* The block IS the body, so the 4px that separates a turn's prose from the
+   sender's name above it has nothing to separate here. */
+.system-announcement .markdown-content {
+  margin-top: 0;
+}
+
+/* ngx-markdown's first and last block carry their own margins, which would
+   read as uneven padding against the box. */
+:host ::ng-deep .system-announcement .markdown-content > markdown > *:first-child {
+  margin-top: 0;
+}
+
+:host ::ng-deep .system-announcement .markdown-content > markdown > *:last-child {
+  margin-bottom: 0;
 }

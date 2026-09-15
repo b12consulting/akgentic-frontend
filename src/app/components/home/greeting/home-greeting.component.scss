@@ -1,0 +1,87 @@
+// A HEADER ABOVE THE LIST, and deliberately a short one.
+//
+// `flex: 0 0 auto` because this is a child of `.content`, whose other child
+// (`.main-container`) is the bounded scroll region the table's
+// `scrollHeight="flex"` body needs. Growing here would take that height from
+// the table; the greeting must cost its own two lines and nothing more.
+//
+// The bottom padding is the whole gap to the card below — `.main-container` has
+// no top margin of its own — so it is the single number that decides how many
+// rows this block costs. 14px is one line of the meta step: enough that the
+// heading is not sitting on the card, small enough that a laptop keeps the same
+// rows it had.
+:host {
+  display: block;
+  flex: 0 0 auto;
+  // TOP, then SIDE, then BOTTOM — and the side value is not a taste decision.
+  //
+  // `1rem` is exactly `.main-container`'s own padding, and `styles.scss`
+  // re-bases `html` to 13px, so this is the same 13px the card insets its
+  // contents by. That makes the salutation align with the "TEAM TYPE" label
+  // inside the card rather than with the card's BORDER — the border is a piece
+  // of furniture, and hanging the page's first line off it looked like the
+  // heading had been pushed against the edge rather than placed.
+  //
+  // The top was 2px, which put the heading against the top of `<main>` with no
+  // margin at all: `.content` has no padding of its own, so nothing else was
+  // going to provide it. `1.5rem` is the only value here that costs the table
+  // rows, and it buys the page a top margin, which it did not have.
+  padding: 1.5rem 1rem 1rem;
+}
+
+// The login page's heading treatment, restated rather than re-derived: display
+// face, light weight, `--akg-text`. The two are the same moment in the product
+// — the app addressing the person in front of it — so they read as one voice.
+//
+// `--akg-font-display` is Merriweather, and the rail's brand row
+// (`console-rail.component.scss`) already pulls it on this route, so the face
+// is in the document by the time this paints. It is self-hosted via
+// `@fontsource` (see `styles.scss`), not fetched from a third party.
+.home-greeting__salutation {
+  margin: 0;
+  font-family: var(--akg-font-display);
+  font-weight: 300;
+  // 24px with 1.2 leading, not 20px with 1.35. The salutation is the first
+  // thing on the page and was reading as a label rather than as the page
+  // addressing you; a display serif needs size before its weight can be light
+  // without looking merely small.
+  //
+  // The pair is chosen to be HEIGHT-NEUTRAL, which is the constraint that
+  // matters here: 20 x 1.35 = 27px against 24 x 1.2 = 28.8px, so the block
+  // grows under 2px and the teams table below keeps the rows it had. Size was
+  // bought back out of the leading rather than out of the table.
+  font-size: 24px;
+  // Display faces set at heading sizes carry word-spacing intended for body
+  // copy. A touch negative closes it optically; it is not a style flourish but
+  // the reason the larger size does not read as looser.
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  color: var(--akg-text);
+}
+
+// One step quieter and one step smaller. The hierarchy between the two lines is
+// carried by SIZE, WEIGHT and FACE rather than by a third text tone, because
+// there is no legible step below `--akg-text-muted` on these grounds — see the
+// note beside it in `_conversation-tokens.scss`.
+.home-greeting__welcome {
+  // 5px, not 3px: the salutation's tighter leading pulls its baseline up, so
+  // the gap between the two lines has to be given back explicitly or they read
+  // as one wrapped sentence.
+  margin: 5px 0 0;
+  font-family: var(--akg-font-ui);
+  font-weight: 300;
+  font-size: var(--akg-font-size-control);
+  line-height: 1.5;
+  color: var(--akg-text-muted);
+}
+
+// The welcome sentence arrives through [innerHTML], so its children are NOT
+// stamped with this component's encapsulation attribute and no ordinary rule
+// here can reach them. `::ng-deep` under a host-scoped ancestor stays scoped to
+// this block in the emitted CSS — it is not a global.
+//
+// A deployment's sentence may carry a link, and an unstyled `<a>` is the UA's
+// blue: the one colour on this page that belongs to no token at all.
+.home-greeting__welcome ::ng-deep a {
+  color: var(--akg-accent-fg);
+}

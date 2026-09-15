@@ -28,6 +28,7 @@ import {
   CommandDescriptor,
   LlmContextCompactedEvent,
 } from '../../../../../protocol/message.types';
+import { provideTranslateTesting } from '../../../../../../testing/i18n-testing';
 
 /**
  * Story 26-2 — the component injects the component-scoped TokenUsageSelector for
@@ -43,6 +44,25 @@ const NEUTRAL_TOKEN_USAGE_SELECTOR = {
       of(undefined),
   },
 };
+
+/**
+ * A trace entry's header, read as its PARTS joined by a single space.
+ *
+ * The header used to be one interpolated string — `"System : roster"` — where a
+ * colon did a label's job at the same size and weight as the name beside it.
+ * It is a `.entry-kind` micro-label plus a `.entry-name` (plus an optional
+ * model) now, and Angular strips the whitespace between sibling elements, so
+ * `textContent` welds them into "Systemroster". Joining the children is the
+ * same reading `popoverRows` below already uses, and it keeps these assertions
+ * pinning WHICH rows render with WHICH names — which is what they were ever
+ * about — without pinning the punctuation between them.
+ */
+function headerText(header: Element): string {
+  return Array.from(header.children)
+    .map((child) => (child.textContent ?? '').replace(/\s+/g, ' ').trim())
+    .filter((text) => text.length > 0)
+    .join(' ');
+}
 
 /**
  * Story 15-1 (ADR-013) — member-chat `/` slash-command mention. The member
@@ -77,6 +97,10 @@ describe('AkgentChatComponent — slash-command mention (Story 15-1 / 17-3)', ()
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         { provide: ApiService, useValue: { sendMessage: jasmine.createSpy('sendMessage').and.resolveTo(undefined) } },
         { provide: UtilService, useValue: {} },
         {
@@ -326,6 +350,10 @@ describe('AkgentChatComponent — head system block (Story 16-2)', () => {
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         {
           provide: ApiService,
           useValue: {
@@ -384,14 +412,21 @@ describe('AkgentChatComponent — head system block (Story 16-2)', () => {
     return { fixture, component, log };
   }
 
-  /** All rendered head-block card headers, e.g. "System : roster". */
+  /** All rendered head-block card headers, e.g. "System roster".
+   *
+   *  UPDATED with the redesign: the header is a `.entry-kind` micro-label plus
+   *  a `.entry-name`, not one string joined by " : ". Whitespace is collapsed
+   *  the way `convHeaders` below already did, because the gap between two
+   *  elements is the stylesheet's business. The assertions still pin WHICH rows
+   *  render, in what order, with which names — the separator was never the
+   *  behaviour under test. */
   function headHeaders(
     fixture: ComponentFixture<AkgentChatComponent>
   ): string[] {
     const el: HTMLElement = fixture.nativeElement;
     return Array.from(
       el.querySelectorAll('.head-system-container .card-header')
-    ).map((n) => (n.textContent ?? '').trim());
+    ).map((n) => headerText(n));
   }
 
   /** Rendered head-block content bodies, in order. */
@@ -418,8 +453,8 @@ describe('AkgentChatComponent — head system block (Story 16-2)', () => {
     fixture.detectChanges();
 
     expect(headHeaders(fixture)).toEqual([
-      'System : roster',
-      'System : System',
+      'System roster',
+      'System System',
     ]);
     expect(headBodies(fixture)).toEqual(['roster v2', 'backstory']);
     // No system row leaked into the conversation table.
@@ -507,12 +542,15 @@ describe('AkgentChatComponent — head system block (Story 16-2)', () => {
     fixture.detectChanges();
 
     // Head block renders once.
-    expect(headHeaders(fixture)).toEqual(['System : roster']);
+    expect(headHeaders(fixture)).toEqual(['System roster']);
     // And there is no second system block inside the conversation rows.
     const el: HTMLElement = fixture.nativeElement;
     const allSystemHeaders = Array.from(
       el.querySelectorAll('.card-header')
-    ).filter((n) => (n.textContent ?? '').includes('System :'));
+    ).filter(
+      (n) =>
+        (n.querySelector('.entry-kind')?.textContent ?? '').trim() === 'System'
+    );
     expect(allSystemHeaders.length).toBe(1);
   });
 
@@ -527,7 +565,7 @@ describe('AkgentChatComponent — head system block (Story 16-2)', () => {
     component.context$.next([doubleCarryContextMessage()]);
     fixture.detectChanges();
 
-    expect(headHeaders(fixture)).toEqual(['System : roster']);
+    expect(headHeaders(fixture)).toEqual(['System roster']);
     expect(headBodies(fixture)).toEqual(['legacy roster']);
     // Still no inline duplicate.
     expect(component.context.some((m) => m.type === 'system')).toBeFalse();
@@ -609,6 +647,10 @@ describe('AkgentChatComponent — never-run backstory head block (Story 20-1)', 
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         {
           provide: ApiService,
           useValue: {
@@ -661,7 +703,7 @@ describe('AkgentChatComponent — never-run backstory head block (Story 20-1)', 
     const el: HTMLElement = fixture.nativeElement;
     return Array.from(
       el.querySelectorAll('.head-system-container .card-header')
-    ).map((n) => (n.textContent ?? '').trim());
+    ).map((n) => headerText(n));
   }
 
   function headBodies(fixture: ComponentFixture<AkgentChatComponent>): string[] {
@@ -676,7 +718,7 @@ describe('AkgentChatComponent — never-run backstory head block (Story 20-1)', 
     // No LlmSystemPromptEvent in the log — never-run agent.
     fixture.detectChanges();
 
-    expect(headHeaders(fixture)).toEqual(['System : agent_backstory']);
+    expect(headHeaders(fixture)).toEqual(['System agent_backstory']);
     expect(headBodies(fixture)).toEqual(['You are Bob.']);
   });
 
@@ -697,7 +739,7 @@ describe('AkgentChatComponent — never-run backstory head block (Story 20-1)', 
     fixture.detectChanges();
 
     // Event rows win — the synthetic backstory row is NOT shown.
-    expect(headHeaders(fixture)).toEqual(['System : roster']);
+    expect(headHeaders(fixture)).toEqual(['System roster']);
     expect(headBodies(fixture)).toEqual(['roster v1']);
   });
 
@@ -719,8 +761,8 @@ describe('AkgentChatComponent — never-run backstory head block (Story 20-1)', 
     // The head block switches to the event rendering; exactly the event rows,
     // no leftover/duplicate synthetic backstory row.
     expect(headHeaders(fixture)).toEqual([
-      'System : agent_backstory',
-      'System : current_date',
+      'System agent_backstory',
+      'System current_date',
     ]);
     expect(headBodies(fixture)).toEqual(['You are Bob (run 1).', 'day 1']);
   });
@@ -741,6 +783,10 @@ describe('AkgentChatComponent — never-run backstory head block (Story 20-1)', 
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         {
           provide: ApiService,
           useValue: {
@@ -797,6 +843,10 @@ describe('AkgentChatComponent — follow mode + status pill', () => {
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         {
           provide: ApiService,
           useValue: {
@@ -866,7 +916,7 @@ describe('AkgentChatComponent — follow mode + status pill', () => {
     component.updateContext([{ type: 'ai', name: 'x', content: 'hi' }] as any);
     tick(0); // flush the post-render setTimeout
     expect(el.scrollTop).toBe(0); // stayed put
-    expect(component.indicatorLabel).toBe('Messages'); // newest below the fold
+    expect(component.indicatorLabel).toBe('chat.messages'); // newest below the fold
   }));
 
   it('submitting enters follow mode and scrolls to the bottom', async () => {
@@ -876,7 +926,7 @@ describe('AkgentChatComponent — follow mode + status pill', () => {
     await component.sendMessage();
     expect((component as any).following).toBeTrue();
     expect(el.scrollTop).toBe(2000);
-    expect(component.indicatorLabel).toBe('Auto scrolling');
+    expect(component.indicatorLabel).toBe('chat.autoScrolling');
   });
 
   it('clicking the pill enters follow mode, scrolls down, shows "Auto scrolling"', () => {
@@ -885,14 +935,14 @@ describe('AkgentChatComponent — follow mode + status pill', () => {
     component.onFollowLatest();
     expect((component as any).following).toBeTrue();
     expect(el.scrollTop).toBe(2000);
-    expect(component.indicatorLabel).toBe('Auto scrolling');
+    expect(component.indicatorLabel).toBe('chat.autoScrolling');
   });
 
   it('shows "Messages" when the newest message is below the fold (not following)', () => {
     const { component } = setup();
     installScroll(component, 2000, 500, 100); // far from bottom
     component.onScroll();
-    expect(component.indicatorLabel).toBe('Messages');
+    expect(component.indicatorLabel).toBe('chat.messages');
   });
 
   it('reaching the bottom activates follow ("Auto scrolling")', () => {
@@ -900,7 +950,7 @@ describe('AkgentChatComponent — follow mode + status pill', () => {
     installScroll(component, 2000, 500, 1500); // at the bottom (dist 0)
     component.onScroll();
     expect((component as any).following).toBeTrue();
-    expect(component.indicatorLabel).toBe('Auto scrolling');
+    expect(component.indicatorLabel).toBe('chat.autoScrolling');
   });
 
   it('a manual upward scroll exits follow mode → "Messages"', () => {
@@ -911,7 +961,7 @@ describe('AkgentChatComponent — follow mode + status pill', () => {
     el.scrollTop = 200; // user scrolled up
     component.onScroll();
     expect((component as any).following).toBeFalse();
-    expect(component.indicatorLabel).toBe('Messages');
+    expect(component.indicatorLabel).toBe('chat.messages');
   });
 
   it('the smooth tail (moving DOWN) does not exit follow mode', () => {
@@ -922,7 +972,7 @@ describe('AkgentChatComponent — follow mode + status pill', () => {
     void el;
     component.onScroll();
     expect((component as any).following).toBeTrue();
-    expect(component.indicatorLabel).toBe('Auto scrolling');
+    expect(component.indicatorLabel).toBe('chat.autoScrolling');
   });
 
   it('does NOT show "Auto scrolling" when the process is stopped', () => {
@@ -931,7 +981,7 @@ describe('AkgentChatComponent — follow mode + status pill', () => {
     installScroll(component, 2000, 500, 1500);
     (component as any).following = true;
     component.onScroll();
-    expect(component.indicatorLabel).not.toBe('Auto scrolling');
+    expect(component.indicatorLabel).not.toBe('chat.autoScrolling');
   });
 
   it('in follow mode, a new message tails to the bottom', fakeAsync(() => {
@@ -974,6 +1024,10 @@ describe('AkgentChatComponent — keyboard submit parity', () => {
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         {
           provide: ApiService,
           useValue: {
@@ -1088,6 +1142,10 @@ describe('AkgentChatComponent — token-usage pill (Story 26-2)', () => {
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         {
           provide: ApiService,
           useValue: {
@@ -1189,11 +1247,13 @@ describe('AkgentChatComponent — token-usage pill (Story 26-2)', () => {
     expect(p.tagName.toLowerCase()).toBe('button');
     expect(p.hasAttribute('disabled')).toBeFalse();
 
-    // aria-label spells out the words + model (full grouped numbers) — the
-    // trigger no longer relies on a non-interactive `title` tooltip.
-    expect(p.getAttribute('aria-label')).toBe(
-      'Token usage: context window 12,300, sent 45,000, received 12,100, model gpt-4o',
-    );
+    // UPDATED with the redesign. The label used to be an English sentence
+    // CONCATENATED in the template from four numbers — untranslatable without a
+    // four-parameter key, and a prose duplicate of the breakdown the popover
+    // already gives everyone. It NAMES the control now (the same word the Team
+    // panel's meter carries) and `aria-haspopup` says there is more behind it.
+    expect(p.getAttribute('aria-label')).toBe('inspector.usage');
+    expect(p.getAttribute('aria-haspopup')).toBe('dialog');
   });
 
   it('(b) live update: a fresh emission with a SMALLER newest ctx updates ctx to the newest value; totals reflect the sums', () => {
@@ -1222,7 +1282,12 @@ describe('AkgentChatComponent — token-usage pill (Story 26-2)', () => {
     const p = pill(fixture)!;
     expect(p.tagName.toLowerCase()).toBe('button');
     expect(p.hasAttribute('disabled')).toBeTrue();
-    expect(p.getAttribute('aria-label')).toBe('No token usage yet');
+    // UPDATED with the redesign: both states of the trigger name the CONTROL
+    // (`inspector.usage`) instead of describing its contents in hardcoded
+    // English. The disabled attribute is what tells assistive tech there is
+    // nothing to open — a second, differently-worded label was saying it again
+    // in a language only some users read.
+    expect(p.getAttribute('aria-label')).toBe('inspector.usage');
   });
 
   it('the pill follows an agent switch (perAgent$ re-bound in ngOnChanges)', () => {
@@ -1312,6 +1377,10 @@ describe('AkgentChatComponent — usage popover (Story 30-2)', () => {
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         {
           provide: ApiService,
           useValue: {
@@ -1417,14 +1486,20 @@ describe('AkgentChatComponent — usage popover (Story 30-2)', () => {
     pill(fixture).click();
     fixture.detectChanges();
 
+    // UPDATED with the redesign: the five row labels were hardcoded English
+    // and are keys now, so under the no-op loader they echo back as keys. Two
+    // of them are REUSED from the Team panel's meter (`inspector.tokensIn` /
+    // `inspector.tokensOut`) rather than new copy — the same number was called
+    // "Sent" in one pane of this inspector and "Tokens in" in another. The
+    // NUMBERS, which is what this spec is actually about, are unchanged.
     const rows = popoverRows(fixture);
-    expect(rows).toContain('Model claude-opus-4-8');
-    expect(rows).toContain('Context window 12,300');
-    expect(rows).toContain('Sent 45,000');
-    expect(rows).toContain('Received 12,100');
-    expect(rows).toContain('Cache ⚡ 4,000 / 9,000');
+    expect(rows).toContain('inspector.trace.model claude-opus-4-8');
+    expect(rows).toContain('inspector.trace.contextWindow 12,300');
+    expect(rows).toContain('inspector.tokensIn 45,000');
+    expect(rows).toContain('inspector.tokensOut 12,100');
+    expect(rows).toContain('inspector.cached 4,000 / 9,000');
     // Cache write is not surfaced (OpenAI reports cache reads only).
-    expect(rows.some((r) => r.startsWith('Cache write'))).toBeFalse();
+    expect(rows.length).toBe(5);
     // aria-expanded flips once the popover is actually open.
     expect(pill(fixture).getAttribute('aria-expanded')).toBe('true');
   });
@@ -1440,7 +1515,7 @@ describe('AkgentChatComponent — usage popover (Story 30-2)', () => {
     fixture.detectChanges();
     pill(fixture).click();
     fixture.detectChanges();
-    expect(popoverRows(fixture)).toContain('Context window 1,000');
+    expect(popoverRows(fixture)).toContain('inspector.trace.contextWindow 1,000');
 
     usage$.next(
       usage({
@@ -1452,8 +1527,8 @@ describe('AkgentChatComponent — usage popover (Story 30-2)', () => {
     );
     fixture.detectChanges();
 
-    expect(popoverRows(fixture)).toContain('Context window 9,000');
-    expect(popoverRows(fixture)).toContain('Sent 10,000');
+    expect(popoverRows(fixture)).toContain('inspector.trace.contextWindow 9,000');
+    expect(popoverRows(fixture)).toContain('inspector.tokensIn 10,000');
   });
 
   it('empty-state (usage$ → undefined) renders a disabled trigger with no popover to open', () => {
@@ -1485,6 +1560,10 @@ describe('AkgentChatComponent — folded compaction summary (Story 29-3)', () =>
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         {
           provide: ApiService,
           useValue: {
@@ -1536,7 +1615,7 @@ describe('AkgentChatComponent — folded compaction summary (Story 29-3)', () =>
     const el: HTMLElement = fixture.nativeElement;
     return Array.from(
       el.querySelectorAll('.collapsible-container .card-header'),
-    ).map((n) => (n.textContent ?? '').replace(/\s+/g, ' ').trim());
+    ).map((n) => headerText(n));
   }
 
   /** Conversation-table content bodies. */
@@ -1588,7 +1667,7 @@ describe('AkgentChatComponent — folded compaction summary (Story 29-3)', () =>
     fixture.detectChanges();
 
     // The summary row renders, clearly labelled, with the prefix stripped.
-    expect(convHeaders(fixture)).toContain('Human : Summary');
+    expect(convHeaders(fixture)).toContain('Human Summary');
     expect(convBodies(fixture)).toContain('the running recap');
 
     // Full-fold: no fused `/clear` head row, no verbatim Q/A tail rows, and the
@@ -1631,6 +1710,10 @@ describe('AkgentChatComponent — OnPush regression (Story 30-3)', () => {
     TestBed.configureTestingModule({
       imports: [AkgentChatComponent],
       providers: [
+        // `CopyButtonComponent`, imported by the component under test, now
+        // resolves its label through `TranslatePipe` rather than a hardcoded
+        // English string, so rendering it needs a TranslateService.
+        provideTranslateTesting(),
         {
           provide: ApiService,
           useValue: {
@@ -1732,6 +1815,6 @@ describe('AkgentChatComponent — OnPush regression (Story 30-3)', () => {
     const pill = (fixture.nativeElement as HTMLElement).querySelector(
       '.jump-to-latest',
     );
-    expect(pill?.textContent).toContain('Messages');
+    expect(pill?.textContent).toContain('chat.messages');
   });
 });

@@ -1,0 +1,69 @@
+:host {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+  padding: 12px 14px;
+  border-top: 1px solid var(--akg-surface-border);
+}
+
+// A CIRCLE. The transcript's agent avatar is a 9px-radius square, and the
+// shape is what distinguishes a person from an agent across the whole console.
+.rail-footer__avatar {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--akg-avatar-human-bg);
+  color: var(--akg-avatar-human-fg);
+  font-family: var(--akg-font-ui);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.rail-footer__text {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.rail-footer__name {
+  font-family: var(--akg-font-ui);
+  font-size: 12.5px;
+  color: var(--akg-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// Quiet by default: this is a way out, not the thing to do next.
+.rail-footer__link {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  font-family: var(--akg-font-ui);
+  font-size: 11px;
+  color: var(--akg-text-muted);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--akg-text-muted);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+  }
+}
+
+.rail-footer__account {
+  flex: 0 0 auto;
+  display: flex;
+}

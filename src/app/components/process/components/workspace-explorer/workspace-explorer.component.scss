@@ -1,8 +1,29 @@
+/*
+ * THE WORKSPACES PANEL, IN THE CONSOLE'S PALETTE.
+ *
+ * Everything here used to be written in PrimeNG Aura's variables
+ * (`--p-surface-50`, `--p-content-background`, `--p-content-border-color`) with
+ * ten raw hexes underneath them. Both are the same bug from two directions: a
+ * deployment re-points `_conversation-tokens.scss` and every panel in the
+ * inspector moves except this one. The mapping applied throughout is
+ * ground -> `--akg-panel-bg`, chrome -> `--akg-overlay-bg`, edges ->
+ * `--akg-surface-border`, rules inside a surface -> `--akg-hairline`.
+ */
 .workspace-explorer {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: var(--p-surface-50);
+  background-color: var(--akg-panel-bg);
+  font-family: var(--akg-font-ui);
+
+  /*
+   * The width of the folded navigator's visible sliver, declared ONCE.
+   *
+   * It was written down three times as a bare `25px` — the pane's left padding,
+   * the strip's own width, and (as `320 - 295`) the fold distance. The three
+   * had to agree and nothing said so.
+   */
+  --ws-strip-width: 25px;
 }
 
 .explorer-layout {
@@ -17,25 +38,37 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background-color: var(--p-content-background);
+  background-color: var(--akg-overlay-bg);
   position: relative;
-  /* Clears the folded navigator's visible sliver (320 - 295 = 25px). */
-  padding-left: 25px;
+  /* Clears the folded navigator's visible sliver. */
+  padding-left: var(--ws-strip-width);
 }
 
-/* Custom Sliding File Navigator */
+/*
+ * Custom sliding file navigator.
+ *
+ * `min(320px, 100%)`, NOT a flat 320px. This panel was built when the workspace
+ * view had the whole window; in the inspector its lane is ~278px, so a 320px
+ * drawer was wider than the pane clipping it and the expanded navigator lost
+ * its right-hand edge — the file sizes and the close affordance with it.
+ *
+ * The fold distance is derived rather than restated. `translateX` resolves a
+ * percentage against the element's OWN border box, so `-100% + strip` leaves
+ * exactly the sliver visible at any width; the old `-295px` was `320 - 25`
+ * hardcoded, and silently wrong the moment the width stopped being 320.
+ */
 .file-navigator {
   position: absolute;
   left: 0;
   top: 0;
   bottom: 0;
-  width: 320px;
-  background-color: var(--p-content-background);
-  border-right: 1px solid var(--p-content-border-color);
-  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+  width: min(320px, 100%);
+  background-color: var(--akg-overlay-bg);
+  border-right: 1px solid var(--akg-surface-border);
+  box-shadow: var(--akg-overlay-shadow);
   display: flex;
   flex-direction: column;
-  transform: translateX(-295px);
+  transform: translateX(calc(-100% + var(--ws-strip-width)));
   transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   z-index: 100;
   pointer-events: auto;
@@ -52,7 +85,7 @@
   align-items: center;
   justify-content: space-between;
   padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--p-content-border-color);
+  border-bottom: 1px solid var(--akg-surface-border);
   min-height: 56px;
   flex-shrink: 0;
   opacity: 0;
@@ -63,11 +96,21 @@
   opacity: 1;
 }
 
+/*
+ * The drawer's heading, in the console's uppercase micro-label — the same
+ * treatment the inspector's TOOLS heading, the rail's group headers and the
+ * workspace member strip use. It was a 14px semibold sentence-case line, which
+ * is a HEADING, and this is a section label on a drawer; one treatment per job
+ * is what makes the panel read as part of the console rather than as a window
+ * inside it.
+ */
 .navigator-title {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--akg-section-label-size);
+  letter-spacing: var(--akg-section-label-tracking);
+  text-transform: uppercase;
   font-weight: 600;
-  color: var(--p-text-color);
+  color: var(--akg-text-muted);
 }
 
 .navigator-content {
@@ -82,31 +125,16 @@
   opacity: 1;
 }
 
-.empty-workspace {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem 1rem;
-  text-align: center;
-  color: #888;
-
-  &-icon {
-    font-size: 3rem;
-    margin-bottom: 1rem;
-  }
-
-  &-title {
-    font-size: 1rem;
-    font-weight: 500;
-    margin-bottom: 0.5rem;
-  }
-
-  &-desc {
-    font-size: 0.875rem;
-    color: #aaa;
-    line-height: 1.4;
-  }
+/*
+ * Both of this pane's parameter-free placeholders are `<app-inspector-empty-state>`
+ * now, so the three bespoke type scales that lived here — a 3rem glyph over a
+ * 1rem title, and a 2.5rem glyph over a 0.95rem one — are DELETED rather than
+ * re-tuned. The wrappers keep only what the wrapper owes: the block the pane's
+ * exclusivity specs address, and a little breathing room.
+ */
+.empty-workspace,
+.empty-directory {
+  padding: 0.5rem 0 1.5rem;
 }
 
 /*
@@ -124,8 +152,8 @@
   top: 0;
   bottom: 0;
   width: 25px;
-  background: var(--p-content-background);
-  border-right: 1px solid var(--p-content-border-color);
+  background: var(--akg-overlay-bg);
+  border-right: 1px solid var(--akg-surface-border);
   transition: opacity 0.2s, width 0.2s, background-color 0.2s;
   display: flex;
   align-items: center;
@@ -136,7 +164,7 @@
 
 .file-navigator:not(.expanded):hover .collapsed-strip {
   width: 29px;
-  background: var(--p-content-hover-background);
+  background: var(--akg-panel-hover);
 }
 
 .file-navigator.expanded .collapsed-strip {
@@ -146,7 +174,7 @@
 
 .collapsed-strip i {
   font-size: 1.25rem;
-  color: var(--p-text-muted-color);
+  color: var(--akg-text-muted);
   transform: rotate(90deg);
 }
 
@@ -162,21 +190,21 @@
   width: 100%;
   padding: 0.25rem 0.5rem;
   border: none;
-  border-radius: var(--p-content-border-radius);
+  border-radius: var(--akg-control-radius);
   background: none;
   font: inherit;
-  font-size: 0.875rem;
-  color: var(--p-text-color);
+  font-size: var(--akg-font-size-control);
+  color: var(--akg-text);
   text-align: left;
   cursor: pointer;
 
   &:hover {
-    background: var(--p-content-hover-background);
+    background: var(--akg-row-hover);
   }
 
   &:focus-visible {
-    outline: 2px solid var(--p-primary-color);
-    outline-offset: -2px;
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
   }
 
   /*
@@ -186,11 +214,12 @@
    * they were `--p-highlight-*` first, which this app's preset overrides to
    * sky.900 on sky.100, the photographic negative of the tree's sky.50 on
    * sky.800. Two rows answering one question in inverted palettes is the
-   * confusion this row exists to remove.
+   * confusion this row exists to remove. Both are now the console's accent
+   * pair, so a rebrand moves them together.
    */
   &.selected {
-    background: var(--p-primary-50);
-    color: var(--p-primary-color);
+    background: var(--akg-accent-bg);
+    color: var(--akg-accent-fg);
   }
 }
 
@@ -220,8 +249,8 @@
 }
 
 .tree-node-size {
-  color: var(--p-text-muted-color);
-  font-size: 0.75rem;
+  color: var(--akg-text-muted);
+  font-size: var(--akg-font-size-meta);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
 }
@@ -236,12 +265,8 @@
   border: none;
   border-radius: 0;
   padding: 0.75rem 1rem;
-  background: var(--p-content-background);
-  border-bottom: 1px solid var(--p-content-border-color);
-}
-
-:host ::ng-deep .p-divider {
-  margin: 0;
+  background: var(--akg-overlay-bg);
+  border-bottom: 1px solid var(--akg-surface-border);
 }
 
 .file-info {
@@ -265,12 +290,12 @@
   column-gap: 0.25rem;
   row-gap: 0.125rem;
   min-width: 0;
-  font-size: 0.875rem;
+  font-size: var(--akg-font-size-control);
 }
 
 .breadcrumb-separator {
-  color: var(--p-text-muted-color);
-  font-size: 0.75rem;
+  color: var(--akg-glyph-quiet);
+  font-size: var(--akg-font-size-meta);
   /* Decorative: the nav landmark and aria-current carry the structure. */
   opacity: 0.7;
 }
@@ -286,18 +311,18 @@
   border-radius: 4px;
   background: none;
   font: inherit;
-  color: var(--p-text-muted-color);
+  color: var(--akg-text-muted);
   cursor: pointer;
   white-space: nowrap;
 
   &:hover {
-    color: var(--p-primary-color);
-    background: var(--p-content-hover-background);
+    color: var(--akg-accent-fg);
+    background: var(--akg-row-hover);
   }
 
   &:focus-visible {
-    outline: 2px solid var(--p-primary-color);
-    outline-offset: 1px;
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
   }
 }
 
@@ -307,7 +332,7 @@
   gap: 0.375rem;
   padding: 0.125rem 0.25rem;
   font-weight: 600;
-  color: var(--p-text-color);
+  color: var(--akg-text);
   /* The one crumb allowed to lose characters — a long filename should not push
      the toolbar's controls off the row. */
   min-width: 0;
@@ -317,7 +342,7 @@
 }
 
 .breadcrumb-file-icon {
-  color: var(--p-primary-color);
+  color: var(--akg-accent-fg);
   font-size: 0.95rem;
   flex-shrink: 0;
 }
@@ -333,8 +358,9 @@
  * The pane body sits on the platform's grey, not on the card white the toolbar
  * and navigator use. That is the whole distinction: chrome is white, content is
  * grey, and the file view's page (below) reads as a sheet on a desk rather than
- * as more chrome. `--p-surface-50` is the same token `.workspace-explorer`
- * already uses, so this is the existing grey, not a new one.
+ * as more chrome. `--akg-panel-bg` is the same token `.workspace-explorer`
+ * already uses — and the same ground the inspector pane itself is drawn on —
+ * so this is the existing grey, not a new one.
  */
 .panel-content {
   flex: 1;
@@ -343,7 +369,7 @@
   overflow: hidden;
   padding: 1rem;
   position: relative;
-  background-color: var(--p-surface-50);
+  background-color: var(--akg-panel-bg);
 }
 
 .directory-list {
@@ -365,22 +391,27 @@
   width: 100%;
   padding: 0.5rem 0.75rem;
   border: none;
-  border-radius: var(--p-content-border-radius);
+  border-radius: var(--akg-control-radius);
   background: transparent;
-  color: var(--p-text-color);
+  color: var(--akg-text);
   font-family: inherit;
-  font-size: 0.875rem;
+  font-size: var(--akg-font-size-control);
   text-align: left;
   cursor: pointer;
   transition: background-color 0.2s;
 
   &:hover {
-    background-color: var(--p-content-hover-background);
+    background-color: var(--akg-row-hover);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
   }
 
   &-icon {
-    color: var(--p-text-muted-color);
-    font-size: 1rem;
+    color: var(--akg-glyph-quiet);
+    font-size: var(--akg-font-size-body);
   }
 
   &-name {
@@ -391,31 +422,13 @@
   }
 
   &-size {
-    color: var(--p-text-muted-color);
-    font-size: 0.75rem;
+    color: var(--akg-text-muted);
+    font-size: var(--akg-font-size-meta);
     flex-shrink: 0;
   }
 }
 
-.empty-directory {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 3rem 1rem;
-  text-align: center;
-  color: #6c757d;
 
-  &-icon {
-    font-size: 2.5rem;
-    margin-bottom: 0.75rem;
-  }
-
-  &-title {
-    font-size: 0.95rem;
-    font-weight: 500;
-  }
-}
 
 
 // A pane's "re-reading" overlay: the content stays, this floats over it.
@@ -463,10 +476,10 @@
   width: 6.5rem;
   height: 6.5rem;
   border-radius: 12px;
-  background: #f1f3f5;
-  border: 1px solid #dee2e6;
+  background: var(--akg-surface-muted);
+  border: 1px solid var(--akg-surface-border);
   // Lifts it off the content without the heavy shadow of a dialog.
-  box-shadow: 0 1px 3px rgb(0 0 0 / 8%);
+  box-shadow: var(--akg-overlay-shadow);
 
   // No baseline strut under the icon, which would push it off the box's centre.
   line-height: 0;
@@ -482,7 +495,7 @@
   font-size: 3rem;
   width: 3rem;
   height: 3rem;
-  color: #94a3b8;
+  color: var(--akg-glyph-quiet);
 }
 
 .navigator-content,
@@ -496,101 +509,117 @@
   align-items: center;
 }
 
+/*
+ * The failure banner, at the console's scale.
+ *
+ * A 3rem glyph is a full-page error illustration, and this is a strip above a
+ * document that is still readable (ADR-030 §D5) — it must not out-shout the
+ * thing it is annotating. Row shape rather than stacked-and-centred, for the
+ * same reason: it reads as a note, not as a replacement for the pane.
+ */
 .error-message {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: flex-start;
   /* Above a body that stays (ADR-030 §D5) — the banner must not be squeezed. */
   flex-shrink: 0;
-  padding: 2rem;
-  text-align: center;
-  gap: 0.75rem;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--akg-danger-fg);
+  border-radius: var(--akg-card-radius);
+  background: var(--akg-danger-bg);
+  text-align: left;
 
   i {
-    font-size: 3rem;
-    color: var(--p-red-500);
+    flex: 0 0 auto;
+    font-size: var(--akg-font-size-body);
+    line-height: 1.5;
+    color: var(--akg-danger-fg);
   }
 
   p {
     margin: 0;
-    font-size: 0.875rem;
-    color: var(--p-text-color);
-  }
-}
-
-// File placeholder (matches message-list style)
-.empty-section {
-  padding: 2rem;
-  text-align: center;
-  color: #6c757d;
-  background: #f8f9fa;
-  border-radius: 8px;
-  border: 2px dashed #dee2e6;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.empty-section-box {
-  width: 100%;
-  max-width: 400px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-.file-placeholder {
-  margin: 2rem;
-  padding: 3rem 2rem;
-
-  &-icon {
-    font-size: 3.5rem;
-    margin-bottom: 1rem;
-  }
-
-  &-title {
-    font-size: 1.25rem;
-    font-weight: 500;
-    margin-bottom: 0.75rem;
-  }
-
-  &-desc {
-    font-size: 0.95rem;
-    color: #aaa;
-    max-width: 400px;
-    margin-bottom: 1.5rem;
+    font-size: var(--akg-font-size-control);
     line-height: 1.5;
+    color: var(--akg-text);
   }
 }
 
+/*
+ * THE DELETED-FILE NOTICE.
+ *
+ * `.empty-section` / `.empty-section-box` / `.file-placeholder` are gone: a
+ * 2px DASHED box around a 3.5rem glyph and a 1.25rem heading, which was the
+ * "copied from the knowledge-graph panel" idiom the Messages tab already shed.
+ * What is left is `<app-inspector-empty-state>`'s own shape, restated because
+ * this sentence takes a parameter and that component takes keys — every value
+ * below is the shared component's, so the two cannot drift apart by accident.
+ */
+.deleted-notice {
+  margin-top: 40px;
+  padding: 0 18px;
+  text-align: center;
+}
+
+.deleted-glyph {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 14px;
+  border-radius: 14px;
+  background: var(--akg-well-bg);
+  color: var(--akg-glyph-quiet);
+  font-size: 20px;
+  line-height: 1;
+}
+
+.deleted-title {
+  margin: 0 0 6px;
+  font-family: var(--akg-font-display);
+  font-weight: 300;
+  font-size: 15px;
+  color: var(--akg-text);
+}
+
+.deleted-blurb {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 300;
+  line-height: 1.6;
+  color: var(--akg-text-muted);
+  /* A filename is one unbroken token and the pane is ~278px wide. */
+  overflow-wrap: anywhere;
+}
+
+/* Same correction as the error banner: a 3rem glyph in a 278px lane is an
+   illustration, and this is a one-sentence notice with a download button. */
 .binary-message {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 2rem;
+  padding: 1.25rem 1rem;
   text-align: center;
-  gap: 1rem;
+  gap: 0.75rem;
 
   i {
-    font-size: 3rem;
-    color: var(--p-blue-500);
+    font-size: 1.5rem;
+    color: var(--akg-glyph-quiet);
   }
 
   p {
     margin: 0;
-    font-size: 0.875rem;
-    color: var(--p-text-color);
+    font-size: var(--akg-font-size-control);
+    line-height: 1.5;
+    color: var(--akg-text);
   }
 }
 
 :host ::ng-deep .binary-card {
   margin: 1rem;
   box-shadow: none;
-  border: 1px solid var(--p-content-border-color);
+  border: 1px solid var(--akg-surface-border);
 }
 
 /*
@@ -608,9 +637,9 @@
  * under.
  */
 %file-page {
-  background-color: var(--p-content-background);
-  border: 1px solid var(--p-content-border-color);
-  border-radius: var(--p-content-border-radius);
+  background-color: var(--akg-overlay-bg);
+  border: 1px solid var(--akg-surface-border);
+  border-radius: 8px;
   padding: 1.5rem;
 }
 
@@ -642,7 +671,7 @@
 
   code {
     font-family: monospace;
-    color: var(--p-text-color);
+    color: var(--akg-text);
   }
 }
 
@@ -672,7 +701,7 @@
 
 :host ::ng-deep .p-tree .p-treenode-content {
   padding: 0.5rem;
-  border-radius: var(--p-content-border-radius);
+  border-radius: var(--akg-control-radius);
   transition: background-color 0.2s;
   cursor: pointer;
   width: 100%;
@@ -681,12 +710,12 @@
 }
 
 :host ::ng-deep .p-tree .p-treenode-content:hover {
-  background-color: var(--p-content-hover-background);
+  background-color: var(--akg-row-hover);
 }
 
 :host ::ng-deep .p-tree .p-treenode-content.p-highlight {
-  background-color: var(--p-primary-50);
-  color: var(--p-primary-color);
+  background-color: var(--akg-accent-bg);
+  color: var(--akg-accent-fg);
 }
 
 :host ::ng-deep .p-tree .p-tree-toggler {
@@ -695,12 +724,12 @@
 
 :host ::ng-deep .p-tree .p-treenode-icon {
   margin-right: 0.5rem;
-  color: var(--p-text-muted-color);
+  color: var(--akg-glyph-quiet);
 }
 
 :host ::ng-deep .p-tree .p-treenode-label {
-  font-size: 0.8125rem;
-  color: var(--p-text-color);
+  font-size: var(--akg-font-size-control);
+  color: var(--akg-text);
   flex: 1;
   cursor: pointer;
 }
@@ -713,14 +742,14 @@
 }
 
 .directory-list::-webkit-scrollbar-track {
-  background: var(--p-surface-50);
+  background: var(--akg-panel-bg);
 }
 
 .directory-list::-webkit-scrollbar-thumb {
-  background: var(--p-surface-400);
-  border-radius: var(--p-content-border-radius);
+  background: var(--akg-dot-idle);
+  border-radius: 8px;
 }
 
 .directory-list::-webkit-scrollbar-thumb:hover {
-  background: var(--p-surface-500);
+  background: var(--akg-glyph-quiet);
 }

@@ -1,5 +1,42 @@
+/*
+ * Another link in the Epic-56 height chain (`process.component.scss` states it
+ * end to end). The chain fails SILENTLY, so every link says `min-height: 0`
+ * explicitly rather than trusting a default.
+ */
+:host {
+  display: block;
+  height: 100%;
+  min-height: 0;
+}
+
+/* `position: relative` is the positioning context for the empty-state overlay
+   below. Stated on the same rule rather than a second one: the panel boxes are
+   themselves absolutely positioned, so an overlay left to find its own ancestor
+   would resolve `inset: 0` against the whole pane and cover the human-request
+   row as well. */
+.graph-component-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  position: relative;
+}
+
+/*
+ * The canvas takes what the pane gives it. This carried
+ * `height: calc(100vh - 260px)` as an inline style — the chrome budget of the
+ * layout it used to own — which inside a 310px inspector panel is simply a
+ * larger number than the box it sits in.
+ *
+ * `min-height` as well as `flex`: echarts measures its container ONCE on init,
+ * and a container that is momentarily zero-height (which a flex child in a
+ * chain still settling can be) makes it lay out for nothing and never
+ * re-measure on its own.
+ */
 .graph-container {
   width: 100%;
+  flex: 1;
+  min-height: 240px;
 }
 
 .mb-8 {
@@ -8,4 +45,23 @@
 
 .mb-4 {
   margin-bottom: 0.4rem;
+}
+
+/*
+ * The "no team yet" message, over the canvas rather than instead of it.
+ *
+ * ABSOLUTE, and that is the whole reason this rule exists: the canvas must keep
+ * its box while the message is up. echarts measures its container ONCE, on
+ * init, so a message that pushed the canvas out of flow — or replaced it —
+ * would leave the chart sized for whatever was left when the first node
+ * arrived, which is usually nothing.
+ *
+ * `pointer-events: none` because the message is not a control. Without it the
+ * overlay would swallow the drag that pans the graph in the frame between the
+ * first node landing and this block being torn down.
+ */
+.graph-empty {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }

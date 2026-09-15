@@ -56,17 +56,47 @@
    * centred). box-sizing: border-box so the padding + border are included. */
   box-sizing: border-box;
   min-height: 3.2rem;
-  /* Same separator as the explorer toolbar / file-header rows. The fallback
-   * is required: --surface-border is not defined in this component's scope, so
-   * without it the var() is invalid and the whole border declaration drops. */
-  border-bottom: 1px solid var(--surface-border, #dee2e6);
+  background: var(--akg-overlay-bg);
+  /*
+   * Same separator as the explorer toolbar / file-header rows.
+   *
+   * It read `var(--surface-border, #dee2e6)` — and `--surface-border` is
+   * declared NOWHERE in `src/` (Aura v19 emits `--p-*`), so the fallback was
+   * not a safety net, it was the colour. That is precisely the line a rebrand
+   * could not move.
+   */
+  border-bottom: 1px solid var(--akg-hairline);
 }
 
 .workspace-header-strip .ws-access-label {
-  font-size: 0.85rem;
+  /* The console's uppercase micro-label, the same one the rail's group headers
+   * and the inspector's TOOLS use: one treatment means "a new group starts
+   * here", and this strip is exactly that. `opacity` is gone — it composited
+   * the text against whatever was behind it, which is how a tone that passes
+   * AA on paper fails on screen. */
+  font-size: var(--akg-section-label-size);
+  letter-spacing: var(--akg-section-label-tracking);
+  text-transform: uppercase;
   font-weight: 600;
-  opacity: 0.65;
-  margin-right: 0.125rem;
+  color: var(--akg-text-muted);
+  margin-right: 0.25rem;
+}
+
+/*
+ * The member chips. PrimeNG draws them on Aura's own grey with Aura's radius;
+ * restated here so they read as the inspector's tool chips do.
+ */
+:host ::ng-deep .ws-member-chip .p-chip {
+  background: var(--akg-panel-bg);
+  border: 1px solid var(--akg-surface-border);
+  border-radius: var(--akg-pill-radius);
+  color: var(--akg-control-fg);
+  font-family: var(--akg-font-ui);
+  /* The console's meta step, by name. It was the same 11.5px written as a
+     literal, which is the one difference that stops a type-scale change from
+     reaching this chip. */
+  font-size: var(--akg-font-size-meta);
+  padding: 2px 9px;
 }
 
 /* Tabbed case: fill the PrimeNG tab chain to the host height and strip the
@@ -77,6 +107,60 @@
   flex-direction: column;
   flex: 1 1 auto;
   min-height: 0;
+}
+
+/*
+ * THE WORKSPACE TAB STRIP, RESTATED IN THE CONSOLE'S LANGUAGE.
+ *
+ * Left to Aura it draws a blue-grey underline, a blue active caption and a
+ * sliding ink bar — the last untokenised chrome in this panel, and the thing
+ * that made the Workspaces tab read as a different application from the five
+ * beside it. The STRUCTURE is unchanged on purpose: a tab per workspace is the
+ * right control for "several of one kind of thing", and replacing it with a
+ * picker would cost a click to see what exists.
+ */
+:host ::ng-deep .p-tablist {
+  flex: 0 0 auto;
+  background: var(--akg-overlay-bg);
+  border-bottom: 1px solid var(--akg-hairline);
+}
+
+:host ::ng-deep .p-tablist-tab-list {
+  background: transparent;
+  border: none;
+}
+
+:host ::ng-deep .p-tab {
+  border: none;
+  background: transparent;
+  color: var(--akg-text-muted);
+  font-family: var(--akg-font-ui);
+  font-size: var(--akg-font-size-control);
+  font-weight: 500;
+  padding: var(--akg-row-padding-y) var(--akg-row-padding-x);
+}
+
+:host ::ng-deep .p-tab:not(.p-disabled):hover {
+  background: var(--akg-row-hover);
+  color: var(--akg-text);
+}
+
+:host ::ng-deep .p-tab[data-p-active='true'] {
+  color: var(--akg-accent-fg);
+  background: transparent;
+}
+
+:host ::ng-deep .p-tab:focus-visible {
+  outline: none;
+  box-shadow: var(--akg-focus-ring);
+  border-radius: var(--akg-control-radius);
+}
+
+/* The ink bar is the one thing that says which tab is live; it inherits Aura's
+ * primary otherwise, which `app.theme.ts` already points at the accent — stated
+ * here anyway so the strip does not depend on that indirection holding. */
+:host ::ng-deep .p-tablist-active-bar {
+  background: var(--akg-accent-fg);
 }
 
 :host ::ng-deep .p-tabpanels {

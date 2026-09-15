@@ -22,9 +22,9 @@ import { ScrollPanelModule } from 'primeng/scrollpanel';
 import { TooltipModule } from 'primeng/tooltip';
 import { CardModule } from 'primeng/card';
 import { ToolbarModule } from 'primeng/toolbar';
-import { DividerModule } from 'primeng/divider';
 import { TagModule } from 'primeng/tag';
 import { MarkdownModule } from 'ngx-markdown';
+import { TranslatePipe } from '@ngx-translate/core';
 import { from, of, switchMap } from 'rxjs';
 import { catchError, map, tap } from 'rxjs/operators';
 import {
@@ -38,6 +38,7 @@ import {
   WorkspaceInvalidationService,
 } from '../../selectors/workspace-invalidation.selector';
 import { UploadModalComponent } from './upload-modal/upload-modal.component';
+import { InspectorEmptyStateComponent } from '../../../console/inspector/inspector-empty-state.component';
 
 /**
  * Outcome of one declarative root-tree load. `switchMap` maps each
@@ -68,6 +69,22 @@ interface RootLoadResult {
    * field attributes the wrong origin to whichever load settles second.
    */
   background: boolean;
+}
+
+/**
+ * One step of the toolbar's location trail.
+ *
+ * `translate` is what separates the two KINDS of name this list carries: the
+ * root is the app's own word for a place and belongs in the locale files, while
+ * every other crumb is a directory name owned by the workspace and must survive
+ * verbatim. Carrying the distinction as data rather than as "index 0 is
+ * special" is what lets the template render one loop.
+ */
+export interface WorkspaceCrumb {
+  readonly name: string;
+  readonly translate: boolean;
+  readonly path: string;
+  readonly last: boolean;
 }
 
 /**
@@ -174,10 +191,11 @@ export class DelayedIndicator {
     TooltipModule,
     CardModule,
     ToolbarModule,
-    DividerModule,
     TagModule,
     MarkdownModule,
+    TranslatePipe,
     UploadModalComponent,
+    InspectorEmptyStateComponent,
   ],
   templateUrl: './workspace-explorer.component.html',
   styleUrls: ['./workspace-explorer.component.scss'],
@@ -440,14 +458,21 @@ export class WorkspaceExplorerComponent {
    * `openFile()`, so opening a file leaves the trail describing that file's
    * directory — which after §D3's file-open rule is exactly where the pane is.
    */
-  breadcrumb = computed<{ name: string; path: string; last: boolean }[]>(() => {
+  breadcrumb = computed<WorkspaceCrumb[]>(() => {
     const segments = this.currentDirectory().split('/').filter(Boolean);
-    const crumbs = [{ name: 'Root', path: '', last: segments.length === 0 }];
+    // `translate: true` on the root and only the root. Every other crumb is a
+    // directory name the API returned and must be rendered verbatim — putting
+    // one of those through the translation layer would silently rewrite a
+    // folder called, say, "common" into whatever key happened to match.
+    const crumbs: WorkspaceCrumb[] = [
+      { name: 'workspace.root', translate: true, path: '', last: segments.length === 0 },
+    ];
     let path = '';
     segments.forEach((segment, index) => {
       path = path === '' ? segment : `${path}/${segment}`;
       crumbs.push({
         name: segment,
+        translate: false,
         path,
         last: index === segments.length - 1,
       });

@@ -11,6 +11,8 @@ import {
 } from '../../../protocol/catalog.interface';
 import { TeamFilterComponent } from './team-filter.component';
 
+import { provideTranslateTesting, setTestTranslations } from '../../../../testing/i18n-testing';
+
 function field(
   key: string,
   overrides: Partial<MetadataFieldDescriptor> = {},
@@ -47,6 +49,7 @@ describe('TeamFilterComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [TeamFilterComponent, FormsModule, NoopAnimationsModule],
+      providers: [provideTranslateTesting()],
       schemas: [CUSTOM_ELEMENTS_SCHEMA],
     }).compileComponents();
 
@@ -184,10 +187,16 @@ describe('TeamFilterComponent', () => {
   });
 
   it('names the floor in every placeholder', () => {
+    // T3. The floor is a PARAMETER now, and the key-echoing test loader returns
+    // the key with nothing substituted — so asserting the rendered placeholder
+    // without registering a template would pass whether the number reached the
+    // pipe or not. `<< >>` marks the template as synthetic: what is pinned is
+    // that the number arrives, never the English around it.
+    setTestTranslations({ home: { filter: { termPlaceholder: '<<floor={{count}}>>' } } });
     selectNamespace(ns('acme', contract([field('case_id', { index: true })])));
 
     expect(inputs()[0].getAttribute('placeholder')).toBe(
-      `${component.minTermLength}+ characters to filter`,
+      `<<floor=${component.minTermLength}>>`,
     );
   });
 
@@ -283,9 +292,10 @@ describe('TeamFilterComponent', () => {
     // The visible caption is deliberately short — the control sits inside the
     // panel, under the team-type select it refers to. The title is where the
     // unabbreviated sentence lives, so the control never depends on that
-    // context being noticed. Asserted EXACTLY: a `toContain` here would still
-    // pass if the caption degraded to "Team type", which is the SELECT's label
-    // and the one wording this control must never collapse to.
+    // context being noticed. Asserted EXACTLY on the KEY: the caption and the
+    // title must be two different keys, because the failure this guards against
+    // is the caption collapsing to the SELECT's wording — and two keys cannot
+    // collapse into one by accident the way two sentences can.
     selectNamespace(ns('acme', contract([])));
 
     expect(
@@ -294,8 +304,11 @@ describe('TeamFilterComponent', () => {
     const label = fixture.nativeElement.querySelector(
       'label[for="filter-namespace-toggle"]',
     ) as HTMLLabelElement;
-    expect(label.textContent?.trim()).toBe('This team type only');
-    expect(label.getAttribute('title')).toContain('selected team type');
+    expect(label.textContent?.trim()).toBe('home.filter.thisTeamTypeOnly');
+    expect(label.getAttribute('title')).toBe('home.filter.thisTeamTypeOnlyTitle');
+    // And it is NOT the team-type select's own label, which is the one wording
+    // this control must never collapse to.
+    expect(label.textContent?.trim()).not.toBe('home.teamType');
   });
 
   it('re-renders the input set from the NEW contract on a type change', () => {

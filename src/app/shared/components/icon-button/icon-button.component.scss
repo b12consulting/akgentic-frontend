@@ -1,0 +1,81 @@
+// A square hit target with a centred glyph and no chrome of its own at rest.
+//
+// `display: grid; place-items: center` rather than flex: the button holds
+// exactly one child (the projected glyph) and grid centres it on both axes
+// without the child needing a rule, so a caller can drop in a bare <svg> and
+// it lands right.
+:host {
+  display: inline-flex;
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: var(--akg-icon-button-size);
+  height: var(--akg-icon-button-size);
+  padding: 0;
+  border: 0;
+  background: transparent;
+  border-radius: var(--akg-icon-button-radius);
+  color: var(--akg-text-muted);
+  cursor: pointer;
+  // Both console rails collapse on one clock; a control that animated on its
+  // own would arrive before or after the pane it moves.
+  transition:
+    background var(--akg-pane-transition-duration) ease,
+    color var(--akg-pane-transition-duration) ease;
+}
+
+.icon-button--sm {
+  width: var(--akg-icon-button-size-sm);
+  height: var(--akg-icon-button-size-sm);
+}
+
+.icon-button:hover:not(:disabled) {
+  background: var(--akg-panel-hover);
+  color: var(--akg-text);
+}
+
+// The sustained ON look. Darker ground AND darker glyph: the ground alone is
+// too close to hover to tell "I am pointing at this" from "this is on".
+.icon-button--pressed {
+  background: var(--akg-hairline);
+  color: var(--akg-text);
+}
+
+.icon-button--pressed:hover:not(:disabled) {
+  background: var(--akg-panel-active-hover);
+}
+
+// The mock ships `outline: none` and defines no `:focus-visible` anywhere, so
+// a keyboard user cannot see where they are. `:focus-visible` rather than
+// `:focus` keeps the ring off a pointer click, which is the only reason
+// `outline: none` was ever tempting.
+.icon-button:focus-visible {
+  outline: none;
+  box-shadow: var(--akg-focus-ring);
+}
+
+.icon-button:disabled {
+  color: var(--akg-glyph-quiet);
+  cursor: default;
+}
+
+// The glyph. Callers supply a 16px inline <svg>; stating the stroke treatment
+// here means they supply geometry only and every icon in the console matches
+// weight without each caller repeating three attributes.
+.icon-button ::ng-deep svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-button {
+    transition: none;
+  }
+}

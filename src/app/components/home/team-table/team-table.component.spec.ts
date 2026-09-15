@@ -17,6 +17,8 @@ import {
   TeamTableComponent,
 } from './team-table.component';
 
+import { provideTranslateTesting, setTestTranslations } from '../../../../testing/i18n-testing';
+
 function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
   return {
     team_id: 'team-1',
@@ -70,7 +72,7 @@ describe('TeamTableComponent', () => {
     // the table testable without standing up a page that loads namespaces.
     await TestBed.configureTestingModule({
       imports: [TeamTableComponent, FormsModule, NoopAnimationsModule],
-      providers: [],
+      providers: [provideTranslateTesting()],
       schemas: [CUSTOM_ELEMENTS_SCHEMA],
     }).compileComponents();
 
@@ -113,13 +115,20 @@ describe('TeamTableComponent', () => {
    * The action controls of one row, in template order: the stop-or-restore
    * control first, the delete control second.
    *
-   * Queried by position inside the actions cell rather than by title, so the
-   * assertions do not depend on how PrimeNG chooses to surface a `title` on
-   * its own host element.
+   * Queried by position INSIDE the actions cell rather than by title, so the
+   * assertions do not depend on how the control surfaces its `title`. The CELL
+   * is found by `data-test`, not as `cells[cells.length - 1]`: the old form
+   * encoded "the actions are the last column" as an unwritten contract between
+   * this helper and the template, and W11's column change is exactly the kind
+   * of edit that silently rewrites it. Five specs depend on this returning the
+   * right cell; none of them is about where the cell sits.
    */
   function actionButtons(row: HTMLTableRowElement): HTMLButtonElement[] {
-    const cells = Array.from(row.querySelectorAll('td'));
-    return Array.from(cells[cells.length - 1].querySelectorAll('button'));
+    const cell = row.querySelector('[data-test="row-actions"]');
+    if (cell === null) {
+      throw new Error('no [data-test="row-actions"] cell in this row');
+    }
+    return Array.from(cell.querySelectorAll('button'));
   }
 
   function tableInstance(): Table {
@@ -134,21 +143,32 @@ describe('TeamTableComponent', () => {
 
   // --- What it renders -----------------------------------------------------
 
-  it('(AC1) renders one row per team, with today\'s six columns', async () => {
+  it('(AC1, W11) renders one row per team, with five columns — Team ID is not one', async () => {
+    // UPDATED FOR W11, deliberately. This used to assert six keys ending
+    // `team.table.id`, and that assertion pinned the thing the round set out to
+    // change: a full uuid given a column of its own, at full width, in every
+    // row. The id is DEMOTED rather than dropped — it is the quietest line of
+    // the Name cell now — so what this spec still owns is that the heading row
+    // says what the columns are, and the spec below owns that the id is still
+    // there and still complete.
     await render([
       makeTeam({ team_id: 't-1', name: 'Alpha' }),
       makeTeam({ team_id: 't-2', name: 'Beta' }),
     ]);
 
     expect(rows().length).toBe(2);
+    // KEYS, not words (NFR3). The last cell is the actions column, which has no
+    // heading and therefore no key — the empty string is still load-bearing:
+    // it is what says the column is there.
     expect(headerCells().map((th) => th.textContent?.trim())).toEqual([
-      'Name',
-      'Metadata',
-      'Creation Date',
-      'Status',
-      'Team ID',
+      'team.table.name',
+      'team.table.metadata',
+      'team.table.createdAt',
+      'team.table.status',
       '',
     ]);
+    // Demoted, not deleted: both ids are still rendered TEXT on the page. The
+    // home page's own spec asserts the same thing from outside this component.
     const text = fixture.nativeElement.textContent as string;
     expect(text).toContain('t-1');
     expect(text).toContain('t-2');
@@ -159,7 +179,8 @@ describe('TeamTableComponent', () => {
     await render([]);
 
     expect(rows().length).toBe(0);
-    expect(headerCells().length).toBe(6);
+    // Five since W11 — see the column spec above for why the sixth went.
+    expect(headerCells().length).toBe(5);
     expect(
       fixture.nativeElement.querySelector('p-paginator, .p-paginator'),
     ).not.toBeNull();
@@ -190,8 +211,195 @@ describe('TeamTableComponent', () => {
       makeTeam({ team_id: 'stop-1', status: 'stopped' }),
     ]);
 
-    expect(rows()[0].textContent).toContain('Running');
-    expect(rows()[1].textContent).toContain('Stopped');
+    expect(rows()[0].textContent).toContain('team.status.running');
+    expect(rows()[1].textContent).toContain('team.status.stopped');
+  });
+
+  // --- The status column: working / idle / unknown (55.1) ------------------
+
+  /**
+   * The status cell of one row.
+   *
+   * BY `data-test`, not by `querySelectorAll('td')[3]`. Ten specs in this file
+   * read the status through this helper, and every one of them would have gone
+   * red — reporting "no status tag" rather than "the column moved" — the
+   * moment W11 took a column out to its left. The index was a contract nobody
+   * had written down; this is the same contract, stated.
+   */
+  function statusCell(row: HTMLTableRowElement): HTMLElement {
+    const cell = row.querySelector('[data-test="row-status"]');
+    if (cell === null) {
+      throw new Error('no [data-test="row-status"] cell in this row');
+    }
+    return cell as HTMLElement;
+  }
+
+  /** The `data-test` marker of whichever status tag a row rendered. */
+  function statusMarker(row: HTMLTableRowElement): string | null {
+    const tag = statusCell(row).querySelector('[data-test^="row-status-"]');
+    return tag?.getAttribute('data-test') ?? null;
+  }
+
+  it('renders a running team with the flag TRUE as Working', async () => {
+    await render([makeTeam({ status: 'running', working: true })]);
+
+    expect(statusMarker(rows()[0])).toBe('row-status-working');
+    expect(statusCell(rows()[0]).textContent).toContain('team.status.working');
+  });
+
+  it('renders a running team with the flag FALSE as Idle', async () => {
+    await render([makeTeam({ status: 'running', working: false })]);
+
+    expect(statusMarker(rows()[0])).toBe('row-status-idle');
+    expect(statusCell(rows()[0]).textContent).toContain('team.status.idle');
+  });
+
+  it('renders UNKNOWN — null or absent — exactly as today: Running', async () => {
+    // The regression this file exists to catch. A server predating the field
+    // sends no key; one that cannot reach the signal sends null. Neither is
+    // idle, and neither may change what the column has always said.
+    await render([
+      makeTeam({ team_id: 'null-1', status: 'running', working: null }),
+      makeTeam({ team_id: 'absent-1', status: 'running' }),
+    ]);
+
+    expect(statusMarker(rows()[0])).toBe('row-status-running');
+    expect(statusMarker(rows()[1])).toBe('row-status-running');
+    expect(rows()[0].textContent).not.toContain('team.status.idle');
+    expect(rows()[1].textContent).not.toContain('team.status.idle');
+  });
+
+  it('renders a NOT-running team as Stopped whatever the flag says', async () => {
+    // Stopped is a lifecycle state; idle is a momentary one. A flag left on a
+    // stopped team is noise, not a third reading.
+    await render([
+      makeTeam({ team_id: 's-1', status: 'stopped', working: true }),
+      makeTeam({ team_id: 's-2', status: 'stopped', working: false }),
+      makeTeam({ team_id: 's-3', status: 'stopped', working: null }),
+    ]);
+
+    for (const row of rows()) {
+      expect(statusMarker(row)).toBe('row-status-stopped');
+      expect(row.textContent).not.toContain('team.status.working');
+      expect(row.textContent).not.toContain('team.status.idle');
+    }
+  });
+
+  it('renders EXACTLY ONE status tag per row', async () => {
+    await render([
+      makeTeam({ team_id: 'a', status: 'running', working: true }),
+      makeTeam({ team_id: 'b', status: 'running', working: false }),
+      makeTeam({ team_id: 'c', status: 'running', working: null }),
+      makeTeam({ team_id: 'd', status: 'stopped', working: true }),
+    ]);
+
+    for (const row of rows()) {
+      expect(
+        statusCell(row).querySelectorAll('[data-test^="row-status-"]').length,
+      ).toBe(1);
+    }
+  });
+
+  it('separates working from idle by TEXT and ICON, not by colour alone', async () => {
+    await render([
+      makeTeam({ team_id: 'w', status: 'running', working: true }),
+      makeTeam({ team_id: 'i', status: 'running', working: false }),
+    ]);
+
+    const working = statusCell(rows()[0]);
+    const idle = statusCell(rows()[1]);
+
+    // The two must be DIFFERENT strings, and each must be the state's own key —
+    // asserting only that they differ would pass on two wrong keys.
+    expect(working.textContent?.trim()).toBe('team.status.working');
+    expect(idle.textContent?.trim()).toBe('team.status.idle');
+    const workingIcon = working.querySelector('.p-tag-icon');
+    const idleIcon = idle.querySelector('.p-tag-icon');
+    expect(workingIcon).not.toBeNull();
+    expect(idleIcon).not.toBeNull();
+    expect(workingIcon?.className).not.toBe(idleIcon?.className);
+  });
+
+  it('gives each activity tag a title of its own, separate from its label', async () => {
+    // The flag describes one instant and travels in a page fetched at another,
+    // so the title has to qualify it rather than claim it is current. THE
+    // WORDING is no longer asserted here — it lives in the locale file and is
+    // pinned in the i18n area, next to the strings themselves. What this owns is
+    // the binding: each state carries its OWN title key, and the title is not
+    // the label repeated.
+    await render([
+      makeTeam({ team_id: 'w', status: 'running', working: true }),
+      makeTeam({ team_id: 'i', status: 'running', working: false }),
+    ]);
+
+    const working = statusCell(rows()[0]).querySelector('[data-test^="row-status-"]');
+    const idle = statusCell(rows()[1]).querySelector('[data-test^="row-status-"]');
+
+    expect(working?.getAttribute('title')).toBe('team.status.workingTitle');
+    expect(idle?.getAttribute('title')).toBe('team.status.idleTitle');
+  });
+
+  it('paints each status from the token palette, not from a PrimeNG severity', async () => {
+    // R5. The four tags used to ask PrimeNG for `severity="info"` and
+    // `severity="success"`, which resolve off Aura's blue and green ramps —
+    // and `app.theme.ts` re-points `primary` alone, so these were the last
+    // colours on screen that re-pointing the token file could not reach.
+    //
+    // What is pinned here is the WIRING, not the colour: every state carries
+    // its own class, and no tag carries a severity class any more. Asserting
+    // the resolved hue would pin the palette in a spec, which is the one place
+    // a rebrand must not have to edit — the values live in
+    // `_conversation-tokens.scss` and are meant to be re-pointed there.
+    //
+    // Both halves matter. Without the negative, re-adding a severity beside
+    // the class would sail through while PrimeNG quietly painted over the
+    // token ground; without the positive, deleting the class would too.
+    await render([
+      makeTeam({ team_id: 's', status: 'stopped' }),
+      makeTeam({ team_id: 'r', status: 'running', working: null }),
+      makeTeam({ team_id: 'w', status: 'running', working: true }),
+      makeTeam({ team_id: 'i', status: 'running', working: false }),
+    ]);
+
+    const states = ['stopped', 'running', 'working', 'idle'];
+    const tags = rows().map(
+      (row) => statusCell(row).querySelector('[data-test^="row-status-"]'),
+    );
+
+    tags.forEach((tag, index) => {
+      expect(tag).not.toBeNull();
+      expect(tag!.classList.contains('team-status-tag')).toBeTrue();
+      expect(
+        tag!.classList.contains(`team-status-tag--${states[index]}`),
+      ).toBeTrue();
+      expect(tag!.classList.contains('p-tag-info')).toBeFalse();
+      expect(tag!.classList.contains('p-tag-success')).toBeFalse();
+    });
+  });
+
+  it('gives stopped a ground of its own and the three running states a shared one', async () => {
+    // The token pair is chosen per STATE, and the choice is the argument the
+    // template makes: working and idle are running, so recolouring either
+    // towards the stopped neutral would read as a lesser kind of stopped. This
+    // asserts the grouping — one neutral class, three live ones — so a future
+    // pass that "tidies" idle onto the neutral has to argue with a red spec
+    // rather than with nobody.
+    await render([
+      makeTeam({ team_id: 's', status: 'stopped' }),
+      makeTeam({ team_id: 'r', status: 'running', working: null }),
+      makeTeam({ team_id: 'w', status: 'running', working: true }),
+      makeTeam({ team_id: 'i', status: 'running', working: false }),
+    ]);
+
+    const classOf = (row: HTMLTableRowElement): string =>
+      statusCell(row).querySelector('[data-test^="row-status-"]')?.className ??
+      '';
+
+    const [stopped, ...live] = rows();
+    expect(classOf(stopped)).toContain('team-status-tag--stopped');
+    for (const row of live) {
+      expect(classOf(row)).not.toContain('team-status-tag--stopped');
+    }
   });
 
   // --- The metadata column -------------------------------------------------
@@ -221,6 +429,270 @@ describe('TeamTableComponent', () => {
     expect(cell).not.toBeNull();
     expect(cell.querySelectorAll('.team-metadata-chip').length).toBe(0);
     expect((cell.textContent as string).trim()).toBe('');
+  });
+
+  // --- The row's title (Epic 53) -------------------------------------------
+
+  it('renders the nominated metadata field as the row title, type beneath it', async () => {
+    // `name` is the team TYPE, identical on every team of a namespace, so a
+    // filtered list of twenty reads as twenty copies of a row. The title is
+    // what differs; it goes where a title belongs, and the type stays as a
+    // quiet second line rather than being thrown away.
+    component.titleKey = 'subject';
+    await render([
+      makeTeam({
+        team_id: 't-1',
+        name: 'Invoice Dispute',
+        metadata: { subject: 'Late invoice for ACME', case_id: 'C-1234' },
+      }),
+    ]);
+
+    const title = fixture.nativeElement.querySelector('[data-test="row-title"]');
+    const type = fixture.nativeElement.querySelector('[data-test="row-team-type"]');
+    expect(title.textContent.trim()).toBe('Late invoice for ACME');
+    expect(type.textContent.trim()).toBe('Invoice Dispute');
+  });
+
+  it('(T2) takes the title OUT of the metadata chips — it is not shown twice', async () => {
+    // The title is an ordinary metadata key. Promoted to a heading and left in
+    // the chip set as well, it appears twice in one row, which reads as
+    // duplicated data rather than as a layout choice.
+    component.titleKey = 'subject';
+    await render([
+      makeTeam({
+        team_id: 't-1',
+        metadata: { subject: 'Late invoice', case_id: 'C-1234', tenant: 'acme' },
+      }),
+    ]);
+
+    const chips = Array.from(
+      fixture.nativeElement.querySelectorAll('.team-metadata-chip'),
+    ) as HTMLElement[];
+    expect(chips.length).toBe(2);
+    expect(chips.some((c) => (c.textContent ?? '').includes('Late invoice'))).toBeFalse();
+    expect(
+      fixture.nativeElement.querySelector('[data-test="row-metadata-subject"]'),
+    ).toBeNull();
+  });
+
+  it('(FR3) renders exactly as before when no field is nominated', async () => {
+    // The default state of every deployment today, and the one this epic
+    // promised not to disturb: the name cell is the team type and nothing
+    // else, and the metadata key that would have been a title is a chip.
+    await render([
+      makeTeam({
+        team_id: 't-1',
+        name: 'Invoice Dispute',
+        metadata: { subject: 'Late invoice', case_id: 'C-1234' },
+      }),
+    ]);
+
+    expect(component.titleKey).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-test="row-title"]')).toBeNull();
+    expect(
+      fixture.nativeElement.querySelector('[data-test="row-team-type"]'),
+    ).toBeNull();
+    const name = fixture.nativeElement.querySelector('.team-name');
+    expect(name.textContent.trim()).toBe('Invoice Dispute');
+    expect(
+      fixture.nativeElement.querySelectorAll('.team-metadata-chip').length,
+    ).toBe(2);
+  });
+
+  it('(FR3) falls back to the team type for a team that answered no title', async () => {
+    // A nomination is per NAMESPACE; answering it is per TEAM. Every team
+    // created before the field existed is in this state.
+    component.titleKey = 'subject';
+    await render([
+      makeTeam({ team_id: 't-1', name: 'Invoice Dispute', metadata: { case_id: 'C-1' } }),
+    ]);
+
+    expect(fixture.nativeElement.querySelector('[data-test="row-title"]')).toBeNull();
+    expect(
+      (fixture.nativeElement.querySelector('.team-name').textContent as string).trim(),
+    ).toBe('Invoice Dispute');
+  });
+
+  it('(T5) falls back to the team type when generation returned an empty title', async () => {
+    // The trap: `""` is a present key, so a truthiness check on the KEY passes
+    // and the row gets a blank heading and no fallback — which reads as a
+    // value that failed to load, and is strictly worse than the team type.
+    component.titleKey = 'subject';
+    await render([
+      makeTeam({
+        team_id: 't-1',
+        name: 'Invoice Dispute',
+        metadata: { subject: '   ' },
+      }),
+    ]);
+
+    expect(fixture.nativeElement.querySelector('[data-test="row-title"]')).toBeNull();
+    expect(
+      (fixture.nativeElement.querySelector('.team-name').textContent as string).trim(),
+    ).toBe('Invoice Dispute');
+  });
+
+  it('decides per ROW, so a titled and an untitled team can sit side by side', async () => {
+    component.titleKey = 'subject';
+    await render([
+      makeTeam({ team_id: 't-1', name: 'Type A', metadata: { subject: 'Titled' } }),
+      makeTeam({ team_id: 't-2', name: 'Type A', metadata: { case_id: 'C-2' } }),
+    ]);
+
+    const [first, second] = rows();
+    expect(
+      (first.querySelector('[data-test="row-title"]') as HTMLElement).textContent!.trim(),
+    ).toBe('Titled');
+    expect(second.querySelector('[data-test="row-title"]')).toBeNull();
+    expect((second.querySelector('.team-name') as HTMLElement).textContent!.trim()).toBe(
+      'Type A',
+    );
+  });
+
+  it('(FR6) keeps the FULL title in a tooltip while the display truncates', async () => {
+    // A generated line has no length contract. Truncation is CSS — nothing in
+    // a unit suite can measure it — so what is pinned here is the part that
+    // would silently lose data: the untruncated string stays reachable.
+    const long = 'A generated title that runs on well past the width of any column';
+    component.titleKey = 'subject';
+    await render([makeTeam({ team_id: 't-1', metadata: { subject: long } })]);
+
+    const title = fixture.nativeElement.querySelector(
+      '[data-test="row-title"]',
+    ) as HTMLElement;
+    expect(title.getAttribute('title')).toBe(long);
+    expect(title.classList).toContain('team-title');
+  });
+
+  it('(T4) renders a title containing markup as TEXT, never as markup', async () => {
+    // The title is generated and therefore untrusted. The bar in a list row is
+    // lower than in a chat bubble; the consequence is the same.
+    const injected = '<img src="x" onerror="alert(1)">';
+    component.titleKey = 'subject';
+    await render([makeTeam({ team_id: 't-1', metadata: { subject: injected } })]);
+
+    const title = fixture.nativeElement.querySelector(
+      '[data-test="row-title"]',
+    ) as HTMLElement;
+    expect(title.textContent!.trim()).toBe(injected);
+    expect(title.querySelector('img')).toBeNull();
+    expect(title.children.length).toBe(0);
+  });
+
+  // --- The demoted Team ID (W11) -------------------------------------------
+
+  /**
+   * A token's value as the BROWSER resolves it, round-tripped through a real
+   * element so the comparison is in one colour syntax whatever syntax the token
+   * is written in. The same trick the header-ground spec below uses, lifted so
+   * two specs do not each carry a copy.
+   */
+  function resolvedColour(token: string): string {
+    const probe = document.createElement('div');
+    probe.style.backgroundColor = getComputedStyle(document.documentElement)
+      .getPropertyValue(token)
+      .trim();
+    document.body.appendChild(probe);
+    const value = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return value;
+  }
+
+  it('(W11) keeps the WHOLE team id, as text, in the name cell', async () => {
+    // THE DEMOTION'S WHOLE CONTRACT. A uuid is only useful pasted somewhere
+    // else, so an id that is truncated for display, hidden behind a tooltip or
+    // moved into a modal is an id the user can no longer do what they did
+    // yesterday with. What moved is its WEIGHT and its COLUMN, not its
+    // presence: it is a line of the Name cell now, and it is the complete
+    // value.
+    const uuid = '505835a6-f63e-4b5a-842f-e294c4ffa0d5';
+    await render([makeTeam({ team_id: uuid, name: 'Alpha' })]);
+
+    const nameCell = rows()[0].querySelectorAll('td')[0];
+    const id = nameCell.querySelector('[data-test="row-team-id"]') as HTMLElement;
+
+    expect(id).withContext('the id lives in the name cell now').not.toBeNull();
+    // EQUALS, not contains: a "505835a6…" that reads as complete is worse than
+    // one that is plainly cut, because it is only found out on paste.
+    expect(id.textContent!.trim()).toBe(uuid);
+  });
+
+  it('(W11) names the demoted id with the heading its column used to carry', async () => {
+    // With the column gone the value would otherwise be an unlabelled 36-char
+    // string. `team.table.id` is the label that already exists and is already
+    // translated; keeping it referenced is also what stops the i18n usage audit
+    // reporting it as a key naming a surface nobody can reach.
+    await render([makeTeam({ team_id: 't-1' })]);
+
+    const id = rows()[0].querySelector('[data-test="row-team-id"]');
+
+    expect(id?.getAttribute('title')).toBe('team.table.id');
+    // And the heading is genuinely gone from the header row, rather than
+    // rendered blank — a blank <th> would still cost the column its width.
+    expect(
+      headerCells().map((th) => th.textContent?.trim()),
+    ).not.toContain('team.table.id');
+  });
+
+  it('(W11) renders the id ONCE per row — it is demoted, not duplicated', async () => {
+    // The failure mode of a "move it under the name" change is leaving the old
+    // cell behind: the row then reads as two ids, which is how a demotion turns
+    // into extra noise.
+    await render([
+      makeTeam({ team_id: 't-1' }),
+      makeTeam({ team_id: 't-2' }),
+    ]);
+
+    for (const row of rows()) {
+      expect(row.querySelectorAll('[data-test="row-team-id"]').length).toBe(1);
+    }
+  });
+
+  // --- The restyle (W10) ---------------------------------------------------
+
+  it('(W10) paints the selected row from the panel ladder, not Aura\'s highlight', async () => {
+    // The rail and this list are two views of one set of teams, so "the one I
+    // am in" has to look the same in both. Left to PrimeNG, a selected row
+    // resolves through `highlight` to the accent tint — a pale GREEN row in a
+    // list whose rail paints the same state a warm grey.
+    //
+    // The VALUE is read from the token rather than written here as a hex (R5):
+    // re-pointing the palette must not turn into a red spec about a table row.
+    // What is pinned is the AGREEMENT — the row's ground is the same token the
+    // rail's hover/active ladder is built from.
+    component.selectedTeamId = 't-1';
+    await render([makeTeam({ team_id: 't-1' }), makeTeam({ team_id: 't-2' })]);
+
+    const selectedRow = rows()[0];
+    expect(selectedRow.classList).toContain('p-datatable-row-selected');
+    expect(getComputedStyle(selectedRow).backgroundColor).toBe(
+      resolvedColour('--akg-panel-hover'),
+    );
+  });
+
+  it('(W10) the row actions are real buttons, each with an accessible name', async () => {
+    // They were `<p-button severity="secondary">`, and a severity resolves off
+    // Aura's cool surface ramp which `app.theme.ts` re-points for `primary` and
+    // nothing else — so these were the last cool grey controls in a warm
+    // palette. Restated natively they take the console's icon-button treatment
+    // from tokens.
+    //
+    // Two things must survive that swap and neither is cosmetic: they have to
+    // stay real <button>s, because `disabled` is what the in-flight specs read
+    // and only a button has it; and the glyph is the only label they carry, so
+    // each needs a name of its own or the row is three unlabelled marks to a
+    // screen reader.
+    await render([makeTeam({ team_id: 'row-1', status: 'running' })]);
+
+    const buttons = actionButtons(rows()[0]);
+    expect(buttons.length).toBe(2);
+    for (const button of buttons) {
+      expect(button.tagName).toBe('BUTTON');
+      // `type` matters inside a table that also holds an editor input: a
+      // button with no type defaults to submit.
+      expect(button.getAttribute('type')).toBe('button');
+      expect(button.getAttribute('aria-label')).toBeTruthy();
+    }
   });
 
   // --- The paginator contract ----------------------------------------------
@@ -260,14 +732,23 @@ describe('TeamTableComponent', () => {
     expect(table.totalRecords).toBe(1000);
   });
 
-  it('(AC14) reports the page as "{first}–{last} of {totalRecords}"', () => {
+  it('(AC14) reports the page through the layer, with the paginator\'s tokens intact', () => {
+    // T3. The report is a TEMPLATE, and the interesting question is not which
+    // key it uses but whether the translation lookup leaves PrimeNG's own
+    // single-braced tokens alone — `{first}` is the paginator's, `{{first}}`
+    // would be the translator's, and eating one would silently produce a report
+    // that says "–  of ".
+    //
+    // The registered string is deliberately not shipped copy; the `<< >>` is
+    // there so nobody reads this as an assertion about English.
+    setTestTranslations({
+      team: { table: { currentPageReport: '<<{first}|{last}|{totalRecords}>>' } },
+    });
     fixture.detectChanges();
 
     const table = tableInstance();
     expect(table.showCurrentPageReport).toBeTrue();
-    expect(table.currentPageReportTemplate).toBe(
-      '{first}–{last} of {totalRecords}',
-    );
+    expect(table.currentPageReportTemplate).toBe('<<{first}|{last}|{totalRecords}>>');
   });
 
   it('(AC14) re-emits (onLazyLoad) VERBATIM through (lazyLoad)', async () => {
@@ -629,15 +1110,33 @@ describe('TeamTableComponent', () => {
     expect(table.minHeight).toBe('0px');
   });
 
-  it('(AC13) a header cell is painted OPAQUE white', async () => {
+  it('(AC13) a header cell is painted with the OPAQUE overlay ground', async () => {
     // [scrollable] gives the thead a sticky position for free, but the app
     // theme paints header cells `transparent` — so rows scroll THROUGH the
     // pinned labels unless this rule travels with the table.
+    //
+    // Resolved from the TOKEN rather than pinned as a literal white (R5). The
+    // rule's job is to match whatever ground the rows are painted on, so a hex
+    // asserted here would turn a deliberate re-point of the palette into a red
+    // spec about a table header. Both halves still hold: the ground must be
+    // opaque — a `var()` naming a token nobody defined computes to
+    // `transparent`, which is the exact bug this rule exists to prevent and
+    // which looks perfectly fine in review — and it must be the SAME ground
+    // the token names.
     await render([makeTeam()]);
 
-    expect(getComputedStyle(headerCells()[0]).backgroundColor).toBe(
-      'rgb(255, 255, 255)',
-    );
+    // Round-trip the token through the browser so the comparison is in one
+    // colour syntax, whatever syntax the token is written in.
+    const probe = document.createElement('div');
+    probe.style.backgroundColor = getComputedStyle(document.documentElement)
+      .getPropertyValue('--akg-overlay-bg')
+      .trim();
+    document.body.appendChild(probe);
+    const ground = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+
+    expect(ground).not.toBe('rgba(0, 0, 0, 0)');
+    expect(getComputedStyle(headerCells()[0]).backgroundColor).toBe(ground);
   });
 
   // --- Loading -----------------------------------------------------------

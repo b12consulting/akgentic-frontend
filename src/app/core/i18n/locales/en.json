@@ -1,0 +1,334 @@
+{
+  "common": {
+    "cancel": "Cancel",
+    "copiedToClipboard": "Content copied to the clipboard",
+    "create": "Create",
+    "next": "Next",
+    "refresh": "Refresh"
+  },
+  "home": {
+    "teamType": "Team type",
+    "teamTypePlaceholder": "Select a team type",
+    "showAllNamespaces": "Show all namespaces",
+    "configuration": "Configuration",
+    "filters": "Filters",
+    "hideFilters": "Hide filters",
+    "filtersActiveTitle": "A filter is active — the list is narrowed. Show the filters to see or clear it.",
+    "hideFiltersTitle": "Hide the filter row",
+    "showFiltersTitle": "Show the filter row",
+    "unsavedChanges": "Unsaved changes",
+    "greeting": {
+      "morning": "Good morning",
+      "afternoon": "Good afternoon",
+      "evening": "Good evening",
+      "morningNamed": "Good morning, {{name}}",
+      "afternoonNamed": "Good afternoon, {{name}}",
+      "eveningNamed": "Good evening, {{name}}"
+    },
+    "filter": {
+      "thisTeamTypeOnly": "This team type only",
+      "thisTeamTypeOnlyTitle": "Show only teams created from the selected team type",
+      "termPlaceholder": "{{count}}+ characters to filter",
+      "reset": "Reset",
+      "resetTitle": "Clear every filter"
+    },
+    "metadata": {
+      "filterable": "filterable",
+      "patternMismatch": "Must match {{pattern}}",
+      "formatInvalid": "Value is not in the expected format",
+      "required": "Required: {{fields}}"
+    }
+  },
+  "team": {
+    "table": {
+      "name": "Name",
+      "metadata": "Metadata",
+      "createdAt": "Creation Date",
+      "status": "Status",
+      "id": "Team ID",
+      "currentPageReport": "{first}–{last} of {totalRecords}",
+      "descriptionPrompt": "Click to add description...",
+      "descriptionPlaceholder": "Enter team description"
+    },
+    "status": {
+      "stopped": "Stopped",
+      "running": "Running",
+      "working": "Working",
+      "idle": "Idle",
+      "workingTitle": "Working as of the last refresh",
+      "idleTitle": "Idle as of the last refresh"
+    },
+    "action": {
+      "stop": "Stop Team",
+      "restore": "Restore Team",
+      "delete": "Delete Team"
+    }
+  },
+  "chat": {
+    "loadingTitle": "Loading process...",
+    "loadingDesc": "Please wait while we fetch the conversation.",
+    "emptyTitle": "No messages yet",
+    "emptyDesc": "Start a conversation by sending a message below.",
+    "autoScrolling": "Auto scrolling",
+    "newMessages": "New messages",
+    "messages": "Messages",
+    "reply": "Reply",
+    "sentTo": "Sent to {{agent}}",
+    "messageForYou": "Message for you",
+    "teamMessage": "Team message",
+    "input": {
+      "sendToPrefix": "Send to {{agents}}",
+      "clearSendTo": "Clear Send-to selection",
+      "sendAs": "Send as",
+      "sendTo": "Send to",
+      "allSupervisors": "All (supervisors)",
+      "restarting": "Restarting team…",
+      "placeholder": "Message the team",
+      "tokenLine": "{{in}} in · {{out}} out",
+      "tokenLineTitle": "Tokens this team has sent and received",
+      "helperEnter": "Enter to send · Shift+Enter for a new line · agents may take a few seconds to reply",
+      "helperModifier": "Ctrl+Enter to send · Enter for a new line · agents may take a few seconds to reply",
+      "send": "Send",
+      "sendAsSelf": "You"
+    },
+    "human": {
+      "header": "Human Input",
+      "noRequests": "No requests for this pair.",
+      "answered": "Answered",
+      "pending": "Pending",
+      "yourReply": "Your reply:",
+      "replyPlaceholder": "Type your reply...",
+      "send": "Send"
+    },
+    "reader": {
+      "header": "Agent conversation",
+      "agentList": "Team agents",
+      "noAgents": "This team has no agents yet.",
+      "noTurns": "{{agent}} has not sent or received any messages yet.",
+      "selectAgent": "Select an agent to read its conversation.",
+      "composer": {
+        "placeholder": "Message {{agent}}",
+        "send": "Send",
+        "stoppedHint": "Start the team to send a message."
+      }
+    },
+    "activity": {
+      "latest": "is using {{tool}}",
+      "latestDone": "used {{tool}}",
+      "step": "{{tool}}",
+      "steps": "{{count}} steps",
+      "expand": "What happened",
+      "collapse": "Hide",
+      "latestContact": "contacted {{tool}}",
+      "latestContactDone": "contacted {{tool}}",
+      "stepContact": "contacted {{tool}}",
+      "contactTitle": "Asked {{tool}}",
+      "showRaw": "Show raw",
+      "hideRaw": "Hide raw",
+      "tool": {
+        "hireMembers": "Brought in a team member",
+        "readMessage": "Read a message from the inbox",
+        "sendMessage": "Sent a message"
+      }
+    },
+    "action": {
+      "copy": "Copy",
+      "rateUp": "Good answer",
+      "rateDown": "Bad answer"
+    },
+    "feedback": {
+      "title": "Feedback",
+      "placeholder": "Enter your feedback here...",
+      "cancel": "Cancel",
+      "submit": "Submit"
+    },
+    "request": {
+      "asks": "Asked {{agent}}",
+      "pending": "Awaiting your reply",
+      "answered": "Answered"
+    },
+    "notice": {
+      "contacted": "contacted {{agent}}"
+    }
+  },
+  "messageList": {
+    "routeTo": "to",
+    "broadcast": "everyone",
+    "relaunch": "Relaunch (N/A)",
+    "emptyTitle": "No messages to display",
+    "emptyDesc": "Messages exchanged between agents will appear here."
+  },
+  "chrome": {
+    "brandLogoAlt": "Logo",
+    "home": "Home",
+    "clear": "Clear",
+    "showDetails": "Show details",
+    "hideDetails": "Hide details",
+    "logout": "Logout",
+    "showSidebar": "Show sidebar",
+    "collapseSidebar": "Collapse sidebar"
+  },
+  "title": {
+    "home": "Home",
+    "process": "Conversation",
+    "catalogNamespace": "Catalog namespace",
+    "login": "Sign in"
+  },
+  "visualization": {
+    "team": "Team",
+    "hierarchy": "Hierarchy",
+    "member": "Member",
+    "knowledgeGraph": "Knowledge graph",
+    "workspaces": "Workspaces",
+    "messages": "Messages"
+  },
+  "panels": {
+    "selectAgent": "Select agent",
+    "noAgentsTitle": "No agents available",
+    "noAgentsDesc": "Agent chat interface and state management will appear here.",
+    "accessibleBy": "Accessible by:",
+    "noMembers": "No members can access this workspace"
+  },
+  "workspace": {
+    "filesTitle": "Workspace files",
+    "refreshWorkspace": "Refresh workspace",
+    "noFilesTitle": "No files found",
+    "noFilesDesc": "The workspace is empty or no files are available",
+    "root": "Root",
+    "location": "Workspace location",
+    "refreshFolder": "Refresh this folder",
+    "refreshFile": "Refresh this file",
+    "downloadFile": "Download this file",
+    "downloadToView": "Download to view",
+    "uploadStopped": "The team must be running to upload files",
+    "uploadToRoot": "Upload to the root folder",
+    "uploadHere": "Upload files here",
+    "emptyFolder": "This folder is empty",
+    "fileDeletedTitle": "File deleted",
+    "fileDeletedDesc": "{{file}} was deleted from this workspace. Select another file from the tree to continue.",
+    "upload": {
+      "title": "Upload files",
+      "target": "Upload to:",
+      "rootFolder": "Root folder",
+      "choose": "Select files",
+      "emptyTitle": "Choose files to upload",
+      "emptyDesc": "Select one or several files from your computer",
+      "submit": "Upload",
+      "errNoFiles": "Select at least one file to upload",
+      "errFailed": "Failed to upload files",
+      "success": "Uploaded {{count}} file(s)"
+    }
+  },
+  "conversation": {
+    "untitled": "Untitled team"
+  },
+  "console": {
+    "splitLabel": "Pane width",
+    "railWidthLabel": "Sidebar width"
+  },
+  "creation": {
+    "title": "New agent team",
+    "chooseType": "Choose the type of team to create",
+    "noTypes": "No team type is available to you.",
+    "showAllTypes": "Show all team types (admin)",
+    "foreignType": "Other owner"
+  },
+  "rail": {
+    "brandSuffix": "by Yuma",
+    "newTeam": "New agent team",
+    "search": "Search teams",
+    "groupRunning": "Running",
+    "groupRecent": "Recent",
+    "teamMeta": "{{summary}} · {{when}}",
+    "teamMetaTimeOnly": "{{when}}",
+    "noResults": "No loaded team matches “{{query}}”",
+    "noResultsHint": "Only teams already loaded are searched. Open the teams list to search them all.",
+    "emptyTitle": "No teams yet",
+    "emptyDesc": "Create an agent team to start a conversation.",
+    "loading": "Loading teams…",
+    "allTeams": "All teams",
+    "rowMenu": "Team actions",
+    "openInList": "Open in teams list",
+    "account": "Account",
+    "anonymous": "Anonymous"
+  },
+  "inspector": {
+    "trace": {
+      "args": "Arguments",
+      "result": "Result",
+      "model": "Model",
+      "contextWindow": "Context window"
+    },
+    "title": "Team details",
+    "close": "Close details",
+    "moveLeft": "Move details to the left",
+    "moveRight": "Move details to the right",
+    "tablist": "Team detail sections",
+    "narrow": {
+      "title": "This panel needs more room",
+      "blurb": "Drag the divider to widen the panel, or collapse the team list. The other sections still fit here."
+    },
+    "human": "@Human",
+    "humanSub": "You · Team {{team}}",
+    "role": {
+      "supervisor": "Supervisor",
+      "worker": "Worker",
+      "member": "Member"
+    },
+    "memberActive": "Active",
+    "memberIdle": "Idle",
+    "tools": "Tools",
+    "usage": "Usage",
+    "tokensIn": "Tokens in",
+    "cached": "Cached",
+    "tokensOut": "Tokens out",
+    "readConversation": "Read the conversation",
+    "readConversationOf": "Read {{agent}}'s conversation",
+    "openMemberTab": "Open in the Member tab"
+  },
+  "login": {
+    "heading": "Sign in",
+    "methods": "Sign-in methods",
+    "noProviders": "No sign-in method is configured for this deployment. Contact your administrator.",
+    "signingIn": "Signing in…",
+    "apiKeyLabel": "API key",
+    "apiKeyPlaceholder": "Paste your API key",
+    "providers": {
+      "google": "Google",
+      "azure_ad": "Azure AD",
+      "apikey": "API key",
+      "default": "Single sign-on",
+      "custom": "{{provider}}"
+    },
+    "submit": {
+      "google": "Continue with Google",
+      "azure_ad": "Continue with Azure AD",
+      "apikey": "Sign in with API key",
+      "default": "Continue with single sign-on",
+      "custom": "Continue with {{provider}}"
+    },
+    "errors": {
+      "emptyKey": "Enter your API key to continue.",
+      "apiKeyFailed": "We could not sign you in with that API key."
+    }
+  },
+  "knowledgeGraph": {
+    "title": "Knowledge graph",
+    "emptyTitle": "No knowledge graph",
+    "emptyBody": "No entities yet — the graph will populate as agents add knowledge.",
+    "entities": "Entities",
+    "relations": "Relations",
+    "noEntities": "No entities found",
+    "noRelations": "No relations found",
+    "nodeProperties": "Node properties",
+    "noProperties": "No additional properties available",
+    "expand": "Expand",
+    "tabGraph": "Graph visualization",
+    "tabRawData": "Raw data",
+    "unnamedEntity": "Unnamed entity",
+    "propName": "Name",
+    "propType": "Type",
+    "propDescription": "Description",
+    "observations": "Observations ({{count}})"
+  }
+}

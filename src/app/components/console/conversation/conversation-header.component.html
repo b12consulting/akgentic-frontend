@@ -1,0 +1,119 @@
+<!--
+  Cluster 1 — the rail's way back.
+
+  Rendered ONLY while the rail is collapsed. A control that reveals a pane you
+  are already looking at is noise, and the rail carries its own collapse
+  control, so this is the reveal half of a pair rather than a toggle.
+-->
+@if (viewService.isRailCollapsed$ | async) {
+  <app-icon-button
+    size="md"
+    [label]="'chrome.showSidebar' | translate"
+    (pressed)="viewService.toggleRail()"
+  >
+    <!-- Geometry only: `app-icon-button` owns the size and the stroke
+         treatment, so every glyph in the console matches weight without each
+         caller repeating three attributes. -->
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="3" y="4" width="18" height="16" rx="3" />
+      <path d="M9 4v16" />
+    </svg>
+  </app-icon-button>
+}
+
+<!-- Cluster 2 — what you are looking at, whose it is, and whether it is alive. -->
+<div class="title-cluster">
+  <h1 class="team-name">
+    {{ (contextService.currentTeam$ | async)?.name ?? ('conversation.untitled' | translate) }}
+  </h1>
+
+  <!--
+    The team's business metadata, between the name and the status pill — the
+    position the old menubar gave it, restored.
+
+    THIS IS NOT DECORATION. In this product a team is usually opened FOR
+    something: a case id, a tenant, a payroll run. The chips are how a reader
+    confirms they are in the right conversation before they type into it, which
+    is a question they ask on arrival, of the header, not by opening a details
+    pane. The redesign dropped them on the stated grounds that they had moved to
+    the inspector's Team tab; they had not — `buildInspectorTeam` derives the
+    roster, the tools and the spend, and never touches `metadata`.
+
+    Renders nothing at all when the team carries none: the pipe yields `[]` for
+    both wire spellings of "no metadata" (absent key, explicit null), so there
+    is no empty container and no placeholder.
+
+    Through the PIPE, never a bare `metadataEntries(team)` call. A function in a
+    binding re-runs every change-detection cycle and returns new object
+    identities, which makes `NgForOf` destroy and rebuild every chip each tick —
+    the reported bug the pipe was written for. `trackBy` is belt to its braces.
+  -->
+  @for (
+    entry of (contextService.currentTeam$ | async)?.metadata | teamMetadata;
+    track entry.key
+  ) {
+    <span class="team-meta" [attr.data-test]="'header-metadata-' + entry.key">
+      <span class="team-meta__label">{{ entry.label }}</span
+      >{{ entry.value }}
+    </span>
+  }
+
+  <!--
+    The status pill.
+
+    THE DESIGN MOCK IS WRONG HERE and this is the correction: in the prototype
+    the green ground, the green dot and its pulse are unconditional, so a
+    STOPPED team renders a pulsing live indicator. All four properties are gated
+    on the real run state below, and the pill as a whole is absent when no team
+    is open — an empty conversation has no state to report.
+  -->
+  @if (teamOpen$ | async) {
+    @if (contextService.currentTeamRunning$ | async) {
+      <span class="status-pill status-pill--running">
+        <span class="status-dot status-dot--live"></span>{{ 'team.status.running' | translate }}
+      </span>
+    } @else {
+      <span class="status-pill status-pill--stopped">
+        <span class="status-dot"></span>{{ 'team.status.stopped' | translate }}
+      </span>
+    }
+  }
+</div>
+
+<!-- Cluster 3 — the two things you can do to the conversation as a whole. -->
+<div class="action-cluster">
+  <button
+    type="button"
+    class="header-action header-action--quiet"
+    [disabled]="(teamOpen$ | async) === false"
+    (click)="clear()"
+  >
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+      <path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" />
+    </svg>
+    {{ 'chrome.clear' | translate }}
+  </button>
+
+  @if (teamOpen$ | async) {
+    <!--
+      `aria-controls` names the inspector's <aside>, which is rendered by a
+      sibling component. The id is a shared constant in the markup rather than
+      in code because it crosses a component boundary in exactly one direction:
+      this button points at that element and nothing points back.
+    -->
+    <button
+      type="button"
+      class="header-action header-action--framed"
+      [class.is-open]="inspectorOpen$ | async"
+      [attr.aria-expanded]="inspectorOpen$ | async"
+      [attr.aria-controls]="'console-inspector'"
+      (click)="viewService.toggleRightColumn()"
+    >
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="16" rx="3" />
+        <path d="M15 4v16" />
+      </svg>
+      {{ ((inspectorOpen$ | async) ? 'chrome.hideDetails' : 'chrome.showDetails') | translate }}
+    </button>
+  }
+</div>

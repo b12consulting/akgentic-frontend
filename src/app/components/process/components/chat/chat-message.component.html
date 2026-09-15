@@ -1,28 +1,152 @@
-<!-- Collapsed line for Rule 3 and Rule 4 -->
+<!--
+  THE TWO FOLDS, AND WHY THEY MUST NOT LOOK ALIKE.
+
+  Rules 3 and 4 both arrive collapsed and both used to render the same clipped
+  `[@A ⇒ @B] : first sixty characters…` row. That put the one message in the
+  transcript that is BLOCKED ON THE USER — an agent asking a named human seat —
+  in the same shape as the most ambient thing on the surface, a tool announcing
+  itself to a manager. The hierarchy the surface now states, loudest first:
+
+    REQUEST (rule 3) > TURN (rules 1/2) > NOTIFICATION (rule 4)
+
+  It is derived from the classifier, not from taste. Rule 3 is the only row that
+  carries a state (`notification()`: live or answered) AND an action (Reply), so
+  it is the only one that can be OUTSTANDING — it gets the accent card. Rule 4
+  carries neither, so it ranks below an ordinary turn and gets a quiet indented
+  system row with no fill and no border of its own.
+-->
+
+<!--
+  RULE 3 — the human-support request.
+
+  In the transcript's gutter, not beside it: the avatar is the same mark and the
+  same `--akg-avatar-gutter` a turn uses, because this IS someone speaking and
+  floating it in its own lane would read as chrome. The question is prose at
+  turn size — a request you cannot read is a request you cannot answer, and the
+  sixty-character clip was exactly that.
+
+  ANSWERED RECEDES. `notification()` is already the live/answered bit (it is
+  false once the reply lands, chat-panel keys it off the INNER message id), so
+  the resolved request drops its fill and its accent and stops competing with
+  the conversation it interrupted. It is not removed: the exchange still
+  happened and the row still expands.
+-->
 <div
-  *ngIf="(message().rule === 3 || message().rule === 4) && message().collapsed"
-  class="collapsed-line"
+  *ngIf="isRequestFold()"
+  class="collapsed-line collapsed-request"
+  [class.answered]="!notification()"
   (click)="onToggleCollapse()"
 >
-  <span class="collapsed-label">
-    [{{ message().label }}<span
-      *ngIf="message().rule === 3 && notification()"
-      class="notification-icon collapsed-notification-icon"
-    > (<span class="hand-raised">🙋</span>)</span>]<span
-      *ngIf="preview().length > 0"
-      class="collapsed-preview"
-    > : {{ preview() }}</span>
+  <span class="turn-avatar" aria-hidden="true">{{ avatarInitial() }}</span>
+  <div class="request-card">
+    <div class="request-head">
+      <span class="request-asks">
+        <!-- WHO IT IS FOR, IN WORDS. The seat being asked used to be the second
+             half of a bracketed pair, which is where a reader stops looking.
+             With `hideAgentNames` there is no seat to name, so the row says what
+             kind of thing it is instead of naming nobody. -->
+        <ng-container *ngIf="showAgentNames; else requestAnonymous">
+          <span class="request-sender">{{ senderName() }}</span>
+          <span class="request-target">{{
+            "chat.request.asks" | translate : { agent: recipientName() }
+          }}</span>
+        </ng-container>
+        <ng-template #requestAnonymous>
+          <span class="request-target">{{ collapsedFallback() | translate }}</span>
+        </ng-template>
+      </span>
+      <span class="request-state" [class.pending]="notification()">{{
+        (notification() ? "chat.request.pending" : "chat.request.answered")
+          | translate
+      }}</span>
+      <i class="pi pi-chevron-right collapsed-caret" aria-hidden="true"></i>
+      <span class="collapsed-timestamp">{{
+        timestampOrNull() | date : "HH:mm"
+      }}</span>
+    </div>
+    <p class="request-body">{{ requestText() }}</p>
+    <!-- Same output as the expanded bubble's Reply and the same disabled rule —
+         `rule3Clicked` is the only thing that opens the human-input modal, and
+         `onOpenModal` stops the click before the row's collapse toggle sees it.
+         Absent entirely on a surface that cannot host that modal
+         (`replyEnabled()`), because a live-looking button that reaches nothing
+         is worse than no button. -->
+    <p-button
+      *ngIf="replyEnabled()"
+      size="small"
+      [label]="'chat.reply' | translate"
+      [disabled]="!notification()"
+      (click)="onOpenModal($event)"
+      class="open-button"
+    ></p-button>
+  </div>
+</div>
+
+<!--
+  RULE 4 — the ambient system row.
+
+  Nothing is waiting on this, so nothing about it asks. No card, no fill, no
+  border: it is an indented line under the transcript's gutter in muted type,
+  the same idiom the compaction marker already uses one block down. What it DOES
+  get is a subject — `#NotificationTool contacted @Manager` in plain words with a
+  glyph, rather than `[#NotificationTool ⇒ @Manager]` — so the thing that spoke
+  is readable at a glance instead of being parsed out of punctuation. Still the
+  whole row toggles, and the caret still says so.
+-->
+<div
+  *ngIf="isNoticeFold()"
+  class="collapsed-line collapsed-notice"
+  (click)="onToggleCollapse()"
+>
+  <i class="pi notice-icon" [ngClass]="noticeIcon()" aria-hidden="true"></i>
+  <span class="notice-text" [class.expanded]="!message().collapsed">
+    <ng-container *ngIf="showAgentNames; else noticeAnonymous">
+      <span class="notice-subject">{{ senderName() }}</span>
+      <span class="notice-verb">{{
+        "chat.notice.contacted" | translate : { agent: recipientName() }
+      }}</span>
+    </ng-container>
+    <ng-template #noticeAnonymous>
+      <span class="notice-subject">{{ collapsedFallback() | translate }}</span>
+    </ng-template>
+    <!-- THE WHOLE MESSAGE, always. `.notice-text` clips it to one line while
+         the row is shut; swapping in a shorter string instead is what stopped
+         the row animating closed, because the content finished changing before
+         the height transition could start. -->
+    <span *ngIf="message().content" class="collapsed-preview">{{
+      message().content
+    }}</span>
+    <!--
+      THE RATING, REVEALED WITH THE TEXT.
+
+      Rule 4 is rateable by design — `isRateable` states it in as many words and
+      argues the case — and the control used to live in the expanded BUBBLE.
+      That bubble is gone, so without this the predicate and the rendering would
+      disagree and rule 4 would quietly stop being rateable: a designed feature
+      lost as a side effect of a layout change.
+
+      PRESENT WHILE FOLDED, NOT ABSENT. Gating it on `collapsed` removed it from
+      the DOM at the moment of the toggle, which dropped the row's content
+      height in one frame and left the closing transition nothing to animate.
+      It stays, clipped by the row's own height, and `inert` is what keeps it
+      out of the tab order and the accessibility tree while it cannot be seen —
+      a control hidden by a clip is still focusable without it.
+    -->
+    <app-feedback
+      *ngIf="rateable() && ratingEnabled()"
+      class="notice-feedback"
+      [message]="message()"
+      [attr.inert]="message().collapsed ? '' : null"
+      (click)="$event.stopPropagation()"
+    ></app-feedback>
   </span>
-  <p-button
-    *ngIf="message().rule === 3"
-    size="small"
-    label="Reply"
-    [disabled]="!notification()"
-    (click)="onOpenModal($event)"
-    class="open-button"
-  ></p-button>
+  <i
+    class="pi collapsed-caret"
+    [ngClass]="message().collapsed ? 'pi-chevron-right' : 'pi-chevron-down'"
+    aria-hidden="true"
+  ></i>
   <span class="collapsed-timestamp">{{
-    message().timestamp | date : "HH:mm"
+    timestampOrNull() | date : "HH:mm"
   }}</span>
 </div>
 
@@ -43,7 +167,7 @@
       [ngClass]="message().collapsed ? 'pi-chevron-right' : 'pi-chevron-down'"
     ></i>
     <span class="system-marker-timestamp">{{
-      message().timestamp | date : "HH:mm"
+      timestampOrNull() | date : "HH:mm"
     }}</span>
   </div>
   <div
@@ -54,22 +178,75 @@
   </div>
 </div>
 
+<!-- Rule 5 — the system announcement, in its TWO shapes.
+
+     Chrome either way: nobody said it, so it gets no avatar, no side and no
+     bubble, and it stays inert (every handler returns early on rule 5).
+
+     A CAPTION ("Team started") keeps the centred rule it was designed for — a
+     marker in the transcript rather than a participant in it.
+
+     A BODY — a team's welcome message, which a deployment authors as markdown
+     and which can run to several paragraphs — cannot use that shape at all:
+     a flex row collapses its newlines, the caption's `nowrap` refuses to wrap,
+     and an interpolated span shows its markdown as source. It gets the block
+     below, through the same `ngx-markdown` path an ordinary turn uses. See
+     `isSystemCaption` for where the line is drawn and why. -->
+<div
+  *ngIf="message().rule === 5 && isSystemCaption()"
+  class="system-rule"
+  role="separator"
+>
+  <span class="system-rule-line"></span>
+  <span class="system-rule-label">{{ message().content }}</span>
+  <span class="system-rule-line"></span>
+</div>
+
+<!-- The same announcement when it has a body. Styled from the marker idiom
+     (rule 6/7) rather than from the turn bubble, because that is what it is:
+     the transcript's own chrome, not somebody's message. -->
+<div *ngIf="message().rule === 5 && !isSystemCaption()" class="system-announcement">
+  <div class="markdown-content">
+    <markdown [data]="message().content"></markdown>
+  </div>
+</div>
+
 <!-- Expanded bubble (Rules 1/2, or Rule 3/4 expanded) -->
 <div
-  *ngIf="!isMarker() && ((message().rule !== 3 && message().rule !== 4) || !message().collapsed)"
+  *ngIf="!isMarker() && message().rule !== 5 && message().rule !== 4 && (message().rule !== 3 || !message().collapsed)"
   class="message"
   [class.right]="message().alignment === 'right'"
   [class.left]="message().alignment === 'left'"
-  (click)="onBubbleClick($event)"
-  [class.clickable]="true"
+  (click)="onToggleCollapse()"
+  [class.clickable]="isCollapsible()"
 >
+  <!-- The speaker's mark, on their side only. The user's own turn is already
+       identified by being a bubble on the right, so a second marker there would
+       label what the shape has already said. -->
+  <span
+    class="turn-avatar"
+    *ngIf="message().alignment === 'left' && message().rule !== 5"
+    aria-hidden="true"
+    >{{ avatarInitial() }}</span
+  >
   <div
     class="message-bubble"
-    [class.selected]="selected()"
+    [class.own-turn]="message().rule === 1"
     [style.background-color]="message().color"
   >
-    <div class="bubble-header">
+    <!--
+      NO HEADER ON THE USER'S OWN TURN (rule 1).
+
+      Every other child of this row is already gated to a rule that is not 1 —
+      the name pill, the two notification glyphs, the Reply button — so on a
+      user's turn the header rendered as a bare clock above their own words.
+      The mock draws that bubble as text and nothing else, and it is right to:
+      you do not need to be told what time you typed something, and the stamp
+      was the only thing standing between the bubble's top edge and the message.
+    -->
+    <div class="bubble-header" *ngIf="message().rule !== 1">
       <button
+        *ngIf="showAgentNames && message().rule !== 1"
         class="label-pill"
         [disabled]="message().rule === 1 || message().rule === 5"
         (click)="onLabelClick(); $event.stopPropagation()"
@@ -89,19 +266,95 @@
         <i class="pi pi-bell"></i>
       </span>
       <p-button
-        *ngIf="message().rule === 3"
+        *ngIf="message().rule === 3 && replyEnabled()"
         size="small"
-        label="Reply"
+        [label]="'chat.reply' | translate"
         [disabled]="!notification()"
         (click)="onOpenModal($event)"
         class="open-button"
       ></p-button>
       <span class="bubble-timestamp">{{
-        message().timestamp | date : "HH:mm"
+        timestampOrNull() | date : "HH:mm"
       }}</span>
     </div>
-    <div class="markdown-content">
-      <markdown [data]="message().content"></markdown>
+    <!--
+      A PERSON'S OWN TYPING IS NOT MARKDOWN.
+
+      Rule 1 is what the user typed into the composer, and running it through
+      the markdown pipeline silently reformats it: a line starting `#` becomes a
+      heading, `*` becomes a bullet, `_word_` loses its underscores, and a
+      pasted code fragment can vanish entirely. None of that was asked for, and
+      the user has no way to escape it. `pre-wrap` renders it back exactly as it
+      was written, newlines included — which is also what the mock draws.
+
+      Everything else on this surface IS authored as markdown by an agent, and
+      keeps the pipeline.
+    -->
+    <div class="markdown-content" *ngIf="message().rule === 1; else renderedBody">
+      <div class="own-text">{{ message().content }}</div>
+      <!--
+        THE CLOCK, AFTER THE WORDS RATHER THAN ABOVE THEM.
+
+        Rule 1 has no `.bubble-header` — see above — and the reason still
+        holds: every other child of that row is gated to a rule that is not 1,
+        so on the user's own turn it rendered as a bare clock sitting between
+        the bubble's top edge and their message.
+
+        What did not hold is dropping the stamp with it. Every other row in the
+        transcript carries one — the agent's turn, the folded notice, the
+        activity fold — so the user's own message was the single item in the
+        sequence with no time on it, which is the same defect the activity
+        fold's own clock exists to avoid.
+
+        At the END of the message and inside the bubble, so it is a footnote to
+        what was said rather than a heading over it: it takes width the last
+        line was not using and costs the turn no height. A step smaller than
+        the stamp in an agent's header, because that one shares a row with the
+        speaker's name while this one sits inside the sentence.
+      -->
+      <!--
+        WHERE IT WENT, when that is not the obvious answer.
+
+        Two identical "Hello" bubbles that went to two different agents were
+        indistinguishable, and the only cue available — the name on the reply
+        below — is wrong the moment the agent you addressed delegates.
+
+        `ownRecipient()` is null on an ordinary turn, so this is silent on the
+        messages where the user chose nobody: a caption on every turn is a
+        caption nobody reads by the fourth one.
+
+        The arrow is for the eye and is `aria-hidden`; the accessible name
+        carries the same fact in words, because "right-arrow at Expert" is not
+        a sentence.
+      -->
+      <span
+        *ngIf="ownRecipient() as recipient"
+        class="own-recipient"
+        [attr.aria-label]="'chat.sentTo' | translate : { agent: recipient }"
+        ><span aria-hidden="true">→ </span>{{ recipient }}</span
+      >
+      <span class="own-timestamp">{{
+        timestampOrNull() | date : "HH:mm"
+      }}</span>
     </div>
+    <ng-template #renderedBody>
+      <div class="markdown-content">
+        <markdown [data]="message().content"></markdown>
+      </div>
+    </ng-template>
+    <!-- Epic 57: the rating control, on the turns the rule allows and no
+         others. `rateable()` delegates to the single predicate — the answer is
+         NOT restated here, so a message kind added later cannot become
+         rateable by a template nobody reread.
+
+         `stopPropagation` because the bubble itself is a click target
+         (selection for rules 1/2, collapse for 3/4): without it, rating an
+         answer would also select it. -->
+    <app-feedback
+      *ngIf="rateable() && ratingEnabled()"
+      class="turn-feedback"
+      [message]="message()"
+      (click)="$event.stopPropagation()"
+    ></app-feedback>
   </div>
 </div>

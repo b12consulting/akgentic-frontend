@@ -1,71 +1,294 @@
-<div class="login-container">
-  <div class="login-card">
-    <img [src]="logo" alt="Logo" class="logo" />
+<div class="login">
+  <!--
+    The masthead sits ABOVE the card, not inside it: whose product this is, is
+    true before any method is chosen, so it should not read as part of the one
+    thing the user has to act on.
 
-    <h1>{{ welcomeMessage }}</h1>
+    "Akgents" is a product name — the same word in every language, and
+    translating it would be a bug. Only the qualifier beside it is copy, and it
+    is the rail's key rather than a second one: two keys for one product
+    qualifier drift the day somebody edits one of them.
 
-    <!-- Error message for no providers configured -->
-    <div *ngIf="loginProviders.length === 0" class="error-message">
-      <p>No authentication providers are configured. Please contact your administrator.</p>
-    </div>
+    THE MARK IS EITHER/OR, NEVER BOTH. The framework default for `config.logo`
+    (`akgent_logo.png`) is a raster of this very wordmark, down to the "by Yuma"
+    underneath, so drawing the image AND the type put the same brand on screen
+    twice on every deployment that never configured one — which is all of them.
+    That is why the image was dropped outright; but dropping it also cost the
+    white-label deployments that DID configure a mark (sdworx-sme ships
+    `"logo": "sdworx-logo.svg"`) the only place theirs was ever drawn.
 
-    <!-- Tab navigation (only show if multiple providers) -->
-    <div *ngIf="showTabs" class="provider-tabs">
-      <button
-        *ngFor="let provider of loginProviders"
-        [class.active]="isProviderActive(provider)"
-        (click)="selectProvider(provider)"
-        class="tab-button"
-      >
-        {{ getProviderLabel(provider) }}
-      </button>
-    </div>
+    So: the wordmark is the DEFAULT, and an explicitly configured logo REPLACES
+    it. `ConfigService.brandLogo` owns the definition of "explicitly" and the
+    rail's brand row asks it the same question — a deployment gets its mark in
+    both places or in neither, never in one of them.
+  -->
+  <header class="login__brand">
+    @if (brandLogo) {
+      <!--
+        Not `alt=""`. This image is the only thing on the page identifying whose
+        product it is, which is the definition of informative rather than
+        decorative. The alt cannot BE the product's name — the framework does
+        not know a white-label deployment's name, only the path to its mark — so
+        it is a translated generic rather than a guess, and `welcomeMessage`
+        below is where a deployment says who it is in words.
+      -->
+      <img
+        class="login__logo"
+        [src]="brandLogo"
+        [alt]="'chrome.brandLogoAlt' | translate"
+      />
+    } @else {
+      <span class="login__wordmark">
+        <span class="login__wordmark-name">Akgents</span>
+        <span class="login__wordmark-suffix">{{ 'rail.brandSuffix' | translate }}</span>
+      </span>
+    }
+  </header>
 
-    <!-- Provider content area -->
-    <div class="provider-content" *ngIf="loginProviders.length > 0">
+  <main class="login__card">
+    <h1 class="login__heading">{{ 'login.heading' | translate }}</h1>
 
-      <!-- OAuth/OIDC Providers (azure, google, default, or any custom) -->
-      <ng-container *ngFor="let provider of loginProviders">
-        <div *ngIf="isOAuthProvider(provider) && isProviderActive(provider)" class="provider-panel">
-          <button (click)="loginOAuth(provider)" class="login-button oauth-button">
-            <img *ngIf="provider === 'azure_ad'" src="microsoft_auth_button.svg" alt="Azure AD" class="icon" />
-            <img *ngIf="provider === 'google'" src="google_auth_button.svg" alt="Google" class="icon" />
-            <span *ngIf="provider !== 'azure_ad' && provider !== 'google'" class="pi pi-sign-in"></span>
-            <span *ngIf="provider !== 'azure_ad' && provider !== 'google'">{{ getProviderLabel(provider) }}</span>
-          </button>
+    @if (welcomeMessage) {
+      <!--
+        A DEPLOYMENT's sentence, rendered verbatim. `config.json` is not a locale
+        file, so this cannot go through the pipe — and replacing it with framework
+        copy would silently overwrite what a deployment chose to say.
+
+        `[innerHTML]`, not interpolation, because "verbatim" includes the markup:
+        real deployments put some in (sdworx-sme says "Welcome to SDWorx
+        Akgents<sup>&reg;</sup>"), and interpolation escapes it, so the tag names
+        appear on screen as literal text. This is a RESTORATION of what the
+        deployed frontend does, not a new sink — Angular's DomSanitizer still
+        runs on the way in (no `bypassSecurityTrustHtml` anywhere near it), so a
+        script or an inline handler in the string is stripped before it lands.
+        That is what makes the value safe enough to trust: it is sanitized, AND
+        it comes from a file the deployment ships rather than from anything a
+        user can type.
+      -->
+      <p class="login__blurb" [innerHTML]="welcomeMessage"></p>
+    }
+
+    @if (providers.length === 0) {
+      <p class="login__notice" role="alert">{{ 'login.noProviders' | translate }}</p>
+    } @else {
+      @if (showTabs) {
+        <!--
+          `(keydown)` on the LIST rather than on each button: the handler needs
+          to know where focus sits among the whole set, and one listener sees
+          every button's keys without N identical bindings drifting apart.
+        -->
+        <div
+          class="login__methods"
+          role="tablist"
+          [attr.aria-label]="'login.methods' | translate"
+          (keydown)="onMethodKeydown($event)"
+        >
+          @for (option of providers; track option.id) {
+            <button
+              #method
+              type="button"
+              role="tab"
+              class="login__method"
+              [class.login__method--selected]="isProviderActive(option.id)"
+              [id]="'login-method-' + option.id"
+              [attr.aria-selected]="isProviderActive(option.id)"
+              [attr.aria-controls]="'login-panel-' + option.id"
+              [attr.tabindex]="isProviderActive(option.id) ? 0 : -1"
+              (click)="selectProvider(option.id)"
+            >
+              {{ option.labelKey | translate: { provider: option.name } }}
+            </button>
+          }
         </div>
-      </ng-container>
+      }
 
-      <!-- API Key Provider -->
-      <div *ngIf="isProviderActive('apikey') && isProviderEnabled('apikey')" class="provider-panel">
-        <div class="apikey-card">
-          <div *ngIf="error" class="apikey-error">{{ error }}</div>
-          <div class="apikey-field">
-            <label for="apikey-field" class="apikey-label">API Key</label>
-            <input
-              type="password"
-              [(ngModel)]="apiKey"
-              placeholder="Enter your API key"
-              [ngModelOptions]="{ standalone: true }"
-              autocomplete="current-password"
-              name="apikey"
-              id="apikey-field"
-              class="apikey-input"
-              (keyup.enter)="loginWithApiKey()"
-            />
-          </div>
-          <button
-            type="button"
-            (click)="loginWithApiKey()"
-            [disabled]="loading"
-            class="apikey-btn"
+      @if (error; as err) {
+        <!--
+          `role="alert"` because the message appears in response to an action
+          the user just took and is the reason it did not work — a screen reader
+          that had to go find it would have already moved on.
+        -->
+        <p class="login__error" role="alert">
+          <svg
+            class="login__error-glyph"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
           >
-            <span class="pi pi-key"></span>
-            <span>{{ loading ? 'Authenticating...' : 'Login with API Key' }}</span>
-          </button>
-        </div>
-      </div>
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 8v5" />
+            <path d="M12 16h.01" />
+          </svg>
+          @if (err.kind === 'key') {
+            <span>{{ err.key | translate }}</span>
+          } @else {
+            <!-- The backend's own sentence, never translated. See `LoginError`. -->
+            <span>{{ err.text }}</span>
+          }
+        </p>
+      }
 
-    </div>
-  </div>
+      @for (option of providers; track option.id) {
+        @if (isProviderActive(option.id)) {
+          <div
+            class="login__panel"
+            [id]="'login-panel-' + option.id"
+            [attr.role]="showTabs ? 'tabpanel' : null"
+            [attr.aria-labelledby]="showTabs ? 'login-method-' + option.id : null"
+          >
+            @if (option.isOAuth) {
+              <!--
+                Bound to THIS option, not to `oauthPending !== null`. The
+                broader test made one provider's in-flight redirect disable
+                every provider's button, so a flag left behind by a redirect
+                that never completed took the whole page down with it rather
+                than just the method it belonged to.
+              -->
+              <button
+                type="button"
+                class="login__submit"
+                [disabled]="oauthPending === option.id"
+                [attr.aria-busy]="oauthPending === option.id"
+                (click)="loginOAuth(option.id)"
+              >
+                @if (oauthPending === option.id) {
+                  <i class="pi pi-spin pi-spinner login__spinner" aria-hidden="true"></i>
+                  <span>{{ 'login.signingIn' | translate }}</span>
+                } @else {
+                  <!--
+                    The brand marks are lifted VERBATIM out of the two button
+                    assets already in `public/`, which are the vendors' full
+                    black lockups — unusable inside an accent button, but the
+                    mark inside each of them is exactly the official one.
+
+                    These eight hexes are the ONLY hardcoded colours in `src/`,
+                    and the exception is written down rather than argued here:
+                    see the header of `src/styles/_conversation-tokens.scss`.
+                    The short version is that a trademark is not palette — a
+                    token is an invitation to re-point a value, and re-pointing
+                    the accent must not recolour somebody else's logo. Each
+                    sits on a white chip for the same reason: neither mark is
+                    legible against the deep green, and tinting one to fix that
+                    would be modifying the mark.
+                  -->
+                  @switch (option.id) {
+                    @case ('google') {
+                      <span class="login__chip">
+                        <svg class="login__mark" viewBox="12 12 20 20" aria-hidden="true">
+                          <path d="M31.6 20.2273C31.6 19.5182 31.5364 18.8364 31.4182 18.1818H22V22.05H27.3818C27.15 23.3 26.4455 24.3591 25.3864 25.0682V27.5773H28.6182C30.5091 25.8364 31.6 23.2727 31.6 20.2273Z" fill="#4285F4" />
+                          <path d="M22 30C24.7 30 26.9636 29.1045 28.6181 27.5773L25.3863 25.0682C24.4909 25.6682 23.3454 26.0227 22 26.0227C19.3954 26.0227 17.1909 24.2636 16.4045 21.9H13.0636V24.4909C14.7091 27.7591 18.0909 30 22 30Z" fill="#34A853" />
+                          <path d="M16.4045 21.9C16.2045 21.3 16.0909 20.6591 16.0909 20C16.0909 19.3409 16.2045 18.7 16.4045 18.1V15.5091H13.0636C12.3864 16.8591 12 18.3864 12 20C12 21.6136 12.3864 23.1409 13.0636 24.4909L16.4045 21.9Z" fill="#FBBC04" />
+                          <path d="M22 13.9773C23.4681 13.9773 24.7863 14.4818 25.8227 15.4727L28.6909 12.6045C26.9591 10.9909 24.6954 10 22 10C18.0909 10 14.7091 12.2409 13.0636 15.5091L16.4045 18.1C17.1909 15.7364 19.3954 13.9773 22 13.9773Z" fill="#E94235" />
+                        </svg>
+                      </span>
+                    }
+                    @case ('azure_ad') {
+                      <span class="login__chip">
+                        <svg class="login__mark" viewBox="12.5 10.5 20 20" aria-hidden="true">
+                          <rect x="13" y="11" width="9" height="9" fill="#f25022" />
+                          <rect x="23" y="11" width="9" height="9" fill="#7fba00" />
+                          <rect x="13" y="21" width="9" height="9" fill="#00a4ef" />
+                          <rect x="23" y="21" width="9" height="9" fill="#ffb900" />
+                        </svg>
+                      </span>
+                    }
+                    @default {
+                      <svg
+                        class="login__glyph"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.7"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+                        <path d="M10 17l5-5-5-5" />
+                        <path d="M15 12H3" />
+                      </svg>
+                    }
+                  }
+                  <span>{{ option.submitKey | translate: { provider: option.name } }}</span>
+                }
+              </button>
+            } @else {
+              <div class="login__field">
+                <label class="login__label" for="login-apikey">
+                  {{ 'login.apiKeyLabel' | translate }}
+                </label>
+                <!--
+                  The ring sits on the WELL, not on the input: the input has no
+                  border of its own, so a ring drawn on it would outline a
+                  transparent box sitting inside the visible one.
+                -->
+                <div class="login__well">
+                  <svg
+                    class="login__well-glyph"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.7"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="8" cy="15" r="4" />
+                    <path d="M10.85 12.15L19 4" />
+                    <path d="M18 5l2 2" />
+                    <path d="M15 8l2 2" />
+                  </svg>
+                  <input
+                    id="login-apikey"
+                    class="login__input"
+                    type="password"
+                    name="apikey"
+                    autocomplete="current-password"
+                    [(ngModel)]="apiKey"
+                    [ngModelOptions]="{ standalone: true }"
+                    [attr.placeholder]="'login.apiKeyPlaceholder' | translate"
+                    [disabled]="loading"
+                    (keyup.enter)="loginWithApiKey()"
+                  />
+                </div>
+              </div>
+              <button
+                type="button"
+                class="login__submit"
+                [disabled]="loading"
+                [attr.aria-busy]="loading"
+                (click)="loginWithApiKey()"
+              >
+                @if (loading) {
+                  <i class="pi pi-spin pi-spinner login__spinner" aria-hidden="true"></i>
+                  <span>{{ 'login.signingIn' | translate }}</span>
+                } @else {
+                  <svg
+                    class="login__glyph"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.7"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="8" cy="15" r="4" />
+                    <path d="M10.85 12.15L19 4" />
+                    <path d="M18 5l2 2" />
+                    <path d="M15 8l2 2" />
+                  </svg>
+                  <span>{{ option.submitKey | translate: { provider: option.name } }}</span>
+                }
+              </button>
+            }
+          </div>
+        }
+      }
+    }
+  </main>
 </div>

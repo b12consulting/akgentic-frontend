@@ -1,0 +1,318 @@
+// THE DIALOG SHELL, which nothing in this file could otherwise reach.
+//
+// PrimeNG renders the dialog through a portal outside this component's DOM, so
+// emulated encapsulation cannot touch its header, border, radius or shadow —
+// and until now none of them were touched. The result was a fully tokenised
+// reader sitting inside an untouched Aura frame: a cool grey chrome around warm
+// neutral content, a title in the UI face at Aura's weight, and a radius that
+// matched nothing else on the surface. The contents were right, which is
+// precisely why the seam showed.
+//
+// Scoped to `.agent-reader-dialog`, the class this component puts on its own
+// dialog via `styleClass`, so the escape cannot leak onto every other dialog in
+// the app. Same containment the team-creation dialog already uses — this is the
+// second instance of that pattern, not a new one.
+//
+// `[contentStyle]` is deliberately left alone: it carries `padding: 0` and the
+// `70vh` height because the reader fills its own content box, and an inline
+// style would win over anything written here anyway.
+::ng-deep .agent-reader-dialog {
+  background: var(--akg-overlay-bg);
+  border: 1px solid var(--akg-surface-border);
+  border-radius: var(--akg-card-radius);
+  box-shadow: var(--akg-overlay-shadow-strong);
+  font-family: var(--akg-font-ui);
+
+  .p-dialog-header {
+    border-bottom: 1px solid var(--akg-hairline);
+  }
+
+  // THE BOTTOM CORNERS, which the frame above cannot round on its own.
+  //
+  // `.p-dialog-content` carries no ground of its own — Aura's preset gives it
+  // padding and nothing else — so it looks like it could not be what squares
+  // the frame off. What it carries is the CLIP: `[contentStyle]` sets
+  // `overflow: hidden` on it, and a clip with no radius is a rectangle. The
+  // two children that do paint, `.agent-list` on its muted ground and the
+  // conversation column on the overlay ground, are therefore cut square and
+  // fill the corners the dialog's own `border-radius` had rounded.
+  //
+  // Only the bottom two: the header owns the top edge and is already inside
+  // the frame. And a step smaller than the frame's, because the dialog draws a
+  // 1px border and an inner radius equal to the outer one leaves a hairline of
+  // border showing past the curve — inner = outer − border-width is the whole
+  // of that rule.
+  .p-dialog-content {
+    border-bottom-left-radius: calc(var(--akg-card-radius) - 1px);
+    border-bottom-right-radius: calc(var(--akg-card-radius) - 1px);
+  }
+
+  // The header states WHICH agent is open, so it is naming a participant rather
+  // than labelling a window. Same treatment as the team-creation dialog's title
+  // so the two read as one product.
+  .p-dialog-title {
+    color: var(--akg-text);
+    font-family: var(--akg-font-ui);
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  // Aura's close button is a cool grey on a cool grey hover. The console has a
+  // named quiet-control pair and this is one.
+  .p-dialog-close-button {
+    color: var(--akg-text-muted);
+
+    &:hover {
+      background: var(--akg-panel-hover);
+      color: var(--akg-text);
+    }
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: var(--akg-focus-ring);
+    }
+  }
+}
+
+/*
+ * Two columns: who is on the team, and what the selected one said.
+ *
+ * The conversation column reads the SAME surface tokens as the main chat
+ * (`--akg-turn-gap`, the reading-column width, the overlay ground). A reader
+ * that looked different from the conversation it is reading would be telling
+ * the user it is a different kind of thing, which it is not.
+ */
+.reader {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+.agent-list {
+  flex: 0 0 15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  padding: 0.75rem;
+  border-right: 1px solid var(--akg-surface-border);
+  background-color: var(--akg-surface-muted);
+}
+
+.agent-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background-color: transparent;
+  color: var(--akg-text);
+  cursor: pointer;
+
+  &:hover {
+    background-color: var(--akg-collapsed-hover);
+  }
+
+  /* The selected agent wears the same accent as the label badge in the
+     conversation — one accent for "this is the agent you are looking at". */
+  &.selected {
+    background-color: var(--akg-accent-bg);
+    border-color: var(--akg-accent-border);
+    color: var(--akg-accent-fg);
+  }
+
+  &:focus {
+    outline: none;
+  }
+}
+
+.agent-name {
+  font-size: 0.9rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-role {
+  font-size: 0.75rem;
+  color: var(--akg-text-muted);
+}
+
+/* The right-hand half: transcript above, composer below. A column of its own
+   so the transcript can scroll while the box you type into stays put. */
+.conversation-pane {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.conversation-column {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  /* Vertical rhythm from the shared tokens; the horizontal inset is the
+     dialog's own, since the main chat's padding reserves a lane for the
+     panel-toggle rail that does not exist inside a modal. */
+  padding: var(--akg-conversation-padding-top) 1.5rem
+    var(--akg-conversation-padding-bottom);
+  background-color: var(--akg-overlay-bg);
+
+  > * {
+    width: 100%;
+    max-width: var(--akg-conversation-max-width);
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* The same two spacing rules the main transcript uses, for the same reason
+     and on the same rows — this column renders `<app-chat-message>` too, so a
+     run of folded notices reads here exactly as it does there. See
+     `chat-panel.component.scss` for why the spacing sits between siblings
+     rather than in a `gap`. */
+  > * + * {
+    margin-top: var(--akg-turn-gap);
+  }
+
+  > .quiet-line + .quiet-line {
+    margin-top: 0;
+  }
+}
+
+.empty-state {
+  padding: 2rem 1rem;
+  text-align: center;
+  color: var(--akg-text-muted);
+  font-style: italic;
+}
+
+/*
+ * The calendar-day rule (Epic 54). The reader shows runs now, and a run can
+ * cross midnight just as a turn can — so the same chrome appears here. Its
+ * rules are repeated rather than imported: style encapsulation means the chat
+ * panel's copy cannot reach a node rendered in this component, and the shared
+ * thing between the two surfaces is the SELECTOR that decides where a boundary
+ * goes, not the CSS that draws it.
+ */
+.day-separator {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 10px;
+  margin-bottom: 2px;
+  color: var(--akg-text-muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  /* Chrome, not content: it is not a selectable item of the transcript. */
+  user-select: none;
+
+  &::before,
+  &::after {
+    content: '';
+    flex: 1 1 auto;
+    height: 1px;
+    background-color: var(--akg-marker-border);
+  }
+}
+
+.day-separator-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/*
+ * The one write affordance in the dialog.
+ *
+ * It sits on the dialog's own surface rather than on the conversation ground,
+ * and carries the composer border token the main input uses — so it reads as
+ * the same kind of control in a different place, which is exactly what it is.
+ */
+.reader-composer {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-end;
+  /* Wraps so the stopped-state hint can take a full row of its own beneath the
+     input and the button, rather than squeezing them. */
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  border-top: 1px solid var(--akg-surface-border);
+  background-color: var(--akg-surface);
+}
+
+/* Why the control is disabled, said once. A greyed button with no explanation
+   reads as a bug; this is the only line on the surface describing a state the
+   user did not put the app into. Quiet, because it is an explanation and not an
+   alert. */
+.reader-composer-hint {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--akg-text-muted);
+  font-family: var(--akg-font-ui);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
+.reader-composer-input {
+  flex: 1;
+  min-width: 0;
+  resize: vertical;
+  max-height: var(--akg-composer-max-height);
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--akg-composer-border);
+  border-radius: var(--akg-card-radius);
+  background-color: var(--akg-surface);
+  color: var(--akg-text);
+  font-family: var(--akg-font-ui);
+  font-size: 0.9rem;
+  line-height: 1.4;
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+  }
+
+  &:disabled {
+    color: var(--akg-text-muted);
+    cursor: not-allowed;
+  }
+}
+
+.reader-composer-send {
+  flex: 0 0 auto;
+  padding: 0.5rem 1rem;
+  border: 0;
+  border-radius: var(--akg-pill-radius);
+  /* The same accent, hover and focus treatment the main composer's send
+     carries — one "this is the primary action" in the app, not two. */
+  background: var(--akg-accent-fg);
+  color: var(--akg-overlay-bg);
+  font-family: var(--akg-font-ui);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: var(--akg-accent-hover);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+  }
+
+  /* Disabled is a STATE, not an absence: the control stays where it is so the
+     user can see what would send, and why it will not yet. */
+  &:disabled {
+    cursor: default;
+    opacity: 0.4;
+  }
+}

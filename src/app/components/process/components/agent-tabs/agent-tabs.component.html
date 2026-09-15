@@ -1,53 +1,74 @@
-<ng-container *ngIf="agentsByCategory; else noAgentsPlaceholder">
-  <p-tabs value="0">
-    <p-tablist>
-      <p-tab value="0" *ngIf="chatTabVisible$ | async">
-        Chat with "{{ selectedAgent?.label }}"
-      </p-tab>
-      <div
-        style="
-          margin-left: auto;
-          margin-right: 0.75rem;
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-        "
-      >
-        <p-dropdown
-          optionLabel="label"
-          group="true"
-          placeholder="Select agent"
-          appendTo="body"
-          inputId="agent-dropdown"
-          [options]="agentsByCategory"
-          [filter]="true"
-          [style]="{ minWidth: '220px', 'max-width': '300px' }"
-          [disabled]="agentsByCategory.length === 0"
-          [(ngModel)]="selectedAgent"
-          (onChange)="onAgentSelect($event)"
-        ></p-dropdown>
-      </div>
-    </p-tablist>
-    <p-tabpanels>
-      <p-tabpanel value="0" *ngIf="chatTabVisible$ | async">
-        <app-akgent-chat
-          [context$]="context$"
-          [backstory$]="backstory$"
-          [agentId]="akgentId"
-          [agentName]="akgentName"
-        ></app-akgent-chat>
-      </p-tabpanel>
-    </p-tabpanels>
-  </p-tabs>
-</ng-container>
-<ng-template #noAgentsPlaceholder>
-  <div class="empty-section agent-placeholder">
-    <div class="empty-section-box">
-      <i class="pi pi-users agent-placeholder-icon"></i>
-      <div class="agent-placeholder-title">No agents available</div>
-      <div class="agent-placeholder-desc">
-        Agent chat interface and state management will appear here.
-      </div>
+<!--
+  The Member pane: pick an agent, read what it has been told.
+
+  NO TAB STRIP ANY MORE. This was a `<p-tabs>` whose list held exactly one tab
+  ("Chat with X") plus the agent picker wedged in beside it. A one-entry tab
+  strip is a control that cannot be operated, and the strip's caption merely
+  repeated the name already showing in the picker — so the pane spent a whole
+  row of library chrome saying nothing. The picker is the pane's header now, and
+  the trace sits under it.
+
+  `agentsByCategory.length > 0`, not `agentsByCategory`. The array is
+  initialised to `[]` and reset to `[]` when the team has no agents, and `[]` is
+  truthy — so the "no agents" branch below could never be reached and an
+  agentless team got a disabled dropdown over blank space instead of the empty
+  state that was written for it.
+-->
+@if (agentsByCategory.length > 0) {
+  <div class="agent-panel">
+    <!--
+      THE PICKER TAKES THE PANE, whatever the pane is.
+
+      `minWidth: 220px` was sized for a full-width tab strip. In the 310px
+      inspector the lane is ~278px, so a 220px floor plus the tab label beside
+      it overflowed the strip and pushed the picker off its right edge — and
+      because it is a `min-width`, no amount of narrowing recovered it. The
+      `max-width: 300px` cap was the same number from the other side and is
+      equally an artefact of the old layout.
+
+      The rules moved out of an inline `[style]` into the stylesheet, which is
+      also what lets them be tokens rather than literals.
+    -->
+    <div class="agent-picker">
+      <p-dropdown
+        optionLabel="label"
+        [group]="grouped"
+        [placeholder]="'panels.selectAgent' | translate"
+        appendTo="body"
+        inputId="agent-dropdown"
+        [options]="pickerOptions"
+        [filter]="true"
+        [disabled]="agentsByCategory.length === 0"
+        [(ngModel)]="selectedAgent"
+        (onChange)="onAgentSelect($event)"
+      ></p-dropdown>
     </div>
+
+    @if (chatTabVisible$ | async) {
+      <app-akgent-chat
+        class="agent-trace"
+        [context$]="context$"
+        [backstory$]="backstory$"
+        [agentId]="akgentId"
+        [agentName]="akgentName"
+      ></app-akgent-chat>
+    } @else {
+      <!--
+        An agent is picked but has neither a conversation nor a backstory — a
+        member that exists and has not run. The pane used to render the picker
+        over nothing at all, which is indistinguishable from a panel that failed
+        to load.
+
+        `panels.noAgentsDesc` is the existing sentence for exactly this state
+        ("…will appear here"), used as the headline because there is no second
+        thing worth saying underneath it.
+      -->
+      <app-inspector-empty-state titleKey="panels.noAgentsDesc" />
+    }
   </div>
-</ng-template>
+} @else {
+  <app-inspector-empty-state
+    titleKey="panels.noAgentsTitle"
+    blurbKey="panels.noAgentsDesc"
+  />
+}

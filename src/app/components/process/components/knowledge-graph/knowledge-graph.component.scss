@@ -21,7 +21,7 @@
         }
         
         code {
-            background: rgba(0, 0, 0, 0.1);
+            background: var(--akg-panel-active);
             padding: 0.05rem 0.2rem;
             border-radius: 2px;
             font-family: 'Courier New', monospace;
@@ -53,16 +53,16 @@
         h4, h5, h6 { font-size: 0.8em; }
         
         blockquote {
-            border-left: 2px solid #007bff;
+            border-left: 2px solid var(--akg-accent-fg);
             padding-left: 0.3rem;
             margin: 0.15rem 0;
-            color: #6c757d;
+            color: var(--akg-text-muted);
             font-style: italic;
             font-size: 0.8em;
         }
         
         a {
-            color: #007bff;
+            color: var(--akg-accent-fg);
             text-decoration: none;
             font-size: 0.85em;
             
@@ -72,7 +72,7 @@
         }
         
         pre {
-            background: rgba(0, 0, 0, 0.05);
+            background: var(--akg-panel-hover);
             padding: 0.3rem;
             border-radius: 3px;
             margin: 0.15rem 0;
@@ -84,7 +84,7 @@
         hr {
             margin: 0.3rem 0;
             border: none;
-            border-top: 1px solid #e0e0e0;
+            border-top: 1px solid var(--akg-surface-border);
         }
         
         table {
@@ -99,18 +99,45 @@
     }
 }
 
-// Host component styling - ensure full dimensions in modal mode
+/*
+ * THE HOST TAKES ITS SIZE FROM ITS CONTAINER. It does not declare one.
+ *
+ * `height: 100%; width: 100%` stood here and was the source of both scrollbars
+ * on the inspector's Knowledge graph tab. The inspector lays its panels out
+ * absolutely — `.inspector-panels > * { position: absolute; inset: 4px 16px
+ * 18px }` in `process.component.scss` — and for an absolutely positioned box
+ * `top` + `bottom` + `height` is OVER-CONSTRAINED: CSS resolves it by ignoring
+ * `bottom`. So the panel was sized to the FULL height of its container while
+ * still starting 4px down, and ran 22px past the bottom. `width: 100%` against
+ * `left: 16px` + `right: 16px` did the same 16px over on the right, which is
+ * what clipped the Expand control and gave the pane a horizontal scrollbar.
+ *
+ * With no width or height declared, `inset` sizes the box on its own — which
+ * is what it was written to do — and in the dialog the flex chain does.
+ * Everything below is `flex: 1` + `min-height: 0` down to the canvas, so the
+ * graph gets exactly the room its pane has and no viewport arithmetic decides
+ * anything.
+ */
 :host {
-    display: block;
-    height: 100%;
-    width: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
 }
 
+/*
+ * THE DIALOG IS THE OTHER CONTEXT, and it needs the opposite of the above.
+ *
+ * In the inspector the host is absolutely positioned and `inset` gives it a
+ * box, so declaring a height over-constrains it. Inside `<p-dialog>` the host
+ * is an ordinary in-flow child of the dialog's content box, which has a height
+ * and hands out none of it on its own — so here `height: 100%` is what starts
+ * the chain rather than what breaks it. Getting this wrong in the other
+ * direction is visible immediately: the canvas collapses to its content and
+ * the graph is drawn clipped at the top and bottom of a short box.
+ */
 :host(.modal-mode) {
-    display: flex;
-    height: 100%;
-    width: 100%;
     flex: 1;
+    height: 100%;
 }
 
 // Ensure modal content containers take full space
@@ -118,15 +145,26 @@
     display: flex;
     width: 100%;
     height: 100%; // Full height since dialog header is handled by PrimeNG
+    min-height: 0;
     flex: 1;
 }
 
 // Modal layout sections
+//
+// A FLEX COLUMN, and `overflow: hidden` rather than `auto`. The section used to
+// scroll because the canvas inside it was `calc(90vh - 40px)` — taller than the
+// box on purpose. Now the canvas is `flex: 1` of this column, so there is
+// nothing to scroll and `auto` would only ever mean "something has gone wrong
+// below"; `min-height: 0` is what lets the column actually shrink to the
+// dialog rather than to the graph.
 .modal-graph-section {
     flex: 1.6;
     min-width: 0;
-    border-right: 1px solid #eee;
-    overflow: auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--akg-hairline);
+    overflow: hidden;
     padding: 10px;
 }
 
@@ -151,10 +189,10 @@
     right: 0;
     width: 100%;
     height: 100%;
-    background: rgba(255, 255, 255, 0.98);
+    background: var(--akg-overlay-bg);
     backdrop-filter: blur(10px);
-    border-left: 1px solid #e0e0e0;
-    box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
+    border-left: 1px solid var(--akg-surface-border);
+    box-shadow: var(--akg-overlay-shadow);
     z-index: 15;
     display: flex;
     flex-direction: column;
@@ -178,21 +216,21 @@
         align-items: center;
         justify-content: space-between;
         padding: 1rem 1.5rem;
-        border-bottom: 1px solid #e0e0e0;
-        background: #f8f9fa;
+        border-bottom: 1px solid var(--akg-surface-border);
+        background: var(--akg-surface-muted);
         flex-shrink: 0;
 
         .side-panel-title {
             margin: 0;
             font-size: 1.1rem;
             font-weight: 600;
-            color: #495057;
+            color: var(--akg-text);
             display: flex;
             align-items: center;
             gap: 0.5rem;
 
             .pi {
-                color: #6c757d;
+                color: var(--akg-text-muted);
                 font-size: 1rem;
             }
         }
@@ -213,21 +251,21 @@
             .property-label {
                 display: block;
                 font-weight: 600;
-                color: #495057;
+                color: var(--akg-text);
                 margin-bottom: 0.5rem;
                 font-size: 0.9rem;
             }
             
             .property-value {
-                color: #6c757d;
+                color: var(--akg-text-muted);
                 line-height: 1.4;
                 font-size: 0.9rem;
                 
                 &.description-text {
                     padding: 0.75rem;
-                    background: #f8f9fa;
+                    background: var(--akg-surface-muted);
                     border-radius: 6px;
-                    border-left: 3px solid #007bff;
+                    border-left: 3px solid var(--akg-accent-fg);
                     
                     // Use compact markdown styling mixin
                     @include compact-markdown-styles;
@@ -248,7 +286,7 @@
                 align-items: flex-start;
                 margin-bottom: 0.5rem;
                 padding: 0.5rem;
-                background: #f8f9fa;
+                background: var(--akg-surface-muted);
                 border-radius: 4px;
                 
                 &:last-child {
@@ -256,7 +294,7 @@
                 }
                 
                 .observation-icon {
-                    color: #6c757d;
+                    color: var(--akg-text-muted);
                     margin-right: 0.5rem;
                     margin-top: 0.05rem;
                     flex-shrink: 0;
@@ -277,7 +315,7 @@
             justify-content: center;
             gap: 0.75rem;
             padding: 3rem;
-            color: #6c757d;
+            color: var(--akg-text-muted);
             font-style: italic;
             
             .pi {
@@ -300,10 +338,6 @@
     font-size: 1.1rem;
 }
 
-.dialog-refresh-button {
-    margin-right: 0.5rem;
-}
-
 // Modal app component styling
 .modal-app-component {
     width: 100%;
@@ -311,195 +345,145 @@
     display: flex;
 }
 
-// Modal header bar styling
-.modal-header-bar {
+/* DELETED with the rest of the dead ladder: `.dialog-refresh-button` and
+ * `.modal-header-bar` styled a refresh control and a modal header bar this
+ * template has neither of. */
+
+/*
+ * The panel's own column: toolbar, then the chosen view.
+ *
+ * `.knowledge-graph-content` used to sit between the two doing nothing but
+ * restating `display: flex` — it went with the tab strip that was its only
+ * child.
+ */
+.knowledge-graph-container {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/*
+ * DELETED: `.tab-content-wrapper`, `.content-area`, the
+ * loading/error/empty `-overlay`, `-content` and `-state` ladders.
+ *
+ * Ninety lines styling eleven class names that appear nowhere in this
+ * component's template — a loading state this panel never renders (it has no
+ * loading flag), an error state bound to an `error$` nothing subscribes to, and
+ * an empty state that is now `<app-inspector-empty-state>`. Dead CSS is not
+ * inert: it is a description of a panel that does not exist, and the next
+ * person to restyle "the empty state" restyles the wrong one.
+ */
+
+/*
+ * THE PANEL HEADER: the two views, and the way out.
+ *
+ * This replaces ~60 lines of `::ng-deep` aimed at `<p-tabView>`'s Aura nav.
+ * Overriding a deprecated library component's internals to make it look like
+ * something else is a bet that its internals do not change, renewed on every
+ * upgrade — and it still left the Expand control with nowhere to sit but
+ * `position: absolute` over the strip. Two buttons own their own appearance and
+ * leave room beside them.
+ */
+.kg-toolbar {
+    flex: 0 0 auto;
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 15px;
-    border-bottom: 1px solid #e0e0e0;
-    background: #f8f9fa;
-    min-height: 50px;
-
-    .modal-title {
-        font-weight: 600;
-        font-size: 1.1rem;
-        color: #333;
-    }
+    gap: 8px;
+    padding: 4px 2px 0;
+    border-bottom: 1px solid var(--akg-hairline);
 }
 
-.knowledge-graph-container {
-    height: 100%;
+.kg-views {
     display: flex;
-    flex-direction: column;
-    padding: 0rem;
-    background: #ffffff;
-    border-radius: 8px;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    align-items: stretch;
+    /* The tabs may shrink; the Expand control must not, or the one affordance
+       that gets an unreadable graph out of a 310px pane is the first thing to
+       be clipped out of it. */
+    min-width: 0;
 }
 
-// Spinner animation for refresh buttons
-.pi-spin {
-    animation: spin 1s linear infinite;
+/*
+ * A view tab. The selected one is marked by the ACCENT UNDERLINE, not by a
+ * filled pill: this row sits directly above the content it switches, and a
+ * filled control there reads as a second surface starting.
+ */
+.kg-view-tab {
+    flex: 0 1 auto;
+    min-width: 0;
+    padding: 8px 10px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--akg-text-muted);
+    font-family: var(--akg-font-ui);
+    font-size: var(--akg-font-size-control);
+    font-weight: 400;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
 }
 
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+.kg-view-tab:hover {
+    color: var(--akg-text);
 }
 
-.knowledge-graph-content {
+.kg-view-tab.selected {
+    color: var(--akg-accent-fg);
+    border-bottom-color: var(--akg-accent-fg);
+}
+
+.kg-view-tab:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+}
+
+/*
+ * The way out of the pane. Quiet — it is not the panel's primary action — but
+ * always legible and never revealed on hover: the user who needs it is the one
+ * who has just failed to read the graph, and hunting for a control is not the
+ * recovery they want.
+ */
+.kg-expand {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 2px;
+    padding: 5px 10px;
+    border: 1px solid var(--akg-control-border);
+    border-radius: var(--akg-control-radius);
+    background: var(--akg-control-bg);
+    color: var(--akg-control-fg);
+    font-family: var(--akg-font-ui);
+    font-size: var(--akg-font-size-meta);
+    cursor: pointer;
+}
+
+.kg-expand:hover {
+    background: var(--akg-control-hover-bg);
+}
+
+.kg-expand:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+}
+
+.kg-expand .pi {
+    font-size: 11px;
+}
+
+/* The switched content. `min-height: 0` because the graph below is a flex
+   child that must be allowed to shrink — without it the canvas keeps its
+   intrinsic height and the raw-data list scrolls the pane instead of itself. */
+.kg-view {
     flex: 1;
-    display: flex;
-    flex-direction: column;
     min-height: 0;
-}
-
-// New overlay-based styling
-.tab-content-wrapper {
-    position: relative;
-    height: 100%;
-    min-height: 400px;
     display: flex;
     flex-direction: column;
-}
-
-.content-area {
-    flex: 1;
-    transition: none;
-}
-
-.loading-overlay,
-.error-overlay,
-.empty-overlay {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    min-height: 400px;
-    background: #ffffff;
-}
-
-.loading-content,
-.error-content,
-.empty-content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 1rem;
-    padding: 2rem;
-    text-align: center;
-    
-    i {
-        font-size: 2rem;
-        color: #007bff;
-    }
-    
-    p {
-        margin: 0;
-        font-size: 1rem;
-        color: #666;
-    }
-}
-
-.error-content i {
-    color: #dc3545;
-}
-
-.empty-content i {
-    color: #6c757d;
-}
-
-.loading-state,
-.error-state,
-.empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    flex: 1;
-    gap: 1rem;
-    color: #666;
-
-    i {
-        font-size: 2rem;
-        color: #007bff;
-    }
-
-    p {
-        margin: 0;
-        font-size: 1rem;
-        text-align: center;
-    }
-}
-
-.error-state i {
-    color: #dc3545;
-}
-
-.empty-state i {
-    color: #6c757d;
-}
-
-// Tab view styling
-.flex-tabs {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-    
-    ::ng-deep {
-        .p-tabview {
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-        }
-        
-        .p-tabview-nav {
-            flex-shrink: 0;
-        }
-        
-        .p-tabview-panels {
-            flex: 1;
-            padding: 0;
-            background: transparent;
-        }
-        
-        .p-tabview-panel {
-            height: 100%;
-            padding: 1rem;
-        }
-    }
-}
-
-// Button positioning for tabs
-.tabs-header-container {
-    position: relative;
-    height: 100%;
-}
-
-.tabs-with-button {
-    position: relative;
-    height: 100%;
-
-    .flex-tabs {
-        height: 100%;
-    }
-
-    .external-expand-button {
-        position: absolute;
-        top: 0.75rem;
-        right: 1rem;
-        z-index: 10;
-        margin-left: 0.5rem;
-    }
-
-    .external-refresh-button {
-        position: absolute;
-        top: 0.75rem;
-        right: 1rem;
-        z-index: 10;
-    }
+    padding-top: 10px;
 }
 
 // Z-Index Management for Proper Layering
@@ -532,30 +516,26 @@
     }
 }
 
+/*
+ * NO PER-MODE HEIGHTS LEFT. Both branches that used to sit here — modal's
+ * `calc(90vh - 40px)` and tab's `height: 100% + min-height: 240px` — were
+ * answering the same question the flex chain now answers on its own, and the
+ * viewport one answered it wrong: 90vh is a number about the WINDOW, and the
+ * dialog's content box is smaller than the window by its own header, tab strip
+ * and padding, so the canvas ran past the bottom of the box it lives in.
+ *
+ * The px floors went with them. They were there because echarts measures its
+ * container on init and lays out for nothing if it catches a zero-height box —
+ * but ngx-echarts runs a `ResizeObserver` on the element with `autoResize` on
+ * by default, so a box that starts at zero and grows is resized for us. A
+ * floor taller than the pane does not protect that case; it just guarantees
+ * overflow in the case that actually happens.
+ */
 .graph-visualization {
     flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    min-height: 0;
-    height: 100%;
-
-    // Modal mode: optimized for side-by-side layout
-    &.modal-mode {
-        .graph-canvas {
-            .echarts-container {
-                height: calc(90vh - 40px);
-            }
-        }
-    }
-
-    // Tab mode: full-width layout
-    &.tab-mode {
-        .graph-canvas {
-            .echarts-container {
-                height: calc(100vh - 260px);
-            }
-        }
-    }
 }
 
 .raw-data-content {
@@ -589,82 +569,80 @@
         }
     }
 
-    // Tab mode: side-by-side layout with more space
+    // Tab mode: ONE column, and no viewport arithmetic.
+    //
+    // Both values here were written for a full-width tab. Two 1fr columns in a
+    // ~278px lane is two 130px columns, which is narrower than the entity names
+    // they hold; and `max-height: calc(100vh - 305px)` is the same window-derived
+    // number the canvas above carried, with the same consequence. The modal-mode
+    // branch already stacks for a narrow pane — tab mode IS a narrow pane now.
     &.tab-mode {
-        min-height: 500px;
-        grid-template-columns: 1fr 1fr; // Keep side-by-side layout
-        gap: 1.5rem;
-        
+        min-height: 0;
+        grid-template-columns: 1fr;
+        gap: 1rem;
+
         .entities-grid,
         .relations-grid {
             overflow-y: auto;
-            max-height: calc(100vh - 305px);
+            max-height: none;
         }
     }
 }
 
 .graph-canvas {
     flex: 1;
-    border: 1px solid #e0e0e0;
-    border-radius: 6px;
-    background: #fafafa;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--akg-surface-border);
+    border-radius: var(--akg-card-radius);
+    background: var(--akg-surface-muted);
     overflow: hidden;
+    /* Containing block for `.kg-graph-empty`, which is `inset: 0` over the
+       canvas rather than beside it. */
     position: relative;
-    height: 100%;
-    min-height: 350px;
 
     .echarts-container {
-        width: 100%;
-        height: 100%;
-        min-height: 350px;
+        flex: 1;
+        min-height: 0;
     }
 
-    // Empty-state placeholder overlay, mirroring the Workspace placeholder
-    // look (dashed box, icon + title + description, centered).
+    /*
+     * The overlay SHELL. Everything the empty state looks like now lives in
+     * `<app-inspector-empty-state>`; what is left here is where it sits.
+     *
+     * The ~50 lines this replaces were a hand-drawn copy of that component,
+     * kept in sync by hand, justified in a comment by the panel having no
+     * locale keys. It has had them since `knowledgeGraph.emptyTitle` landed.
+     *
+     * Not `pointer-events: none`: the canvas underneath has nothing on it to
+     * interact with while this is up, and a transparent overlay that swallowed
+     * a click would be the harder bug to find.
+     */
     .kg-graph-empty {
         position: absolute;
         inset: 0;
-        margin: 1.5rem;
         display: flex;
         flex-direction: column;
-        align-items: center;
         justify-content: center;
-        text-align: center;
-        gap: 0.5rem;
-        color: #6c757d;
-        background: #f8f9fa;
-        border-radius: 8px;
-        border: 2px dashed #dee2e6;
-
-        &-icon {
-            font-size: 3.5rem;
-            margin-bottom: 1rem;
-            color: #adb5bd;
-        }
-
-        &-title {
-            font-size: 1.25rem;
-            font-weight: 500;
-        }
-
-        &-desc {
-            font-size: 0.95rem;
-            color: #aaa;
-            max-width: 400px;
-        }
+        background: transparent;
     }
 }
 
+// The same uppercase micro-label the rail's group headers, the inspector's
+// TOOLS and its USAGE all use. The repetition IS the language: one treatment
+// means "a new group starts here", and an 18px heading here was a second,
+// louder way of saying it in the one pane that could least afford the room.
 .nodes-section h4,
 .edges-section h4 {
-    font-size: 1.15rem;
+    margin: 0 0 10px;
+    padding: 0;
+    border: 0;
+    font-size: var(--akg-section-label-size);
     font-weight: 500;
-    color: #222;
-    margin-bottom: 1rem;
-    margin-top: 0;
-    padding-bottom: 0.3rem;
-    padding-left: 1rem;
-    border-bottom: 1px solid #e0e0e0;
+    letter-spacing: var(--akg-section-label-tracking);
+    text-transform: uppercase;
+    color: var(--akg-text-muted);
 }
 
 .entities-grid,
@@ -690,7 +668,7 @@
 
     .entity-description {
         margin: 0.5rem 0 0 0;
-        color: #555;
+        color: var(--akg-text-muted);
         font-size: 0.9rem;
         font-style: italic;
         line-height: 1.4;
@@ -703,7 +681,7 @@
         margin-top: 0.75rem;
 
         strong {
-            color: #495057;
+            color: var(--akg-text);
             font-size: 0.85rem;
         }
 
@@ -714,7 +692,7 @@
 
             li {
                 margin-bottom: 0.25rem;
-                color: #666;
+                color: var(--akg-text-muted);
                 font-size: 0.85rem;
                 line-height: 1.3;
             }
@@ -728,7 +706,7 @@
         flex-wrap: wrap;
 
         .relation-arrow {
-            color: #007bff;
+            color: var(--akg-accent-fg);
             font-size: 0.875rem;
         }
 
@@ -740,27 +718,39 @@
     }
 }
 
+// The "no entities" / "no relations" notices under each list. Same idiom as the
+// graph's overlay above, one step smaller because these sit inside a section
+// rather than standing in for a whole pane.
+//
+// The italics are gone with the dashed border: italic body text at 0.9rem is
+// the least legible setting in the console, and it was carrying the only thing
+// these blocks say.
 .empty-section {
-    padding: 2rem;
-    text-align: center;
-    color: #6c757d;
-    background: #f8f9fa;
-    border-radius: 8px;
-    border: 2px dashed #dee2e6;
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.5rem;
+    gap: 8px;
+    padding: 1.5rem 1rem;
+    text-align: center;
+    color: var(--akg-text-muted);
+    background: transparent;
 
     i {
-        font-size: 2rem;
-        color: #adb5bd;
+        display: grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 11px;
+        background: var(--akg-well-bg);
+        color: var(--akg-glyph-quiet);
+        font-size: 15px;
     }
 
     p {
         margin: 0;
-        font-style: italic;
-        font-size: 0.9rem;
+        font-size: 12px;
+        font-weight: 300;
+        color: var(--akg-text-muted);
     }
 }
 
@@ -773,8 +763,8 @@
     }
     
     .p-dialog {
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        border: 1px solid #dee2e6;
+        box-shadow: var(--akg-overlay-shadow-strong);
+        border: 1px solid var(--akg-surface-border);
         position: fixed !important; // Ensure fixed positioning
     }
     
@@ -786,13 +776,13 @@
     
     .p-dialog-header {
         padding: 0.75rem 1rem;
-        background: #f8f9fa;
-        border-bottom: 1px solid #e0e0e0;
+        background: var(--akg-surface-muted);
+        border-bottom: 1px solid var(--akg-surface-border);
         cursor: move; // Indicate it's draggable
         
         .p-dialog-title {
             font-weight: 600;
-            color: #495057;
+            color: var(--akg-text);
             display: flex;
             align-items: center;
             gap: 0.5rem;
@@ -800,15 +790,15 @@
             &::before {
                 content: "\e900"; // PrimeIcons info-circle
                 font-family: 'primeicons';
-                color: #6c757d;
+                color: var(--akg-text-muted);
             }
         }
         
         .p-dialog-header-icon {
-            color: #6c757d;
+            color: var(--akg-text-muted);
             
             &:hover {
-                color: #495057;
+                color: var(--akg-text);
             }
         }
     }
@@ -826,20 +816,20 @@
         .property-label {
             display: block;
             font-weight: 600;
-            color: #495057;
+            color: var(--akg-text);
             margin-bottom: 0.5rem;
             font-size: 0.9rem;
         }
         
         .property-value {
-            color: #6c757d;
+            color: var(--akg-text-muted);
             line-height: 1.5;
             
             &.description-text {
                 padding: 0.5rem;
-                background: #f8f9fa;
+                background: var(--akg-surface-muted);
                 border-radius: 4px;
-                border-left: 3px solid #007bff;
+                border-left: 3px solid var(--akg-accent-fg);
                 
                 // Use compact markdown styling mixin
                 @include compact-markdown-styles;
@@ -860,7 +850,7 @@
             align-items: flex-start;
             margin-bottom: 0.5rem;
             padding: 0.5rem;
-            background: #f8f9fa;
+            background: var(--akg-surface-muted);
             border-radius: 4px;
             
             &:last-child {
@@ -868,7 +858,7 @@
             }
             
             .observation-icon {
-                color: #6c757d;
+                color: var(--akg-text-muted);
                 margin-right: 0.5rem;
                 margin-top: 0.1rem;
                 flex-shrink: 0;
@@ -888,11 +878,54 @@
         justify-content: center;
         gap: 0.5rem;
         padding: 2rem;
-        color: #6c757d;
+        color: var(--akg-text-muted);
         font-style: italic;
         
         .pi {
             font-size: 1.2rem;
         }
     }
+}
+
+/*
+ * DELETED: the `.tab-mode .graph-canvas { min-height: 240px }` floor.
+ *
+ * It was the last survivor of three px floors written for a panel that owned
+ * the page, kept because echarts lays out for nothing if it measures a
+ * zero-height container on init. ngx-echarts observes the element with a
+ * `ResizeObserver` and resizes when the box grows, so the floor guarded
+ * against something that cannot happen while making the canvas taller than
+ * its pane in the case that does. The canvas is `flex: 1` of a bounded
+ * column now — see `.graph-canvas`.
+ */
+
+/* The card shadow, radius and ground the container used to draw are not
+ * overridden back off down here any more — they are simply not declared. A rule
+ * whose whole job is to cancel a rule 500 lines above it is two people
+ * disagreeing in one file, and the reader has to find both to know what wins. */
+
+/*
+ * The entity and relation cards, in the palette's terms. PrimeNG's `p-card`
+ * ships its own white ground, its own radius and a shadow sized for a page
+ * layout; six of them stacked in a 278px lane read as six floating sheets.
+ */
+:host ::ng-deep .entity-card .p-card,
+:host ::ng-deep .relation-card .p-card {
+    border: 1px solid var(--akg-surface-border);
+    border-radius: var(--akg-card-radius);
+    background: var(--akg-overlay-bg);
+    box-shadow: none;
+}
+
+:host ::ng-deep .entity-card .p-card-body,
+:host ::ng-deep .relation-card .p-card-body {
+    padding: 10px 12px;
+}
+
+:host ::ng-deep .entity-card .p-card-title,
+:host ::ng-deep .relation-card .p-card-title {
+    margin: 0 0 6px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--akg-text);
 }

@@ -1,0 +1,64 @@
+/*
+ * The host is the block the pane stacks; without this it is an inline box and
+ * the column below inherits nothing to lay itself out in.
+ */
+:host {
+  display: block;
+}
+
+/*
+ * A single column of cards. The gap is the only separator — cards on a tinted
+ * pane already have edges, and adding rules between them would draw the gaps
+ * instead of the contents.
+ */
+.team-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/*
+ * The person's card. Same geometry as a member card so the list reads as one
+ * stack, and a warm avatar so the first row is legibly not an agent.
+ */
+.human-card {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 12px;
+  border: 1px solid var(--akg-surface-border);
+  border-radius: var(--akg-card-radius);
+  background: var(--akg-overlay-bg);
+}
+
+.human-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: var(--akg-avatar-size-sm);
+  height: var(--akg-avatar-size-sm);
+  border-radius: 8px;
+  background: var(--akg-avatar-human-bg);
+  color: var(--akg-avatar-human-fg);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.human-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* A name, so the heading step — see `member-card.component.scss`; the two
+   rows sit in the same column and must not disagree about what a name is. */
+.human-name {
+  font-size: 13px;
+  color: var(--akg-text);
+}
+
+.human-sub {
+  font-size: 11px;
+  font-weight: 300;
+  color: var(--akg-text-muted);
+}

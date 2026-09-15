@@ -6,6 +6,14 @@
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link id="appIcon" rel="icon" type="image/x-icon" href="favicon.png" />
+    <!--
+      NO THIRD-PARTY FONT HOST. The three families are self-hosted through
+      `@fontsource/*` and declared in `src/styles.scss` — see the block there
+      for why a `fonts.googleapis.com` <link> is not an option in an enterprise
+      console deployed inside a customer's tenancy. Do not reintroduce one: it
+      would restore a render-blocking request to a third party, and it would
+      fail silently, because a font that does not load simply falls back.
+    -->
   </head>
   <body>
     <app-root></app-root>

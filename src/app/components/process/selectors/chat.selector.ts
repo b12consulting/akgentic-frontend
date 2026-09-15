@@ -13,6 +13,7 @@ import {
   buildPreview,
   ChatMessage,
   classifyMessage,
+  classifyRule,
   ENTRY_POINT_NAME,
 } from './chat-message.model';
 import {
@@ -50,16 +51,33 @@ export interface ChatAnswer {
 }
 
 /**
- * One entry in a thinking bubble's tool list.
+ * One step in a run: something the agent DID between being asked and answering.
  *
- * Populated from ToolCallEvent (`done: false`) and flipped to `done: true`
- * by the matching ToolReturnEvent (same `tool_call_id`).
+ * Two kinds, one sequence. A tool call arrives as a `ToolCallEvent`; a message
+ * to another agent arrives as a rule-4 `SentMessage`. They reach the client by
+ * different transports, but to the person reading the conversation they are the
+ * same thing — work they did not ask to see the detail of — so they share one
+ * list and one chronological order. Splitting them by transport put "used a
+ * tool" inside the fold and "contacted an agent" beside it, which exposed an
+ * implementation detail as though it were a distinction that mattered.
+ *
+ * `tool_call_id` and `tool_name` keep their names to avoid a repo-wide rename
+ * inside a behaviour change; for a contact they hold the SentMessage id and the
+ * agent contacted. A rename to step/subject is a follow-up worth doing on its
+ * own.
  */
 export interface ThinkingToolEntry {
+  /** trackBy key: `tool_call_id` for a tool, the `SentMessage` id for a contact.
+   *  The contact case doubles as the exclusion key that stops the same message
+   *  rendering both as a step and as a row of its own. */
   tool_call_id: string;
+  /** The tool called, or the agent contacted. */
   tool_name: string;
   arguments_preview: string;
+  /** Tools open `false` and flip on their return. A contact is complete the
+   *  moment it is sent — there is no second event to wait for. */
   done: boolean;
+  kind: 'tool' | 'contact';
 }
 
 /**
@@ -257,8 +275,11 @@ function applyToolCallToThinking(
   const entry: ThinkingToolEntry = {
     tool_call_id: inner.tool_call_id,
     tool_name: inner.tool_name,
-    arguments_preview: buildPreview(inner.arguments, 60),
+    // 160, not 60: this string is both the step's supporting line and the
+    // raw call behind "Show raw", and 60 truncated most payloads to noise.
+    arguments_preview: buildPreview(inner.arguments, 160),
     done: false,
+    kind: 'tool',
   };
   const updated: ThinkingState = {
     ...existing,
@@ -309,9 +330,74 @@ function applyToolReturnToThinking(
   return state;
 }
 
+/**
+ * A send either ENDS the run or is a STEP inside it.
+ *
+ * Ending it is the answer — anything addressed to a human. A message to another
+ * agent is work in progress: the agent asked a colleague and is still going, so
+ * closing the run there would end it at the exact moment it delegated, and the
+ * contact would land after the fold as an unrelated row.
+ *
+ * The test is `classifyRule`, not a local recipient check, so the fold and the
+ * transcript cannot disagree about what counts as AI-to-AI. One definition,
+ * used twice.
+ */
 function applySentToThinking(state: ChatState, msg: SentMessage): ChatState {
   if (msg.sender.role === ACTOR_SYSTEM_ROLE) return state;
-  return finaliseThinking(state, msg.sender.agent_id);
+  if (classifyRule(msg) !== 4) {
+    return finaliseThinking(state, msg.sender.agent_id);
+  }
+  return applyContactToThinking(state, msg);
+}
+
+/**
+ * Append a contact step to the sender's live run.
+ *
+ * No live run means no fold to put it in, and the state is returned untouched:
+ * the message then keeps rendering as a row of its own, which is the honest
+ * outcome. Nothing is dropped — `applyMessageFromSent` has already recorded it,
+ * and the display filter only removes messages a fold actually holds.
+ */
+function applyContactToThinking(state: ChatState, msg: SentMessage): ChatState {
+  const agentId = msg.sender.agent_id;
+  const idx = state.thinkingAgents.findIndex(
+    (s) => s.agent_id === agentId && !s.final,
+  );
+  if (idx === -1) return state;
+  const existing = state.thinkingAgents[idx];
+  const entry: ThinkingToolEntry = {
+    tool_call_id: msg.id,
+    tool_name: msg.recipient.name,
+    arguments_preview: buildPreview(msg.message.content ?? '', 160),
+    done: true,
+    kind: 'contact',
+  };
+  const updated: ThinkingState = {
+    ...existing,
+    tools: [...existing.tools, entry],
+  };
+  const nextThinking = [...state.thinkingAgents];
+  nextThinking[idx] = updated;
+  return { ...state, thinkingAgents: nextThinking };
+}
+
+/**
+ * Every message id a fold has absorbed as a contact step.
+ *
+ * The rendering layer uses this to drop the row so the same send is not shown
+ * twice — once inside the run and once beside it. Keyed by id rather than by
+ * rule, because a rule-4 message that reached no live run is still a row.
+ */
+export function contactStepMessageIds(
+  thinking: readonly ThinkingState[],
+): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const t of thinking) {
+    for (const step of t.tools) {
+      if (step.kind === 'contact') ids.add(step.tool_call_id);
+    }
+  }
+  return ids;
 }
 
 function applyProcessedToThinking(

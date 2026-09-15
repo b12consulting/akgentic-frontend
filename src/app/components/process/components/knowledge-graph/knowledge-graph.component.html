@@ -12,17 +12,27 @@
         [options]="graphOptions"
         (chartInit)="onChartInit($event)"
       ></div>
-      <!-- Empty-state placeholder (overlay), styled like the Workspace
-           placeholder. Shown when the graph has no entities. -->
-      <div
-        class="kg-graph-empty"
-        *ngIf="!(graphData$ | async)?.nodes?.length"
-      >
-        <i class="pi pi-sitemap kg-graph-empty-icon"></i>
-        <div class="kg-graph-empty-title">No Knowledge Graph</div>
-        <div class="kg-graph-empty-desc">
-          No entities yet — the graph will populate as agents add knowledge.
-        </div>
+      <!--
+        THE SHARED EMPTY STATE, not a local copy of it.
+
+        This used to be a hand-drawn reproduction of `<app-inspector-empty-state>`
+        — same well tile, same display-face headline, same muted line — and the
+        stylesheet said why: the panel's empty sentences were "hardcoded English
+        with no locale keys behind them", so a key-taking component had nothing
+        to be given. That stopped being true when `knowledgeGraph.emptyTitle` /
+        `emptyBody` landed, and a second copy of an idiom is exactly how two
+        panes drift into looking like two products.
+
+        It stays an OVERLAY rather than replacing the canvas: the canvas is what
+        ECharts is attached to, and tearing it out of the DOM on every empty
+        emission would make the instance unmountable and remountable on a stream
+        that empties routinely.
+      -->
+      <div class="kg-graph-empty" *ngIf="!(graphData$ | async)?.nodes?.length">
+        <app-inspector-empty-state
+          titleKey="knowledgeGraph.emptyTitle"
+          blurbKey="knowledgeGraph.emptyBody"
+        />
       </div>
     </div>
   </div>
@@ -31,12 +41,12 @@
 <!-- Entities Section Template -->
 <ng-template #entitiesSectionTemplate>
   <div class="nodes-section">
-    <h4>Entities</h4>
+    <h4>{{ "knowledgeGraph.entities" | translate }}</h4>
     <div class="entities-grid">
       <p-card
         *ngFor="let node of (graphData$ | async)?.nodes"
         class="entity-card"
-        [header]="node.name || 'Unnamed Entity'"
+        [header]="node.name || ('knowledgeGraph.unnamedEntity' | translate)"
       >
         <div class="entity-content">
           <div class="entity-type-container" *ngIf="node.entity_type">
@@ -53,7 +63,10 @@
             *ngIf="node.observations && node.observations.length > 0"
             class="entity-observations"
           >
-            <strong>Observations ({{ node.observations.length }}):</strong>
+            <strong>{{
+              "knowledgeGraph.observations"
+                | translate : { count: node.observations.length }
+            }}</strong>
             <ul class="observations-list">
               <li *ngFor="let obs of node.observations">
                 {{ obs }}
@@ -65,7 +78,7 @@
     </div>
     <div *ngIf="!(graphData$ | async)?.nodes?.length" class="empty-section">
       <i class="pi pi-inbox"></i>
-      <p>No entities found</p>
+      <p>{{ "knowledgeGraph.noEntities" | translate }}</p>
     </div>
   </div>
 </ng-template>
@@ -73,7 +86,7 @@
 <!-- Relations Section Template -->
 <ng-template #relationsSectionTemplate>
   <div class="edges-section">
-    <h4>Relations</h4>
+    <h4>{{ "knowledgeGraph.relations" | translate }}</h4>
     <div class="relations-grid">
       <p-card
         *ngFor="let edge of (graphData$ | async)?.edges"
@@ -99,7 +112,7 @@
     </div>
     <div *ngIf="!(graphData$ | async)?.edges?.length" class="empty-section">
       <i class="pi pi-link"></i>
-      <p>No relations found</p>
+      <p>{{ "knowledgeGraph.noRelations" | translate }}</p>
     </div>
   </div>
 </ng-template>
@@ -144,7 +157,7 @@
   >
     <ng-template pTemplate="header">
       <div class="dialog-header-container">
-        <span class="dialog-title">Knowledge Graph</span>
+        <span class="dialog-title">{{ "knowledgeGraph.title" | translate }}</span>
       </div>
     </ng-template>
     <app-knowledge-graph
@@ -181,7 +194,7 @@
         <div class="side-panel-header">
           <h3 class="side-panel-title">
             <i class="pi pi-info-circle"></i>
-            Node Properties
+            {{ "knowledgeGraph.nodeProperties" | translate }}
           </h3>
           <button
             pButton
@@ -195,15 +208,19 @@
         <div class="side-panel-content">
           <!-- Node Name -->
           <div class="property-section">
-            <label class="property-label">Name:</label>
+            <label class="property-label">{{
+              "knowledgeGraph.propName" | translate
+            }}</label>
             <div class="property-value">
-              {{ node.name || "Unnamed Entity" }}
+              {{ node.name || ("knowledgeGraph.unnamedEntity" | translate) }}
             </div>
           </div>
 
           <!-- Entity Type -->
           <div class="property-section" *ngIf="node.entity_type">
-            <label class="property-label">Type:</label>
+            <label class="property-label">{{
+              "knowledgeGraph.propType" | translate
+            }}</label>
             <div class="property-value">
               <p-tag
                 [value]="node.entity_type"
@@ -215,7 +232,9 @@
 
           <!-- Description -->
           <div class="property-section" *ngIf="node.description">
-            <label class="property-label">Description:</label>
+            <label class="property-label">{{
+              "knowledgeGraph.propDescription" | translate
+            }}</label>
             <div class="property-value description-text">
               <markdown [data]="node.description"></markdown>
             </div>
@@ -226,9 +245,10 @@
             class="property-section"
             *ngIf="node.observations && node.observations.length > 0"
           >
-            <label class="property-label"
-              >Observations ({{ node.observations.length }}):</label
-            >
+            <label class="property-label">{{
+              "knowledgeGraph.observations"
+                | translate : { count: node.observations.length }
+            }}</label>
             <div class="property-value">
               <div class="observations-container">
                 <div
@@ -251,7 +271,7 @@
             class="empty-properties"
           >
             <i class="pi pi-info-circle"></i>
-            <span>No additional properties available</span>
+            <span>{{ "knowledgeGraph.noProperties" | translate }}</span>
           </div>
         </div>
       </div>
@@ -259,36 +279,70 @@
   </div>
 </ng-container>
 
-<!-- Tabbed View - Only shown when isModal is false -->
+<!--
+  THE PANEL VIEW. Two readings of one graph, and a toolbar that says which.
+
+  The `<p-tabView>` that used to be here is gone; the SPLIT it expressed is not.
+  See `KnowledgeGraphView` in the component for why the split earns its place
+  and the library strip did not. In short: the strip was deprecated PrimeNG kept
+  presentable by ~60 lines of `::ng-deep`, it owned the whole header row, and
+  the Expand control had to be absolutely positioned on top of it to get a seat.
+
+  `role="tablist"` with two `role="tab"` buttons, not two plain buttons: the
+  control still MEANS "pick one of these views", and a screen reader gets that
+  from the roles rather than from the styling. `aria-selected` is what carries
+  the state; the accent underline is the sighted half of the same fact.
+-->
 <div class="knowledge-graph-container" *ngIf="!isModal">
-  <!-- Main content with tabs - Always present, content conditionally shown -->
-  <div class="knowledge-graph-content">
-    <div class="tabs-header-container">
-      <div class="tabs-with-button">
-        <p-tabView class="flex-tabs" [(activeIndex)]="activeTabIndex">
-          <p-tabPanel header="Graph Visualization">
-            <ng-container
-              *ngTemplateOutlet="graphVisualizationTemplate"
-            ></ng-container>
-          </p-tabPanel>
-          <p-tabPanel header="Raw Data">
-            <ng-container
-              *ngTemplateOutlet="rawDataContentTemplate"
-            ></ng-container>
-          </p-tabPanel>
-        </p-tabView>
-        <button
-          pButton
-          type="button"
-          size="small"
-          severity="secondary"
-          icon="pi pi-external-link"
-          label="Expand KG"
-          (click)="isModalView = true; openKGModal()"
-          class="external-expand-button"
-        ></button>
-      </div>
+  <div class="kg-toolbar">
+    <div
+      class="kg-views"
+      role="tablist"
+      [attr.aria-label]="'knowledgeGraph.title' | translate"
+    >
+      <button
+        type="button"
+        role="tab"
+        class="kg-view-tab"
+        [class.selected]="activeView === 'graph'"
+        [attr.aria-selected]="activeView === 'graph'"
+        (click)="setView('graph')"
+      >
+        {{ "knowledgeGraph.tabGraph" | translate }}
+      </button>
+      <button
+        type="button"
+        role="tab"
+        class="kg-view-tab"
+        [class.selected]="activeView === 'raw'"
+        [attr.aria-selected]="activeView === 'raw'"
+        (click)="setView('raw')"
+      >
+        {{ "knowledgeGraph.tabRawData" | translate }}
+      </button>
     </div>
+
+    <!--
+      Beside the views, not on top of them. A force layout is unreadable in a
+      310px pane however it is coloured, so the control that gets it out of the
+      pane is the one thing in this header that is always worth reaching.
+    -->
+    <button
+      type="button"
+      class="kg-expand"
+      (click)="isModalView = true; openKGModal()"
+    >
+      <i class="pi pi-external-link" aria-hidden="true"></i>
+      {{ "knowledgeGraph.expand" | translate }}
+    </button>
+  </div>
+
+  <div class="kg-view">
+    @if (activeView === "graph") {
+      <ng-container *ngTemplateOutlet="graphVisualizationTemplate"></ng-container>
+    } @else {
+      <ng-container *ngTemplateOutlet="rawDataContentTemplate"></ng-container>
+    }
   </div>
 </div>
 
@@ -302,7 +356,7 @@
   [closable]="true"
   [draggable]="true"
   [resizable]="false"
-  header="Node Properties"
+  [header]="'knowledgeGraph.nodeProperties' | translate"
   [style]="{ width: '400px' }"
   [baseZIndex]="1000"
   styleClass="node-properties-dialog"
@@ -310,15 +364,19 @@
   <div class="node-details" *ngIf="selectedNode$ | async as node">
     <!-- Node Name -->
     <div class="property-section">
-      <label class="property-label">Name:</label>
+      <label class="property-label">{{
+        "knowledgeGraph.propName" | translate
+      }}</label>
       <div class="property-value">
-        {{ node.name || "Unnamed Entity" }}
+        {{ node.name || ("knowledgeGraph.unnamedEntity" | translate) }}
       </div>
     </div>
 
     <!-- Entity Type -->
     <div class="property-section" *ngIf="node.entity_type">
-      <label class="property-label">Type:</label>
+      <label class="property-label">{{
+        "knowledgeGraph.propType" | translate
+      }}</label>
       <div class="property-value">
         <p-tag
           [value]="node.entity_type"
@@ -330,7 +388,9 @@
 
     <!-- Description -->
     <div class="property-section" *ngIf="node.description">
-      <label class="property-label">Description:</label>
+      <label class="property-label">{{
+        "knowledgeGraph.propDescription" | translate
+      }}</label>
       <div class="property-value description-text">
         <markdown [data]="node.description"></markdown>
       </div>
@@ -341,9 +401,10 @@
       class="property-section"
       *ngIf="node.observations && node.observations.length > 0"
     >
-      <label class="property-label"
-        >Observations ({{ node.observations.length }}):</label
-      >
+      <label class="property-label">{{
+        "knowledgeGraph.observations"
+          | translate : { count: node.observations.length }
+      }}</label>
       <div class="property-value">
         <div class="observations-container">
           <div
@@ -366,7 +427,7 @@
       class="empty-properties"
     >
       <i class="pi pi-info-circle"></i>
-      <span>No additional properties available</span>
+      <span>{{ "knowledgeGraph.noProperties" | translate }}</span>
     </div>
   </div>
 </p-dialog>

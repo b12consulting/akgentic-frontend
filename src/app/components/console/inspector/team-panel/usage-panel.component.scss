@@ -1,0 +1,126 @@
+/*
+ * Separated from the sections above by margin rather than a rule. The card's
+ * own border already closes the pane; a divider on top of it would be two
+ * boundaries doing one job.
+ */
+.usage {
+  margin-top: 18px;
+  padding: 13px 14px;
+  border: 1px solid var(--akg-surface-border);
+  border-radius: var(--akg-card-radius);
+  background: var(--akg-overlay-bg);
+}
+
+/* The same uppercase treatment as the TOOLS header and the rail's group
+   headers — one shape for "this is a section". */
+.usage-label {
+  margin: 0 0 10px;
+  font-size: var(--akg-section-label-size);
+  font-weight: 500;
+  letter-spacing: var(--akg-section-label-tracking);
+  text-transform: uppercase;
+  color: var(--akg-text-muted);
+}
+
+.usage-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: 12.5px;
+  font-weight: 300;
+}
+
+.usage-name {
+  color: var(--akg-text-muted);
+}
+
+/*
+ * The figure is the darkest thing in the card. Label and value at the same
+ * weight would make the row read as a sentence; the contrast step is what makes
+ * the number the thing you came for.
+ */
+.usage-value {
+  color: var(--akg-text);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The per-model breakdown, under a rule rather than in a second card. It
+ * decomposes the three figures above, so it has to read as the same block
+ * continued — a card of its own would read as a different subject.
+ *
+ * The hairline is the INSIDE-a-surface separator, not the surface border: the
+ * card already has an outline and repeating that value here would draw the
+ * heavier of the two lines in the lighter of the two roles.
+ */
+/*
+ * ONE GRID OVER THE WHOLE BREAKDOWN, not a flex row per model — and that is
+ * what puts the figures in line.
+ *
+ * Each row used to be its own flex container packing three figures against the
+ * right edge. Only the LAST of the three therefore landed anywhere
+ * predictable: `↑690.1k` and `⚡630.7k` sat wherever the widths before them
+ * happened to leave them, in line with nothing, and with two models on a team
+ * they did not even line up with each other. The eye is being asked to compare
+ * `in` against `in` down the column, which is the same reason the three totals
+ * above are a column rather than a sentence.
+ *
+ * Four columns shared by every row: the name takes what is left
+ * (`minmax(0, 1fr)` so it can shrink and ellipsise), and each figure column is
+ * `auto` — as wide as the widest figure in it, across all rows. The rows
+ * `display: contents` so their spans become items of THIS grid rather than of
+ * a box of their own; the vertical padding they used to carry moves onto the
+ * cells, since an element with `display: contents` has no box to pad. Its
+ * inherited type still reaches them, which is why the size and weight stay
+ * here.
+ */
+.usage-models {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid var(--akg-hairline);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  column-gap: 7px;
+  align-items: baseline;
+  font-size: 11.5px;
+  font-weight: 300;
+}
+
+.usage-model-row,
+.usage-model-figures {
+  display: contents;
+}
+
+/*
+ * A model name is long, opaque and not the point — `gpt-5.4-2026-03-05` would
+ * push the figures out of the pane if it were allowed its natural width. It
+ * truncates and keeps the full string on `title`; the figures do not, because
+ * an elided number is worse than no number.
+ */
+.usage-model-name {
+  min-width: 0;
+  padding: 3px 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--akg-text-muted);
+}
+
+/*
+ * `justify-self: end` rather than a centred or stretched cell: these are
+ * numbers of different lengths in a column, and a number column is read off
+ * its LAST digit. `tabular-nums` is the other half — proportional digits make
+ * `690.1k` and `630.7k` different widths and the column ragged even once the
+ * cells line up.
+ *
+ * The blank placeholder is styled with them so it occupies its column at the
+ * same height rather than collapsing the row.
+ */
+.usage-model-figure,
+.usage-model-blank {
+  justify-self: end;
+  padding: 3px 0;
+  color: var(--akg-text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

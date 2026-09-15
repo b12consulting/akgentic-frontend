@@ -1,106 +1,144 @@
 <!--
-  Single scroll region for the whole trace. The head system block (Epic 16)
-  scrolls TOGETHER with the conversation, exactly as it did before Epic 16 when
-  the system block was the first row inside the scrollable table — only now it
-  stays pinned at the head. `.trace-scroll` owns the scroll so neither the head
-  block nor a long conversation can overflow the clipped tab container and push
-  the chat input out of reach.
+  THE MEMBER'S TRACE, in the console's language.
+
+  WHAT CAME OUT, AND WHY. This pane was three library components deep — a
+  `<p-table>` with no header, no columns and no sort, holding a `<p-fieldset>`
+  per message whose legend said "Content" over the content — and every one of
+  them was drawing its own ground, its own border and its own type scale inside
+  a 278px lane. A table is a control for comparing rows against columns; a trace
+  has one column, and the table was supplying nothing but chrome. A fieldset's
+  legend earns its place when it NAMES something the reader could not otherwise
+  identify; "Content" over a message body names nothing.
+
+  WHAT STAYED. The class hooks `.card-container`, `.card-header`,
+  `.text-container`, `.head-system-container` and `.collapsible-container`:
+  they are what the specs address this pane through, and the first two are also
+  still defined globally for the Messages tab. Their global values are wrong
+  here (a 1rem margin on four sides in a 278px lane, a 1.1rem/600 header, a
+  hardcoded border) and are restated in the stylesheet rather than inherited.
+
+  The single scroll region is unchanged: the head system block (Epic 16) scrolls
+  TOGETHER with the conversation so neither can overflow the pane and push the
+  composer out of reach.
 -->
 <div class="trace-scroll" #traceScroll (scroll)="onScroll()">
   <!--
     Head system block — sourced from `headRows$`: the event-sourced
     `systemPrompt$` rows (SystemPromptSelector, Story 16-1) when present
     (latest-wins), else the never-run backstory fallback synthesized from
-    `backstory$` (akgentic-agent ADR-007 §4). Independent of `context.length`. `*ngIf ... as
-    rows` + `rows.length` guard renders nothing when there are no rows (AC8).
-    `async` keeps it OnPush-safe and self-unsubscribing.
+    `backstory$` (akgentic-agent ADR-007 §4). Independent of `context.length`.
+    `*ngIf ... as rows` + `rows.length` guard renders nothing when there are no
+    rows (AC8). `async` keeps it OnPush-safe and self-unsubscribing.
   -->
-  <div
-    class="head-system-container"
-    *ngIf="headRows$ | async as rows"
-  >
+  <div class="head-system-container" *ngIf="headRows$ | async as rows">
     <ng-container *ngIf="rows.length">
-      <div class="card-container" *ngFor="let row of rows">
-        <div class="card-header">{{ row.type | capitalize }} : {{ row.name }}</div>
-        <div class="fieldset-body">
-          <p-fieldset legend="Content" [toggleable]="false">
-            <app-copy-button (click)="utilService.copyToClipboard(row.content)" />
-            <div class="text-container" [innerHTML]="row.content"></div>
-          </p-fieldset>
+      <article class="card-container trace-entry" *ngFor="let row of rows">
+        <!--
+          KIND, THEN NAME — not "System : roster".
+
+          The colon was doing a label's job with punctuation, at the same size
+          and weight as the name beside it, so the eye had to read both to find
+          out which was which. The kind is a small fixed vocabulary and belongs
+          in the uppercase micro-label the rail's groups and the inspector's
+          TOOLS/USAGE already use; the name is the variable part and gets the
+          weight. It is NOT translated: `system` / `ai` / `tool_call` are wire
+          values off the protocol, in the same class as the model id beside
+          them, and translating them would make the pane disagree with every
+          other place those strings appear.
+        -->
+        <header class="card-header">
+          <span class="entry-kind">{{ row.type | capitalize }}</span>
+          <span class="entry-name">{{ row.name }}</span>
+        </header>
+        <div class="entry-well">
+          <app-copy-button
+            class="entry-copy"
+            (click)="utilService.copyToClipboard(row.content)"
+          />
+          <div class="text-container" [innerHTML]="row.content"></div>
         </div>
-      </div>
+      </article>
     </ng-container>
   </div>
 
   <!-- Conversation. Not independently scrollable: `.trace-scroll` is the single
-       scroll region (hover-pauses auto-scroll via the table's mouse events). -->
+       scroll region (hover-pauses auto-scroll via the region's mouse events). -->
   <div class="collapsible-container" *ngIf="context.length">
-    <div class="collapsible">
-      <p-table [value]="context" [rowTrackBy]="trackByIndex">
-      <ng-template #body let-message>
-        <div class="card-container">
-          <div class="card-header">
-            {{ message.type | capitalize }} : {{ message.name }}
-            <span *ngIf="message.model_name" class="model-info">
-              ({{ message.provider_name }}/{{ message.model_name }})
-            </span>
+    @for (message of context; track $index) {
+      <article class="card-container trace-entry">
+        <header class="card-header">
+          <span class="entry-kind">{{ message.type | capitalize }}</span>
+          <span class="entry-name">{{ message.name }}</span>
+          <!-- Which model produced this turn is provenance, not conversation:
+               it sits at the quiet end and wraps to its own line rather than
+               pushing the name out of the pane. -->
+          <span *ngIf="message.model_name" class="model-info">
+            {{ message.provider_name }}/{{ message.model_name }}
+          </span>
+        </header>
+
+        <ng-container
+          *ngIf="
+            ['system', 'ai', 'tool', 'human', 'tool_result'].includes(
+              message.type
+            )
+          "
+        >
+          <div class="entry-well">
+            <app-copy-button
+              class="entry-copy"
+              (click)="utilService.copyToClipboard(message.content)"
+            />
+            <div class="text-container" [innerHTML]="message.content"></div>
           </div>
-          <div class="fieldset-body">
-            <ng-container
-              *ngIf="
-                ['system', 'ai', 'tool', 'human', 'tool_result'].includes(
-                  message.type
-                )
+        </ng-container>
+
+        <!--
+          A TOOL CALL IS A DIFFERENT SHAPE and now reads as one: the tool's hue
+          on the left edge, then what was asked and what came back. The tool's
+          own name is already in `.entry-name` above, so the `p-fieldset
+          legend="Tool"` that repeated it underneath is gone — it was the third
+          place on this card the same string appeared.
+        -->
+        <ng-container *ngIf="['tool_call'].includes(message.type)">
+          <div class="entry-well entry-well-tool">
+            <p class="entry-well-label">{{ "inspector.trace.args" | translate }}</p>
+            <app-copy-button
+              class="entry-copy"
+              (click)="
+                utilService.copyToClipboard(utilService.formatJSON(message.args))
               "
-            >
-              <p-fieldset legend="Content" [toggleable]="false">
-                <app-copy-button
-                  (click)="utilService.copyToClipboard(message.content)"
-                />
-                <div class="text-container" [innerHTML]="message.content"></div>
-              </p-fieldset>
-            </ng-container>
-            <ng-container *ngIf="['tool_call'].includes(message.type)">
-              <p-fieldset legend="Tool" [toggleable]="false">
-                {{ message.name }}
-              </p-fieldset>
-              <p-fieldset legend="Args" [toggleable]="false">
-                <app-copy-button
-                  (click)="
-                    utilService.copyToClipboard(
-                      utilService.formatJSON(message.args)
-                    )
-                  "
-                />
-                <pre class="text-container">{{
-                  utilService.formatJSON(message.args)
-                }}</pre>
-              </p-fieldset>
-              <p-fieldset
-                legend="Result"
-                [toggleable]="false"
-                *ngIf="message.result !== null && message.result !== undefined"
-              >
-                <app-copy-button
-                  (click)="utilService.copyToClipboard(message.result)"
-                />
-                <pre class="text-container">{{
-                  utilService.formatJSON(message.result)
-                }}</pre>
-              </p-fieldset>
-            </ng-container>
+            />
+            <pre class="text-container">{{
+              utilService.formatJSON(message.args)
+            }}</pre>
           </div>
-        </div>
-      </ng-template>
-    </p-table>
-  </div>
+          <div
+            class="entry-well entry-well-tool"
+            *ngIf="message.result !== null && message.result !== undefined"
+          >
+            <p class="entry-well-label">{{ "inspector.trace.result" | translate }}</p>
+            <app-copy-button
+              class="entry-copy"
+              (click)="utilService.copyToClipboard(message.result)"
+            />
+            <pre class="text-container">{{
+              utilService.formatJSON(message.result)
+            }}</pre>
+          </div>
+        </ng-container>
+      </article>
+    }
   </div>
 </div>
 
 <div class="input-container">
   <!-- "Messages" / "Auto scrolling" status pill, anchored on top of the input.
        Click → follow (auto-scroll to the bottom). Hidden when the newest message
-       is on screen. -->
+       is on screen. `indicatorLabel` carries a KEY, not a sentence — the two
+       strings it used to hold were the last untranslated copy in this pane and
+       `chat.messages` / `chat.autoScrolling` already existed for the main
+       transcript's identical control. -->
   <button
     *ngIf="indicatorLabel"
     type="button"
@@ -108,119 +146,154 @@
     (click)="onFollowLatest()"
   >
     <i class="pi" [ngClass]="indicatorIcon"></i>
-    <span>{{ indicatorLabel }}</span>
+    <span>{{ indicatorLabel | translate }}</span>
   </button>
-  <p-floatlabel variant="in">
-    <div class="input-row">
-      <div class="input-row-textarea">
-        <textarea
-          pTextarea
-          rows="4"
-          cols="50"
-          [(ngModel)]="userInput"
-          (keydown.enter)="userInputEnterKeySubmit ? sendMessage() : null"
-          (keydown.meta.enter)="sendMessage()"
-          (keydown.control.enter)="sendMessage()"
-          [mentionConfig]="mentionConfig"
-          [mentionListTemplate]="mentionItemTemplate"
-        ></textarea>
-        <label for="on_label">Chat input</label>
-      </div>
-      <!--
-        ADR-013: `/` command mention item template — renders the command name
-        prominently, an optional args hint (`<role> [name]`), and the
-        description as secondary text.
-      -->
-      <ng-template #mentionItemTemplate let-item="item">
-        <span class="mention-item-name">{{ item.name }}</span>
-        <span *ngIf="item.args?.length" class="mention-item-args">
-          {{ commandArgsHint(item.args) }}
-        </span>
-        <span *ngIf="item.description" class="mention-item-desc">{{ item.description }}</span>
-      </ng-template>
-      <div class="input-row-buttons">
-        <!--
-          ADR-024 §Decision 3 — interactive token-usage trigger, first child of
-          `.input-row-buttons` (left of Submit); supersedes ADR-022 §Decision 5's
-          non-interactive `[title]` pill. Bound to
-          `tokenUsageSelector.perAgent$(agentId) | async` ONCE via `*ngIf ... as
-          usage`: a defined usage renders a keyboard-focusable `<button>` —
-          `ctx <ctx> · ↑<sent> ↓<received>` (every number via `tokenCount`) plus a
-          `⚡` glyph when any cache tokens were used — that toggles
-          `<p-popover #usageOp>` with the full breakdown (model, true context
-          window with the fresh/cached split, sent/received, and cache read shown
-          as last/total — cache write is not surfaced since OpenAI reports cache
-          reads only — all via the exact `| number` pipe). A never-run agent
-          (`undefined`) renders
-          the neutral `ctx — · ↑0 ↓0` with the trigger DISABLED — inert, no
-          popover to open (the VIEW owns the empty-state, ADR-022 §OQ2).
-        -->
-        <ng-container *ngIf="usage$ | async as usage; else emptyPill">
-          <button
-            type="button"
-            class="usage-pill"
-            [attr.aria-label]="
-              'Token usage: context window ' + (usage.lastContextWindow | number) +
-              ', sent ' + (usage.totalSent | number) +
-              ', received ' + (usage.totalReceived | number) +
-              ', model ' + usage.lastModelName
-            "
-            aria-haspopup="dialog"
-            [attr.aria-expanded]="usageOp.overlayVisible"
-            (click)="usageOp.toggle($event)"
-          >
-            ctx {{ usage.lastContextWindow | tokenCount }} ·
-            ↑{{ usage.totalSent | tokenCount }} ↓{{ usage.totalReceived | tokenCount }}
-            <span *ngIf="usage.totalCacheRead + usage.totalCacheWrite > 0">⚡</span>
-          </button>
-          <p-popover #usageOp>
-            <div class="usage-popover">
-              <div class="usage-popover-row">
-                <span class="usage-popover-label">Model</span>
-                <span>{{ usage.lastModelName }}</span>
-              </div>
-              <div class="usage-popover-row">
-                <span class="usage-popover-label">Context window</span>
-                <span>
-                  {{ usage.lastContextWindow | number }} 
-                </span>
-              </div>
-              <div class="usage-popover-row">
-                <span class="usage-popover-label">Sent</span>
-                <span>{{ usage.totalSent | number }}</span>
-              </div>
-              <div class="usage-popover-row">
-                <span class="usage-popover-label">Received</span>
-                <span>{{ usage.totalReceived | number }}</span>
-              </div>
-              <div class="usage-popover-row">
-                <span class="usage-popover-label">Cache ⚡</span>
-                <span>{{ usage.lastCacheRead | number }} / {{ usage.totalCacheRead | number }}</span>
-              </div>
-            </div>
-          </p-popover>
-        </ng-container>
-        <ng-template #emptyPill>
-          <button type="button" class="usage-pill" aria-label="No token usage yet" disabled>
-            ctx — · ↑0 ↓0
-          </button>
-        </ng-template>
-        <button
-          pButton
-          type="button"
-          size="small"
-          label="Submit"
-          (click)="sendMessage()"
-          [disabled]="!userInput || isLoading || !(contextService.currentTeamRunning$ | async)"
-        >
-          <ng-container *ngIf="isLoading; else refreshIcon">
-            <i class="pi pi-spinner pi-spin"></i>
-          </ng-container>
-          <ng-template #refreshIcon>
-            <i class="pi pi-send"></i>
-          </ng-template>
-        </button>
-      </div>
+  <div class="input-row">
+    <!--
+      NO `<p-floatlabel>`. Its label was the string "Chat input" — interface
+      describing itself — floating over a control whose purpose is obvious from
+      the Send button beside it, and it cost a wrapper whose absolute
+      positioning had to be fought to keep the textarea on the pane. A
+      placeholder naming the AGENT says something the user does not already
+      know: which of the team they are about to talk to.
+    -->
+    <div class="input-row-textarea">
+      <textarea
+        pTextarea
+        rows="3"
+        [attr.aria-label]="
+          'chat.reader.composer.placeholder' | translate: { agent: agentName }
+        "
+        [placeholder]="
+          'chat.reader.composer.placeholder' | translate: { agent: agentName }
+        "
+        [(ngModel)]="userInput"
+        (keydown.enter)="userInputEnterKeySubmit ? sendMessage() : null"
+        (keydown.meta.enter)="sendMessage()"
+        (keydown.control.enter)="sendMessage()"
+        [mentionConfig]="mentionConfig"
+        [mentionListTemplate]="mentionItemTemplate"
+      ></textarea>
     </div>
-  </p-floatlabel>
+    <!--
+      ADR-013: `/` command mention item template — renders the command name
+      prominently, an optional args hint (`<role> [name]`), and the
+      description as secondary text.
+    -->
+    <ng-template #mentionItemTemplate let-item="item">
+      <span class="mention-item-name">{{ item.name }}</span>
+      <span *ngIf="item.args?.length" class="mention-item-args">
+        {{ commandArgsHint(item.args) }}
+      </span>
+      <span *ngIf="item.description" class="mention-item-desc">{{
+        item.description
+      }}</span>
+    </ng-template>
+    <div class="input-row-buttons">
+      <!--
+        ADR-024 §Decision 3 — interactive token-usage trigger, first child of
+        `.input-row-buttons` (left of Send); supersedes ADR-022 §Decision 5's
+        non-interactive `[title]` pill. Bound to
+        `tokenUsageSelector.perAgent$(agentId) | async` ONCE via `*ngIf ... as
+        usage`: a defined usage renders a keyboard-focusable `<button>` —
+        `ctx <ctx> · ↑<sent> ↓<received>` (every number via `tokenCount`) plus a
+        `⚡` glyph when any cache tokens were used — that toggles
+        `<p-popover #usageOp>` with the full breakdown (model, true context
+        window, sent/received, and cache read shown as last/total — cache write
+        is not surfaced since OpenAI reports cache reads only — all via the
+        exact `| number` pipe). A never-run agent (`undefined`) renders the
+        neutral `ctx — · ↑0 ↓0` with the trigger DISABLED — inert, no popover to
+        open (the VIEW owns the empty-state, ADR-022 §OQ2).
+
+        The aria-label was an English sentence CONCATENATED in the template from
+        four numbers. It could not be translated without inventing a key with
+        four parameters, and it duplicated — in prose, for one audience only —
+        the breakdown the popover already states in a table that everybody gets.
+        The label now NAMES the control (`inspector.usage`, the same word the
+        Team panel's meter carries) and `aria-haspopup` says there is more.
+      -->
+      <ng-container *ngIf="usage$ | async as usage; else emptyPill">
+        <button
+          type="button"
+          class="usage-pill"
+          [attr.aria-label]="'inspector.usage' | translate"
+          aria-haspopup="dialog"
+          [attr.aria-expanded]="usageOp.overlayVisible"
+          (click)="usageOp.toggle($event)"
+        >
+          ctx {{ usage.lastContextWindow | tokenCount }} · ↑{{
+            usage.totalSent | tokenCount
+          }}
+          ↓{{ usage.totalReceived | tokenCount }}
+          <span *ngIf="usage.totalCacheRead + usage.totalCacheWrite > 0">⚡</span>
+        </button>
+        <p-popover #usageOp>
+          <div class="usage-popover">
+            <div class="usage-popover-row">
+              <span class="usage-popover-label">{{
+                "inspector.trace.model" | translate
+              }}</span>
+              <span>{{ usage.lastModelName }}</span>
+            </div>
+            <div class="usage-popover-row">
+              <span class="usage-popover-label">{{
+                "inspector.trace.contextWindow" | translate
+              }}</span>
+              <span>{{ usage.lastContextWindow | number }}</span>
+            </div>
+            <!-- The Team panel's meter already calls these "Tokens in" and
+                 "Tokens out". Two names for one number across two panes of the
+                 same inspector is the reader's problem, not a nuance. -->
+            <div class="usage-popover-row">
+              <span class="usage-popover-label">{{
+                "inspector.tokensIn" | translate
+              }}</span>
+              <span>{{ usage.totalSent | number }}</span>
+            </div>
+            <div class="usage-popover-row">
+              <span class="usage-popover-label">{{
+                "inspector.tokensOut" | translate
+              }}</span>
+              <span>{{ usage.totalReceived | number }}</span>
+            </div>
+            <div class="usage-popover-row">
+              <span class="usage-popover-label">{{
+                "inspector.cached" | translate
+              }}</span>
+              <span
+                >{{ usage.lastCacheRead | number }} /
+                {{ usage.totalCacheRead | number }}</span
+              >
+            </div>
+          </div>
+        </p-popover>
+      </ng-container>
+      <ng-template #emptyPill>
+        <button
+          type="button"
+          class="usage-pill"
+          [attr.aria-label]="'inspector.usage' | translate"
+          disabled
+        >
+          ctx — · ↑0 ↓0
+        </button>
+      </ng-template>
+      <button
+        type="button"
+        class="send-button"
+        (click)="sendMessage()"
+        [disabled]="
+          !userInput || isLoading || !(contextService.currentTeamRunning$ | async)
+        "
+      >
+        <ng-container *ngIf="isLoading; else refreshIcon">
+          <i class="pi pi-spinner pi-spin" aria-hidden="true"></i>
+        </ng-container>
+        <ng-template #refreshIcon>
+          <i class="pi pi-send" aria-hidden="true"></i>
+        </ng-template>
+        {{ "chat.input.send" | translate }}
+      </button>
+    </div>
+  </div>
 </div>

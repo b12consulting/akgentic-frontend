@@ -1,0 +1,53 @@
+/* Block host: the empty state is placed directly inside a panel, not as a flex
+   item that would be blockified for it. */
+:host {
+  display: block;
+}
+
+/*
+ * Pushed down rather than vertically centred. A pane that centres its empty
+ * state has the sentence move as the pane resizes; a fixed offset from the top
+ * keeps it where the eye already is after the tab strip.
+ */
+.empty-state {
+  margin-top: 40px;
+  padding: 0 18px;
+  text-align: center;
+}
+
+/*
+ * An inset well, not an outlined box: the tile is the same value as a surface
+ * BORDER used as a fill, which is what makes it read as a recess in the pane
+ * rather than another card floating on it.
+ */
+.empty-glyph {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 14px;
+  border-radius: 14px;
+  background: var(--akg-well-bg);
+  color: var(--akg-glyph-quiet);
+}
+
+/*
+ * The display face, at its lightest weight. This is the one moment in the
+ * inspector with a voice — everything else in the pane is interface — and the
+ * weight keeps it from competing with the panel it is standing in for.
+ */
+.empty-title {
+  margin: 0 0 6px;
+  font-family: var(--akg-font-display);
+  font-weight: 300;
+  font-size: 15px;
+  color: var(--akg-text);
+}
+
+.empty-blurb {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 300;
+  line-height: 1.6;
+  color: var(--akg-text-muted);
+}

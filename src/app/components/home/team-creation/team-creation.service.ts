@@ -1,4 +1,5 @@
 import { inject, Injectable } from '@angular/core';
+import { Observable, Subject } from 'rxjs';
 
 import { ContextService } from '../../../core/context/context.service';
 import { HttpError } from '../../../core/http/fetch.service';
@@ -47,6 +48,24 @@ export type CreationOutcome = 'asked' | 'created' | 'failed';
 export class TeamCreationService {
   private contextService = inject(ContextService);
 
+  /**
+   * A team was created; here is its id. The gate's ONE output.
+   *
+   * A `Subject`, not a return value, because the two creation paths do not
+   * return to the same place: `request` is awaited by the page, but the modal's
+   * confirm is a template binding — `(confirmed)="creation.confirm($event)"` —
+   * whose promise nobody holds. One channel both paths reach is what keeps the
+   * page's response to a creation single, rather than one copy per entry point.
+   *
+   * Not a `BehaviorSubject`: there is no "current created team", and a late
+   * subscriber replaying the last creation would re-open a team the user had
+   * since closed.
+   */
+  private readonly _created$ = new Subject<string>();
+
+  /** Emits the new team's id after a successful create. See `_created$`. */
+  readonly created$: Observable<string> = this._created$.asObservable();
+
   // -----------------------------------------------------------------------
   // The dialog's state. Plain fields behind getters — not signals and not
   // observables: the page reads them through ordinary template bindings, they
@@ -77,7 +96,7 @@ export class TeamCreationService {
   private _submitting = false;
 
   // A modal confirm is only meaningful while a namespace is captured; the
-  // destination is always the new team's process view, so no mode is kept.
+  // destination is the page's to choose (see `created$`), so no mode is kept.
   private _pending = false;
 
   private _creatingByGesture = false;
@@ -137,7 +156,7 @@ export class TeamCreationService {
    * The single decision, for BOTH call sites.
    *
    *   `'asked'`   — the dialog is now open; nothing was created.
-   *   `'created'` — the team was created and the app is navigating to it.
+   *   `'created'` — the team was created and `created$` has emitted its id.
    *   `'failed'`  — an ungated create rejected; logged here.
    *
    * The contract is consulted ONCE, whatever the origin. A gate that skipped
@@ -162,7 +181,7 @@ export class TeamCreationService {
       this._creatingByGesture = true;
     }
     try {
-      await this.createAndNavigate(ns.namespace);
+      await this.createAndAnnounce(ns.namespace);
       return 'created';
     } catch (error) {
       console.error('Failed to create team:', error);
@@ -192,7 +211,7 @@ export class TeamCreationService {
     this._submitting = true;
     this._error = null;
     try {
-      await this.createAndNavigate(namespace, metadata);
+      await this.createAndAnnounce(namespace, metadata);
       this.closeMetadataModal();
     } catch (error) {
       this.handleMetadataCreateError(error);
@@ -207,27 +226,33 @@ export class TeamCreationService {
   }
 
   /**
-   * Create and go to the new team's process view. EVERY creation path lands
-   * here — with or without the metadata modal, gestured or not — because a
-   * user who just created a team wants to be IN it, not looking at its row.
-   * `contextService.createTeamAndNavigate` creates, seeds the team into the
-   * context cache (so the process view has it before any refetch), and
-   * navigates; there is no reload compensation because the home page is being
-   * left behind.
+   * Create the team and ANNOUNCE it. EVERY creation path lands here — with or
+   * without the metadata modal, gestured or not — because a user who just
+   * created a team wants to be IN it, not looking at its row.
+   *
+   * What it no longer does is decide HOW to be in it. This used to call
+   * `contextService.createTeam`, which routed to `/process/:id`;
+   * since Epic 52 the home page shows a team beside its list, so a create that
+   * routed away threw the list out on exactly the path a row click keeps it.
+   * The gate now emits on `created$` and the page chooses the destination —
+   * which is also why the missing "reload compensation" noted here before is
+   * now the page's business: it stays mounted, so its list has to catch up.
    *
    * `metadata` is forwarded UNCONDITIONALLY, including when `undefined`. The
    * "attach the key only when non-empty" rule lives in exactly one place,
    * `apiService.createTeam`; forwarding `undefined` produces the same body by
    * construction.
    *
-   * Rejections propagate: the modal path needs to see a 422 to keep itself
-   * open, so the swallow-and-log lives in the caller.
+   * Emits only AFTER the POST resolves, so a subscriber never sees an id for a
+   * team the server refused. Rejections propagate: the modal path needs to see
+   * a 422 to keep itself open, so the swallow-and-log lives in the caller.
    */
-  private async createAndNavigate(
+  private async createAndAnnounce(
     namespace: string,
     metadata?: Record<string, string>,
   ): Promise<void> {
-    await this.contextService.createTeamAndNavigate(namespace, metadata);
+    const teamId = await this.contextService.createTeam(namespace, metadata);
+    this._created$.next(teamId);
   }
 
   /**

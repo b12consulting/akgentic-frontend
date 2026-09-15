@@ -16,7 +16,11 @@ import {
   StopMessage,
 } from '../../../protocol/message.types';
 import { NodeInterface } from '../models/types';
-import { CategoryService } from '../../../core/ui/category.service';
+import {
+  CategoryService,
+  graphCategoryColors,
+  readToken,
+} from '../../../core/ui/category.service';
 import {
   EMPTY_GRAPH,
   GraphBuilder,
@@ -24,6 +28,7 @@ import {
   GraphState,
   graphFold,
   graphStep,
+  dangerInk,
   HUMAN_ROLE,
   ORCHESTRATOR_CLASS,
 } from './graph.selector';
@@ -340,7 +345,7 @@ describe('graphFold / graphStep (pure)', () => {
     expect(s.nodes.length).toBe(0);
   });
 
-  it('ErrorMessage marks node color darkred', () => {
+  it('ErrorMessage marks the node in the danger ink', () => {
     const s = graphFold(
       [
         makeStart({ sender: makeAddress({ agent_id: 'a1' }) }),
@@ -348,7 +353,27 @@ describe('graphFold / graphStep (pure)', () => {
       ],
       cs,
     );
-    expect(s.nodes[0].itemStyle?.color).toBe('darkred');
+    expect(s.nodes[0].itemStyle?.color).toBe(dangerInk());
+  });
+
+  // The six assertions above compare against `dangerInk()` rather than against
+  // a transcribed literal, so on their own they would pass even if the helper
+  // returned nonsense. THIS is the spec that makes them load-bearing: it pins
+  // that the helper resolves the real token, that it is no longer the CSS
+  // keyword the canvas used to be painted in, and — the property the W14 ramp
+  // was deliberately built around — that a failed agent cannot be confused
+  // with a healthy one from any squad.
+  it('paints failure in the resolved danger token, distinct from every squad colour', () => {
+    const ink = dangerInk();
+
+    expect(ink).toBe(readToken('--akg-danger-fg'));
+    expect(ink).not.toBe('');
+    // Not the pre-token keyword: this is the change W14 asked for.
+    expect(ink).not.toBe('darkred');
+
+    for (const squadColour of graphCategoryColors()) {
+      expect(squadColour.toLowerCase()).not.toBe(ink.toLowerCase());
+    }
   });
 
   it('SentMessage adds an edge (dedup on same source/target)', () => {
@@ -374,7 +399,7 @@ describe('graphFold / graphStep (pure)', () => {
       ],
       cs,
     );
-    expect(s.nodes[0].itemStyle?.borderColor).toBe('darkred');
+    expect(s.nodes[0].itemStyle?.borderColor).toBe(dangerInk());
   });
 
   it('ReceivedMessage from Human sender does NOT change state', () => {
@@ -446,7 +471,7 @@ describe('graphFold / graphStep (pure)', () => {
     expect(after.squad).toBe(before.squad);
     // Original node object MUST NOT be mutated (immutability guard).
     expect(before.nodes[0].itemStyle?.borderColor).toBeUndefined();
-    expect(after.nodes[0].itemStyle?.borderColor).toBe('darkred');
+    expect(after.nodes[0].itemStyle?.borderColor).toBe(dangerInk());
   });
 
   it('(AC7) ProcessedMessage clearing border emits a NEW nodes reference', () => {
@@ -460,7 +485,7 @@ describe('graphFold / graphStep (pure)', () => {
     const after = graphStep(before, makeProcessed('a1'), cs);
     expect(after.nodes).not.toBe(before.nodes);
     // Prior snapshot retains the border (no retroactive mutation).
-    expect(before.nodes[0].itemStyle?.borderColor).toBe('darkred');
+    expect(before.nodes[0].itemStyle?.borderColor).toBe(dangerInk());
     expect(after.nodes[0].itemStyle?.borderColor).toBeUndefined();
   });
 
@@ -472,7 +497,7 @@ describe('graphFold / graphStep (pure)', () => {
     const after = graphStep(before, makeError('a1'), cs);
     expect(after.nodes).not.toBe(before.nodes);
     expect(before.nodes[0].itemStyle?.color).toBeUndefined();
-    expect(after.nodes[0].itemStyle?.color).toBe('darkred');
+    expect(after.nodes[0].itemStyle?.color).toBe(dangerInk());
   });
 
   it('(AC7) ProcessedMessage on node with no border is a same-reference no-op', () => {
@@ -510,7 +535,7 @@ describe('graphFold / graphStep (pure)', () => {
     const after = graphStep(before, makeHandled('a1'), cs);
     expect(after).toBe(before);
     expect(after.nodes).toBe(before.nodes);
-    expect(after.nodes[0].itemStyle?.borderColor).toBe('darkred');
+    expect(after.nodes[0].itemStyle?.borderColor).toBe(dangerInk());
   });
 });
 
@@ -618,5 +643,252 @@ describe('graphFold parity (AC5 — REST batch vs WS per-message)', () => {
     );
 
     expect(JSON.stringify(batchState)).toBe(JSON.stringify(wsState));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// W13 — the fold's side effects on the root-scoped `CategoryService`.
+//
+// `MessageLogService` / `GraphDataService` are component-scoped and die with a
+// team switch; `CategoryService` is `providedIn: 'root'` and does not. `graph$`
+// re-folds the WHOLE log on every `log$` emission, so anything the fold wrote
+// to that singleton per message was written once per message per frame and
+// outlived the team it described. These pin the companion state as a PROJECTION
+// of the fold result instead.
+// ---------------------------------------------------------------------------
+
+describe('graphFold companion state (CategoryService projection)', () => {
+  let cs: CategoryService;
+
+  beforeEach(() => {
+    cs = new CategoryService();
+  });
+
+  it('re-folding the same log does not grow the legend selection array', () => {
+    // The user has clicked the legend once, so a selection array exists. Each
+    // websocket frame re-folds the whole log; the per-message `push` therefore
+    // appended one entry per squad per frame, unbounded, for the life of the tab.
+    cs.setSelectedCategory([]);
+    const log = [
+      makeStart({ sender: makeAddress({ agent_id: 'a1', squad_id: 'sq-1' }) }),
+      makeStart({ sender: makeAddress({ agent_id: 'a2', squad_id: 'sq-2' }) }),
+    ];
+    graphFold(log, cs);
+    graphFold(log, cs);
+    graphFold(log, cs);
+
+    expect(cs.getSelectedCategory()!.length).toBe(2);
+  });
+
+  it('a newly-appeared squad extends the selection, keeping deselected ones off', () => {
+    cs.setSelectedCategory([false]); // team 0 hidden by the user
+    graphFold(
+      [
+        makeStart({ sender: makeAddress({ agent_id: 'a1', squad_id: 'sq-1' }) }),
+        makeStart({ sender: makeAddress({ agent_id: 'a2', squad_id: 'sq-2' }) }),
+      ],
+      cs,
+    );
+
+    expect(cs.getSelectedCategory()).toEqual([false, true]);
+  });
+
+  it('does NOT republish the selection when the category count is unchanged', () => {
+    // `selectedSquad$` feeds a `combineLatest` in MessageListComponent: an
+    // emission per frame re-filters and re-scrolls the table for nothing.
+    cs.setSelectedCategory([true]);
+    const log = [
+      makeStart({ sender: makeAddress({ agent_id: 'a1', squad_id: 'sq-1' }) }),
+    ];
+    graphFold(log, cs);
+    const emissions: (boolean[] | null)[] = [];
+    const sub = cs.selectedSquad$.subscribe((v) => emissions.push(v));
+    graphFold(log, cs);
+    graphFold(log, cs);
+    sub.unsubscribe();
+
+    expect(emissions.length).toBe(1); // the replayed current value only
+  });
+
+  it('an empty log clears the roster the previous team left behind', () => {
+    graphFold([makeStart({ sender: makeAddress({ agent_id: 'a1' }) })], cs);
+    expect(cs.nodes.length).toBe(1);
+
+    // `IngestionService.init()` step (b) resets the log on every team switch.
+    graphFold([], cs);
+
+    expect(cs.nodes).toEqual([]);
+  });
+
+  it('an empty log clears the squad ids the previous team left behind', () => {
+    graphFold(
+      [makeStart({ sender: makeAddress({ agent_id: 'a1', squad_id: 'teamA-sq' }) })],
+      cs,
+    );
+    graphFold(
+      [makeStart({ sender: makeAddress({ agent_id: 'b1', squad_id: 'teamB-sq' }) })],
+      cs,
+    );
+
+    expect(Object.keys(cs.squadDict)).toEqual(['teamB-sq']);
+  });
+
+  it('a StopMessage reaches the companion roster, not just the fold state', () => {
+    const s = graphFold(
+      [makeStart({ sender: makeAddress({ agent_id: 'a1' }) }), makeStop('a1')],
+      cs,
+    );
+
+    expect(s.nodes.length).toBe(0);
+    expect(cs.nodes.length).toBe(0);
+  });
+
+  it('squadDict indexes agree with the category order the legend renders', () => {
+    const s = graphFold(
+      [
+        makeStart({ sender: makeAddress({ agent_id: 'a1', squad_id: 'sq-1' }) }),
+        makeStart({ sender: makeAddress({ agent_id: 'b1', squad_id: 'sq-2' }) }),
+        makeStart({ sender: makeAddress({ agent_id: 'a2', squad_id: 'sq-1' }) }),
+      ],
+      cs,
+    );
+
+    expect(s.squad.map((c) => c.squadId)).toEqual(['sq-1', 'sq-2']);
+    expect(cs.squadDict).toEqual({ 'sq-1': 0, 'sq-2': 1 });
+    // A second member of an existing squad reuses that squad's index.
+    expect(s.nodes.map((n) => n.category)).toEqual([0, 1, 0]);
+  });
+
+  it('an 11th squad wraps the palette instead of getting no colour at all', () => {
+    // `COLORS` has a finite length; an out-of-range index handed echarts
+    // `color: undefined`, and echarts then silently substitutes its OWN palette.
+    const log = Array.from({ length: cs.COLORS.length + 1 }, (_, i) =>
+      makeStart({ sender: makeAddress({ agent_id: `a${i}`, squad_id: `sq-${i}` }) }),
+    );
+    const s = graphFold(log, cs);
+
+    expect(s.squad.length).toBe(cs.COLORS.length + 1);
+    expect(s.squad.every((c) => !!c.itemStyle.color)).toBe(true);
+    expect(s.squad[cs.COLORS.length].itemStyle.color).toBe(cs.COLORS[0]);
+  });
+});
+
+describe('graphFold node identity', () => {
+  let cs: CategoryService;
+
+  beforeEach(() => {
+    cs = new CategoryService();
+  });
+
+  it('a re-announced agent does not become a second node', () => {
+    // Two nodes sharing a `name` collide in the echarts series (names are the
+    // node key): they overdraw, edges resolve ambiguously, and `applyStopMessage`
+    // splices only the first, leaving a ghost of a stopped agent behind.
+    const s = graphFold(
+      [
+        makeStart({ id: 's-1', sender: makeAddress({ agent_id: 'a1' }) }),
+        makeStart({ id: 's-2', sender: makeAddress({ agent_id: 'a1' }) }),
+      ],
+      cs,
+    );
+
+    expect(s.nodes.length).toBe(1);
+  });
+
+  it('a re-announced agent leaves the first node untouched (same reference)', () => {
+    const first = graphFold(
+      [makeStart({ id: 's-1', sender: makeAddress({ agent_id: 'a1' }) })],
+      cs,
+    );
+    const second = graphStep(
+      first,
+      makeStart({ id: 's-2', sender: makeAddress({ agent_id: 'a1' }) }),
+      cs,
+    );
+
+    expect(second).toBe(first); // AC7 no-op contract
+  });
+
+  it('start → stop → start re-adds the agent (the stop really removed it)', () => {
+    const s = graphFold(
+      [
+        makeStart({ id: 's-1', sender: makeAddress({ agent_id: 'a1' }) }),
+        makeStop('a1'),
+        makeStart({ id: 's-2', sender: makeAddress({ agent_id: 'a1' }) }),
+      ],
+      cs,
+    );
+
+    expect(s.nodes.map((n) => n.name)).toEqual(['a1']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// W13 — characterization, NOT a regression test (it passes before and after the
+// fixes above). It exists because the reported symptom, "No agents available"
+// over a fully drawn graph, was attributed to `nodes$` emitting empty, and two
+// independent reproductions found the stream innocent — the overlay is stale
+// because `GraphComponent`'s OnPush parent is never marked dirty. This pins the
+// stream's side of that conclusion so the next investigation starts past it.
+// ---------------------------------------------------------------------------
+
+describe('GraphDataService.nodes$ stays populated while the team is running', () => {
+  let log: MessageLogService;
+  let service: GraphDataService;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [MessageLogService, CategoryService, GraphDataService],
+    });
+    log = TestBed.inject(MessageLogService);
+    service = TestBed.inject(GraphDataService);
+  });
+
+  it('never re-emits empty across an incremental team startup', () => {
+    const emissions: number[] = [];
+    const sub = service.nodes$.subscribe((n) => emissions.push(n.length));
+
+    // Shaped like a real team boot: the orchestrator announces itself (skipped
+    // by design), then members arrive one frame at a time, then traffic flows.
+    log.append(
+      makeStart({
+        id: 'start-orch',
+        sender: makeAddress({ agent_id: 'orch', __actor_type__: ORCHESTRATOR_CLASS }),
+      }),
+    );
+    log.append(makeStart({ sender: makeAddress({ agent_id: 'a1', squad_id: 'sq-1' }) }));
+    log.append(makeStart({ sender: makeAddress({ agent_id: 'a2', squad_id: 'sq-1' }) }));
+    log.append({
+      ...makeSentMessage({ id: 's-1' }),
+      sender: makeAddress({ agent_id: 'a1' }),
+      recipient: makeAddress({ agent_id: 'a2', role: 'Worker' }),
+    } as SentMessage);
+    log.append(makeReceived('a2'));
+    log.append(makeProcessed('a2'));
+    log.append(makeStateChanged());
+    sub.unsubscribe();
+
+    const firstNonEmpty = emissions.findIndex((n) => n > 0);
+    expect(firstNonEmpty).toBeGreaterThan(-1);
+    expect(emissions.slice(firstNonEmpty).every((n) => n > 0)).toBe(true);
+    expect(emissions[emissions.length - 1]).toBe(2);
+  });
+
+  it('two subscribers of the shared fold see the same non-empty roster', () => {
+    // `graph$` is `shareReplay(1)` over a fold with side effects; a second
+    // subscriber must not be served a different — or emptied — state.
+    log.append(makeStart({ sender: makeAddress({ agent_id: 'a1', squad_id: 'sq-1' }) }));
+    log.append(makeStart({ sender: makeAddress({ agent_id: 'a2', squad_id: 'sq-2' }) }));
+
+    let fromFirst: NodeInterface[] = [];
+    let fromSecond: NodeInterface[] = [];
+    const s1 = service.nodes$.subscribe((n) => (fromFirst = n));
+    const s2 = service.nodes$.subscribe((n) => (fromSecond = n));
+    log.append(makeReceived('a2'));
+    s1.unsubscribe();
+    s2.unsubscribe();
+
+    expect(fromFirst.length).toBe(2);
+    expect(fromSecond).toBe(fromFirst);
   });
 });

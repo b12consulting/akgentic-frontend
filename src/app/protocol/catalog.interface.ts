@@ -25,6 +25,10 @@
  * and the browser's own. The server sources it from `model_json_schema()`
  * precisely so the string handed to a browser is already in the dialect a
  * browser parses — see catalog ADR-022 §D7.
+ *
+ * `is_title` is optional and nullable for the same two reasons as `pattern`.
+ * `undefined`, `null` and `false` all mean exactly the same thing: THIS FIELD
+ * IS NOT THE TITLE.
  */
 export interface MetadataFieldDescriptor {
   key: string;
@@ -32,6 +36,24 @@ export interface MetadataFieldDescriptor {
   index: boolean;
   mandatory: boolean;
   pattern?: string | null;
+  /**
+   * Marks this field as the team's TITLE — the one short generated line that
+   * says what a team is about, as opposed to `TeamResponse.name`, which is the
+   * team TYPE and reads identically on every team of that namespace.
+   *
+   * A MARKER, NOT THE TITLE ITSELF. The value rides `TeamResponse.metadata`
+   * under this field's `key` — a bag that already travels — so nothing on the
+   * wire changes to carry a title.
+   *
+   * AT MOST ONE field of a contract may set it. That is a rule the SERVER
+   * owns, and therefore a rule the server can break: a contract declaring two
+   * is malformed, and this client must still behave predictably. It resolves
+   * the ambiguity in DECLARATION ORDER — first declared wins — in
+   * `titleFieldKey()`, so one malformed contract always yields one title.
+   * Never resolve it by iterating a metadata object's keys instead; that is
+   * the "whichever key came first" nondeterminism the rule exists to avoid.
+   */
+  is_title?: boolean | null;
 }
 
 /**

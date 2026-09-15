@@ -1,10 +1,18 @@
-import { Component, EventEmitter, Input, Output, ViewChild } from '@angular/core';
+import {
+  Component,
+  EventEmitter,
+  inject,
+  Input,
+  Output,
+  ViewChild,
+} from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { DialogModule } from 'primeng/dialog';
 import { ButtonModule } from 'primeng/button';
 import { FileUpload, FileUploadModule } from 'primeng/fileupload';
 import { ProgressBarModule } from 'primeng/progressbar';
 import { MessageModule } from 'primeng/message';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 @Component({
   selector: 'app-upload-modal',
@@ -16,6 +24,7 @@ import { MessageModule } from 'primeng/message';
     FileUploadModule,
     ProgressBarModule,
     MessageModule,
+    TranslatePipe,
   ],
   templateUrl: './upload-modal.component.html',
   styleUrls: ['./upload-modal.component.scss'],
@@ -27,6 +36,11 @@ export class UploadModalComponent {
   @Output() uploadComplete = new EventEmitter<void>();
 
   @ViewChild(FileUpload) fileUpload!: FileUpload;
+
+  /* These three sentences are rendered into a p-message's `[text]`, not into a
+   * template expression, so they cannot go through the pipe — they go through
+   * the service instead. They are user-visible copy either way. */
+  private readonly translate = inject(TranslateService);
 
   selectedFiles: File[] = [];
   uploading = false;
@@ -58,7 +72,7 @@ export class UploadModalComponent {
 
   async uploadFiles() {
     if (this.selectedFiles.length === 0) {
-      this.errorMessage = 'Please select at least one file to upload';
+      this.errorMessage = this.translate.instant('workspace.upload.errNoFiles');
       return;
     }
 
@@ -71,14 +85,17 @@ export class UploadModalComponent {
       // Emit the upload event with files
       // The parent component will handle the actual upload
       this.uploadComplete.emit();
-      this.successMessage = `Successfully uploaded ${this.selectedFiles.length} file(s)`;
+      this.successMessage = this.translate.instant('workspace.upload.success', {
+        count: this.selectedFiles.length,
+      });
 
       // Auto-close after success
       setTimeout(() => {
         this.onHide();
       }, 1500);
     } catch (error: any) {
-      this.errorMessage = error?.message || 'Failed to upload files';
+      this.errorMessage =
+        error?.message || this.translate.instant('workspace.upload.errFailed');
     } finally {
       this.uploading = false;
       this.uploadProgress = 100;

@@ -1,76 +1,45 @@
-<main>
-  <p-menubar
-    [model]="items"
-    *ngIf="(authService.currentUser$ | async) ?? hideLogin"
-  >
-    <ng-template #start>
-      <div class="header-start">
-        <img
-          [src]="logo"
-          class="logo clickable-logo"
-          style="height: 40px; cursor: pointer"
-          alt="Logo"
-          (click)="navigateToHome()"
-          title="Go to Home"
-        />
-        <div>
-          <ng-container
-            *ngIf="(contextService.currentTeam$ | async) as team"
-          >
-            <span class="process-type"
-              >{{ team.name }}
-              <!--
-                The team's business metadata, between the name and the status
-                chip. Renders nothing at all when the team carries none — the
-                pipe yields `[]` for both wire spellings of "no metadata"
-                (absent key, explicit null), so no empty container and no
-                placeholder is emitted.
+<!--
+  The chrome rule lives in `chromeVisible$`, not in this binding. It used to be
+  `!!(user) || hideLogin` — an expression that can never be false in the running
+  app, because `AuthService` answers "signed out" with an anonymous user object
+  rather than with `null`. The route is what decides it now; see the field.
 
-                Through the PIPE, never a bare `metadataEntries(team)` call: a
-                function in a binding re-runs every change-detection cycle and
-                returns new object identities, which makes `NgForOf` rebuild
-                every chip each tick. See TeamMetadataPipe.
-              -->
-              <span
-                *ngFor="
-                  let entry of team.metadata | teamMetadata;
-                  trackBy: trackMetadataEntry
-                "
-                class="process-metadata"
-                [attr.data-test]="'header-metadata-' + entry.key"
-                ><span class="process-metadata__label">{{ entry.label }}</span
-                >{{ entry.value }}</span
-              >
-              <p-tag
-                *ngIf="(contextService.currentTeamRunning$ | async) === false"
-                value="Stopped"
-                severity="info"
-                [style]="{ 'margin-left': '8px' }"
-              >
-              </p-tag>
-              <p-tag
-                *ngIf="(contextService.currentTeamRunning$ | async)"
-                value="Running"
-                severity="success"
-                [style]="{ 'margin-left': '8px' }"
-              >
-              </p-tag>
-            </span>
-          </ng-container>
-        </div>
-      </div>
-    </ng-template>
-    <ng-template #item let-item>
-      <ng-container>
-        <a [routerLink]="item.route" class="p-menubar-item-link">
-          <span [class]="item.icon"></span>
-          <span class="mr-2">{{ item.label }}</span>
-        </a>
-      </ng-container>
-    </ng-template>
-  </p-menubar>
-  <section class="content">
-    <router-outlet></router-outlet>
-  </section>
-  <p-toast (onClose)="onToastClose($event)"></p-toast>
-</main>
+  `?? false` because `strictTemplates` types `| async` as `T | null`, and the
+  shell's input is `boolean`. `false` is also the shell's own documented
+  fail-safe: a missing rail is a missing affordance, a rail on the login screen
+  is a leak.
+
+  The router outlet is PROJECTED into the shell rather than placed beside it, so
+  the routed view inherits the shell's height chain. Both scroll regions on
+  `/process/:id` measure off it.
+-->
+<app-console-shell [chromeVisible]="(chromeVisible$ | async) ?? false">
+  <router-outlet></router-outlet>
+</app-console-shell>
+
+<!--
+  Outside the shell on purpose: a viewport-positioned overlay clipped by the
+  shell's `overflow: hidden` would simply never appear. Exactly one mount, with
+  no `key` — see `NotificationToastService` and story 31-5.
+-->
+<p-toast (onClose)="onToastClose($event)"></p-toast>
+
+<!--
+  THE TEAM-CREATION WIZARD. Outside the shell for the toast's reason, and mounted
+  here rather than in the rail for a second one: the control that opens it lives
+  in the rail, and a collapsed rail is `inert` + `aria-hidden`, so a dialog
+  nested there would stop accepting input the moment the rail closed behind it.
+
+  `@if`, not `[visible]` on a permanently-instantiated component, and that is the
+  load-bearing part. The wizard provides `TeamCreationService` on itself, and
+  that service's captured namespace and open dialog are documented to die with
+  their host. The gate only keeps that promise if the host is destroyed — which
+  is what this gate does and what a hidden-but-alive component would not.
+
+  Nothing but the boolean crosses this line: the flag comes from
+  `TeamCreationLauncher`, and where a created team lands is the dialog's own
+  decision, not the root's.
+-->
+@if (creationLauncher.isOpen()) {
+  <app-team-creation-dialog />
+}

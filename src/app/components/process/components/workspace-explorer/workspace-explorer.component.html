@@ -10,12 +10,14 @@
         (mouseleave)="onNavigatorLeave()"
       >
         <div class="navigator-header">
-          <h3 class="navigator-title">Workspace Files</h3>
+          <h3 class="navigator-title">
+            {{ "workspace.filesTitle" | translate }}
+          </h3>
           <div class="header-actions">
             <p-button
               icon="pi pi-refresh"
               data-testid="refresh-workspace"
-              ariaLabel="Refresh workspace"
+              [ariaLabel]="'workspace.refreshWorkspace' | translate"
               [text]="true"
               [rounded]="true"
               severity="secondary"
@@ -44,15 +46,23 @@
             <p>{{ treeError() }}</p>
           </div>
 
+          <!--
+            THE SHARED EMPTY STATE, not this panel's third hand-drawn one.
+
+            It was a 3rem glyph over a 1rem title over a 0.875rem line — one of
+            THREE placeholder shapes in this component alone, each at its own
+            type scale, none of them the console's. The wrapper keeps its
+            `.empty-workspace` class: it is what the pane's exclusivity specs
+            address this state by, and it is still the thing that is empty.
+          -->
           <div
             *ngIf="hasLoadedRoot() && !treeError() && treeNodes().length === 0"
             class="empty-workspace"
           >
-            <i class="pi pi-folder-open empty-workspace-icon"></i>
-            <div class="empty-workspace-title">No files found</div>
-            <div class="empty-workspace-desc">
-              The workspace is empty or no files are available
-            </div>
+            <app-inspector-empty-state
+              titleKey="workspace.noFilesTitle"
+              blurbKey="workspace.noFilesDesc"
+            />
           </div>
 
           <!--
@@ -74,7 +84,7 @@
             (click)="selectRoot()"
           >
             <i class="pi pi-home tree-root-icon"></i>
-            <span>Root</span>
+            <span>{{ "workspace.root" | translate }}</span>
           </button>
 
           <!--
@@ -137,14 +147,17 @@
               follows as the final crumb, which is why `last` is not styled as
               current there: the file is.
             -->
-            <nav class="breadcrumb" aria-label="Workspace location">
+            <nav
+              class="breadcrumb"
+              [attr.aria-label]="'workspace.location' | translate"
+            >
               @for (crumb of breadcrumb(); track crumb.path) {
                 @if (!$first) {
                   <i class="pi pi-angle-right breadcrumb-separator"></i>
                 }
                 @if (crumb.last && !openFile()) {
                   <span class="breadcrumb-current" aria-current="page">
-                    {{ crumb.name }}
+                    {{ crumb.translate ? (crumb.name | translate) : crumb.name }}
                   </span>
                 } @else {
                   <button
@@ -152,7 +165,7 @@
                     class="breadcrumb-link"
                     (click)="navigateToCrumb(crumb.path)"
                   >
-                    {{ crumb.name }}
+                    {{ crumb.translate ? (crumb.name | translate) : crumb.name }}
                   </button>
                 }
               }
@@ -197,7 +210,7 @@
             <p-button
               icon="pi pi-refresh"
               data-testid="refresh-directory"
-              pTooltip="Refresh this folder"
+              [pTooltip]="'workspace.refreshFolder' | translate"
               tooltipPosition="left"
               [text]="true"
               [rounded]="true"
@@ -215,9 +228,10 @@
                 [disabled]="!isProcessRunning()"
                 (onClick)="openUploadModal()"
                 [pTooltip]="
-                  !isProcessRunning()
-                    ? 'Team must be running to upload files'
-                    : 'Upload to Root'
+                  (!isProcessRunning()
+                    ? 'workspace.uploadStopped'
+                    : 'workspace.uploadToRoot'
+                  ) | translate
                 "
                 tooltipPosition="left"
               />
@@ -231,9 +245,10 @@
                 [disabled]="!isProcessRunning()"
                 (onClick)="openUploadModal(currentDirectory())"
                 [pTooltip]="
-                  !isProcessRunning()
-                    ? 'Team must be running to upload files'
-                    : 'Upload Files'
+                  (!isProcessRunning()
+                    ? 'workspace.uploadStopped'
+                    : 'workspace.uploadHere'
+                  ) | translate
                 "
                 tooltipPosition="left"
               />
@@ -243,7 +258,7 @@
             *ngIf="openFile()"
             icon="pi pi-refresh"
             data-testid="refresh-file"
-            pTooltip="Refresh this file"
+            [pTooltip]="'workspace.refreshFile' | translate"
             tooltipPosition="left"
             [text]="true"
             [rounded]="true"
@@ -255,7 +270,7 @@
             *ngIf="openFile()"
             icon="pi pi-download"
             data-testid="download-file"
-            pTooltip="Download this file"
+            [pTooltip]="'workspace.downloadFile' | translate"
             tooltipPosition="left"
             [text]="true"
             [rounded]="true"
@@ -265,7 +280,11 @@
         </ng-template>
       </p-toolbar>
 
-      <p-divider />
+      <!--
+        The `<p-divider/>` that used to sit here is gone: `.preview-toolbar`
+        already draws its own `border-bottom`, so the pane carried TWO rules a
+        pixel apart under the location trail. One separator per separation.
+      -->
 
       <div class="panel-content">
         <!--
@@ -313,15 +332,31 @@
             </div>
           }
           @case ('deleted') {
-            <div class="empty-section file-placeholder deleted-notice">
-              <div class="empty-section-box">
-                <i class="pi pi-trash file-placeholder-icon"></i>
-                <div class="file-placeholder-title">File deleted</div>
-                <div class="file-placeholder-desc">
-                  {{ deletedNotice() }} was deleted from this workspace. Select
-                  another file from the tree to continue.
-                </div>
+            <!--
+              THE ONE PLACEHOLDER THAT CANNOT BE `<app-inspector-empty-state>`.
+
+              Its sentence is PARAMETERISED — it names the file that went away,
+              which is the whole reason the notice exists — and the shared
+              component takes keys, not keys-with-params. So the SHAPE is
+              restated here (well glyph, display title, muted line) against the
+              same tokens, and the dashed-border box it used to draw is gone
+              rather than restyled. See the follow-up asking for a
+              `blurbParams` input; this block collapses into the shared one the
+              day it lands.
+            -->
+            <div class="deleted-notice">
+              <div class="deleted-glyph" aria-hidden="true">
+                <i class="pi pi-trash"></i>
               </div>
+              <p class="deleted-title">
+                {{ "workspace.fileDeletedTitle" | translate }}
+              </p>
+              <p class="deleted-blurb">
+                {{
+                  "workspace.fileDeletedDesc"
+                    | translate : { file: deletedNotice() }
+                }}
+              </p>
             </div>
           }
           @case ('list') {
@@ -335,9 +370,13 @@
             <div class="directory-list">
               @if (listedEntries(); as entries) {
                 @if (entries.length === 0) {
+                  <!-- Shared empty state again. No blurb: "this folder is
+                       empty" is the whole fact, and a second reassuring line
+                       under it would be padding. -->
                   <div class="empty-directory">
-                    <i class="pi pi-folder-open empty-directory-icon"></i>
-                    <div class="empty-directory-title">This folder is empty</div>
+                    <app-inspector-empty-state
+                      titleKey="workspace.emptyFolder"
+                    />
                   </div>
                 } @else {
                   @for (entry of entries; track entry.path) {
@@ -366,7 +405,7 @@
                 <i class="pi pi-info-circle"></i>
                 <p>{{ content()!.body }}</p>
                 <p-button
-                  label="Download to view"
+                  [label]="'workspace.downloadToView' | translate"
                   icon="pi pi-download"
                   severity="info"
                   (onClick)="downloadFile()"

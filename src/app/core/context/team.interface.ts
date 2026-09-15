@@ -3,6 +3,8 @@
  * Maps to Python TeamResponse, EventResponse from akgentic.infra.server.models.
  */
 
+import { TeamMetadataContract } from '../../protocol/catalog.interface';
+
 // Maps to Python TeamResponse (from akgentic.infra.server.models)
 export interface TeamResponse {
   team_id: string;
@@ -22,6 +24,23 @@ export interface TeamResponse {
    * same thing to every consumer — NO METADATA — so gate on falsiness.
    */
   metadata?: Record<string, unknown> | null;
+  /**
+   * Whether the team was doing something at the instant the server answered:
+   * `true` working, `false` idle, `null` NOT KNOWN.
+   *
+   * OPTIONAL *and* nullable, and unlike `metadata` the three states are NOT
+   * interchangeable: a server predating this field omits the key, and a
+   * current server that cannot reach whatever produces the signal sends
+   * `null`. Both mean UNKNOWN — which is not `false`. Gating on falsiness
+   * here (`if (response.working)`) collapses absent, `null` and `false` into
+   * one branch and labels every team on an older server idle. Compare
+   * against `true` / `false` explicitly, or go through `teamActivity`.
+   *
+   * A STATUS, NOT A HEARTBEAT. It describes one instant and travels in a page
+   * fetched at another, so it is already stale by the time it renders. It
+   * rides the list response the page fetches anyway; nothing polls it.
+   */
+  working?: boolean | null;
 }
 
 // Maps to Python TeamListResponse (classic offset+total pagination, Epic 28).
@@ -91,6 +110,11 @@ export interface TeamContext {
   description?: string | null;
   /** Carried through verbatim from `TeamResponse.metadata`. See there. */
   metadata?: Record<string, unknown> | null;
+  /**
+   * Carried through verbatim from `TeamResponse.working`. See there —
+   * especially that `null` and absent both mean UNKNOWN, not idle.
+   */
+  working?: boolean | null;
 }
 
 /**
@@ -159,8 +183,58 @@ export function teamFilterEquals(a: TeamFilter, b: TeamFilter): boolean {
 }
 
 /** Check if a team is currently running. */
-export function isRunning(team: TeamContext): boolean {
+export function isRunning(team: Pick<TeamContext, 'status'>): boolean {
   return team.status === 'running';
+}
+
+/**
+ * What the status column says about a team.
+ *
+ * `'stopped'` and `'running'` are the two states the list has always had;
+ * `'working'` and `'idle'` split `'running'` when — and only when — the server
+ * told us which. `'running'` is therefore not a fallback that lost
+ * information: it is the honest rendering of a team whose activity is UNKNOWN.
+ */
+export type TeamActivity = 'stopped' | 'running' | 'working' | 'idle';
+
+/**
+ * Derive the status column's state from a team's status and activity flag.
+ *
+ * A PURE function of exactly those two fields — the whole truth table, in one
+ * place, so it can be tested without a DOM. Six rows, and the three that
+ * matter most are the ones where the flag is absent or `null`:
+ *
+ * | status      | working   | -> state    |
+ * |-------------|-----------|-------------|
+ * | not running | anything  | `stopped`   |
+ * | running     | `true`    | `working`   |
+ * | running     | `false`   | `idle`      |
+ * | running     | `null`    | `running`   |
+ * | running     | absent    | `running`   |
+ *
+ * STOPPED IGNORES THE FLAG (FR4). Stopped is a lifecycle state and idle is a
+ * momentary one; a team goes idle and busy repeatedly without ever stopping,
+ * and an activity flag left on a stopped team is noise, not a third reading.
+ *
+ * UNKNOWN RENDERS AS TODAY (FR3). `working === true` and `=== false` are
+ * matched explicitly rather than by truthiness precisely so that a server
+ * predating the field cannot quietly relabel every running team `idle` — a
+ * failure that would look like the whole fleet going idle at once, most
+ * visibly right after a deploy.
+ */
+export function teamActivity(
+  team: Pick<TeamContext, 'status'> & { working?: boolean | null },
+): TeamActivity {
+  if (!isRunning(team)) {
+    return 'stopped';
+  }
+  if (team.working === true) {
+    return 'working';
+  }
+  if (team.working === false) {
+    return 'idle';
+  }
+  return 'running';
 }
 
 /**
@@ -178,6 +252,9 @@ export function toTeamContext(response: TeamResponse): TeamContext {
     config_name: response.name,
     description: null,
     metadata: response.metadata ?? null,
+    // `??`, not `||`: `false` is a REAL answer here (idle) and must survive
+    // the mapping. Absent normalises to `null` because both spell UNKNOWN.
+    working: response.working ?? null,
   };
 }
 
@@ -242,14 +319,23 @@ function metadataValue(value: unknown): string {
  * on every change-detection cycle and returns a fresh array of fresh objects,
  * which `NgForOf` reads as "every item replaced" — it destroys and rebuilds
  * every chip each tick. Go through the pipe.
+ *
+ * `excludeKey` REMOVES one key from the result, and exists for exactly one
+ * caller: a surface that renders the title field somewhere of its own (Epic
+ * 53). The title is an ordinary metadata key, so a surface that promotes it to
+ * a heading and does NOT exclude it here shows the same value twice in the
+ * same row — which reads as duplicated data rather than as a layout slip. A
+ * surface that renders no title passes nothing and sees today's behaviour.
  */
 export function metadataEntries(
   metadata: Record<string, unknown> | null | undefined,
+  excludeKey?: string | null,
 ): TeamMetadataEntry[] {
   if (!metadata) {
     return [];
   }
   return Object.entries(metadata)
+    .filter(([key]) => key !== excludeKey)
     .filter(([, value]) => value !== null && value !== undefined)
     .map(([key, value]) => ({
       key,
@@ -257,4 +343,64 @@ export function metadataEntries(
       value: metadataValue(value),
     }))
     .filter((entry) => entry.value.trim() !== '');
+}
+
+/**
+ * Which metadata key a namespace's contract nominates as the team's TITLE, or
+ * `null` when it nominates none.
+ *
+ * THE SINGLE PLACE that question is answered. `is_title` is documented as "at
+ * most one field", but that is a server-side rule and a malformed contract can
+ * declare two. Resolving in DECLARATION ORDER — `fields` arrives in the order
+ * the model declares them, always, and `Array.prototype.find` walks it in that
+ * order — makes the malformed case DETERMINISTIC: the same contract yields the
+ * same title on every render, on every machine, in every browser. Resolving it
+ * by walking the metadata object's own keys instead would make the answer
+ * depend on the shape of one team's data rather than on the contract.
+ *
+ * Takes the CONTRACT rather than the `NamespaceSummary` that holds it, so the
+ * two spellings of "this namespace declares nothing" — an absent key and an
+ * explicit `null` — collapse at the one boundary that has to know about them.
+ */
+export function titleFieldKey(
+  contract: TeamMetadataContract | null | undefined,
+): string | null {
+  const field = contract?.fields.find((f) => f.is_title === true);
+  return field?.key ?? null;
+}
+
+/**
+ * One team's title: the value its metadata carries under `titleKey`, rendered
+ * as a single line of text — or `null` when there is no title to show.
+ *
+ * `null` covers every "no title" state, and they are not the same thing:
+ * the namespace nominates no field (`titleKey` is `null`), the team predates
+ * the contract and carries no metadata at all, the key is simply unanswered,
+ * or — the one that is easy to miss — GENERATION RAN AND RETURNED `""`. An
+ * empty string is not a title; a blank heading over a row is strictly worse
+ * than the team type, because it looks like a value that failed to load. Every
+ * one of those falls back, by the same rule `metadataEntries` already applies
+ * to a chip.
+ *
+ * The value is TEXT and is rendered as text. It is generated, which makes it
+ * untrusted: it goes through interpolation, never `innerHTML`, and nothing
+ * here builds markup for a caller to hand to a sanitiser bypass.
+ *
+ * Truncation is NOT applied here. Where to cut depends on the width of the
+ * surface, which only the surface knows; the display layer ellipsises in CSS
+ * and keeps the full string in a tooltip, so nothing is silently lost.
+ */
+export function teamTitle(
+  metadata: Record<string, unknown> | null | undefined,
+  titleKey: string | null | undefined,
+): string | null {
+  if (!metadata || !titleKey) {
+    return null;
+  }
+  const raw = metadata[titleKey];
+  if (raw === null || raw === undefined) {
+    return null;
+  }
+  const text = metadataValue(raw);
+  return text.trim() === '' ? null : text;
 }

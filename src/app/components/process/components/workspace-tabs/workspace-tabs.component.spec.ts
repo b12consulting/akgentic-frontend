@@ -23,6 +23,8 @@ import {
 import { WorkspaceExplorerComponent } from '../workspace-explorer/workspace-explorer.component';
 import { WorkspaceTabsComponent } from './workspace-tabs.component';
 
+import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
+
 // --------------------------------------------------------------------
 // Fixture helpers — descriptor shape mirrors workspace-registry.selector.
 // --------------------------------------------------------------------
@@ -97,6 +99,7 @@ describe('WorkspaceTabsComponent', () => {
     await TestBed.configureTestingModule({
       imports: [WorkspaceTabsComponent, NoopAnimationsModule],
       providers: [
+        provideTranslateTesting(),
         { provide: ContextService, useValue: contextStub },
         { provide: WorkspaceService, useValue: workspaceStub },
         {
@@ -110,6 +113,7 @@ describe('WorkspaceTabsComponent', () => {
       .overrideComponent(WorkspaceTabsComponent, {
         set: {
           providers: [
+            provideTranslateTesting(),
             { provide: WorkspaceRegistryService, useValue: registry },
             { provide: AgentsByIdService, useValue: agents },
           ],
@@ -307,7 +311,7 @@ describe('WorkspaceTabsComponent', () => {
       fixture.debugElement.query(By.css('.workspace-header-strip'))
         .nativeElement.textContent as string
     ).trim();
-    expect(text).toContain('No members can access this workspace');
+    expect(text).toContain('panels.noMembers');
   });
 
   it('(AC4b) the default workspace is NOT treated as "all members" — chips reflect its agentIds', () => {

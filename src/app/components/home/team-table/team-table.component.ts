@@ -9,7 +9,7 @@ import {
   ViewChildren,
 } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { ButtonModule } from 'primeng/button';
+import { TranslatePipe } from '@ngx-translate/core';
 import { InputTextModule } from 'primeng/inputtext';
 import {
   TableLazyLoadEvent,
@@ -20,9 +20,14 @@ import { TagModule } from 'primeng/tag';
 
 import {
   TeamMetadataPipe,
+  TeamTitlePipe,
   trackMetadataEntry,
 } from '../../../core/context/team-metadata.pipe';
-import { isRunning, TeamContext } from '../../../core/context/team.interface';
+import {
+  isRunning,
+  teamActivity,
+  TeamContext,
+} from '../../../core/context/team.interface';
 
 /** A row action the user asked for. The page performs it; the row shows it running. */
 export interface TeamRowAction {
@@ -69,9 +74,10 @@ export interface TeamDescriptionSave {
     FormsModule,
     TableModule,
     TagModule,
-    ButtonModule,
     InputTextModule,
     TeamMetadataPipe,
+    TeamTitlePipe,
+    TranslatePipe,
   ],
   templateUrl: './team-table.component.html',
   styleUrl: './team-table.component.scss',
@@ -90,6 +96,28 @@ export class TeamTableComponent {
   @Input() first = 0;
 
   /**
+   * Which metadata key holds a row's TITLE, or `null` when none does.
+   *
+   * A KEY, not a title. Each row reads its own value out of its own metadata
+   * under this key; the table is told which question to ask, not the answers.
+   *
+   * The page resolves it from the selected namespace's contract
+   * (`titleFieldKey`), because a `TeamContext` carries no namespace of its own
+   * — the same limitation `metadataEntries` documents for chip labels. So on
+   * an UNNARROWED list, where rows from several namespaces are on screen at
+   * once, this is the selected namespace's key applied to all of them. That
+   * degrades safely rather than wrongly: a row from another namespace either
+   * has no value under that key and falls back to its team type, or has one
+   * and the key means the same thing to both contracts. Fixing it properly
+   * needs the namespace on the row, which is a wire change this epic does not
+   * make.
+   *
+   * `null` — the state of every deployment whose catalog nominates no title —
+   * renders the row exactly as it did before this input existed.
+   */
+  @Input() titleKey: string | null = null;
+
+  /**
    * Whether the list is being fetched.
    *
    * Drives `p-table`'s own overlay, which dims the rows already on screen
@@ -102,6 +130,35 @@ export class TeamTableComponent {
    * `ContextService.loading$`, not here: this input is already the answer.
    */
   @Input() loading = false;
+
+  /**
+   * The team that is OPEN beside the list, or `null` (Epic 52).
+   *
+   * One-way, and the page owns it. Before the split the table could keep its
+   * own selection to itself, because selecting a row navigated away and the
+   * highlight died with the page. Now the highlight has to answer a question
+   * that outlives the click — "which of these am I looking at?" — and only the
+   * page knows. Re-asserting it every cycle is also what stops PrimeNG's own
+   * click-to-unselect quietly clearing the highlight while the team it named is
+   * still open in the pane beside it.
+   */
+  @Input() selectedTeamId: string | null = null;
+
+  /**
+   * The row `p-table` should draw as selected: the loaded team whose id the
+   * page named, or `null` while it is on another page (or gone).
+   *
+   * A getter and not a stored field, because `teams` is REPLACED on every page
+   * load and the previous page's object would be a selection PrimeNG can no
+   * longer find. `find` over the current array returns the same reference on
+   * every change-detection pass, so re-evaluating it churns nothing.
+   */
+  get selectedRow(): TeamContext | null {
+    if (this.selectedTeamId === null) {
+      return null;
+    }
+    return this.teams.find((t) => t.team_id === this.selectedTeamId) ?? null;
+  }
 
   /**
    * The `p-table`'s own lazy-load event, re-emitted VERBATIM.
@@ -152,6 +209,22 @@ export class TeamTableComponent {
 
   /** Exposed to the row template. */
   isRunning = isRunning;
+
+  /**
+   * Exposed to the row template, which renders the status column from it.
+   *
+   * A PURE function of the row's status and activity flag, defined beside the
+   * model rather than here: the six-row truth table is the part of this
+   * feature that can be got wrong silently, and it is testable without a DOM
+   * only while it stays out of the component.
+   *
+   * Safe in a binding despite the rule the metadata column follows — this
+   * returns one of four string literals, so a re-run each change-detection
+   * cycle yields an identical primitive and re-renders nothing. The metadata
+   * pipe exists because `metadataEntries` returns fresh OBJECTS; there is no
+   * such identity to churn here.
+   */
+  teamActivity = teamActivity;
 
   /** `trackBy` for the Metadata column's chips. See the pipe. */
   trackMetadataEntry = trackMetadataEntry;

@@ -22,6 +22,14 @@ export type ChatBubbleRule = 1 | 2 | 3 | 4 | 5;
  *  (a non-collapsible "Conversation cleared" line). Markers carry no real
  *  sender/recipient and are not aligned bubbles. */
 export type MarkerRule = 6 | 7;
+/**
+ * ADDING A RULE? Classify its rateability in `./rateable.ts` in the same
+ * change. `isRateable` switches exhaustively over this union with no `default`
+ * arm, so widening `MessageRule` here stops that file compiling until the new
+ * kind is stated to be an answer or excluded (Epic 57 FR1 / T1). That compile
+ * error is deliberate — it is the only thing standing between a new message
+ * kind and being silently rateable.
+ */
 export type MessageRule = ChatBubbleRule | MarkerRule;
 
 export const COMPACTION_MARKER_RULE: MarkerRule = 6;
@@ -82,10 +90,14 @@ export function buildLabel(msg: SentMessage, rule: ChatBubbleRule): string {
   const recipientName = makeAgentNameUserFriendly(msg.recipient.name);
 
   switch (rule) {
+    // Your own turn is already identified by being a bubble on your side, and
+    // rule 2 is the agent talking to you — the arrow restates the direction the
+    // layout has already shown. Rules 3 and 4 keep theirs: those are between
+    // two other parties, where who-sent-what-to-whom is the whole content.
     case 1:
-      return `You ⇒ ${recipientName}`;
+      return 'You';
     case 2:
-      return `${senderName} ⇒ You`;
+      return senderName;
     case 3:
     case 4:
       return `${senderName} ⇒ ${recipientName}`;
@@ -94,12 +106,24 @@ export function buildLabel(msg: SentMessage, rule: ChatBubbleRule): string {
   }
 }
 
+/**
+ * The fill behind a turn.
+ *
+ * ONLY RULE 1 HAS ONE. An agent's turn sits directly on the page so the
+ * conversation reads as a document; the user's own turn keeps a bubble, which
+ * is what carries the left/right rhythm now that nothing else is tinted.
+ *
+ * The remaining rules are `transparent` rather than removed: `color` is part of
+ * `ChatMessage` and is bound in the template, so a value has to be there. A
+ * deployment that wants the old tinted look re-points these and the geometry
+ * follows from `.own-turn` in the stylesheet.
+ */
 const RULE_COLORS: Record<ChatBubbleRule, string> = {
-  1: '#efeeee',
-  2: '#9ebbcb',
-  3: '#9ebbcb',
-  4: '#9ebbcb',
-  5: '#9ebbcb', // reuses the Rule 4 blue (ADR-011 Decision 3)
+  1: 'var(--akg-surface)',
+  2: 'transparent',
+  3: 'transparent',
+  4: 'transparent',
+  5: 'transparent',
 };
 
 /**

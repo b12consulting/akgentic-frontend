@@ -1,163 +1,412 @@
-// Chat input row layout
+/*
+ * LINK IN THE EPIC-56 HEIGHT CHAIN. See `process.component.scss` for the chain
+ * stated end to end, and for why it fails silently: nothing errors, the scroll
+ * region simply runs past the bottom of the pane and its scrollbar stops
+ * appearing. Every link says `min-height: 0` explicitly rather than trusting a
+ * default, because the broken link last time was an element with no rule at all.
+ *
+ * `.trace-scroll` below takes the slack; the chat input row keeps its intrinsic
+ * height so it stays pinned and reachable however long the trace gets.
+ */
+:host {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+/*
+ * THE COMPOSER, and nothing floating over it.
+ *
+ * `<p-floatlabel variant="in">` is gone with the caption it held ("Chat
+ * input" — interface naming itself), and with it the absolutely-positioned
+ * label this row had to leave space for. What is left is a column: the
+ * textarea, then the controls under it.
+ */
 .input-row {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  gap: 8px;
+}
 
-  .input-row-textarea {
-      display: flex;
-      align-items: flex-end;
+.input-row-textarea {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+}
 
-      textarea {
-        flex: 1 1 auto;
-      }
-    }
+/*
+ * The field, in the palette's terms. Left to Aura it draws a white ground with
+ * a blue-grey border and a blue focus ring — three colours a deployment cannot
+ * move, on the one control in this pane the user actually operates.
+ */
+.input-row-textarea textarea {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  padding: 9px 11px;
+  border: 1px solid var(--akg-composer-border);
+  border-radius: var(--akg-card-radius);
+  background: var(--akg-overlay-bg);
+  color: var(--akg-turn-fg);
+  font-family: var(--akg-font-ui);
+  font-size: var(--akg-font-size-control);
+  line-height: 1.5;
+  resize: vertical;
+}
 
-  .input-row-buttons {
-    display: flex;
-    flex-direction: row;
-    gap: 0.5rem;
-    align-items: center;
-    justify-content: flex-end;
+.input-row-textarea textarea::placeholder {
+  color: var(--akg-text-muted);
+}
 
-    .pi-refresh {
-      font-size: 1rem;
-    }
+.input-row-textarea textarea:focus {
+  outline: none;
+  border-color: var(--akg-accent-fg);
+  box-shadow: var(--akg-focus-ring);
+}
 
-    .pi-spinner {
-      font-size: 1rem;
-    }
+.input-row-buttons {
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+  min-width: 0;
+}
 
-    // ADR-024 §Decision 3 — token-usage trigger: compact, muted, but now an
-    // interactive `<button>` (supersedes ADR-022 §Decision 5's non-interactive
-    // pill). `white-space: nowrap` keeps `ctx … · ↑… ↓…` on one line; the button
-    // reset (border/font/background) keeps the visual weight subordinate to
-    // Submit. Shrinks before Submit at narrow widths so it never pushes the
-    // button off the row. `:disabled` (never-run agent, AC 3) reverts to the
-    // `default` cursor — inert, nothing to open.
-    .usage-pill {
-      flex: 0 1 auto;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      border: none;
-      font: inherit;
-      cursor: pointer;
-      color: #64748b;
-      font-size: 0.75rem;
-      font-variant-numeric: tabular-nums;
-      padding: 0.15rem 0.5rem;
-      border-radius: 999px;
-      background-color: #f1f5f9;
+/*
+ * ADR-024 §Decision 3 — the token-usage trigger: compact, muted, interactive.
+ * `white-space: nowrap` keeps `ctx … · ↑… ↓…` on one line; the button reset
+ * keeps its visual weight subordinate to Send. Shrinks before Send at narrow
+ * widths so it never pushes the primary control off the row. `:disabled`
+ * (never-run agent, AC 3) reverts to the `default` cursor — inert, nothing to
+ * open.
+ */
+.usage-pill {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 4px 9px;
+  border: none;
+  border-radius: var(--akg-pill-radius);
+  background: var(--akg-well-bg);
+  color: var(--akg-text-muted);
+  font-family: var(--akg-font-ui);
+  font-size: var(--akg-font-size-meta);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
 
-      &:disabled {
-        cursor: default;
-      }
-    }
+.usage-pill:disabled {
+  cursor: default;
+}
+
+.usage-pill:focus-visible {
+  outline: none;
+  box-shadow: var(--akg-focus-ring);
+}
+
+/*
+ * SEND. The one filled control in the pane, and the only thing here entitled to
+ * the accent — `pButton` gave it Aura's blue, which is the colour a deployment
+ * is least able to live with and least able to change.
+ *
+ * The disabled state drops to the well ground rather than to a transparency:
+ * an accent at 40% opacity over a tinted pane is a different hue, not a dimmer
+ * one, and it read as a second brand colour.
+ */
+.send-button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--akg-control-radius);
+  background: var(--akg-accent-fg);
+  color: var(--akg-accent-bright);
+  font-family: var(--akg-font-ui);
+  font-size: var(--akg-font-size-control);
+  cursor: pointer;
+}
+
+.send-button:hover:not(:disabled) {
+  background: var(--akg-accent-hover);
+}
+
+.send-button:disabled {
+  background: var(--akg-well-bg);
+  color: var(--akg-text-muted);
+  cursor: default;
+}
+
+.send-button:focus-visible {
+  outline: none;
+  box-shadow: var(--akg-focus-ring);
+}
+
+.send-button .pi {
+  font-size: 12px;
+}
+
+.pi-spin {
+  animation: akgent-chat-spin 1s linear infinite;
+}
+
+@keyframes akgent-chat-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
-// ADR-024 §Decision 3 — the popover's key/value breakdown (member-chat pill and
-// team-tree footer share this layout). Exact counts via `| number`; the pill/
-// footer keep the compact `tokenCount` numbers.
+// ADR-024 §Decision 3 — the popover's key/value breakdown. Exact counts via
+// `| number`; the pill keeps the compact `tokenCount` numbers.
 .usage-popover {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  font-size: 0.85rem;
-  min-width: 14rem;
+  gap: 6px;
+  min-width: 210px;
+  font-family: var(--akg-font-ui);
+  font-size: var(--akg-font-size-meta);
+  color: var(--akg-text);
+}
 
-  .usage-popover-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 1rem;
-  }
+.usage-popover-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  font-variant-numeric: tabular-nums;
+}
 
-  .usage-popover-label {
-    color: #64748b;
-    font-weight: 600;
-  }
+.usage-popover-label {
+  color: var(--akg-text-muted);
+  font-weight: 400;
 }
 
 .input-container {
-    padding: 1rem 0rem 0rem;
-    position: relative;
-    textarea {
-    width: 100%;
-    margin-bottom: 0.5rem;
-    }
+  padding: 10px 0 0;
+  position: relative;
+}
 
-    // "Messages" / "Auto scrolling" pill — floats just above the input, centered.
-    .jump-to-latest {
-        position: absolute;
-        left: 50%;
-        bottom: 95%;
-        transform: translateX(-50%);
-        z-index: 5;
-        display: inline-flex;
-        align-items: center;
-        gap: 0.4rem;
-        padding: 0.35rem 0.9rem;
-        border: none;
-        border-radius: 999px;
-        background-color: #fff;
-        color: #475569;
-        font-size: 0.85rem;
-        font-weight: 600;
-        cursor: pointer;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+/*
+ * "Messages" / "Auto scrolling" — floats just above the composer, centred.
+ *
+ * `font-weight: 600` at 0.85rem was heavier than anything else in the pane
+ * including the member's own name. It is a nudge, not an announcement.
+ */
+.jump-to-latest {
+  position: absolute;
+  left: 50%;
+  bottom: 95%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid var(--akg-surface-border);
+  border-radius: var(--akg-pill-radius);
+  background: var(--akg-overlay-bg);
+  color: var(--akg-control-fg);
+  font-family: var(--akg-font-ui);
+  font-size: var(--akg-font-size-meta);
+  cursor: pointer;
+  box-shadow: var(--akg-overlay-shadow);
+}
 
-        .pi {
-            font-size: 0.85rem;
-        }
+.jump-to-latest:hover {
+  background: var(--akg-panel-hover);
+}
 
-        &:hover {
-            background-color: #f2f7f9;
-        }
-    }
+.jump-to-latest .pi {
+  font-size: 11px;
 }
 
 // Single scroll region for the whole trace: the Epic 16 head system block and
-// the conversation scroll together, keeping the chat input pinned below and
-// always reachable. Viewport-relative (not flex:1) because the PrimeNG tab
-// chain above this component does not propagate a usable height. The 370px
-// reserves the tab header, the input row, and surrounding chrome — the same
-// budget the conversation table used before this single region replaced its
-// per-table `scrollHeight`.
+// the conversation scroll together, keeping the composer pinned below and
+// always reachable.
+//
+// FLEX, NOT VIEWPORT. This carried `height: calc(100vh - 370px)`, and the
+// comment above it named the real obstacle: "the PrimeNG tab chain above this
+// component does not propagate a usable height". That was true and the fix was
+// aimed at the wrong element — the answer is to make the chain propagate
+// (`agent-tabs.component.scss` now does), not to measure the window from inside
+// it. Since Epic 56 this panel lives in the 310px inspector, where 370px of
+// "surrounding chrome" is a budget for a layout that no longer exists.
+//
+// `min-height: 0` is the load-bearing half: a flex child's default
+// `min-height: auto` refuses to shrink below its content, so `flex: 1` alone
+// would let a long trace push the region past the pane and its scrollbar would
+// never appear — the silent failure `process.component.scss` documents.
 .trace-scroll {
-  height: calc(100vh - 370px);
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  padding-right: 2px;
 }
 
+/*
+ * ONE TRACE ENTRY.
+ *
+ * `.card-container` is still the class, because the specs address this pane
+ * through it and `src/styles.scss` still defines it for the Messages tab. Every
+ * value it inherits from there is wrong here and is restated: `margin: 1rem` on
+ * four sides spends 32px of a ~278px lane on nothing, the `#e0e0e0` border was
+ * the last untokenised edge in this pane, and a 1.1rem/600 header is heavier
+ * than the member's own name in the picker above.
+ *
+ * A card, not a table row: the trace is a sequence of things that happened, and
+ * the only comparison the reader makes between two of them is "which came
+ * first", which order already answers.
+ */
 .card-container {
-  margin: 1rem 0;
+  margin: 0 0 8px;
+  padding: 9px 11px;
+  border: 1px solid var(--akg-surface-border);
+  border-radius: var(--akg-card-radius);
+  background: var(--akg-overlay-bg);
 }
 
+.collapsible-container,
+.head-system-container {
+  width: 100%;
+  min-width: 0;
+}
+
+/*
+ * KIND, NAME, PROVENANCE — in three weights, on one line that may wrap.
+ *
+ * `align-items: baseline` rather than `center`: the kind is a 10.5px
+ * micro-label and the name is 13px, and centring two different type sizes
+ * against each other leaves neither sitting on the line the reader is following.
+ */
+.card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  padding: 0 0 7px;
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+/* The same uppercase micro-label the rail's group headers, the inspector's
+   TOOLS and its USAGE use. One treatment means "this names a category". */
+.entry-kind {
+  flex: 0 0 auto;
+  font-size: var(--akg-section-label-size);
+  font-weight: 500;
+  letter-spacing: var(--akg-section-label-tracking);
+  text-transform: uppercase;
+  color: var(--akg-text-muted);
+}
+
+.entry-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--akg-text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Provenance. `flex-basis: 100%` sends it to its own line as soon as the pane
+   is too narrow for both, instead of squeezing the name it belongs to. */
+.model-info {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--akg-font-mono);
+  font-size: 10.5px;
+  color: var(--akg-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * THE BODY, as an inset well rather than a `<p-fieldset>`.
+ *
+ * The fieldset supplied a border, a ground and a legend reading "Content" over
+ * the content. A recess says the same thing — "this is the material, not the
+ * interface" — without a word, and it distinguishes the quoted text from the
+ * card's own chrome, which a second outlined box on an outlined card did not.
+ */
+.entry-well {
+  position: relative;
+  padding: 8px 9px;
+  border-radius: 8px;
+  background: var(--akg-well-bg);
+}
+
+.entry-well + .entry-well {
+  margin-top: 6px;
+}
+
+/* The tool hue on the leading edge — the same mark the Team panel's tool chips
+   and the transcript's tool fold carry. */
+.entry-well-tool {
+  border-left: 2px solid var(--akg-tool-accent);
+}
+
+.entry-well-label {
+  margin: 0 0 5px;
+  font-size: var(--akg-section-label-size);
+  font-weight: 500;
+  letter-spacing: var(--akg-section-label-tracking);
+  text-transform: uppercase;
+  color: var(--akg-text-muted);
+}
+
+/* Top-right of its own well, not floating in the card. A copy control that is
+   not inside the thing it copies has to be guessed at. */
+.entry-copy {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 1;
+}
+
+/*
+ * The quoted material. Monospace and `pre-wrap` are load-bearing — this is
+ * prompt text, JSON arguments and tool output, where indentation carries
+ * meaning — but the 40vh cap the global class sets is a window measurement
+ * inside a 310px pane and is replaced by a fixed one so a 4000-line system
+ * prompt cannot become the whole scroll region.
+ */
 .text-container {
-  font-size: 85%;
-  white-space: pre-wrap;
-  word-wrap: break-word;
-  overflow-x: auto;
-  font-family: monospace;
+  max-height: 260px;
   margin: 0;
+  overflow: auto;
+  font-family: var(--akg-font-mono);
+  font-size: 11px;
+  line-height: 1.55;
+  color: var(--akg-turn-fg);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
-/* Ensure the container doesn't exceed the available width */
-.collapsible-container {
-    width: 100%;
-    overflow: hidden;
-  }
-  
-  /* Collapsible button styling */
-.collapse-toggle {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-    padding: 5px;
-    margin-bottom: 10px;
-    color: #334155;
-  }
+/* The `/` mention list — the one remaining overlay this component renders. */
+.mention-item-name {
+  font-family: var(--akg-font-mono);
+  font-size: var(--akg-font-size-meta);
+  color: var(--akg-text);
+}
+
+.mention-item-args {
+  margin-left: 6px;
+  font-family: var(--akg-font-mono);
+  font-size: 10.5px;
+  color: var(--akg-accent-fg);
+}
+
+.mention-item-desc {
+  display: block;
+  font-size: 10.5px;
+  color: var(--akg-text-muted);
+}

@@ -1,27 +1,158 @@
+<!--
+  The activity fold.
+
+  Between a human's message and the answer, an agent does work: it calls tools
+  and it contacts other agents. That work is WHAT HAPPENED, not what was said,
+  so it renders as one quiet row rather than as speech — the latest step, live,
+  replaced as the next one starts. The caret opens the full sequence.
+
+  The row is the summary, not a header above one: collapsed, there is nothing
+  else to show, so a separate header line would be an empty frame.
+-->
 <div
-  class="thinking-bubble"
-  [class.final]="state().final"
+  class="activity"
+  [class.live]="!state().final"
   [class.expanded]="expanded()"
+  [class.openable]="stepCount() > 0"
   (click)="onClick()"
 >
-  <div class="thinking-header">
-    <span class="agent-label">[{{ state().agent_name }}]<span *ngIf="!state().final"> thinking</span></span>
-    <span class="thinking-dots" *ngIf="!state().final">
-      <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-    </span>
-    <span class="spacer"></span>
-    <span class="timestamp">{{ state().start_time | date: 'HH:mm' }}</span>
-  </div>
-  <div class="tool-list" *ngIf="state().tools.length > 0">
-    <div
-      class="tool-entry"
-      *ngFor="let t of state().tools; trackBy: trackByToolId"
-      [class.done]="t.done"
+  <div class="activity-row">
+    <!--
+      A WRENCH, not a dot. The mark leads the row, and the whole job of a
+      leading mark is to say what kind of row this is before anything is read;
+      a 6px grey dot says only "something is here", which is the one thing the
+      reader can already see. The tool hue (`--akg-tool-accent`) is reserved for
+      exactly this — a step ran — so the glyph and its colour say the same thing
+      twice, in the two channels a glance uses.
+
+      The pulse survives, moved onto the glyph: it is still one mark with two
+      states, slow while the agent works and still once it has answered.
+    -->
+    <svg
+      class="activity-mark"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
     >
-      <span class="bullet">·</span>
-      <span class="tool-name">{{ t.tool_name }}</span>
-      <span class="tool-sep"> - </span>
-      <span class="tool-args">"{{ t.arguments_preview }}"</span>
-    </div>
+      <path d="M14.7 6.3a4 4 0 0 1-5 5L5 16v3h3l4.7-4.7a4 4 0 0 1 5-5l2.6-2.6-2.6-2.6z" />
+    </svg>
+
+    <span class="activity-agent">{{ state().agent_name }}</span>
+
+    <!-- `latestSubject()`, not `l.tool_name`: a run that contacted two agents
+         named only the second one here, while the count beside it said the row
+         was incomplete without saying what it had left out. -->
+    <span class="activity-latest" *ngIf="latest()">{{
+      latestKey() | translate: { tool: latestSubject() }
+    }}</span>
+
+    <span class="activity-count" *ngIf="stepCount() > 1">{{
+      "chat.activity.steps" | translate: { count: stepCount() }
+    }}</span>
+
+    <span class="activity-spacer"></span>
+
+    <!--
+      A CARET, like every other fold on the surface.
+
+      This row used to spell the action out — "What happened" / "Hide" — on the
+      argument that its text is a SUMMARY, so what opening it gives you is not
+      deducible the way it is on a row whose text is already the thing you would
+      read. The words went because uniformity won: four kinds of row fold in
+      this transcript and the other three are a caret, so a fifth reading of the
+      same control was the odd one out rather than the helpful one.
+
+      Nothing is lost to a screen reader — the words were only ever visual.
+      `aria-label` names the action and `aria-expanded` carries the state, which
+      is more than the visible label said.
+
+      A real `<button>`: the fold's own row is clickable, but a click target
+      with no focusable element in it is unreachable from a keyboard, and this
+      is the affordance a reader is looking at when they decide to open it.
+    -->
+    <button
+      *ngIf="stepCount() > 0"
+      type="button"
+      class="activity-toggle"
+      [attr.aria-expanded]="expanded()"
+      [attr.aria-label]="
+        (expanded() ? 'chat.activity.collapse' : 'chat.activity.expand')
+          | translate
+      "
+      (click)="onToggleFromLabel($event)"
+    >
+      <i
+        class="pi activity-caret"
+        [ngClass]="expanded() ? 'pi-chevron-down' : 'pi-chevron-right'"
+        aria-hidden="true"
+      ></i>
+    </button>
+
+    <!--
+      THE CLOCK LAST, which is where every other row in the transcript puts it.
+
+      A folded notice ends `caret, time`; the compaction marker ends with its
+      time; a turn's header ends with its time. This row used to end
+      `time, label, caret`, so the one element common to every row in the
+      sequence sat in a different place here than everywhere else — and the eye
+      looking down the right-hand edge for "when" found it only on some rows.
+
+      The comment this replaces argued the trailing edge belonged to the toggle,
+      because that is where the eye goes for "and then what". True in isolation;
+      wrong against four other rows that had already settled the question.
+    -->
+    <span class="activity-time">{{ state().start_time | date: "HH:mm" }}</span>
   </div>
+
+  <!--
+    Opened: each step is a short sentence and a supporting line. The call as it
+    came off the wire is one click further in — kept, because an operator
+    debugging a run needs it, and hidden, because nobody reading the
+    conversation does.
+  -->
+  <ol
+    class="activity-list"
+    *ngIf="expanded() && stepCount() > 0"
+    @stepsReveal
+  >
+    <li
+      class="activity-entry"
+      *ngFor="let n of narratedSteps(); trackBy: trackByStepId"
+      [class.done]="n.step.done"
+    >
+      <span class="entry-bullet" aria-hidden="true"></span>
+      <div class="entry-body">
+        <div class="entry-title">
+          {{
+            n.titleKey
+              ? (n.titleKey | translate: { tool: n.title })
+              : n.title
+          }}
+        </div>
+        <div class="entry-detail" *ngIf="n.detail">{{ n.detail }}</div>
+      </div>
+    </li>
+
+    <li class="activity-raw-row">
+      <button
+        type="button"
+        class="activity-raw-toggle"
+        (click)="onToggleRaw($event)"
+      >
+        {{ (rawOpen() ? "chat.activity.hideRaw" : "chat.activity.showRaw") | translate }}
+      </button>
+      <div class="activity-raw" *ngIf="rawOpen()">
+        <div
+          class="raw-line"
+          *ngFor="let n of narratedSteps(); trackBy: trackByStepId"
+        >
+          {{ n.raw }}
+        </div>
+      </div>
+    </li>
+  </ol>
 </div>

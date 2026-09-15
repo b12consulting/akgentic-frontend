@@ -15,26 +15,31 @@
   font-weight: 600;
 }
 
+// The token, not PrimeNG's red: this dialog is now reused inside the console's
+// creation wizard, where every other colour on screen resolves through
+// `_conversation-tokens.scss`. One off-palette red on a redesigned surface is
+// the whole of the difference between a system and a collection.
 .team-metadata-modal__required {
-  color: var(--p-red-500, #e24c4c);
+  color: var(--akg-danger-fg);
   margin-left: 0.15rem;
 }
 
 // Quiet affordance: the field is filterable server-side. Informational only.
 .team-metadata-modal__index {
-  color: var(--p-text-muted-color, #6c757d);
+  color: var(--akg-text-muted);
   font-size: 0.75rem;
 }
 
-// darkred (#8b0000), not the PrimeNG red token, and deliberately a literal.
-// The token resolves to a light #e24c4c that sits at roughly 3.4:1 on the
-// dialog's white surface -- legible, but not obviously an error at a glance.
-// darkred is ~10.7:1 there. Safe as a literal because the app pins
-// `darkModeSelector: 'none'` (app.config.ts), so this text is only ever painted
-// on a light surface; if a dark theme is ever turned on, this is one of the
-// declarations that has to be revisited.
+// The reason this was the literal `darkred` still holds: PrimeNG's own red
+// token resolves to a light #e24c4c sitting at roughly 3.4:1 on the dialog's
+// white surface -- legible, but not obviously an error at a glance. What has
+// changed is that the palette now NAMES a danger tone. `--akg-danger-fg`
+// measures ~6.6:1 against the dialog's white surface -- comfortably past AA's
+// 4.5:1 for body text -- and it is the same red the rest of the console uses to
+// say "this went wrong", which a one-off literal never could be. Re-check that
+// figure if the palette's danger tone ever moves.
 .team-metadata-modal__error {
-  color: darkred;
+  color: var(--akg-danger-fg);
   font-size: 0.85rem;
   font-weight: 500;
   white-space: pre-line;
@@ -49,7 +54,7 @@
 }
 
 .team-metadata-modal__blocked-hint {
-  color: var(--p-text-muted-color, #6c757d);
+  color: var(--akg-text-muted);
   font-size: 0.75rem;
   margin-right: auto;
 }

@@ -1,0 +1,138 @@
+:host {
+  display: block;
+  flex: 0 0 auto;
+}
+
+.inspector-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 12px 14px;
+  /* Icons in one row, with the caption of the SELECTED tab beside its glyph.
+
+     This strip used to scroll, on the claim that five labelled entries fit a
+     310px pane and only a narrow window broke them. They never fit. A labelled
+     tab cost 22px padding + 11px icon + 6px gap = 39px of chrome before a
+     single letter, so five of them plus their captions needed 489px, and even
+     the minimum four (the two conditional entries filtered out) needed 378px.
+     The strip was ~1.6x too wide at EVERY width and the scroll was hiding it.
+     The sixth entry (Epic 56 `hierarchy`) only made it impossible to ignore:
+     272px of chrome + 360px of English caption = 632px in a 310px lane, and
+     732px in French.
+
+     SIX captions cannot be drawn; ONE can, and exactly one is ever showing. The
+     five unselected tabs cost
+
+       5 tabs x (18px padding + 13px icon) + 5 gaps x 2px + 28px strip padding
+         = 140 + 10 + 28 = 178px
+
+     leaving 132px of a 310px pane and 62px at the 240px floor for the selected
+     tab — which is why the caption's room is not a fixed number but
+     `calc(100% - 160px)` on the selected button (see below). 160 rather than
+     150 keeps ~10px of slack against the real glyph advance: 13px is the
+     icon's FONT SIZE and a primeicons glyph advances ~10px at it, so a tab
+     measures ~28px rather than the 31px the nominal budget assumes. Quote the
+     nominal figure when trading against the pane floor — the slack is real,
+     not assumed.
+
+     THE ONE-ROW GUARANTEE IS NOW STRUCTURAL RATHER THAN BUDGETARY. Because the
+     selected tab's width is capped as a share of the strip and the caption
+     inside it ellipsises, the row cannot exceed 100% at ANY pane width — there
+     is no length of translated caption that overflows it. French does not
+     merely fit, it cannot fail to: the caption yields instead of the layout.
+
+     `flex-wrap: wrap` is kept as a SAFETY NET, not as the mechanism. It is here
+     so that at any width the user can drag the pane to, an unexpected overflow
+     becomes a second row rather than the horizontal scrollbar that hid this
+     problem the first time. */
+  flex-wrap: wrap;
+}
+
+.inspector-tabs__tab {
+  display: inline-flex;
+  align-items: center;
+  /* Only the selected tab has two children; on the other five this collapses to
+     nothing because there is nothing to separate. */
+  gap: 6px;
+  padding: 6px 9px;
+  border: 0;
+  border-radius: var(--akg-pill-radius);
+  background: transparent;
+  color: var(--akg-text-muted);
+  font-family: var(--akg-font-ui);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* Larger than the 11px it was beside a caption: the glyph is now the entire
+   visible control and the entire hit target, so it carries the weight the
+   caption used to share. */
+.inspector-tabs__tab i {
+  font-size: 13px;
+}
+
+.inspector-tabs__tab:hover:not(.inspector-tabs__tab--selected) {
+  background: var(--akg-panel-hover);
+}
+
+/* The TEXT token used as a fill. That inversion is the mock's, and it is
+   deliberate: the selected pill is the darkest thing in the pane, so it reads
+   as selected at a glance without needing the accent — which is reserved for
+   "the product is doing something" rather than "you are looking at this".
+
+   It carries more weight now than it did: with no captions, this fill is the
+   only thing on the strip that says which tab you are on. */
+.inspector-tabs__tab--selected {
+  background: var(--akg-text);
+  color: var(--akg-overlay-bg);
+  /* THE SIZING THAT MAKES THE ROW UNBREAKABLE, WITH NO MAGIC NUMBER IN IT.
+
+     `flex-basis: 0` is the whole trick. Flex decides which LINE an item goes on
+     from its hypothetical main size — its basis clamped by its own min/max — and
+     it makes that decision before any growing or shrinking. A basis of 0 means
+     this tab asks for nothing when the lines are formed, so the row is laid out
+     as if all six were icon-only and cannot overflow at any pane width. The
+     caption is then paid for out of the LEFTOVER space, by `flex-grow`.
+
+     `max-width: max-content` stops the grow at the caption's natural width.
+     Without it this tab would swallow every spare pixel and "Team" would sit in
+     a 400px black pill on a wide pane; with it, growth stops the moment the
+     caption is fully legible and the leftover stays leftover.
+
+     `min-width: 0` disables the flex item's automatic content-based minimum.
+     That minimum is computed from MIN-CONTENT, and the strip sets
+     `white-space: nowrap`, so an unbroken caption's min-content IS its full
+     width — the automatic minimum would outrank the basis (min beats max in
+     CSS) and push the tab onto a second row, which is exactly the bug a fixed
+     `calc()` cap could not prevent either.
+
+     Deliberately NOT a subtraction like `calc(100% - 160px)`: that has to
+     assume the other tabs' width, which depends on the glyph advance of a
+     webfont and on how many of the six conditional entries the host is
+     currently offering. Both of those change without this file, and the failure
+     when they do is a silently wrapped strip. */
+  flex: 1 1 0;
+  max-width: max-content;
+  min-width: 0;
+}
+
+/* The name of the tab you are on. Ellipsised rather than wrapped: a two-line
+   pill would change the strip's height as the user moved between tabs, and the
+   full string is on the button's `title` and `aria-label` either way. */
+.inspector-tabs__caption {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The mock ships `outline: none` with no replacement and has no `:focus-visible`
+   rule anywhere, which makes the whole strip invisible to a keyboard. The
+   outline is dropped here only because the ring token replaces it — and the ring
+   is a box-shadow so it follows the pill's radius instead of boxing it. */
+.inspector-tabs__tab:focus-visible {
+  outline: none;
+  box-shadow: var(--akg-focus-ring);
+}

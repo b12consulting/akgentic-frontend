@@ -176,27 +176,25 @@ describe('classifyRule', () => {
 });
 
 describe('buildLabel', () => {
-  it('Rule 1: "You ⇒ {recipient}"', () => {
+  // Rules 1 and 2 name a SPEAKER, not a route. The direction is already carried
+  // by the layout — your turn is a bubble on your side, an agent's is not — so
+  // the arrow restated what the shape had said, once per turn, forever.
+  it('Rule 1 names you, without a route', () => {
     const msg = makeSentMessage({
       sender: makeAddress({ name: '@Human', role: 'Human' }),
       recipient: makeAddress({ name: '@Manager-manager', role: 'Manager' }),
     });
-    const label = buildLabel(msg, 1);
-    expect(label).toContain('You ⇒');
-    expect(label).toContain('Manager');
-    expect(label).not.toContain('->');
+    expect(buildLabel(msg, 1)).toBe('You');
   });
 
-  it('Rule 2: "{sender} ⇒ You"', () => {
+  it('Rule 2 names the agent that spoke, without a route', () => {
     const msg = makeSentMessage({
       sender: makeAddress({ name: '@Manager-manager', role: 'Manager' }),
       recipient: makeAddress({ name: '@Human', role: 'Human' }),
     });
     const label = buildLabel(msg, 2);
-    expect(label).toContain('⇒ You');
     expect(label).toContain('Manager');
-    expect(label.endsWith('⇒ You')).toBe(true);
-    expect(label).not.toContain('->');
+    expect(label).not.toContain('⇒');
   });
 
   it('Rule 3: "@{sender} ⇒ @{recipient}"', () => {
@@ -223,13 +221,14 @@ describe('buildLabel', () => {
     expect(label).not.toContain('->');
   });
 
-  it('Rule 2 explicit: result ends with "⇒ You" (Story 4.3)', () => {
+  it('Rules 3 and 4 KEEP their route — it is the content, not chrome', () => {
     const msg = makeSentMessage({
       sender: makeAddress({ name: '@Manager-manager', role: 'Manager' }),
-      recipient: makeAddress({ name: '@Human', role: 'Human' }),
+      recipient: makeAddress({ name: '@Expert-expert', role: 'Expert' }),
     });
-    const label = buildLabel(msg, 2);
-    expect(label.endsWith('⇒ You')).toBe(true);
+    // Between two other parties, who sent what to whom is the whole point of
+    // the line. Only the turns that involve you lose the arrow.
+    expect(buildLabel(msg, 4)).toContain('⇒');
   });
 
   it('Rule 5: returns the fixed SYSTEM_MESSAGE_LABEL (Story 2.6)', () => {
@@ -350,9 +349,10 @@ describe('classifyMessage', () => {
     expect(result.content).toBe('test content');
     expect(result.rule).toBe(1);
     expect(result.alignment).toBe('right');
-    expect(result.color).toBe('#efeeee');
+    // The user's own turn is the ONLY filled one (conversation surface).
+    expect(result.color).toBe('var(--akg-surface)');
     expect(result.collapsed).toBe(false);
-    expect(result.label).toContain('You ⇒');
+    expect(result.label).toBe('You');
   });
 
   it('should return a ChatMessage with correct fields for Rule 4 (collapsed)', () => {
@@ -364,7 +364,8 @@ describe('classifyMessage', () => {
 
     expect(result.rule).toBe(4);
     expect(result.alignment).toBe('left');
-    expect(result.color).toBe('#9ebbcb');
+    // Agent turns carry no fill — they sit on the page as a document.
+    expect(result.color).toBe('transparent');
     expect(result.collapsed).toBe(true);
   });
 
@@ -461,7 +462,8 @@ describe('classifyMessage', () => {
     const result = classifyMessage(makeWelcomeSent());
     expect(result.rule).toBe(5);
     expect(result.alignment).toBe('left');
-    expect(result.color).toBe('#9ebbcb');
+    // Agent turns carry no fill — they sit on the page as a document.
+    expect(result.color).toBe('transparent');
     expect(result.collapsed).toBe(false);
     expect(result.label).toBe(SYSTEM_MESSAGE_LABEL);
   });
@@ -605,5 +607,34 @@ describe('buildClearMarker (Rule 7)', () => {
     expect(marker.id).toBe('evt-1');
     expect(marker.parent_id).toBeNull();
     expect(marker.timestamp.getTime()).toBe(new Date(evt.timestamp).getTime());
+  });
+});
+
+describe('turn fill (conversation surface)', () => {
+  // Pins the design contract at the model layer: exactly ONE rule is filled.
+  // A future rule given a colour copied from its neighbour would restore the
+  // tinted-boxes look one bubble at a time, and no other spec would notice.
+  it("fills the user's own turn", () => {
+    const own = makeSentMessage({
+      sender: makeAddress({ name: ENTRY_POINT_NAME, role: 'Human' }),
+    });
+    expect(classifyMessage(own).rule).toBe(1);
+    expect(classifyMessage(own).color).not.toBe('transparent');
+  });
+
+  it('leaves every AGENT turn transparent, so it reads as a document', () => {
+    const toHuman = makeSentMessage({
+      sender: makeAddress({ name: '@Manager', role: 'Manager' }),
+      recipient: makeAddress({ name: ENTRY_POINT_NAME, role: 'Human' }),
+    });
+    expect(classifyMessage(toHuman).rule).toBe(2);
+    expect(classifyMessage(toHuman).color).toBe('transparent');
+
+    const agentToAgent = makeSentMessage({
+      sender: makeAddress({ name: '@Manager', role: 'Manager' }),
+      recipient: makeAddress({ name: '@Worker', role: 'Worker' }),
+    });
+    expect(classifyMessage(agentToAgent).rule).toBe(4);
+    expect(classifyMessage(agentToAgent).color).toBe('transparent');
   });
 });

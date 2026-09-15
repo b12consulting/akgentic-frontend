@@ -1,0 +1,195 @@
+// The wizard's chrome comes from the console's token palette, not from
+// PrimeNG's defaults and not from literals. This is the first p-dialog on the
+// redesigned surface: everything inside it — surface, border, text tones, the
+// focus ring — has to read as the rail and the inspector do, or the one dialog
+// in the console is the one place the palette stops.
+//
+// The `::ng-deep` block is confined to `.team-creation-dialog`, the class this
+// component puts on its own dialog via `styleClass`. PrimeNG renders the dialog
+// through a portal outside this component's DOM, so emulated encapsulation
+// cannot reach it; scoping the escape to a class only this component applies is
+// what keeps it from leaking onto every other dialog in the app.
+::ng-deep .team-creation-dialog {
+  background: var(--akg-overlay-bg);
+  border: 1px solid var(--akg-surface-border);
+  border-radius: var(--akg-card-radius);
+  box-shadow: var(--akg-overlay-shadow-strong);
+  font-family: var(--akg-font-ui);
+
+  .p-dialog-header {
+    border-bottom: 1px solid var(--akg-hairline);
+  }
+
+  .p-dialog-title {
+    color: var(--akg-text);
+    font-family: var(--akg-font-ui);
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  // Aura ships `dialog.content.padding` as `0 {padding} {padding}` — the top is
+  // ZERO, on the assumption that a dialog body opens with prose that can sit
+  // under the title. This one opens with an uppercase micro-label ("CHOOSE THE
+  // TYPE OF TEAM TO CREATE"), and with the hairline rule added to the header
+  // above it landed hard against that rule: two lines of chrome stacked with
+  // nothing between them, so the label read as the title's second line rather
+  // than as the first step.
+  //
+  // Matched to the header's OWN padding rather than picked by eye, so the band
+  // of quiet under the rule equals the band above it and the rule sits in the
+  // middle of its own gap. Set on the content box rather than as a margin on
+  // the first child because the first child varies — the admin toggle, the
+  // empty state and the fieldset all take this position, and three margins
+  // would be three chances to forget one.
+  .p-dialog-content {
+    padding-top: var(--p-dialog-header-padding, 1.25rem);
+  }
+}
+
+// The settled-empty state. Muted rather than danger-toned: having no team type
+// is a fact about this account, not a failure of this dialog.
+.team-creation__empty {
+  color: var(--akg-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+// `<fieldset>` earns the group its accessible name and arrives with a border,
+// padding and margins from the UA sheet that would draw a second box inside the
+// dialog. Zeroed rather than swapped for a `<div>`, because the `<legend>` is
+// the whole reason the element is a fieldset.
+.team-creation__types {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.team-creation__legend {
+  color: var(--akg-text-muted);
+  font-size: var(--akg-section-label-size);
+  font-weight: 600;
+  letter-spacing: var(--akg-section-label-tracking);
+  text-transform: uppercase;
+  padding: 0;
+  margin-bottom: 8px;
+}
+
+.team-creation__type {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--akg-surface-border);
+  border-radius: var(--akg-card-radius);
+  background: var(--akg-surface-muted);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--akg-panel-bg);
+  }
+
+  // The ring follows the ROW, not the 13px radio inside it: the row is what
+  // the user is choosing between, and a ring around the dot leaves the
+  // keyboard user reading a label they cannot tell is current. `focus-within`
+  // rather than `focus-visible` because the focusable element is the input and
+  // the styled element is its label.
+  &:focus-within {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+  }
+}
+
+.team-creation__type--selected {
+  border-color: var(--akg-accent-border);
+  background: var(--akg-accent-bg);
+}
+
+// `accent-color` tints the native control without replacing it, so the radio
+// keeps every behaviour the browser gives it — including the platform's own
+// high-contrast and forced-colours treatment, which a re-drawn dot loses.
+.team-creation__radio {
+  flex: 0 0 auto;
+  margin: 2px 0 0;
+  accent-color: var(--akg-accent-fg);
+}
+
+.team-creation__type-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.team-creation__type-name {
+  color: var(--akg-text);
+  font-size: 13.5px;
+  font-weight: 500;
+}
+
+// Catalog prose, and it can be a paragraph. Wrapped rather than truncated: the
+// description is the only thing telling two similarly-named types apart, so an
+// ellipsis here would hide the deciding information.
+.team-creation__type-desc {
+  color: var(--akg-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.team-creation__actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 1.25rem;
+}
+
+// The admin firehose switch (ADR-028). It sits above the group rather than
+// inside it because it changes WHICH list the group shows, and a control that
+// reshapes a fieldset is not one of that fieldset's choices.
+.team-creation__show-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  color: var(--akg-text-muted);
+  font-size: 12.5px;
+  cursor: pointer;
+
+  // As on the rows: the ring follows the LABEL, because the label is the target
+  // and the 13px box inside it is not something a keyboard user can see land.
+  &:focus-within {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+    border-radius: var(--akg-icon-button-radius);
+  }
+}
+
+.team-creation__show-all-input {
+  flex: 0 0 auto;
+  margin: 0;
+  accent-color: var(--akg-accent-fg);
+}
+
+// "Somebody else owns this one." The DANGER tone rather than the neutral one is
+// deliberate: this badge exists to make the riskiest destination in the list
+// look different from the rest, and a quiet grey chip beside a name reads as
+// metadata rather than as a caution.
+.team-creation__foreign {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: var(--akg-pill-radius);
+  background: var(--akg-danger-bg);
+  color: var(--akg-danger-fg);
+  font-size: var(--akg-section-label-size);
+  font-weight: 600;
+  letter-spacing: var(--akg-section-label-tracking);
+  text-transform: uppercase;
+  vertical-align: middle;
+}
