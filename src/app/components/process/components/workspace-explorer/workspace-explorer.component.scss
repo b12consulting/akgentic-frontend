@@ -6,14 +6,30 @@
  * ten raw hexes underneath them. Both are the same bug from two directions: a
  * deployment re-points `_conversation-tokens.scss` and every panel in the
  * inspector moves except this one. The mapping applied throughout is
- * ground -> `--akg-panel-bg`, chrome -> `--akg-overlay-bg`, edges ->
+ * ground -> `--akg-surface-muted`, chrome -> `--akg-overlay-bg`, edges ->
  * `--akg-surface-border`, rules inside a surface -> `--akg-hairline`.
+ *
+ * THE GROUND IS THE LIGHTEST WARM TONE THE PALETTE HAS. It was
+ * `--akg-panel-bg`, which is also the user turn's fill, so the pane read as one
+ * more bubble blown up to fill the inspector; `--akg-page-bg` was tried next
+ * and was still too heavy for a surface this large. `--akg-surface-muted` is
+ * the activity fold's own resting tone and the last step before white.
+ *
+ * It costs the chrome/content distinction the pane used to draw: white toolbar
+ * over grey body is now white over #fcfbfa, which is three units apart and
+ * effectively one surface. What separates them here is the BORDER, not the
+ * fill — see `--akg-surface-border` on the toolbar and navigator. Anything that
+ * needs to read as a distinct plane in this pane has to earn it with an edge.
+ *
+ * All three grounds in this file move together: the pane, its content area and
+ * the scrollbar track are one surface, and they are only one surface while they
+ * share a token.
  */
 .workspace-explorer {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background-color: var(--akg-panel-bg);
+  background-color: var(--akg-surface-muted);
   font-family: var(--akg-font-ui);
 
   /*
@@ -355,12 +371,11 @@
  * list instead of scrolling away with it (ADR-033 §D8).
  */
 /*
- * The pane body sits on the platform's grey, not on the card white the toolbar
- * and navigator use. That is the whole distinction: chrome is white, content is
- * grey, and the file view's page (below) reads as a sheet on a desk rather than
- * as more chrome. `--akg-panel-bg` is the same token `.workspace-explorer`
- * already uses — and the same ground the inspector pane itself is drawn on —
- * so this is the existing grey, not a new one.
+ * The same ground as `.workspace-explorer`, deliberately — one token, so the
+ * body cannot drift away from the pane it sits in. It used to be a grey a
+ * clear step below the toolbar's white, which is what made the file view read
+ * as a sheet on a desk; at `--akg-surface-muted` that separation is carried by
+ * the toolbar's border instead of by its fill.
  */
 .panel-content {
   flex: 1;
@@ -369,7 +384,7 @@
   overflow: hidden;
   padding: 1rem;
   position: relative;
-  background-color: var(--akg-panel-bg);
+  background-color: var(--akg-surface-muted);
 }
 
 .directory-list {
@@ -742,7 +757,7 @@
 }
 
 .directory-list::-webkit-scrollbar-track {
-  background: var(--akg-panel-bg);
+  background: var(--akg-surface-muted);
 }
 
 .directory-list::-webkit-scrollbar-thumb {
