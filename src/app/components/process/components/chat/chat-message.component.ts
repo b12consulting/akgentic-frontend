@@ -9,7 +9,7 @@ import {
   Output,
 } from '@angular/core';
 import { ButtonModule } from 'primeng/button';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { MarkdownModule } from 'ngx-markdown';
 import { ConfigService } from '../../../../core/config/config.service';
 import {
@@ -18,6 +18,11 @@ import {
   ENTRY_POINT_NAME,
 } from '../../selectors/chat-message.model';
 import { isRateable } from '../../selectors/rateable';
+import {
+  AgentColours,
+  NO_AGENT_COLOURS,
+} from '../../selectors/agent-colour';
+import type { AgentRef } from '../../../../core/ui/agent-reader.service';
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 import { FeedbackComponent } from './feedback.component';
 
@@ -85,6 +90,15 @@ const SYSTEM_CAPTION_MAX_CHARS = 80;
  * ("Team started - 3 agents"), and treating that as markdown would push
  * ordinary announcements into the block treatment for nothing.
  */
+/**
+ * The stand-in substituted for `{{agent}}` so the verb can be cut around it.
+ *
+ * NUL. It cannot occur in translated copy, it is not a character anybody can
+ * type into a locale file by accident, and it survives interpolation
+ * unchanged. Any printable sentinel would eventually collide with real copy.
+ */
+const AGENT_SLOT = '\u0000';
+
 const MARKDOWN_MARKERS = /[#*`>[\]]|^\s*[-+]\s/;
 
 @Component({
@@ -105,6 +119,16 @@ export class ChatMessageComponent {
   @Output() messageSelected = new EventEmitter<ChatMessage>();
   @Output() toggleCollapse = new EventEmitter<ChatMessage>();
   @Output() rule3Clicked = new EventEmitter<ChatMessage>();
+  /**
+   * A NAMED PARTY on this turn was clicked — not the turn, a person on it.
+   *
+   * Separate from `messageSelected`, which reports the turn and lets the host
+   * derive its SENDER. A notification row names two parties and either can be
+   * the one you want to read, so the party has to travel with the event; a
+   * host deriving it from the message could only ever guess which half was
+   * clicked.
+   */
+  @Output() agentSelected = new EventEmitter<AgentRef>();
   message = input.required<ChatMessage>();
   /**
    * May a turn be rated HERE?
@@ -192,6 +216,39 @@ export class ChatMessageComponent {
 
     return makeAgentNameUserFriendly(recipient);
   });
+
+  /**
+   * THE TEAM'S COLOUR LOOKUP, passed in rather than derived.
+   *
+   * An agent's colour is a fact about the ROSTER — which agent was discovered
+   * first — and a turn does not hold the roster. The panel resolves it once per
+   * roster change and hands the same lookup to every row, exactly as it does
+   * `defaultRecipient`, so every turn on the surface agrees and the graph and
+   * the member list agree with them.
+   *
+   * Defaults to the empty lookup, not to null: a row rendered before the roster
+   * arrives asks the same question and gets "no colour", which is the resting
+   * appearance this surface already had.
+   */
+  agentColours = input<AgentColours>(NO_AGENT_COLOURS);
+
+  private readonly translate = inject(TranslateService);
+
+  /**
+   * The colour of whoever SPOKE, or null.
+   *
+   * Drives the speaker mark and the name pill. Null on the user's own turn and
+   * on a tool's — the lookup withholds both — and a null background is no
+   * background, which is what those two had before.
+   */
+  readonly senderColour = computed<string | null>(() =>
+    this.agentColours().of(this.message().sender?.name),
+  );
+
+  /** The colour of the party the message was addressed TO, or null. */
+  readonly recipientColour = computed<string | null>(() =>
+    this.agentColours().of(this.message().recipient?.name),
+  );
 
   private readonly config = inject(ConfigService);
 
@@ -365,6 +422,87 @@ export class ChatMessageComponent {
   readonly recipientName = computed(() =>
     makeAgentNameUserFriendly(this.message().recipient?.name ?? ''),
   );
+
+  /**
+   * THE NOTIFICATION ROW'S VERB, SPLIT AROUND THE NAME IT CARRIES.
+   *
+   * The row reads "@Manager contacted @Expert", and both names are now
+   * controls: hovering one tints it in that agent's colour, clicking it opens
+   * that agent's reader. The recipient is inside a translated sentence
+   * (`contacted {{agent}}`), so it has to come out of the string to be an
+   * element of its own.
+   *
+   * SPLIT ON A SENTINEL, NOT ON THE NAME. Interpolating the real name and then
+   * splitting the result on it breaks the moment a name occurs twice, or occurs
+   * inside the verb, or the locale decorates it. Substituting one character
+   * that cannot appear in copy and cutting there is exact — and, unlike a pair
+   * of `…Before` / `…After` keys, it holds for a language that puts the name in
+   * the MIDDLE of the phrase (Dutch does: "heeft @X gecontacteerd"). Only
+   * `en`/`fr` ship today and both happen to end with it; the next locale added
+   * must not be a rewrite of this component.
+   *
+   * GETTERS, NOT `computed()`, for the same reason `isNoticeFold` is a method:
+   * a template expression re-evaluates every change-detection pass, so a
+   * language change is picked up. `translate.instant` read inside a `computed`
+   * would memoise the phrase in whichever language was active at first render.
+   */
+  private noticeVerb(): readonly [string, string] {
+    const rendered: string = this.translate.instant('chat.notice.contacted', {
+      agent: AGENT_SLOT,
+    });
+    const cut = rendered.indexOf(AGENT_SLOT);
+    // A locale that dropped the placeholder still has to render SOMETHING
+    // rather than a blank verb: the whole phrase goes before the name, which
+    // reads as an ordinary sentence with the name appended.
+    if (cut === -1) return [rendered, ''];
+    return [rendered.slice(0, cut), rendered.slice(cut + AGENT_SLOT.length)];
+  }
+
+  get noticeVerbBefore(): string {
+    return this.noticeVerb()[0];
+  }
+
+  get noticeVerbAfter(): string {
+    return this.noticeVerb()[1];
+  }
+
+  /**
+   * Whether a named party on this row can be OPENED.
+   *
+   * THE COLOUR IS THE AFFORDANCE. A party has a colour exactly when it is an
+   * agent on the roster — the lookup withholds one from the tools, from the
+   * human, and from an actor that is not a member at all — which is precisely
+   * the set whose conversation there is something to read. So the tint and the
+   * click are gated on the same fact, and a `#NotificationTool` in the subject
+   * position is drawn plain and does nothing, without a second rule saying so.
+   */
+  isSenderOpenable(): boolean {
+    return this.senderColour() !== null;
+  }
+
+  isRecipientOpenable(): boolean {
+    return this.recipientColour() !== null;
+  }
+
+  onSenderClick(event: Event): void {
+    event.stopPropagation();
+    const { sender } = this.message();
+    if (!this.isSenderOpenable() || !sender?.agent_id) return;
+    this.agentSelected.emit({
+      agentId: sender.agent_id,
+      actorName: sender.name,
+    });
+  }
+
+  onRecipientClick(event: Event): void {
+    event.stopPropagation();
+    const { recipient } = this.message();
+    if (!this.isRecipientOpenable() || !recipient?.agent_id) return;
+    this.agentSelected.emit({
+      agentId: recipient.agent_id,
+      actorName: recipient.name,
+    });
+  }
 
   /** The question, long enough to be a question. See `REQUEST_PREVIEW_CHARS`. */
   readonly requestText = computed(() =>

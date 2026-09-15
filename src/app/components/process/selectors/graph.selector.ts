@@ -2,6 +2,7 @@ import { inject, Injectable } from '@angular/core';
 import { BehaviorSubject, distinctUntilChanged, map, Observable, shareReplay } from 'rxjs';
 
 import { ENTRY_POINT_NAME } from './chat-message.model';
+import { HUMAN_ROLE } from './actor-kind';
 import {
   AkgenticMessage,
   ErrorMessage,
@@ -21,7 +22,13 @@ import { EdgeInterface, NodeInterface } from '../models/types';
 import { CategoryService, readToken } from '../../../core/ui/category.service';
 import { MessageLogService } from '../event/message-log.service';
 
-export const HUMAN_ROLE = 'Human';
+/**
+ * Re-exported, not declared. The constant now belongs to `actor-kind.ts` with
+ * the predicates that read it; this line keeps every existing importer of
+ * `graph.selector` working rather than rewriting a dozen import sites to prove
+ * a point about where a string lives.
+ */
+export { HUMAN_ROLE } from './actor-kind';
 export const ORCHESTRATOR_CLASS = 'akgentic.core.orchestrator.Orchestrator';
 
 /**

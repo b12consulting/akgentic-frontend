@@ -43,7 +43,21 @@
   >
     <!-- Decorative: the name beside it is what a screen reader should read, and
          an initial announced on its own is a letter with no meaning. -->
-    <span class="member-avatar" aria-hidden="true">{{ member.initial }}</span>
+    <!--
+      Filled with the MEMBER'S OWN colour when the roster gave it one — the same
+      colour their node wears on the hierarchy graph and their speaker mark
+      wears in the transcript. Bound inline because it is data, one stop out of
+      a ten-stop ramp, which a stylesheet cannot enumerate; `.tinted` is what
+      fixes the ink that has to sit on top of it. A member with no colour keeps
+      the flat worker fill, so the tile is never blank.
+    -->
+    <span
+      class="member-avatar"
+      [class.tinted]="member.colour !== null"
+      [style.background-color]="member.colour"
+      aria-hidden="true"
+      >{{ member.initial }}</span
+    >
 
     <span class="member-body">
       <span class="member-name">{{ member.label }}</span>

@@ -19,6 +19,10 @@ import {
   trackDisplayItem,
 } from '../../selectors/display-items';
 import { NodeInterface } from '../../models/types';
+import {
+  AgentColours,
+  NO_AGENT_COLOURS,
+} from '../../selectors/agent-colour';
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 import { TranslatePipe } from '@ngx-translate/core';
 
@@ -117,6 +121,18 @@ export class AgentConversationModalComponent {
   pendingNotifications = input<ReadonlySet<string>>(new Set<string>());
   /** `agent_id` of the app-wide selected agent — the reader follows it. */
   selectedAgentId = input<string | null>(null);
+  /**
+   * The team's agent→colour lookup, handed down from the host.
+   *
+   * Not rebuilt from `agents()` here even though the roster is right there:
+   * this dialog is handed a list the host has already narrowed, and building
+   * the lookup from a narrowed list is exactly how two surfaces end up
+   * assigning the same agent different stops. One lookup, built once, passed
+   * around — the same rule `pendingNotifications` follows and for the same
+   * reason.
+   */
+  agentColours = input<AgentColours>(NO_AGENT_COLOURS);
+
   /** Whether the team can accept a message at all (the process is running). */
   canSend = input<boolean>(false);
 
@@ -276,6 +292,24 @@ export class AgentConversationModalComponent {
    * Two clickable halves would be a change to the shared message component, and
    * that component is shared precisely so the two surfaces cannot diverge.
    */
+  /**
+   * A NAMED PARTY inside a notification row was clicked — move the reader to
+   * it, in place, exactly as clicking the badge does.
+   *
+   * The component has already refused the actors that are not agents (it offers
+   * a name as a control only where the colour lookup gave it a colour), so what
+   * is left to refuse here is the same thing `onMessageAgentClick` refuses: an
+   * actor that is not on THIS dialog's list, which the left-hand column could
+   * not show, and the agent already open, which would be a no-op that clears a
+   * half-typed draft.
+   */
+  onPartyClick(agent: AgentRef): void {
+    if (!agent.agentId || agent.agentId === this.selectedAgentId()) return;
+    if (!this.agents().some((a) => a.name === agent.agentId)) return;
+    this.draft.set('');
+    this.agentSelected.emit(agent);
+  }
+
   onMessageAgentClick(message: ChatMessage): void {
     const agentId = message.sender.agent_id;
     if (!agentId || agentId === this.selectedAgentId()) return;

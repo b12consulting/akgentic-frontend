@@ -98,6 +98,15 @@
 .worker .member-avatar {
   background: var(--akg-avatar-worker-bg);
   color: var(--akg-avatar-worker-fg);
+
+  /* The ink for an agent-coloured tile. One value that clears 4.5:1 against
+     every stop in the ramp — see `--akg-agent-mark-fg`, which says why that is
+     a property of the ramp rather than a coincidence. Without it the monogram
+     keeps `--akg-avatar-worker-fg`, a grey chosen for the flat grey fill, and
+     disappears on the darker stops. */
+  &.tinted {
+    color: var(--akg-agent-mark-fg);
+  }
 }
 
 .member-body {

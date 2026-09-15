@@ -11,8 +11,10 @@
           [attr.data-message-id]="item.data.id"
           [message]="item.data"
           [defaultRecipient]="defaultRecipient"
+          [agentColours]="agentColours"
           [notification]="hasNotification(item.data)"
           (messageSelected)="onMessageSelected($event)"
+          (agentSelected)="onAgentSelected($event)"
           (toggleCollapse)="onToggleCollapse($event)"
           (rule3Clicked)="onRule3Clicked($event)"
         ></app-chat-message>
@@ -84,6 +86,7 @@
   <app-agent-conversation-modal
     [visible]="readerVisible"
     [agents]="readerAgents"
+    [agentColours]="agentColours"
     [messages]="chatMessages"
     [runs]="thinkingStates"
     [selectedAgentId]="readerSelectedAgentId"

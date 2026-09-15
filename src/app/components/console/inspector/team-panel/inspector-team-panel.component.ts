@@ -20,6 +20,8 @@ import { MemberCardComponent } from './member-card.component';
 import { ToolChipsComponent } from './tool-chips.component';
 import { UsagePanelComponent } from './usage-panel.component';
 import { AgentReaderService } from '../../../../core/ui/agent-reader.service';
+import { CategoryService } from '../../../../core/ui/category.service';
+import { agentColours } from '../../../process/selectors/agent-colour';
 
 /**
  * The inspector's Team panel: who is on this team, what it can use, what it has
@@ -107,8 +109,27 @@ export class InspectorTeamPanelComponent {
     this.agentReader.open({ agentId, actorName: member.actorName });
   }
 
+  /** The resolved categorical ramp, memoised in the service. `getComputedStyle`
+   *  is a layout flush, so it is read per roster emission rather than per row. */
+  private readonly categoryService = inject(CategoryService);
+
+  /**
+   * ONE COLOUR PER AGENT, from the SAME function the transcript and the
+   * hierarchy graph call — see `agent-colour.ts`.
+   *
+   * Built over the WHOLE node list, before `buildInspectorTeam` partitions it.
+   * The lookup applies its own exclusions, and handing it the already-narrowed
+   * agent list would make this panel's stop assignment depend on a partition no
+   * other surface performs — the two would agree until the day one of them
+   * changed, which is the failure this shared function exists to prevent.
+   */
   readonly view$: Observable<InspectorTeamView> = this.graph.nodes$.pipe(
-    map(buildInspectorTeam),
+    map((nodes) =>
+      buildInspectorTeam(
+        nodes,
+        agentColours(nodes, this.categoryService.COLORS),
+      ),
+    ),
     distinctUntilChanged(inspectorTeamsEqual),
     shareReplay({ bufferSize: 1, refCount: true }),
   );

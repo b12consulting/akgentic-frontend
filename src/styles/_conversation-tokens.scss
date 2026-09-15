@@ -300,6 +300,21 @@
   // reads as one object rather than as a colour pairing.
   --akg-avatar-human-fg: #42301f;
 
+  // THE INK ON AN AGENT'S COLOURED MARK.
+  //
+  // An agent's mark — the transcript's speaker tile, the inspector's member
+  // tile — is filled with that agent's own stop from `--akg-graph-category-*`,
+  // which is runtime data rather than a token this file can name. The MONOGRAM
+  // on top of it is not data, and it needs one value that works against every
+  // stop in the ramp rather than a pairing chosen for one of them.
+  //
+  // White is that value, and it is a property of the ramp: those ten stops were
+  // picked as marks to be told apart on a light ground, so all ten are dark
+  // enough to carry white at 4.5:1. Declared here rather than written `#ffffff`
+  // at the two call sites because a deployment that re-points the ramp to a
+  // pale one has to be able to re-point this with it.
+  --akg-agent-mark-fg: #ffffff;
+
   // A worker's avatar is an ALIAS, not a new colour: the mock fills it with a
   // hover ground. Naming the role is what stops the next reader inventing a
   // hex for it and quietly forking the palette in one component.

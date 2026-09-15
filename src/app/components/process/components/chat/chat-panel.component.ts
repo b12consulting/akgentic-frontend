@@ -25,7 +25,16 @@ import { ChatService, ThinkingState } from '../../selectors/chat.selector';
 import { IngestionService } from '../../event/ingestion.service';
 import { ContextService } from '../../../../core/context/context.service';
 import { AkgentService } from '../../../../core/ui/akgent.service';
-import { defaultRecipientName, isToolActor } from '../../selectors/actor-kind';
+import { CategoryService } from '../../../../core/ui/category.service';
+import {
+  defaultRecipientName,
+  isAddressableAgent,
+} from '../../selectors/actor-kind';
+import {
+  AgentColours,
+  agentColours,
+  NO_AGENT_COLOURS,
+} from '../../selectors/agent-colour';
 import { GraphDataService } from '../../selectors/graph.selector';
 import { NodeInterface } from '../../models/types';
 import { Selectable, SelectionService } from '../../ui-state/selection.service';
@@ -125,6 +134,10 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
   private akgentService: AkgentService = inject(AkgentService);
   private graphDataService: GraphDataService = inject(GraphDataService);
   private agentReader: AgentReaderService = inject(AgentReaderService);
+  /** The resolved categorical ramp, memoised there. Read once per roster
+   *  emission to build `agentColours`; `getComputedStyle` is a layout flush
+   *  and this is not something to ask per row. */
+  private categoryService: CategoryService = inject(CategoryService);
 
   chatMessages: ChatMessage[] = [];
   thinkingStates: ThinkingState[] = [];
@@ -161,6 +174,22 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
    * known" and keeps the transcript silent rather than guessing.
    */
   defaultRecipient: string | null = null;
+
+  /**
+   * ONE COLOUR PER AGENT, resolved here and handed to every row.
+   *
+   * The lookup is a fact about the ROSTER — which agent was discovered first —
+   * so it is built where the roster arrives rather than by each turn asking the
+   * graph about itself. Every row on the surface then agrees by construction,
+   * and so do the hierarchy graph and the inspector's member list, which build
+   * theirs from the same function over the same nodes.
+   *
+   * BUILT FROM THE UNFILTERED `nodes`, not from `readerAgents` beside it. The
+   * lookup applies its own exclusions; feeding it a pre-narrowed list would
+   * make the transcript's stop assignment depend on a filter the graph does not
+   * apply, and the two would silently disagree.
+   */
+  agentColours: AgentColours = NO_AGENT_COLOURS;
 
   private subscription!: Subscription;
   private readerSubscriptions = new Subscription();
@@ -222,7 +251,15 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
         // that can only disappoint. The rule lives in `isToolActor` rather than
         // inline, because the Member picker asks the same question and two
         // copies of it would eventually disagree.
-        this.readerAgents = nodes.filter((n) => !isToolActor(n.actorName));
+        //
+        // AND NOT THE HUMAN. The rule used to drop the tools only, which left
+        // the person reading this dialog listed in it as somebody whose
+        // conversation they could go and read. Selecting themselves showed
+        // their own turns — a duplicate of the main chat, one pane over, minus
+        // everything the main chat can do with them. `isAddressableAgent` is
+        // both exclusions as one predicate so the two cannot be applied in
+        // different combinations on different surfaces again.
+        this.readerAgents = nodes.filter(isAddressableAgent);
 
         // Resolved HERE, once per roster change, rather than by each turn: it
         // is a fact about the team's shape and a turn holding the graph to ask
@@ -230,6 +267,7 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
         // it to decide whether a turn's recipient is worth naming — see
         // `ChatMessageComponent.ownRecipient`.
         this.defaultRecipient = defaultRecipientName(nodes, ENTRY_POINT_NAME);
+        this.agentColours = agentColours(nodes, this.categoryService.COLORS);
       }),
     );
     this.readerSubscriptions.add(
@@ -667,6 +705,22 @@ export class ChatPanelComponent implements OnInit, OnDestroy, AfterViewChecked {
       agentId: chatMsg.sender.agent_id,
       actorName: chatMsg.sender.name,
     });
+  }
+
+  /**
+   * A NAMED PARTY on a notification row was clicked — open that agent.
+   *
+   * Separate from `onMessageSelected` above, which derives the agent from the
+   * turn's sender. A notification row names two, and the component reports
+   * WHICH was clicked because only it knows; deriving it here could only guess.
+   *
+   * No filtering: the row offers a name as a control exactly when the colour
+   * lookup gave that name a colour, and the lookup's members are this team's
+   * agents. An actor it withheld a colour from is drawn as plain text and never
+   * reaches this handler.
+   */
+  onAgentSelected(agent: AgentRef): void {
+    this.openReaderOn(agent);
   }
 
   /** An agent was picked from the reader's own list. */

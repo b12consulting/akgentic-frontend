@@ -17,6 +17,7 @@ function member(overrides: Partial<InspectorMember> = {}): InspectorMember {
     kind: 'worker',
     depth: 0,
     active: true,
+    colour: null,
     ...overrides,
   };
 }
@@ -263,5 +264,58 @@ describe('MemberCardComponent', () => {
 
     expect(readButton().getAttribute('aria-label')).toBe('<<tab>>');
     expect(readButton().getAttribute('title')).toBe('<<tab>>');
+  });
+});
+
+/**
+ * THE AGENT'S COLOUR ON THE TILE.
+ *
+ * The monogram tile carries the same colour the agent's node wears on the
+ * hierarchy graph and its speaker mark wears in the transcript; these assert the
+ * two halves of that — the fill, and the `.tinted` class that fixes the ink on
+ * top of it, without which the monogram keeps a grey chosen for the flat fill
+ * and vanishes on the darker stops.
+ */
+describe('MemberCardComponent — agent colour', () => {
+  let fixture: ComponentFixture<MemberCardComponent>;
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [MemberCardComponent],
+      providers: [provideTranslateTesting()],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(MemberCardComponent);
+  });
+
+  function avatar(m: InspectorMember): HTMLElement {
+    // `setInput`, not a field write: the card is OnPush, and assigning the
+    // property directly leaves the view unmarked and the assertion reading the
+    // previous render.
+    fixture.componentRef.setInput('member', m);
+    fixture.detectChanges();
+    const el = (fixture.nativeElement as HTMLElement).querySelector(
+      '.member-avatar',
+    );
+    if (el === null) {
+      throw new Error('the avatar did not render');
+    }
+    return el as HTMLElement;
+  }
+
+  it('fills the tile with the member colour and fixes the ink', () => {
+    const el = avatar(member({ colour: 'rgb(170, 0, 0)' }));
+
+    expect(el.style.backgroundColor).toBe('rgb(170, 0, 0)');
+    expect(el.classList).toContain('tinted');
+  });
+
+  it('leaves the flat worker fill alone when the roster gave no colour', () => {
+    // A tile is never blank: with no colour it keeps `--akg-avatar-worker-bg`
+    // from the stylesheet, which means writing no inline background at all.
+    const el = avatar(member({ colour: null }));
+
+    expect(el.style.backgroundColor).toBe('');
+    expect(el.classList).not.toContain('tinted');
   });
 });

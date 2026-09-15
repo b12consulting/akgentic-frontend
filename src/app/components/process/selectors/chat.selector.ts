@@ -16,6 +16,7 @@ import {
   classifyRule,
   ENTRY_POINT_NAME,
 } from './chat-message.model';
+import { HUMAN_ROLE } from './actor-kind';
 import {
   AkgenticMessage,
   EventMessage,
@@ -34,7 +35,6 @@ import {
 } from '../../../protocol/message.types';
 import { MessageLogService } from '../event/message-log.service';
 
-const HUMAN_ROLE = 'Human';
 const ACTOR_SYSTEM_ROLE = 'ActorSystem';
 
 // [CUSTOM] Chat body and chat answer interfaces should be customized according to your API.

@@ -104,11 +104,66 @@
     [class.expanded]="!message().collapsed"
     [class.clipped]="isNoticeClipped()"
   >
+    <!--
+      BOTH NAMES ARE CONTROLS.
+
+      "@Manager contacted @Expert" names two agents, and either can be the one
+      the reader wants. Each is tinted with that agent's own colour on hover —
+      the same colour the node wears on the graph and the tile wears in the
+      member list — and opens that agent's conversation when clicked.
+
+      `.notice-party` is a `<span>` with a role, not a `<button>`: the row it
+      sits in is itself a click target (the fold), and a button inside a
+      clickable row that is inside a list is three nested affordances for the
+      pointer to land on. The handlers stop propagation so opening an agent does
+      not also toggle the fold underneath.
+
+      `--akg-party-colour` is set per name rather than a background being bound
+      directly: the stylesheet decides HOW the colour is used (a wash on hover,
+      the text colour on focus) and this decides WHICH colour. Binding the
+      finished appearance here would put the design in the template.
+
+      The recipient is lifted OUT of the translated sentence — see
+      `noticeVerb()` — so the two halves of the verb sit either side of it and a
+      locale that puts the name mid-phrase still reads correctly.
+    -->
     <ng-container *ngIf="showAgentNames; else noticeAnonymous">
-      <span class="notice-subject">{{ senderName() }}</span>
-      <span class="notice-verb">{{
-        "chat.notice.contacted" | translate : { agent: recipientName() }
-      }}</span>
+      <span
+        class="notice-subject notice-party"
+        [class.openable]="isSenderOpenable()"
+        [style.--akg-party-colour]="senderColour()"
+        [attr.role]="isSenderOpenable() ? 'button' : null"
+        [attr.tabindex]="isSenderOpenable() ? 0 : null"
+        [attr.title]="
+          isSenderOpenable()
+            ? ('inspector.readConversationOf' | translate: { agent: senderName() })
+            : null
+        "
+        (click)="onSenderClick($event)"
+        (keydown.enter)="onSenderClick($event)"
+        (keydown.space)="onSenderClick($event)"
+        >{{ senderName() }}</span
+      >
+      <span class="notice-verb"
+        >{{ noticeVerbBefore
+        }}<span
+          class="notice-party"
+          [class.openable]="isRecipientOpenable()"
+          [style.--akg-party-colour]="recipientColour()"
+          [attr.role]="isRecipientOpenable() ? 'button' : null"
+          [attr.tabindex]="isRecipientOpenable() ? 0 : null"
+          [attr.title]="
+            isRecipientOpenable()
+              ? ('inspector.readConversationOf'
+                | translate: { agent: recipientName() })
+              : null
+          "
+          (click)="onRecipientClick($event)"
+          (keydown.enter)="onRecipientClick($event)"
+          (keydown.space)="onRecipientClick($event)"
+          >{{ recipientName() }}</span
+        >{{ noticeVerbAfter }}</span
+      >
     </ng-container>
     <ng-template #noticeAnonymous>
       <span class="notice-subject">{{ collapsedFallback() | translate }}</span>
@@ -227,9 +282,18 @@
   <!-- The speaker's mark, on their side only. The user's own turn is already
        identified by being a bubble on the right, so a second marker there would
        label what the shape has already said. -->
+  <!--
+    Filled with the SPEAKER'S OWN colour when there is one — the same colour
+    their node wears on the hierarchy graph and their tile wears in the member
+    list, which is the whole point of there being one. Falls back to the flat
+    worker fill in the stylesheet when the lookup withholds a colour (a tool, or
+    a roster that has not arrived), so the mark is never blank.
+  -->
   <span
     class="turn-avatar"
     *ngIf="message().alignment === 'left' && message().rule !== 5"
+    [style.background-color]="senderColour()"
+    [class.tinted]="senderColour() !== null"
     aria-hidden="true"
     >{{ avatarInitial() }}</span
   >
@@ -252,6 +316,8 @@
       <button
         *ngIf="showAgentNames && message().rule !== 1"
         class="label-pill"
+        [class.tinted]="senderColour() !== null"
+        [style.--akg-party-colour]="senderColour()"
         [disabled]="message().rule === 1 || message().rule === 5"
         (click)="onLabelClick(); $event.stopPropagation()"
       >

@@ -342,6 +342,64 @@
   margin-left: 4px;
 }
 
+/*
+ * A NAMED AGENT, INSIDE THE SENTENCE.
+ *
+ * The row says "@Manager contacted @Expert", and each name is a way into that
+ * agent's own conversation. `--akg-party-colour` is set per name by the
+ * template from the shared agent→colour lookup; everything about HOW that
+ * colour is used is decided here.
+ *
+ * AT REST IT LOOKS LIKE PROSE. An ambient row is one line saying something
+ * happened, and two permanently-tinted words in it would make the quietest row
+ * on the surface the loudest. The colour arrives on hover and on focus, which
+ * is when the question "can I click this?" is actually being asked.
+ *
+ * `color-mix` rather than an `rgba()` literal or a second token per agent: the
+ * ramp is ten saturated categorical stops chosen to be told APART, and any of
+ * them behind 13px text at full strength fails contrast. Mixing each one into
+ * the panel ground gives a wash that is recognisably that agent's colour and
+ * still leaves `--akg-text` legible on top, without the palette having to
+ * declare a tint for every stop.
+ *
+ * ONLY `.openable`. A tool in the subject position gets no colour from the
+ * lookup and no `.openable` class, so it is drawn as plain text and ignores a
+ * click — one fact gating both, rather than a rule here and a rule in the
+ * component that could disagree.
+ */
+.notice-party {
+  border-radius: 4px;
+  padding: 0 3px;
+  margin: 0 -3px;
+
+  &.openable {
+    cursor: pointer;
+    transition:
+      background-color 120ms ease,
+      color 120ms ease;
+
+    &:hover,
+    &:focus-visible {
+      background-color: color-mix(
+        in srgb,
+        var(--akg-party-colour) 16%,
+        transparent
+      );
+      /* The name itself takes the agent's own ink, darkened against the ground
+         rather than used raw: at 70% these stops clear 4.5:1 on the panel,
+         where several of them do not at full strength. */
+      color: color-mix(in srgb, var(--akg-party-colour) 70%, var(--akg-text));
+    }
+
+    /* The keyboard route to the same thing. `:focus-visible` above paints it;
+       this is the ring, which the hover state deliberately does not draw. */
+    &:focus-visible {
+      outline: 2px solid var(--akg-party-colour);
+      outline-offset: 1px;
+    }
+  }
+}
+
 /* The body, after the subject. The separator is generated rather than typed
    into the template so it cannot end up in the accessible name of the row, and
    so an empty body (no preview element) takes its punctuation with it — the old
@@ -417,6 +475,23 @@
   font-weight: 600;
   letter-spacing: 0.01em;
   user-select: none;
+
+  /*
+   * THE AGENT'S OWN COLOUR, when the roster gave it one.
+   *
+   * The background itself is bound inline by the template — it is data, one
+   * value out of a ten-stop ramp, and a stylesheet cannot enumerate it. What
+   * this class does is fix the ink that has to sit on top: the resting mark is
+   * `--akg-accent-bright` on `--akg-accent-fg`, a pairing chosen for those two
+   * colours, and carrying it onto an arbitrary stop of a categorical ramp is
+   * how a monogram ends up invisible on the one stop that happens to be pale.
+   * White is the one value that clears 4.5:1 against every stop in the ramp,
+   * which is a property of the ramp rather than a coincidence — the stops were
+   * contrast-checked as marks to be told apart on a light ground.
+   */
+  &.tinted {
+    color: var(--akg-agent-mark-fg);
+  }
 }
 
 /*
@@ -557,6 +632,20 @@
 
   &:hover:not(:disabled) {
     background-color: var(--akg-accent-border);
+  }
+
+  /*
+   * The SPEAKER'S colour on hover, matching the two names on a notification
+   * row — the pill opens the same reader, so it must not answer the pointer in
+   * a different colour. Same `color-mix` treatment and the same reason.
+   */
+  &.tinted:hover:not(:disabled) {
+    background-color: color-mix(
+      in srgb,
+      var(--akg-party-colour) 16%,
+      transparent
+    );
+    color: color-mix(in srgb, var(--akg-party-colour) 70%, var(--akg-text));
   }
 
   &:disabled {

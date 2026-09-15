@@ -52,7 +52,9 @@
               [ratingEnabled]="false"
               [replyEnabled]="false"
               [notification]="isPending(item.data)"
+              [agentColours]="agentColours()"
               (messageSelected)="onMessageAgentClick($event)"
+              (agentSelected)="onPartyClick($event)"
               (toggleCollapse)="onToggleCollapse($event)"
             ></app-chat-message>
             <!-- Chrome, not a turn (Epic 54 NFR1). It falls out of the shared

@@ -62,7 +62,14 @@ describe('GraphComponent — the empty-state overlay', () => {
         { provide: GraphDataService, useValue: { nodes$, edges$, categories$ } },
         { provide: ApiService, useValue: {} },
         { provide: AkgentService, useValue: {} },
-        { provide: CategoryService, useValue: { setSelectedCategory: () => {} } },
+        {
+          //  is part of this service's shape and the graph reads it to
+          // colour a node per agent. A stub that omitted it crashed the pane the
+          // moment nodes arrived — the stub was lying about the contract, not the
+          // caller being unsafe.
+          provide: CategoryService,
+          useValue: { setSelectedCategory: () => {}, COLORS: ['#101010', '#202020'] },
+        },
         { provide: SelectionService, useValue: { handleSelection: () => {} } },
       ],
     }).compileComponents();

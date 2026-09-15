@@ -99,6 +99,26 @@ const PAIRED: readonly Pairing[] = [
  * to match a token would look identical to a token that had been considered and
  * cleared, and this file exists because a contrast question went unasked.
  */
+/**
+ * The ink on an agent's coloured mark, against EVERY stop it can land on.
+ *
+ * `--akg-agent-mark-fg` is not paired with one ground: the transcript's speaker
+ * tile and the inspector's member tile are filled with whichever stop of the
+ * categorical ramp the roster handed that agent, so the question is not "does it
+ * clear on this ground" but "does it clear on all ten".
+ *
+ * MEASURED RATHER THAN EXCUSED. The token's own comment claims that carrying
+ * white is a property of the ramp — those stops were chosen as marks to be told
+ * apart on a light ground, so all ten are dark. A claim like that is exactly
+ * what this file exists to stop being taken on trust, and it is the claim that
+ * breaks first when a deployment re-points the ramp to a pastel one.
+ */
+const AGENT_MARK_FG = '--akg-agent-mark-fg';
+const AGENT_MARK_GROUNDS: readonly string[] = Array.from(
+  { length: 10 },
+  (_, i) => `--akg-graph-category-${i + 1}`,
+);
+
 const NOT_MEASURED = new Map([
   [
     '--akg-notify-fg',
@@ -234,10 +254,19 @@ describe('the console palette', () => {
    * `--akg-text-whisper` fails this spec until somebody has stated which bar it
    * is meant to clear, or why it has none.
    */
+  for (const ground of AGENT_MARK_GROUNDS) {
+    it(`${AGENT_MARK_FG} is readable on ${ground} (AA, 4.5:1)`, () => {
+      expect(contrast(tokenValue(AGENT_MARK_FG), tokenValue(ground)))
+        .withContext(`${AGENT_MARK_FG} on ${ground}`)
+        .toBeGreaterThanOrEqual(4.5);
+    });
+  }
+
   it('declares no foreground token this spec neither measures nor excuses', () => {
     const measured = new Set([
       ...[...TEXT, ...GLYPH, ...PAIRED].map((entry) => entry.token),
       ...NOT_MEASURED.keys(),
+      AGENT_MARK_FG,
     ]);
     // Foregrounds by naming convention; `-bg`, `-border` and the rest are
     // grounds and are covered by being grounds.

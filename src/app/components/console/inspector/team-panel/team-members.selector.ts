@@ -1,6 +1,14 @@
 import { NodeInterface } from '../../../process/models/types';
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
-import { isHumanNode, isToolActor, toolLabel } from './tool-actors';
+import {
+  isHumanNode,
+  isToolNode,
+  toolLabel,
+} from '../../../process/selectors/actor-kind';
+import {
+  AgentColours,
+  NO_AGENT_COLOURS,
+} from '../../../process/selectors/agent-colour';
 
 /**
  * What a member IS, structurally: a node that has children supervises them, a
@@ -35,6 +43,19 @@ export interface InspectorMember {
   readonly kind: MemberKind;
   /** 0-based nesting, CAPPED at {@link MAX_MEMBER_DEPTH}. */
   readonly depth: number;
+  /**
+   * THIS MEMBER'S OWN COLOUR, or null when the roster gave it none.
+   *
+   * The same value the hierarchy graph fills this agent's node with and the
+   * transcript fills its speaker mark with — one identity, so following an
+   * agent from the member list to the drawing to what it said is a matter of
+   * looking rather than reading names.
+   *
+   * Pre-derived here with everything else the card renders: a card that
+   * resolved its own colour would need the roster, and two surfaces resolving
+   * from two roster views is how they come to disagree.
+   */
+  readonly colour: string | null;
   readonly active: boolean;
 }
 
@@ -86,6 +107,7 @@ function toMember(
   kind: MemberKind,
   depth: number,
   roleKey: string,
+  colours: AgentColours,
 ): InspectorMember {
   const actorName = String(node.actorName ?? '');
   const label = makeAgentNameUserFriendly(actorName);
@@ -93,6 +115,7 @@ function toMember(
     id: node.name,
     label,
     actorName,
+    colour: colours.of(actorName),
     initial: label.charAt(0).toUpperCase(),
     roleKey,
     kind,
@@ -135,6 +158,7 @@ function toMember(
  */
 export function buildInspectorTeam(
   nodes: readonly NodeInterface[],
+  colours: AgentColours = NO_AGENT_COLOURS,
 ): InspectorTeamView {
   let human: InspectorMember | null = null;
   let humanTeam: number | null = null;
@@ -149,12 +173,12 @@ export function buildInspectorTeam(
       // First human wins. A second human node would be a protocol surprise, and
       // a list of "you" cards is not a thing this panel can mean.
       if (human === null) {
-        human = toMember(node, 'worker', 0, ROLE_KEY_MEMBER);
+        human = toMember(node, 'worker', 0, ROLE_KEY_MEMBER, colours);
         humanTeam = node.category;
       }
       continue;
     }
-    if (isToolActor(node)) {
+    if (isToolNode(node)) {
       const label = toolLabel(node);
       if (!seenTools.has(label)) {
         seenTools.add(label);
@@ -194,7 +218,13 @@ export function buildInspectorTeam(
     const children = childrenOf.get(node.name) ?? [];
     const kind: MemberKind = children.length > 0 ? 'supervisor' : 'worker';
     members.push(
-      toMember(node, kind, Math.min(depth, MAX_MEMBER_DEPTH), roleKeyFor(kind)),
+      toMember(
+        node,
+        kind,
+        Math.min(depth, MAX_MEMBER_DEPTH),
+        roleKeyFor(kind),
+        colours,
+      ),
     );
     for (const child of children) {
       visit(child, depth + 1);
@@ -255,6 +285,12 @@ function membersEqual(
     a.roleKey === b.roleKey &&
     a.kind === b.kind &&
     a.depth === b.depth &&
-    a.active === b.active
+    a.active === b.active &&
+    // AND THE COLOUR. It is derived from the agent's POSITION in the roster, so
+    // it can change while every other field on the row stays put — an agent
+    // ahead of this one leaving shifts the stops behind it. Omitted here, that
+    // move would be swallowed by `distinctUntilChanged` and the member list
+    // would go on drawing tiles in colours the graph had stopped using.
+    a.colour === b.colour
   );
 }

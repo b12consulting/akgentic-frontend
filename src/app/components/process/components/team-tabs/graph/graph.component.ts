@@ -33,6 +33,8 @@ import {
 } from '../../../../../core/ui/category.service';
 
 // Import the shared GraphDataService
+import { isToolNode } from '../../../selectors/actor-kind';
+import { agentColours } from '../../../selectors/agent-colour';
 import { makeAgentNameUserFriendly } from '../../../../../shared/util/util';
 import { GraphDataService } from '../../../selectors/graph.selector';
 import {
@@ -66,30 +68,6 @@ function escapeHtml(value: string): string {
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
-}
-
-/**
- * The mark that tells a tool from an agent on the wire.
- *
- * `actorName` carries it: agents arrive as `@Manager`, tools as
- * `#VectorStore`. It is a display convention rather than a typed field, which
- * is why this is a prefix test and not a `kind === 'tool'` — there is no such
- * field to read.
- */
-const TOOL_ACTOR_PREFIX = '#';
-
-/**
- * Whether a node is a tool rather than an actor.
- *
- * TOOLS ARE NOT DRAWN ON THIS GRAPH. The pane answers "who is on this team and
- * who talks to whom"; a tool is neither — it is something an agent HOLDS, and
- * it is listed as such on the Team panel. On the canvas it was noise with a
- * specific cost: an unused tool has no edge at all, so it is a node the force
- * layout can only push around, and half the graph was these. The Team panel is
- * where the full inventory stays.
- */
-function isToolNode(node: { actorName?: string }): boolean {
-  return (node.actorName ?? '').startsWith(TOOL_ACTOR_PREFIX);
 }
 
 @Component({
@@ -273,6 +251,18 @@ export class GraphComponent {
       itemWidth: 10,
       itemHeight: 10,
       textStyle: { color: legendColor, fontFamily, fontSize: 11 },
+      // A NEUTRAL MARK, because the nodes are no longer coloured by squad.
+      //
+      // Each entry used to carry its squad's colour, and that was honest while
+      // the nodes wore it too. Now a node's fill is its AGENT's — one identity
+      // shared with the transcript and the member list — so a coloured legend
+      // would be pointing at a scheme nothing on the canvas uses, and the
+      // obvious reading ("blue means this squad") would be wrong.
+      //
+      // The entry stays: it is still the control that shows and hides a squad,
+      // and that is what it is for. `itemStyle` here overrides the per-category
+      // colour echarts would otherwise take from the series.
+      itemStyle: { color: quiet, borderColor: quiet },
       // A squad the user has switched OFF still has to be readable enough to
       // switch back on, which is what makes this a meaningful mark rather than
       // a disabled one.
@@ -453,7 +443,10 @@ export class GraphComponent {
    * there, which is exactly how this pane hid a bug for a release.
    */
   private updateChart() {
-    // FILTERED FOR THE CANVAS ONLY. `this.nodes` keeps every actor, because it
+    // FILTERED FOR THE CANVAS ONLY, by the SHARED predicate — this pane used
+    // to restate the '#'-prefix rule inline, which made three copies of it in
+    // a codebase whose `actor-kind.ts` opens by warning that a rule written
+    // twice is a rule that drifts. `this.nodes` keeps every actor, because it
     // is also what `<app-human-request [nodes]>` reads and what the empty-state
     // overlay counts — a team of one agent and six tools is not an empty team,
     // and a human request raised by an agent must still be findable.
@@ -468,6 +461,36 @@ export class GraphComponent {
       (e) => drawn.has(e.source) && drawn.has(e.target)
     );
 
+    /*
+     * ONE COLOUR PER AGENT, and it is the SAME colour the transcript's speaker
+     * mark and the inspector's member tile draw — see `agent-colour.ts`. The
+     * canvas used to take its fill from the node's `category`, i.e. from its
+     * SQUAD, which in a single-squad deployment painted the whole team one
+     * colour and tied the drawing to nothing else in the console.
+     *
+     * BUILT FROM THE UNFILTERED ROSTER (`this.nodes`), not from `nodes` above.
+     * The lookup skips tools itself, and handing it a list the tools had
+     * already been removed from would make this pane's stop assignment depend
+     * on a filter no other surface applies — the two would agree today and
+     * drift the first time one of them changed.
+     *
+     * ON THE NODE, NOT ON THE CATEGORY. A node-level `itemStyle` wins over the
+     * category's in echarts, which is exactly the precedence wanted: the
+     * category still exists, because the legend still filters on it.
+     *
+     * AN ERROR STILL WINS. `applyErrorMessage` writes `itemStyle.color` to
+     * mark a failed or thinking actor and clears the key again on recovery, so
+     * a colour already present is that signal and must not be painted over —
+     * "this agent is @Manager" is never worth more than "this agent failed".
+     */
+    const colours = agentColours(this.nodes || [], this.categoryService.COLORS);
+    const painted = nodes.map((n) => {
+      const signal = n.itemStyle?.color;
+      const own = colours.of(n.actorName);
+      if (signal || !own) return n;
+      return { ...n, itemStyle: { ...(n.itemStyle || {}), color: own } };
+    });
+
     const categories = this.categories || [];
     const names = categories.map((c) => c.name);
 
@@ -476,7 +499,7 @@ export class GraphComponent {
       // identity does not change; a new `[options]` reference would be answered
       // with a notMerge replace the moment change detection next ran.
       if (this.seededSeries && this.seededLegend) {
-        this.seededSeries.data = nodes;
+        this.seededSeries.data = painted;
         this.seededSeries.links = edges;
         this.seededSeries.categories = categories;
         this.seededLegend.data = names;
@@ -488,7 +511,7 @@ export class GraphComponent {
       legend: [{ data: names }],
       series: [
         {
-          data: nodes,
+          data: painted,
           links: edges,
           categories: categories,
         },
