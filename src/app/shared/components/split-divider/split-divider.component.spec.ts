@@ -285,6 +285,121 @@ describe('SplitDividerComponent (Story 52-2)', () => {
   });
 
   /**
+   * THE DRAG THAT WOULD NOT LET GO.
+   *
+   * Reported from use: after releasing the button, the divider sometimes keeps
+   * following the pointer. `pointerup` is the only path the original code had,
+   * and it is not a guaranteed event — capture can end without one (released
+   * outside the window, the element re-rendered mid-drag, the OS taking the
+   * pointer), and `setPointerCapture` can throw before the handler that would
+   * have cleared `dragging` was ever reachable.
+   *
+   * Three ways out, because no single one of them is certain to arrive. Each
+   * spec here drives ONE of them with the others withheld, which is what makes
+   * them evidence about that path rather than about whichever fires first.
+   */
+  describe('a drag always ends', () => {
+    /** A drag in progress that has already moved the panes once. */
+    function dragging(): void {
+      const trackEl = fixture.nativeElement.querySelector('div') as HTMLElement;
+      spyOn(trackEl, 'getBoundingClientRect').and.returnValue({
+        left: 0,
+        width: 1000,
+      } as DOMRect);
+      // Set directly rather than via `pointerdown`: `setPointerCapture`
+      // rejects a pointer id the browser has no record of, and the capture is
+      // not what these specs are about.
+      host.divider.dragging = true;
+      host.divider.onPointerMove({ clientX: 600, buttons: 1 } as PointerEvent);
+      expect(host.live.length)
+        .withContext('the drag must actually be moving before it is ended')
+        .toBe(1);
+    }
+
+    it('stops on the first move with no button held, and settles there', () => {
+      dragging();
+      const moved = host.live[0];
+
+      host.divider.onPointerMove({ clientX: 800, buttons: 0 } as PointerEvent);
+
+      expect(host.divider.dragging).toBeFalse();
+      // The move that ended the drag is not also a drag step: the pointer was
+      // no longer held anywhere along the way to 800.
+      expect(host.live).toEqual([moved]);
+      expect(host.commits)
+        .withContext('the width the user let go at is the one to keep')
+        .toEqual([moved]);
+    });
+
+    it('does not follow the pointer once a buttonless move has ended it', () => {
+      dragging();
+      const moved = host.live[0];
+
+      host.divider.onPointerMove({ clientX: 800, buttons: 0 } as PointerEvent);
+      host.divider.onPointerMove({ clientX: 300, buttons: 0 } as PointerEvent);
+      host.divider.onPointerMove({ clientX: 900, buttons: 0 } as PointerEvent);
+
+      expect(host.live).toEqual([moved]);
+      expect(host.commits).toEqual([moved]);
+    });
+
+    it('stops when capture is lost without any pointerup', () => {
+      dragging();
+      const moved = host.live[0];
+
+      element.dispatchEvent(
+        new Event('lostpointercapture', { bubbles: true }),
+      );
+      fixture.detectChanges();
+
+      expect(host.divider.dragging).toBeFalse();
+      expect(host.commits).toEqual([moved]);
+    });
+
+    /**
+     * The release fires BOTH `pointerup` and `lostpointercapture`, so the
+     * second one to arrive must be a no-op. Committing twice would persist the
+     * same width twice and, on a host that treats a commit as a user action,
+     * count one drag as two. Clearing `lastEmitted` is what prevents it — this
+     * spec is what says so, having gone green against a `dragging` guard that
+     * looked like the reason and was not.
+     */
+    it('settles once when both end-of-drag events arrive', () => {
+      dragging();
+      const moved = host.live[0];
+
+      host.divider.onPointerUp({ pointerId: 1 } as PointerEvent);
+      element.dispatchEvent(
+        new Event('lostpointercapture', { bubbles: true }),
+      );
+      fixture.detectChanges();
+
+      expect(host.commits).toEqual([moved]);
+    });
+
+    /**
+     * `setPointerCapture` throws on a pointer id the browser has no record of
+     * — which is every synthetic `pointerdown`, and in a real browser a pointer
+     * the OS has already taken back. The throw used to escape the handler with
+     * `dragging` already set, leaving a divider nothing on the page could stop.
+     */
+    it('starts a drag even when the pointer cannot be captured', () => {
+      spyOn(element, 'setPointerCapture').and.throwError('NotFoundError');
+
+      expect(() =>
+        element.dispatchEvent(
+          new PointerEvent('pointerdown', { bubbles: true, button: 0 }),
+        ),
+      ).not.toThrow();
+      expect(host.divider.dragging).toBeTrue();
+
+      // And it is still a drag that ends: the backstop does not need capture.
+      host.divider.onPointerMove({ clientX: 800, buttons: 0 } as PointerEvent);
+      expect(host.divider.dragging).toBeFalse();
+    });
+  });
+
+  /**
    * R3. The range is the HOST's.
    *
    * This divider measures the LEFTMOST pane, so one preference about one
