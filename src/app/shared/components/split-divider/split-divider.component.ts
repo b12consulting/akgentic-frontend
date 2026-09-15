@@ -92,6 +92,12 @@ import {
     '(pointermove)': 'onPointerMove($event)',
     '(pointerup)': 'onPointerUp($event)',
     '(pointercancel)': 'onPointerUp($event)',
+    // THE RELEASE THIS COMPONENT NEVER HEARS ABOUT. `pointerup` is not
+    // guaranteed: capture can end without one — the button released outside the
+    // window, the element re-rendered mid-drag, the OS taking the pointer. Left
+    // unhandled, `dragging` stays true and the divider keeps following a
+    // pointer with nothing held down. See `endDrag`.
+    '(lostpointercapture)': 'onLostPointerCapture()',
     '(keydown)': 'onKeyDown($event)',
     '(dblclick)': 'onDoubleClick()',
   },
@@ -166,12 +172,24 @@ export class SplitDividerComponent {
     if (event.button !== 0) {
       return;
     }
-    this.dragging = true;
     this.lastEmitted = null;
     // Pointer capture, not a document listener: it keeps the events coming
-    // when the pointer leaves this 8px strip — which it does immediately —
-    // and it releases itself if the pointer is lost.
-    this.host.nativeElement.setPointerCapture(event.pointerId);
+    // when the pointer leaves this 8px strip — which it does immediately. It
+    // also releases ITSELF when the pointer is lost, which is not the same as
+    // telling us: that is what `lostpointercapture` is bound for.
+    //
+    // It THROWS on a pointer id the browser has no record of, and an exception
+    // escaping here used to leave `dragging` already true with no capture and
+    // no handler to clear it — a divider stuck to the pointer until the next
+    // release that happens to land on the strip itself. The drag is still
+    // worth starting without capture (it just stops tracking once the pointer
+    // leaves the strip), so this catches rather than returns.
+    try {
+      this.host.nativeElement.setPointerCapture(event.pointerId);
+    } catch {
+      // Nothing to do: `endDrag` tolerates a capture that was never taken.
+    }
+    this.dragging = true;
     // Otherwise the drag selects the text of both panes as it crosses them.
     event.preventDefault();
     this.host.nativeElement.focus();
@@ -179,6 +197,22 @@ export class SplitDividerComponent {
 
   onPointerMove(event: PointerEvent): void {
     if (!this.dragging) {
+      return;
+    }
+    /*
+     * THE BACKSTOP, AND THE ONLY ONE THAT CANNOT BE MISSED.
+     *
+     * Every other end-of-drag path is an event the browser may not send. This
+     * one is a fact carried BY the move itself: no button is down, so whatever
+     * happened to the release, the drag is over. It is what turns "the divider
+     * is still dragging minutes later" into one stale frame.
+     *
+     * Explicitly `=== 0` rather than falsy: `buttons` is absent on the partial
+     * objects specs construct, and treating "not reported" as "released" would
+     * make a synthetic drag impossible to write.
+     */
+    if (event.buttons === 0) {
+      this.endDrag(event.pointerId);
       return;
     }
     const rect = this.track.getBoundingClientRect();
@@ -199,12 +233,37 @@ export class SplitDividerComponent {
   }
 
   onPointerUp(event: PointerEvent): void {
-    if (!this.dragging) {
-      return;
-    }
+    this.endDrag(event.pointerId);
+  }
+
+  /**
+   * Capture ended without a `pointerup` reaching us.
+   *
+   * The width the panes are showing is the one the user dropped them at, so
+   * this settles exactly like a release. There is no pointer id to give back —
+   * the capture is already gone, which is what this event means.
+   */
+  onLostPointerCapture(): void {
+    this.endDrag();
+  }
+
+  /**
+   * The single end of a drag, whichever way it arrives.
+   *
+   * MUST be safe to run twice, because the paths overlap: an ordinary release
+   * fires `pointerup` AND `lostpointercapture`, and a stuck one is ended by the
+   * next move instead. What makes it safe is clearing `lastEmitted` — the
+   * second call finds nothing to commit, so one drag persists one width. A
+   * `dragging` guard here would look like the mechanism and is not one; it was
+   * tried, and removing it changed no test and no behaviour.
+   */
+  private endDrag(pointerId?: number): void {
     this.dragging = false;
-    if (this.host.nativeElement.hasPointerCapture(event.pointerId)) {
-      this.host.nativeElement.releasePointerCapture(event.pointerId);
+    if (
+      pointerId !== undefined &&
+      this.host.nativeElement.hasPointerCapture(pointerId)
+    ) {
+      this.host.nativeElement.releasePointerCapture(pointerId);
     }
     // A press-and-release that never moved emitted nothing, and commits
     // nothing: there is no new width, and re-persisting the old one would be a
