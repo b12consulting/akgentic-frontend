@@ -14,7 +14,7 @@ import { TokenCountPipe } from '../../../../shared/pipes/token-count.pipe';
  * What this team has spent, in three numbers.
  *
  * BARE `inject`, never a local `providers` entry: `TokenUsageSelector` is
- * component-scoped on `ProcessComponent` and re-providing it here would create
+ * scoped to the `process/:id` route and re-providing it here would create
  * a SECOND selector over an empty store, so the panel would sit at zero while
  * the transcript ran. The shared-instance expectation is pinned in this
  * component's own spec (it used to be pinned by `tree.component.spec.ts`, which

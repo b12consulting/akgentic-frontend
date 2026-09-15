@@ -2,7 +2,6 @@ import { inject, Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
 import { AkgentService } from '../../../core/ui/akgent.service';
 import { ApiService } from '../../../core/http/api.service';
-import { ChatService } from '../selectors/chat.selector';
 import { ContextService } from '../../../core/context/context.service';
 
 import { SentMessage } from '../../../protocol/message.types';
@@ -22,7 +21,6 @@ export class SelectionService {
 
   akgentService: AkgentService = inject(AkgentService);
   apiService: ApiService = inject(ApiService);
-  chatService: ChatService = inject(ChatService);
   contextService: ContextService = inject(ContextService);
 
   handleSelection(selection: Selectable): void {

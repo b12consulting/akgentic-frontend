@@ -33,7 +33,7 @@ import { MessageLogService } from './message-log.service';
  *
  * SCOPING (NFR / ADR-005 parity):
  *   {@link PerAgentStoreRegistry} is COMPONENT-SCOPED — it injects the
- *   component-scoped `MessageLogService` and must be provided on
+ *   route-scoped `MessageLogService` and must be provided on
  *   the `process/:id` route's providers (NEVER `providedIn: 'root'`). A team switch
  *   destroys the component, which destroys the registry (and its single
  *   `log$` subscription), so no per-agent state leaks across processes. This

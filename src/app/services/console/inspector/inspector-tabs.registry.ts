@@ -75,12 +75,16 @@ export interface VisualizationOption {
  *      `[class.moved-offscreen]="isHidden('<value>')"`.
  *
  * The second one cannot be collapsed into the first from here, and it is worth
- * saying WHY rather than leaving the next reader to re-discover it: every panel
- * reads a service that is component-scoped on `ProcessComponent.providers`, so
- * the panels are PROJECTED and must be declared in that template. A registry
- * that also owned the components would have them resolve against the
- * inspector's injector, find nothing, and throw. `isHidden()` is already
- * generic over the value, so there is no per-tab case to add there.
+ * saying WHY rather than leaving the next reader to re-discover it: the panels
+ * live in `ui/` and this registry is in `services/`, which the boundary rules
+ * give no edge to `ui`. So a registry that also owned the components could not
+ * import them, and the panels are PROJECTED from the host's template instead.
+ * `isHidden()` is already generic over the value, so there is no per-tab case
+ * to add there.
+ *
+ * (Not an injector constraint. An earlier version of this note blamed
+ * the `process/:id` route's providers; the team's services moved to the `process/:id`
+ * route and resolve anywhere under it.)
  *
  * What is NOT a touch point any more: the capability filter (declare
  * `requires`), the tab ORDER (it is this array's order), and the narrow-pane

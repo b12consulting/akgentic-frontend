@@ -1,6 +1,6 @@
 // Minimal, boundary-only ESLint flat config (ESLint 9).
 //
-// SCOPE (Epic 18 / ADR-015 §7 — story 18-6): this config enforces EXACTLY ONE
+// SCOPE: this config enforces EXACTLY ONE
 // rule — the one-way import DAG between the frontend's architectural layers. It
 // deliberately does NOT adopt @angular-eslint, @typescript-eslint recommended,
 // stylistic, formatting, or type-aware rules; those would flag the pre-existing,
@@ -11,32 +11,17 @@
 // relative-import depth. This is the robust encoding for this codebase, which
 // uses relative imports with no tsconfig path aliases.
 //
-// The allow list below mirrors ADR-015 §7 verbatim:
+// THE ALLOW LIST IS BELOW, not here. It used to be transcribed into this header
+// as well, and the copy went stale the moment the layers were reorganised: it
+// named eleven element types that no longer exist and asserted two rules the
+// live config contradicts. A linter never warns about a permission it grants,
+// so a false RESTRICTION written in a comment is the one class of belief this
+// gate structurally cannot correct — which is why the transcription is gone
+// rather than updated.
 //
-//   App level:
-//     protocol        -> nothing app-internal
-//     shared          -> protocol
-//     core            -> protocol, shared
-//     page-*          -> core, shared, protocol, feature-catalog,
-//                        feature-team-creation
-//                       (NO sibling-page imports, EXCEPT the two reusable
-//                        dialogs — the catalog's namespace panel and the team
-//                        creation gate + metadata modal — which pages embed)
-//     feature-*       -> core, shared, protocol
-//     console         -> core, shared, protocol, feature-team-creation,
-//                        proc-selectors, proc-models
-//
-//   Within process/ (top consumes down):
-//     proc-components -> proc-ui-state, proc-selectors, proc-event,
-//                        proc-workspace, proc-models, core, shared, protocol
-//     proc-ui-state   -> proc-selectors, proc-event, proc-models, core, protocol
-//     proc-selectors  -> proc-event, proc-models, core, shared, protocol
-//     proc-workspace  -> core, protocol
-//     proc-event      -> proc-models, core, protocol
-//     proc-models     -> protocol
-//
-//   Acyclic chain:
-//     components -> ui-state -> selectors -> event -> core -> { shared, protocol }
+// For the layers and what each may import, read `README.md` "## Layout"; for
+// what is enforced, read `boundaries/elements` and `boundaries/dependencies`
+// below, which are the only authority.
 //
 // Verification is behavioural (story AC #4/#5): `npm run lint` exits 0 on the
 // migrated tree and non-zero on a planted cross-layer import. There are NO
@@ -102,6 +87,11 @@ module.exports = tseslint.config(
         { type: 'svc-selectors', pattern: 'src/app/services/process/selectors' },
         { type: 'svc-ui-state', pattern: 'src/app/services/process/ui-state' },
         { type: 'svc-workspace', pattern: 'src/app/services/process/workspace' },
+        // The team's open/close ritual. Its own type because it is the one unit
+        // in the data layer that composes the others — it drives the ingestion
+        // pipeline — and folding it into the generic `services` type would
+        // either deny it that edge or hand it to every other feature's services.
+        { type: 'svc-session', pattern: 'src/app/services/process/session' },
         { type: 'services', pattern: 'src/app/services' },
 
         // --- The two view layers ---------------------------------------------
@@ -146,6 +136,24 @@ module.exports = tseslint.config(
               allow: {
                 to: {
                   type: ['svc-selectors', 'svc-event', 'svc-models', 'core', 'protocol'],
+                },
+              },
+            },
+            {
+              // It composes the pipeline and reads the app's team context; it
+              // must NOT reach a view, which is what keeps `open a team` a
+              // mechanism rather than one console's behaviour.
+              from: { type: 'svc-session' },
+              allow: {
+                to: {
+                  type: [
+                    'svc-event',
+                    'svc-selectors',
+                    'svc-models',
+                    'core',
+                    'shared',
+                    'protocol',
+                  ],
                 },
               },
             },
@@ -220,6 +228,7 @@ module.exports = tseslint.config(
                     'svc-models',
                     'svc-event',
                     'svc-selectors',
+                    'svc-session',
                     'svc-ui-state',
                     'svc-workspace',
                     'core',

@@ -69,7 +69,7 @@ export class ConnectionToast {
    * the socket and the resulting `complete` re-enters `show()`.
    *
    * One-way by design: nothing sets it back to `false`, matching the flag it
-   * replaces. A component-scoped service is never re-initialised after its
+   * replaces. A route-scoped service is never re-initialised after its
    * component is destroyed, so there is no path that would need it cleared. If a
    * future story ever re-inits after destroy this becomes a live bug — it is not
    * one today.

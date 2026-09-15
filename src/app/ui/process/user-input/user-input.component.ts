@@ -102,7 +102,7 @@ export class ProcessUserInputComponent implements OnInit {
    * The team's running token cost, for the line beside the send button.
    *
    * OPTIONAL injection, and the reason is a real seam rather than defensiveness.
-   * `TokenUsageSelector` is component-scoped on `ProcessComponent.providers`
+   * `TokenUsageSelector` is scoped to the `process/:id` route
    * (never `providedIn: 'root'`, because a root instance would carry one team's
    * totals into the next), and in the running app this composer is always
    * mounted inside that injector. It is NOT always mounted inside it in tests:

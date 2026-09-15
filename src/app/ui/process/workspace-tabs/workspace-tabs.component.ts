@@ -53,7 +53,7 @@ interface WorkspaceTabsVm {
  *
  * Neither `WorkspaceRegistryService` nor `AgentsByIdService` is re-provided
  * here — both are provided by `ProcessComponent` so the view shares the
- * component-scoped `MessageLogService` lifecycle.
+ * route-scoped `MessageLogService` lifecycle.
  */
 @Component({
   selector: 'app-workspace-tabs',

@@ -40,14 +40,19 @@ export type { VisualizationOption };
  * The console's third pane (Epic 56): a title, a tab strip, and whatever the
  * host projects under it.
  *
- * It is a FRAME, not a container of panels. The five visualisation panels stay
- * in `ProcessComponent`'s template and arrive through `<ng-content>`, for one
- * reason that is not stylistic: every one of them reads a service that is
- * component-scoped on `ProcessComponent.providers` (`GraphDataService`,
- * `TokenUsageSelector`, `AgentsByIdService`, `MessageLogService`). Declared in
- * here they would resolve against this component's injector, find nothing, and
- * throw. Projected, they keep the host's injector and the ordered provider
- * array that stops one team's state reaching the next stays untouched.
+ * It is a FRAME, not a container of panels. The panels stay in the host's
+ * template and arrive through `<ng-content>`, for one reason that is not
+ * stylistic and is not about injectors: this file lives in `components/`, the
+ * presentational layer, and every one of those panels lives in `ui/`. The
+ * boundary rule grants `components` no edge to `ui` at all, so this frame
+ * CANNOT declare them — projection is the only shape available, and that is
+ * what keeps the frame reusable by a console that brings its own panels.
+ *
+ * (The injector is not the obstacle. The team's services are provided on the
+ * `process/:id` ROUTE, so anything rendered under that route resolves them
+ * wherever it is declared. An earlier version of this note said a panel
+ * declared here would "find nothing and throw"; that stopped being true when
+ * the providers moved off `ProcessComponent`.)
  *
  * The consequence to remember when reading the stylesheet: projected nodes
  * carry the HOST's style-encapsulation attribute, so the rules that stack the

@@ -360,7 +360,7 @@ function seedFrom(
  * of bug `appended$`'s plain `Subject` exists to avoid.
  *
  * Scope: component-scoped (NOT `providedIn: 'root'`) because it injects the
- * component-scoped `MessageLogService`. A root-scoped instance would outlive the
+ * route-scoped `MessageLogService`. A root-scoped instance would outlive the
  * team switch that is supposed to empty it.
  */
 @Injectable()

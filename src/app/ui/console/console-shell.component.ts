@@ -33,7 +33,7 @@ import { ConsoleRailComponent } from './rail/console-rail.component';
  * rail | conversation | inspector as three siblings. They cannot be siblings in
  * this app: the inspector reads `GraphDataService`, `TokenUsageSelector`,
  * `AgentsByIdService` and `MessageLogService`, all of which are
- * component-scoped on `ProcessComponent.providers` — the ordered array that is
+ * scoped to the `process/:id` route — the ordered array that is
  * the only thing stopping one team's state leaking into the next after a team
  * switch. An inspector mounted out here would resolve none of them and would
  * throw `NullInjectorError` on first render. So the shell splits at a different
