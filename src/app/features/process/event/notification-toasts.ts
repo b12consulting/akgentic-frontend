@@ -103,7 +103,7 @@ const ORCHESTRATOR_ROLE = 'Orchestrator';
  * site and not one line of logic here.
  *
  * Component-scoped (`@Injectable()` with no `providedIn`), provided on
- * `ProcessComponent` before `IngestionService`, which injects it. Root scope
+ * the `process/:id` route before `IngestionService`, which injects it. Root scope
  * would carry one team's dismissal cache into the next.
  */
 @Injectable()

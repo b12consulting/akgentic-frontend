@@ -34,7 +34,7 @@ export type TeamSocketStatus = 'error' | 'complete';
  * testing — every order works when there is only ever one `init()`.
  *
  * Component-scoped (`@Injectable()` with no `providedIn`), provided on
- * `ProcessComponent` before `IngestionService`, which injects it. Root scope
+ * the `process/:id` route before `IngestionService`, which injects it. Root scope
  * would share ONE socket across every team switch.
  */
 @Injectable()

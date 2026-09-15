@@ -49,7 +49,7 @@ export function presenceReduce(log: AkgenticMessage[]): boolean {
  *
  * Scope: component-scoped (NOT `providedIn: 'root'`) because it injects
  * `MessageLogService`, which is component-scoped on
- * `ProcessComponent.providers`. Team switches destroy `ProcessComponent`,
+ * the `process/:id` route's providers. Leaving the route destroys them,
  * which destroys the log and the selector — no state leaks between teams.
  */
 @Injectable()

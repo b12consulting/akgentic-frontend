@@ -34,7 +34,7 @@ import { MessageLogService } from './message-log.service';
  * SCOPING (NFR / ADR-005 parity):
  *   {@link PerAgentStoreRegistry} is COMPONENT-SCOPED — it injects the
  *   component-scoped `MessageLogService` and must be provided on
- *   `ProcessComponent.providers` (NEVER `providedIn: 'root'`). A team switch
+ *   the `process/:id` route's providers (NEVER `providedIn: 'root'`). A team switch
  *   destroys the component, which destroys the registry (and its single
  *   `log$` subscription), so no per-agent state leaks across processes. This
  *   story (17-1) ships the class only; consumer wiring is Stories 17-2..17-4.
@@ -191,7 +191,7 @@ function startWithCurrent<T>(read: () => T) {
  * `processedCount` cursor, and folds each frame's new tail into every
  * registered spec's map (O(Δ)). Reset and replay share one code path.
  *
- * Component-scoped (see module docstring). Provide on `ProcessComponent`'s
+ * Route-scoped (see module docstring). Provide on the `process/:id` route's
  * `providers`; never `providedIn: 'root'`.
  */
 @Injectable()

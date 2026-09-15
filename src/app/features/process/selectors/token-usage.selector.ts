@@ -121,14 +121,14 @@ function modelListEqual(a: ModelTokenTotals[], b: ModelTokenTotals[]): boolean {
  * - `teamTotals$` is a PURE sum over `tokenUsage.all$` (Σ every agent's
  *   `totalSent` / `totalReceived` / `totalCacheRead` / `totalCacheWrite`) — NOT
  *   a separately stored aggregate. Because
- *   `ProcessComponent` + its scoped registry are destroyed/recreated on every
+ *   the route injector + its registry are destroyed/recreated on every
  *   team switch, `all$` holds exactly the CURRENT team's agents, so the total is
  *   correct by construction with no team-id bookkeeping. The sum is a fresh
  *   reference each frame, so it needs a STRUCTURAL `distinctUntilChanged`
  *   (`totalsEqual`) to suppress no-op frames, plus `shareReplay` for OnPush.
  *
  * Scope: component-scoped (NOT `providedIn: 'root'`) — it injects the
- * component-scoped `IngestionService` from `ProcessComponent.providers`.
+ * route-scoped `IngestionService` from the `process/:id` route's providers.
  */
 @Injectable()
 export class TokenUsageSelector {

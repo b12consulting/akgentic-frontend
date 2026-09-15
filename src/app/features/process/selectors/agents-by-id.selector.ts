@@ -74,7 +74,7 @@ function agentsByIdEqual(a: AgentsById, b: AgentsById): boolean {
  * untouched (no descriptor churn, AC6).
  *
  * Scope: component-scoped (NOT `providedIn: 'root'`) because it injects
- * `MessageLogService`, which is component-scoped on `ProcessComponent`. A team
+ * `MessageLogService`, which is scoped to the `process/:id` route. A team
  * switch destroys the component (and the log), so the map shares that lifecycle
  * and never leaks identities across teams.
  *

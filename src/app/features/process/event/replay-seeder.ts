@@ -69,7 +69,7 @@ function synthesizeStateChanged(snapshot: AgentStateResponse): StateChangedMessa
  * fires either REST call.
  *
  * Component-scoped (`@Injectable()` with no `providedIn`), provided on
- * `ProcessComponent` before `IngestionService`, matching every other unit in
+ * the `process/:id` route before `IngestionService`, matching every other unit in
  * this folder.
  */
 @Injectable()

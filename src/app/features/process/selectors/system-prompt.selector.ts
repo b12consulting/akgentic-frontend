@@ -41,7 +41,7 @@ export {
  * fold's `[]`-for-no-rows contract).
  *
  * Scope: component-scoped (NOT `providedIn: 'root'`) — it injects the
- * component-scoped `IngestionService` from `ProcessComponent.providers`.
+ * route-scoped `IngestionService` from the `process/:id` route's providers.
  */
 @Injectable()
 export class SystemPromptSelector {

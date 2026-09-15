@@ -44,7 +44,7 @@ import { MessageService } from 'primeng/api';
  * than to either toast unit.
  *
  * Component-scoped (`@Injectable()` with no `providedIn`), provided on
- * `ProcessComponent` before `IngestionService`, which injects it. Root scope
+ * the `process/:id` route before `IngestionService`, which injects it. Root scope
  * would be wrong even though the unit holds no per-team domain state: its dedup
  * flag is per-team-cycle, and a root instance would outlive the very team switch
  * `start()` resets it for.

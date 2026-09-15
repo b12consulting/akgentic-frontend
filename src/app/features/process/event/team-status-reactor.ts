@@ -58,7 +58,7 @@ import {
  * is the same reasoning written out on `NotificationToasts`.
  *
  * Component-scoped (`@Injectable()` with no `providedIn`), provided on
- * `ProcessComponent` before `IngestionService`, which injects it.
+ * the `process/:id` route before `IngestionService`, which injects it.
  */
 @Injectable()
 export class TeamStatusReactor {

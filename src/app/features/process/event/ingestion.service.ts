@@ -36,7 +36,7 @@ import { MessageService } from 'primeng/api';
  * evaporate silently, because a green single-team suite is exactly what a
  * self-wired implementation produces.
  *
- * The units, all component-scoped and provided on `ProcessComponent`:
+ * The units, all route-scoped and provided on `process/:id`:
  *   - `TeamSocket` (`team-socket.ts`) — WS transport, the `createWebSocket`
  *     seam, `inbound$` / `frames$` / `status$`.
  *   - `LogFeeder` (`log-feeder.ts`) — `bufferTime(16)` → `log.appendAll`, the

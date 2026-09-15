@@ -125,9 +125,13 @@ export class FeedbackService {
    * visit, and the rating the user gives it in this session is pushed onto
    * `feedbacks$` by `setFeedback`.
    *
-   * The scope is one process view — this service is provided by
-   * `ProcessComponent`, so opening another team constructs a new instance and
-   * loads again.
+   * The scope is one visit to the process route — this service is provided
+   * there, so arriving at the view constructs a new instance and loads again.
+   *
+   * NOT once per TEAM. The router reuses the route when only `:id` changes, so
+   * switching teams in place keeps this instance and its `pendingLoad`. That is
+   * correct here — feedback is keyed by message, not by team — but it is the
+   * reason this says "one visit" rather than "one team".
    */
   private pendingLoad: Promise<void> | null = null;
 

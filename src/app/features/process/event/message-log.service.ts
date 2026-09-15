@@ -106,7 +106,7 @@ function sameIdSet(a: Set<string>, b: Set<string>): boolean {
  * (Stories 6.2–6.4) derive their reactive state by folding `log$`.
  *
  * IMPORTANT: This service MUST be provided component-scoped (on
- * `ProcessComponent.providers`), NEVER `providedIn: 'root'`. Team switches
+ * the `process/:id` route's providers), NEVER `providedIn: 'root'`. Team switches
  * destroy the component, which destroys the log — preventing process-A data
  * from leaking into process-B's display (AC5).
  */

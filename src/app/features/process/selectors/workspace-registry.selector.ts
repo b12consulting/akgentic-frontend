@@ -202,7 +202,7 @@ function teamIdFromLog(log: AkgenticMessage[]): string {
  * `ToolPresenceService`.
  *
  * Scope: component-scoped (NOT `providedIn: 'root'`) because it injects
- * `MessageLogService`, which is component-scoped on `ProcessComponent`. A team
+ * `MessageLogService`, which is scoped to the `process/:id` route. A team
  * switch destroys the component (and the log), so the registry shares that
  * lifecycle and never leaks workspaces across teams. NOT yet provided in
  * `process.component` — that wiring is Story 23-3.

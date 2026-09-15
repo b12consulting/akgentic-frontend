@@ -38,7 +38,7 @@ import {
  * current log — so construction order relative to `init()` is not load-bearing.
  *
  * Component-scoped (`@Injectable()` with no `providedIn`), provided on
- * `ProcessComponent` alongside the registry it wraps: root scope would leak
+ * the `process/:id` route alongside the registry it wraps: root scope would leak
  * per-agent state across team switches.
  */
 @Injectable()
@@ -46,7 +46,7 @@ export class ProcessStores {
   /**
    * Epic 17 (ADR-014): component-scoped registry that folds `log$` into the
    * per-agent `state` / `context` maps (single subscription, O(Δ), automatic
-   * replay + reset). Provided on `ProcessComponent` alongside
+   * replay + reset). Provided on the `process/:id` route alongside
    * `MessageLogService`. Owns the maps the deleted dicts used to hold.
    */
   private readonly registry: PerAgentStoreRegistry =

@@ -36,7 +36,7 @@ const FRAME_WINDOW_MS = 16;
  * from teardown.
  *
  * Component-scoped (`@Injectable()` with no `providedIn`), provided on
- * `ProcessComponent` before `IngestionService`. Root scope would feed one team's
+ * the `process/:id` route before `IngestionService`. Root scope would feed one team's
  * frames into the next team's log.
  */
 @Injectable()

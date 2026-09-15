@@ -38,7 +38,7 @@ const SPINNER_MIN_VISIBLE_MS = 500;
  * teardown alone would leak each cycle's side-channel into the next.
  *
  * Component-scoped (`@Injectable()` with no `providedIn`), provided on
- * `ProcessComponent` alongside every other unit in this folder: a root instance
+ * the `process/:id` route alongside every other unit in this folder: a root instance
  * would outlive the process view and carry a prior team's spinner state — and
  * its `| async`-bound subject — into the next one.
  */

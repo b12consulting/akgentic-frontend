@@ -1,4 +1,4 @@
-import { AsyncPipe, CommonModule } from '@angular/common';
+import { CommonModule } from '@angular/common';
 import {
   AfterViewInit,
   Component,
@@ -29,24 +29,9 @@ import { PaneLayoutService } from '../../core/ui/pane-layout.service';
 import { ViewService } from '../../core/ui/view.service';
 import { ConfigService } from '../../core/config/config.service';
 import { ContextService } from '../../core/context/context.service';
-import { KGStateReducer } from '../../features/process/selectors/knowledge-graph.selector';
-import { ConnectionToast } from '../../features/process/event/connection-toast';
-import { NotificationToasts } from '../../features/process/event/notification-toasts';
-import { LoadingIndicator } from '../../features/process/event/loading-indicator';
-import { LogFeeder } from '../../features/process/event/log-feeder';
-import { MessageLogService } from '../../features/process/event/message-log.service';
 import { IngestionService } from '../../features/process/event/ingestion.service';
-import { PerAgentStoreRegistry } from '../../features/process/event/per-agent-store';
-import { ProcessStores } from '../../features/process/event/process-stores';
-import { ReplaySeeder } from '../../features/process/event/replay-seeder';
-import { SystemPromptSelector } from '../../features/process/selectors/system-prompt.selector';
-import { TeamSocket } from '../../features/process/event/team-socket';
-import { TeamStatusReactor } from '../../features/process/event/team-status-reactor';
-import { TokenUsageSelector } from '../../features/process/selectors/token-usage.selector';
 import { ToolPresenceService } from '../../features/process/selectors/tool-presence.selector';
-import { WorkspaceInvalidationService } from '../../features/process/selectors/workspace-invalidation.selector';
 import { WorkspaceRegistryService } from '../../features/process/selectors/workspace-registry.selector';
-import { AgentsByIdService } from '../../features/process/selectors/agents-by-id.selector';
 
 import { AgentTabsComponent } from './components/agent-tabs/agent-tabs.component';
 import { TeamTabsComponent } from './components/team-tabs/team-tabs.component';
@@ -57,8 +42,6 @@ import { WorkspaceTabsComponent } from './components/workspace-tabs/workspace-ta
 import { BehaviorSubject, combineLatest, Observable, Subscription } from 'rxjs';
 import { distinctUntilChanged, map, take } from 'rxjs/operators';
 import { ChatPanelComponent } from './components/chat/chat-panel.component';
-import { ChatService } from '../../features/process/selectors/chat.selector';
-import { FeedbackService } from '../../features/process/ui-state/feedback.service';
 import { GraphDataService } from '../../features/process/selectors/graph.selector';
 import { SelectionService } from '../../features/process/ui-state/selection.service';
 
@@ -66,10 +49,7 @@ import { ConversationHeaderComponent } from '../console/conversation/conversatio
 import { ConsoleInspectorComponent } from '../console/inspector/console-inspector.component';
 import { InspectorTeamPanelComponent } from '../console/inspector/team-panel/inspector-team-panel.component';
 import { VisualizationOption } from '../console/inspector/inspector-tabs.component';
-import {
-  resolveInspectorTab,
-  visibleInspectorTabs,
-} from '../../features/console/inspector/inspector-tabs.registry';
+import { resolveInspectorTab, visibleInspectorTabs } from '../../features/console/inspector/inspector-tabs.registry';
 import { SplitDividerComponent } from '../../shared/components/split-divider/split-divider.component';
 
 @Component({
@@ -95,99 +75,6 @@ import { SplitDividerComponent } from '../../shared/components/split-divider/spl
     // "drag continuously, persist once" needs.
     SplitDividerComponent,
     TranslatePipe,
-  ],
-  providers: [
-    AsyncPipe,
-    MessageLogService,
-    // Epic 23 (ADR-019): component-scoped registry that folds the message log
-    // into the set of WorkspaceDescriptors driving the workspace sub-tabs. Must
-    // be provided AFTER MessageLogService (which it injects). Never
-    // `providedIn: 'root'` — it shares the team-scoped log lifecycle, so a team
-    // switch destroys it and never leaks workspaces across teams.
-    WorkspaceRegistryService,
-    // Epic 39 (ADR-031): component-scoped unit turning the message log into
-    // workspace re-read instructions, one per completed mutating workspace tool
-    // call. Provided AFTER MessageLogService (which it injects) and next to the
-    // registry it shares a lifecycle with. Never `providedIn: 'root'` — it HOLDS
-    // the team's in-flight calls and their agent→workspace attribution, and
-    // empties both on the log reset that opens a team switch; a root instance
-    // would carry one team's held calls into the next.
-    WorkspaceInvalidationService,
-    // Epic 23 (ADR-020): component-scoped identity map that folds the message
-    // log into `agent_id -> { name, role }`, combined in WorkspaceTabsComponent
-    // with the workspace registry to render each workspace's member chips.
-    // Provided AFTER MessageLogService (which it injects); never
-    // `providedIn: 'root'` — it shares the team-scoped log lifecycle.
-    AgentsByIdService,
-    ToolPresenceService,
-    KGStateReducer,
-    SystemPromptSelector,
-    // Epic 17 (ADR-014): component-scoped registry that derives per-agent
-    // `state` / `context` from `log$`. Must be provided BEFORE
-    // IngestionService (which injects it). Never `providedIn: 'root'` —
-    // a team switch destroys this component, destroying the registry and its
-    // single `log$` subscription (same lifecycle guarantee as MessageLogService).
-    PerAgentStoreRegistry,
-    // Epic 34 (ADR-025 §1): the projection unit declaring the five per-agent
-    // stores. Provided BETWEEN the registry (which it injects) and
-    // IngestionService (which injects it and re-exports its stores). Never
-    // `providedIn: 'root'` — it wraps the component-scoped registry, and root
-    // scope would leak per-agent state across team switches.
-    ProcessStores,
-    // Epic 34 (ADR-025 §1): the REST replay source, provided BEFORE
-    // IngestionService (which injects it). Never `providedIn: 'root'` — it is
-    // stateless, so root scope would leak nothing today, but the folder's
-    // uniform component scoping keeps this list readable and keeps a future
-    // stateful mistake contained to one team's lifetime.
-    ReplaySeeder,
-    // Epic 34 (ADR-025 §0-§1): the spinner-floor reactor, provided BEFORE
-    // IngestionService (which injects it and re-exports its `loadingProcess$`).
-    // Never `providedIn: 'root'` — a root instance would outlive this view and
-    // carry a prior team's spinner state, and its `| async`-bound subject, into
-    // the next one.
-    LoadingIndicator,
-    // Epic 34 (ADR-025 §0-§1): the WS-disconnect toast reactor, provided BEFORE
-    // IngestionService (which injects it and drives its start/show/stop). A
-    // separate class from the notification toast on purpose — the two carry
-    // opposite `closable` semantics and their old adjacency had already caused
-    // one copy-paste defect. Never `providedIn: 'root'` — its dedup flag is
-    // per-team-cycle, and a root instance would outlive the team switch that
-    // `start()` resets it for.
-    ConnectionToast,
-    // Epic 34 (ADR-025 §0-§1): the notification-toast reactor (stories 31-3 /
-    // 31-4 / 31-5 / 31-6), provided BEFORE IngestionService, which injects it and
-    // drives its start/stop. Never `providedIn: 'root'` — it caches per-team
-    // dismissal state, and a root instance would carry one team's closed ids into
-    // the next, silently suppressing toasts that should have been raised.
-    NotificationToasts,
-    // Story 37-2: the team-stopping reactor, provided BEFORE IngestionService,
-    // which injects it and drives its start/stop. Never `providedIn: 'root'` —
-    // it belongs to the process view's log lifecycle like every other unit in
-    // that folder, and a root instance would keep reading a destroyed team's
-    // log. It writes to the root-scoped `ContextService`, which is the point:
-    // that service outlives this view and owns team status.
-    TeamStatusReactor,
-    // Epic 34 (ADR-025 §1): the WS transport source, provided BEFORE
-    // IngestionService (which injects it and opens it LAST in `init()`). Never
-    // `providedIn: 'root'` — a root instance would share ONE socket across every
-    // team switch, which is the transport half of the race ADR-005 §Decision 6
-    // closes.
-    TeamSocket,
-    // Epic 34 (ADR-025 §1): the frame-batched log feed, provided BEFORE
-    // IngestionService (which injects it and hands it the socket's inbound
-    // stream). Never `providedIn: 'root'` — a root instance would feed one
-    // team's frames into the next team's log.
-    LogFeeder,
-    IngestionService,
-    // Epic 26 (ADR-022): component-scoped read surface over the `tokenUsage`
-    // PerAgentStore. Provided AFTER IngestionService (which it injects); never
-    // `providedIn: 'root'` — it shares the team-scoped log lifecycle, so a team
-    // switch destroys it and the usage pill always reads THIS team's totals.
-    TokenUsageSelector,
-    GraphDataService,
-    ChatService,
-    SelectionService,
-    FeedbackService,
   ],
   templateUrl: './process.component.html',
   styleUrl: './process.component.scss',

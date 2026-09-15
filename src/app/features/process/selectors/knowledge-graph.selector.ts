@@ -194,7 +194,7 @@ export function kgFold(log: AkgenticMessage[]): KnowledgeGraphData {
  *
  * Scope: component-scoped (NOT `providedIn: 'root'`) because it injects
  * `MessageLogService`, which is component-scoped on
- * `ProcessComponent.providers`.
+ * the `process/:id` route's providers.
  */
 @Injectable()
 export class KGStateReducer {
