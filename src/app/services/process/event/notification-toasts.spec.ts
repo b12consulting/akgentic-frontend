@@ -4,6 +4,8 @@ import { Toast } from 'primeng/toast';
 import { BehaviorSubject, Subject } from 'rxjs';
 
 import { NotificationToastService } from '../../../core/ui/notification-toast.service';
+import { NOTIFICATION_PORT } from '../../../core/notification/notification.port';
+import { PrimeNgNotificationAdapter } from '../../../ui/console/notification.adapter';
 import { NotificationToasts } from './notification-toasts';
 import { ActorAddress, AkgenticMessage } from '../../../protocol/message.types';
 
@@ -86,13 +88,19 @@ const NOTIFICATION_MODEL =
 const ERROR_MODEL = 'akgentic.core.messages.orchestrator.ErrorMessage';
 
 /**
- * The `MessageService` double, in the EXACT `{ add, clear }` shape the migrated
- * blocks used inside `ingestion.service.spec.ts` — so every `add.calls`
- * assertion carries across byte for byte.
+ * The notification-port double.
+ *
+ * Story 53-1 replaced this unit's two injected collaborators — PrimeNG's
+ * `MessageService` and the root `NotificationToastService` — with one token, so
+ * the double carries all three operations. Every `add.calls` assertion the
+ * migrated blocks brought over from `ingestion.service.spec.ts` survives as the
+ * same assertion on `notify.calls`: the argument is the same object minus the
+ * PrimeNG type.
  */
-function messageServiceDouble(): any {
+function notificationPortDouble(): any {
   return {
-    add: jasmine.createSpy('add'),
+    notify: jasmine.createSpy('notify'),
+    dismiss: jasmine.createSpy('dismiss'),
     clear: jasmine.createSpy('clear'),
   };
 }
@@ -123,7 +131,7 @@ describe('NotificationToasts — Story 31-3 (notification toast)', () => {
   const ERROR = ERROR_MODEL;
 
   function addArgs(): any[] {
-    return msgService.add.calls.allArgs().map((a: any[]) => a[0]);
+    return msgService.notify.calls.allArgs().map((a: any[]) => a[0]);
   }
 
   beforeEach(() => {
@@ -133,11 +141,11 @@ describe('NotificationToasts — Story 31-3 (notification toast)', () => {
     TestBed.configureTestingModule({
       providers: [
         NotificationToasts,
-        { provide: MessageService, useValue: messageServiceDouble() },
+        { provide: NOTIFICATION_PORT, useValue: notificationPortDouble() },
       ],
     });
     toasts = TestBed.inject(NotificationToasts);
-    msgService = TestBed.inject(MessageService);
+    msgService = TestBed.inject(NOTIFICATION_PORT);
   });
 
   /** The orchestrator's `start()` call, which every frame below arrives after. */
@@ -152,7 +160,7 @@ describe('NotificationToasts — Story 31-3 (notification toast)', () => {
       mkNotification('w-1', WARNING, '@Researcher', 'token budget exceeded'),
     );
 
-    expect(msgService.add).toHaveBeenCalledTimes(1);
+    expect(msgService.notify).toHaveBeenCalledTimes(1);
     const arg = addArgs()[0];
     expect(arg.severity).toBe('warn');
     expect(arg.summary).toBe('@Researcher');
@@ -207,7 +215,7 @@ describe('NotificationToasts — Story 31-3 (notification toast)', () => {
 
     inbound$.next(mkNotification('n-1', NOTIFICATION, '@Planner', 'heads up'));
 
-    expect(msgService.add).toHaveBeenCalledTimes(1);
+    expect(msgService.notify).toHaveBeenCalledTimes(1);
     const arg = addArgs()[0];
     expect(arg.severity).toBe('info');
     expect(arg.summary).toBe('@Planner');
@@ -229,7 +237,7 @@ describe('NotificationToasts — Story 31-3 (notification toast)', () => {
     inbound$.next(mkNotification('w-1', WARNING, '@Alpha', 'first'));
     inbound$.next(mkNotification('w-2', WARNING, '@Beta', 'second'));
 
-    expect(msgService.add).toHaveBeenCalledTimes(2);
+    expect(msgService.notify).toHaveBeenCalledTimes(2);
     const ids = addArgs().map((c) => c.data.messageId);
     expect(ids).toEqual(['w-1', 'w-2']);
     expect(ids[0]).not.toBe(ids[1]);
@@ -246,7 +254,7 @@ describe('NotificationToasts — Story 31-3 (notification toast)', () => {
 
     inbound$.next(mkNotification('e-1', ERROR, '@Researcher', 'boom'));
 
-    expect(msgService.add).toHaveBeenCalledTimes(1);
+    expect(msgService.notify).toHaveBeenCalledTimes(1);
     const arg = addArgs()[0];
     expect(arg.severity).toBe('error');
     expect(arg.summary).toBe('@Researcher');
@@ -278,7 +286,7 @@ describe('NotificationToasts — Story 31-3 (notification toast)', () => {
       inbound$.next(mkNotification('x-1', model, '@Researcher', 'inert'));
     }
 
-    expect(msgService.add).not.toHaveBeenCalled();
+    expect(msgService.notify).not.toHaveBeenCalled();
   });
 
   // Story 31-4 (AC #3/#4): the toast now also carries the team id, so
@@ -319,7 +327,7 @@ describe('NotificationToasts — Story 31-6 (error parity, severity, summary)', 
   let closedIds$: BehaviorSubject<Set<string>>;
 
   function addArgs(): any[] {
-    return msgService.add.calls.allArgs().map((a: any[]) => a[0]);
+    return msgService.notify.calls.allArgs().map((a: any[]) => a[0]);
   }
 
   beforeEach(() => {
@@ -329,11 +337,11 @@ describe('NotificationToasts — Story 31-6 (error parity, severity, summary)', 
     TestBed.configureTestingModule({
       providers: [
         NotificationToasts,
-        { provide: MessageService, useValue: messageServiceDouble() },
+        { provide: NOTIFICATION_PORT, useValue: notificationPortDouble() },
       ],
     });
     toasts = TestBed.inject(NotificationToasts);
-    msgService = TestBed.inject(MessageService);
+    msgService = TestBed.inject(NOTIFICATION_PORT);
   });
 
   function start(): void {
@@ -343,7 +351,7 @@ describe('NotificationToasts — Story 31-6 (error parity, severity, summary)', 
   /** Push one frame and return the single `MessageService.add` argument. */
   function toastFor(frame: any): any {
     inbound$.next(frame);
-    expect(msgService.add).toHaveBeenCalledTimes(1);
+    expect(msgService.notify).toHaveBeenCalledTimes(1);
     return addArgs()[0];
   }
 
@@ -405,7 +413,7 @@ describe('NotificationToasts — Story 31-6 (error parity, severity, summary)', 
     // Three frames, three calls to the shared method, three toasts: no branch
     // in the WS handler raised a toast of its own.
     expect(shown).toHaveBeenCalledTimes(3);
-    expect(msgService.add).toHaveBeenCalledTimes(3);
+    expect(msgService.notify).toHaveBeenCalledTimes(3);
     expect(shown.calls.allArgs().map((a: any[]) => a[1])).toEqual([
       'error',
       'warn',
@@ -470,7 +478,7 @@ describe('NotificationToasts — Story 31-6 (error parity, severity, summary)', 
       ['w-1', WARNING_MODEL, 'Warning'],
       ['n-1', NOTIFICATION_MODEL, 'Notification'],
     ] as const) {
-      msgService.add.calls.reset();
+      msgService.notify.calls.reset();
       const arg = toastFor(
         mkNotification(id, model, '@Orchestrator', 'body', null, 'Orchestrator'),
       );
@@ -555,7 +563,7 @@ describe('NotificationToasts — Story 31-6 (error parity, severity, summary)', 
       inbound$.next(mkNotification('x-1', model, '@Researcher', 'inert'));
     }
 
-    expect(msgService.add).not.toHaveBeenCalled();
+    expect(msgService.notify).not.toHaveBeenCalled();
   });
 });
 
@@ -601,7 +609,7 @@ describe('NotificationToasts — Story 31-4 (closed-notification suppression)', 
   }
 
   function addArgs(): any[] {
-    return msgService.add.calls.allArgs().map((a: any[]) => a[0]);
+    return msgService.notify.calls.allArgs().map((a: any[]) => a[0]);
   }
 
   beforeEach(() => {
@@ -611,11 +619,11 @@ describe('NotificationToasts — Story 31-4 (closed-notification suppression)', 
     TestBed.configureTestingModule({
       providers: [
         NotificationToasts,
-        { provide: MessageService, useValue: messageServiceDouble() },
+        { provide: NOTIFICATION_PORT, useValue: notificationPortDouble() },
       ],
     });
     toasts = TestBed.inject(NotificationToasts);
-    msgService = TestBed.inject(MessageService);
+    msgService = TestBed.inject(NOTIFICATION_PORT);
   });
 
   function start(): void {
@@ -634,7 +642,7 @@ describe('NotificationToasts — Story 31-4 (closed-notification suppression)', 
 
     inbound$.next(mkWarning('w-1', 'token budget exceeded'));
 
-    expect(msgService.add).not.toHaveBeenCalled();
+    expect(msgService.notify).not.toHaveBeenCalled();
   });
 
   it('AC9: a WarningMessage whose id was NOT closed still raises exactly one toast with the full 31-3 property set', () => {
@@ -644,7 +652,7 @@ describe('NotificationToasts — Story 31-4 (closed-notification suppression)', 
 
     inbound$.next(mkWarning('w-1', 'token budget exceeded'));
 
-    expect(msgService.add).toHaveBeenCalledTimes(1);
+    expect(msgService.notify).toHaveBeenCalledTimes(1);
     const arg = addArgs()[0];
     expect(arg.severity).toBe('warn');
     expect(arg.summary).toBe('@Researcher');
@@ -664,7 +672,7 @@ describe('NotificationToasts — Story 31-4 (closed-notification suppression)', 
     inbound$.next(mkWarning('w-1', 'suppressed'));
     inbound$.next(mkWarning('w-2', 'still shown'));
 
-    expect(msgService.add).toHaveBeenCalledTimes(1);
+    expect(msgService.notify).toHaveBeenCalledTimes(1);
     expect(addArgs()[0].data.messageId).toBe('w-2');
   });
 
@@ -673,7 +681,7 @@ describe('NotificationToasts — Story 31-4 (closed-notification suppression)', 
 
     close('never-seen');
 
-    expect(msgService.add).not.toHaveBeenCalled();
+    expect(msgService.notify).not.toHaveBeenCalled();
   });
 
   // Story 31-6 (AC #13) — the error half of the suppressor, proven with error
@@ -687,7 +695,7 @@ describe('NotificationToasts — Story 31-4 (closed-notification suppression)', 
 
     inbound$.next(mkWarning('e-1', 'boom', ERROR));
 
-    expect(msgService.add).not.toHaveBeenCalled();
+    expect(msgService.notify).not.toHaveBeenCalled();
   });
 
   it('AC #13: an ErrorMessage whose id was NOT closed still raises its sticky error toast', () => {
@@ -697,7 +705,7 @@ describe('NotificationToasts — Story 31-4 (closed-notification suppression)', 
 
     inbound$.next(mkWarning('e-1', 'boom', ERROR));
 
-    expect(msgService.add).toHaveBeenCalledTimes(1);
+    expect(msgService.notify).toHaveBeenCalledTimes(1);
     const arg = addArgs()[0];
     expect(arg.severity).toBe('error');
     expect(arg.sticky).toBeTrue();
@@ -795,7 +803,18 @@ describe('NotificationToasts — Story 31-5 (reactive toast removal)', () => {
     closedIds$ = new BehaviorSubject<Set<string>>(new Set<string>());
 
     TestBed.configureTestingModule({
-      providers: [NotificationToasts, MessageService],
+      providers: [
+        NotificationToasts,
+        MessageService,
+        // Story 53-1: the REAL adapter, not a double. This block's whole point
+        // is that a toast leaves the screen rather than that a call was made,
+        // so the port must be the production implementation — `notify` reaching
+        // the real `MessageService` and `dismiss` reaching the real
+        // `NotificationToastService` splice. A double here would reduce the
+        // mount harness to a transport harness, which is what the block header
+        // below warns against.
+        { provide: NOTIFICATION_PORT, useClass: PrimeNgNotificationAdapter },
+      ],
     });
     messageService = TestBed.inject(MessageService);
     toastContainer = new FakeToastContainer(messageService);
@@ -975,20 +994,20 @@ describe('NotificationToasts — explicit lifecycle (AC2, AC9)', () => {
 
   beforeEach(() => {
     inbound$ = new Subject<AkgenticMessage>();
-    dismiss = jasmine.createSpy('dismiss');
 
     TestBed.configureTestingModule({
       providers: [
         NotificationToasts,
-        { provide: MessageService, useValue: messageServiceDouble() },
-        {
-          provide: NotificationToastService,
-          useValue: { dismiss, register: jasmine.createSpy('register') },
-        },
+        { provide: NOTIFICATION_PORT, useValue: notificationPortDouble() },
       ],
     });
     toasts = TestBed.inject(NotificationToasts);
-    msgService = TestBed.inject(MessageService);
+    msgService = TestBed.inject(NOTIFICATION_PORT);
+    // Story 53-1: dismissal now travels on the SAME token as raising, so the
+    // spy comes off the port double rather than from a second provider. The
+    // assertions below are unchanged — they were always about which ids reach
+    // `dismiss`, never about which object carries it.
+    dismiss = msgService.dismiss;
   });
 
   function emptyIds(): BehaviorSubject<Set<string>> {
@@ -1004,7 +1023,7 @@ describe('NotificationToasts — explicit lifecycle (AC2, AC9)', () => {
       mkNotification('w-1', WARNING_MODEL, '@Researcher', 'over limit'),
     );
 
-    expect(msgService.add).not.toHaveBeenCalled();
+    expect(msgService.notify).not.toHaveBeenCalled();
     expect(dismiss).not.toHaveBeenCalled();
   });
 
@@ -1021,7 +1040,7 @@ describe('NotificationToasts — explicit lifecycle (AC2, AC9)', () => {
       mkNotification('w-1', WARNING_MODEL, '@Researcher', 'over limit'),
     );
 
-    expect(msgService.add).not.toHaveBeenCalled();
+    expect(msgService.notify).not.toHaveBeenCalled();
   });
 
   it('AC2: a stop()/start() re-init cycle raises exactly ONE toast per event', () => {
@@ -1036,7 +1055,7 @@ describe('NotificationToasts — explicit lifecycle (AC2, AC9)', () => {
       mkNotification('w-1', WARNING_MODEL, '@Researcher', 'over limit'),
     );
 
-    expect(msgService.add).toHaveBeenCalledTimes(1);
+    expect(msgService.notify).toHaveBeenCalledTimes(1);
   });
 
   it('AC9: stop() clears the dismissal cache, so a replayed closure dismisses again', () => {
@@ -1076,11 +1095,11 @@ describe('NotificationToasts — explicit lifecycle (AC2, AC9)', () => {
 
 describe('NotificationToasts — the toast payload is exactly five keys (AC7)', () => {
   it('AC7: no sixth property, and `data` carries exactly messageId and teamId', () => {
-    const msgService = messageServiceDouble();
+    const msgService = notificationPortDouble();
     TestBed.configureTestingModule({
       providers: [
         NotificationToasts,
-        { provide: MessageService, useValue: msgService },
+        { provide: NOTIFICATION_PORT, useValue: msgService },
       ],
     });
     const toasts = TestBed.inject(NotificationToasts);
@@ -1098,7 +1117,7 @@ describe('NotificationToasts — the toast payload is exactly five keys (AC7)', 
     // are defined by their ABSENCE (`key` is dropped by the keyless mount,
     // `closable` is the disconnect toast's opposite, `life` defeats `sticky`),
     // and a containment assertion cannot see an added property at all.
-    const payload = msgService.add.calls.mostRecent().args[0];
+    const payload = msgService.notify.calls.mostRecent().args[0];
     expect(Object.keys(payload).sort()).toEqual([
       'data',
       'detail',
@@ -1113,16 +1132,16 @@ describe('NotificationToasts — the toast payload is exactly five keys (AC7)', 
 describe('NotificationToasts — component-scoped, never root-provided (AC12)', () => {
   it('is NOT reachable from an injector that does not provide it', () => {
     TestBed.resetTestingModule();
-    // `MessageService` IS available here, and `NotificationToastService` is
-    // root-provided, so the injection can only fail on `NotificationToasts`
-    // itself. Give the class `providedIn: 'root'` and this injection SUCCEEDS
+    // The notification port IS available here, so the injection can only fail
+    // on `NotificationToasts` itself. Give the class `providedIn: 'root'` and
+    // this injection SUCCEEDS
     // instead — and one dismissal cache would then be shared across every team
     // the user visits, silently suppressing the next team's toasts. On story
     // 34-1 that exact mutation left the ENTIRE suite green, because every other
     // `TestBed` provides the class explicitly.
     TestBed.configureTestingModule({
       providers: [
-        { provide: MessageService, useValue: messageServiceDouble() },
+        { provide: NOTIFICATION_PORT, useValue: notificationPortDouble() },
       ],
     });
 

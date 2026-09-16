@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { MessageService } from 'primeng/api';
+import { NOTIFICATION_PORT } from '../../../core/notification/notification.port';
 
 import { AkgenticMessage } from '../../../protocol/message.types';
 import { ApiService } from '../../../core/http/api.service';
@@ -172,9 +172,10 @@ function configureBed(): {
         },
       },
       {
-        provide: MessageService,
+        provide: NOTIFICATION_PORT,
         useValue: {
-          add: jasmine.createSpy('add'),
+          notify: jasmine.createSpy('notify'),
+          dismiss: jasmine.createSpy('dismiss'),
           clear: jasmine.createSpy('clear'),
         },
       },

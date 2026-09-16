@@ -1,6 +1,9 @@
 import { TestBed } from '@angular/core/testing';
 import { BehaviorSubject, Subject } from 'rxjs';
 import { MessageService } from 'primeng/api';
+
+import { NOTIFICATION_PORT } from '../../../core/notification/notification.port';
+import { PrimeNgNotificationAdapter } from '../../console/notification.adapter';
 import { WebSocketSubject } from 'rxjs/webSocket';
 
 import { AgentTabsComponent } from './agent-tabs.component';
@@ -150,7 +153,9 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
         {
           provide: MessageService,
           useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') },
-        },
+          },
+          // Story 53-1: the data layer notifies through the port now.
+          { provide: NOTIFICATION_PORT, useClass: PrimeNgNotificationAdapter },
         {
           provide: AkgentService,
           useValue: { selectedAkgent$, select: jasmine.createSpy('select') },

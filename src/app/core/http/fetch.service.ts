@@ -1,5 +1,5 @@
 import { Injectable, inject } from '@angular/core';
-import { MessageService } from 'primeng/api';
+import { NOTIFICATION_PORT } from '../notification/notification.port';
 import { ConfigService } from '../config/config.service';
 
 /**
@@ -105,7 +105,7 @@ function tryParseJson(text: string): unknown {
   providedIn: 'root',
 })
 export class FetchService {
-  messageService: MessageService = inject(MessageService);
+  private notifications = inject(NOTIFICATION_PORT);
   private config = inject(ConfigService);
 
   /**
@@ -235,7 +235,7 @@ export class FetchService {
     message: string,
     type: 'success' | 'error' = 'success'
   ): void {
-    this.messageService.add({
+    this.notifications.notify({
       severity: type,
       summary: message,
     });

@@ -4,6 +4,9 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { MessageService } from 'primeng/api';
 
+import { NOTIFICATION_PORT } from '../../../core/notification/notification.port';
+import { PrimeNgNotificationAdapter } from '../../console/notification.adapter';
+
 import { MessageListComponent } from './message-list.component';
 import { MessageLogService } from '../../../services/process/event/message-log.service';
 import { AkgenticMessage, SentMessage } from '../../../protocol/message.types';
@@ -202,6 +205,10 @@ describe('MessageListComponent (Story 2.6, AC8)', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         MessageService,
+        // Story 53-1: `UtilService` reaches the toast surface through the port
+        // now. The real adapter is the production wiring and is just as inert
+        // as the real `MessageService` above it until something notifies.
+        { provide: NOTIFICATION_PORT, useClass: PrimeNgNotificationAdapter },
         // MessageLogService is component-scoped in production; provide it at
         // module level here so the test can drive the log directly.
         MessageLogService,
@@ -365,6 +372,10 @@ describe('MessageListComponent notification rendering (Story 31-2)', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         MessageService,
+        // Story 53-1: `UtilService` reaches the toast surface through the port
+        // now. The real adapter is the production wiring and is just as inert
+        // as the real `MessageService` above it until something notifies.
+        { provide: NOTIFICATION_PORT, useClass: PrimeNgNotificationAdapter },
         MessageLogService,
       ],
     }).compileComponents();
@@ -634,6 +645,10 @@ describe('MessageListComponent row padding (Story 31-6)', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         MessageService,
+        // Story 53-1: `UtilService` reaches the toast surface through the port
+        // now. The real adapter is the production wiring and is just as inert
+        // as the real `MessageService` above it until something notifies.
+        { provide: NOTIFICATION_PORT, useClass: PrimeNgNotificationAdapter },
         MessageLogService,
       ],
     }).compileComponents();
@@ -762,6 +777,10 @@ describe('MessageListComponent as the raw log (W16)', () => {
         provideHttpClient(),
         provideHttpClientTesting(),
         MessageService,
+        // Story 53-1: `UtilService` reaches the toast surface through the port
+        // now. The real adapter is the production wiring and is just as inert
+        // as the real `MessageService` above it until something notifies.
+        { provide: NOTIFICATION_PORT, useClass: PrimeNgNotificationAdapter },
         MessageLogService,
       ],
     }).compileComponents();

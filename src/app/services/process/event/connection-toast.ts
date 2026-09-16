@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 
-import { MessageService } from 'primeng/api';
+import { NOTIFICATION_PORT } from '../../../core/notification/notification.port';
 
 /**
  * `ConnectionToast` — the disconnect-warning REACTOR (Epic 34 / ADR-025 §0-§1).
@@ -20,9 +20,12 @@ import { MessageService } from 'primeng/api';
  *
  * Unrelated to `core/ui/notification-toast.service.ts` despite the neighbouring
  * name: that one REMOVES a single already-rendered toast (story 31-5), an
- * operation PrimeNG's `MessageService` does not offer. Nothing is shared with
- * it, nor with the notification toast — no base class, no helper, no payload
- * builder, no constant. Sharing anything would re-open the copy-paste trap.
+ * operation PrimeNG's `MessageService` does not offer — it reaches this unit's
+ * surface as the port's `dismiss`. Nothing is shared with it, nor with the
+ * notification toast — no base class, no helper, no payload builder, no
+ * constant. Sharing anything would re-open the copy-paste trap, and the port is
+ * no exception: it is a SINK, not a shared payload builder, so the `notify(...)`
+ * call below stays literal at this site.
  *
  * A reactor that HOLDS STATE, which the epic's review test otherwise forbids
  * ("if a unit needs to remember something, it is a projection"). That test
@@ -38,10 +41,12 @@ import { MessageService } from 'primeng/api';
  * `IngestionService`. Wiring this unit to a `TeamSocket` status stream instead
  * of the two push call sites is story 34-6, not this one.
  *
- * `messageService.clear()` is deliberately ABSENT here (and must stay absent):
- * `clear()` empties the whole keyless `<p-toast>` container, notification toasts
- * included, so it belongs to `IngestionService`'s lifecycle sequencing rather
- * than to either toast unit.
+ * The port's `clear()` is deliberately ABSENT here (and must stay absent): it
+ * empties the whole keyless `<p-toast>` container, notification toasts included,
+ * so it belongs to `IngestionService`'s lifecycle sequencing rather than to
+ * either toast unit. Story 53-1 put that operation on the port — which is what
+ * lets `IngestionService` drop its own PrimeNG import — and moved it no closer
+ * to this file.
  *
  * Component-scoped (`@Injectable()` with no `providedIn`), provided on
  * the `process/:id` route before `IngestionService`, which injects it. Root scope
@@ -51,7 +56,7 @@ import { MessageService } from 'primeng/api';
  */
 @Injectable()
 export class ConnectionToast {
-  private readonly messageService: MessageService = inject(MessageService);
+  private readonly notifications = inject(NOTIFICATION_PORT);
 
   /**
    * Story 8-2 (AC3): deduplication flag — prevents stacking duplicate
@@ -102,7 +107,7 @@ export class ConnectionToast {
   show(): void {
     if (this.wsDisconnectToastShown || this.destroying) return;
     this.wsDisconnectToastShown = true;
-    this.messageService.add({
+    this.notifications.notify({
       severity: 'warn',
       summary: 'Connection Lost',
       detail: 'Real-time connection to the server has been lost. Updates are paused.',

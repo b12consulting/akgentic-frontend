@@ -21,7 +21,7 @@ import { ProcessStores } from './process-stores';
 import { ReplaySeeder } from './replay-seeder';
 import { TeamSocket, TeamSocketStatus } from './team-socket';
 import { TeamStatusReactor } from './team-status-reactor';
-import { MessageService } from 'primeng/api';
+import { NOTIFICATION_PORT } from '../../../core/notification/notification.port';
 
 /**
  * `IngestionService` — the ORCHESTRATOR of the ingestion layer (Epic 34 /
@@ -60,9 +60,12 @@ import { MessageService } from 'primeng/api';
  *     a stopped team's `TeamStoppingEvent` only ever arrives in step (c)'s REST
  *     replay.
  *
- * `messageService.clear()` stays here rather than moving into either toast unit:
- * it empties the whole keyless `<p-toast>` container, both families at once, so
- * it is lifecycle sequencing.
+ * The notification port's `clear()` stays here rather than moving into either
+ * toast unit: it empties the whole keyless `<p-toast>` container, both families
+ * at once, so it is lifecycle sequencing. Story 53-1 (ADR-035 §D6.1) is why it
+ * is the PORT's `clear()` and no longer PrimeNG's — this file used to hold the
+ * layer's last `MessageService` import for the sake of these three calls, and
+ * that is the import the port was widened to a third method to remove.
  *
  * Per-agent state (Epic 17 / ADR-014, re-homed by Epic 34 / ADR-025 §1):
  * `state`, `context`, `commands`, `systemPrompt` and `tokenUsage` are ALL
@@ -74,7 +77,7 @@ import { MessageService } from 'primeng/api';
  */
 @Injectable()
 export class IngestionService {
-  messageService: MessageService = inject(MessageService);
+  private notifications = inject(NOTIFICATION_PORT);
 
   /**
    * Story 6.1 (ADR-005 §Decision 1): component-scoped append-only log of every
@@ -243,7 +246,7 @@ export class IngestionService {
 
     // Story 8-2: clear any stale toasts from a prior init() cycle so process-A's
     // warnings do not persist into process-B. Both families at once.
-    this.messageService.clear();
+    this.notifications.clear();
     // Epic 34 (ADR-025 §1): re-arm the disconnect toast for this cycle, at
     // exactly the point the inline flag reset held — after the toast clear,
     // before the spinner cycle — so a prior team's disconnect cannot suppress
@@ -416,7 +419,7 @@ export class IngestionService {
     this.cycleToken++;
     this.disposePriorSubscriptions();
     this.log.reset();
-    this.messageService.clear();
+    this.notifications.clear();
     this.processId = '';
   }
 
@@ -433,7 +436,7 @@ export class IngestionService {
 
     // Story 8-2 (AC4): clear all toasts so navigating away removes warnings and
     // a fresh process view starts clean.
-    this.messageService.clear();
+    this.notifications.clear();
 
     this.disposePriorSubscriptions();
 

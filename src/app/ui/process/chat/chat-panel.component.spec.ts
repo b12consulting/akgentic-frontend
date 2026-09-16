@@ -10,6 +10,9 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { BehaviorSubject, of, Subject } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { MessageService } from 'primeng/api';
+
+import { NOTIFICATION_PORT } from '../../../core/notification/notification.port';
+import { PrimeNgNotificationAdapter } from '../../console/notification.adapter';
 import { provideMarkdown } from 'ngx-markdown';
 
 import { ChatPanelComponent } from './chat-panel.component';
@@ -181,6 +184,10 @@ describe('ChatPanelComponent', () => {
         // The nested <app-user-input> raises its own restore-failure toast
         // (Story 33-1), so the child needs the PrimeNG toast service present.
         MessageService,
+        // Story 53-1: `UtilService` reaches the toast surface through the port
+        // now. The real adapter is the production wiring and is just as inert
+        // as the real `MessageService` above it until something notifies.
+        { provide: NOTIFICATION_PORT, useClass: PrimeNgNotificationAdapter },
       ],
     }).compileComponents();
 
@@ -2166,6 +2173,10 @@ describe('ChatPanelComponent — HandledMessage split, end to end (Story 44-1)',
           },
         },
         MessageService,
+        // Story 53-1: `UtilService` reaches the toast surface through the port
+        // now. The real adapter is the production wiring and is just as inert
+        // as the real `MessageService` above it until something notifies.
+        { provide: NOTIFICATION_PORT, useClass: PrimeNgNotificationAdapter },
       ],
     }).compileComponents();
 

@@ -2,9 +2,7 @@ import { inject, Injectable } from '@angular/core';
 
 import { Observable, Subscription } from 'rxjs';
 
-import { MessageService } from 'primeng/api';
-
-import { NotificationToastService } from '../../../core/ui/notification-toast.service';
+import { NOTIFICATION_PORT } from '../../../core/notification/notification.port';
 import {
   AkgenticMessage,
   ErrorMessage,
@@ -93,8 +91,9 @@ const ORCHESTRATOR_ROLE = 'Orchestrator';
  * restating ADR-005 §Decision 6). That is the concrete defect being removed —
  * the subscription this unit now opens in `start()` used to be a FIELD
  * INITIALIZER on `IngestionService`, firing during construction, which forced
- * `notificationToast` to be declared above it and made that declaration order a
- * rule the class had to explain in a comment. Both are gone with it.
+ * that service's dismissal collaborator to be declared above it and made the
+ * declaration order a rule the class had to explain in a comment. Both are gone
+ * with it.
  *
  * `start()` takes `Observable`s rather than reaching for a service, which is
  * what makes story 34-6 cheap: when `TeamSocket` appears, only the ARGUMENT
@@ -108,22 +107,18 @@ const ORCHESTRATOR_ROLE = 'Orchestrator';
  */
 @Injectable()
 export class NotificationToasts {
-  private readonly messageService: MessageService = inject(MessageService);
-
   /**
-   * Story 31-5: the other half of dismissal. `messageService` raises toasts;
-   * this removes a single one that is already on screen — an operation PrimeNG's
-   * `MessageService` does not offer.
+   * Story 53-1 (ADR-035 §D6.1): the toast surface, raised and removed through
+   * ONE port instead of two injected collaborators.
    *
-   * Named `notificationToast` (singular, no `s`) exactly as `IngestionService`
-   * named it, so the migrated code reads unchanged. It is the root-scoped
-   * `core/ui` service that REMOVES one toast, and not this class, which raises
-   * them; the two names read almost identically at a glance and this is the only
-   * file that imports both.
+   * Both halves of story 31-5 travel on it. `notify` raises; `dismiss` removes a
+   * single toast already on screen — an operation PrimeNG's `MessageService` does
+   * not offer, and which the adapter delegates to the `core/ui` service that owns
+   * the splice. This file used to inject that service directly, which was a
+   * data-layer unit reaching a UI one; after 53-1 the only route is the token,
+   * and the token is satisfied at the composition root.
    */
-  private readonly notificationToast: NotificationToastService = inject(
-    NotificationToastService,
-  );
+  private readonly notifications = inject(NOTIFICATION_PORT);
 
   /**
    * Story 31-4 (AC #9): latest snapshot of `MessageLogService.closedNotificationIds$`,
@@ -260,7 +255,7 @@ export class NotificationToasts {
     const previous = this.closedNotificationIds;
     this.closedNotificationIds = ids;
     for (const id of ids) {
-      if (!previous.has(id)) this.notificationToast.dismiss(id);
+      if (!previous.has(id)) this.notifications.dismiss(id);
     }
   }
 
@@ -315,7 +310,14 @@ export class NotificationToasts {
    * `notificationSeverity` and passes the answer down.
    *
    * Three properties are deliberately ABSENT, and each omission is
-   * load-bearing — do not "complete" this object:
+   * load-bearing — do not "complete" this object.
+   *
+   * Story 53-1 moved the payload one step away from PrimeNG without weakening
+   * any of it. `key` and `life` are not fields of `NotificationRequest` at all,
+   * so neither can be reintroduced here by accident; `closable` is a field, and
+   * the adapter OMITS it from the `Message` rather than passing `undefined`,
+   * which is the distinction the close cross actually depends on. The reasons
+   * below are unchanged and still describe what the adapter must keep true:
    *
    *   - **no `key`** — `app.component.html` mounts a single keyless
    *     `<p-toast>`, and PrimeNG admits a message only when the mount's key
@@ -354,7 +356,7 @@ export class NotificationToasts {
     severity: NotificationSeverity,
   ): void {
     if (this.closedNotificationIds.has(event.id)) return;
-    this.messageService.add({
+    this.notifications.notify({
       severity,
       summary: this.toastSummary(event, severity),
       detail: event.content,

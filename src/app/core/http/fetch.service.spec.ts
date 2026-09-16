@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { MessageService } from 'primeng/api';
+import { NOTIFICATION_PORT, NotificationPort } from '../notification/notification.port';
 
 import { ConfigService } from '../config/config.service';
 import {
@@ -60,16 +60,20 @@ function makeResponse({
 
 describe('FetchService', () => {
   let service: FetchService;
-  let messageServiceSpy: jasmine.SpyObj<MessageService>;
+  let notificationsSpy: jasmine.SpyObj<NotificationPort>;
   let originalFetch: typeof fetch;
 
   beforeEach(() => {
-    messageServiceSpy = jasmine.createSpyObj('MessageService', ['add']);
+    notificationsSpy = jasmine.createSpyObj<NotificationPort>('NotificationPort', [
+      'notify',
+      'dismiss',
+      'clear',
+    ]);
 
     TestBed.configureTestingModule({
       providers: [
         FetchService,
-        { provide: MessageService, useValue: messageServiceSpy },
+        { provide: NOTIFICATION_PORT, useValue: notificationsSpy },
         {
           provide: ConfigService,
           useValue: { hideLogin: false } as Partial<ConfigService>,
@@ -151,8 +155,8 @@ describe('FetchService', () => {
         })
       ).toBeRejected();
 
-      expect(messageServiceSpy.add).toHaveBeenCalledTimes(1);
-      const call = messageServiceSpy.add.calls.first().args[0];
+      expect(notificationsSpy.notify).toHaveBeenCalledTimes(1);
+      const call = notificationsSpy.notify.calls.first().args[0];
       expect(call.severity).toBe('error');
     });
 
@@ -267,7 +271,7 @@ describe('FetchService', () => {
       // The surface the notification uses must still be the same shape
       // ("Request failed: ...\n\n<detail>") so existing callers' catch-on-
       // Error branches see the same message.
-      const toastArgs = messageServiceSpy.add.calls.first().args[0];
+      const toastArgs = notificationsSpy.notify.calls.first().args[0];
       expect(toastArgs.summary as string).toContain('Request failed');
       expect(toastArgs.summary as string).toContain('Nope');
     });
@@ -293,7 +297,7 @@ describe('FetchService', () => {
       expect((caught as HttpError).status).toBe(401);
       // Existing toast-on-error behaviour preserved — the panel's save
       // handler relies on the global toast fired here for 401 fall-through.
-      expect(messageServiceSpy.add).toHaveBeenCalledTimes(1);
+      expect(notificationsSpy.notify).toHaveBeenCalledTimes(1);
     });
 
     it('the HttpError is also a FetchFailure, and still carries status + body', async () => {
@@ -354,8 +358,8 @@ describe('FetchService', () => {
       );
       // FetchService stays the single place that tells the user a request
       // failed — a caller adding its own toast would double up.
-      expect(messageServiceSpy.add).toHaveBeenCalledTimes(1);
-      expect(messageServiceSpy.add.calls.first().args[0].severity).toBe('error');
+      expect(notificationsSpy.notify).toHaveBeenCalledTimes(1);
+      expect(notificationsSpy.notify.calls.first().args[0].severity).toBe('error');
     });
 
     it('the NetworkError is a FetchFailure and an Error, has no status, and keeps the cause', async () => {
@@ -396,8 +400,8 @@ describe('FetchService', () => {
       }
 
       expect((caught as Error).message).toBe('Could not reach the catalog');
-      expect(messageServiceSpy.add).toHaveBeenCalledTimes(1);
-      expect(messageServiceSpy.add.calls.first().args[0].summary).toBe(
+      expect(notificationsSpy.notify).toHaveBeenCalledTimes(1);
+      expect(notificationsSpy.notify.calls.first().args[0].summary).toBe(
         'Could not reach the catalog',
       );
     });

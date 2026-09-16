@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { Clipboard } from '@angular/cdk/clipboard';
-import { MessageService } from 'primeng/api';
+import { NOTIFICATION_PORT } from '../notification/notification.port';
 import { TranslateService } from '@ngx-translate/core';
 
 @Injectable({
@@ -8,7 +8,7 @@ import { TranslateService } from '@ngx-translate/core';
 })
 export class UtilService {
   clipboard: Clipboard = inject(Clipboard);
-  messageService: MessageService = inject(MessageService);
+  private notifications = inject(NOTIFICATION_PORT);
   private translate: TranslateService = inject(TranslateService);
 
   /**
@@ -69,7 +69,7 @@ export class UtilService {
    */
   copyToClipboard(content: string) {
     this.clipboard.copy(content);
-    this.messageService.add({
+    this.notifications.notify({
       severity: 'success',
       summary: this.translate.instant('common.copiedToClipboard'),
     });

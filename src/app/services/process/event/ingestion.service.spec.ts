@@ -9,6 +9,8 @@ import { LogFeeder } from './log-feeder';
 import { TeamSocket } from './team-socket';
 import { ApiService } from '../../../core/http/api.service';
 import { NotificationToastService } from '../../../core/ui/notification-toast.service';
+import { NOTIFICATION_PORT } from '../../../core/notification/notification.port';
+import { PrimeNgNotificationAdapter } from '../../../ui/console/notification.adapter';
 import { ChatService } from '../selectors/chat.selector';
 import { ConnectionToast } from './connection-toast';
 import { LoadingIndicator } from './loading-indicator';
@@ -130,7 +132,14 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
               .and.resolveTo([]),
           },
         },
-        { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
+        {
+          provide: NOTIFICATION_PORT,
+          useValue: {
+            notify: jasmine.createSpy('notify'),
+            dismiss: jasmine.createSpy('dismiss'),
+            clear: jasmine.createSpy('clear'),
+          },
+        },
       ],
     });
     service = TestBed.inject(IngestionService);
@@ -399,7 +408,14 @@ describe('IngestionService — Story 6.1 (frame-batched log ingestion)', () => {
               .and.resolveTo([]),
           },
         },
-        { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
+        {
+          provide: NOTIFICATION_PORT,
+          useValue: {
+            notify: jasmine.createSpy('notify'),
+            dismiss: jasmine.createSpy('dismiss'),
+            clear: jasmine.createSpy('clear'),
+          },
+        },
       ],
     });
     service = TestBed.inject(IngestionService);
@@ -754,7 +770,14 @@ describe('IngestionService — commands PerAgentStore (Story 17-3, ADR-014/ADR-0
               .and.resolveTo([]),
           },
         },
-        { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
+        {
+          provide: NOTIFICATION_PORT,
+          useValue: {
+            notify: jasmine.createSpy('notify'),
+            dismiss: jasmine.createSpy('dismiss'),
+            clear: jasmine.createSpy('clear'),
+          },
+        },
       ],
     });
     service = TestBed.inject(IngestionService);
@@ -986,7 +1009,14 @@ describe('IngestionService — registry is the only per-agent owner (Epic 17, AD
               .and.resolveTo([]),
           },
         },
-        { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
+        {
+          provide: NOTIFICATION_PORT,
+          useValue: {
+            notify: jasmine.createSpy('notify'),
+            dismiss: jasmine.createSpy('dismiss'),
+            clear: jasmine.createSpy('clear'),
+          },
+        },
       ],
     });
   });
@@ -1097,11 +1127,18 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
               .and.resolveTo([]),
           },
         },
-        { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
+        {
+          provide: NOTIFICATION_PORT,
+          useValue: {
+            notify: jasmine.createSpy('notify'),
+            dismiss: jasmine.createSpy('dismiss'),
+            clear: jasmine.createSpy('clear'),
+          },
+        },
       ],
     });
     service = TestBed.inject(IngestionService);
-    msgService = TestBed.inject(MessageService);
+    msgService = TestBed.inject(NOTIFICATION_PORT);
     connectionToast = TestBed.inject(ConnectionToast);
 
     spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
@@ -1120,7 +1157,7 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
 
   /** Every 'Connection Lost' payload raised so far, in order. */
   function disconnectToasts(): any[] {
-    return msgService.add.calls
+    return msgService.notify.calls
       .allArgs()
       .map((a: any[]) => a[0])
       .filter((c: any) => c.severity === 'warn' && c.summary === 'Connection Lost');
@@ -1132,7 +1169,7 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
 
     fakeSocket.error(new Error('connection lost'));
 
-    expect(msgService.add).toHaveBeenCalledWith(
+    expect(msgService.notify).toHaveBeenCalledWith(
       jasmine.objectContaining({
         severity: 'warn',
         summary: 'Connection Lost',
@@ -1149,7 +1186,7 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
 
     fakeSocket.error(new Error('connection lost'));
 
-    const calls = msgService.add.calls.allArgs().map((a: any[]) => a[0]);
+    const calls = msgService.notify.calls.allArgs().map((a: any[]) => a[0]);
     const transientErrorCalls = calls.filter(
       (c: any) => c.severity === 'error' && c.life === 5000 && c.summary === 'Connection Error',
     );
@@ -1162,7 +1199,7 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
 
     fakeSocket.complete();
 
-    expect(msgService.add).toHaveBeenCalledWith(
+    expect(msgService.notify).toHaveBeenCalledWith(
       jasmine.objectContaining({
         severity: 'warn',
         sticky: true,
@@ -1210,7 +1247,7 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
 
     // The only warn-toast add calls should be zero — the destroying guard
     // prevents the toast from being shown during intentional navigation.
-    const warnCalls = msgService.add.calls.allArgs()
+    const warnCalls = msgService.notify.calls.allArgs()
       .map((a: any[]) => a[0])
       .filter((c: any) => c.severity === 'warn' && c.summary === 'Connection Lost');
     expect(warnCalls.length).toBe(0);
@@ -1372,7 +1409,14 @@ describe('IngestionService — state + context PerAgentStore (Story 17-2)', () =
               .and.resolveTo([]),
           },
         },
-        { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
+        {
+          provide: NOTIFICATION_PORT,
+          useValue: {
+            notify: jasmine.createSpy('notify'),
+            dismiss: jasmine.createSpy('dismiss'),
+            clear: jasmine.createSpy('clear'),
+          },
+        },
       ],
     });
     service = TestBed.inject(IngestionService);
@@ -1594,7 +1638,14 @@ describe('IngestionService — seed agent state on init (Story 25-1)', () => {
               .and.resolveTo([]),
           },
         },
-        { provide: MessageService, useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') } },
+        {
+          provide: NOTIFICATION_PORT,
+          useValue: {
+            notify: jasmine.createSpy('notify'),
+            dismiss: jasmine.createSpy('dismiss'),
+            clear: jasmine.createSpy('clear'),
+          },
+        },
       ],
     });
     service = TestBed.inject(IngestionService);
@@ -1923,16 +1974,17 @@ describe('IngestionService — Story 31-3 (notification toast)', () => {
           },
         },
         {
-          provide: MessageService,
+          provide: NOTIFICATION_PORT,
           useValue: {
-            add: jasmine.createSpy('add'),
+            notify: jasmine.createSpy('notify'),
+            dismiss: jasmine.createSpy('dismiss'),
             clear: jasmine.createSpy('clear'),
           },
         },
       ],
     });
     service = TestBed.inject(IngestionService);
-    msgService = TestBed.inject(MessageService);
+    msgService = TestBed.inject(NOTIFICATION_PORT);
 
     spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
@@ -1954,7 +2006,7 @@ describe('IngestionService — Story 31-3 (notification toast)', () => {
     jasmine.clock().tick(600);
     // init()'s `messageService.clear()` runs before any frame; reset so the
     // add-count assertions below count only frame-driven toasts.
-    msgService.add.calls.reset();
+    msgService.notify.calls.reset();
   }
 
   it('AC9: the WarningMessage still reaches the message log (the toast is additive)', async () => {
@@ -1973,7 +2025,7 @@ describe('IngestionService — Story 31-3 (notification toast)', () => {
 
     fakeSocket.error(new Error('connection lost'));
 
-    expect(msgService.add).toHaveBeenCalledWith(
+    expect(msgService.notify).toHaveBeenCalledWith(
       jasmine.objectContaining({
         severity: 'warn',
         summary: 'Connection Lost',
@@ -2031,16 +2083,17 @@ describe('IngestionService — Story 31-6 (error parity, severity, summary)', ()
           },
         },
         {
-          provide: MessageService,
+          provide: NOTIFICATION_PORT,
           useValue: {
-            add: jasmine.createSpy('add'),
+            notify: jasmine.createSpy('notify'),
+            dismiss: jasmine.createSpy('dismiss'),
             clear: jasmine.createSpy('clear'),
           },
         },
       ],
     });
     service = TestBed.inject(IngestionService);
-    msgService = TestBed.inject(MessageService);
+    msgService = TestBed.inject(NOTIFICATION_PORT);
 
     spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
@@ -2059,7 +2112,7 @@ describe('IngestionService — Story 31-6 (error parity, severity, summary)', ()
   async function start(): Promise<void> {
     await service.init('proc-1', true);
     jasmine.clock().tick(600);
-    msgService.add.calls.reset();
+    msgService.notify.calls.reset();
   }
 
   // --- AC #14: the toast is additive, the log is untouched ------------------
@@ -2096,7 +2149,7 @@ describe('IngestionService — Story 31-6 (error parity, severity, summary)', ()
 
     fakeSocket.error(new Error('connection lost'));
 
-    expect(msgService.add).toHaveBeenCalledWith(
+    expect(msgService.notify).toHaveBeenCalledWith(
       jasmine.objectContaining({
         severity: 'warn',
         summary: 'Connection Lost',
@@ -2199,16 +2252,17 @@ describe('IngestionService — Story 31-4 (closed-notification suppression)', ()
           },
         },
         {
-          provide: MessageService,
+          provide: NOTIFICATION_PORT,
           useValue: {
-            add: jasmine.createSpy('add'),
+            notify: jasmine.createSpy('notify'),
+            dismiss: jasmine.createSpy('dismiss'),
             clear: jasmine.createSpy('clear'),
           },
         },
       ],
     });
     service = TestBed.inject(IngestionService);
-    msgService = TestBed.inject(MessageService);
+    msgService = TestBed.inject(NOTIFICATION_PORT);
     log = TestBed.inject(MessageLogService);
 
     spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
@@ -2228,7 +2282,7 @@ describe('IngestionService — Story 31-4 (closed-notification suppression)', ()
   async function start(): Promise<void> {
     await service.init('proc-1', true);
     jasmine.clock().tick(600);
-    msgService.add.calls.reset();
+    msgService.notify.calls.reset();
   }
 
   it('AC10: the suppressed WarningMessage is STILL appended to the log', async () => {
@@ -2267,7 +2321,7 @@ describe('IngestionService — Story 31-4 (closed-notification suppression)', ()
 
     await service.init('proc-1', false);
     jasmine.clock().tick(600);
-    msgService.add.calls.reset();
+    msgService.notify.calls.reset();
 
     fakeSocket.next(mkNotification('w-1', 'token budget exceeded'));
     // Story 35-1: the dispatch is downstream of the log now, so without this
@@ -2275,7 +2329,7 @@ describe('IngestionService — Story 31-4 (closed-notification suppression)', ()
     // hold vacuously. Ticking is what keeps it a suppression spec.
     jasmine.clock().tick(20);
 
-    expect(msgService.add).not.toHaveBeenCalled();
+    expect(msgService.notify).not.toHaveBeenCalled();
   });
 
   it('AC #13: the suppressed ErrorMessage is STILL appended to the log', async () => {
@@ -2431,6 +2485,12 @@ describe('IngestionService — Story 31-5 (reactive toast removal)', () => {
         { provide: ContextService, useValue: contextServiceDouble() },
         ChatService,
         MessageService,
+        // Story 53-1: the REAL adapter. This block asserts that a toast LEFT
+        // THE SCREEN, not that a call was made, so the port must be the
+        // production implementation sitting on the real `MessageService` and
+        // the real `NotificationToastService`. A double here would turn the
+        // mount harness into a transport harness.
+        { provide: NOTIFICATION_PORT, useClass: PrimeNgNotificationAdapter },
         {
           provide: ApiService,
           useValue: {
@@ -2684,16 +2744,17 @@ describe('IngestionService — notification-toast reactor sequencing (Epic 34)',
           },
         },
         {
-          provide: MessageService,
+          provide: NOTIFICATION_PORT,
           useValue: {
-            add: jasmine.createSpy('add'),
+            notify: jasmine.createSpy('notify'),
+            dismiss: jasmine.createSpy('dismiss'),
             clear: jasmine.createSpy('clear'),
           },
         },
       ],
     });
     service = TestBed.inject(IngestionService);
-    msgService = TestBed.inject(MessageService);
+    msgService = TestBed.inject(NOTIFICATION_PORT);
 
     spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
@@ -2721,7 +2782,7 @@ describe('IngestionService — notification-toast reactor sequencing (Epic 34)',
       .and.returnValue(socketB as unknown as WebSocketSubject<any>);
     await service.init('proc-2', true);
     jasmine.clock().tick(600);
-    msgService.add.calls.reset();
+    msgService.notify.calls.reset();
 
     socketB.next(mkWarning('w-1'));
     // Story 35-1: the toast is raised when the frame reaches the LOG, one
@@ -2729,7 +2790,7 @@ describe('IngestionService — notification-toast reactor sequencing (Epic 34)',
     // leak it was written for — a second live subscription doubles this to 2.
     jasmine.clock().tick(20);
 
-    expect(msgService.add).toHaveBeenCalledTimes(1);
+    expect(msgService.notify).toHaveBeenCalledTimes(1);
     socketB.complete();
   });
 
@@ -2755,8 +2816,8 @@ describe('IngestionService — notification-toast reactor sequencing (Epic 34)',
     await service.init('proc-1', true);
     jasmine.clock().tick(600);
 
-    expect(msgService.add).toHaveBeenCalledTimes(1);
-    expect(msgService.add.calls.mostRecent().args[0].data.messageId).toBe(
+    expect(msgService.notify).toHaveBeenCalledTimes(1);
+    expect(msgService.notify.calls.mostRecent().args[0].data.messageId).toBe(
       'w-1',
     );
     replaying.complete();
@@ -2776,8 +2837,8 @@ describe('IngestionService — notification-toast reactor sequencing (Epic 34)',
     // The REST replay goes through `log.appendAll`, which is what the reactor
     // subscribes now. Leave `notificationToasts.start(...)` below the replay
     // block and this assertion is the one that fails.
-    expect(msgService.add).toHaveBeenCalledTimes(1);
-    expect(msgService.add.calls.mostRecent().args[0].data.messageId).toBe(
+    expect(msgService.notify).toHaveBeenCalledTimes(1);
+    expect(msgService.notify.calls.mostRecent().args[0].data.messageId).toBe(
       'w-1',
     );
 
@@ -2788,13 +2849,13 @@ describe('IngestionService — notification-toast reactor sequencing (Epic 34)',
       .and.returnValue(socketB as unknown as WebSocketSubject<any>);
     await service.init('proc-2', true);
     jasmine.clock().tick(600);
-    msgService.add.calls.reset();
+    msgService.notify.calls.reset();
 
     socketB.next(mkWarning('w-1'));
     jasmine.clock().tick(20);
 
-    expect(msgService.add).toHaveBeenCalledTimes(1);
-    expect(msgService.add.calls.mostRecent().args[0].data.messageId).toBe(
+    expect(msgService.notify).toHaveBeenCalledTimes(1);
+    expect(msgService.notify.calls.mostRecent().args[0].data.messageId).toBe(
       'w-1',
     );
     socketB.complete();
@@ -2863,9 +2924,10 @@ describe('IngestionService — init() ordering + self-wiring (Story 34-6)', () =
           },
         },
         {
-          provide: MessageService,
+          provide: NOTIFICATION_PORT,
           useValue: {
-            add: jasmine.createSpy('add'),
+            notify: jasmine.createSpy('notify'),
+            dismiss: jasmine.createSpy('dismiss'),
             clear: jasmine.createSpy('clear'),
           },
         },
@@ -3121,16 +3183,17 @@ describe('IngestionService — Story 35-1 (toasts dispatch from the log)', () =>
           },
         },
         {
-          provide: MessageService,
+          provide: NOTIFICATION_PORT,
           useValue: {
-            add: jasmine.createSpy('add'),
+            notify: jasmine.createSpy('notify'),
+            dismiss: jasmine.createSpy('dismiss'),
             clear: jasmine.createSpy('clear'),
           },
         },
       ],
     });
     service = TestBed.inject(IngestionService);
-    msgService = TestBed.inject(MessageService);
+    msgService = TestBed.inject(NOTIFICATION_PORT);
 
     spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
       fakeSocket as unknown as WebSocketSubject<any>,
@@ -3148,7 +3211,7 @@ describe('IngestionService — Story 35-1 (toasts dispatch from the log)', () =>
 
   /** Every `MessageService.add` payload, in the order it was raised. */
   function raised(): any[] {
-    return msgService.add.calls.allArgs().map((a: any[]) => a[0]);
+    return msgService.notify.calls.allArgs().map((a: any[]) => a[0]);
   }
 
   it('AC #7: a STOPPED team raises one toast per replayed notification', async () => {
@@ -3166,7 +3229,7 @@ describe('IngestionService — Story 35-1 (toasts dispatch from the log)', () =>
     // `init()` and `appended$` delivers synchronously.
     jasmine.clock().tick(600);
 
-    // NO `msgService.add.calls.reset()` here, deliberately: `init()`'s
+    // NO `msgService.notify.calls.reset()` here, deliberately: `init()`'s
     // `messageService.clear()` runs at step (b), BEFORE the replay, so the only
     // `add` calls are the two being asserted — and a reset placed after
     // `init()` would erase exactly the evidence.
@@ -3216,7 +3279,7 @@ describe('IngestionService — Story 35-1 (toasts dispatch from the log)', () =>
     (teamSocket() as any).createWebSocket = jasmine
       .createSpy('createWebSocket')
       .and.returnValue(socketB as unknown as WebSocketSubject<any>);
-    msgService.add.calls.reset();
+    msgService.notify.calls.reset();
 
     await service.init('proc-B', false);
     jasmine.clock().tick(600);
@@ -3338,9 +3401,10 @@ describe('IngestionService — Story 37-2 (team-stopping reactor wiring)', () =>
           },
         },
         {
-          provide: MessageService,
+          provide: NOTIFICATION_PORT,
           useValue: {
-            add: jasmine.createSpy('add'),
+            notify: jasmine.createSpy('notify'),
+            dismiss: jasmine.createSpy('dismiss'),
             clear: jasmine.createSpy('clear'),
           },
         },
@@ -3527,9 +3591,10 @@ describe('IngestionService — Story 52-1 (superseded cycles)', () => {
         ChatService,
         { provide: ApiService, useValue: api },
         {
-          provide: MessageService,
+          provide: NOTIFICATION_PORT,
           useValue: {
-            add: jasmine.createSpy('add'),
+            notify: jasmine.createSpy('notify'),
+            dismiss: jasmine.createSpy('dismiss'),
             clear: jasmine.createSpy('clear'),
           },
         },

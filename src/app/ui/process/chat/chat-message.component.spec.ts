@@ -2,6 +2,9 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideMarkdown } from 'ngx-markdown';
 import { MessageService } from 'primeng/api';
+
+import { NOTIFICATION_PORT } from '../../../core/notification/notification.port';
+import { PrimeNgNotificationAdapter } from '../../console/notification.adapter';
 import { BehaviorSubject } from 'rxjs';
 import { ConfigService } from '../../../core/config/config.service';
 import { ChatMessageComponent } from './chat-message.component';
@@ -76,6 +79,10 @@ describe('ChatMessageComponent', () => {
         // rather than stubbed: the real one is inert until something is added
         // to it, and nothing here adds.
         MessageService,
+        // Story 53-1: `UtilService` reaches the toast surface through the port
+        // now. The real adapter is the production wiring and is just as inert
+        // as the real `MessageService` above it until something notifies.
+        { provide: NOTIFICATION_PORT, useClass: PrimeNgNotificationAdapter },
         { provide: FeedbackService, useValue: makeFeedbackServiceStub() },
       ],
     }).compileComponents();
@@ -1400,6 +1407,10 @@ describe('ChatMessageComponent', () => {
           provideTranslateTesting(),
           provideMarkdown(),
           MessageService,
+          // Story 53-1: `UtilService` reaches the toast surface through the port
+          // now. The real adapter is the production wiring and is just as inert
+          // as the real `MessageService` above it until something notifies.
+          { provide: NOTIFICATION_PORT, useClass: PrimeNgNotificationAdapter },
           { provide: ConfigService, useValue: { hideAgentNames } },
           { provide: FeedbackService, useValue: makeFeedbackServiceStub() },
         ],
