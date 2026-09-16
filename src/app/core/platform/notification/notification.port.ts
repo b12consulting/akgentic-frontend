@@ -10,13 +10,20 @@ import { InjectionToken } from '@angular/core';
  * the composition root (`ui/console/notification.adapter.ts`), so nothing below
  * `ui/` names a UI framework and Epic 53's file move stays a pure rename.
  *
- * It lives in `platform` (T2) because the token must be importable from BOTH sides
- * of the data layer's DAG, and T2 is the highest tier both of them may reach:
- * `core/platform/http/fetch.service.ts` is itself `platform`, which may import only
- * `shared` and `protocol` — so the port cannot sit at T3 — while `svc-event` and
- * the rest of `core/services/**` may import `platform`. T1 `shared/` would also be
- * reachable from both, but §D1 declares that tier pure functions and pipes; a port
- * is plumbing, and it belongs beside `http/`, its closest caller.
+ * It lives in `platform` because the token must be importable from BOTH sides of
+ * the data layer's DAG, and `platform` is the only tier both of them may reach:
+ * `core/platform/http/fetch.service.ts` is itself `platform`, which may import
+ * only `shared` and `protocol` — so the port cannot sit in `services` — while
+ * `svc-event` and the rest of `core/services/**` may import `platform`.
+ *
+ * `shared/` is NOT the near-miss alternative it looks like, and the gate rules it
+ * out before taste does. `svc-event`'s allow list is `svc-models, platform,
+ * protocol` — no `shared` grant at all — so a port in `shared/` would be
+ * unreachable from one of the tiers that needs it. Verified by mutation rather
+ * than read off the config: planting the same `shared` import into a `platform`
+ * file and an `svc-event` file reddens the `svc-event` one only. §D1 declaring
+ * that tier pure functions and pipes is the second reason, and used to be given
+ * as the only one.
  *
  * This paragraph used to argue instead that `core/` was a single `boundaries`
  * element, so that imports within it were unrestricted and no lint change was
