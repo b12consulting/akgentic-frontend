@@ -153,9 +153,9 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
         {
           provide: MessageService,
           useValue: { add: jasmine.createSpy('add'), clear: jasmine.createSpy('clear') },
-          },
-          // Story 53-1: the data layer notifies through the port now.
-          { provide: NOTIFICATION_PORT, useClass: PrimeNgNotificationAdapter },
+        },
+        // Story 53-1: the data layer notifies through the port now.
+        { provide: NOTIFICATION_PORT, useClass: PrimeNgNotificationAdapter },
         {
           provide: AkgentService,
           useValue: { selectedAkgent$, select: jasmine.createSpy('select') },

@@ -31,7 +31,7 @@ import {
  * Story 37-2: `IngestionService` now injects `TeamStatusReactor`, which injects
  * the root-scoped `ContextService`. A real one would drag `Router` into every
  * bed in this file, so each provider list gets this double instead — one fresh
- * spy per `configureTestingModule`, exactly like the `MessageService` double
+ * spy per `configureTestingModule`, exactly like the notification-port double
  * beside it. Only the team-status wiring block below reads it back.
  */
 function contextServiceDouble(): any {
@@ -1180,15 +1180,21 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
     );
   });
 
-  it('AC1: WS error no longer shows transient error toast with life: 5000', async () => {
+  it('AC1: WS error no longer shows a transient "Connection Error" toast', async () => {
     await service.init('proc-1', true);
     jasmine.clock().tick(600);
 
     fakeSocket.error(new Error('connection lost'));
 
+    // The toast this replaced carried `life: 5000`, and the filter used to say
+    // so. Story 53-1 removed `life` from the request type altogether, which
+    // turned that conjunct into one no payload can satisfy — and a filter that
+    // cannot match makes `toBe(0)` true for every implementation, including one
+    // that raises the toast this spec exists to forbid. Severity and summary are
+    // what the observable surface still carries, so they are what it asserts.
     const calls = msgService.notify.calls.allArgs().map((a: any[]) => a[0]);
     const transientErrorCalls = calls.filter(
-      (c: any) => c.severity === 'error' && c.life === 5000 && c.summary === 'Connection Error',
+      (c: any) => c.severity === 'error' && c.summary === 'Connection Error',
     );
     expect(transientErrorCalls.length).toBe(0);
   });
@@ -2004,8 +2010,8 @@ describe('IngestionService — Story 31-3 (notification toast)', () => {
   async function start(): Promise<void> {
     await service.init('proc-1', true);
     jasmine.clock().tick(600);
-    // init()'s `messageService.clear()` runs before any frame; reset so the
-    // add-count assertions below count only frame-driven toasts.
+    // init()'s `clear()` on the port runs before any frame; reset so the
+    // notify-count assertions below count only frame-driven toasts.
     msgService.notify.calls.reset();
   }
 
@@ -2041,7 +2047,7 @@ describe('IngestionService — Story 31-3 (notification toast)', () => {
 //
 // Epic 34 / story 34-5 moved the severity partition (AC #5), the one-dispatch
 // pin (AC #4) and every summary join case (AC #7-#11) to
-// `notification-toasts.spec.ts` — they observe `MessageService.add` and need no
+// `notification-toasts.spec.ts` — they observe the port's `notify` and need no
 // pipeline. What remains here is AC #14, the half that is ABOUT the pipeline: an
 // error toast is additive, so the error still lands in the log and in
 // `messageList$`; plus the AC #15 disconnect toast on the WS error path.
@@ -3209,7 +3215,7 @@ describe('IngestionService — Story 35-1 (toasts dispatch from the log)', () =>
     jasmine.clock().uninstall();
   });
 
-  /** Every `MessageService.add` payload, in the order it was raised. */
+  /** Every `NotificationPort.notify` request, in the order it was raised. */
   function raised(): any[] {
     return msgService.notify.calls.allArgs().map((a: any[]) => a[0]);
   }
@@ -3230,8 +3236,8 @@ describe('IngestionService — Story 35-1 (toasts dispatch from the log)', () =>
     jasmine.clock().tick(600);
 
     // NO `msgService.notify.calls.reset()` here, deliberately: `init()`'s
-    // `messageService.clear()` runs at step (b), BEFORE the replay, so the only
-    // `add` calls are the two being asserted — and a reset placed after
+    // `clear()` on the port runs at step (b), BEFORE the replay, so the only
+    // `notify` calls are the two being asserted — and a reset placed after
     // `init()` would erase exactly the evidence.
     expect(raised().length).toBe(2);
     expect(raised().map((m) => m.severity)).toEqual(['error', 'warn']);

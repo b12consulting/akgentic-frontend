@@ -109,7 +109,7 @@ function notificationPortDouble(): any {
 // Story 31-3 — Persistent closable toast with agent-name header (AC1-AC5, AC8-AC10)
 //
 // The service half of the story: what `showNotificationToast` puts on the wire
-// to `MessageService.add`. The DOM half (close button, keyless rendering,
+// to the port's `notify`. The DOM half (close button, keyless rendering,
 // coexistence) lives in `app.component.spec.ts`, because those three facts are
 // PrimeNG contracts against the app's real `<p-toast>` mount and cannot be
 // observed from a spy argument.
@@ -304,7 +304,7 @@ describe('NotificationToasts — Story 31-3 (notification toast)', () => {
 // ---------------------------------------------------------------------------
 // Story 31-6 — errors join the notification family; shared severity; summary
 //
-// Two separable contracts, both observed through `MessageService.add`:
+// Two separable contracts, both observed through the port's `notify`:
 //
 //   * the SEVERITY the toast is raised at (AC #5), which is the story's silent
 //     failure mode. Widening `showNotificationToast` to admit errors made the
@@ -348,7 +348,7 @@ describe('NotificationToasts — Story 31-6 (error parity, severity, summary)', 
     toasts.start(inbound$.asObservable(), closedIds$.asObservable());
   }
 
-  /** Push one frame and return the single `MessageService.add` argument. */
+  /** Push one frame and return the single `NotificationPort.notify` argument. */
   function toastFor(frame: any): any {
     inbound$.next(frame);
     expect(msgService.notify).toHaveBeenCalledTimes(1);
@@ -397,7 +397,7 @@ describe('NotificationToasts — Story 31-6 (error parity, severity, summary)', 
     expect(addArgs()[0].severity).not.toBe('info');
   });
 
-  // --- AC #4: one dispatch, no second `messageService.add` in the handler --
+  // --- AC #4: one dispatch, no second `notify` in the handler --------------
 
   it('AC #4: all three severities route through the one toast method', () => {
     start();
@@ -1134,11 +1134,10 @@ describe('NotificationToasts — component-scoped, never root-provided (AC12)', 
     TestBed.resetTestingModule();
     // The notification port IS available here, so the injection can only fail
     // on `NotificationToasts` itself. Give the class `providedIn: 'root'` and
-    // this injection SUCCEEDS
-    // instead — and one dismissal cache would then be shared across every team
-    // the user visits, silently suppressing the next team's toasts. On story
-    // 34-1 that exact mutation left the ENTIRE suite green, because every other
-    // `TestBed` provides the class explicitly.
+    // this injection SUCCEEDS instead — and one dismissal cache would then be
+    // shared across every team the user visits, silently suppressing the next
+    // team's toasts. On story 34-1 that exact mutation left the ENTIRE suite
+    // green, because every other `TestBed` provides the class explicitly.
     TestBed.configureTestingModule({
       providers: [
         { provide: NOTIFICATION_PORT, useValue: notificationPortDouble() },
