@@ -42,7 +42,7 @@ import {
 } from '../../../../core/services/process/event/per-agent-specs';
 import { CommandDescriptor } from '../../../../core/protocol/message.types';
 
-import { CopyButtonComponent } from '../../../../components/common/copy-button/copy-button.component';
+import { CopyButtonComponent } from '../../../../core/components/primitives/copy-button/copy-button.component';
 
 /**
  * AkgentChatComponent - Displays chat messages with JSON-formatted arguments using Monaco Editor

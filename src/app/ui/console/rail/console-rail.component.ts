@@ -16,9 +16,9 @@ import { ConfigService } from '../../../core/platform/config/config.service';
 import { ContextService } from '../../../core/platform/context/context.service';
 import { TeamCreationLauncher } from '../team-creation-launcher.service';
 import { ViewService } from '../view.service';
-import { IconButtonComponent } from '../../../components/common/icon-button/icon-button.component';
+import { IconButtonComponent } from '../../../core/components/primitives/icon-button/icon-button.component';
 import { RailFooterComponent } from './rail-footer.component';
-import { RailSearchComponent } from '../../../components/console/rail/rail-search.component';
+import { SearchBoxComponent } from '../../../core/components/primitives/search-box/search-box.component';
 import { RailTeamRowComponent } from './rail-team-row.component';
 import { railGroups, RailTeamGroup } from '../../../core/services/console/rail/rail-teams.selector';
 
@@ -101,7 +101,7 @@ export function railListState(
     AsyncPipe,
     TranslatePipe,
     IconButtonComponent,
-    RailSearchComponent,
+    SearchBoxComponent,
     RailTeamRowComponent,
     RailFooterComponent,
   ],
@@ -159,7 +159,7 @@ export class ConsoleRailComponent implements OnInit {
   /**
    * What is typed into the search box.
    *
-   * PUBLIC and bound back into `<app-rail-search [value]>`, so the box is a
+   * PUBLIC and bound back into `<app-search-box [value]>`, so the box is a
    * controlled input: the rail holds the one copy of the query that the list
    * is filtered by, rather than the DOM holding a second one that happens to
    * agree.

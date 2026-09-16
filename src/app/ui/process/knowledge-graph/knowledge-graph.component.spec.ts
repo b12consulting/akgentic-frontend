@@ -359,7 +359,7 @@ describe('KnowledgeGraphComponent', () => {
   describe('the empty state', () => {
     it('stands in for the canvas with the console\'s one empty-state shape', () => {
       const el = fixture.nativeElement as HTMLElement;
-      const empty = el.querySelector('.kg-graph-empty app-inspector-empty-state');
+      const empty = el.querySelector('.kg-graph-empty app-empty-state');
       expect(empty).not.toBeNull();
       expect(empty!.textContent).toContain('knowledgeGraph.emptyTitle');
       expect(empty!.textContent).toContain('knowledgeGraph.emptyBody');

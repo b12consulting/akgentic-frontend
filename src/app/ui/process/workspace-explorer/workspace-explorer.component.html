@@ -59,7 +59,7 @@
             *ngIf="hasLoadedRoot() && !treeError() && treeNodes().length === 0"
             class="empty-workspace"
           >
-            <app-inspector-empty-state
+            <app-empty-state
               titleKey="workspace.noFilesTitle"
               blurbKey="workspace.noFilesDesc"
             />
@@ -333,7 +333,7 @@
           }
           @case ('deleted') {
             <!--
-              THE ONE PLACEHOLDER THAT CANNOT BE `<app-inspector-empty-state>`.
+              THE ONE PLACEHOLDER THAT CANNOT BE `<app-empty-state>`.
 
               Its sentence is PARAMETERISED — it names the file that went away,
               which is the whole reason the notice exists — and the shared
@@ -374,7 +374,7 @@
                        empty" is the whole fact, and a second reassuring line
                        under it would be padding. -->
                   <div class="empty-directory">
-                    <app-inspector-empty-state
+                    <app-empty-state
                       titleKey="workspace.emptyFolder"
                     />
                   </div>

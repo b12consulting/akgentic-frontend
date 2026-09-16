@@ -116,7 +116,7 @@
     </div>
   }
 
-  <app-rail-search
+  <app-search-box
     [value]="(query$ | async) ?? ''"
     (valueChange)="onQueryChange($event)"
   />

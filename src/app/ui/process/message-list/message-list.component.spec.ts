@@ -316,7 +316,7 @@ describe('MessageListComponent (Story 2.6, AC8)', () => {
       fixture.detectChanges();
 
       const host = fixture.nativeElement as HTMLElement;
-      expect(host.querySelector('app-inspector-empty-state')).not.toBeNull();
+      expect(host.querySelector('app-empty-state')).not.toBeNull();
       // The dashed box and its three bespoke type steps are gone, not restyled.
       expect(host.querySelector('.empty-section')).toBeNull();
       expect(host.querySelector('.message-placeholder')).toBeNull();
@@ -341,7 +341,7 @@ describe('MessageListComponent (Story 2.6, AC8)', () => {
       fixture.detectChanges();
       expect(
         (fixture.nativeElement as HTMLElement).querySelector(
-          'app-inspector-empty-state',
+          'app-empty-state',
         ),
       ).not.toBeNull();
 
@@ -349,7 +349,7 @@ describe('MessageListComponent (Story 2.6, AC8)', () => {
       fixture.detectChanges();
 
       const host = fixture.nativeElement as HTMLElement;
-      expect(host.querySelector('app-inspector-empty-state')).toBeNull();
+      expect(host.querySelector('app-empty-state')).toBeNull();
       expect(host.querySelector('.message-card')).not.toBeNull();
     });
   });

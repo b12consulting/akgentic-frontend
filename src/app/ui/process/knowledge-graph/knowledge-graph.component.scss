@@ -370,7 +370,7 @@
  * Ninety lines styling eleven class names that appear nowhere in this
  * component's template — a loading state this panel never renders (it has no
  * loading flag), an error state bound to an `error$` nothing subscribes to, and
- * an empty state that is now `<app-inspector-empty-state>`. Dead CSS is not
+ * an empty state that is now `<app-empty-state>`. Dead CSS is not
  * inert: it is a description of a panel that does not exist, and the next
  * person to restyle "the empty state" restyles the wrong one.
  */
@@ -609,7 +609,7 @@
 
     /*
      * The overlay SHELL. Everything the empty state looks like now lives in
-     * `<app-inspector-empty-state>`; what is left here is where it sits.
+     * `<app-empty-state>`; what is left here is where it sits.
      *
      * The ~50 lines this replaces were a hand-drawn copy of that component,
      * kept in sync by hand, justified in a comment by the panel having no

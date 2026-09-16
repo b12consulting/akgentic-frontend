@@ -7,7 +7,7 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { ContextService } from '../../../core/platform/context/context.service';
 import { TeamMetadataPipe } from '../../../core/platform/context/team-metadata.pipe';
 import { ViewService } from '../view.service';
-import { IconButtonComponent } from '../../../components/common/icon-button/icon-button.component';
+import { IconButtonComponent } from '../../../core/components/primitives/icon-button/icon-button.component';
 
 /**
  * The conversation's own title bar (Epic: console redesign, B3).

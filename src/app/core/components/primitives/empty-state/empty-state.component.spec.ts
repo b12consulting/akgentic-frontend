@@ -1,10 +1,10 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { InspectorEmptyStateComponent } from './inspector-empty-state.component';
+import { EmptyStateComponent } from './empty-state.component';
 import {
   provideTranslateTesting,
   setTestTranslations,
-} from '../../../../testing/i18n-testing';
+} from '../../../../../testing/i18n-testing';
 
 /**
  * The shared empty state.
@@ -15,16 +15,16 @@ import {
  * empties the text of an optional line and leaves the node, so the gap it sat
  * in stays behind as a hole.
  */
-describe('InspectorEmptyStateComponent', () => {
-  let fixture: ComponentFixture<InspectorEmptyStateComponent>;
+describe('EmptyStateComponent', () => {
+  let fixture: ComponentFixture<EmptyStateComponent>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [InspectorEmptyStateComponent],
+      imports: [EmptyStateComponent],
       providers: [provideTranslateTesting()],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(InspectorEmptyStateComponent);
+    fixture = TestBed.createComponent(EmptyStateComponent);
   });
 
   function host(): HTMLElement {

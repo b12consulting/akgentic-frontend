@@ -12,7 +12,7 @@ import {
   railPercentOf,
 } from './pane-layout';
 import { PaneLayoutService } from './pane-layout.service';
-import { SplitDividerComponent } from '../../components/common/split-divider/split-divider.component';
+import { SplitDividerComponent } from '../../core/components/primitives/split-divider/split-divider.component';
 import { provideTranslateTesting } from '../../../testing/i18n-testing';
 import { ConsoleShellComponent } from './console-shell.component';
 

@@ -110,7 +110,7 @@ describe('InspectorTeamPanelComponent', () => {
     it('renders the shared empty state when there is neither a human nor a member', async () => {
       await setup([]);
 
-      expect(host().querySelector('app-inspector-empty-state')).not.toBeNull();
+      expect(host().querySelector('app-empty-state')).not.toBeNull();
     });
 
     it('renders nothing else beside it — no usage card standing on its own', async () => {
@@ -126,7 +126,7 @@ describe('InspectorTeamPanelComponent', () => {
     it('stays empty when the only nodes are tools, which are not members', async () => {
       await setup([node({ name: 't', actorName: '#KnowledgeGraphTool' })]);
 
-      expect(host().querySelector('app-inspector-empty-state')).not.toBeNull();
+      expect(host().querySelector('app-empty-state')).not.toBeNull();
     });
   });
 
@@ -180,7 +180,7 @@ describe('InspectorTeamPanelComponent', () => {
 
       expect(host().querySelector('.human-card')).not.toBeNull();
       expect(memberNames()).toEqual([]);
-      expect(host().querySelector('app-inspector-empty-state')).toBeNull();
+      expect(host().querySelector('app-empty-state')).toBeNull();
     });
   });
 
@@ -218,7 +218,7 @@ describe('InspectorTeamPanelComponent', () => {
       nodes$.next([]);
       fixture.detectChanges();
 
-      expect(host().querySelector('app-inspector-empty-state')).not.toBeNull();
+      expect(host().querySelector('app-empty-state')).not.toBeNull();
     });
 
     it('does not re-emit the view when a frame changes nothing structural', async () => {

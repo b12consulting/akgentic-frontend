@@ -50,7 +50,7 @@ import { ConsoleInspectorComponent } from '../console/inspector/console-inspecto
 import { InspectorTeamPanelComponent } from '../console/inspector/team-panel/inspector-team-panel.component';
 import { VisualizationOption } from '../../components/console/inspector/inspector-tabs.component';
 import { resolveInspectorTab, visibleInspectorTabs } from '../../core/services/console/inspector/inspector-tabs.registry';
-import { SplitDividerComponent } from '../../components/common/split-divider/split-divider.component';
+import { SplitDividerComponent } from '../../core/components/primitives/split-divider/split-divider.component';
 
 @Component({
   selector: 'app-process',

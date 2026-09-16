@@ -42,7 +42,7 @@ import {
   SelectionService,
 } from '../../../../core/services/process/ui-state/selection.service';
 import { HumanRequestComponent } from '../../human-request/human-request.component';
-import { InspectorEmptyStateComponent } from '../../../../components/console/inspector/inspector-empty-state.component';
+import { EmptyStateComponent } from '../../../../core/components/primitives/empty-state/empty-state.component';
 
 echarts.use([
   CanvasRenderer,
@@ -95,7 +95,7 @@ function liveInk(): string {
     TextareaModule,
     NgxEchartsDirective,
     HumanRequestComponent,
-    InspectorEmptyStateComponent,
+    EmptyStateComponent,
   ],
   templateUrl: './graph.component.html',
   styleUrls: ['./graph.component.scss'],

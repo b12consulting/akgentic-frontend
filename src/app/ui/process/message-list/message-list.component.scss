@@ -225,7 +225,7 @@
 }
 
 /*
- * The empty state is `<app-inspector-empty-state>` now, so the three blocks
+ * The empty state is `<app-empty-state>` now, so the three blocks
  * that used to live here — `.empty-section`, `.empty-section-box` and
  * `.message-placeholder` — are gone rather than restyled. They were a copy of
  * the knowledge-graph panel's placeholder, carried a dashed border and four

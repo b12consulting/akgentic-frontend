@@ -33,7 +33,7 @@ import { NgxEchartsDirective, provideEchartsCore } from 'ngx-echarts';
 
 import { KGStateReducer } from '../../../core/services/process/selectors/knowledge-graph.selector';
 import { graphCategoryColors, readToken } from '../../../core/services/category.service';
-import { InspectorEmptyStateComponent } from '../../../components/console/inspector/inspector-empty-state.component';
+import { EmptyStateComponent } from '../../../core/components/primitives/empty-state/empty-state.component';
 
 echarts.use([
   CanvasRenderer,
@@ -150,7 +150,7 @@ const PAIR_SEPARATOR = '\u0000';
     TagModule,
     DialogModule,
     MarkdownModule,
-    InspectorEmptyStateComponent,
+    EmptyStateComponent,
   ],
   templateUrl: './knowledge-graph.component.html',
   styleUrl: './knowledge-graph.component.scss',

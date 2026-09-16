@@ -1,23 +1,23 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 
-import { provideTranslateTesting } from '../../../../testing/i18n-testing';
-import { RailSearchComponent } from './rail-search.component';
+import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
+import { SearchBoxComponent } from './search-box.component';
 
-describe('RailSearchComponent', () => {
-  let fixture: ComponentFixture<RailSearchComponent>;
-  let component: RailSearchComponent;
+describe('SearchBoxComponent', () => {
+  let fixture: ComponentFixture<SearchBoxComponent>;
+  let component: SearchBoxComponent;
 
   const input = (): HTMLInputElement =>
     fixture.debugElement.query(By.css('input')).nativeElement as HTMLInputElement;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [RailSearchComponent],
+      imports: [SearchBoxComponent],
       providers: [provideTranslateTesting()],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(RailSearchComponent);
+    fixture = TestBed.createComponent(SearchBoxComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
   });

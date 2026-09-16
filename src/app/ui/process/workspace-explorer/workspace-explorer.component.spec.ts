@@ -30,7 +30,7 @@ import { UploadModalComponent } from '../../../components/process/workspace-expl
 // it degrades to an unknown element under CUSTOM_ELEMENTS_SCHEMA and renders
 // nothing. Naming it keeps the existing sentence assertions intact rather
 // than rewriting them to assert on an attribute.
-import { InspectorEmptyStateComponent } from '../../../components/console/inspector/inspector-empty-state.component';
+import { EmptyStateComponent } from '../../../core/components/primitives/empty-state/empty-state.component';
 import { TranslatePipe } from '@ngx-translate/core';
 import {
   provideTranslateTesting,
@@ -206,7 +206,7 @@ describe('WorkspaceExplorerComponent', () => {
     })
       .overrideComponent(WorkspaceExplorerComponent, {
         set: {
-          imports: [CommonModule, TranslatePipe, InspectorEmptyStateComponent],
+          imports: [CommonModule, TranslatePipe, EmptyStateComponent],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
       })
@@ -1705,7 +1705,7 @@ describe('WorkspaceExplorerComponent — NFR3 OnPush regression gate', () => {
             CommonModule,
             ToolbarModule,
             TranslatePipe,
-            InspectorEmptyStateComponent,
+            EmptyStateComponent,
           ],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
@@ -2005,7 +2005,7 @@ describe('WorkspaceExplorerComponent — live run-state tracking (FR9)', () => {
             ButtonModule,
             ToolbarModule,
             TranslatePipe,
-            InspectorEmptyStateComponent,
+            EmptyStateComponent,
           ],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
@@ -2321,7 +2321,7 @@ describe('WorkspaceExplorerComponent — per-file refresh control (Epic 38)', ()
             ButtonModule,
             ToolbarModule,
             TranslatePipe,
-            InspectorEmptyStateComponent,
+            EmptyStateComponent,
           ],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
@@ -2536,7 +2536,7 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
             ButtonModule,
             ToolbarModule,
             TranslatePipe,
-            InspectorEmptyStateComponent,
+            EmptyStateComponent,
           ],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
@@ -3167,7 +3167,7 @@ describe('WorkspaceExplorerComponent — gesture-less reads log instead of banne
             ButtonModule,
             ToolbarModule,
             TranslatePipe,
-            InspectorEmptyStateComponent,
+            EmptyStateComponent,
           ],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
@@ -3558,7 +3558,7 @@ describe('WorkspaceExplorerComponent — the pane state model (Epic 45)', () => 
             ButtonModule,
             ToolbarModule,
             TranslatePipe,
-            InspectorEmptyStateComponent,
+            EmptyStateComponent,
           ],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
@@ -4252,7 +4252,7 @@ describe('WorkspaceExplorerComponent — drill-down list and pinned upload (Epic
             ToolbarModule,
             TreeModule,
             TranslatePipe,
-            InspectorEmptyStateComponent,
+            EmptyStateComponent,
           ],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
@@ -5058,7 +5058,7 @@ describe('WorkspaceExplorerComponent — the console\'s design language (W15)', 
             CommonModule,
             ToolbarModule,
             TranslatePipe,
-            InspectorEmptyStateComponent,
+            EmptyStateComponent,
           ],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
         },
@@ -5075,11 +5075,11 @@ describe('WorkspaceExplorerComponent — the console\'s design language (W15)', 
   }
 
   describe('its placeholders are the inspector\'s shared empty state', () => {
-    it('renders the navigator\'s "no files" state through <app-inspector-empty-state>', () => {
+    it('renders the navigator\'s "no files" state through <app-empty-state>', () => {
       const empty = host().querySelector<HTMLElement>('.empty-workspace');
       expect(empty).withContext('empty-workspace block').not.toBeNull();
 
-      expect(empty!.querySelector('app-inspector-empty-state'))
+      expect(empty!.querySelector('app-empty-state'))
         .withContext('the shared empty state')
         .not.toBeNull();
       // Both sentences still arrive, still as keys.
@@ -5097,7 +5097,7 @@ describe('WorkspaceExplorerComponent — the console\'s design language (W15)', 
       const empty = host().querySelector<HTMLElement>('.empty-directory');
       expect(empty).withContext('empty-directory block').not.toBeNull();
 
-      const shared = empty!.querySelector('app-inspector-empty-state');
+      const shared = empty!.querySelector('app-empty-state');
       expect(shared).withContext('the shared empty state').not.toBeNull();
       expect(empty!.textContent).toContain('workspace.emptyFolder');
       expect(empty!.querySelector('.empty-directory-icon')).toBeNull();

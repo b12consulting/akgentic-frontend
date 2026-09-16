@@ -66,17 +66,17 @@
     The strip above stays live, so the way out is never only "drag the
     divider": the three panels that read fine narrow are one click away.
 
-    It reuses `app-inspector-empty-state` rather than growing a second centred
+    It reuses `app-empty-state` rather than growing a second centred
     glyph-and-sentence layout. Five panels already draw their own empty
     reasons through it, and "there is no room to draw this" is one more reason
     a pane can have nothing to show.
   -->
   @if (showNarrowNotice) {
     <div class="inspector__narrow" data-test="inspector-narrow-notice">
-      <app-inspector-empty-state
+      <app-empty-state
         titleKey="inspector.narrow.title"
         blurbKey="inspector.narrow.blurb"
-      ></app-inspector-empty-state>
+      ></app-empty-state>
     </div>
   }
 

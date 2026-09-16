@@ -142,7 +142,7 @@
 }
 
 /*
- * Both of this pane's parameter-free placeholders are `<app-inspector-empty-state>`
+ * Both of this pane's parameter-free placeholders are `<app-empty-state>`
  * now, so the three bespoke type scales that lived here — a 3rem glyph over a
  * 1rem title, and a 2.5rem glyph over a 0.95rem one — are DELETED rather than
  * re-tuned. The wrappers keep only what the wrapper owes: the block the pane's
@@ -566,7 +566,7 @@
  * `.empty-section` / `.empty-section-box` / `.file-placeholder` are gone: a
  * 2px DASHED box around a 3.5rem glyph and a 1.25rem heading, which was the
  * "copied from the knowledge-graph panel" idiom the Messages tab already shed.
- * What is left is `<app-inspector-empty-state>`'s own shape, restated because
+ * What is left is `<app-empty-state>`'s own shape, restated because
  * this sentence takes a parameter and that component takes keys — every value
  * below is the shared component's, so the two cannot drift apart by accident.
  */

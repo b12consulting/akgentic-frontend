@@ -38,7 +38,7 @@ export interface RailTeamGroup {
  * free-text parameter (only `meta.<key>`, which needs an indexed key declared
  * by a namespace contract, and `catalog_namespace`), so this cannot be pushed
  * to the server and must not pretend to have been — see the note on
- * `RailSearchComponent` and the `rail.noResultsHint` string that goes with it.
+ * `SearchBoxComponent` and the `rail.noResultsHint` string that goes with it.
  *
  * Normalises its own argument even though the parameter is named for an
  * already-normalised one: `trim().toLowerCase()` is idempotent, so a caller

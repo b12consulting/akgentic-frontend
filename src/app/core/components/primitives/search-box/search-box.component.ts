@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output } from 
 import { TranslatePipe } from '@ngx-translate/core';
 
 /**
- * The rail's search box.
+ * A search box. The reasoning below is its first caller's — the console rail.
  *
  * A CLIENT-SIDE FILTER OVER THE LOADED PAGE, and it has to be read that way.
  * `GET /teams` has no free-text parameter: it accepts `meta.<key>` — which
@@ -18,13 +18,13 @@ import { TranslatePipe } from '@ngx-translate/core';
  * DOM; there is no request to debounce because there is no request.
  */
 @Component({
-  selector: 'app-rail-search',
+  selector: 'app-search-box',
   imports: [TranslatePipe],
-  templateUrl: './rail-search.component.html',
-  styleUrl: './rail-search.component.scss',
+  templateUrl: './search-box.component.html',
+  styleUrl: './search-box.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class RailSearchComponent {
+export class SearchBoxComponent {
   /** What is in the box. One-way in; the parent owns the value. */
   @Input() value = '';
 

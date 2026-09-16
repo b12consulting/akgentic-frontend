@@ -100,6 +100,14 @@ module.exports = tseslint.config(
         { type: 'svc-session', pattern: 'src/app/core/services/process/session' },
         { type: 'services', pattern: 'src/app/core/services' },
 
+        // --- The primitives tier ---------------------------------------------
+        // Domain-free controls: an icon and a click, a string copied, a
+        // percentage dragged. The tier's rule is that it may NOT import
+        // `services` — type imports included, since `boundaries` cannot tell a
+        // type import from an injection, which is exactly what makes the rule
+        // enforceable here and only a review rule in `components`.
+        { type: 'primitives', pattern: 'src/app/core/components/primitives' },
+
         // --- The two view layers ---------------------------------------------
         { type: 'components', pattern: 'src/app/components' },
         { type: 'ui', pattern: 'src/app/ui' },
@@ -188,6 +196,13 @@ module.exports = tseslint.config(
               },
             },
 
+            // --- primitives: may reach platform, shared, protocol and each
+            // other. NOT services, and not a view layer.
+            {
+              from: { type: 'primitives' },
+              allow: { to: { type: ['primitives', 'platform', 'shared', 'protocol'] } },
+            },
+
             // --- components: render, never fetch -----------------------------
             //
             // WHAT THIS RULE DOES AND DOES NOT CATCH, because the difference
@@ -208,6 +223,10 @@ module.exports = tseslint.config(
                 to: {
                   type: [
                     'components',
+                    // TEMPORARY, and load-bearing: `member-card` is the one file
+                    // left in this tier importing a primitive. Epic 53's next
+                    // story moves it into `features/` and this entry goes with it.
+                    'primitives',
                     'platform',
                     'shared',
                     'protocol',
@@ -231,6 +250,7 @@ module.exports = tseslint.config(
                   type: [
                     'ui',
                     'components',
+                    'primitives',
                     'services',
                     'svc-models',
                     'svc-event',

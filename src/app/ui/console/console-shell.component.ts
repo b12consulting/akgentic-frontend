@@ -20,7 +20,7 @@ import {
   railWidthFromPercent,
 } from './pane-layout';
 import { PaneLayoutService } from './pane-layout.service';
-import { SplitDividerComponent } from '../../components/common/split-divider/split-divider.component';
+import { SplitDividerComponent } from '../../core/components/primitives/split-divider/split-divider.component';
 import { ConsoleRailComponent } from './rail/console-rail.component';
 
 /**

@@ -37,7 +37,7 @@ import {
   INSPECTOR_MIN_PERCENT,
   PANE_LAYOUT_STORAGE_KEY,
 } from '../console/pane-layout';
-import { SplitDividerComponent } from '../../components/common/split-divider/split-divider.component';
+import { SplitDividerComponent } from '../../core/components/primitives/split-divider/split-divider.component';
 import { ConsoleInspectorComponent } from '../console/inspector/console-inspector.component';
 import {
   provideTranslateTesting,

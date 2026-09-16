@@ -38,7 +38,7 @@ import { AuthService } from '../../core/platform/auth/auth.service';
 import { ConfigService } from '../../core/platform/config/config.service';
 import { ContextService } from '../../core/platform/context/context.service';
 import { ViewService } from '../console/view.service';
-import { IconButtonComponent } from '../../components/common/icon-button/icon-button.component';
+import { IconButtonComponent } from '../../core/components/primitives/icon-button/icon-button.component';
 
 // Listed in @Component.imports so Angular's @defer block can resolve
 // <app-namespace-panel>. The `@defer (when ...)` block in the template keeps

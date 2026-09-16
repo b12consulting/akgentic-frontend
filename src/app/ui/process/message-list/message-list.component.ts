@@ -21,8 +21,8 @@ import {
   notificationSeverity,
   NotificationSeverity,
 } from '../../../core/protocol/message.types';
-import { CopyButtonComponent } from '../../../components/common/copy-button/copy-button.component';
-import { InspectorEmptyStateComponent } from '../../../components/console/inspector/inspector-empty-state.component';
+import { CopyButtonComponent } from '../../../core/components/primitives/copy-button/copy-button.component';
+import { EmptyStateComponent } from '../../../core/components/primitives/empty-state/empty-state.component';
 
 /**
  * The two places a log row can be carrying its text.
@@ -107,7 +107,7 @@ function pad(value: number): string {
     TableModule,
     ButtonModule,
     CopyButtonComponent,
-    InspectorEmptyStateComponent,
+    EmptyStateComponent,
     TranslatePipe,
   ],
   templateUrl: './message-list.component.html',

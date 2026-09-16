@@ -401,7 +401,7 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
     nodes$.next([]);
     const host = renderPanel();
 
-    expect(host.querySelector('app-inspector-empty-state')).not.toBeNull();
+    expect(host.querySelector('app-empty-state')).not.toBeNull();
     expect(host.querySelector('p-dropdown')).toBeNull();
   });
 
@@ -413,7 +413,7 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
     const host = renderPanel();
 
     expect(host.querySelector('app-akgent-chat')).toBeNull();
-    expect(host.querySelector('app-inspector-empty-state')).not.toBeNull();
+    expect(host.querySelector('app-empty-state')).not.toBeNull();
     // The picker stays: the state is "this one has nothing", not "there is
     // nothing to pick".
     expect(host.querySelector('p-dropdown')).not.toBeNull();
@@ -427,7 +427,7 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
     const host = renderPanel();
 
     expect(host.querySelector('app-akgent-chat')).not.toBeNull();
-    expect(host.querySelector('app-inspector-empty-state')).toBeNull();
+    expect(host.querySelector('app-empty-state')).toBeNull();
   });
 });
 

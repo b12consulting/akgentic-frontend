@@ -19,8 +19,8 @@ import { TranslatePipe } from '@ngx-translate/core';
 
 import { InspectorSide } from '../pane-layout';
 import { ViewService } from '../view.service';
-import { IconButtonComponent } from '../../../components/common/icon-button/icon-button.component';
-import { InspectorEmptyStateComponent } from '../../../components/console/inspector/inspector-empty-state.component';
+import { IconButtonComponent } from '../../../core/components/primitives/icon-button/icon-button.component';
+import { EmptyStateComponent } from '../../../core/components/primitives/empty-state/empty-state.component';
 import {
   InspectorTabsComponent,
   VisualizationOption,
@@ -64,7 +64,7 @@ export type { VisualizationOption };
     TranslatePipe,
     IconButtonComponent,
     InspectorTabsComponent,
-    InspectorEmptyStateComponent,
+    EmptyStateComponent,
   ],
   templateUrl: './console-inspector.component.html',
   styleUrl: './console-inspector.component.scss',

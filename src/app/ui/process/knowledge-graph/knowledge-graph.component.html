@@ -15,7 +15,7 @@
       <!--
         THE SHARED EMPTY STATE, not a local copy of it.
 
-        This used to be a hand-drawn reproduction of `<app-inspector-empty-state>`
+        This used to be a hand-drawn reproduction of `<app-empty-state>`
         — same well tile, same display-face headline, same muted line — and the
         stylesheet said why: the panel's empty sentences were "hardcoded English
         with no locale keys behind them", so a key-taking component had nothing
@@ -29,7 +29,7 @@
         that empties routinely.
       -->
       <div class="kg-graph-empty" *ngIf="!(graphData$ | async)?.nodes?.length">
-        <app-inspector-empty-state
+        <app-empty-state
           titleKey="knowledgeGraph.emptyTitle"
           blurbKey="knowledgeGraph.emptyBody"
         />

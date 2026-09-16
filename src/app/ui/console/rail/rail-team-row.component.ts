@@ -24,7 +24,7 @@ import {
   metadataEntries,
   TeamActivity,
 } from '../../../core/platform/context/team.interface';
-import { IconButtonComponent } from '../../../components/common/icon-button/icon-button.component';
+import { IconButtonComponent } from '../../../core/components/primitives/icon-button/icon-button.component';
 import { RailTeamRow } from '../../../core/services/console/rail/rail-teams.selector';
 
 /** Which `team.status.*` key describes each activity, including its "as of the

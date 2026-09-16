@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
 import { TranslatePipe } from '@ngx-translate/core';
 
 /**
- * The inspector's empty state, as ONE shape.
+ * An empty pane, as ONE shape.
  *
  * Every pane in the inspector can be empty for a different reason — no team
  * selected, no messages yet, no agents started — and each reason wants its own
@@ -20,14 +20,14 @@ import { TranslatePipe } from '@ngx-translate/core';
  * separate decision from having something to retrofit them to.
  */
 @Component({
-  selector: 'app-inspector-empty-state',
+  selector: 'app-empty-state',
   standalone: true,
   imports: [TranslatePipe],
-  templateUrl: './inspector-empty-state.component.html',
-  styleUrl: './inspector-empty-state.component.scss',
+  templateUrl: './empty-state.component.html',
+  styleUrl: './empty-state.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class InspectorEmptyStateComponent {
+export class EmptyStateComponent {
   /** i18n key for the headline. Required: an empty state with no sentence is
    *  indistinguishable from a pane that failed to render. */
   @Input({ required: true }) titleKey!: string;

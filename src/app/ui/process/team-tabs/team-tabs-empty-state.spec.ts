@@ -31,7 +31,7 @@ import { provideTranslateTesting } from '../../../../testing/i18n-testing';
  *     change-detection difference from the passing spec.
  *
  *  2. IT EMITS IMMEDIATELY AFTER MOUNT. The `TranslatePipe` inside
- *     `<app-inspector-empty-state>` — which only exists WHILE the overlay is on
+ *     `<app-empty-state>` — which only exists WHILE the overlay is on
  *     screen — calls `markForCheck()` when its translation resolves, and that
  *     one call marks the graph's view and its OnPush ancestors dirty. An
  *     emission landing in that window is rendered correctly, which is why the

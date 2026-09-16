@@ -265,7 +265,7 @@ describe('ConsoleRailComponent', () => {
     await render();
     expect(qa('app-rail-team-row').length).toBe(2);
 
-    const search = q('app-rail-search');
+    const search = q('app-search-box');
     search.componentInstance.valueChange.emit('brav');
     fixture.detectChanges();
 
@@ -442,7 +442,7 @@ describe('ConsoleRailComponent', () => {
       await render();
       const host = fixture.nativeElement as HTMLElement;
       const nav = host.querySelector('.rail__nav-row');
-      const search = host.querySelector('app-rail-search');
+      const search = host.querySelector('app-search-box');
 
       expect(nav).not.toBeNull();
       expect(search).not.toBeNull();

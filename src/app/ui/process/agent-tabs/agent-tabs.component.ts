@@ -25,7 +25,7 @@ import { isToolActor } from '../../../core/services/process/selectors/actor-kind
 import { IngestionService } from '../../../core/services/process/event/ingestion.service';
 
 import { AkgentChatComponent } from './akgent-chat/akgent-chat.component';
-import { InspectorEmptyStateComponent } from '../../../components/console/inspector/inspector-empty-state.component';
+import { EmptyStateComponent } from '../../../core/components/primitives/empty-state/empty-state.component';
 import { TranslatePipe } from '@ngx-translate/core';
 
 /** One selectable member in the picker. */
@@ -77,7 +77,7 @@ interface GraphSquad {
     FormsModule,
     DropdownModule,
     AkgentChatComponent,
-    InspectorEmptyStateComponent,
+    EmptyStateComponent,
     TranslatePipe,
   ],
   templateUrl: './agent-tabs.component.html',

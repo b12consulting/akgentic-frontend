@@ -15,7 +15,7 @@ import {
   inspectorTeamsEqual,
   InspectorTeamView,
 } from '../../../../core/services/console/inspector/team-panel/team-members.selector';
-import { InspectorEmptyStateComponent } from '../../../../components/console/inspector/inspector-empty-state.component';
+import { EmptyStateComponent } from '../../../../core/components/primitives/empty-state/empty-state.component';
 import { MemberCardComponent } from '../../../../components/console/inspector/team-panel/member-card.component';
 import { ToolChipsComponent } from '../../../../components/console/inspector/team-panel/tool-chips.component';
 import { UsagePanelComponent } from './usage-panel.component';
@@ -59,7 +59,7 @@ import { agentColours } from '../../../../core/services/process/selectors/agent-
   imports: [
     AsyncPipe,
     TranslatePipe,
-    InspectorEmptyStateComponent,
+    EmptyStateComponent,
     MemberCardComponent,
     ToolChipsComponent,
     UsagePanelComponent,

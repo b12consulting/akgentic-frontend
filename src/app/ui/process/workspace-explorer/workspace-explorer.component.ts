@@ -38,7 +38,7 @@ import {
   WorkspaceInvalidationService,
 } from '../../../core/services/process/selectors/workspace-invalidation.selector';
 import { UploadModalComponent } from '../../../components/process/workspace-explorer/upload-modal/upload-modal.component';
-import { InspectorEmptyStateComponent } from '../../../components/console/inspector/inspector-empty-state.component';
+import { EmptyStateComponent } from '../../../core/components/primitives/empty-state/empty-state.component';
 
 /**
  * Outcome of one declarative root-tree load. `switchMap` maps each
@@ -195,7 +195,7 @@ export class DelayedIndicator {
     MarkdownModule,
     TranslatePipe,
     UploadModalComponent,
-    InspectorEmptyStateComponent,
+    EmptyStateComponent,
   ],
   templateUrl: './workspace-explorer.component.html',
   styleUrls: ['./workspace-explorer.component.scss'],
