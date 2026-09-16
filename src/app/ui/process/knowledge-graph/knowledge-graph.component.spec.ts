@@ -426,7 +426,18 @@ describe('KnowledgeGraphComponent', () => {
       // Swept by CONTAINMENT as well as by class: the wrapper PrimeNG appends
       // is its own, and pinning this to a class list is a guess about a
       // library's internals that would rot silently the next time it changes.
+      //
+      // NEVER the fixture's own subtree, though. Sweeping by containment is
+      // correct only while `appendTo="body"` really moves the overlay OUT of
+      // the fixture. The day PrimeNG stops doing that, the nested instance is
+      // found INSIDE the TestBed root and an unguarded sweep deletes the
+      // harness mid-suite — the same cross-suite damage this hook exists to
+      // prevent, caused by the hook, and reported as failures in whichever
+      // suites Karma happened to order next.
       Array.from(document.body.children).forEach((child) => {
+        if (child.contains(fixture.nativeElement)) {
+          return;
+        }
         if (child.querySelector('app-knowledge-graph.modal-app-component')) {
           child.remove();
         }
