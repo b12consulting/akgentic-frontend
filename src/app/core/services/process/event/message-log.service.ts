@@ -61,12 +61,13 @@ export function messageListFold(log: AkgenticMessage[]): AkgenticMessage[] {
  * Story 31-4 (AC #7) — pure fold collecting the ids of every notification the
  * user has dismissed, from the `ClosedNotification` events on the log.
  *
- * It lives HERE, in the event layer, rather than under `components/process/
- * selectors/` where a log-derived projection would normally go: the consumer is
- * `IngestionService`, and the Epic 18 import DAG allows `proc-event` to reach
- * only `proc-models | core | protocol`. Story 18-3 broke the event→selectors
- * edge deliberately to kill a circular import; a selector-homed fold would fail
- * `npm run lint`, not merely offend a convention.
+ * It lives HERE, in the event tier, rather than under
+ * `core/services/process/selectors/` where a log-derived projection would
+ * normally go: the consumer is `IngestionService`, and the import DAG allows
+ * `svc-event` to reach only `svc-models | platform | protocol`. Story 18-3
+ * broke the event→selectors edge deliberately to kill a circular import; a
+ * selector-homed fold would fail `npm run lint`, not merely offend a
+ * convention.
  *
  * Live-stream ids and replayed ids are indistinguishable to the fold — both are
  * just log entries — which is what makes a dismissal survive a reload.
