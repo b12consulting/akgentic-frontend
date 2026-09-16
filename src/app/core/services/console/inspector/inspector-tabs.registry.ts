@@ -76,9 +76,10 @@ export interface VisualizationOption {
  *
  * The second one cannot be collapsed into the first from here, and it is worth
  * saying WHY rather than leaving the next reader to re-discover it: the panels
- * live in `ui/` and this registry is in `core/services/`, which the boundary rules
- * give no edge to `ui`. So a registry that also owned the components could not
- * import them, and the panels are PROJECTED from the host's template instead.
+ * live in `ui/` and this registry is in `core/services/`, which the boundary
+ * rules give no edge to `ui`. So a registry that also owned the components
+ * could not import them, and the panels are PROJECTED from the host's template
+ * instead.
  * `isHidden()` is already generic over the value, so there is no per-tab case
  * to add there.
  *

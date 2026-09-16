@@ -22,8 +22,8 @@ import { TranslatePipe } from '@ngx-translate/core';
  *
  * The registry satisfies that requirement better than this file does. It is
  * where the tab SET is already declared, it is pure data with no decorator and
- * no template, and — living under `core/services/console/inspector/` — it has no
- * outgoing edge into any component tier at all. The old arrangement had the
+ * no template, and — living under `core/services/console/inspector/` — it has
+ * no outgoing edge into any component tier at all. The old arrangement had the
  * registry importing a type out of the component that renders it, which is the
  * data tier depending on the view tier: legal only because both sat inside one
  * `boundaries` element and the edge was therefore invisible.

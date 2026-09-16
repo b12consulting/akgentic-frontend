@@ -246,7 +246,7 @@ rule set's default is `disallow`, so **any edge not in this table is refused**.
 | `protocol` | `core/protocol/` | *nothing* | everything |
 | `shared` | `core/shared/` | `protocol` | `platform` `services` `primitives` `features` `ui` |
 | `platform` | `core/platform/` | `shared` `protocol` | `services` `primitives` `features` `ui` |
-| `services` | `core/services/` | `platform` `shared` `protocol` | **`primitives` `features`** `ui` |
+| `services` | `core/services/` | `platform` `shared` `protocol`, and the `svc-*` sub-tiers below | **`primitives` `features`** `ui` |
 | `primitives` | `core/components/primitives/` | `platform` `shared` `protocol`, and each other | **`services`** `features` `ui` |
 | `features` | `core/components/features/` | `primitives` `services` `platform` `shared` `protocol`, and each other | `ui` |
 | `ui` | `ui/` | everything below, and each other | — |

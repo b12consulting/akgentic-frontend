@@ -121,7 +121,7 @@ module.exports = tseslint.config(
         // pattern ordered after one that also matches never fires.
         { type: 'features', pattern: 'src/app/core/components/features' },
 
-        // --- The view layer ---------------------------------------------------
+        // --- The view tier ----------------------------------------------------
         { type: 'ui', pattern: 'src/app/ui' },
       ],
     },
@@ -278,11 +278,11 @@ module.exports = tseslint.config(
               },
             },
 
-            // --- ui: the only layer allowed to assemble ----------------------
+            // --- ui: the only tier allowed to assemble -----------------------
             // It may reach everything below it, including other assemblies —
             // the console shell mounts the inspector, the process view mounts
             // the header. Nothing may reach BACK into it, which is what makes a
-            // second UI possible: `ui/` is the layer you replace.
+            // second UI possible: `ui/` is the tier you replace.
             {
               from: { type: 'ui' },
               allow: {
