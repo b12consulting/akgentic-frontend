@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
-import { ConfigService } from '../config/config.service';
+import { ConfigService } from '../../core/config/config.service';
 
 /**
  * Which of the console's two side panes are collapsed.

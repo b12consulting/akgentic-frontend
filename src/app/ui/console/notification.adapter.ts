@@ -6,7 +6,7 @@ import {
   NotificationPort,
   NotificationRequest,
 } from '../../core/notification/notification.port';
-import { NotificationToastService } from '../../core/ui/notification-toast.service';
+import { NotificationToastService } from './notification-toast.service';
 
 /**
  * Story 53-1 (ADR-035 §D6.1): the PrimeNG side of `NOTIFICATION_PORT`, and the

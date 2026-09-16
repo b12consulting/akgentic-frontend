@@ -26,7 +26,7 @@ import {
 import { makeAgentNameUserFriendly } from '../../../shared/util/util';
 import { TranslatePipe } from '@ngx-translate/core';
 
-import type { AgentRef } from '../../../core/ui/agent-reader.service';
+import type { AgentRef } from './agent-reader.service';
 
 import { ChatMessageComponent } from './chat-message.component';
 import { ChatThinkingComponent } from '../../../components/process/chat/chat-thinking.component';
@@ -37,14 +37,14 @@ export interface ReaderSendRequest extends AgentRef {
 }
 
 /**
- * `AgentRef` and `AgentReaderService` now live in `core/ui` — they are shell
+ * `AgentRef` and `AgentReaderService` now live in their own file — they are shell
  * plumbing shared with the inspector, not reader internals, and keeping the
  * inspector importing a chat COMPONENT file to reach them was the wrong
  * dependency direction. Re-exported here so existing importers of this module
- * keep compiling; new callers should import from `core/ui/agent-reader.service`.
+ * keep compiling; new callers should import from `ui/process/chat/agent-reader.service`.
  */
-export { AgentReaderService } from '../../../core/ui/agent-reader.service';
-export type { AgentRef } from '../../../core/ui/agent-reader.service';
+export { AgentReaderService } from './agent-reader.service';
+export type { AgentRef } from './agent-reader.service';
 
 /** The rules that render as a collapsed one-liner until the reader opens them.
  *  3/4 are the agent-to-agent lines; 6 is the compaction fold. */

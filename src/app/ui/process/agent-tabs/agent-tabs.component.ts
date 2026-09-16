@@ -15,7 +15,7 @@ import { map, takeUntil } from 'rxjs/operators';
 
 import { DropdownModule } from 'primeng/dropdown';
 
-import { AkgentService } from '../../../core/ui/akgent.service';
+import { AkgentService } from '../../../services/akgent.service';
 import {
   GraphDataService,
   HUMAN_ROLE as HUMAN_PROXY_ROLE,

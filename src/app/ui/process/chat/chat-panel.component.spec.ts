@@ -16,7 +16,7 @@ import { PrimeNgNotificationAdapter } from '../../console/notification.adapter';
 import { provideMarkdown } from 'ngx-markdown';
 
 import { ChatPanelComponent } from './chat-panel.component';
-import { AgentReaderService } from '../../../core/ui/agent-reader.service';
+import { AgentReaderService } from './agent-reader.service';
 import {
   chatFold,
   ChatService,
@@ -27,7 +27,7 @@ import { SelectionService } from '../../../services/process/ui-state/selection.s
 import { ActorAddress, EventMessage, HandledMessage, ReceivedMessage, SentMessage, AkgenticMessage, StartMessage, isSentMessage } from '../../../protocol/message.types';
 import { ChatMessage, classifyMessage } from '../../../services/process/selectors/chat-message.model';
 import { ApiService } from '../../../core/http/api.service';
-import { AkgentService } from '../../../core/ui/akgent.service';
+import { AkgentService } from '../../../services/akgent.service';
 import { GraphDataService } from '../../../services/process/selectors/graph.selector';
 import { NodeInterface } from '../../../services/process/models/types';
 import { ContextService } from '../../../core/context/context.service';

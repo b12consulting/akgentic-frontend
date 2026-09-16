@@ -360,7 +360,7 @@
   // leaving the conversation — the thing the app is for — as a slot.
   // THE RAIL IS RESIZABLE NOW, so both of these have a TypeScript counterpart
   // and every edit here is a paired edit. The cascade applies the token, the
-  // drag arithmetic runs in `core/ui/pane-layout.ts`, and neither side can read
+  // drag arithmetic runs in `ui/console/pane-layout.ts`, and neither side can read
   // the other — so the numbers are written down twice on purpose and stay in
   // step only because this comment says they must. Same bargain, and the same
   // convention, as `--akg-inspector-min-width` below.
@@ -404,7 +404,7 @@
   // BECAUSE IT USUALLY WINS, THE DIVIDER HAS TO KNOW ABOUT IT. Its clamp is
   // the higher of `INSPECTOR_MIN_PERCENT` and this value converted at the
   // measured row width — see `INSPECTOR_MIN_WIDTH_PX` in
-  // `core/ui/pane-layout.ts`, which is this number's other half and the only
+  // `ui/console/pane-layout.ts`, which is this number's other half and the only
   // other place it is written down. Move one and you must move the other:
   // whenever they disagree the drag has a dead zone at its narrow end, where
   // the handle keeps tracking the pointer and the boundary stops.

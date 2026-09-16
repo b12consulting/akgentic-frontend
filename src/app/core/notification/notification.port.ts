@@ -3,7 +3,7 @@ import { InjectionToken } from '@angular/core';
 /**
  * Story 53-1 (ADR-035 §D6.1): the data layer's only route to the toast surface.
  *
- * `core/http`, `core/ui/utils` and `services/process/event/*` used to inject
+ * `core/http`, `services/utils.service.ts` and `services/process/event/*` used to inject
  * PrimeNG's `MessageService` directly. Five files, one shared want — somewhere to
  * put a notification — which is a PORT rather than a framework dependency. The
  * implementation is supplied at the composition root

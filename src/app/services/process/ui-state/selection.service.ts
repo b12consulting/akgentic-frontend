@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
-import { AkgentService } from '../../../core/ui/akgent.service';
+import { AkgentService } from '../../akgent.service';
 import { ApiService } from '../../../core/http/api.service';
 import { ContextService } from '../../../core/context/context.service';
 

@@ -1,5 +1,5 @@
 import { inject, Injectable } from '@angular/core';
-import { ApiService } from '../http/api.service';
+import { ApiService } from '../core/http/api.service';
 import { BehaviorSubject, Subject } from 'rxjs';
 
 export class Akgent {

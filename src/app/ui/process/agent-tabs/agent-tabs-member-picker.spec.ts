@@ -5,7 +5,7 @@ import { BehaviorSubject } from 'rxjs';
 import { Dropdown } from 'primeng/dropdown';
 
 import { AgentTabsComponent } from './agent-tabs.component';
-import { Akgent, AkgentService } from '../../../core/ui/akgent.service';
+import { Akgent, AkgentService } from '../../../services/akgent.service';
 import { GraphDataService } from '../../../services/process/selectors/graph.selector';
 import { IngestionService } from '../../../services/process/event/ingestion.service';
 import { provideTranslateTesting } from '../../../../testing/i18n-testing';

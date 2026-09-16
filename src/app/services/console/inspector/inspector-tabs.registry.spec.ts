@@ -9,7 +9,7 @@ import {
   INSPECTOR_DEFAULT_PERCENT,
   INSPECTOR_MIN_WIDTH_PX,
   RAIL_DEFAULT_WIDTH_PX,
-} from '../../../core/ui/pane-layout';
+} from '../../../ui/console/pane-layout';
 
 /**
  * The registry is the answer to "why is that tab there / not there", so what it

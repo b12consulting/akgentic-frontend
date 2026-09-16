@@ -19,8 +19,8 @@ import { InspectorEmptyStateComponent } from '../../../../components/console/ins
 import { MemberCardComponent } from '../../../../components/console/inspector/team-panel/member-card.component';
 import { ToolChipsComponent } from '../../../../components/console/inspector/team-panel/tool-chips.component';
 import { UsagePanelComponent } from './usage-panel.component';
-import { AgentReaderService } from '../../../../core/ui/agent-reader.service';
-import { CategoryService } from '../../../../core/ui/category.service';
+import { AgentReaderService } from '../../../process/chat/agent-reader.service';
+import { CategoryService } from '../../../../services/category.service';
 import { agentColours } from '../../../../services/process/selectors/agent-colour';
 
 /**

@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { BehaviorSubject } from 'rxjs';
 
-import { UtilService } from '../../../core/ui/utils.service';
+import { UtilService } from '../../../services/utils.service';
 import { ActorAddress } from '../../../protocol/message.types';
 import { provideTranslateTesting } from '../../../../testing/i18n-testing';
 import { ChatMessage } from '../../../services/process/selectors/chat-message.model';

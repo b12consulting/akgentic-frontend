@@ -127,7 +127,7 @@ module.exports = tseslint.config(
               from: { type: 'svc-selectors' },
               allow: {
                 to: {
-                  type: ['svc-event', 'svc-models', 'core', 'shared', 'protocol'],
+                  type: ['svc-event', 'svc-models', 'core', 'shared', 'protocol', 'services'],
                 },
               },
             },
@@ -135,7 +135,7 @@ module.exports = tseslint.config(
               from: { type: 'svc-ui-state' },
               allow: {
                 to: {
-                  type: ['svc-selectors', 'svc-event', 'svc-models', 'core', 'protocol'],
+                  type: ['svc-selectors', 'svc-event', 'svc-models', 'core', 'protocol', 'services'],
                 },
               },
             },
@@ -153,6 +153,7 @@ module.exports = tseslint.config(
                     'core',
                     'shared',
                     'protocol',
+                    'services',
                   ],
                 },
               },

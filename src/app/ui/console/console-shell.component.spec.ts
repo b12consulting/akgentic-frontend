@@ -10,8 +10,8 @@ import {
   RAIL_MIN_WIDTH_PX,
   railBounds,
   railPercentOf,
-} from '../../core/ui/pane-layout';
-import { PaneLayoutService } from '../../core/ui/pane-layout.service';
+} from './pane-layout';
+import { PaneLayoutService } from './pane-layout.service';
 import { SplitDividerComponent } from '../../components/common/split-divider/split-divider.component';
 import { provideTranslateTesting } from '../../../testing/i18n-testing';
 import { ConsoleShellComponent } from './console-shell.component';

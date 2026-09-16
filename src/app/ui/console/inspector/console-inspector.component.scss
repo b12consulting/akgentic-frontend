@@ -33,7 +33,7 @@
    `leadingBounds` takes the measured row width and returns
    `max(INSPECTOR_MIN_PERCENT, 240 / rowWidth * 100)`. `ProcessComponent`
    measures `#paneTrack` and feeds it in. If this value ever changes,
-   `INSPECTOR_MIN_WIDTH_PX` in `core/ui/pane-layout.ts` has to change with it —
+   `INSPECTOR_MIN_WIDTH_PX` in `ui/console/pane-layout.ts` has to change with it —
    they are one number written in the two languages that cannot read each
    other.
    

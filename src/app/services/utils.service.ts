@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { Clipboard } from '@angular/cdk/clipboard';
-import { NOTIFICATION_PORT } from '../notification/notification.port';
+import { NOTIFICATION_PORT } from '../core/notification/notification.port';
 import { TranslateService } from '@ngx-translate/core';
 
 @Injectable({

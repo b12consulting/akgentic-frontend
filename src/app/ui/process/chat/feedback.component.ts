@@ -14,7 +14,7 @@ import { Button } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { Textarea } from 'primeng/textarea';
 import { BehaviorSubject, Subscription } from 'rxjs';
-import { UtilService } from '../../../core/ui/utils.service';
+import { UtilService } from '../../../services/utils.service';
 import { IconButtonComponent } from '../../../components/common/icon-button/icon-button.component';
 import { ChatMessage } from '../../../services/process/selectors/chat-message.model';
 import { isRateable } from '../../../services/process/selectors/rateable';

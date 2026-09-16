@@ -22,7 +22,7 @@ import {
   AgentColours,
   NO_AGENT_COLOURS,
 } from '../../../services/process/selectors/agent-colour';
-import type { AgentRef } from '../../../core/ui/agent-reader.service';
+import type { AgentRef } from './agent-reader.service';
 import { makeAgentNameUserFriendly } from '../../../shared/util/util';
 import { FeedbackComponent } from './feedback.component';
 

@@ -113,7 +113,7 @@ export class NotificationToasts {
    *
    * Both halves of story 31-5 travel on it. `notify` raises; `dismiss` removes a
    * single toast already on screen — an operation PrimeNG's `MessageService` does
-   * not offer, and which the adapter delegates to the `core/ui` service that owns
+   * not offer, and which the adapter delegates to the `ui/console` service that owns
    * the splice. This file used to inject that service directly, which was a
    * data-layer unit reaching a UI one; after 53-1 the only route is the token,
    * and the token is satisfied at the composition root.

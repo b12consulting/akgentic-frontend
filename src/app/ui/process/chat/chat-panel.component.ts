@@ -24,8 +24,8 @@ import { ApiService } from '../../../core/http/api.service';
 import { ChatService, ThinkingState } from '../../../services/process/selectors/chat.selector';
 import { IngestionService } from '../../../services/process/event/ingestion.service';
 import { ContextService } from '../../../core/context/context.service';
-import { AkgentService } from '../../../core/ui/akgent.service';
-import { CategoryService } from '../../../core/ui/category.service';
+import { AkgentService } from '../../../services/akgent.service';
+import { CategoryService } from '../../../services/category.service';
 import {
   defaultRecipientName,
   isAddressableAgent,
@@ -50,7 +50,7 @@ import {
 import {
   AgentReaderService,
   AgentRef,
-} from '../../../core/ui/agent-reader.service';
+} from './agent-reader.service';
 import { ChatMessageComponent } from './chat-message.component';
 import { ChatThinkingComponent } from '../../../components/process/chat/chat-thinking.component';
 import { ProcessUserInputComponent } from '../user-input/user-input.component';

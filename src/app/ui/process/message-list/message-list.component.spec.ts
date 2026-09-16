@@ -11,7 +11,7 @@ import { MessageListComponent } from './message-list.component';
 import { MessageLogService } from '../../../services/process/event/message-log.service';
 import { AkgenticMessage, SentMessage } from '../../../protocol/message.types';
 
-import { CategoryService } from '../../../core/ui/category.service';
+import { CategoryService } from '../../../services/category.service';
 
 import {
   provideTranslateTesting,

@@ -8,7 +8,7 @@ import { IngestionService } from './ingestion.service';
 import { LogFeeder } from './log-feeder';
 import { TeamSocket } from './team-socket';
 import { ApiService } from '../../../core/http/api.service';
-import { NotificationToastService } from '../../../core/ui/notification-toast.service';
+import { NotificationToastService } from '../../../ui/console/notification-toast.service';
 import { NOTIFICATION_PORT } from '../../../core/notification/notification.port';
 import { PrimeNgNotificationAdapter } from '../../../ui/console/notification.adapter';
 import { ChatService } from '../selectors/chat.selector';

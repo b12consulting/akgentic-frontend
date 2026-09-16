@@ -8,9 +8,9 @@ import { AuthService } from '../../../core/auth/auth.service';
 import { ConfigService } from '../../../core/config/config.service';
 import { ContextService } from '../../../core/context/context.service';
 import { TeamContext } from '../../../core/context/team.interface';
-import { TeamCreationLauncher } from '../../../core/ui/team-creation-launcher.service';
+import { TeamCreationLauncher } from '../team-creation-launcher.service';
 import { TeamCreationService } from '../../../services/home/team-creation/team-creation.service';
-import { ViewService } from '../../../core/ui/view.service';
+import { ViewService } from '../view.service';
 import {
   provideTranslateTesting,
   setTestTranslations,

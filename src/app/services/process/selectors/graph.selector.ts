@@ -19,7 +19,7 @@ import {
   StopMessage,
 } from '../../../protocol/message.types';
 import { EdgeInterface, NodeInterface } from '../models/types';
-import { CategoryService, readToken } from '../../../core/ui/category.service';
+import { CategoryService, readToken } from '../../category.service';
 import { MessageLogService } from '../event/message-log.service';
 
 /**

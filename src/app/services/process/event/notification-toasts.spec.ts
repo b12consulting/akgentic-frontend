@@ -3,7 +3,7 @@ import { MessageService } from 'primeng/api';
 import { Toast } from 'primeng/toast';
 import { BehaviorSubject, Subject } from 'rxjs';
 
-import { NotificationToastService } from '../../../core/ui/notification-toast.service';
+import { NotificationToastService } from '../../../ui/console/notification-toast.service';
 import { NOTIFICATION_PORT } from '../../../core/notification/notification.port';
 import { PrimeNgNotificationAdapter } from '../../../ui/console/notification.adapter';
 import { NotificationToasts } from './notification-toasts';

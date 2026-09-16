@@ -20,7 +20,7 @@ import {
   CategoryService,
   graphCategoryColors,
   readToken,
-} from '../../../core/ui/category.service';
+} from '../../category.service';
 import {
   EMPTY_GRAPH,
   GraphBuilder,

@@ -6,7 +6,7 @@ import { InspectorTeamPanelComponent } from './inspector-team-panel.component';
 import {
   AgentReaderService,
   AgentRef,
-} from '../../../../core/ui/agent-reader.service';
+} from '../../../process/chat/agent-reader.service';
 import { NodeInterface } from '../../../../services/process/models/types';
 import { GraphDataService } from '../../../../services/process/selectors/graph.selector';
 import {

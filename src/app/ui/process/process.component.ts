@@ -18,14 +18,14 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 
-import { AkgentService } from '../../core/ui/akgent.service';
+import { AkgentService } from '../../services/akgent.service';
 import {
   inspectorPercentFromLeading,
   INSPECTOR_DEFAULT_PERCENT,
   leadingPercent as leadingPercentOf,
-} from '../../core/ui/pane-layout';
-import { PaneLayoutService } from '../../core/ui/pane-layout.service';
-import { ViewService } from '../../core/ui/view.service';
+} from '../console/pane-layout';
+import { PaneLayoutService } from '../console/pane-layout.service';
+import { ViewService } from '../console/view.service';
 import { TeamSessionService } from '../../services/process/session/team-session.service';
 import { ConfigService } from '../../core/config/config.service';
 import { ContextService } from '../../core/context/context.service';
@@ -46,7 +46,7 @@ import { GraphDataService } from '../../services/process/selectors/graph.selecto
 import { SelectionService } from '../../services/process/ui-state/selection.service';
 
 import { ConversationHeaderComponent } from '../console/conversation/conversation-header.component';
-import { ConsoleInspectorComponent } from '../../components/console/inspector/console-inspector.component';
+import { ConsoleInspectorComponent } from '../console/inspector/console-inspector.component';
 import { InspectorTeamPanelComponent } from '../console/inspector/team-panel/inspector-team-panel.component';
 import { VisualizationOption } from '../../components/console/inspector/inspector-tabs.component';
 import { resolveInspectorTab, visibleInspectorTabs } from '../../services/console/inspector/inspector-tabs.registry';

@@ -6,7 +6,7 @@ import { TranslatePipe } from '@ngx-translate/core';
 
 import { ContextService } from '../../../core/context/context.service';
 import { TeamMetadataPipe } from '../../../core/context/team-metadata.pipe';
-import { ViewService } from '../../../core/ui/view.service';
+import { ViewService } from '../view.service';
 import { IconButtonComponent } from '../../../components/common/icon-button/icon-button.component';
 
 /**

@@ -18,8 +18,8 @@ import {
   railBounds,
   railPercentOf,
   railWidthFromPercent,
-} from '../../core/ui/pane-layout';
-import { PaneLayoutService } from '../../core/ui/pane-layout.service';
+} from './pane-layout';
+import { PaneLayoutService } from './pane-layout.service';
 import { SplitDividerComponent } from '../../components/common/split-divider/split-divider.component';
 import { ConsoleRailComponent } from './rail/console-rail.component';
 

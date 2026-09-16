@@ -4,9 +4,9 @@ import { By } from '@angular/platform-browser';
 
 import { TeamTabsComponent } from './team-tabs.component';
 import { GraphComponent } from './graph/graph.component';
-import { AkgentService } from '../../../core/ui/akgent.service';
+import { AkgentService } from '../../../services/akgent.service';
 import { ApiService } from '../../../core/http/api.service';
-import { CategoryService } from '../../../core/ui/category.service';
+import { CategoryService } from '../../../services/category.service';
 import { GraphDataService } from '../../../services/process/selectors/graph.selector';
 import { MessageLogService } from '../../../services/process/event/message-log.service';
 import { SelectionService } from '../../../services/process/ui-state/selection.service';

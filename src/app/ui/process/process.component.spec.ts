@@ -12,7 +12,7 @@ import {
   StartMessage,
   StopMessage,
 } from '../../protocol/message.types';
-import { AkgentService } from '../../core/ui/akgent.service';
+import { AkgentService } from '../../services/akgent.service';
 import { ChatService } from '../../services/process/selectors/chat.selector';
 import { ContextService } from '../../core/context/context.service';
 import { FeedbackService } from '../../services/process/ui-state/feedback.service';
@@ -29,16 +29,16 @@ import {
 import { WorkspaceRegistryService } from '../../services/process/selectors/workspace-registry.selector';
 import { TeamContext } from '../../core/context/team.interface';
 import { NodeInterface } from '../../services/process/models/types';
-import { ViewService } from '../../core/ui/view.service';
-import { PaneLayoutService } from '../../core/ui/pane-layout.service';
+import { ViewService } from '../console/view.service';
+import { PaneLayoutService } from '../console/pane-layout.service';
 import {
   INSPECTOR_DEFAULT_PERCENT,
   INSPECTOR_MAX_PERCENT,
   INSPECTOR_MIN_PERCENT,
   PANE_LAYOUT_STORAGE_KEY,
-} from '../../core/ui/pane-layout';
+} from '../console/pane-layout';
 import { SplitDividerComponent } from '../../components/common/split-divider/split-divider.component';
-import { ConsoleInspectorComponent } from '../../components/console/inspector/console-inspector.component';
+import { ConsoleInspectorComponent } from '../console/inspector/console-inspector.component';
 import {
   provideTranslateTesting,
   setTestTranslations,

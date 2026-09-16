@@ -7,7 +7,7 @@ import { BehaviorSubject } from 'rxjs';
 import { AuthService } from '../../../core/auth/auth.service';
 import { ContextService } from '../../../core/context/context.service';
 import { ApiService } from '../../../core/http/api.service';
-import { TeamCreationLauncher } from '../../../core/ui/team-creation-launcher.service';
+import { TeamCreationLauncher } from '../team-creation-launcher.service';
 import { TeamCreationService } from '../../../services/home/team-creation/team-creation.service';
 import {
   NamespaceSummary,

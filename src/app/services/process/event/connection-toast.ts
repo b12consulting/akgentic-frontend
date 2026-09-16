@@ -18,7 +18,7 @@ import { NOTIFICATION_PORT } from '../../../core/notification/notification.port'
  * structurally impossible instead, which is why the split is pinned by specs
  * (`connection-toast.spec.ts`) and not by this paragraph.
  *
- * Unrelated to `core/ui/notification-toast.service.ts` despite the neighbouring
+ * Unrelated to `ui/console/notification-toast.service.ts` despite the neighbouring
  * name: that one REMOVES a single already-rendered toast (story 31-5), an
  * operation PrimeNG's `MessageService` does not offer — it reaches this unit's
  * surface as the port's `dismiss`. Nothing is shared with it, nor with the

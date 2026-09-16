@@ -4,13 +4,13 @@ import { BehaviorSubject } from 'rxjs';
 
 import { GraphComponent } from './graph.component';
 import { TeamTabsComponent } from '../team-tabs.component';
-import { AkgentService } from '../../../../core/ui/akgent.service';
+import { AkgentService } from '../../../../services/akgent.service';
 import { ApiService } from '../../../../core/http/api.service';
 import {
   CategoryService,
   graphCategoryColors,
   readToken,
-} from '../../../../core/ui/category.service';
+} from '../../../../services/category.service';
 import { GraphDataService } from '../../../../services/process/selectors/graph.selector';
 import { SelectionService } from '../../../../services/process/ui-state/selection.service';
 import { provideTranslateTesting } from '../../../../../testing/i18n-testing';

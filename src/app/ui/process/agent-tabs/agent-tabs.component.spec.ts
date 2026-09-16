@@ -7,7 +7,7 @@ import { PrimeNgNotificationAdapter } from '../../console/notification.adapter';
 import { WebSocketSubject } from 'rxjs/webSocket';
 
 import { AgentTabsComponent } from './agent-tabs.component';
-import { Akgent, AkgentService } from '../../../core/ui/akgent.service';
+import { Akgent, AkgentService } from '../../../services/akgent.service';
 import { GraphDataService } from '../../../services/process/selectors/graph.selector';
 import { IngestionService } from '../../../services/process/event/ingestion.service';
 import { MessageLogService } from '../../../services/process/event/message-log.service';

@@ -17,14 +17,14 @@ import {
 import { toSignal } from '@angular/core/rxjs-interop';
 import { TranslatePipe } from '@ngx-translate/core';
 
-import { InspectorSide } from '../../../core/ui/pane-layout';
-import { ViewService } from '../../../core/ui/view.service';
-import { IconButtonComponent } from '../../common/icon-button/icon-button.component';
-import { InspectorEmptyStateComponent } from './inspector-empty-state.component';
+import { InspectorSide } from '../pane-layout';
+import { ViewService } from '../view.service';
+import { IconButtonComponent } from '../../../components/common/icon-button/icon-button.component';
+import { InspectorEmptyStateComponent } from '../../../components/console/inspector/inspector-empty-state.component';
 import {
   InspectorTabsComponent,
   VisualizationOption,
-} from './inspector-tabs.component';
+} from '../../../components/console/inspector/inspector-tabs.component';
 import {
   INSPECTOR_NARROW_MAX_PX,
   inspectorTabNeedsRoom,

@@ -2,7 +2,7 @@ import { inject, Injectable } from '@angular/core';
 
 import { ContextService } from '../../../core/context/context.service';
 import { isRunning } from '../../../core/context/team.interface';
-import { AkgentService } from '../../../core/ui/akgent.service';
+import { AkgentService } from '../../akgent.service';
 import { IngestionService } from '../event/ingestion.service';
 
 /**

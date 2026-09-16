@@ -119,7 +119,7 @@ export class SplitDividerComponent {
    *
    * Defaulted to the module constants, so every pre-R3 call site and its specs
    * keep the range they had. A host with two arrangeable panes rebinds them per
-   * arrangement — see `leadingBounds` in `core/ui/pane-layout.ts`.
+   * arrangement — see `leadingBounds` in `ui/console/pane-layout.ts`.
    */
   @Input() min = SPLIT_MIN_PERCENT;
   @Input() max = SPLIT_MAX_PERCENT;

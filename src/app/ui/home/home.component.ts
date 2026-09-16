@@ -37,7 +37,7 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { AuthService } from '../../core/auth/auth.service';
 import { ConfigService } from '../../core/config/config.service';
 import { ContextService } from '../../core/context/context.service';
-import { ViewService } from '../../core/ui/view.service';
+import { ViewService } from '../console/view.service';
 import { IconButtonComponent } from '../../components/common/icon-button/icon-button.component';
 
 // Listed in @Component.imports so Angular's @defer block can resolve

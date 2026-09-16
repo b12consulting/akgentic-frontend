@@ -5,7 +5,7 @@ import { BehaviorSubject } from 'rxjs';
 import { ConversationHeaderComponent } from './conversation-header.component';
 import { ContextService } from '../../../core/context/context.service';
 import { TeamContext } from '../../../core/context/team.interface';
-import { ViewService } from '../../../core/ui/view.service';
+import { ViewService } from '../view.service';
 import { provideTranslateTesting } from '../../../../testing/i18n-testing';
 
 function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {

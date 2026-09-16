@@ -24,13 +24,13 @@ import { EChartsCoreOption } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { NgxEchartsDirective, provideEchartsCore } from 'ngx-echarts';
 
-import { AkgentService } from '../../../../core/ui/akgent.service';
+import { AkgentService } from '../../../../services/akgent.service';
 import { ApiService } from '../../../../core/http/api.service';
 import {
   CategoryService,
   graphCategoryColors,
   readToken,
-} from '../../../../core/ui/category.service';
+} from '../../../../services/category.service';
 
 // Import the shared GraphDataService
 import { isToolNode } from '../../../../services/process/selectors/actor-kind';

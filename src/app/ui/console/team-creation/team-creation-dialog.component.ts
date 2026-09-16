@@ -20,7 +20,7 @@ import { TeamCreationService } from '../../../services/home/team-creation/team-c
 import { TeamTypeCatalog } from '../../../services/home/team-creation/team-type-catalog.service';
 import { TeamMetadataModalComponent } from '../../../components/home/team-metadata-modal/team-metadata-modal.component';
 import { AuthService } from '../../../core/auth/auth.service';
-import { TeamCreationLauncher } from '../../../core/ui/team-creation-launcher.service';
+import { TeamCreationLauncher } from '../team-creation-launcher.service';
 import { NamespaceSummary } from '../../../protocol/catalog.interface';
 
 /** Which half of the wizard is on screen. */

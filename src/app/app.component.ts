@@ -12,8 +12,8 @@ import { ApiService } from './core/http/api.service';
 import { AuthService } from './core/auth/auth.service';
 import { ConfigService } from './core/config/config.service';
 import { FaviconService } from './core/config/favicon.service';
-import { NotificationToastService } from './core/ui/notification-toast.service';
-import { TeamCreationLauncher } from './core/ui/team-creation-launcher.service';
+import { NotificationToastService } from './ui/console/notification-toast.service';
+import { TeamCreationLauncher } from './ui/console/team-creation-launcher.service';
 
 /**
  * The routes that render WITHOUT the app frame.

@@ -3,14 +3,14 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { BehaviorSubject } from 'rxjs';
 
-import { ViewService } from '../../../core/ui/view.service';
+import { ViewService } from '../view.service';
 import {
   provideTranslateTesting,
   setTestTranslations,
 } from '../../../../testing/i18n-testing';
-import { InspectorSide } from '../../../core/ui/pane-layout';
+import { InspectorSide } from '../pane-layout';
 import { ConsoleInspectorComponent } from './console-inspector.component';
-import { VisualizationOption } from './inspector-tabs.component';
+import { VisualizationOption } from '../../../components/console/inspector/inspector-tabs.component';
 
 /**
  * The inspector is only ever used as a projector, so it is exercised as one:

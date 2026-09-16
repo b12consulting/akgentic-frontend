@@ -26,7 +26,7 @@ import { map } from 'rxjs/operators';
 import { CapitalizePipe } from '../../../../shared/pipes/capitalise.pipe';
 import { TokenCountPipe } from '../../../../shared/pipes/token-count.pipe';
 import { ApiService } from '../../../../core/http/api.service';
-import { UtilService } from '../../../../core/ui/utils.service';
+import { UtilService } from '../../../../services/utils.service';
 import { ContextService } from '../../../../core/context/context.service';
 import { ConfigService } from '../../../../core/config/config.service';
 import { IngestionService } from '../../../../services/process/event/ingestion.service';

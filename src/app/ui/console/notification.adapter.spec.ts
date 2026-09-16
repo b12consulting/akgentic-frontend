@@ -2,7 +2,7 @@ import { TestBed } from '@angular/core/testing';
 
 import { MessageService, ToastMessageOptions } from 'primeng/api';
 
-import { NotificationToastService } from '../../core/ui/notification-toast.service';
+import { NotificationToastService } from './notification-toast.service';
 import { PrimeNgNotificationAdapter } from './notification.adapter';
 
 /**
