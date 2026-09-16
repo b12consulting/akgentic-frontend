@@ -109,7 +109,7 @@ module.exports = tseslint.config(
         { type: 'primitives', pattern: 'src/app/core/components/primitives' },
 
         // --- The features tier -----------------------------------------------
-        // The library the framework maintains: twenty-eight domain widgets in
+        // The library the framework maintains: twenty-seven domain widgets in
         // ten capability folders. Neither pattern here is a prefix of the
         // other, so their relative order does not matter — but both MUST
         // precede `ui`, which is the layer they may not reach.

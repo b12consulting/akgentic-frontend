@@ -830,8 +830,9 @@ describe('graphFold node identity', () => {
 // fixes above). It exists because the reported symptom, "No agents available"
 // over a fully drawn graph, was attributed to `nodes$` emitting empty, and two
 // independent reproductions found the stream innocent — the overlay is stale
-// because `TeamGraphComponent`'s OnPush parent is never marked dirty. This pins the
-// stream's side of that conclusion so the next investigation starts past it.
+// because `TeamGraphComponent`'s OnPush parent is never marked dirty. This
+// pins the stream's side of that conclusion so the next investigation starts
+// past it.
 // ---------------------------------------------------------------------------
 
 describe('GraphDataService.nodes$ stays populated while the team is running', () => {
