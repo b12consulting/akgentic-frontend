@@ -15,7 +15,7 @@ import {
 } from '@angular/common/http';
 import customPreset from './app.theme';
 import { CredentialsInterceptor } from './core/auth/credentials.interceptor';
-import { markedOptionsFactory } from './shared/util/util';
+import { markedOptionsFactory } from './app.markdown';
 import { ConfigService } from './core/config/config.service';
 import { NOTIFICATION_PORT } from './core/notification/notification.port';
 import { PrimeNgNotificationAdapter } from './ui/console/notification.adapter';

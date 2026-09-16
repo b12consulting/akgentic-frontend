@@ -1,22 +1,5 @@
 import { Pipe, PipeTransform } from '@angular/core';
 import { upperFirst } from 'lodash';
-import { MarkedOptions, MarkedRenderer } from 'ngx-markdown';
-
-// Open Markdown links in new tab.
-export const markedOptionsFactory = (): MarkedOptions => {
-  const renderer = new MarkedRenderer();
-
-  renderer.link = ({ href, text }): string => {
-    return `<a target="_blank" href="${href}">${text}</a>`;
-  };
-
-  return {
-    renderer: renderer,
-    gfm: true,
-    breaks: true,
-    pedantic: false,
-  };
-};
 
 @Pipe({
   name: 'makeAgentNameUserFriendly',
