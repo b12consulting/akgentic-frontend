@@ -2,7 +2,7 @@
  * One entry in the inspector's tab strip.
  *
  * IT LIVES HERE, beside the tab SET it describes, rather than in
- * `ProcessComponent` (which builds the list) or in `ConsoleInspectorComponent`
+ * `ProcessComponent` (which builds the list) or in `InspectorComponent`
  * (which passes it through). Both of those would make the import graph a
  * cycle — `ProcessComponent` imports the inspector, the inspector imports the
  * tabs — and a cycle between files that carry Angular decorators is the kind of

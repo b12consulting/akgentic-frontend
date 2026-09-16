@@ -29,7 +29,7 @@ import {
 import { WorkspaceRegistryService } from '../../core/services/process/selectors/workspace-registry.selector';
 import { TeamContext } from '../../core/platform/context/team.interface';
 import { NodeInterface } from '../../core/services/process/models/types';
-import { ViewService } from '../console/view.service';
+import { ViewService } from '../../core/services/view.service';
 import { PaneLayoutService } from '../console/pane-layout.service';
 import {
   INSPECTOR_DEFAULT_PERCENT,
@@ -38,7 +38,7 @@ import {
   PANE_LAYOUT_STORAGE_KEY,
 } from '../console/pane-layout';
 import { SplitDividerComponent } from '../../core/components/primitives/split-divider/split-divider.component';
-import { ConsoleInspectorComponent } from '../console/inspector/console-inspector.component';
+import { InspectorComponent } from '../console/inspector/inspector.component';
 import {
   provideTranslateTesting,
   setTestTranslations,
@@ -325,7 +325,7 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
     expect(
       host.querySelector('.conversation-pane > app-conversation-header'),
     ).not.toBeNull();
-    expect(host.querySelector('.console-panes > app-console-inspector')).not.toBeNull();
+    expect(host.querySelector('.console-panes > app-inspector')).not.toBeNull();
   });
 
   /**
@@ -335,12 +335,12 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
    */
   it('(Epic 56) projects the panels into the inspector, all mounted at once', () => {
     const host = fixture.nativeElement as HTMLElement;
-    const panels = host.querySelector('app-console-inspector .inspector-panels');
+    const panels = host.querySelector('app-inspector .inspector-panels');
     expect(panels).not.toBeNull();
 
     // Team, hierarchy, member and messages are unconditional; the other two are
     // gated on their tool being present, and the log is empty here.
-    expect(panels!.querySelector('app-inspector-team-panel')).not.toBeNull();
+    expect(panels!.querySelector('app-team-panel')).not.toBeNull();
     expect(panels!.querySelector('app-team-tabs')).not.toBeNull();
     expect(panels!.querySelector('app-agent-tabs')).not.toBeNull();
     expect(panels!.querySelector('app-message-list')).not.toBeNull();
@@ -363,7 +363,7 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
     const host = fixture.nativeElement as HTMLElement;
 
     const team = host.querySelector('#inspector-panel-team')!;
-    expect(team.querySelector('app-inspector-team-panel')).not.toBeNull();
+    expect(team.querySelector('app-team-panel')).not.toBeNull();
     expect(team.querySelector('app-team-tabs')).toBeNull();
 
     const hierarchy = host.querySelector('#inspector-panel-hierarchy')!;
@@ -373,7 +373,7 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
   /**
    * `.moved-offscreen`, not `*ngIf`.
    *
-   * Unmounting the inactive panels would remount `app-graph` (echarts) and
+   * Unmounting the inactive panels would remount `app-team-graph` (echarts) and
    * `app-knowledge-graph` on every tab change; their init/dispose paths have
    * never been exercised that way, and keeping all five mounted is why the
    * switch is instant and why the graph does not re-run its layout. `inert` is
@@ -1033,7 +1033,7 @@ describe('ProcessComponent (Story 52-1 — team id as an input)', () => {
 // R3 — the two panes are arrangeable and resizable
 //
 // The wiring is a set of BINDINGS, so it is exercised through them: the real
-// `app-split-divider` and the real `app-console-inspector` are mounted, and the
+// `app-split-divider` and the real `app-inspector` are mounted, and the
 // heavy panels stay behind `CUSTOM_ELEMENTS_SCHEMA`. Driving the component's
 // handlers directly would pass just as happily with the outputs unbound.
 // =====================================================================
@@ -1064,7 +1064,7 @@ describe('ProcessComponent (R3 — arrangeable, resizable panes)', () => {
   }
 
   function inspectorEl(h: Harness): HTMLElement {
-    return host(h).querySelector('app-console-inspector') as HTMLElement;
+    return host(h).querySelector('app-inspector') as HTMLElement;
   }
 
   function stored(): { inspectorSide: string; inspectorPercent: number } | null {
@@ -1155,7 +1155,7 @@ describe('ProcessComponent (R3 — arrangeable, resizable panes)', () => {
             CommonModule,
             TranslatePipe,
             SplitDividerComponent,
-            ConsoleInspectorComponent,
+            InspectorComponent,
           ],
           providers: [],
           schemas: [CUSTOM_ELEMENTS_SCHEMA],
@@ -1237,7 +1237,7 @@ describe('ProcessComponent (R3 — arrangeable, resizable panes)', () => {
     expect(children).toEqual([
       'div', // .conversation-pane
       'app-split-divider',
-      'app-console-inspector',
+      'app-inspector',
     ]);
   });
 
@@ -1245,8 +1245,8 @@ describe('ProcessComponent (R3 — arrangeable, resizable panes)', () => {
     const h = await build();
 
     expect(host(h).querySelector('.conversation-pane > app-conversation-header')).not.toBeNull();
-    expect(host(h).querySelector('.console-panes > app-console-inspector')).not.toBeNull();
-    expect(host(h).querySelector('app-console-inspector .inspector-panels')).not.toBeNull();
+    expect(host(h).querySelector('.console-panes > app-inspector')).not.toBeNull();
+    expect(host(h).querySelector('app-inspector .inspector-panels')).not.toBeNull();
   });
 
   // -------------------------------------------------------------------
@@ -1378,11 +1378,11 @@ describe('ProcessComponent (R3 — arrangeable, resizable panes)', () => {
     expect(paneRow(h).classList.contains('console-panes--swapped')).toBeTrue();
     // The DOM order is untouched: the swap is CSS `order`, so the inspector
     // stays a direct child in the same slot and the injector contract holds.
-    expect(host(h).querySelector('.console-panes > app-console-inspector')).not.toBeNull();
+    expect(host(h).querySelector('.console-panes > app-inspector')).not.toBeNull();
     expect(Array.from(paneRow(h).children).map((c) => c.tagName.toLowerCase())).toEqual([
       'div',
       'app-split-divider',
-      'app-console-inspector',
+      'app-inspector',
     ]);
   });
 
@@ -1675,7 +1675,7 @@ describe('ProcessComponent (R3 — arrangeable, resizable panes)', () => {
     second.detectChanges();
     const row = second.nativeElement.querySelector('.console-panes') as HTMLElement;
     const pane = second.nativeElement.querySelector(
-      'app-console-inspector',
+      'app-inspector',
     ) as HTMLElement;
 
     expect(row.classList.contains('console-panes--swapped')).toBeTrue();

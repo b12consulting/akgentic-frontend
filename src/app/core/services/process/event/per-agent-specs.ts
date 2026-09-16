@@ -45,8 +45,8 @@ import {
 
 /**
  * One rendered row of the trace head system block. Mirrors the shape the
- * `AkgentChatComponent` already produces for `part_kind === 'system-prompt'`
- * parts (`akgent-chat.component.ts` label/mapping) so Story 16-2 can render it
+ * `AgentChatComponent` already produces for `part_kind === 'system-prompt'`
+ * parts (`agent-chat.component.ts` label/mapping) so Story 16-2 can render it
  * with no shape change: `name` is the human label, `content` the rendered text.
  */
 export interface SystemPromptRow {
@@ -67,7 +67,7 @@ export interface SystemPromptRow {
 
 /**
  * Label for a system-prompt block — reuses the exact logic from
- * `akgent-chat.component.ts`: the trailing segment of the pydantic-ai
+ * `agent-chat.component.ts`: the trailing segment of the pydantic-ai
  * `dynamic_ref` (e.g. `team.roster` → `roster`), or `'System'` for static parts
  * (`dynamic_ref` null/empty). Defensive: never throws on null/undefined.
  */
@@ -211,7 +211,7 @@ export function systemPromptMatch(msg: AkgenticMessage): boolean {
 
 /**
  * Per-agent `state` value shape (Epic 17 / ADR-014 §5). Mirrors what the
- * deleted `stateDict$` produced for `AkgentStateComponent.generateForm`:
+ * deleted `stateDict$` produced for `AgentStateComponent.generateForm`:
  * V2 sends an empty schema and the raw state is rendered as JSON.
  */
 export interface AgentStateValue {
@@ -264,7 +264,7 @@ export const stateSpec: PerAgentSpec<AgentStateValue> = {
 /**
  * Marker prefix the backend's synthetic compaction summary carries on its single
  * `UserPromptPart` (`ContextManager.fold_compaction`, ADR-010 §4). The member
- * trace prepends the same prefix so `AkgentChatComponent` can label the
+ * trace prepends the same prefix so `AgentChatComponent` can label the
  * folded-in row as a summary rather than a plain user turn.
  */
 export const CONVERSATION_SUMMARY_PREFIX = '[Conversation summary] ';
@@ -319,7 +319,7 @@ function rebuildSystemOnly(entry: unknown): unknown {
  * Build the synthetic summary entry inserted at a compaction's fold point: a
  * `ModelRequest`-shaped object with one `user-prompt` part prefixed
  * `CONVERSATION_SUMMARY_PREFIX`, mirroring the backend synthetic `ModelRequest` /
- * `UserPromptPart`. The shape matches what `AkgentChatComponent.updateContext`
+ * `UserPromptPart`. The shape matches what `AgentChatComponent.updateContext`
  * already renders for a user-prompt part.
  */
 function buildSummaryEntry(summary: string): unknown {

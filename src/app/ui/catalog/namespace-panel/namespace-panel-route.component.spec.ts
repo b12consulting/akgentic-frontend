@@ -25,9 +25,9 @@ import {
 } from '../../../core/protocol/catalog.interface';
 import { ApiService } from '../../../core/platform/http/api.service';
 import { HttpError } from '../../../core/platform/http/fetch.service';
-import { NamespacePanelComponent } from './namespace-panel.component';
+import { NamespacePanelComponent } from '../../../core/components/features/namespace-panel/namespace-panel.component';
 import { NamespacePanelRouteComponent } from './namespace-panel-route.component';
-import { ValidationReportComponent } from '../../../components/catalog/namespace-panel/validation-report/validation-report.component';
+import { ValidationReportComponent } from '../../../core/components/features/namespace-panel/validation-report/validation-report.component';
 
 /**
  * Route-shell component tests.

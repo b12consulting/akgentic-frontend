@@ -108,8 +108,14 @@ module.exports = tseslint.config(
         // enforceable here and only a review rule in `components`.
         { type: 'primitives', pattern: 'src/app/core/components/primitives' },
 
-        // --- The two view layers ---------------------------------------------
-        { type: 'components', pattern: 'src/app/components' },
+        // --- The features tier -----------------------------------------------
+        // The library the framework maintains: twenty-eight domain widgets in
+        // ten capability folders. Neither pattern here is a prefix of the
+        // other, so their relative order does not matter — but both MUST
+        // precede `ui`, which is the layer they may not reach.
+        { type: 'features', pattern: 'src/app/core/components/features' },
+
+        // --- The view layer ---------------------------------------------------
         { type: 'ui', pattern: 'src/app/ui' },
       ],
     },
@@ -203,36 +209,45 @@ module.exports = tseslint.config(
               allow: { to: { type: ['primitives', 'platform', 'shared', 'protocol'] } },
             },
 
-            // --- components: render, never fetch -----------------------------
+            // --- features: the library ---------------------------------------
+            //
+            // May reach primitives, the whole data tier, platform, shared,
+            // protocol, and each other. It may NOT reach `ui`, which is the
+            // edge that would turn the layer inside out and the one this tier
+            // exists to forbid.
+            //
+            // The six `svc-*` sub-types are listed explicitly because they are
+            // distinct element types from `services`, and features inject them
+            // directly — `pending-request` alone takes `SelectionService` from
+            // `svc-ui-state` and `GraphDataService` from `svc-selectors`.
             //
             // WHAT THIS RULE DOES AND DOES NOT CATCH, because the difference
-            // matters. It forbids a dumb component from importing `ui/`, which
-            // is the edge that would turn the layer inside out. It does NOT
+            // matters. It forbids a feature from importing `ui/`. It does NOT
             // forbid importing `services`, and cannot: a component's `@Input`
             // is typed by the selector that produces it — `member-card` takes an
             // `InspectorMember` — and `boundaries` sees a type import and a
             // service injection as the same edge.
             //
-            // The rule that actually keeps this layer dumb is the one used to
-            // populate it: a component belongs here when it injects no service
-            // that carries DATA. That is a review rule, not a lint rule, and
+            // The rule that actually keeps a feature a feature is the one used
+            // to populate it. That is a review rule, not a lint rule, and
             // saying so here is better than implying the linter checks it.
             {
-              from: { type: 'components' },
+              from: { type: 'features' },
               allow: {
                 to: {
                   type: [
-                    'components',
-                    // TEMPORARY, and load-bearing: `member-card` is the one file
-                    // left in this tier importing a primitive. Epic 53's next
-                    // story moves it into `features/` and this entry goes with it.
+                    'features',
                     'primitives',
+                    'services',
+                    'svc-models',
+                    'svc-event',
+                    'svc-selectors',
+                    'svc-ui-state',
+                    'svc-workspace',
+                    'svc-session',
                     'platform',
                     'shared',
                     'protocol',
-                    'services',
-                    'svc-models',
-                    'svc-selectors',
                   ],
                 },
               },
@@ -249,7 +264,7 @@ module.exports = tseslint.config(
                 to: {
                   type: [
                     'ui',
-                    'components',
+                    'features',
                     'primitives',
                     'services',
                     'svc-models',

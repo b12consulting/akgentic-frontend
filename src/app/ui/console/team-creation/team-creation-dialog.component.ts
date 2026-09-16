@@ -18,7 +18,7 @@ import { DialogModule } from 'primeng/dialog';
 
 import { TeamCreationService } from '../../../core/services/home/team-creation/team-creation.service';
 import { TeamTypeCatalog } from '../../../core/services/home/team-creation/team-type-catalog.service';
-import { TeamMetadataModalComponent } from '../../../components/home/team-metadata-modal/team-metadata-modal.component';
+import { TeamMetadataModalComponent } from '../../../core/components/features/team-list/metadata-modal/team-metadata-modal.component';
 import { AuthService } from '../../../core/platform/auth/auth.service';
 import { TeamCreationLauncher } from '../team-creation-launcher.service';
 import { NamespaceSummary } from '../../../core/protocol/catalog.interface';

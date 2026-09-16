@@ -25,7 +25,7 @@ import {
   leadingPercent as leadingPercentOf,
 } from '../console/pane-layout';
 import { PaneLayoutService } from '../console/pane-layout.service';
-import { ViewService } from '../console/view.service';
+import { ViewService } from '../../core/services/view.service';
 import { TeamSessionService } from '../../core/services/process/session/team-session.service';
 import { ConfigService } from '../../core/platform/config/config.service';
 import { ContextService } from '../../core/platform/context/context.service';
@@ -33,22 +33,22 @@ import { IngestionService } from '../../core/services/process/event/ingestion.se
 import { ToolPresenceService } from '../../core/services/process/selectors/tool-presence.selector';
 import { WorkspaceRegistryService } from '../../core/services/process/selectors/workspace-registry.selector';
 
-import { AgentTabsComponent } from './agent-tabs/agent-tabs.component';
-import { TeamTabsComponent } from './team-tabs/team-tabs.component';
-import { KnowledgeGraphComponent } from './knowledge-graph/knowledge-graph.component';
-import { MessageListComponent } from './message-list/message-list.component';
-import { WorkspaceTabsComponent } from './workspace-tabs/workspace-tabs.component';
+import { AgentTabsComponent } from '../../core/components/features/agent-tabs/agent-tabs.component';
+import { TeamTabsComponent } from '../../core/components/features/team-graph/team-tabs.component';
+import { KnowledgeGraphComponent } from '../../core/components/features/knowledge-graph/knowledge-graph.component';
+import { MessageListComponent } from '../../core/components/features/message-panel/message-list.component';
+import { WorkspaceTabsComponent } from '../../core/components/features/workspace/workspace-tabs.component';
 
 import { BehaviorSubject, combineLatest, Observable, Subscription } from 'rxjs';
 import { distinctUntilChanged, map, take } from 'rxjs/operators';
-import { ChatPanelComponent } from './chat/chat-panel.component';
+import { ChatPanelComponent } from '../../core/components/features/chat/chat-panel.component';
 import { GraphDataService } from '../../core/services/process/selectors/graph.selector';
 import { SelectionService } from '../../core/services/process/ui-state/selection.service';
 
-import { ConversationHeaderComponent } from '../console/conversation/conversation-header.component';
-import { ConsoleInspectorComponent } from '../console/inspector/console-inspector.component';
-import { InspectorTeamPanelComponent } from '../console/inspector/team-panel/inspector-team-panel.component';
-import { VisualizationOption } from '../../components/console/inspector/inspector-tabs.component';
+import { ConversationHeaderComponent } from '../../core/components/features/chat/conversation/conversation-header.component';
+import { InspectorComponent } from '../console/inspector/inspector.component';
+import { TeamPanelComponent } from '../../core/components/features/team-panel/team-panel.component';
+import { VisualizationOption } from '../console/inspector/inspector-tabs.component';
 import { resolveInspectorTab, visibleInspectorTabs } from '../../core/services/console/inspector/inspector-tabs.registry';
 import { SplitDividerComponent } from '../../core/components/primitives/split-divider/split-divider.component';
 
@@ -67,8 +67,8 @@ import { SplitDividerComponent } from '../../core/components/primitives/split-di
     // they sit either side of, or read, the component-scoped providers below,
     // which resolve nowhere else.
     ConversationHeaderComponent,
-    ConsoleInspectorComponent,
-    InspectorTeamPanelComponent,
+    InspectorComponent,
+    TeamPanelComponent,
     // R3: the boundary between the two panes. Reused rather than reimplemented
     // — it already owns pointer capture, the `role="separator"` ARIA set, the
     // six-key grid, and the percentChange-vs-commit split that is exactly what

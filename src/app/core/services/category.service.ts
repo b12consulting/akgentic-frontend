@@ -21,7 +21,7 @@ export const GRAPH_CATEGORY_COUNT = 10;
  * `"var(--akg-graph-category-1)"` does not produce a green node, it produces an
  * unparseable fill. Everything the chart paints therefore has to be resolved to
  * a literal in JavaScript first. (The one exception is echarts' TOOLTIP, which
- * is real DOM — `graph.component.ts` uses `var()` directly there.)
+ * is real DOM — `team-graph.component.ts` uses `var()` directly there.)
  */
 export function readToken(name: string): string {
   return getComputedStyle(document.documentElement)

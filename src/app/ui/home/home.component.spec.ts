@@ -16,13 +16,13 @@ import { ApiService } from '../../core/platform/http/api.service';
 import { AuthService } from '../../core/platform/auth/auth.service';
 import { ConfigService } from '../../core/platform/config/config.service';
 import { ContextService } from '../../core/platform/context/context.service';
-import { ViewService } from '../console/view.service';
+import { ViewService } from '../../core/services/view.service';
 import {
   NO_TEAM_FILTER,
   TeamContext,
   TeamFilter,
 } from '../../core/platform/context/team.interface';
-import { NamespacePanelComponent } from '../catalog/namespace-panel/namespace-panel.component';
+import { NamespacePanelComponent } from '../../core/components/features/namespace-panel/namespace-panel.component';
 import { HttpError } from '../../core/platform/http/fetch.service';
 import {
   MetadataFieldDescriptor,
@@ -32,13 +32,13 @@ import {
 import { HomeComponent } from './home.component';
 import { HomeGreetingComponent } from './greeting/home-greeting.component';
 import { TeamCreationService } from '../../core/services/home/team-creation/team-creation.service';
-import { TeamFilterComponent } from '../../components/home/team-filter/team-filter.component';
-import { TeamMetadataModalComponent } from '../../components/home/team-metadata-modal/team-metadata-modal.component';
+import { TeamFilterComponent } from '../../core/components/features/team-list/team-filter.component';
+import { TeamMetadataModalComponent } from '../../core/components/features/team-list/metadata-modal/team-metadata-modal.component';
 import {
   TeamDescriptionSave,
   TeamRowAction,
   TeamTableComponent,
-} from '../../components/home/team-table/team-table.component';
+} from '../../core/components/features/team-list/team-table.component';
 
 import { provideTranslateTesting, setTestTranslations } from '../../../testing/i18n-testing';
 

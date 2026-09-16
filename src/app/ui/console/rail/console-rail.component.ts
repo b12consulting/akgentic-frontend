@@ -15,7 +15,7 @@ import { BehaviorSubject, combineLatest, filter, map, Observable, take } from 'r
 import { ConfigService } from '../../../core/platform/config/config.service';
 import { ContextService } from '../../../core/platform/context/context.service';
 import { TeamCreationLauncher } from '../team-creation-launcher.service';
-import { ViewService } from '../view.service';
+import { ViewService } from '../../../core/services/view.service';
 import { IconButtonComponent } from '../../../core/components/primitives/icon-button/icon-button.component';
 import { RailFooterComponent } from './rail-footer.component';
 import { SearchBoxComponent } from '../../../core/components/primitives/search-box/search-box.component';

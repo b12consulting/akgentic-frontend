@@ -54,7 +54,7 @@
     (commit)="onPaneCommit($event)"
   ></app-split-divider>
 
-  <app-console-inspector
+  <app-inspector
     [class.animated]="animateRightColumn"
     [class.resizing]="paneResizing"
     [style.--akg-inspector-basis]="inspectorBasis()"
@@ -80,7 +80,7 @@
       <!--
         `.moved-offscreen`, NOT `*ngIf`. All five panels stay mounted and the
         inactive ones are pushed out of view. Swapping to a structural gate
-        would remount `app-graph` (echarts) and `app-knowledge-graph` on every
+        would remount `app-team-graph` (echarts) and `app-knowledge-graph` on every
         tab change; their init/dispose paths have never been exercised that way,
         and keeping them mounted is why switching tabs is instant and why the
         graph does not re-run its layout each time.
@@ -109,9 +109,9 @@
         [attr.inert]="isHidden('team') ? '' : null"
         [class.moved-offscreen]="isHidden('team')"
       >
-        <app-inspector-team-panel
+        <app-team-panel
           (memberSelected)="onMemberSelected($event)"
-        ></app-inspector-team-panel>
+        ></app-team-panel>
       </div>
 
       <div
@@ -171,5 +171,5 @@
         [class.moved-offscreen]="isHidden('messages')"
       ></app-message-list>
     </div>
-  </app-console-inspector>
+  </app-inspector>
 </div>

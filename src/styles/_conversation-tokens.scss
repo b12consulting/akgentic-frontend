@@ -555,9 +555,9 @@
   // it, it is an unparseable string. So the component RESOLVES these names
   // through `getComputedStyle` and hands echarts the literal — which is why
   // `graphCategoryColors()` lives beside the service that owns the legend, and
-  // why `graph.component.spec.ts` asserts that no colour reaching the canvas is
-  // still a `var(...)` string. The one place `var()` does work is the tooltip,
-  // which echarts renders as real DOM.
+  // why `team-graph.component.spec.ts` asserts that no colour reaching the
+  // canvas is still a `var(...)` string. The one place `var()` does work is
+  // the tooltip, which echarts renders as real DOM.
   //
   // Until this block existed the graph carried ten raw hexes in
   // `category.service.ts` — a cool blue-grey ramp (`#6A9BB6`, `#fac858`,

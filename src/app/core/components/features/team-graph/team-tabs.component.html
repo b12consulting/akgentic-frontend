@@ -1,0 +1,19 @@
+<!--
+  THE HIERARCHY TAB IS THE GRAPH. There is nothing to choose between.
+
+  This element used to be a `<p-tabs>` with "List view" and "Graph view", the
+  list being `<app-tree>`. Two things were wrong with it. The list duplicated
+  the inspector's own Team tab — same roster, same names, one tab apart — so the
+  strip asked the user to pick between a panel and a worse copy of a panel they
+  already had. And a tab strip inside a tabbed pane makes the second strip look
+  like the first: two rows of the same control meaning two different depths.
+
+  So the strip is GONE rather than defaulted to "Graph view". A single-choice
+  tab strip is a control that cannot be operated, which is worse than no control
+  — it reads as broken rather than as absent.
+
+  What the list carried and the Team tab does not is written up in the removal's
+  follow-ups; the one item with no other home — the per-model token breakdown —
+  moved into `token-usage-panel`, which is why it is not lost.
+-->
+<app-team-graph></app-team-graph>

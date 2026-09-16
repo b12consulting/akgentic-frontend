@@ -10,7 +10,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 
 import { ApiService } from '../../../core/platform/http/api.service';
-import { NamespacePanelComponent } from './namespace-panel.component';
+import { NamespacePanelComponent } from '../../../core/components/features/namespace-panel/namespace-panel.component';
 
 /**
  * Route-shell host for `NamespacePanelComponent` on the deep-link route.

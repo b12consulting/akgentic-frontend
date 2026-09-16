@@ -37,7 +37,7 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { AuthService } from '../../core/platform/auth/auth.service';
 import { ConfigService } from '../../core/platform/config/config.service';
 import { ContextService } from '../../core/platform/context/context.service';
-import { ViewService } from '../console/view.service';
+import { ViewService } from '../../core/services/view.service';
 import { IconButtonComponent } from '../../core/components/primitives/icon-button/icon-button.component';
 
 // Listed in @Component.imports so Angular's @defer block can resolve
@@ -45,11 +45,11 @@ import { IconButtonComponent } from '../../core/components/primitives/icon-butto
 // the component's compiled code (and its Monaco chunk) in a deferred chunk
 // loaded only on first opening of the namespace-editor dialog — the initial
 // home-page bundle stays Monaco-free.
-import { NamespacePanelComponent } from '../catalog/namespace-panel/namespace-panel.component';
+import { NamespacePanelComponent } from '../../core/components/features/namespace-panel/namespace-panel.component';
 import {
   TeamMetadataModalComponent,
-} from '../../components/home/team-metadata-modal/team-metadata-modal.component';
-import { TeamFilterComponent } from '../../components/home/team-filter/team-filter.component';
+} from '../../core/components/features/team-list/metadata-modal/team-metadata-modal.component';
+import { TeamFilterComponent } from '../../core/components/features/team-list/team-filter.component';
 import { HomeGreetingComponent } from './greeting/home-greeting.component';
 import { TeamCreationService } from '../../core/services/home/team-creation/team-creation.service';
 import { TeamTypeCatalog } from '../../core/services/home/team-creation/team-type-catalog.service';
@@ -57,7 +57,7 @@ import {
   TeamDescriptionSave,
   TeamRowAction,
   TeamTableComponent,
-} from '../../components/home/team-table/team-table.component';
+} from '../../core/components/features/team-list/team-table.component';
 
 // Classic team-list page size (Epic 28, ADR-032 §Decision 3). Bound to the
 // paginator's [rows] and used as the loadTeamsPage size fallback so no magic

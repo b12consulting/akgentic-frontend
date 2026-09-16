@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 
-import { NamespacePanelComponent } from './namespace-panel.component';
+import { NamespacePanelComponent } from '../../../core/components/features/namespace-panel/namespace-panel.component';
 import { NamespacePanelRouteComponent } from './namespace-panel-route.component';
 import { namespacePanelCanDeactivate } from './namespace-panel.guard';
 

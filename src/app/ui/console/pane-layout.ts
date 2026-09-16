@@ -81,7 +81,7 @@ export interface PaneLayout {
  * pixel minimum across viewports, so the guarantee is CSS's:
  * `--akg-inspector-min-width` on the pane itself. See `INSPECTOR_MIN_WIDTH_PX`
  * below for why the two have to be reconciled rather than merely coexist, and
- * the note in `console-inspector.component.scss`.
+ * the note in `inspector.component.scss`.
  */
 export const INSPECTOR_MIN_PERCENT = 18;
 export const INSPECTOR_MAX_PERCENT = 50;

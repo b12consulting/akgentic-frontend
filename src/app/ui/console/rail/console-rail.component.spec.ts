@@ -10,7 +10,7 @@ import { ContextService } from '../../../core/platform/context/context.service';
 import { TeamContext } from '../../../core/platform/context/team.interface';
 import { TeamCreationLauncher } from '../team-creation-launcher.service';
 import { TeamCreationService } from '../../../core/services/home/team-creation/team-creation.service';
-import { ViewService } from '../view.service';
+import { ViewService } from '../../../core/services/view.service';
 import {
   provideTranslateTesting,
   setTestTranslations,
