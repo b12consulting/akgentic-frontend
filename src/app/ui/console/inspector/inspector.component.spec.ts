@@ -3,7 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { BehaviorSubject } from 'rxjs';
 
-import { ViewService } from '../../../core/services/view.service';
+import { ViewService } from '../view.service';
 import {
   provideTranslateTesting,
   setTestTranslations,

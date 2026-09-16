@@ -18,7 +18,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { TranslatePipe } from '@ngx-translate/core';
 
 import { InspectorSide } from '../pane-layout';
-import { ViewService } from '../../../core/services/view.service';
+import { ViewService } from '../view.service';
 import { IconButtonComponent } from '../../../core/components/primitives/icon-button/icon-button.component';
 import { EmptyStateComponent } from '../../../core/components/primitives/empty-state/empty-state.component';
 import {

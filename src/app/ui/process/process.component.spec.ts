@@ -29,7 +29,7 @@ import {
 import { WorkspaceRegistryService } from '../../core/services/process/selectors/workspace-registry.selector';
 import { TeamContext } from '../../core/platform/context/team.interface';
 import { NodeInterface } from '../../core/services/process/models/types';
-import { ViewService } from '../../core/services/view.service';
+import { ViewService } from '../console/view.service';
 import { PaneLayoutService } from '../console/pane-layout.service';
 import {
   INSPECTOR_DEFAULT_PERCENT,

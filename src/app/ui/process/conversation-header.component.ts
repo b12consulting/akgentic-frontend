@@ -4,10 +4,10 @@ import { map, Observable } from 'rxjs';
 
 import { TranslatePipe } from '@ngx-translate/core';
 
-import { ContextService } from '../../../../platform/context/context.service';
-import { TeamMetadataPipe } from '../../../../platform/context/team-metadata.pipe';
-import { ViewService } from '../../../../services/view.service';
-import { IconButtonComponent } from '../../../primitives/icon-button/icon-button.component';
+import { ContextService } from '../../core/platform/context/context.service';
+import { TeamMetadataPipe } from '../../core/platform/context/team-metadata.pipe';
+import { ViewService } from '../console/view.service';
+import { IconButtonComponent } from '../../core/components/primitives/icon-button/icon-button.component';
 
 /**
  * The conversation's own title bar (Epic: console redesign, B3).

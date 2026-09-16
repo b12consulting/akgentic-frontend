@@ -16,7 +16,7 @@ import { ApiService } from '../../core/platform/http/api.service';
 import { AuthService } from '../../core/platform/auth/auth.service';
 import { ConfigService } from '../../core/platform/config/config.service';
 import { ContextService } from '../../core/platform/context/context.service';
-import { ViewService } from '../../core/services/view.service';
+import { ViewService } from '../console/view.service';
 import {
   NO_TEAM_FILTER,
   TeamContext,

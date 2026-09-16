@@ -3,10 +3,10 @@ import { By } from '@angular/platform-browser';
 import { BehaviorSubject } from 'rxjs';
 
 import { ConversationHeaderComponent } from './conversation-header.component';
-import { ContextService } from '../../../../platform/context/context.service';
-import { TeamContext } from '../../../../platform/context/team.interface';
-import { ViewService } from '../../../../services/view.service';
-import { provideTranslateTesting } from '../../../../../../testing/i18n-testing';
+import { ContextService } from '../../core/platform/context/context.service';
+import { TeamContext } from '../../core/platform/context/team.interface';
+import { ViewService } from '../console/view.service';
+import { provideTranslateTesting } from '../../../testing/i18n-testing';
 
 function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
   return {

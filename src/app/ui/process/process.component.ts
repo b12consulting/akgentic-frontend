@@ -25,7 +25,7 @@ import {
   leadingPercent as leadingPercentOf,
 } from '../console/pane-layout';
 import { PaneLayoutService } from '../console/pane-layout.service';
-import { ViewService } from '../../core/services/view.service';
+import { ViewService } from '../console/view.service';
 import { TeamSessionService } from '../../core/services/process/session/team-session.service';
 import { ConfigService } from '../../core/platform/config/config.service';
 import { ContextService } from '../../core/platform/context/context.service';
@@ -45,7 +45,7 @@ import { ChatPanelComponent } from '../../core/components/features/chat/chat-pan
 import { GraphDataService } from '../../core/services/process/selectors/graph.selector';
 import { SelectionService } from '../../core/services/process/ui-state/selection.service';
 
-import { ConversationHeaderComponent } from '../../core/components/features/chat/conversation/conversation-header.component';
+import { ConversationHeaderComponent } from './conversation-header.component';
 import { InspectorComponent } from '../console/inspector/inspector.component';
 import { TeamPanelComponent } from '../../core/components/features/team-panel/team-panel.component';
 import { VisualizationOption } from '../console/inspector/inspector-tabs.component';

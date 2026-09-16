@@ -19,7 +19,7 @@ import { ContextService } from './core/platform/context/context.service';
 import { FaviconService } from './core/platform/config/favicon.service';
 import { NotificationToastService } from './ui/console/notification-toast.service';
 import { TeamCreationLauncher } from './ui/console/team-creation-launcher.service';
-import { ViewService } from './core/services/view.service';
+import { ViewService } from './ui/console/view.service';
 
 import { provideTranslateTesting } from '../testing/i18n-testing';
 
