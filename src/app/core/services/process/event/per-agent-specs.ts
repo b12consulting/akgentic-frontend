@@ -33,8 +33,8 @@ import {
  * reads `ingestion.systemPrompt` one-directionally (selectors → event).
  *
  * This module imports ONLY `./per-agent-store` (factories/types) and the
- * `../../../protocol/message.types` discriminators — NO `services/` / selectors,
- * NO `ui-state/`, NO `components/`. The reducer bodies, `match` predicates, and
+ * `../../../protocol/message.types` discriminators — NO selectors, NO
+ * `ui-state/`, NO component tier. The reducer bodies, `match` predicates, and
  * default `sender.agent_id` keying (ADR-014 §2 ordering) are preserved
  * byte-for-byte from their prior homes; behavior is identical.
  */

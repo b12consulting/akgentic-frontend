@@ -1,10 +1,12 @@
 // Minimal, boundary-only ESLint flat config (ESLint 9).
 //
-// SCOPE: this config enforces EXACTLY ONE
-// rule — the one-way import DAG between the frontend's architectural layers. It
-// deliberately does NOT adopt @angular-eslint, @typescript-eslint recommended,
-// stylistic, formatting, or type-aware rules; those would flag the pre-existing,
-// untouched codebase, which is out of scope for this story.
+// SCOPE: this config enforces the one-way import DAG between the frontend's
+// seven architectural tiers, in both directions it has — between tiers, and
+// between a tier and the outside packages it may draw on. It deliberately does
+// NOT adopt @angular-eslint, @typescript-eslint recommended, stylistic,
+// formatting, or type-aware rules; those would flag a large body of
+// pre-existing, untouched code and would turn a structural gate into a style
+// gate.
 //
 // Mechanism: eslint-plugin-boundaries tags each file by its folder ("element
 // type") and enforces allow/deny edges BETWEEN element types regardless of the
@@ -19,14 +21,16 @@
 // gate structurally cannot correct — which is why the transcription is gone
 // rather than updated.
 //
-// For the layers and what each may import, read `README.md` "## Layout"; for
+// For the tiers and what each may import, read `README.md` "## Layout"; for
 // what is enforced, read `boundaries/elements` and `boundaries/dependencies`
 // below, which are the only authority.
 //
-// Verification is behavioural (story AC #4/#5): `npm run lint` exits 0 on the
-// migrated tree and non-zero on a planted cross-layer import. There are NO
-// string-presence assertions on ADR numbers, file paths, or folder names
-// (CLAUDE.md Golden Rule #8).
+// Verification is behavioural: `npm run lint` exits 0 on this tree and non-zero
+// on a planted edge — a cross-tier import, or an outside package a tier is not
+// granted. Both directions are checked by mutation rather than assumed, because
+// a gate that has only ever been observed passing has not been observed working.
+// There are NO string-presence assertions on ADR numbers, file paths, or folder
+// names (CLAUDE.md Golden Rule #8).
 
 const tseslint = require('typescript-eslint');
 const boundaries = require('eslint-plugin-boundaries');
@@ -61,14 +65,15 @@ module.exports = tseslint.config(
       // "unknown" and intentionally unrestricted — app.routes.ts is the router
       // that legitimately wires every page together.
       'boundaries/elements': [
-        // --- The three layers, and the two that were always there ------------
+        // --- The lower tiers -------------------------------------------------
         //
-        // `ui/` assembles, `components/` renders, `services/` supplies. The
-        // split is by DIRECTORY rather than by naming convention so it cannot
-        // erode quietly, and the types below are what stop it eroding loudly:
-        // a shared type between two folders would make every edge between them
-        // legal in both directions, because `boundaries` cannot express
-        // direction within a type.
+        // `ui/` assembles pages, `core/components/` holds the library it
+        // assembles them from, and everything under it supplies. The split is by
+        // DIRECTORY rather than by naming convention so it cannot erode quietly,
+        // and the types below are what stop it eroding loudly: a shared type
+        // between two folders would make every edge between them legal in both
+        // directions, because `boundaries` cannot express direction within a
+        // type.
         //
         // Order matters — the most specific pattern must precede the generic
         // one, or a leaf is tagged as its own parent.
@@ -104,15 +109,16 @@ module.exports = tseslint.config(
         // Domain-free controls: an icon and a click, a string copied, a
         // percentage dragged. The tier's rule is that it may NOT import
         // `services` — type imports included, since `boundaries` cannot tell a
-        // type import from an injection, which is exactly what makes the rule
-        // enforceable here and only a review rule in `components`.
+        // type import from an injection. That blindness is what makes the rule
+        // enforceable HERE, where the answer is "no edge at all", and leaves it
+        // a review rule for `features`, which may hold that edge legitimately.
         { type: 'primitives', pattern: 'src/app/core/components/primitives' },
 
         // --- The features tier -----------------------------------------------
         // The library the framework maintains: twenty-seven domain widgets in
-        // ten capability folders. Neither pattern here is a prefix of the
-        // other, so their relative order does not matter — but both MUST
-        // precede `ui`, which is the layer they may not reach.
+        // ten capability folders. This pattern MUST precede `ui`, which is the
+        // tier it may not reach — `boundaries` takes the FIRST match, so a
+        // pattern ordered after one that also matches never fires.
         { type: 'features', pattern: 'src/app/core/components/features' },
 
         // --- The view layer ---------------------------------------------------
@@ -124,6 +130,13 @@ module.exports = tseslint.config(
         'error',
         {
           default: 'disallow',
+          // Without this, the rule inspects LOCAL dependencies only and every
+          // `import … from 'primeng/table'` is invisible to it — which is why
+          // `default: 'disallow'` above coexisted with a tree full of legal
+          // package imports. Turning it on brings external packages under the
+          // same default-deny, and the external allow lists at the bottom of
+          // this array are what that default then needs.
+          checkAllOrigins: true,
           rules: [
             // protocol imports nothing app-internal.
             { from: { type: 'protocol' }, disallow: { to: { type: '*' } } },
@@ -163,12 +176,24 @@ module.exports = tseslint.config(
               // It composes the pipeline and reads the app's team context; it
               // must NOT reach a view, which is what keeps `open a team` a
               // mechanism rather than one console's behaviour.
+              //
+              // `svc-ui-state` is in this list and in no other tier's that is
+              // below it. The data layer's order is models <- event <-
+              // selectors <- ui-state, and `svc-session` composes ALL of them —
+              // that is the whole reason it has an element type of its own
+              // rather than folding into `services`. Reaching the tier directly
+              // above the ones it already reaches is that rule applied, not a
+              // new direction: the DAG is not inverted, because nothing in
+              // `svc-ui-state` reaches back. The two real edges are
+              // `SelectionService` and `FeedbackService`, both required by
+              // `process.providers.ts`, which declares the composed stack.
               from: { type: 'svc-session' },
               allow: {
                 to: {
                   type: [
                     'svc-event',
                     'svc-selectors',
+                    'svc-ui-state',
                     'svc-models',
                     'platform',
                     'shared',
@@ -279,6 +304,145 @@ module.exports = tseslint.config(
                   ],
                 },
               },
+            },
+            // --- WHICH OUTSIDE PACKAGES EACH TIER MAY DRAW ON --------------
+            //
+            // Everything above gates edges between INTERNAL element types and
+            // nothing else. An import of `ngx-markdown` is invisible to it.
+            // That is not a hypothetical gap: `ngx-markdown` was removed from
+            // `shared/` earlier in this epic, and re-adding it afterwards was
+            // checked and left the lint GREEN. Every "this tier imports no UI
+            // framework" claim in `README.md` was, until these rules, an
+            // assertion about the tree on the day someone last read it.
+            //
+            // THE DEFAULT IS `disallow` AND THE TRADE-OFF IS DELIBERATE. The
+            // cheap alternative — default `allow` plus a `disallow` list on the
+            // pure tiers — reads better and costs nothing to maintain, but it
+            // only ever forbids packages somebody thought to name. A UI package
+            // nobody anticipated lands in `shared/` silently, which is the
+            // exact hole these rules exist to close, reintroduced one level up.
+            // Denying by default costs a config edit per new dependency in the
+            // lower tiers; that edit IS the point, because it is where a
+            // reviewer gets to ask whether the tier should have grown a
+            // dependency at all.
+            //
+            // THEY MATCH ON `source`, THE WHOLE SPECIFIER, NOT ON THE PACKAGE
+            // NAME. That distinction is load-bearing twice below — see
+            // `primeng/button` and `@angular/cdk/clipboard` — because matching
+            // by package would have to admit the entire component library in
+            // both places to admit the one entry point each tier actually uses.
+            //
+            // The lists are EXHAUSTIVE and MEASURED, not aspirational: each is
+            // every non-relative specifier that tier's non-spec files import
+            // today.
+            //
+            // `protocol` appears in no rule at all: it imports nothing external,
+            // and under `default: 'disallow'` the absence of a rule IS the
+            // strongest statement available.
+
+            // Wire types and Angular's DI decorator. Nothing else — in
+            // particular no rendering library, which is what makes `shared`
+            // safe for every tier above it to depend on.
+            {
+              from: { type: 'shared' },
+              to: { origin: 'external' },
+              allow: {
+                dependency: [
+                  { source: '@angular/core' },
+                  { source: 'lodash' },
+                  { source: 'js-yaml' },
+                ],
+              },
+            },
+
+            // Routing, HTTP, translation, reactivity: the framework services
+            // the app is built on. No component library.
+            {
+              from: { type: 'platform' },
+              to: { origin: 'external' },
+              allow: {
+                dependency: [
+                  { source: '@angular/core' },
+                  { source: '@angular/core/rxjs-interop' },
+                  { source: '@angular/common' },
+                  { source: '@angular/common/http' },
+                  { source: '@angular/router' },
+                  { source: '@angular/platform-browser' },
+                  { source: '@ngx-translate/core' },
+                  { source: 'rxjs' },
+                  { source: 'rxjs/operators' },
+                ],
+              },
+            },
+
+            // THE DATA LAYER'S EXTERNAL SURFACE, and the claim these rules are
+            // really here to hold: zero UI-component imports across every
+            // `svc-*` tier and the generic `services` type. That is currently
+            // true, and until now was true only by inspection.
+            //
+            // Two entries need saying out loud, because both look like
+            // exceptions and neither is:
+            //
+            // `@angular/cdk/clipboard` is a UI toolkit's entry point that ships
+            // no component — it is a clipboard call. Allowed as measured, and
+            // allowed AS THAT ENTRY POINT: `@angular/cdk/dialog` would still be
+            // refused here. Whether the data tier should name `@angular/cdk` at
+            // all is a separate decision, not one made silently here.
+            //
+            // `@angular/common` is `AsyncPipe`, which `process.providers.ts`
+            // lists among the route's providers.
+            {
+              from: {
+                type: [
+                  'svc-models',
+                  'svc-event',
+                  'svc-selectors',
+                  'svc-ui-state',
+                  'svc-workspace',
+                  'svc-session',
+                  'services',
+                ],
+              },
+              to: { origin: 'external' },
+              allow: {
+                dependency: [
+                  { source: '@angular/core' },
+                  { source: '@angular/common' },
+                  { source: '@angular/cdk/clipboard' },
+                  { source: '@ngx-translate/core' },
+                  { source: 'rxjs' },
+                  { source: 'rxjs/operators' },
+                  { source: 'rxjs/webSocket' },
+                  { source: 'js-yaml' },
+                ],
+              },
+            },
+
+            // Domain-free, NOT framework-free: the tier's rule is that it names
+            // no domain concept, not that it declines to draw its own controls.
+            // `primeng/button` is imported here today and must stay legal —
+            // and only it, which is why this matches the specifier rather than
+            // the package.
+            {
+              from: { type: 'primitives' },
+              to: { origin: 'external' },
+              allow: {
+                dependency: [
+                  { source: '@angular/core' },
+                  { source: '@ngx-translate/core' },
+                  { source: 'primeng/button' },
+                ],
+              },
+            },
+
+            // The library and the pages: whatever they need. These two are
+            // SUPPOSED to draw on the outside world — 42 distinct packages
+            // between PrimeNG, echarts, Monaco, markdown and the rest — and an
+            // allow list here would be maintenance with no invariant behind it.
+            {
+              from: { type: ['features', 'ui'] },
+              to: { origin: 'external' },
+              allow: { dependency: [{ source: '**' }] },
             },
           ],
         },

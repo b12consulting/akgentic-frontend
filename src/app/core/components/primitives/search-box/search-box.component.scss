@@ -4,9 +4,10 @@
 }
 
 // An INSET WELL, not an outlined field: `--akg-well-bg` is deliberately a
-// border value used as a fill, so the box reads as carved out of the rail
-// rather than drawn on top of it. No border — the fill alone is the affordance.
-.rail-search__field {
+// border value used as a fill, so the box reads as carved out of its host
+// surface rather than drawn on top of it. No border — the fill alone is the
+// affordance.
+.search-box__field {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -15,18 +16,18 @@
   border-radius: 10px;
 }
 
-.rail-search__field:focus-within {
+.search-box__field:focus-within {
   box-shadow: var(--akg-focus-ring);
 }
 
-.rail-search__glyph {
+.search-box__glyph {
   flex: 0 0 auto;
   width: 14px;
   height: 14px;
   color: var(--akg-glyph-quiet);
 }
 
-.rail-search__input {
+.search-box__input {
   flex: 1;
   min-width: 0;
   border: 0;

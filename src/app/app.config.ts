@@ -27,8 +27,8 @@ export const appConfig: ApplicationConfig = {
   providers: [
     MessageService,
     // Story 53-1 (ADR-035 §D6.1): bind the data layer's notification port to
-    // PrimeNG here, at the composition root, so `core/` and `services/` name no
-    // UI framework. Root scope reaches both the `providedIn: 'root'` services and
+    // PrimeNG here, at the composition root, so `core/services/` names no UI
+    // framework. Root scope reaches both the `providedIn: 'root'` services and
     // the route-scoped event units on `process/:id`.
     //
     // `MessageService` above stays: the adapter injects it, and `ui/` components

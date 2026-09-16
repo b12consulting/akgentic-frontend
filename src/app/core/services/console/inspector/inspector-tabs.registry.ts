@@ -11,8 +11,8 @@
  * It used to live in `inspector-tabs.component.ts`, the leaf that renders it,
  * on the same no-outgoing-edges argument. This module satisfies that argument
  * more strictly: it is pure data with no decorator and no template, and it has
- * no outgoing edge into `components/` at all. The old arrangement had this
- * registry importing a type out of the component that renders it — the logic
+ * no outgoing edge into any component tier at all. The old arrangement had this
+ * registry importing a type out of the component that renders it — the data
  * tier depending on the view tier, legal only because both sat inside one
  * `boundaries` element and the edge was therefore invisible.
  *
@@ -76,7 +76,7 @@ export interface VisualizationOption {
  *
  * The second one cannot be collapsed into the first from here, and it is worth
  * saying WHY rather than leaving the next reader to re-discover it: the panels
- * live in `ui/` and this registry is in `services/`, which the boundary rules
+ * live in `ui/` and this registry is in `core/services/`, which the boundary rules
  * give no edge to `ui`. So a registry that also owned the components could not
  * import them, and the panels are PROJECTED from the host's template instead.
  * `isHidden()` is already generic over the value, so there is no per-tab case

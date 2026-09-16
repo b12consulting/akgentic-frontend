@@ -120,7 +120,7 @@ Two configuration keys, both `config.json`:
 
 ### Adding a language
 
-1. Copy `src/app/core/i18n/locales/en.json` — the canonical key list, also published at
+1. Copy `src/app/core/platform/i18n/locales/en.json` — the canonical key list, also published at
    `<app-url>/i18n/en.json` so you can fetch it off a running deployment — and translate the values.
 2. Drop it in the web root as `i18n/<lang>.json`, the same way you place `config.json`.
 3. Add the tag to `languages`.
@@ -211,32 +211,88 @@ npm run lint                         # eslint over src/**/*.ts
 
 ## Layout
 
-`src/app/` is three layers, split by DIRECTORY rather than by naming convention so the split cannot
-erode quietly:
+`src/app/` is **two top-level folders over seven ordered tiers**, split by DIRECTORY rather than by
+naming convention so the split cannot erode quietly. `core/` is the framework-maintained part;
+`ui/` is the part you replace.
 
-| Folder | What lives there | May import |
-|---|---|---|
-| `ui/` | **assemblies** — the views that inject services and wire components together | everything below, and each other |
-| `components/` | **presentational** — renders what it is given, fetches nothing | `components`, `core`, `shared`, `protocol`, and the TYPES its inputs are declared in |
-| `services/` | **data** — selectors, stores, event plumbing, feature-scoped services and models | `core`, `shared`, `protocol` |
-| `core/` | app-wide services with no feature of their own: auth, config, http, i18n, shell UI state | `shared`, `protocol` |
-| `shared/` | pipes and pure utilities | `protocol` |
-| `protocol/` | the wire types — the contract with `akgentic-infra` | nothing |
+```
+src/app/
+├── app.config.ts  app.routes.ts  app.component.ts     composition root
+│      the ONLY place that names a `ui/` symbol
+│
+├── core/                                framework-maintained
+│   ├── protocol/        the wire contract with akgentic-infra
+│   ├── shared/          pure functions, pipes
+│   ├── platform/        http · auth · i18n · config · context
+│   ├── services/        ingestion · selectors · reactors · session ·
+│   │                    ui-state · workspace
+│   └── components/      THE LIBRARY
+│       ├── primitives/  domain-free controls
+│       └── features/    self-contained widgets, wired to services
+│
+└── ui/                  pages and shell. Nothing may import this.
+```
 
-`ui/`, `components/` and `services/` mirror each other's feature names (`process`, `console`,
-`home`, `catalog`), so a view, the pieces it renders and the data behind it sit at the same path in
-three trees. `components/common/` holds the cross-feature primitives.
+**`core/` is a namespace, not a tier.** Each tier below names itself; there is deliberately no
+element type covering `core/` as a whole, because one would make every edge inside it legal in both
+directions while the lint still passed.
 
-**`ui/` is the layer you replace.** Nothing may import back into it — the rule set defaults to
-`disallow` and no rule grants that edge — so a second console can be built by writing a new `ui/`
-against the same `components/` and `services/`, which is the whole reason for the split.
+This is the normative table. It is not a description of intent: each row is an
+`eslint-plugin-boundaries` element type and each **May import** cell is that type's allow list. The
+rule set's default is `disallow`, so **any edge not in this table is refused**.
 
-### Which layer does a component belong to?
+| Element type | Folder | May import | May NOT import |
+|---|---|---|---|
+| `protocol` | `core/protocol/` | *nothing* | everything |
+| `shared` | `core/shared/` | `protocol` | `platform` `services` `primitives` `features` `ui` |
+| `platform` | `core/platform/` | `shared` `protocol` | `services` `primitives` `features` `ui` |
+| `services` | `core/services/` | `platform` `shared` `protocol` | **`primitives` `features`** `ui` |
+| `primitives` | `core/components/primitives/` | `platform` `shared` `protocol`, and each other | **`services`** `features` `ui` |
+| `features` | `core/components/features/` | `primitives` `services` `platform` `shared` `protocol`, and each other | `ui` |
+| `ui` | `ui/` | everything below, and each other | — |
 
-It is `ui/` if it injects a service that carries **data**, or if it mounts something that does.
-Injecting `ConfigService`, `TranslateService` or `ViewService` does not count: those are config and
-chrome, not data. The "mounts something that does" half is transitive and is what keeps the boundary
-honest — a shell that renders a data-bound child is an assembly however little it injects itself.
+`core/services/` keeps its own internal taxonomy: `svc-models ← svc-event ← svc-selectors ←
+svc-ui-state`, with `svc-session` composing them. Each is a separate element type, so the order
+inside the data layer is enforced too rather than being flattened by a folder name.
+
+Three cells carry the design and a future reader will be tempted by each:
+
+- **`services` may not import `primitives` or `features`.** A selector reaching into a widget is the
+  inversion the whole tree exists to prevent.
+- **`primitives` may not import `services`.** This is what makes "primitive" decidable — see below.
+  It covers **type imports as well as injections**.
+- **Nothing may import `ui`.** That is the property that makes a second UI possible: a second console
+  is built by writing a new `ui/` against the same `core/components/` and `core/services/`.
+
+**Which outside packages a tier may draw on is enforced too**, by the same rule set and the same
+`disallow` default. The lower tiers carry exhaustive, measured allow lists — `core/shared/` may name
+`@angular/core`, `lodash` and `js-yaml` and nothing else — while `features/` and `ui/` are
+deliberately unrestricted, because drawing on the outside world is what they are for. The lists match
+the **whole specifier**, not the package name, which is how `core/services/` can use
+`@angular/cdk/clipboard` (headless) while `@angular/cdk/dialog` stays refused.
+
+### Which tier does a component belong to?
+
+A component is a **primitive** if it **names no domain concept**. It knows nothing of teams, agents,
+messages, workspaces, namespaces or the event log; its inputs are strings, numbers, booleans and
+i18n keys. Two tests, applied in order:
+
+1. **Mechanical, and lint-enforced:** does it import anything from `core/services/`? If yes it is not
+   a primitive. Type imports count.
+2. **Editorial, and settled by review:** is it meaningful outside one feature? If it belongs to one
+   capability, it lives in that capability's folder under `features/` — whether or not it injects
+   anything.
+
+Test 1 alone is not sufficient, and that is the substance of the rule. A team table might import
+nothing from `core/services/` and still be a table of *teams*; putting it in `primitives` would give
+the domain-free tier a teams list. Test 2 is what prevents that, and it is why the primitives tier is
+deliberately **small** — five components today. A primitives folder that grows a `TeamCard` has
+stopped being one, and only test 2 will catch it.
+
+Everything else in the library is a **feature**: a self-contained widget that may inject the data
+layer, nested by composition, so a component appearing only ever inside one other component is a
+subfolder of it. A **page or shell** — anything that assembles features into a route or into the
+chrome around one — is `ui/`.
 
 Two rules cover the team's services and are worth knowing before adding one:
 

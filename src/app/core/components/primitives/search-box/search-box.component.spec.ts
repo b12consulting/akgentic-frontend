@@ -61,7 +61,7 @@ describe('SearchBoxComponent', () => {
   it('carries the focus ring on the FIELD, not on the bare input', () => {
     // The mock removes the outline and replaces it with nothing. The ring is a
     // token on the well so a keyboard user can see the whole control.
-    const field = fixture.debugElement.query(By.css('.rail-search__field'));
+    const field = fixture.debugElement.query(By.css('.search-box__field'));
     expect(field).not.toBeNull();
     expect(field.nativeElement.contains(input())).toBeTrue();
   });

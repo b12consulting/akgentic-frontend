@@ -12,7 +12,7 @@ import { IngestionService } from '../event/ingestion.service';
  * it reuses. `Route.providers` already made the twenty-three team services
  * reachable from anywhere under `process/:id` — but the ~130 lines that make
  * them *work* stayed in `ProcessComponent`, which is precisely the file a new
- * UI deletes. So a UI built against `components/` and `services/` compiled,
+ * UI deletes. So a UI built against `core/components/` and `core/services/` compiled,
  * linted, rendered — and then failed quietly: `SelectionService` reads
  * `currentProcessId$`, whose only writer was that component, so saving a human
  * input died on "no team selected", the header showed no team, and the

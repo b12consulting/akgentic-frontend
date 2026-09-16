@@ -64,25 +64,13 @@ export type CreationTypesState = 'loading' | 'empty' | 'types';
  * than its falsiness — is the documented bug that gate exists to have fixed
  * once.
  *
- * WHY THE TWO `components/home/` IMPORTS BELOW ARE LEGAL. `TeamCreationService`
- * and `TeamMetadataModalComponent` live under `components/home/` but are NOT
- * tagged `page-home`: `eslint.config.js:137-144` gives each of their folders the
- * element type `feature-team-creation`, listed AHEAD of the `page-home` pattern
- * because `eslint-plugin-boundaries` matches in order and the broader pattern
- * would otherwise swallow them. They stopped being home-page leaves the moment a
- * second surface embedded them verbatim — the same situation `feature-catalog`
- * was carved out for — and a tag is a statement about what a folder IS, so it
- * had to follow.
+ * `TeamCreationService` and `TeamMetadataModalComponent` are imported from
+ * `core/services/home/team-creation/` and `core/components/features/team-list/`.
+ * Both edges are `ui` reaching down, which needs no argument.
  *
- * The carve-out is deliberately one-directional. `feature-team-creation` may
- * depend on `core`, `shared` and `protocol` and on nothing else; it may not
- * import a page or the console. That restriction is the whole reason the
- * carve-out cannot become a `page-home <-> console` edge by the back door —
- * without it, tagging a folder out of `page-home` would be a way to launder any
- * page-to-page import through a third name.
- *
- * Do NOT resolve this by copying either symbol into `console/` — a second
- * creation gate is the duplication `TeamCreationService` exists to have removed.
+ * Do NOT resolve a future version of this by copying either symbol into
+ * `console/` — a second creation gate is the duplication `TeamCreationService`
+ * exists to have removed.
  *
  * THE ADMIN "SHOW ALL TEAM TYPES" TOGGLE IS HERE BECAUSE IT USED TO BE ON THE
  * PAGE (ADR-028). Before R2 an admin could turn the management page's "show all

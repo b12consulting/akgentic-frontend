@@ -13,7 +13,7 @@ import { NotificationToastService } from './notification-toast.service';
  * only file this story adds that names a UI framework.
  *
  * It lives in `ui/console/` rather than in `core/`, which is the whole point:
- * `core/` and `services/` stop importing PrimeNG, and `ui/console/` is where
+ * `core/services/` stops importing PrimeNG, and `ui/console/` is where
  * ADR-035 §D5 sends the toast machinery this class delegates to. `app.config.ts`
  * is the composition root and is the only place outside `ui/` allowed to name a
  * `ui/` symbol (§D1), so the binding is made there and nothing below reaches up.

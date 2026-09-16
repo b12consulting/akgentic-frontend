@@ -42,11 +42,17 @@ export type { VisualizationOption };
  *
  * It is a FRAME, not a container of panels. The panels stay in the host's
  * template and arrive through `<ng-content>`, for one reason that is not
- * stylistic and is not about injectors: this file lives in `components/`, the
- * presentational layer, and every one of those panels lives in `ui/`. The
- * boundary rule grants `components` no edge to `ui` at all, so this frame
- * CANNOT declare them — projection is the only shape available, and that is
- * what keeps the frame reusable by a console that brings its own panels.
+ * stylistic and is not about injectors: a frame that DECLARES its panels is a
+ * frame that only ever shows those panels. This file is `ui`, which may import
+ * anything, so nothing stops it importing them — the constraint is a design
+ * one, not a lint one, and it is the stronger of the two here. Projection is
+ * what keeps the frame reusable by a console that brings its own panels, which
+ * is the whole reason `ui/` is the tier you replace.
+ *
+ * (An earlier version of this note argued the point from the boundary rule,
+ * claiming this file lived in a presentational tier that was granted no edge to
+ * `ui`. That was true of a layout this tree no longer has. The conclusion was
+ * right and the reason was backwards: keep the projection, on its own merits.)
  *
  * (The injector is not the obstacle. The team's services are provided on the
  * `process/:id` ROUTE, so anything rendered under that route resolves them
