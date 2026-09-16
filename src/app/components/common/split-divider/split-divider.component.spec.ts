@@ -8,7 +8,7 @@ import {
   SPLIT_FINE_STEP_PERCENT,
   SPLIT_MAX_PERCENT,
   SPLIT_MIN_PERCENT,
-} from '../../../shared/util/split-width';
+} from '../../../core/shared/util/split-width';
 import { SplitDividerComponent } from './split-divider.component';
 
 /**

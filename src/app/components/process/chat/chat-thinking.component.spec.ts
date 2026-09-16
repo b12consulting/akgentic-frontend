@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
 import { ChatThinkingComponent } from './chat-thinking.component';
-import { ThinkingState, ThinkingToolEntry } from '../../../services/process/selectors/chat.selector';
+import { ThinkingState, ThinkingToolEntry } from '../../../core/services/process/selectors/chat.selector';
 import {
   provideTranslateTesting,
   setTestTranslations,

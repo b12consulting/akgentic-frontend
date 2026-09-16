@@ -4,14 +4,14 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { MessageService } from 'primeng/api';
 
-import { NOTIFICATION_PORT } from '../../../core/notification/notification.port';
+import { NOTIFICATION_PORT } from '../../../core/platform/notification/notification.port';
 import { PrimeNgNotificationAdapter } from '../../console/notification.adapter';
 
 import { MessageListComponent } from './message-list.component';
-import { MessageLogService } from '../../../services/process/event/message-log.service';
-import { AkgenticMessage, SentMessage } from '../../../protocol/message.types';
+import { MessageLogService } from '../../../core/services/process/event/message-log.service';
+import { AkgenticMessage, SentMessage } from '../../../core/protocol/message.types';
 
-import { CategoryService } from '../../../services/category.service';
+import { CategoryService } from '../../../core/services/category.service';
 
 import {
   provideTranslateTesting,

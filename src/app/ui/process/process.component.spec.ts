@@ -11,24 +11,24 @@ import {
   EventMessage,
   StartMessage,
   StopMessage,
-} from '../../protocol/message.types';
-import { AkgentService } from '../../services/akgent.service';
-import { ChatService } from '../../services/process/selectors/chat.selector';
-import { ContextService } from '../../core/context/context.service';
-import { FeedbackService } from '../../services/process/ui-state/feedback.service';
-import { GraphDataService } from '../../services/process/selectors/graph.selector';
-import { KGStateReducer } from '../../services/process/selectors/knowledge-graph.selector';
-import { MessageLogService } from '../../services/process/event/message-log.service';
-import { TeamSessionService } from '../../services/process/session/team-session.service';
-import { IngestionService } from '../../services/process/event/ingestion.service';
-import { SelectionService } from '../../services/process/ui-state/selection.service';
+} from '../../core/protocol/message.types';
+import { AkgentService } from '../../core/services/akgent.service';
+import { ChatService } from '../../core/services/process/selectors/chat.selector';
+import { ContextService } from '../../core/platform/context/context.service';
+import { FeedbackService } from '../../core/services/process/ui-state/feedback.service';
+import { GraphDataService } from '../../core/services/process/selectors/graph.selector';
+import { KGStateReducer } from '../../core/services/process/selectors/knowledge-graph.selector';
+import { MessageLogService } from '../../core/services/process/event/message-log.service';
+import { TeamSessionService } from '../../core/services/process/session/team-session.service';
+import { IngestionService } from '../../core/services/process/event/ingestion.service';
+import { SelectionService } from '../../core/services/process/ui-state/selection.service';
 import {
   KG_ACTOR_NAME,
   ToolPresenceService,
-} from '../../services/process/selectors/tool-presence.selector';
-import { WorkspaceRegistryService } from '../../services/process/selectors/workspace-registry.selector';
-import { TeamContext } from '../../core/context/team.interface';
-import { NodeInterface } from '../../services/process/models/types';
+} from '../../core/services/process/selectors/tool-presence.selector';
+import { WorkspaceRegistryService } from '../../core/services/process/selectors/workspace-registry.selector';
+import { TeamContext } from '../../core/platform/context/team.interface';
+import { NodeInterface } from '../../core/services/process/models/types';
 import { ViewService } from '../console/view.service';
 import { PaneLayoutService } from '../console/pane-layout.service';
 import {
@@ -43,7 +43,7 @@ import {
   provideTranslateTesting,
   setTestTranslations,
 } from '../../../testing/i18n-testing';
-import { ConfigService } from '../../core/config/config.service';
+import { ConfigService } from '../../core/platform/config/config.service';
 import { ProcessComponent } from './process.component';
 
 // --------------------------------------------------------------------

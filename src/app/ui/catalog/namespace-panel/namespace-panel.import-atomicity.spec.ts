@@ -14,8 +14,8 @@ import { InputTextModule } from 'primeng/inputtext';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 
-import { ApiService } from '../../../core/http/api.service';
-import { HttpError } from '../../../core/http/fetch.service';
+import { ApiService } from '../../../core/platform/http/api.service';
+import { HttpError } from '../../../core/platform/http/fetch.service';
 import { NamespacePanelComponent } from './namespace-panel.component';
 import { ValidationReportComponent } from '../../../components/catalog/namespace-panel/validation-report/validation-report.component';
 

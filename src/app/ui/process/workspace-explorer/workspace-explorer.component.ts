@@ -31,12 +31,12 @@ import {
   WorkspaceService,
   FileNode,
   FileContent,
-} from '../../../services/process/workspace/workspace.service';
-import { ContextService } from '../../../core/context/context.service';
+} from '../../../core/services/process/workspace/workspace.service';
+import { ContextService } from '../../../core/platform/context/context.service';
 import {
   WorkspaceInvalidation,
   WorkspaceInvalidationService,
-} from '../../../services/process/selectors/workspace-invalidation.selector';
+} from '../../../core/services/process/selectors/workspace-invalidation.selector';
 import { UploadModalComponent } from '../../../components/process/workspace-explorer/upload-modal/upload-modal.component';
 import { InspectorEmptyStateComponent } from '../../../components/console/inspector/inspector-empty-state.component';
 

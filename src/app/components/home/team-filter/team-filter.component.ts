@@ -17,12 +17,12 @@ import {
   metadataKeyLabel,
   NO_TEAM_FILTER,
   TeamFilter,
-} from '../../../core/context/team.interface';
-import { MIN_FILTER_TERM_LENGTH } from '../../../core/http/api.service';
+} from '../../../core/platform/context/team.interface';
+import { MIN_FILTER_TERM_LENGTH } from '../../../core/platform/http/api.service';
 import {
   MetadataFieldDescriptor,
   NamespaceSummary,
-} from '../../../protocol/catalog.interface';
+} from '../../../core/protocol/catalog.interface';
 
 /**
  * The teams-list filter form.

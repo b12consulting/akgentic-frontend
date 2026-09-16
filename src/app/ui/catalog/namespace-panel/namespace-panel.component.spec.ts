@@ -29,10 +29,10 @@ import { InputTextModule } from 'primeng/inputtext';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 
-import { NamespaceValidationReport } from '../../../protocol/catalog.interface';
-import { ApiService } from '../../../core/http/api.service';
-import { AuthService } from '../../../core/auth/auth.service';
-import { HttpError, NetworkError } from '../../../core/http/fetch.service';
+import { NamespaceValidationReport } from '../../../core/protocol/catalog.interface';
+import { ApiService } from '../../../core/platform/http/api.service';
+import { AuthService } from '../../../core/platform/auth/auth.service';
+import { HttpError, NetworkError } from '../../../core/platform/http/fetch.service';
 import { NamespacePanelComponent } from './namespace-panel.component';
 import { ValidationReportComponent } from '../../../components/catalog/namespace-panel/validation-report/validation-report.component';
 

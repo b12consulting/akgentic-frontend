@@ -2,29 +2,29 @@ import { TestBed } from '@angular/core/testing';
 import { BehaviorSubject, Subject } from 'rxjs';
 import { MessageService } from 'primeng/api';
 
-import { NOTIFICATION_PORT } from '../../../core/notification/notification.port';
+import { NOTIFICATION_PORT } from '../../../core/platform/notification/notification.port';
 import { PrimeNgNotificationAdapter } from '../../console/notification.adapter';
 import { WebSocketSubject } from 'rxjs/webSocket';
 
 import { AgentTabsComponent } from './agent-tabs.component';
-import { Akgent, AkgentService } from '../../../services/akgent.service';
-import { GraphDataService } from '../../../services/process/selectors/graph.selector';
-import { IngestionService } from '../../../services/process/event/ingestion.service';
-import { MessageLogService } from '../../../services/process/event/message-log.service';
-import { PerAgentStoreRegistry } from '../../../services/process/event/per-agent-store';
-import { ProcessStores } from '../../../services/process/event/process-stores';
-import { ReplaySeeder } from '../../../services/process/event/replay-seeder';
-import { ConnectionToast } from '../../../services/process/event/connection-toast';
-import { NotificationToasts } from '../../../services/process/event/notification-toasts';
-import { LogFeeder } from '../../../services/process/event/log-feeder';
-import { TeamSocket } from '../../../services/process/event/team-socket';
-import { LoadingIndicator } from '../../../services/process/event/loading-indicator';
-import { TeamStatusReactor } from '../../../services/process/event/team-status-reactor';
-import { ContextService } from '../../../core/context/context.service';
-import { ChatService } from '../../../services/process/selectors/chat.selector';
-import { ApiService } from '../../../core/http/api.service';
-import { SystemPromptSelector } from '../../../services/process/selectors/system-prompt.selector';
-import { TokenUsageSelector } from '../../../services/process/selectors/token-usage.selector';
+import { Akgent, AkgentService } from '../../../core/services/akgent.service';
+import { GraphDataService } from '../../../core/services/process/selectors/graph.selector';
+import { IngestionService } from '../../../core/services/process/event/ingestion.service';
+import { MessageLogService } from '../../../core/services/process/event/message-log.service';
+import { PerAgentStoreRegistry } from '../../../core/services/process/event/per-agent-store';
+import { ProcessStores } from '../../../core/services/process/event/process-stores';
+import { ReplaySeeder } from '../../../core/services/process/event/replay-seeder';
+import { ConnectionToast } from '../../../core/services/process/event/connection-toast';
+import { NotificationToasts } from '../../../core/services/process/event/notification-toasts';
+import { LogFeeder } from '../../../core/services/process/event/log-feeder';
+import { TeamSocket } from '../../../core/services/process/event/team-socket';
+import { LoadingIndicator } from '../../../core/services/process/event/loading-indicator';
+import { TeamStatusReactor } from '../../../core/services/process/event/team-status-reactor';
+import { ContextService } from '../../../core/platform/context/context.service';
+import { ChatService } from '../../../core/services/process/selectors/chat.selector';
+import { ApiService } from '../../../core/platform/http/api.service';
+import { SystemPromptSelector } from '../../../core/services/process/selectors/system-prompt.selector';
+import { TokenUsageSelector } from '../../../core/services/process/selectors/token-usage.selector';
 
 import { provideTranslateTesting } from '../../../../testing/i18n-testing';
 

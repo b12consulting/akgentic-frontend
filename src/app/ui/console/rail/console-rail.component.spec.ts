@@ -4,12 +4,12 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { NavigationEnd, Router } from '@angular/router';
 import { BehaviorSubject, Subject } from 'rxjs';
 
-import { AuthService } from '../../../core/auth/auth.service';
-import { ConfigService } from '../../../core/config/config.service';
-import { ContextService } from '../../../core/context/context.service';
-import { TeamContext } from '../../../core/context/team.interface';
+import { AuthService } from '../../../core/platform/auth/auth.service';
+import { ConfigService } from '../../../core/platform/config/config.service';
+import { ContextService } from '../../../core/platform/context/context.service';
+import { TeamContext } from '../../../core/platform/context/team.interface';
 import { TeamCreationLauncher } from '../team-creation-launcher.service';
-import { TeamCreationService } from '../../../services/home/team-creation/team-creation.service';
+import { TeamCreationService } from '../../../core/services/home/team-creation/team-creation.service';
 import { ViewService } from '../view.service';
 import {
   provideTranslateTesting,

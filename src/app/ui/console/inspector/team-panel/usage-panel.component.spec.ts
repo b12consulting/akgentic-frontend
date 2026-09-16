@@ -6,7 +6,7 @@ import {
   ModelTokenTotals,
   TeamTokenTotals,
   TokenUsageSelector,
-} from '../../../../services/process/selectors/token-usage.selector';
+} from '../../../../core/services/process/selectors/token-usage.selector';
 import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
 
 function totals(overrides: Partial<TeamTokenTotals> = {}): TeamTokenTotals {

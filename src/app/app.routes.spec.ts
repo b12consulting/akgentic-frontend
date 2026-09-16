@@ -3,7 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { RouterTestingModule } from '@angular/router/testing';
 
 import { routes } from './app.routes';
-import { AuthGuard } from './core/auth/auth.guard';
+import { AuthGuard } from './core/platform/auth/auth.guard';
 import { namespacePanelCanDeactivate } from './ui/catalog/namespace-panel/namespace-panel.guard';
 
 /**

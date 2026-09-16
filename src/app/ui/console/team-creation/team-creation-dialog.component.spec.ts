@@ -4,15 +4,15 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { Router } from '@angular/router';
 import { BehaviorSubject } from 'rxjs';
 
-import { AuthService } from '../../../core/auth/auth.service';
-import { ContextService } from '../../../core/context/context.service';
-import { ApiService } from '../../../core/http/api.service';
+import { AuthService } from '../../../core/platform/auth/auth.service';
+import { ContextService } from '../../../core/platform/context/context.service';
+import { ApiService } from '../../../core/platform/http/api.service';
 import { TeamCreationLauncher } from '../team-creation-launcher.service';
-import { TeamCreationService } from '../../../services/home/team-creation/team-creation.service';
+import { TeamCreationService } from '../../../core/services/home/team-creation/team-creation.service';
 import {
   NamespaceSummary,
   TeamMetadataContract,
-} from '../../../protocol/catalog.interface';
+} from '../../../core/protocol/catalog.interface';
 import { provideTranslateTesting, setTestTranslations } from '../../../../testing/i18n-testing';
 import { TeamCreationDialogComponent } from './team-creation-dialog.component';
 

@@ -18,7 +18,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 
-import { AkgentService } from '../../services/akgent.service';
+import { AkgentService } from '../../core/services/akgent.service';
 import {
   inspectorPercentFromLeading,
   INSPECTOR_DEFAULT_PERCENT,
@@ -26,12 +26,12 @@ import {
 } from '../console/pane-layout';
 import { PaneLayoutService } from '../console/pane-layout.service';
 import { ViewService } from '../console/view.service';
-import { TeamSessionService } from '../../services/process/session/team-session.service';
-import { ConfigService } from '../../core/config/config.service';
-import { ContextService } from '../../core/context/context.service';
-import { IngestionService } from '../../services/process/event/ingestion.service';
-import { ToolPresenceService } from '../../services/process/selectors/tool-presence.selector';
-import { WorkspaceRegistryService } from '../../services/process/selectors/workspace-registry.selector';
+import { TeamSessionService } from '../../core/services/process/session/team-session.service';
+import { ConfigService } from '../../core/platform/config/config.service';
+import { ContextService } from '../../core/platform/context/context.service';
+import { IngestionService } from '../../core/services/process/event/ingestion.service';
+import { ToolPresenceService } from '../../core/services/process/selectors/tool-presence.selector';
+import { WorkspaceRegistryService } from '../../core/services/process/selectors/workspace-registry.selector';
 
 import { AgentTabsComponent } from './agent-tabs/agent-tabs.component';
 import { TeamTabsComponent } from './team-tabs/team-tabs.component';
@@ -42,14 +42,14 @@ import { WorkspaceTabsComponent } from './workspace-tabs/workspace-tabs.componen
 import { BehaviorSubject, combineLatest, Observable, Subscription } from 'rxjs';
 import { distinctUntilChanged, map, take } from 'rxjs/operators';
 import { ChatPanelComponent } from './chat/chat-panel.component';
-import { GraphDataService } from '../../services/process/selectors/graph.selector';
-import { SelectionService } from '../../services/process/ui-state/selection.service';
+import { GraphDataService } from '../../core/services/process/selectors/graph.selector';
+import { SelectionService } from '../../core/services/process/ui-state/selection.service';
 
 import { ConversationHeaderComponent } from '../console/conversation/conversation-header.component';
 import { ConsoleInspectorComponent } from '../console/inspector/console-inspector.component';
 import { InspectorTeamPanelComponent } from '../console/inspector/team-panel/inspector-team-panel.component';
 import { VisualizationOption } from '../../components/console/inspector/inspector-tabs.component';
-import { resolveInspectorTab, visibleInspectorTabs } from '../../services/console/inspector/inspector-tabs.registry';
+import { resolveInspectorTab, visibleInspectorTabs } from '../../core/services/console/inspector/inspector-tabs.registry';
 import { SplitDividerComponent } from '../../components/common/split-divider/split-divider.component';
 
 @Component({

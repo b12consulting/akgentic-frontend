@@ -31,8 +31,8 @@ import { EChartsCoreOption } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { NgxEchartsDirective, provideEchartsCore } from 'ngx-echarts';
 
-import { KGStateReducer } from '../../../services/process/selectors/knowledge-graph.selector';
-import { graphCategoryColors, readToken } from '../../../services/category.service';
+import { KGStateReducer } from '../../../core/services/process/selectors/knowledge-graph.selector';
+import { graphCategoryColors, readToken } from '../../../core/services/category.service';
 import { InspectorEmptyStateComponent } from '../../../components/console/inspector/inspector-empty-state.component';
 
 echarts.use([

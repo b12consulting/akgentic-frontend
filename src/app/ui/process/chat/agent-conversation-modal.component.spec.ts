@@ -8,10 +8,10 @@ import {
   AgentRef,
   ReaderSendRequest,
 } from './agent-conversation-modal.component';
-import { ChatMessage } from '../../../services/process/selectors/chat-message.model';
-import { ThinkingState } from '../../../services/process/selectors/chat.selector';
-import { NodeInterface } from '../../../services/process/models/types';
-import { ActorAddress } from '../../../protocol/message.types';
+import { ChatMessage } from '../../../core/services/process/selectors/chat-message.model';
+import { ThinkingState } from '../../../core/services/process/selectors/chat.selector';
+import { NodeInterface } from '../../../core/services/process/models/types';
+import { ActorAddress } from '../../../core/protocol/message.types';
 
 import {
   provideTranslateTesting,

@@ -17,7 +17,7 @@ import {
   SplitBounds,
   splitPercentFromPointer,
   stepSplitPercent,
-} from '../../../shared/util/split-width';
+} from '../../../core/shared/util/split-width';
 
 /**
  * The draggable boundary between two panes (Epic 52, story 52-2).

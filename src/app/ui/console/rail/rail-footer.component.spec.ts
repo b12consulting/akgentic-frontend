@@ -3,9 +3,9 @@ import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { BehaviorSubject } from 'rxjs';
 
-import { AuthService } from '../../../core/auth/auth.service';
-import { ConfigService } from '../../../core/config/config.service';
-import { ContextService } from '../../../core/context/context.service';
+import { AuthService } from '../../../core/platform/auth/auth.service';
+import { ConfigService } from '../../../core/platform/config/config.service';
+import { ContextService } from '../../../core/platform/context/context.service';
 import { IconButtonComponent } from '../../../components/common/icon-button/icon-button.component';
 import { provideTranslateTesting } from '../../../../testing/i18n-testing';
 import { RailFooterComponent } from './rail-footer.component';

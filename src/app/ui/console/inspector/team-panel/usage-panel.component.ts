@@ -7,8 +7,8 @@ import {
   ModelTokenTotals,
   TeamTokenTotals,
   TokenUsageSelector,
-} from '../../../../services/process/selectors/token-usage.selector';
-import { TokenCountPipe } from '../../../../shared/pipes/token-count.pipe';
+} from '../../../../core/services/process/selectors/token-usage.selector';
+import { TokenCountPipe } from '../../../../core/shared/pipes/token-count.pipe';
 
 /**
  * What this team has spent, in three numbers.

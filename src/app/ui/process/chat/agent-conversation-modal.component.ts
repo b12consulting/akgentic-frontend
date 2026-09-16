@@ -9,21 +9,21 @@ import {
 } from '@angular/core';
 import { DialogModule } from 'primeng/dialog';
 
-import { agentConversation } from '../../../services/process/selectors/agent-conversation.selector';
-import { ChatMessage } from '../../../services/process/selectors/chat-message.model';
-import { ThinkingState } from '../../../services/process/selectors/chat.selector';
+import { agentConversation } from '../../../core/services/process/selectors/agent-conversation.selector';
+import { ChatMessage } from '../../../core/services/process/selectors/chat-message.model';
+import { ThinkingState } from '../../../core/services/process/selectors/chat.selector';
 import {
   agentRuns,
   buildDisplayItems,
   DisplayItem,
   trackDisplayItem,
-} from '../../../services/process/selectors/display-items';
-import { NodeInterface } from '../../../services/process/models/types';
+} from '../../../core/services/process/selectors/display-items';
+import { NodeInterface } from '../../../core/services/process/models/types';
 import {
   AgentColours,
   NO_AGENT_COLOURS,
-} from '../../../services/process/selectors/agent-colour';
-import { makeAgentNameUserFriendly } from '../../../shared/util/util';
+} from '../../../core/services/process/selectors/agent-colour';
+import { makeAgentNameUserFriendly } from '../../../core/shared/util/util';
 import { TranslatePipe } from '@ngx-translate/core';
 
 import type { AgentRef } from './agent-reader.service';

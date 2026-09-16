@@ -5,7 +5,7 @@ import { MessageService, ToastMessageOptions } from 'primeng/api';
 import {
   NotificationPort,
   NotificationRequest,
-} from '../../core/notification/notification.port';
+} from '../../core/platform/notification/notification.port';
 import { NotificationToastService } from './notification-toast.service';
 
 /**

@@ -7,7 +7,7 @@ import {
 } from '@angular/core';
 import { TranslatePipe } from '@ngx-translate/core';
 
-import { InspectorMember } from '../../../../services/console/inspector/team-panel/team-members.selector';
+import { InspectorMember } from '../../../../core/services/console/inspector/team-panel/team-members.selector';
 import { IconButtonComponent } from '../../../common/icon-button/icon-button.component';
 
 /**

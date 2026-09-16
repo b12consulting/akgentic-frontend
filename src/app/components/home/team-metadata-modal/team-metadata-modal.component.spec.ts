@@ -6,7 +6,7 @@ import { provideTranslateTesting, setTestTranslations } from '../../../../testin
 import {
   MetadataFieldDescriptor,
   TeamMetadataContract,
-} from '../../../protocol/catalog.interface';
+} from '../../../core/protocol/catalog.interface';
 import { TeamMetadataModalComponent } from './team-metadata-modal.component';
 
 /**

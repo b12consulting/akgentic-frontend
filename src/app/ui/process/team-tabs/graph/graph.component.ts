@@ -24,23 +24,23 @@ import { EChartsCoreOption } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { NgxEchartsDirective, provideEchartsCore } from 'ngx-echarts';
 
-import { AkgentService } from '../../../../services/akgent.service';
-import { ApiService } from '../../../../core/http/api.service';
+import { AkgentService } from '../../../../core/services/akgent.service';
+import { ApiService } from '../../../../core/platform/http/api.service';
 import {
   CategoryService,
   graphCategoryColors,
   readToken,
-} from '../../../../services/category.service';
+} from '../../../../core/services/category.service';
 
 // Import the shared GraphDataService
-import { isToolNode } from '../../../../services/process/selectors/actor-kind';
-import { agentColours } from '../../../../services/process/selectors/agent-colour';
-import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
-import { GraphDataService } from '../../../../services/process/selectors/graph.selector';
+import { isToolNode } from '../../../../core/services/process/selectors/actor-kind';
+import { agentColours } from '../../../../core/services/process/selectors/agent-colour';
+import { makeAgentNameUserFriendly } from '../../../../core/shared/util/util';
+import { GraphDataService } from '../../../../core/services/process/selectors/graph.selector';
 import {
   Selectable,
   SelectionService,
-} from '../../../../services/process/ui-state/selection.service';
+} from '../../../../core/services/process/ui-state/selection.service';
 import { HumanRequestComponent } from '../../human-request/human-request.component';
 import { InspectorEmptyStateComponent } from '../../../../components/console/inspector/inspector-empty-state.component';
 

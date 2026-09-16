@@ -24,7 +24,7 @@ import { InputTextModule } from 'primeng/inputtext';
 import {
   MetadataFieldDescriptor,
   TeamMetadataContract,
-} from '../../../protocol/catalog.interface';
+} from '../../../core/protocol/catalog.interface';
 
 /**
  * Compiles a declared pattern, or returns `null` when it will not compile.

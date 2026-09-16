@@ -3,12 +3,12 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormsModule } from '@angular/forms';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
-import { NO_TEAM_FILTER, TeamFilter } from '../../../core/context/team.interface';
+import { NO_TEAM_FILTER, TeamFilter } from '../../../core/platform/context/team.interface';
 import {
   MetadataFieldDescriptor,
   NamespaceSummary,
   TeamMetadataContract,
-} from '../../../protocol/catalog.interface';
+} from '../../../core/protocol/catalog.interface';
 import { TeamFilterComponent } from './team-filter.component';
 
 import { provideTranslateTesting, setTestTranslations } from '../../../../testing/i18n-testing';

@@ -11,7 +11,7 @@ import { BehaviorSubject, of, Subject } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { MessageService } from 'primeng/api';
 
-import { NOTIFICATION_PORT } from '../../../core/notification/notification.port';
+import { NOTIFICATION_PORT } from '../../../core/platform/notification/notification.port';
 import { PrimeNgNotificationAdapter } from '../../console/notification.adapter';
 import { provideMarkdown } from 'ngx-markdown';
 
@@ -22,17 +22,17 @@ import {
   ChatService,
   computePendingNotifications,
   ThinkingState,
-} from '../../../services/process/selectors/chat.selector';
-import { SelectionService } from '../../../services/process/ui-state/selection.service';
-import { ActorAddress, EventMessage, HandledMessage, ReceivedMessage, SentMessage, AkgenticMessage, StartMessage, isSentMessage } from '../../../protocol/message.types';
-import { ChatMessage, classifyMessage } from '../../../services/process/selectors/chat-message.model';
-import { ApiService } from '../../../core/http/api.service';
-import { AkgentService } from '../../../services/akgent.service';
-import { GraphDataService } from '../../../services/process/selectors/graph.selector';
-import { NodeInterface } from '../../../services/process/models/types';
-import { ContextService } from '../../../core/context/context.service';
-import { IngestionService } from '../../../services/process/event/ingestion.service';
-import { Feedback, FeedbackService } from '../../../services/process/ui-state/feedback.service';
+} from '../../../core/services/process/selectors/chat.selector';
+import { SelectionService } from '../../../core/services/process/ui-state/selection.service';
+import { ActorAddress, EventMessage, HandledMessage, ReceivedMessage, SentMessage, AkgenticMessage, StartMessage, isSentMessage } from '../../../core/protocol/message.types';
+import { ChatMessage, classifyMessage } from '../../../core/services/process/selectors/chat-message.model';
+import { ApiService } from '../../../core/platform/http/api.service';
+import { AkgentService } from '../../../core/services/akgent.service';
+import { GraphDataService } from '../../../core/services/process/selectors/graph.selector';
+import { NodeInterface } from '../../../core/services/process/models/types';
+import { ContextService } from '../../../core/platform/context/context.service';
+import { IngestionService } from '../../../core/services/process/event/ingestion.service';
+import { Feedback, FeedbackService } from '../../../core/services/process/ui-state/feedback.service';
 
 import { provideTranslateTesting } from '../../../../testing/i18n-testing';
 

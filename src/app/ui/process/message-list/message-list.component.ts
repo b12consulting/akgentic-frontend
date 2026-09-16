@@ -6,13 +6,13 @@ import { ButtonModule } from 'primeng/button';
 import { Table, TableModule } from 'primeng/table';
 import { MessageService } from 'primeng/api';
 
-import { CapitalizePipe } from '../../../shared/pipes/capitalise.pipe';
-import { CategoryService } from '../../../services/category.service';
-import { UtilService } from '../../../services/utils.service';
+import { CapitalizePipe } from '../../../core/shared/pipes/capitalise.pipe';
+import { CategoryService } from '../../../core/services/category.service';
+import { UtilService } from '../../../core/services/utils.service';
 
 import { combineLatest, Subscription } from 'rxjs';
-import { AkgentService } from '../../../services/akgent.service';
-import { MessageLogService } from '../../../services/process/event/message-log.service';
+import { AkgentService } from '../../../core/services/akgent.service';
+import { MessageLogService } from '../../../core/services/process/event/message-log.service';
 import {
   ActorAddress,
   BaseMessage,
@@ -20,7 +20,7 @@ import {
   isWelcomeAnnouncement,
   notificationSeverity,
   NotificationSeverity,
-} from '../../../protocol/message.types';
+} from '../../../core/protocol/message.types';
 import { CopyButtonComponent } from '../../../components/common/copy-button/copy-button.component';
 import { InspectorEmptyStateComponent } from '../../../components/console/inspector/inspector-empty-state.component';
 
@@ -245,7 +245,7 @@ export class MessageListComponent {
    * means "not a notification", which sends the row down the existing
    * `SentMessage` branch.
    *
-   * Story 31-6 (FR20) moved the body to `protocol/message.types.ts` so
+   * Story 31-6 (FR20) moved the body to `core/protocol/message.types.ts` so
    * `IngestionService` classifies toasts through the same function. This stays
    * as a one-line delegation because the template binds to it by name.
    */

@@ -3,11 +3,11 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { BehaviorSubject } from 'rxjs';
 
 import { GraphComponent } from './graph.component';
-import { AkgentService } from '../../../../services/akgent.service';
-import { ApiService } from '../../../../core/http/api.service';
-import { CategoryService } from '../../../../services/category.service';
-import { GraphDataService } from '../../../../services/process/selectors/graph.selector';
-import { SelectionService } from '../../../../services/process/ui-state/selection.service';
+import { AkgentService } from '../../../../core/services/akgent.service';
+import { ApiService } from '../../../../core/platform/http/api.service';
+import { CategoryService } from '../../../../core/services/category.service';
+import { GraphDataService } from '../../../../core/services/process/selectors/graph.selector';
+import { SelectionService } from '../../../../core/services/process/ui-state/selection.service';
 import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
 
 /**

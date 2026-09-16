@@ -14,14 +14,14 @@ import {
   withInterceptorsFromDi,
 } from '@angular/common/http';
 import customPreset from './app.theme';
-import { CredentialsInterceptor } from './core/auth/credentials.interceptor';
+import { CredentialsInterceptor } from './core/platform/auth/credentials.interceptor';
 import { markedOptionsFactory } from './app.markdown';
-import { ConfigService } from './core/config/config.service';
-import { NOTIFICATION_PORT } from './core/notification/notification.port';
+import { ConfigService } from './core/platform/config/config.service';
+import { NOTIFICATION_PORT } from './core/platform/notification/notification.port';
 import { PrimeNgNotificationAdapter } from './ui/console/notification.adapter';
-import { I18nService } from './core/i18n/i18n.service';
-import { provideI18n } from './core/i18n/i18n.providers';
-import { TranslatedTitleStrategy } from './core/i18n/translated-title.strategy';
+import { I18nService } from './core/platform/i18n/i18n.service';
+import { provideI18n } from './core/platform/i18n/i18n.providers';
+import { TranslatedTitleStrategy } from './core/platform/i18n/translated-title.strategy';
 
 export const appConfig: ApplicationConfig = {
   providers: [

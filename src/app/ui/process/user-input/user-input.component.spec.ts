@@ -5,19 +5,19 @@ import { MessageService } from 'primeng/api';
 import { BehaviorSubject } from 'rxjs';
 
 import { ProcessUserInputComponent } from './user-input.component';
-import { ApiService } from '../../../core/http/api.service';
-import { HttpError, NetworkError } from '../../../core/http/fetch.service';
-import { ChatService } from '../../../services/process/selectors/chat.selector';
-import { ContextService } from '../../../core/context/context.service';
-import { GraphDataService } from '../../../services/process/selectors/graph.selector';
-import { IngestionService } from '../../../services/process/event/ingestion.service';
+import { ApiService } from '../../../core/platform/http/api.service';
+import { HttpError, NetworkError } from '../../../core/platform/http/fetch.service';
+import { ChatService } from '../../../core/services/process/selectors/chat.selector';
+import { ContextService } from '../../../core/platform/context/context.service';
+import { GraphDataService } from '../../../core/services/process/selectors/graph.selector';
+import { IngestionService } from '../../../core/services/process/event/ingestion.service';
 import {
   TeamTokenTotals,
   TokenUsageSelector,
-} from '../../../services/process/selectors/token-usage.selector';
-import { ActorAddress, CommandDescriptor } from '../../../protocol/message.types';
-import { NodeInterface } from '../../../services/process/models/types';
-import { makeAgentNameUserFriendly } from '../../../shared/util/util';
+} from '../../../core/services/process/selectors/token-usage.selector';
+import { ActorAddress, CommandDescriptor } from '../../../core/protocol/message.types';
+import { NodeInterface } from '../../../core/services/process/models/types';
+import { makeAgentNameUserFriendly } from '../../../core/shared/util/util';
 
 import {
   provideTranslateTesting,

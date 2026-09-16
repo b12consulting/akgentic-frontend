@@ -29,7 +29,7 @@ import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const localeDir = join(root, 'src/app/core/i18n/locales');
+const localeDir = join(root, 'src/app/core/platform/i18n/locales');
 
 /**
  * Key PREFIXES whose leaves are composed at runtime, each with the site that

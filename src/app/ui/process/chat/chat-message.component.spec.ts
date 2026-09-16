@@ -3,15 +3,15 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideMarkdown } from 'ngx-markdown';
 import { MessageService } from 'primeng/api';
 
-import { NOTIFICATION_PORT } from '../../../core/notification/notification.port';
+import { NOTIFICATION_PORT } from '../../../core/platform/notification/notification.port';
 import { PrimeNgNotificationAdapter } from '../../console/notification.adapter';
 import { BehaviorSubject } from 'rxjs';
-import { ConfigService } from '../../../core/config/config.service';
+import { ConfigService } from '../../../core/platform/config/config.service';
 import { ChatMessageComponent } from './chat-message.component';
-import { ChatMessage } from '../../../services/process/selectors/chat-message.model';
-import { isRateable } from '../../../services/process/selectors/rateable';
-import { Feedback, FeedbackService } from '../../../services/process/ui-state/feedback.service';
-import { ActorAddress } from '../../../protocol/message.types';
+import { ChatMessage } from '../../../core/services/process/selectors/chat-message.model';
+import { isRateable } from '../../../core/services/process/selectors/rateable';
+import { Feedback, FeedbackService } from '../../../core/services/process/ui-state/feedback.service';
+import { ActorAddress } from '../../../core/protocol/message.types';
 
 import {
   provideTranslateTesting,

@@ -12,26 +12,26 @@ import {
 } from '@angular/router';
 import { BehaviorSubject, firstValueFrom, of } from 'rxjs';
 
-import { ApiService } from '../../core/http/api.service';
-import { AuthService } from '../../core/auth/auth.service';
-import { ConfigService } from '../../core/config/config.service';
-import { ContextService } from '../../core/context/context.service';
+import { ApiService } from '../../core/platform/http/api.service';
+import { AuthService } from '../../core/platform/auth/auth.service';
+import { ConfigService } from '../../core/platform/config/config.service';
+import { ContextService } from '../../core/platform/context/context.service';
 import { ViewService } from '../console/view.service';
 import {
   NO_TEAM_FILTER,
   TeamContext,
   TeamFilter,
-} from '../../core/context/team.interface';
+} from '../../core/platform/context/team.interface';
 import { NamespacePanelComponent } from '../catalog/namespace-panel/namespace-panel.component';
-import { HttpError } from '../../core/http/fetch.service';
+import { HttpError } from '../../core/platform/http/fetch.service';
 import {
   MetadataFieldDescriptor,
   NamespaceSummary,
   TeamMetadataContract,
-} from '../../protocol/catalog.interface';
+} from '../../core/protocol/catalog.interface';
 import { HomeComponent } from './home.component';
 import { HomeGreetingComponent } from './greeting/home-greeting.component';
-import { TeamCreationService } from '../../services/home/team-creation/team-creation.service';
+import { TeamCreationService } from '../../core/services/home/team-creation/team-creation.service';
 import { TeamFilterComponent } from '../../components/home/team-filter/team-filter.component';
 import { TeamMetadataModalComponent } from '../../components/home/team-metadata-modal/team-metadata-modal.component';
 import {

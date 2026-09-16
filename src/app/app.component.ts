@@ -8,10 +8,10 @@ import { distinctUntilChanged, filter, map, startWith } from 'rxjs/operators';
 
 import { ConsoleShellComponent } from './ui/console/console-shell.component';
 import { TeamCreationDialogComponent } from './ui/console/team-creation/team-creation-dialog.component';
-import { ApiService } from './core/http/api.service';
-import { AuthService } from './core/auth/auth.service';
-import { ConfigService } from './core/config/config.service';
-import { FaviconService } from './core/config/favicon.service';
+import { ApiService } from './core/platform/http/api.service';
+import { AuthService } from './core/platform/auth/auth.service';
+import { ConfigService } from './core/platform/config/config.service';
+import { FaviconService } from './core/platform/config/favicon.service';
 import { NotificationToastService } from './ui/console/notification-toast.service';
 import { TeamCreationLauncher } from './ui/console/team-creation-launcher.service';
 

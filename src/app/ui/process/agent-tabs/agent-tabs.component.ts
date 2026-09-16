@@ -15,14 +15,14 @@ import { map, takeUntil } from 'rxjs/operators';
 
 import { DropdownModule } from 'primeng/dropdown';
 
-import { AkgentService } from '../../../services/akgent.service';
+import { AkgentService } from '../../../core/services/akgent.service';
 import {
   GraphDataService,
   HUMAN_ROLE as HUMAN_PROXY_ROLE,
-} from '../../../services/process/selectors/graph.selector';
-import { isToolActor } from '../../../services/process/selectors/actor-kind';
+} from '../../../core/services/process/selectors/graph.selector';
+import { isToolActor } from '../../../core/services/process/selectors/actor-kind';
 
-import { IngestionService } from '../../../services/process/event/ingestion.service';
+import { IngestionService } from '../../../core/services/process/event/ingestion.service';
 
 import { AkgentChatComponent } from './akgent-chat/akgent-chat.component';
 import { InspectorEmptyStateComponent } from '../../../components/console/inspector/inspector-empty-state.component';

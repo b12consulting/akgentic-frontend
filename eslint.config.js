@@ -72,9 +72,15 @@ module.exports = tseslint.config(
         //
         // Order matters — the most specific pattern must precede the generic
         // one, or a leaf is tagged as its own parent.
-        { type: 'protocol', pattern: 'src/app/protocol' },
-        { type: 'shared', pattern: 'src/app/shared' },
-        { type: 'core', pattern: 'src/app/core' },
+        // There is deliberately NO generic `src/app/core` entry. `core/` is a
+        // namespace holding four separate tiers, not a tier; a pattern matching
+        // the namespace would match every file under it, and since `boundaries`
+        // takes the FIRST match it would collapse all of them into one element
+        // type — where every edge inside `core/` is legal in both directions and
+        // `npm run lint` still exits 0. Every tier names itself or does not exist.
+        { type: 'protocol', pattern: 'src/app/core/protocol' },
+        { type: 'shared', pattern: 'src/app/core/shared' },
+        { type: 'platform', pattern: 'src/app/core/platform' },
 
         // --- The data layer --------------------------------------------------
         // The process feature's internal tiers keep their own types. That DAG
@@ -82,17 +88,17 @@ module.exports = tseslint.config(
         // the one part of the tree with a real layering argument behind it, and
         // collapsing it into one `services` type would have thrown it away as a
         // side effect of a folder rename.
-        { type: 'svc-models', pattern: 'src/app/services/process/models' },
-        { type: 'svc-event', pattern: 'src/app/services/process/event' },
-        { type: 'svc-selectors', pattern: 'src/app/services/process/selectors' },
-        { type: 'svc-ui-state', pattern: 'src/app/services/process/ui-state' },
-        { type: 'svc-workspace', pattern: 'src/app/services/process/workspace' },
+        { type: 'svc-models', pattern: 'src/app/core/services/process/models' },
+        { type: 'svc-event', pattern: 'src/app/core/services/process/event' },
+        { type: 'svc-selectors', pattern: 'src/app/core/services/process/selectors' },
+        { type: 'svc-ui-state', pattern: 'src/app/core/services/process/ui-state' },
+        { type: 'svc-workspace', pattern: 'src/app/core/services/process/workspace' },
         // The team's open/close ritual. Its own type because it is the one unit
         // in the data layer that composes the others — it drives the ingestion
         // pipeline — and folding it into the generic `services` type would
         // either deny it that edge or hand it to every other feature's services.
-        { type: 'svc-session', pattern: 'src/app/services/process/session' },
-        { type: 'services', pattern: 'src/app/services' },
+        { type: 'svc-session', pattern: 'src/app/core/services/process/session' },
+        { type: 'services', pattern: 'src/app/core/services' },
 
         // --- The two view layers ---------------------------------------------
         { type: 'components', pattern: 'src/app/components' },
@@ -111,7 +117,7 @@ module.exports = tseslint.config(
             { from: { type: 'shared' }, allow: { to: { type: ['protocol'] } } },
 
             {
-              from: { type: 'core' },
+              from: { type: 'platform' },
               allow: { to: { type: ['protocol', 'shared'] } },
             },
 
@@ -119,7 +125,7 @@ module.exports = tseslint.config(
             { from: { type: 'svc-models' }, allow: { to: { type: ['protocol'] } } },
             {
               from: { type: 'svc-event' },
-              allow: { to: { type: ['svc-models', 'core', 'protocol'] } },
+              allow: { to: { type: ['svc-models', 'platform', 'protocol'] } },
             },
             {
               // MUST NOT reach ui-state: a selector that read the selection
@@ -127,7 +133,7 @@ module.exports = tseslint.config(
               from: { type: 'svc-selectors' },
               allow: {
                 to: {
-                  type: ['svc-event', 'svc-models', 'core', 'shared', 'protocol', 'services'],
+                  type: ['svc-event', 'svc-models', 'platform', 'shared', 'protocol', 'services'],
                 },
               },
             },
@@ -135,7 +141,7 @@ module.exports = tseslint.config(
               from: { type: 'svc-ui-state' },
               allow: {
                 to: {
-                  type: ['svc-selectors', 'svc-event', 'svc-models', 'core', 'protocol', 'services'],
+                  type: ['svc-selectors', 'svc-event', 'svc-models', 'platform', 'protocol', 'services'],
                 },
               },
             },
@@ -150,7 +156,7 @@ module.exports = tseslint.config(
                     'svc-event',
                     'svc-selectors',
                     'svc-models',
-                    'core',
+                    'platform',
                     'shared',
                     'protocol',
                     'services',
@@ -160,7 +166,7 @@ module.exports = tseslint.config(
             },
             {
               from: { type: 'svc-workspace' },
-              allow: { to: { type: ['core', 'protocol'] } },
+              allow: { to: { type: ['platform', 'protocol'] } },
             },
             {
               // The other features' services. They may read the process feature's
@@ -171,7 +177,7 @@ module.exports = tseslint.config(
               allow: {
                 to: {
                   type: [
-                    'core',
+                    'platform',
                     'shared',
                     'protocol',
                     'svc-selectors',
@@ -202,7 +208,7 @@ module.exports = tseslint.config(
                 to: {
                   type: [
                     'components',
-                    'core',
+                    'platform',
                     'shared',
                     'protocol',
                     'services',
@@ -232,7 +238,7 @@ module.exports = tseslint.config(
                     'svc-session',
                     'svc-ui-state',
                     'svc-workspace',
-                    'core',
+                    'platform',
                     'shared',
                     'protocol',
                   ],

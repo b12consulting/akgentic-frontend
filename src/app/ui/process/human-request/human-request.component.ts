@@ -6,11 +6,11 @@ import { DialogModule } from 'primeng/dialog';
 import { TextareaModule } from 'primeng/textarea';
 import { BehaviorSubject } from 'rxjs';
 
-import { GraphDataService } from '../../../services/process/selectors/graph.selector';
-import { SelectionService } from '../../../services/process/ui-state/selection.service';
+import { GraphDataService } from '../../../core/services/process/selectors/graph.selector';
+import { SelectionService } from '../../../core/services/process/ui-state/selection.service';
 
-import { SentMessage } from '../../../protocol/message.types';
-import { LineBreakPipe } from '../../../shared/pipes/line_break.pipe';
+import { SentMessage } from '../../../core/protocol/message.types';
+import { LineBreakPipe } from '../../../core/shared/pipes/line_break.pipe';
 
 @Component({
   selector: 'app-human-request',

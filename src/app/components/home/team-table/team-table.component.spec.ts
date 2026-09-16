@@ -10,7 +10,7 @@ import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { Table, TableLazyLoadEvent, TableRowSelectEvent } from 'primeng/table';
 
-import { TeamContext } from '../../../core/context/team.interface';
+import { TeamContext } from '../../../core/platform/context/team.interface';
 import {
   TeamDescriptionSave,
   TeamRowAction,

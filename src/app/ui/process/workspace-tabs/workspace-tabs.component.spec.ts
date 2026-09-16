@@ -6,20 +6,20 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { Tabs } from 'primeng/tabs';
 import { BehaviorSubject, Subject } from 'rxjs';
 
-import { ContextService } from '../../../core/context/context.service';
-import { WorkspaceService } from '../../../services/process/workspace/workspace.service';
+import { ContextService } from '../../../core/platform/context/context.service';
+import { WorkspaceService } from '../../../core/services/process/workspace/workspace.service';
 import {
   AgentsById,
   AgentsByIdService,
-} from '../../../services/process/selectors/agents-by-id.selector';
+} from '../../../core/services/process/selectors/agents-by-id.selector';
 import {
   WorkspaceInvalidation,
   WorkspaceInvalidationService,
-} from '../../../services/process/selectors/workspace-invalidation.selector';
+} from '../../../core/services/process/selectors/workspace-invalidation.selector';
 import {
   WorkspaceDescriptor,
   WorkspaceRegistryService,
-} from '../../../services/process/selectors/workspace-registry.selector';
+} from '../../../core/services/process/selectors/workspace-registry.selector';
 import { WorkspaceExplorerComponent } from '../workspace-explorer/workspace-explorer.component';
 import { WorkspaceTabsComponent } from './workspace-tabs.component';
 

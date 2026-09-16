@@ -4,12 +4,12 @@ import { BehaviorSubject } from 'rxjs';
 
 import { TeamTabsComponent } from './team-tabs.component';
 import { GraphComponent } from './graph/graph.component';
-import { ApiService } from '../../../core/http/api.service';
-import { AkgentService } from '../../../services/akgent.service';
-import { CategoryService } from '../../../services/category.service';
-import { GraphDataService } from '../../../services/process/selectors/graph.selector';
-import { SelectionService } from '../../../services/process/ui-state/selection.service';
-import { NodeInterface } from '../../../services/process/models/types';
+import { ApiService } from '../../../core/platform/http/api.service';
+import { AkgentService } from '../../../core/services/akgent.service';
+import { CategoryService } from '../../../core/services/category.service';
+import { GraphDataService } from '../../../core/services/process/selectors/graph.selector';
+import { SelectionService } from '../../../core/services/process/ui-state/selection.service';
+import { NodeInterface } from '../../../core/services/process/models/types';
 import { provideTranslateTesting } from '../../../../testing/i18n-testing';
 
 /**

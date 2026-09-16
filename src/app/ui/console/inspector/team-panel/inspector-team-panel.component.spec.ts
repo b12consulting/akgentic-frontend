@@ -7,12 +7,12 @@ import {
   AgentReaderService,
   AgentRef,
 } from '../../../process/chat/agent-reader.service';
-import { NodeInterface } from '../../../../services/process/models/types';
-import { GraphDataService } from '../../../../services/process/selectors/graph.selector';
+import { NodeInterface } from '../../../../core/services/process/models/types';
+import { GraphDataService } from '../../../../core/services/process/selectors/graph.selector';
 import {
   TeamTokenTotals,
   TokenUsageSelector,
-} from '../../../../services/process/selectors/token-usage.selector';
+} from '../../../../core/services/process/selectors/token-usage.selector';
 import {
   provideTranslateTesting,
   setTestTranslations,

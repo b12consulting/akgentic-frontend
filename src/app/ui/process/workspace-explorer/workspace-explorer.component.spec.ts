@@ -13,16 +13,16 @@ import { ToolbarModule } from 'primeng/toolbar';
 import { TreeModule } from 'primeng/tree';
 import { BehaviorSubject, Subject } from 'rxjs';
 
-import { ContextService } from '../../../core/context/context.service';
+import { ContextService } from '../../../core/platform/context/context.service';
 import {
   WorkspaceInvalidation,
   WorkspaceInvalidationService,
-} from '../../../services/process/selectors/workspace-invalidation.selector';
+} from '../../../core/services/process/selectors/workspace-invalidation.selector';
 import {
   FileContent,
   FileNode,
   WorkspaceService,
-} from '../../../services/process/workspace/workspace.service';
+} from '../../../core/services/process/workspace/workspace.service';
 import { UploadModalComponent } from '../../../components/process/workspace-explorer/upload-modal/upload-modal.component';
 // The two parameter-free placeholders in this pane are the console's SHARED
 // empty state now, and every `overrideComponent` below REPLACES the

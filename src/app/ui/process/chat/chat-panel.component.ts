@@ -12,32 +12,32 @@ import {
 import { TranslatePipe } from '@ngx-translate/core';
 import { combineLatest, Subscription } from 'rxjs';
 
-import { ChatMessage, ENTRY_POINT_NAME } from '../../../services/process/selectors/chat-message.model';
+import { ChatMessage, ENTRY_POINT_NAME } from '../../../core/services/process/selectors/chat-message.model';
 import {
   buildDisplayItems,
   DisplayItem,
   mainTranscriptRuns,
   trackDisplayItem,
-} from '../../../services/process/selectors/display-items';
-import { ActorAddress } from '../../../protocol/message.types';
-import { ApiService } from '../../../core/http/api.service';
-import { ChatService, ThinkingState } from '../../../services/process/selectors/chat.selector';
-import { IngestionService } from '../../../services/process/event/ingestion.service';
-import { ContextService } from '../../../core/context/context.service';
-import { AkgentService } from '../../../services/akgent.service';
-import { CategoryService } from '../../../services/category.service';
+} from '../../../core/services/process/selectors/display-items';
+import { ActorAddress } from '../../../core/protocol/message.types';
+import { ApiService } from '../../../core/platform/http/api.service';
+import { ChatService, ThinkingState } from '../../../core/services/process/selectors/chat.selector';
+import { IngestionService } from '../../../core/services/process/event/ingestion.service';
+import { ContextService } from '../../../core/platform/context/context.service';
+import { AkgentService } from '../../../core/services/akgent.service';
+import { CategoryService } from '../../../core/services/category.service';
 import {
   defaultRecipientName,
   isAddressableAgent,
-} from '../../../services/process/selectors/actor-kind';
+} from '../../../core/services/process/selectors/actor-kind';
 import {
   AgentColours,
   agentColours,
   NO_AGENT_COLOURS,
-} from '../../../services/process/selectors/agent-colour';
-import { GraphDataService } from '../../../services/process/selectors/graph.selector';
-import { NodeInterface } from '../../../services/process/models/types';
-import { Selectable, SelectionService } from '../../../services/process/ui-state/selection.service';
+} from '../../../core/services/process/selectors/agent-colour';
+import { GraphDataService } from '../../../core/services/process/selectors/graph.selector';
+import { NodeInterface } from '../../../core/services/process/models/types';
+import { Selectable, SelectionService } from '../../../core/services/process/ui-state/selection.service';
 import {
   AnsweredRequest,
   ChatHumanModalComponent,
@@ -61,7 +61,7 @@ import { ProcessUserInputComponent } from '../user-input/user-input.component';
  * declared by one of them. Re-exported here so existing importers of the panel
  * keep compiling.
  */
-export type { DisplayItem, TurnDisplayItem } from '../../../services/process/selectors/display-items';
+export type { DisplayItem, TurnDisplayItem } from '../../../core/services/process/selectors/display-items';
 
 /**
  * Chat panel scroll model (ADR-016, simplified rewrite).

@@ -14,11 +14,11 @@ import { Button } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { Textarea } from 'primeng/textarea';
 import { BehaviorSubject, Subscription } from 'rxjs';
-import { UtilService } from '../../../services/utils.service';
+import { UtilService } from '../../../core/services/utils.service';
 import { IconButtonComponent } from '../../../components/common/icon-button/icon-button.component';
-import { ChatMessage } from '../../../services/process/selectors/chat-message.model';
-import { isRateable } from '../../../services/process/selectors/rateable';
-import { Feedback, FeedbackService } from '../../../services/process/ui-state/feedback.service';
+import { ChatMessage } from '../../../core/services/process/selectors/chat-message.model';
+import { isRateable } from '../../../core/services/process/selectors/rateable';
+import { Feedback, FeedbackService } from '../../../core/services/process/ui-state/feedback.service';
 
 /**
  * The turn's action row: copy, and the two thumbs.

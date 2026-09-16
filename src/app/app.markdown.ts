@@ -3,7 +3,7 @@ import { MarkedOptions, MarkedRenderer } from 'ngx-markdown';
 /**
  * The app's markdown rendering options, at the composition root.
  *
- * It lived in `shared/util/util.ts`, which is declared PURE — and an
+ * It lived in `core/shared/util/util.ts`, which is declared PURE — and an
  * `ngx-markdown` import was the one edge contradicting that. Every other
  * importer of that file takes only `makeAgentNameUserFriendly`; this factory's
  * sole caller in the repository is `app.config.ts`, one file away.

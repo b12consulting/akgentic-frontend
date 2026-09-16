@@ -5,29 +5,29 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { BehaviorSubject, Observable, of } from 'rxjs';
 
 import { AkgentChatComponent } from './akgent-chat.component';
-import { ApiService } from '../../../../core/http/api.service';
-import { UtilService } from '../../../../services/utils.service';
-import { ContextService } from '../../../../core/context/context.service';
-import { IngestionService } from '../../../../services/process/event/ingestion.service';
-import { MessageLogService } from '../../../../services/process/event/message-log.service';
-import { PerAgentStoreRegistry } from '../../../../services/process/event/per-agent-store';
+import { ApiService } from '../../../../core/platform/http/api.service';
+import { UtilService } from '../../../../core/services/utils.service';
+import { ContextService } from '../../../../core/platform/context/context.service';
+import { IngestionService } from '../../../../core/services/process/event/ingestion.service';
+import { MessageLogService } from '../../../../core/services/process/event/message-log.service';
+import { PerAgentStoreRegistry } from '../../../../core/services/process/event/per-agent-store';
 import {
   SystemPromptSelector,
   SystemPromptValue,
   systemPromptMatch,
   systemPromptReduce,
-} from '../../../../services/process/selectors/system-prompt.selector';
-import { TokenUsageSelector } from '../../../../services/process/selectors/token-usage.selector';
+} from '../../../../core/services/process/selectors/system-prompt.selector';
+import { TokenUsageSelector } from '../../../../core/services/process/selectors/token-usage.selector';
 import {
   AgentTokenUsage,
   CONVERSATION_SUMMARY_PREFIX,
   foldContextCompaction,
-} from '../../../../services/process/event/per-agent-specs';
+} from '../../../../core/services/process/event/per-agent-specs';
 import {
   AkgenticMessage,
   CommandDescriptor,
   LlmContextCompactedEvent,
-} from '../../../../protocol/message.types';
+} from '../../../../core/protocol/message.types';
 import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
 
 /**

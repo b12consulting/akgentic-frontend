@@ -12,15 +12,15 @@ import { NavigationEnd, Router } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 import { BehaviorSubject, combineLatest, filter, map, Observable, take } from 'rxjs';
 
-import { ConfigService } from '../../../core/config/config.service';
-import { ContextService } from '../../../core/context/context.service';
+import { ConfigService } from '../../../core/platform/config/config.service';
+import { ContextService } from '../../../core/platform/context/context.service';
 import { TeamCreationLauncher } from '../team-creation-launcher.service';
 import { ViewService } from '../view.service';
 import { IconButtonComponent } from '../../../components/common/icon-button/icon-button.component';
 import { RailFooterComponent } from './rail-footer.component';
 import { RailSearchComponent } from '../../../components/console/rail/rail-search.component';
 import { RailTeamRowComponent } from './rail-team-row.component';
-import { railGroups, RailTeamGroup } from '../../../services/console/rail/rail-teams.selector';
+import { railGroups, RailTeamGroup } from '../../../core/services/console/rail/rail-teams.selector';
 
 /**
  * What the list region is showing.

@@ -2,12 +2,12 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { Router } from '@angular/router';
 import { NEVER, of, throwError } from 'rxjs';
-import { AuthService } from '../../core/auth/auth.service';
-import { ConfigService } from '../../core/config/config.service';
-import { AuthProvider } from '../../core/auth/auth.types';
+import { AuthService } from '../../core/platform/auth/auth.service';
+import { ConfigService } from '../../core/platform/config/config.service';
+import { AuthProvider } from '../../core/platform/auth/auth.types';
 import { provideTranslateTesting } from '../../../testing/i18n-testing';
 import { KNOWN_PROVIDERS, LoginComponent } from './login.component';
-import en from '../../core/i18n/locales/en.json';
+import en from '../../core/platform/i18n/locales/en.json';
 
 /**
  * Specs for {@link LoginComponent}.
@@ -557,7 +557,7 @@ describe('LoginComponent', () => {
 
   // The RULE behind `brandLogo` — how that answer is reached, as opposed to
   // what the masthead does with it — now lives in
-  // `src/app/core/config/config.service.spec.ts`, next to the
+  // `src/app/core/platform/config/config.service.spec.ts`, next to the
   // `declaredWelcomeMessage` rule it is the model for. It moved verbatim; the
   // note that used to stand here said there was nowhere else to put it, and
   // now there is.

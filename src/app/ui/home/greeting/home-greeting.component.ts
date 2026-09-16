@@ -8,9 +8,9 @@ import {
 import { TranslatePipe } from '@ngx-translate/core';
 import { map, Observable } from 'rxjs';
 
-import { AuthService } from '../../../core/auth/auth.service';
-import { ConfigService } from '../../../core/config/config.service';
-import { greetableNameOf, greetingKeyFor } from '../../../services/home/greeting/greeting';
+import { AuthService } from '../../../core/platform/auth/auth.service';
+import { ConfigService } from '../../../core/platform/config/config.service';
+import { greetableNameOf, greetingKeyFor } from '../../../core/services/home/greeting/greeting';
 
 /** The salutation, reduced to what the template threads into one pipe. */
 export interface GreetingLine {

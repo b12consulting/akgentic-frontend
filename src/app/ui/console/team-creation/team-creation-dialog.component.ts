@@ -16,12 +16,12 @@ import { map } from 'rxjs/operators';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 
-import { TeamCreationService } from '../../../services/home/team-creation/team-creation.service';
-import { TeamTypeCatalog } from '../../../services/home/team-creation/team-type-catalog.service';
+import { TeamCreationService } from '../../../core/services/home/team-creation/team-creation.service';
+import { TeamTypeCatalog } from '../../../core/services/home/team-creation/team-type-catalog.service';
 import { TeamMetadataModalComponent } from '../../../components/home/team-metadata-modal/team-metadata-modal.component';
-import { AuthService } from '../../../core/auth/auth.service';
+import { AuthService } from '../../../core/platform/auth/auth.service';
 import { TeamCreationLauncher } from '../team-creation-launcher.service';
-import { NamespaceSummary } from '../../../protocol/catalog.interface';
+import { NamespaceSummary } from '../../../core/protocol/catalog.interface';
 
 /** Which half of the wizard is on screen. */
 export type CreationStep = 'type' | 'metadata';

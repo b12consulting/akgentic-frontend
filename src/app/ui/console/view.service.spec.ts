@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 
-import { ConfigService } from '../../core/config/config.service';
+import { ConfigService } from '../../core/platform/config/config.service';
 import { ViewService } from './view.service';
 
 /**

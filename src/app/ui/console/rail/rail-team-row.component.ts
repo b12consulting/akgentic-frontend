@@ -17,15 +17,15 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { MenuItem } from 'primeng/api';
 import { Menu, MenuModule } from 'primeng/menu';
 
-import { ContextService } from '../../../core/context/context.service';
-import { TeamTitlePipe } from '../../../core/context/team-metadata.pipe';
+import { ContextService } from '../../../core/platform/context/context.service';
+import { TeamTitlePipe } from '../../../core/platform/context/team-metadata.pipe';
 import {
   isRunning,
   metadataEntries,
   TeamActivity,
-} from '../../../core/context/team.interface';
+} from '../../../core/platform/context/team.interface';
 import { IconButtonComponent } from '../../../components/common/icon-button/icon-button.component';
-import { RailTeamRow } from '../../../services/console/rail/rail-teams.selector';
+import { RailTeamRow } from '../../../core/services/console/rail/rail-teams.selector';
 
 /** Which `team.status.*` key describes each activity, including its "as of the
  *  last refresh" hedge. Frozen because it is a lookup table, not state. */

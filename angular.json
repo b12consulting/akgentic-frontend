@@ -50,7 +50,7 @@
               },
               {
                 "glob": "*.json",
-                "input": "src/app/core/i18n/locales",
+                "input": "src/app/core/platform/i18n/locales",
                 "output": "/i18n"
               }
             ],
@@ -106,7 +106,7 @@
               },
               {
                 "glob": "*.json",
-                "input": "src/app/core/i18n/locales",
+                "input": "src/app/core/platform/i18n/locales",
                 "output": "/i18n"
               }
             ],

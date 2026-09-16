@@ -4,7 +4,7 @@ import { markedOptionsFactory } from './app.markdown';
 
 /**
  * The renderer's first spec. It had none for as long as it lived in
- * `shared/util/util.ts`, which is part of why nothing noticed that the file it
+ * `core/shared/util/util.ts`, which is part of why nothing noticed that the file it
  * sat in was the one edge contradicting that tier's declared purity.
  *
  * What is pinned is the BEHAVIOUR the override exists for — a markdown link

@@ -5,9 +5,9 @@ import { BehaviorSubject } from 'rxjs';
 import { Dropdown } from 'primeng/dropdown';
 
 import { AgentTabsComponent } from './agent-tabs.component';
-import { Akgent, AkgentService } from '../../../services/akgent.service';
-import { GraphDataService } from '../../../services/process/selectors/graph.selector';
-import { IngestionService } from '../../../services/process/event/ingestion.service';
+import { Akgent, AkgentService } from '../../../core/services/akgent.service';
+import { GraphDataService } from '../../../core/services/process/selectors/graph.selector';
+import { IngestionService } from '../../../core/services/process/event/ingestion.service';
 import { provideTranslateTesting } from '../../../../testing/i18n-testing';
 
 /**

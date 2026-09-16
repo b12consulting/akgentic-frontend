@@ -9,19 +9,19 @@ import {
 import { TranslatePipe } from '@ngx-translate/core';
 import { distinctUntilChanged, map, Observable, shareReplay } from 'rxjs';
 
-import { GraphDataService } from '../../../../services/process/selectors/graph.selector';
+import { GraphDataService } from '../../../../core/services/process/selectors/graph.selector';
 import {
   buildInspectorTeam,
   inspectorTeamsEqual,
   InspectorTeamView,
-} from '../../../../services/console/inspector/team-panel/team-members.selector';
+} from '../../../../core/services/console/inspector/team-panel/team-members.selector';
 import { InspectorEmptyStateComponent } from '../../../../components/console/inspector/inspector-empty-state.component';
 import { MemberCardComponent } from '../../../../components/console/inspector/team-panel/member-card.component';
 import { ToolChipsComponent } from '../../../../components/console/inspector/team-panel/tool-chips.component';
 import { UsagePanelComponent } from './usage-panel.component';
 import { AgentReaderService } from '../../../process/chat/agent-reader.service';
-import { CategoryService } from '../../../../services/category.service';
-import { agentColours } from '../../../../services/process/selectors/agent-colour';
+import { CategoryService } from '../../../../core/services/category.service';
+import { agentColours } from '../../../../core/services/process/selectors/agent-colour';
 
 /**
  * The inspector's Team panel: who is on this team, what it can use, what it has

@@ -22,12 +22,12 @@ import {
   TeamMetadataPipe,
   TeamTitlePipe,
   trackMetadataEntry,
-} from '../../../core/context/team-metadata.pipe';
+} from '../../../core/platform/context/team-metadata.pipe';
 import {
   isRunning,
   teamActivity,
   TeamContext,
-} from '../../../core/context/team.interface';
+} from '../../../core/platform/context/team.interface';
 
 /** A row action the user asked for. The page performs it; the row shows it running. */
 export interface TeamRowAction {

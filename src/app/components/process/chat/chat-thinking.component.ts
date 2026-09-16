@@ -3,9 +3,9 @@ import { Component, computed, inject, input, output, signal } from '@angular/cor
 import { animate, style, transition, trigger } from '@angular/animations';
 import { TranslatePipe } from '@ngx-translate/core';
 
-import { I18nService } from '../../../core/i18n/i18n.service';
-import { ThinkingState, ThinkingToolEntry } from '../../../services/process/selectors/chat.selector';
-import { describeStep, StepNarration } from '../../../services/process/selectors/step-narration';
+import { I18nService } from '../../../core/platform/i18n/i18n.service';
+import { ThinkingState, ThinkingToolEntry } from '../../../core/services/process/selectors/chat.selector';
+import { describeStep, StepNarration } from '../../../core/services/process/selectors/step-narration';
 
 /** A step plus the sentence it renders as. */
 export interface NarratedStep extends StepNarration {

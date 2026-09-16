@@ -26,10 +26,10 @@ import { InputTextModule } from 'primeng/inputtext';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 
-import { NamespaceValidationReport } from '../../../protocol/catalog.interface';
-import { ApiService } from '../../../core/http/api.service';
-import { AuthService } from '../../../core/auth/auth.service';
-import { HttpError } from '../../../core/http/fetch.service';
+import { NamespaceValidationReport } from '../../../core/protocol/catalog.interface';
+import { ApiService } from '../../../core/platform/http/api.service';
+import { AuthService } from '../../../core/platform/auth/auth.service';
+import { HttpError } from '../../../core/platform/http/fetch.service';
 import {
   CloneYamlError,
   extractYamlName,
@@ -39,7 +39,7 @@ import {
   rewriteNamespaceInYaml,
   suggestDestName,
   suggestDestNamespace,
-} from '../../../services/catalog/yaml-clone.helper';
+} from '../../../core/services/catalog/yaml-clone.helper';
 import { ValidationReportComponent } from '../../../components/catalog/namespace-panel/validation-report/validation-report.component';
 
 /**

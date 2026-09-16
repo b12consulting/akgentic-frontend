@@ -3,14 +3,14 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
-import { ContextService } from '../../../core/context/context.service';
-import { TeamActivity, TeamContext } from '../../../core/context/team.interface';
+import { ContextService } from '../../../core/platform/context/context.service';
+import { TeamActivity, TeamContext } from '../../../core/platform/context/team.interface';
 import {
   provideTranslateTesting,
   setTestTranslations,
 } from '../../../../testing/i18n-testing';
 import { RailTeamRowComponent } from './rail-team-row.component';
-import { RailTeamRow } from '../../../services/console/rail/rail-teams.selector';
+import { RailTeamRow } from '../../../core/services/console/rail/rail-teams.selector';
 
 function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
   return {

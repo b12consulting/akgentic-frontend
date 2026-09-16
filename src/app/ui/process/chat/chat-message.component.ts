@@ -11,19 +11,19 @@ import {
 import { ButtonModule } from 'primeng/button';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { MarkdownModule } from 'ngx-markdown';
-import { ConfigService } from '../../../core/config/config.service';
+import { ConfigService } from '../../../core/platform/config/config.service';
 import {
   buildPreview,
   ChatMessage,
   ENTRY_POINT_NAME,
-} from '../../../services/process/selectors/chat-message.model';
-import { isRateable } from '../../../services/process/selectors/rateable';
+} from '../../../core/services/process/selectors/chat-message.model';
+import { isRateable } from '../../../core/services/process/selectors/rateable';
 import {
   AgentColours,
   NO_AGENT_COLOURS,
-} from '../../../services/process/selectors/agent-colour';
+} from '../../../core/services/process/selectors/agent-colour';
 import type { AgentRef } from './agent-reader.service';
-import { makeAgentNameUserFriendly } from '../../../shared/util/util';
+import { makeAgentNameUserFriendly } from '../../../core/shared/util/util';
 import { FeedbackComponent } from './feedback.component';
 
 /**

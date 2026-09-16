@@ -22,9 +22,9 @@ import { TooltipModule } from 'primeng/tooltip';
 import {
   NamespaceSummary,
   NamespaceValidationReport,
-} from '../../../protocol/catalog.interface';
-import { ApiService } from '../../../core/http/api.service';
-import { HttpError } from '../../../core/http/fetch.service';
+} from '../../../core/protocol/catalog.interface';
+import { ApiService } from '../../../core/platform/http/api.service';
+import { HttpError } from '../../../core/platform/http/fetch.service';
 import { NamespacePanelComponent } from './namespace-panel.component';
 import { NamespacePanelRouteComponent } from './namespace-panel-route.component';
 import { ValidationReportComponent } from '../../../components/catalog/namespace-panel/validation-report/validation-report.component';

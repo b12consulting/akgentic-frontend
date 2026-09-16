@@ -8,9 +8,9 @@ import {
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
-import { AuthService } from '../../core/auth/auth.service';
-import { ConfigService } from '../../core/config/config.service';
-import { AuthProvider } from '../../core/auth/auth.types';
+import { AuthService } from '../../core/platform/auth/auth.service';
+import { ConfigService } from '../../core/platform/config/config.service';
+import { AuthProvider } from '../../core/platform/auth/auth.types';
 
 /**
  * What went wrong, in a form that says whose sentence it is.

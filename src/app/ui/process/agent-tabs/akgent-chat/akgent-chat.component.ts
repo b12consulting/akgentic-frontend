@@ -23,24 +23,24 @@ import { MentionModule } from 'angular-mentions';
 import { BehaviorSubject, combineLatest, Observable, of } from 'rxjs';
 import { map } from 'rxjs/operators';
 
-import { CapitalizePipe } from '../../../../shared/pipes/capitalise.pipe';
-import { TokenCountPipe } from '../../../../shared/pipes/token-count.pipe';
-import { ApiService } from '../../../../core/http/api.service';
-import { UtilService } from '../../../../services/utils.service';
-import { ContextService } from '../../../../core/context/context.service';
-import { ConfigService } from '../../../../core/config/config.service';
-import { IngestionService } from '../../../../services/process/event/ingestion.service';
+import { CapitalizePipe } from '../../../../core/shared/pipes/capitalise.pipe';
+import { TokenCountPipe } from '../../../../core/shared/pipes/token-count.pipe';
+import { ApiService } from '../../../../core/platform/http/api.service';
+import { UtilService } from '../../../../core/services/utils.service';
+import { ContextService } from '../../../../core/platform/context/context.service';
+import { ConfigService } from '../../../../core/platform/config/config.service';
+import { IngestionService } from '../../../../core/services/process/event/ingestion.service';
 import {
   SystemPromptRow,
   SystemPromptSelector,
   systemPromptLabel,
-} from '../../../../services/process/selectors/system-prompt.selector';
-import { TokenUsageSelector } from '../../../../services/process/selectors/token-usage.selector';
+} from '../../../../core/services/process/selectors/system-prompt.selector';
+import { TokenUsageSelector } from '../../../../core/services/process/selectors/token-usage.selector';
 import {
   AgentTokenUsage,
   CONVERSATION_SUMMARY_PREFIX,
-} from '../../../../services/process/event/per-agent-specs';
-import { CommandDescriptor } from '../../../../protocol/message.types';
+} from '../../../../core/services/process/event/per-agent-specs';
+import { CommandDescriptor } from '../../../../core/protocol/message.types';
 
 import { CopyButtonComponent } from '../../../../components/common/copy-button/copy-button.component';
 

@@ -6,7 +6,7 @@ import {
   fromQueryParams,
   isFiltering,
   toQueryParams,
-} from '../../core/context/home-url';
+} from '../../core/platform/context/home-url';
 import {
   BehaviorSubject,
   firstValueFrom,
@@ -15,13 +15,13 @@ import {
 } from 'rxjs';
 import { filter, map, take } from 'rxjs/operators';
 
-import { ApiService, MIN_FILTER_TERM_LENGTH } from '../../core/http/api.service';
+import { ApiService, MIN_FILTER_TERM_LENGTH } from '../../core/platform/http/api.service';
 import {
   NO_TEAM_FILTER,
   TeamFilter,
   titleFieldKey,
-} from '../../core/context/team.interface';
-import { NamespaceSummary } from '../../protocol/catalog.interface';
+} from '../../core/platform/context/team.interface';
+import { NamespaceSummary } from '../../core/protocol/catalog.interface';
 
 import { CommonModule } from '@angular/common';
 // `ButtonModule` is gone: the three toolbar buttons are native `<button>`s
@@ -34,9 +34,9 @@ import { DialogModule } from 'primeng/dialog';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TranslatePipe } from '@ngx-translate/core';
 
-import { AuthService } from '../../core/auth/auth.service';
-import { ConfigService } from '../../core/config/config.service';
-import { ContextService } from '../../core/context/context.service';
+import { AuthService } from '../../core/platform/auth/auth.service';
+import { ConfigService } from '../../core/platform/config/config.service';
+import { ContextService } from '../../core/platform/context/context.service';
 import { ViewService } from '../console/view.service';
 import { IconButtonComponent } from '../../components/common/icon-button/icon-button.component';
 
@@ -51,8 +51,8 @@ import {
 } from '../../components/home/team-metadata-modal/team-metadata-modal.component';
 import { TeamFilterComponent } from '../../components/home/team-filter/team-filter.component';
 import { HomeGreetingComponent } from './greeting/home-greeting.component';
-import { TeamCreationService } from '../../services/home/team-creation/team-creation.service';
-import { TeamTypeCatalog } from '../../services/home/team-creation/team-type-catalog.service';
+import { TeamCreationService } from '../../core/services/home/team-creation/team-creation.service';
+import { TeamTypeCatalog } from '../../core/services/home/team-creation/team-type-catalog.service';
 import {
   TeamDescriptionSave,
   TeamRowAction,

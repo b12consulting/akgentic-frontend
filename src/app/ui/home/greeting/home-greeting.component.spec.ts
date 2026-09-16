@@ -1,8 +1,8 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { BehaviorSubject } from 'rxjs';
 
-import { AuthService } from '../../../core/auth/auth.service';
-import { ConfigService } from '../../../core/config/config.service';
+import { AuthService } from '../../../core/platform/auth/auth.service';
+import { ConfigService } from '../../../core/platform/config/config.service';
 import {
   provideTranslateTesting,
   setTestTranslations,

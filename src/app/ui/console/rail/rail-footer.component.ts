@@ -10,8 +10,8 @@ import { MenuItem } from 'primeng/api';
 import { Menu, MenuModule } from 'primeng/menu';
 import { map, Observable } from 'rxjs';
 
-import { AuthService } from '../../../core/auth/auth.service';
-import { ConfigService } from '../../../core/config/config.service';
+import { AuthService } from '../../../core/platform/auth/auth.service';
+import { ConfigService } from '../../../core/platform/config/config.service';
 import { IconButtonComponent } from '../../../components/common/icon-button/icon-button.component';
 
 /** What the footer needs to know about the signed-in user, and nothing else. */

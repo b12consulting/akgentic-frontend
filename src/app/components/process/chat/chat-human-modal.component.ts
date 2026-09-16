@@ -7,9 +7,9 @@ import { TextareaModule } from 'primeng/textarea';
 import { TranslatePipe } from '@ngx-translate/core';
 import { MarkdownModule } from 'ngx-markdown';
 
-import { ChatMessage } from '../../../services/process/selectors/chat-message.model';
-import { ActorAddress } from '../../../protocol/message.types';
-import { makeAgentNameUserFriendly } from '../../../shared/util/util';
+import { ChatMessage } from '../../../core/services/process/selectors/chat-message.model';
+import { ActorAddress } from '../../../core/protocol/message.types';
+import { makeAgentNameUserFriendly } from '../../../core/shared/util/util';
 
 export interface HumanModalReply {
   content: string;
