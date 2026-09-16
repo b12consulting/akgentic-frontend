@@ -144,17 +144,21 @@
       ></app-workspace-tabs>
 
       <!--
-        Story 52-1: `[processId]` is BOUND rather than left to the child's
-        `route.snapshot.params['id']` fallback. Hosted on the teams list
-        there is no `:id` in the URL at all, so the fallback resolves to
-        `undefined` and the graph would ask the API about a team of that name.
+        `[teamId]` is BOUND, and there is no longer any fallback for it to beat:
+        the child's `route.snapshot.params['id']` read is gone and the input is
+        `required`, so omitting this binding is a build failure rather than a
+        silent `undefined`.
+
+        The fact Story 52-1 recorded still holds and is why binding it is
+        correct: hosted on the teams list there is no `:id` in the URL at all,
+        so the URL was never a source this host could rely on.
       -->
       <app-knowledge-graph
         *ngIf="hasKnowledgeGraph$ | async"
         id="inspector-panel-knowledge-graph"
         role="tabpanel"
         aria-labelledby="inspector-tab-knowledge-graph"
-        [processId]="processId"
+        [teamId]="processId"
         [attr.inert]="isHidden('knowledge-graph') ? '' : null"
         [class.moved-offscreen]="isHidden('knowledge-graph')"
       ></app-knowledge-graph>

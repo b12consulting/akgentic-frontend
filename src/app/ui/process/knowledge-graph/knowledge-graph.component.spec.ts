@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ActivatedRoute } from '@angular/router';
 import { BehaviorSubject } from 'rxjs';
 
 import { KnowledgeGraphComponent } from './knowledge-graph.component';
@@ -57,15 +57,15 @@ describe('KnowledgeGraphComponent', () => {
         provideTranslateTesting(),
         provideNoopAnimations(),
         { provide: KGStateReducer, useValue: { knowledgeGraph$ } },
-        {
-          provide: ActivatedRoute,
-          useValue: { snapshot: { params: { id: 'proc-1' } } },
-        },
       ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(KnowledgeGraphComponent);
     component = fixture.componentInstance;
+    // The id arrives as a REQUIRED input now; no bed provides an ActivatedRoute
+    // any more, which is what makes the router's absence a behavioural fact
+    // rather than a source-text assertion.
+    fixture.componentRef.setInput('teamId', 'proc-1');
     fixture.detectChanges();
   });
 
@@ -377,6 +377,116 @@ describe('KnowledgeGraphComponent', () => {
       ).toBeNull();
     });
   });
+
+  /**
+   * THE ONLY CONSUMER OF THE ID, and the reason it must not be latched.
+   *
+   * The panel mounts a second copy of itself inside the Expand dialog, and that
+   * recursion is the whole of what `teamId` is for — nothing here fetches with
+   * it. The id used to be copied once into a field in `ngOnInit`, which the
+   * router makes wrong rather than merely redundant: `app.routes.ts` REUSES the
+   * `process/:id` route across a team switch, so `ProcessComponent.processId`
+   * changes under a graph that stays mounted, and a copy taken at init would
+   * hand the dialog the previous team's id for the life of the component.
+   *
+   * Reading the input at use time is what makes that impossible by
+   * construction, so the second half of this spec — the change, WITHOUT a
+   * remount — is the assertion that matters. A re-latched copy passes the first
+   * half and fails the second.
+   */
+  describe('the id the modal instance is given', () => {
+    /**
+     * THE DIALOG IS `appendTo="body"`, so it is not inside the fixture, and
+     * Karma stacks every suite in ONE document with the file order randomised.
+     * A spec that leaves this dialog behind therefore drops a viewport-covering
+     * overlay into other suites, and two of them read the document directly:
+     * the namespace-panel mask specs take `document.querySelector('.p-dialog-mask')`
+     * — ours is first — and split-divider's W8a probes
+     * `document.elementFromPoint`, which returned this component's own nested
+     * modal instance instead of the divider.
+     *
+     * Closing it is not sufficient on its own: PrimeNG tears the overlay down
+     * from an animation callback, and under `provideNoopAnimations` that has
+     * not run by the time the fixture is destroyed. Both nodes are appended to
+     * `<body>` as SIBLINGS, so the mask and the dialog have to be swept
+     * separately — removing the mask alone is what left the dialog behind.
+     */
+    afterEach(async () => {
+      component.showKGModal = false;
+      component.isModalView = false;
+      fixture.detectChanges();
+
+      // ONE MACROTASK BEFORE SWEEPING, and this is the part that took three
+      // runs to see: PrimeNG MOVES the overlay to `<body>` from a queued task,
+      // so a sweep that runs synchronously here can execute BEFORE the node it
+      // is meant to remove has arrived. That is why the leak came back on
+      // roughly one run in three after the first fix.
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+      // Swept by CONTAINMENT as well as by class: the wrapper PrimeNG appends
+      // is its own, and pinning this to a class list is a guess about a
+      // library's internals that would rot silently the next time it changes.
+      Array.from(document.body.children).forEach((child) => {
+        if (child.querySelector('app-knowledge-graph.modal-app-component')) {
+          child.remove();
+        }
+      });
+      document
+        .querySelectorAll('.kg-pdialog, .kg-pdialog-mask')
+        .forEach((node) => node.remove());
+      document.body.classList.remove('p-overflow-hidden');
+    });
+
+    function openModal(): void {
+      component.isModalView = true;
+      component.openKGModal();
+      fixture.detectChanges();
+    }
+
+    /** The nested copy of this component, mounted inside the dialog. */
+    function nested(): KnowledgeGraphComponent | null {
+      const found = fixture.debugElement.queryAll(
+        By.directive(KnowledgeGraphComponent),
+      );
+      return found.length ? (found[0].componentInstance as KnowledgeGraphComponent) : null;
+    }
+
+    it('hands the modal instance the id it was given, and follows it when it changes', () => {
+      fixture.componentRef.setInput('teamId', 'team-a');
+      fixture.detectChanges();
+      openModal();
+
+      const inner = nested();
+      expect(inner)
+        .withContext('the dialog mounts a second graph — the id has a consumer')
+        .not.toBeNull();
+      expect(inner!.teamId).toBe('team-a');
+
+      // The team switches under a MOUNTED graph: same route, same component
+      // instance, new id. This is the case the old `ngOnInit` latch got wrong.
+      fixture.componentRef.setInput('teamId', 'team-b');
+      fixture.detectChanges();
+
+      expect(nested())
+        .withContext('the nested instance must not have been recreated')
+        .toBe(inner);
+      expect(nested()!.teamId)
+        .withContext('a latched copy would still read team-a here')
+        .toBe('team-b');
+    });
+
+    it('renders normally on the empty id, which is a real value and not a special case', () => {
+      // `ProcessComponent.processId` is `''` from construction until
+      // `openTeam()` resolves, so the graph is mounted on `''` for real.
+      fixture.componentRef.setInput('teamId', '');
+      fixture.detectChanges();
+
+      expect(component.teamId).toBe('');
+      expect(
+        (fixture.nativeElement as HTMLElement).querySelector('.kg-toolbar'),
+      ).not.toBeNull();
+    });
+  });
 });
 
 /**
@@ -447,15 +557,12 @@ describe('the knowledge canvas', () => {
         provideTranslateTesting(),
         provideNoopAnimations(),
         { provide: KGStateReducer, useValue: { knowledgeGraph$ } },
-        {
-          provide: ActivatedRoute,
-          useValue: { snapshot: { params: { id: 'proc-1' } } },
-        },
       ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(KnowledgeGraphComponent);
     component = fixture.componentInstance;
+    fixture.componentRef.setInput('teamId', 'proc-1');
     fixture.autoDetectChanges();
     await quiesce();
   });

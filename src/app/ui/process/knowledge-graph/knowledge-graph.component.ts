@@ -10,7 +10,6 @@ import {
   HostBinding,
 } from '@angular/core';
 import { trigger, style, transition, animate } from '@angular/animations';
-import { ActivatedRoute } from '@angular/router';
 import { BehaviorSubject, Subscription } from 'rxjs';
 import { distinctUntilChanged } from 'rxjs/operators';
 
@@ -176,7 +175,21 @@ const PAIR_SEPARATOR = '\u0000';
 })
 export class KnowledgeGraphComponent implements OnInit, OnDestroy {
   @Input() isModal = false;
-  @Input() processId?: string; // Allow process ID to be passed as input for modal mode
+
+  /**
+   * The team this graph belongs to, SUPPLIED BY THE HOST.
+   *
+   * It is not a data source: nothing here fetches with it. The graph's contents
+   * come from `KGStateReducer.knowledgeGraph$`, and the only consumer of this id
+   * is the modal instance this component mounts of itself.
+   *
+   * REQUIRED, so the URL is never consulted. The component used to fall back to
+   * `route.snapshot.params['id']`, which welded it to one app's route table and
+   * made it unmountable anywhere that shape does not exist. With
+   * `strictTemplates`, `required: true` turns a missing binding into a build
+   * failure rather than a silent `undefined`.
+   */
+  @Input({ required: true }) teamId!: string;
 
   @HostBinding('class.modal-mode') get modalMode() {
     return this.isModal;
@@ -190,12 +203,10 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
   }
 
   zone: NgZone = inject(NgZone);
-  route: ActivatedRoute = inject(ActivatedRoute);
   // Story 6.2 (ADR-005 §Decision 4): subscribe to the pure selector instead
   // of the former ingestion knowledgeGraph$ passthrough (deleted).
   private readonly kgReducer: KGStateReducer = inject(KGStateReducer);
 
-  currentProcessId: string = '';
   graphData$ = new BehaviorSubject<KnowledgeGraphData | null>(null);
   error$ = new BehaviorSubject<string | null>(null);
 
@@ -252,9 +263,6 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
   private subscriptions: Subscription[] = [];
 
   ngOnInit(): void {
-    // Get process ID either from input (modal mode) or route (normal mode)
-    this.currentProcessId = this.processId || this.route.snapshot.params['id'];
-
     // Initialize with empty data to ensure chart is always created
     this.graphData$.next({ nodes: [], edges: [] });
 
