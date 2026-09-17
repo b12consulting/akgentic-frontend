@@ -6,7 +6,7 @@ import { NOTIFICATION_PORT } from '../../../platform/notification/notification.p
 import { PrimeNgNotificationAdapter } from '../../../../ui/console/notification.adapter';
 import { WebSocketSubject } from 'rxjs/webSocket';
 
-import { AgentTabsComponent } from './agent-tabs.component';
+import { MemberContextComponent } from './member-context.component';
 import { Akgent, AkgentService } from '../../../services/akgent.service';
 import { GraphDataService } from '../../../services/process/selectors/graph.selector';
 import { IngestionService } from '../../../services/process/event/ingestion.service';
@@ -29,7 +29,7 @@ import { TokenUsageSelector } from '../../../services/process/selectors/token-us
 import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
 
 /**
- * Story 17-2 (ADR-014) — the agent-state panel and agent-chat context view are
+ * Story 17-2 (ADR-014) — the member-state panel and context-trace view are
  * now sourced from `ingestionService.state.forAgent(id)` /
  * `ingestionService.context.forAgent(id)` (PerAgentStore instances) instead of the
  * deleted `stateDict$` / `contextDict$`. These specs verify the host wiring:
@@ -37,8 +37,8 @@ import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
  * `undefined` mapped to the existing defaults (`null` / `[]`) so the template
  * guards behave identically. Drives the real log fold (no store mocking).
  */
-describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)', () => {
-  let component: AgentTabsComponent;
+describe('MemberContextComponent — store-backed state/context wiring (Story 17-2)', () => {
+  let component: MemberContextComponent;
   let log: MessageLogService;
   let ingestionService: IngestionService;
   let selectedAkgent$: BehaviorSubject<Akgent | null>;
@@ -120,7 +120,7 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
         // `Router` this bed has no use for.
         //
         // `currentTeamRunning$` is here for the DOM specs at the bottom: once
-        // the pane can actually render `<app-agent-chat>`, that component's
+        // the pane can actually render `<app-context-trace>`, that component's
         // composer reads it to decide whether it may send.
         {
           provide: ContextService,
@@ -129,7 +129,7 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
             currentTeamRunning$: new BehaviorSubject<boolean>(true),
           },
         },
-        // `<app-agent-chat>`'s two component-scoped selectors. Real ones —
+        // `<app-context-trace>`'s two component-scoped selectors. Real ones —
         // both are pure derivations over the log this bed already drives, so
         // faking them would put a stub between the spec and the thing it is
         // asserting rendered.
@@ -178,7 +178,7 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
     // Wire the WS pipeline so the registry's log$ subscription is live.
     await ingestionService.init('proc-1', true);
 
-    component = TestBed.createComponent(AgentTabsComponent).componentInstance;
+    component = TestBed.createComponent(MemberContextComponent).componentInstance;
     component.ngOnInit();
   });
 
@@ -249,10 +249,10 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
     expect(component.context$.value).toEqual([]);
   });
 
-  /** Synchronously read the current value of `chatTabVisible$`. */
+  /** Synchronously read the current value of `traceVisible$`. */
   function tabVisible(): boolean {
     let visible: boolean | undefined;
-    component.chatTabVisible$.subscribe((v) => (visible = v)).unsubscribe();
+    component.traceVisible$.subscribe((v) => (visible = v)).unsubscribe();
     return visible as boolean;
   }
 
@@ -268,7 +268,7 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
   // visibility from AgentState.backstory. Visibility gates on conversation
   // context OR a non-empty trimmed `state.backstory` (a running agent always has
   // context; a never-run agent shows its backstory). The head-block fallback
-  // itself is verified at the consumer in agent-chat.component.spec.ts.
+  // itself is verified at the consumer in context-trace.component.spec.ts.
   // ===========================================================================
 
   it('AC1/AC3 never-run: no system-prompt event but a non-empty state.backstory → backstory$ projects it and the chat tab is visible', () => {
@@ -313,7 +313,7 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
     expect(tabVisible()).toBeFalse();
   });
 
-  it('chatTabVisible$ is false for an agent with neither context nor backstory', () => {
+  it('traceVisible$ is false for an agent with neither context nor backstory', () => {
     selectedAkgent$.next({ name: '@unknown', agentId: 'unknown' });
 
     expect(backstory()).toBe('');
@@ -341,7 +341,7 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
     nodes$.next([
       { name: 'agent-A', actorName: '@agent-A', category: 0, role: 'Worker' },
     ]);
-    const fixture = TestBed.createComponent(AgentTabsComponent);
+    const fixture = TestBed.createComponent(MemberContextComponent);
     fixture.detectChanges();
 
     const dropdown = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>(
@@ -366,7 +366,7 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
 
   /** Render a fresh fixture against the CURRENT `nodes$` value. */
   function renderPanel(): HTMLElement {
-    const fixture = TestBed.createComponent(AgentTabsComponent);
+    const fixture = TestBed.createComponent(MemberContextComponent);
     fixture.detectChanges();
     return fixture.nativeElement as HTMLElement;
   }
@@ -412,7 +412,7 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
     nodes$.next([AGENT]);
     const host = renderPanel();
 
-    expect(host.querySelector('app-agent-chat')).toBeNull();
+    expect(host.querySelector('app-context-trace')).toBeNull();
     expect(host.querySelector('app-empty-state')).not.toBeNull();
     // The picker stays: the state is "this one has nothing", not "there is
     // nothing to pick".
@@ -426,7 +426,7 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
 
     const host = renderPanel();
 
-    expect(host.querySelector('app-agent-chat')).not.toBeNull();
+    expect(host.querySelector('app-context-trace')).not.toBeNull();
     expect(host.querySelector('app-empty-state')).toBeNull();
   });
 });
@@ -441,8 +441,8 @@ describe('AgentTabsComponent — store-backed state/context wiring (Story 17-2)'
  * its own. Two derivations of one string is how the picker's header and the
  * graph's legend come to disagree.
  */
-describe('AgentTabsComponent — the picker groups by squad, or not at all', () => {
-  let component: AgentTabsComponent;
+describe('MemberContextComponent — the picker groups by squad, or not at all', () => {
+  let component: MemberContextComponent;
   let nodes$: BehaviorSubject<any[]>;
   let categories$: BehaviorSubject<any[]>;
 
@@ -462,7 +462,7 @@ describe('AgentTabsComponent — the picker groups by squad, or not at all', () 
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      imports: [AgentTabsComponent],
+      imports: [MemberContextComponent],
       providers: [
         provideTranslateTesting(),
         {
@@ -484,7 +484,7 @@ describe('AgentTabsComponent — the picker groups by squad, or not at all', () 
       ],
     });
 
-    const fixture = TestBed.createComponent(AgentTabsComponent);
+    const fixture = TestBed.createComponent(MemberContextComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
   });

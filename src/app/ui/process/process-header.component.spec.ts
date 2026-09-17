@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { BehaviorSubject } from 'rxjs';
 
-import { ConversationHeaderComponent } from './conversation-header.component';
+import { ProcessHeaderComponent } from './process-header.component';
 import { ContextService } from '../../core/platform/context/context.service';
 import { TeamContext } from '../../core/platform/context/team.interface';
 import { ViewService } from '../console/view.service';
@@ -20,8 +20,8 @@ function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
   };
 }
 
-describe('ConversationHeaderComponent', () => {
-  let fixture: ComponentFixture<ConversationHeaderComponent>;
+describe('ProcessHeaderComponent', () => {
+  let fixture: ComponentFixture<ProcessHeaderComponent>;
 
   // The header reads root state and writes to it through two service methods,
   // so the doubles are subjects the spec drives directly plus spies on the two
@@ -45,7 +45,7 @@ describe('ConversationHeaderComponent', () => {
     toggleRailSpy = jasmine.createSpy('toggleRail');
 
     await TestBed.configureTestingModule({
-      imports: [ConversationHeaderComponent],
+      imports: [ProcessHeaderComponent],
       providers: [
         provideTranslateTesting(),
         {
@@ -73,7 +73,7 @@ describe('ConversationHeaderComponent', () => {
       ],
     }).compileComponents();
 
-    fixture = TestBed.createComponent(ConversationHeaderComponent);
+    fixture = TestBed.createComponent(ProcessHeaderComponent);
     fixture.detectChanges();
   });
 

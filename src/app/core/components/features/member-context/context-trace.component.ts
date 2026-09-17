@@ -45,11 +45,11 @@ import { CommandDescriptor } from '../../../protocol/message.types';
 import { CopyButtonComponent } from '../../primitives/copy-button/copy-button.component';
 
 /**
- * AgentChatComponent - Displays chat messages with JSON-formatted arguments using Monaco Editor
+ * ContextTraceComponent - Displays chat messages with JSON-formatted arguments using Monaco Editor
  */
 
 @Component({
-  selector: 'app-agent-chat',
+  selector: 'app-context-trace',
   // Six PrimeNG modules came out with the chrome that used them: the table
   // that held the trace, the fieldset per message, the card and spinner that
   // nothing rendered, the float label whose caption was the words "Chat input",
@@ -65,17 +65,17 @@ import { CopyButtonComponent } from '../../primitives/copy-button/copy-button.co
     CopyButtonComponent,
     TranslatePipe,
   ],
-  templateUrl: './agent-chat.component.html',
-  styleUrl: './agent-chat.component.scss',
+  templateUrl: './context-trace.component.html',
+  styleUrl: './context-trace.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class AgentChatComponent implements OnInit, OnChanges {
+export class ContextTraceComponent implements OnInit, OnChanges {
   // The single trace scroll region (head system block + conversation). Auto
   // scroll-to-bottom targets this element so new messages stay in view.
   @ViewChild('traceScroll') traceScroll?: ElementRef<HTMLElement>;
   @Input() context$!: BehaviorSubject<any[]>;
   // akgentic-agent ADR-007 §4 — the selected agent's trimmed `AgentState.backstory`, projected
-  // by the host (`AgentTabsComponent`) from the `state` PerAgentStore. Drives the
+  // by the host (`MemberContextComponent`) from the `state` PerAgentStore. Drives the
   // never-run head-block FALLBACK (a synthetic backstory row) when no
   // `LlmSystemPromptEvent` row exists yet. Optional so existing callers/tests
   // that omit it keep the event-only head block.
@@ -143,7 +143,7 @@ export class AgentChatComponent implements OnInit, OnChanges {
   usage$!: Observable<AgentTokenUsage | undefined>;
 
   /**
-   * The agent-tabs dropdown REUSES this component across member selections (it
+   * The member picker REUSES this component across member selections (it
    * lives under `*ngIf="context$.length"`, which stays truthy when switching
    * between agents that both have context), so `ngOnInit` does NOT re-run on a
    * switch. Re-bind the head system block to the newly-selected agent here, or
@@ -583,17 +583,17 @@ export class AgentChatComponent implements OnInit, OnChanges {
    *  running; otherwise "Messages" when the newest message is below the fold. */
   private updateIndicator(): void {
     if (this.following && this.contextService.currentTeamRunning$.value) {
-      this.indicatorLabel = AgentChatComponent.FOLLOWING_KEY;
+      this.indicatorLabel = ContextTraceComponent.FOLLOWING_KEY;
     } else {
       this.indicatorLabel = this.newestBelowFold()
-        ? AgentChatComponent.BEHIND_KEY
+        ? ContextTraceComponent.BEHIND_KEY
         : null;
     }
   }
 
   /** Icon for the pill — a "following" glyph while auto scrolling, else a down-arrow. */
   get indicatorIcon(): string {
-    return this.indicatorLabel === AgentChatComponent.FOLLOWING_KEY
+    return this.indicatorLabel === ContextTraceComponent.FOLLOWING_KEY
       ? 'pi-sync'
       : 'pi-arrow-down';
   }

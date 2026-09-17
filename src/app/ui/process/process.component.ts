@@ -33,7 +33,7 @@ import { IngestionService } from '../../core/services/process/event/ingestion.se
 import { ToolPresenceService } from '../../core/services/process/selectors/tool-presence.selector';
 import { WorkspaceRegistryService } from '../../core/services/process/selectors/workspace-registry.selector';
 
-import { AgentTabsComponent } from '../../core/components/features/agent-tabs/agent-tabs.component';
+import { MemberContextComponent } from '../../core/components/features/member-context/member-context.component';
 import { TeamTabsComponent } from '../../core/components/features/team-graph/team-tabs.component';
 import { KnowledgeGraphComponent } from '../../core/components/features/knowledge-graph/knowledge-graph.component';
 import { MessageListComponent } from '../../core/components/features/message-panel/message-list.component';
@@ -45,7 +45,7 @@ import { ChatPanelComponent } from '../../core/components/features/chat/chat-pan
 import { GraphDataService } from '../../core/services/process/selectors/graph.selector';
 import { SelectionService } from '../../core/services/process/ui-state/selection.service';
 
-import { ConversationHeaderComponent } from './conversation-header.component';
+import { ProcessHeaderComponent } from './process-header.component';
 import { InspectorComponent } from '../console/inspector/inspector.component';
 import { TeamPanelComponent } from '../../core/components/features/team-panel/team-panel.component';
 import { VisualizationOption } from '../console/inspector/inspector-tabs.component';
@@ -57,7 +57,7 @@ import { SplitDividerComponent } from '../../core/components/primitives/split-di
   imports: [
     CommonModule,
     MessageListComponent,
-    AgentTabsComponent,
+    MemberContextComponent,
     TeamTabsComponent,
     KnowledgeGraphComponent,
     WorkspaceTabsComponent,
@@ -66,7 +66,7 @@ import { SplitDividerComponent } from '../../core/components/primitives/split-di
     // the console shell that have to be mounted from INSIDE this component:
     // they sit either side of, or read, the component-scoped providers below,
     // which resolve nowhere else.
-    ConversationHeaderComponent,
+    ProcessHeaderComponent,
     InspectorComponent,
     TeamPanelComponent,
     // R3: the boundary between the two panes. Reused rather than reimplemented

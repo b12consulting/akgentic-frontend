@@ -323,7 +323,7 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
     const host = fixture.nativeElement as HTMLElement;
 
     expect(
-      host.querySelector('.conversation-pane > app-conversation-header'),
+      host.querySelector('.conversation-pane > app-process-header'),
     ).not.toBeNull();
     expect(host.querySelector('.console-panes > app-inspector')).not.toBeNull();
   });
@@ -342,7 +342,7 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
     // gated on their tool being present, and the log is empty here.
     expect(panels!.querySelector('app-team-panel')).not.toBeNull();
     expect(panels!.querySelector('app-team-tabs')).not.toBeNull();
-    expect(panels!.querySelector('app-agent-tabs')).not.toBeNull();
+    expect(panels!.querySelector('app-member-context')).not.toBeNull();
     expect(panels!.querySelector('app-message-list')).not.toBeNull();
   });
 
@@ -1244,7 +1244,7 @@ describe('ProcessComponent (R3 — arrangeable, resizable panes)', () => {
   it('leaves the pinned containment contract intact', async () => {
     const h = await build();
 
-    expect(host(h).querySelector('.conversation-pane > app-conversation-header')).not.toBeNull();
+    expect(host(h).querySelector('.conversation-pane > app-process-header')).not.toBeNull();
     expect(host(h).querySelector('.console-panes > app-inspector')).not.toBeNull();
     expect(host(h).querySelector('app-inspector .inspector-panels')).not.toBeNull();
   });

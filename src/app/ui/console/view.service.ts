@@ -6,7 +6,7 @@ import { ConfigService } from '../../core/platform/config/config.service';
  * Which of the console's two side panes are collapsed.
  *
  * ROOT-SCOPED, and that is the whole design. Each pane has more than one
- * control — the inspector is toggled by the conversation header's Details
+ * control — the inspector is toggled by the process header's Details
  * button AND by its own close X, and the rail by a control in the rail and one
  * in the header — so the state cannot live on either pane, or the two controls
  * would each own half of it. One subject per pane, as many controls as the

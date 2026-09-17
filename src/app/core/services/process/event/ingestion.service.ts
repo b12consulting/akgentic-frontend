@@ -292,7 +292,7 @@ export class IngestionService {
     // state per mutation grew the backing store without bound). With the gate in
     // place a running team has NO source for `state`, so `backstory$` is `''`,
     // and after a `/clear` empties `context` the Member chat tab disappears
-    // entirely (`agent-tabs.component.ts:chatTabVisible$`). `getAgentStates` is
+    // entirely (`member-context.component.ts:traceVisible$`). `getAgentStates` is
     // the named source the ADR asks for; the latest-wins fold means a real
     // `StateChangedMessage` still overwrites the seed if one ever returns.
     //

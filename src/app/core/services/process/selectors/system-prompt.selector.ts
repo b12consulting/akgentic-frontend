@@ -9,7 +9,7 @@ import { SystemPromptRow } from '../event/per-agent-specs';
  * `event/` layer (Epic 18 / ADR-015 §3). The reducer + helpers moved into
  * `event/per-agent-specs.ts` to break the `ingestion ↔ system-prompt.selector`
  * circular import; these re-exports preserve the existing import paths for the
- * façade's consumers (`agent-chat.component.ts`) and the parity specs without
+ * façade's consumers (`context-trace.component.ts`) and the parity specs without
  * a logic change.
  */
 export type {

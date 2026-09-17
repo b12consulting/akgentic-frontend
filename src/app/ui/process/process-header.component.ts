@@ -21,7 +21,7 @@ import { IconButtonComponent } from '../../core/components/primitives/icon-butto
  * NO INPUTS AND NO OUTPUTS, deliberately. Everything it renders comes from
  * root-scoped state (`ContextService`, `ViewService`), so the entire contract
  * with its host is the selector. That is what lets `ProcessComponent` reference
- * `<app-conversation-header>` without either side knowing anything else about
+ * `<app-process-header>` without either side knowing anything else about
  * the other, and it is why this seam needed no handshake beyond the tag.
  *
  * IT CARRIES THE TEAM'S BUSINESS METADATA, beside the name, as the menubar it
@@ -39,13 +39,13 @@ import { IconButtonComponent } from '../../core/components/primitives/icon-butto
  * different question.
  */
 @Component({
-  selector: 'app-conversation-header',
+  selector: 'app-process-header',
   imports: [AsyncPipe, TranslatePipe, IconButtonComponent, TeamMetadataPipe],
-  templateUrl: './conversation-header.component.html',
-  styleUrl: './conversation-header.component.scss',
+  templateUrl: './process-header.component.html',
+  styleUrl: './process-header.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class ConversationHeaderComponent {
+export class ProcessHeaderComponent {
   readonly contextService: ContextService = inject(ContextService);
   readonly viewService: ViewService = inject(ViewService);
 

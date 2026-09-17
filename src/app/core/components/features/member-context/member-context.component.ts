@@ -24,7 +24,7 @@ import { isToolActor } from '../../../services/process/selectors/actor-kind';
 
 import { IngestionService } from '../../../services/process/event/ingestion.service';
 
-import { AgentChatComponent } from './agent-chat.component';
+import { ContextTraceComponent } from './context-trace.component';
 import { EmptyStateComponent } from '../../primitives/empty-state/empty-state.component';
 import { TranslatePipe } from '@ngx-translate/core';
 
@@ -70,20 +70,20 @@ interface GraphSquad {
  * its name and the template no longer pretends.
  */
 @Component({
-  selector: 'app-agent-tabs',
+  selector: 'app-member-context',
   standalone: true,
   imports: [
     CommonModule,
     FormsModule,
     DropdownModule,
-    AgentChatComponent,
+    ContextTraceComponent,
     EmptyStateComponent,
     TranslatePipe,
   ],
-  templateUrl: './agent-tabs.component.html',
-  styleUrl: './agent-tabs.component.scss',
+  templateUrl: './member-context.component.html',
+  styleUrl: './member-context.component.scss',
 })
-export class AgentTabsComponent implements OnInit {
+export class MemberContextComponent implements OnInit {
   akgentService: AkgentService = inject(AkgentService);
   graphDataService: GraphDataService = inject(GraphDataService);
   ingestionService: IngestionService = inject(IngestionService);
@@ -146,7 +146,7 @@ export class AgentTabsComponent implements OnInit {
   // backstory must NOT force the tab open). A running agent always has context;
   // a never-run agent shows `state.backstory`. When visible it occupies slot "0"
   // and the State tab moves to "1".
-  chatTabVisible$ = combineLatest([this.context$, this.state$]).pipe(
+  traceVisible$ = combineLatest([this.context$, this.state$]).pipe(
     map(
       ([context, state]) =>
         (context?.length ?? 0) > 0 || this.readBackstory(state).length > 0,

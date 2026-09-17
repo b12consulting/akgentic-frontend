@@ -93,7 +93,7 @@ const TEST_ROUTES: Routes = [
 // and with it the three-way `combineLatest` over the open team, the session and
 // the inspector's collapse state, the `onLangChange` rebuild, and `buildMenu`.
 // Its contents were redistributed — team name, status, Clear and Details to the
-// conversation header; logo, account and All-teams to the rail — and each of
+// process header; logo, account and All-teams to the rail — and each of
 // those reads the state it needs where it is rendered.
 //
 // So the assertions that used to live here (AC12's "toggling the right column

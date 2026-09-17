@@ -20,7 +20,7 @@ import {
  * PRESENTATIONAL, deliberately. It holds no state, injects nothing, and knows
  * nothing about what it toggles: the glyph arrives through `<ng-content>` and
  * the meaning arrives through `label`. That is what lets the rail, the
- * conversation header and the inspector share it without any of them learning
+ * process header and the inspector share it without any of them learning
  * about the others.
  *
  * `label` is ALREADY-TRANSLATED text, never a key. A shared primitive that

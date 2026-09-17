@@ -1,7 +1,7 @@
 /*
  * THE PANE PROPAGATES ITS HEIGHT.
  *
- * `agent-chat.component.scss` used to carry `height: calc(100vh - 370px)` with
+ * `context-trace.component.scss` used to carry `height: calc(100vh - 370px)` with
  * a comment naming the real obstacle: "the PrimeNG tab chain above this
  * component does not propagate a usable height". That was true, and the fix was
  * applied to the wrong element — measuring the window from inside a 310px pane

@@ -483,8 +483,8 @@ p-table {
 // stock green sitting in the middle of a warm-neutral palette. The severities
 // are gone; each state names itself with a class and the ground is set here.
 //
-// The tokens are the SAME pair the conversation header's status pill reads
-// (`conversation-header.component.scss`). That is the point of the aliases
+// The tokens are the SAME pair the process header's status pill reads
+// (`process-header.component.scss`). That is the point of the aliases
 // rather than of reaching for `--akg-accent-bg` directly: the two places a
 // team's state is drawn now agree by construction, and re-pointing the accent
 // moves both.

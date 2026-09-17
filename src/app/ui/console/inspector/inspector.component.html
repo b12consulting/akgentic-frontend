@@ -1,5 +1,5 @@
 <!--
-  The `id` is a CONTRACT, not decoration: the conversation header's Details
+  The `id` is a CONTRACT, not decoration: the process header's Details
   button points its `aria-controls` at it, so a screen reader can be told what
   that button reveals. Renaming it silently breaks that link, since nothing
   errors when `aria-controls` names an element that does not exist.
@@ -10,7 +10,7 @@
     <span class="inspector__title-spacer"></span>
     <!--
       The swap control (R3) sits BESIDE the close X rather than in the
-      conversation header, because it is an action on THIS pane and the pane is
+      process header, because it is an action on THIS pane and the pane is
       where the user is looking when they decide it is on the wrong side.
 
       Its label states the DESTINATION, not the current position: "Move to the

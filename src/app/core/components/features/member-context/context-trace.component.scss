@@ -128,7 +128,18 @@
   border: 1px solid transparent;
   border-radius: var(--akg-control-radius);
   background: var(--akg-accent-fg);
-  color: var(--akg-accent-bright);
+
+  /*
+   * WHITE, the same as the composer's send control
+   * (`chat/user-input/user-input.component.scss`, which sets
+   * `color: var(--akg-overlay-bg)` on its own `.send-button`).
+   *
+   * This was `--akg-accent-bright` — the ramp's light green — which put a green
+   * label on a green fill and read as one flat shape rather than as a label on
+   * a button. Two controls that send the user's text should not disagree about
+   * what a filled accent button looks like.
+   */
+  color: var(--akg-overlay-bg);
   font-family: var(--akg-font-ui);
   font-size: var(--akg-font-size-control);
   cursor: pointer;
@@ -234,7 +245,7 @@
 // comment above it named the real obstacle: "the PrimeNG tab chain above this
 // component does not propagate a usable height". That was true and the fix was
 // aimed at the wrong element — the answer is to make the chain propagate
-// (`agent-tabs.component.scss` now does), not to measure the window from inside
+// (`member-context.component.scss` now does), not to measure the window from inside
 // it. Since Epic 56 this panel lives in the 310px inspector, where 370px of
 // "surrounding chrome" is a budget for a layout that no longer exists.
 //
@@ -330,18 +341,31 @@
 }
 
 /*
- * THE BODY, as an inset well rather than a `<p-fieldset>`.
+ * THE BODY, as an OUTLINED box carrying the card's own ground.
  *
- * The fieldset supplied a border, a ground and a legend reading "Content" over
- * the content. A recess says the same thing — "this is the material, not the
- * interface" — without a word, and it distinguishes the quoted text from the
- * card's own chrome, which a second outlined box on an outlined card did not.
+ * It was a `<p-fieldset>` (border + ground + a legend reading "Content" over
+ * the content), then an inset well on `--akg-well-bg`. The recess was chosen to
+ * say "this is the material, not the interface" without a word — and the note
+ * here recorded that an outline had been rejected because "a second outlined
+ * box on an outlined card" failed to separate the two.
+ *
+ * That objection no longer holds, which is why this is not a revert.
+ * `.head-system-container` carries no border today — the card reads as a white
+ * fill on the beige page, not as an outlined frame — so a hairline box inside
+ * it is the only drawn edge in the group rather than the second of two.
+ *
+ * `transparent` rather than naming the card's colour: the well then IS the
+ * container's ground, whatever that becomes, and cannot drift from it. The
+ * lightening this replaces went the other way and hit a floor —
+ * `--akg-surface-muted` dissolved into the white card entirely, because a
+ * ground is only as light as its surroundings allow. An edge has no such floor.
  */
 .entry-well {
   position: relative;
   padding: 8px 9px;
+  border: 1px solid var(--akg-surface-border);
   border-radius: 8px;
-  background: var(--akg-well-bg);
+  background: transparent;
 }
 
 .entry-well + .entry-well {

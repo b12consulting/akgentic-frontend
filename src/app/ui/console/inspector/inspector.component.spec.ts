@@ -105,7 +105,7 @@ describe('InspectorComponent', () => {
   }
 
   /**
-   * The id is the conversation header's `aria-controls` target. Nothing errors
+   * The id is the process header's `aria-controls` target. Nothing errors
    * when `aria-controls` points at an element that does not exist, so the only
    * thing keeping that link honest is an assertion on this side of it.
    */

@@ -24,7 +24,7 @@
   [class.console-panes--swapped]="inspectorSide() === 'left'"
 >
   <div class="conversation-pane">
-    <app-conversation-header></app-conversation-header>
+    <app-process-header></app-process-header>
     <app-chat-panel class="chat-app" [processId]="processId"></app-chat-panel>
   </div>
 
@@ -131,7 +131,7 @@
         [attr.inert]="isHidden('member') ? '' : null"
         [class.moved-offscreen]="isHidden('member')"
       >
-        <app-agent-tabs></app-agent-tabs>
+        <app-member-context></app-member-context>
       </div>
 
       <app-workspace-tabs

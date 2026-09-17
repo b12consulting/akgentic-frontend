@@ -44,14 +44,14 @@
       ></p-dropdown>
     </div>
 
-    @if (chatTabVisible$ | async) {
-      <app-agent-chat
+    @if (traceVisible$ | async) {
+      <app-context-trace
         class="agent-trace"
         [context$]="context$"
         [backstory$]="backstory$"
         [agentId]="akgentId"
         [agentName]="akgentName"
-      ></app-agent-chat>
+      ></app-context-trace>
     } @else {
       <!--
         An agent is picked but has neither a conversation nor a backstory — a

@@ -126,7 +126,7 @@ export class InspectorComponent implements AfterViewInit, OnDestroy {
    * Public because the template calls `toggleRightColumn()` on it.
    *
    * Root-scoped on purpose: the same state has two controls by design — the
-   * conversation header's Details button and this pane's own close X — and a
+   * process header's Details button and this pane's own close X — and a
    * pane that owned its own flag would have to be told about the other one.
    */
   readonly viewService: ViewService = inject(ViewService);

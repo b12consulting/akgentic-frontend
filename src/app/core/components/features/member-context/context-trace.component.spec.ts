@@ -4,7 +4,7 @@ import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { BehaviorSubject, Observable, of } from 'rxjs';
 
-import { AgentChatComponent } from './agent-chat.component';
+import { ContextTraceComponent } from './context-trace.component';
 import { ApiService } from '../../../platform/http/api.service';
 import { UtilService } from '../../../services/utils.service';
 import { ContextService } from '../../../platform/context/context.service';
@@ -69,8 +69,8 @@ function headerText(header: Element): string {
  * chat targets exactly one agent (its own `agentName`), so the `/` list is
  * unconditionally that agent's commands.
  */
-describe('AgentChatComponent — slash-command mention (Story 15-1 / 17-3)', () => {
-  let component: AgentChatComponent;
+describe('ContextTraceComponent — slash-command mention (Story 15-1 / 17-3)', () => {
+  let component: ContextTraceComponent;
   // Story 17-3: the member chat reads `commands.snapshot(this.agentId)` keyed by
   // agent_id. The stub holds an agent_id → descriptors map + a `snapshot(id)`.
   let commandsById: Record<string, CommandDescriptor[]>;
@@ -95,7 +95,7 @@ describe('AgentChatComponent — slash-command mention (Story 15-1 / 17-3)', () 
     commandsById = {};
 
     TestBed.configureTestingModule({
-      imports: [AgentChatComponent],
+      imports: [ContextTraceComponent],
       providers: [
         // `CopyButtonComponent`, imported by the component under test, now
         // resolves its label through `TranslatePipe` rather than a hardcoded
@@ -110,7 +110,7 @@ describe('AgentChatComponent — slash-command mention (Story 15-1 / 17-3)', () 
             currentProcessId$: new BehaviorSubject<string>('proc-1'),
           },
         },
-        // Story 16-2 / Epic 17 (17-4): AgentChatComponent injects
+        // Story 16-2 / Epic 17 (17-4): ContextTraceComponent injects
         // SystemPromptSelector, now a thin façade over
         // `IngestionService.systemPrompt`. Provide a stub service exposing the
         // `commands` snapshot the `/` mention reads PLUS a REAL `systemPrompt`
@@ -138,7 +138,7 @@ describe('AgentChatComponent — slash-command mention (Story 15-1 / 17-3)', () 
       ],
     });
 
-    const fixture = TestBed.createComponent(AgentChatComponent);
+    const fixture = TestBed.createComponent(ContextTraceComponent);
     component = fixture.componentInstance;
     component.context$ = new BehaviorSubject<any[]>([]);
     component.agentId = 'a-mgr';
@@ -338,17 +338,17 @@ function doubleCarryContextMessage(): any {
   };
 }
 
-describe('AgentChatComponent — head system block (Story 16-2)', () => {
+describe('ContextTraceComponent — head system block (Story 16-2)', () => {
   const AGENT = 'a-mgr';
 
   function setup(): {
-    fixture: ComponentFixture<AgentChatComponent>;
-    component: AgentChatComponent;
+    fixture: ComponentFixture<ContextTraceComponent>;
+    component: ContextTraceComponent;
     log: MessageLogService;
   } {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      imports: [AgentChatComponent],
+      imports: [ContextTraceComponent],
       providers: [
         // `CopyButtonComponent`, imported by the component under test, now
         // resolves its label through `TranslatePipe` rather than a hardcoded
@@ -404,7 +404,7 @@ describe('AgentChatComponent — head system block (Story 16-2)', () => {
     });
 
     const log = TestBed.inject(MessageLogService);
-    const fixture = TestBed.createComponent(AgentChatComponent);
+    const fixture = TestBed.createComponent(ContextTraceComponent);
     const component = fixture.componentInstance;
     component.context$ = new BehaviorSubject<any[]>([]);
     component.agentId = AGENT;
@@ -421,7 +421,7 @@ describe('AgentChatComponent — head system block (Story 16-2)', () => {
    *  render, in what order, with which names — the separator was never the
    *  behaviour under test. */
   function headHeaders(
-    fixture: ComponentFixture<AgentChatComponent>
+    fixture: ComponentFixture<ContextTraceComponent>
   ): string[] {
     const el: HTMLElement = fixture.nativeElement;
     return Array.from(
@@ -431,7 +431,7 @@ describe('AgentChatComponent — head system block (Story 16-2)', () => {
 
   /** Rendered head-block content bodies, in order. */
   function headBodies(
-    fixture: ComponentFixture<AgentChatComponent>
+    fixture: ComponentFixture<ContextTraceComponent>
   ): string[] {
     const el: HTMLElement = fixture.nativeElement;
     return Array.from(
@@ -476,7 +476,7 @@ describe('AgentChatComponent — head system block (Story 16-2)', () => {
     fixture.detectChanges();
     expect(headBodies(fixture)).toEqual(['A backstory']);
 
-    // The agent-tabs dropdown REUSES this component when switching members, so
+    // The member picker REUSES this component when switching members, so
     // ngOnInit does not re-run — ngOnChanges must re-point systemPrompt$ at the
     // new agent. Without the fix the head block stays pinned to 'A backstory'.
     // Story 30-3 (OnPush): `fixture.componentRef.setInput(...)` — not a bare
@@ -634,18 +634,18 @@ describe('AgentChatComponent — head system block (Story 16-2)', () => {
 // head block renders the synthetic backstory row when no event rows exist, the
 // event rows when present (latest-wins), and nothing when both are empty.
 // ---------------------------------------------------------------------------
-describe('AgentChatComponent — never-run backstory head block (Story 20-1)', () => {
+describe('ContextTraceComponent — never-run backstory head block (Story 20-1)', () => {
   const AGENT = 'a-mgr';
 
   function setup(backstory = ''): {
-    fixture: ComponentFixture<AgentChatComponent>;
-    component: AgentChatComponent;
+    fixture: ComponentFixture<ContextTraceComponent>;
+    component: ContextTraceComponent;
     log: MessageLogService;
     backstory$: BehaviorSubject<string>;
   } {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      imports: [AgentChatComponent],
+      imports: [ContextTraceComponent],
       providers: [
         // `CopyButtonComponent`, imported by the component under test, now
         // resolves its label through `TranslatePipe` rather than a hardcoded
@@ -689,7 +689,7 @@ describe('AgentChatComponent — never-run backstory head block (Story 20-1)', (
     });
 
     const log = TestBed.inject(MessageLogService);
-    const fixture = TestBed.createComponent(AgentChatComponent);
+    const fixture = TestBed.createComponent(ContextTraceComponent);
     const component = fixture.componentInstance;
     const backstory$ = new BehaviorSubject<string>(backstory);
     component.context$ = new BehaviorSubject<any[]>([]);
@@ -699,14 +699,14 @@ describe('AgentChatComponent — never-run backstory head block (Story 20-1)', (
     return { fixture, component, log, backstory$ };
   }
 
-  function headHeaders(fixture: ComponentFixture<AgentChatComponent>): string[] {
+  function headHeaders(fixture: ComponentFixture<ContextTraceComponent>): string[] {
     const el: HTMLElement = fixture.nativeElement;
     return Array.from(
       el.querySelectorAll('.head-system-container .card-header')
     ).map((n) => headerText(n));
   }
 
-  function headBodies(fixture: ComponentFixture<AgentChatComponent>): string[] {
+  function headBodies(fixture: ComponentFixture<ContextTraceComponent>): string[] {
     const el: HTMLElement = fixture.nativeElement;
     return Array.from(
       el.querySelectorAll('.head-system-container .text-container')
@@ -781,7 +781,7 @@ describe('AgentChatComponent — never-run backstory head block (Story 20-1)', (
     // A caller that does NOT bind backstory$ keeps the event-only head block.
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      imports: [AgentChatComponent],
+      imports: [ContextTraceComponent],
       providers: [
         // `CopyButtonComponent`, imported by the component under test, now
         // resolves its label through `TranslatePipe` rather than a hardcoded
@@ -823,7 +823,7 @@ describe('AgentChatComponent — never-run backstory head block (Story 20-1)', (
         provideNoopAnimations(),
       ],
     });
-    const fixture = TestBed.createComponent(AgentChatComponent);
+    const fixture = TestBed.createComponent(ContextTraceComponent);
     const component = fixture.componentInstance;
     component.context$ = new BehaviorSubject<any[]>([]);
     component.agentId = AGENT;
@@ -834,14 +834,14 @@ describe('AgentChatComponent — never-run backstory head block (Story 20-1)', (
   });
 });
 
-describe('AgentChatComponent — follow mode + status pill', () => {
+describe('ContextTraceComponent — follow mode + status pill', () => {
   let running: BehaviorSubject<boolean>;
 
-  function setup(): { component: AgentChatComponent } {
+  function setup(): { component: ContextTraceComponent } {
     running = new BehaviorSubject<boolean>(true);
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      imports: [AgentChatComponent],
+      imports: [ContextTraceComponent],
       providers: [
         // `CopyButtonComponent`, imported by the component under test, now
         // resolves its label through `TranslatePipe` rather than a hardcoded
@@ -883,7 +883,7 @@ describe('AgentChatComponent — follow mode + status pill', () => {
         provideNoopAnimations(),
       ],
     });
-    const fixture = TestBed.createComponent(AgentChatComponent);
+    const fixture = TestBed.createComponent(ContextTraceComponent);
     const component = fixture.componentInstance;
     component.context$ = new BehaviorSubject<any[]>([]);
     component.agentId = 'a-mgr';
@@ -893,7 +893,7 @@ describe('AgentChatComponent — follow mode + status pill', () => {
 
   /** Install a mock trace-scroll element with controllable geometry. */
   function installScroll(
-    component: AgentChatComponent,
+    component: ContextTraceComponent,
     scrollHeight: number,
     clientHeight: number,
     scrollTop = 0,
@@ -1016,13 +1016,13 @@ describe('AgentChatComponent — follow mode + status pill', () => {
 // Keyboard-submit parity with the main chat (user-input): Enter submits only
 // when the `userInputEnterKeySubmit` setting is on; Cmd/Ctrl+Enter always send.
 // ---------------------------------------------------------------------------
-describe('AgentChatComponent — keyboard submit parity', () => {
-  let component: AgentChatComponent;
-  let fixture: ComponentFixture<AgentChatComponent>;
+describe('ContextTraceComponent — keyboard submit parity', () => {
+  let component: ContextTraceComponent;
+  let fixture: ComponentFixture<ContextTraceComponent>;
 
   beforeEach(() => {
     TestBed.configureTestingModule({
-      imports: [AgentChatComponent],
+      imports: [ContextTraceComponent],
       providers: [
         // `CopyButtonComponent`, imported by the component under test, now
         // resolves its label through `TranslatePipe` rather than a hardcoded
@@ -1062,7 +1062,7 @@ describe('AgentChatComponent — keyboard submit parity', () => {
       ],
     });
 
-    fixture = TestBed.createComponent(AgentChatComponent);
+    fixture = TestBed.createComponent(ContextTraceComponent);
     component = fixture.componentInstance;
     component.context$ = new BehaviorSubject<any[]>([]);
     component.agentId = 'a-mgr';
@@ -1113,7 +1113,7 @@ describe('AgentChatComponent — keyboard submit parity', () => {
 // whose `perAgent$` returns a controllable BehaviorSubject so render / live-update
 // / empty-state are deterministic.
 // ---------------------------------------------------------------------------
-describe('AgentChatComponent — token-usage pill (Story 26-2)', () => {
+describe('ContextTraceComponent — token-usage pill (Story 26-2)', () => {
   const AGENT = 'a-mgr';
 
   function usage(partial: Partial<AgentTokenUsage>): AgentTokenUsage {
@@ -1133,14 +1133,14 @@ describe('AgentChatComponent — token-usage pill (Story 26-2)', () => {
   }
 
   function setup(initial: AgentTokenUsage | undefined): {
-    fixture: ComponentFixture<AgentChatComponent>;
-    component: AgentChatComponent;
+    fixture: ComponentFixture<ContextTraceComponent>;
+    component: ContextTraceComponent;
     usage$: BehaviorSubject<AgentTokenUsage | undefined>;
   } {
     const usage$ = new BehaviorSubject<AgentTokenUsage | undefined>(initial);
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      imports: [AgentChatComponent],
+      imports: [ContextTraceComponent],
       providers: [
         // `CopyButtonComponent`, imported by the component under test, now
         // resolves its label through `TranslatePipe` rather than a hardcoded
@@ -1190,7 +1190,7 @@ describe('AgentChatComponent — token-usage pill (Story 26-2)', () => {
       ],
     });
 
-    const fixture = TestBed.createComponent(AgentChatComponent);
+    const fixture = TestBed.createComponent(ContextTraceComponent);
     const component = fixture.componentInstance;
     component.context$ = new BehaviorSubject<any[]>([]);
     component.agentId = AGENT;
@@ -1200,7 +1200,7 @@ describe('AgentChatComponent — token-usage pill (Story 26-2)', () => {
 
   /** The `.input-row-buttons` row element. */
   function buttonsRow(
-    fixture: ComponentFixture<AgentChatComponent>,
+    fixture: ComponentFixture<ContextTraceComponent>,
   ): HTMLElement {
     const el: HTMLElement = fixture.nativeElement;
     return el.querySelector('.input-row-buttons') as HTMLElement;
@@ -1208,14 +1208,14 @@ describe('AgentChatComponent — token-usage pill (Story 26-2)', () => {
 
   /** The pill element (the `.usage-pill` span). */
   function pill(
-    fixture: ComponentFixture<AgentChatComponent>,
+    fixture: ComponentFixture<ContextTraceComponent>,
   ): HTMLElement | null {
     return buttonsRow(fixture).querySelector('.usage-pill');
   }
 
   /** The pill's rendered text with whitespace collapsed (OQ3: glyphs/order are
    *  the contract, not exact spacing). */
-  function pillText(fixture: ComponentFixture<AgentChatComponent>): string {
+  function pillText(fixture: ComponentFixture<ContextTraceComponent>): string {
     return (pill(fixture)?.textContent ?? '').replace(/\s+/g, ' ').trim();
   }
 
@@ -1349,7 +1349,7 @@ describe('AgentChatComponent — token-usage pill (Story 26-2)', () => {
 // empty-state deterministic. `p-popover` renders in place (no `appendTo`
 // override) so its content is queryable straight off `fixture.nativeElement`.
 // ---------------------------------------------------------------------------
-describe('AgentChatComponent — usage popover (Story 30-2)', () => {
+describe('ContextTraceComponent — usage popover (Story 30-2)', () => {
   const AGENT = 'a-mgr';
 
   function usage(partial: Partial<AgentTokenUsage>): AgentTokenUsage {
@@ -1369,13 +1369,13 @@ describe('AgentChatComponent — usage popover (Story 30-2)', () => {
   }
 
   function setup(initial: AgentTokenUsage | undefined): {
-    fixture: ComponentFixture<AgentChatComponent>;
+    fixture: ComponentFixture<ContextTraceComponent>;
     usage$: BehaviorSubject<AgentTokenUsage | undefined>;
   } {
     const usage$ = new BehaviorSubject<AgentTokenUsage | undefined>(initial);
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      imports: [AgentChatComponent],
+      imports: [ContextTraceComponent],
       providers: [
         // `CopyButtonComponent`, imported by the component under test, now
         // resolves its label through `TranslatePipe` rather than a hardcoded
@@ -1423,7 +1423,7 @@ describe('AgentChatComponent — usage popover (Story 30-2)', () => {
       ],
     });
 
-    const fixture = TestBed.createComponent(AgentChatComponent);
+    const fixture = TestBed.createComponent(ContextTraceComponent);
     const component = fixture.componentInstance;
     component.context$ = new BehaviorSubject<any[]>([]);
     component.agentId = AGENT;
@@ -1431,7 +1431,7 @@ describe('AgentChatComponent — usage popover (Story 30-2)', () => {
     return { fixture, usage$ };
   }
 
-  function pill(fixture: ComponentFixture<AgentChatComponent>): HTMLButtonElement {
+  function pill(fixture: ComponentFixture<ContextTraceComponent>): HTMLButtonElement {
     return (fixture.nativeElement as HTMLElement).querySelector(
       '.usage-pill',
     ) as HTMLButtonElement;
@@ -1439,7 +1439,7 @@ describe('AgentChatComponent — usage popover (Story 30-2)', () => {
 
   /** Each `.usage-popover-row`'s two cells joined with a single space (e.g.
    *  "Cache read 4,000 / 9,000") — empty array when the popover isn't open. */
-  function popoverRows(fixture: ComponentFixture<AgentChatComponent>): string[] {
+  function popoverRows(fixture: ComponentFixture<ContextTraceComponent>): string[] {
     const rows = (fixture.nativeElement as HTMLElement).querySelectorAll(
       '.usage-popover-row',
     );
@@ -1549,16 +1549,16 @@ describe('AgentChatComponent — usage popover (Story 30-2)', () => {
 // verbatim Q/A tail. Driven by pushing the SAME folded array the store produces
 // (foldContextCompaction) into context$ and asserting the rendered rows.
 // ---------------------------------------------------------------------------
-describe('AgentChatComponent — folded compaction summary (Story 29-3)', () => {
+describe('ContextTraceComponent — folded compaction summary (Story 29-3)', () => {
   const AGENT = 'a-mgr';
 
   function setup(): {
-    fixture: ComponentFixture<AgentChatComponent>;
-    component: AgentChatComponent;
+    fixture: ComponentFixture<ContextTraceComponent>;
+    component: ContextTraceComponent;
   } {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      imports: [AgentChatComponent],
+      imports: [ContextTraceComponent],
       providers: [
         // `CopyButtonComponent`, imported by the component under test, now
         // resolves its label through `TranslatePipe` rather than a hardcoded
@@ -1601,7 +1601,7 @@ describe('AgentChatComponent — folded compaction summary (Story 29-3)', () => 
       ],
     });
 
-    const fixture = TestBed.createComponent(AgentChatComponent);
+    const fixture = TestBed.createComponent(ContextTraceComponent);
     const component = fixture.componentInstance;
     component.context$ = new BehaviorSubject<any[]>([]);
     component.agentId = AGENT;
@@ -1611,7 +1611,7 @@ describe('AgentChatComponent — folded compaction summary (Story 29-3)', () => 
 
   /** Conversation-table card headers (excludes the head system block), whitespace
    *  normalised. */
-  function convHeaders(fixture: ComponentFixture<AgentChatComponent>): string[] {
+  function convHeaders(fixture: ComponentFixture<ContextTraceComponent>): string[] {
     const el: HTMLElement = fixture.nativeElement;
     return Array.from(
       el.querySelectorAll('.collapsible-container .card-header'),
@@ -1619,7 +1619,7 @@ describe('AgentChatComponent — folded compaction summary (Story 29-3)', () => 
   }
 
   /** Conversation-table content bodies. */
-  function convBodies(fixture: ComponentFixture<AgentChatComponent>): string[] {
+  function convBodies(fixture: ComponentFixture<ContextTraceComponent>): string[] {
     const el: HTMLElement = fixture.nativeElement;
     return Array.from(
       el.querySelectorAll('.collapsible-container .text-container'),
@@ -1683,7 +1683,7 @@ describe('AgentChatComponent — folded compaction summary (Story 29-3)', () => 
 
 // ---------------------------------------------------------------------------
 // Story 30-3 — component-level OnPush on the usage-display host components.
-// AgentChatComponent now runs under `ChangeDetectionStrategy.OnPush`; the
+// ContextTraceComponent now runs under `ChangeDetectionStrategy.OnPush`; the
 // writes below (the `context$` and `currentTeamRunning$` subscriptions in
 // `ngOnInit`) come from MANUAL RxJS subscriptions, not the `async` pipe, so
 // only an explicit `ChangeDetectorRef.markForCheck()` at each site keeps them
@@ -1697,18 +1697,18 @@ describe('AgentChatComponent — folded compaction summary (Story 29-3)', () => 
 // which repaints the view regardless of `markForCheck()` and would silently
 // mask a missing call — confirmed empirically (see Dev Agent Record).
 // ---------------------------------------------------------------------------
-describe('AgentChatComponent — OnPush regression (Story 30-3)', () => {
+describe('ContextTraceComponent — OnPush regression (Story 30-3)', () => {
   const AGENT = 'a-mgr';
 
   function setup(): {
-    fixture: ComponentFixture<AgentChatComponent>;
-    component: AgentChatComponent;
+    fixture: ComponentFixture<ContextTraceComponent>;
+    component: ContextTraceComponent;
     running$: BehaviorSubject<boolean>;
   } {
     const running$ = new BehaviorSubject<boolean>(true);
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      imports: [AgentChatComponent],
+      imports: [ContextTraceComponent],
       providers: [
         // `CopyButtonComponent`, imported by the component under test, now
         // resolves its label through `TranslatePipe` rather than a hardcoded
@@ -1751,7 +1751,7 @@ describe('AgentChatComponent — OnPush regression (Story 30-3)', () => {
       ],
     });
 
-    const fixture = TestBed.createComponent(AgentChatComponent);
+    const fixture = TestBed.createComponent(ContextTraceComponent);
     const component = fixture.componentInstance;
     component.context$ = new BehaviorSubject<any[]>([]);
     component.agentId = AGENT;
@@ -1762,7 +1762,7 @@ describe('AgentChatComponent — OnPush regression (Story 30-3)', () => {
   /** Install a mock trace-scroll element with controllable geometry (mirrors
    *  the "follow mode" describe block's helper above). */
   function installScroll(
-    component: AgentChatComponent,
+    component: ContextTraceComponent,
     scrollHeight: number,
     clientHeight: number,
     scrollTop = 0,

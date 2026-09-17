@@ -2,7 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { BehaviorSubject, Observable, of } from 'rxjs';
 
-import { AgentChatComponent } from './agent-chat.component';
+import { ContextTraceComponent } from './context-trace.component';
 import { ApiService } from '../../../platform/http/api.service';
 import { UtilService } from '../../../services/utils.service';
 import { ContextService } from '../../../platform/context/context.service';
@@ -29,16 +29,16 @@ import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
  * the user comes through a translation key, and that the composer names the
  * member rather than naming itself.
  */
-describe('AgentChatComponent — the trace, in the console\'s language', () => {
+describe('ContextTraceComponent — the trace, in the console\'s language', () => {
   const AGENT = 'a-mgr';
 
   function setup(): {
-    fixture: ComponentFixture<AgentChatComponent>;
-    component: AgentChatComponent;
+    fixture: ComponentFixture<ContextTraceComponent>;
+    component: ContextTraceComponent;
   } {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      imports: [AgentChatComponent],
+      imports: [ContextTraceComponent],
       providers: [
         provideTranslateTesting(),
         {
@@ -87,7 +87,7 @@ describe('AgentChatComponent — the trace, in the console\'s language', () => {
       ],
     });
 
-    const fixture = TestBed.createComponent(AgentChatComponent);
+    const fixture = TestBed.createComponent(ContextTraceComponent);
     const component = fixture.componentInstance;
     component.context$ = new BehaviorSubject<unknown[]>([]) as BehaviorSubject<
       any[]
@@ -97,7 +97,7 @@ describe('AgentChatComponent — the trace, in the console\'s language', () => {
     return { fixture, component };
   }
 
-  function html(fixture: ComponentFixture<AgentChatComponent>): HTMLElement {
+  function html(fixture: ComponentFixture<ContextTraceComponent>): HTMLElement {
     return fixture.nativeElement as HTMLElement;
   }
 
@@ -273,11 +273,11 @@ describe('AgentChatComponent — the trace, in the console\'s language', () => {
     const { fixture, component } = setup();
     fixture.detectChanges();
 
-    component.indicatorLabel = AgentChatComponent.FOLLOWING_KEY;
+    component.indicatorLabel = ContextTraceComponent.FOLLOWING_KEY;
     expect(component.indicatorLabel).toBe('chat.autoScrolling');
     expect(component.indicatorIcon).toBe('pi-sync');
 
-    component.indicatorLabel = AgentChatComponent.BEHIND_KEY;
+    component.indicatorLabel = ContextTraceComponent.BEHIND_KEY;
     expect(component.indicatorLabel).toBe('chat.messages');
     expect(component.indicatorIcon).toBe('pi-arrow-down');
   });

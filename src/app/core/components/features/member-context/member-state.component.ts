@@ -19,12 +19,12 @@ import { AkgentService } from '../../../services/akgent.service';
 import { ConfigService } from '../../../platform/config/config.service';
 
 @Component({
-  selector: 'app-agent-state',
+  selector: 'app-member-state',
   imports: [CommonModule, ReactiveFormsModule, TextareaModule, ButtonModule],
-  templateUrl: './agent-state.component.html',
-  styleUrl: './agent-state.component.scss',
+  templateUrl: './member-state.component.html',
+  styleUrl: './member-state.component.scss',
 })
-export class AgentStateComponent {
+export class MemberStateComponent {
   @Input() state$!: BehaviorSubject<any>;
   @Input() agentId!: string;
 

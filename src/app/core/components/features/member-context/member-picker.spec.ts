@@ -4,7 +4,7 @@ import { By } from '@angular/platform-browser';
 import { BehaviorSubject } from 'rxjs';
 import { Dropdown } from 'primeng/dropdown';
 
-import { AgentTabsComponent } from './agent-tabs.component';
+import { MemberContextComponent } from './member-context.component';
 import { Akgent, AkgentService } from '../../../services/akgent.service';
 import { GraphDataService } from '../../../services/process/selectors/graph.selector';
 import { IngestionService } from '../../../services/process/event/ingestion.service';
@@ -35,9 +35,9 @@ function member(id: string, category: number): Record<string, unknown> {
   };
 }
 
-describe('AgentTabsComponent — what the agent picker actually lists', () => {
-  let fixture: ComponentFixture<AgentTabsComponent>;
-  let component: AgentTabsComponent;
+describe('MemberContextComponent — what the agent picker actually lists', () => {
+  let fixture: ComponentFixture<MemberContextComponent>;
+  let component: MemberContextComponent;
   let nodes$: BehaviorSubject<unknown[]>;
   let categories$: BehaviorSubject<unknown[]>;
   let selectedAkgent$: BehaviorSubject<Akgent | null>;
@@ -49,7 +49,7 @@ describe('AgentTabsComponent — what the agent picker actually lists', () => {
 
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
-      imports: [AgentTabsComponent],
+      imports: [MemberContextComponent],
       providers: [
         provideTranslateTesting(),
         {
@@ -71,7 +71,7 @@ describe('AgentTabsComponent — what the agent picker actually lists', () => {
       ],
     });
 
-    fixture = TestBed.createComponent(AgentTabsComponent);
+    fixture = TestBed.createComponent(MemberContextComponent);
     component = fixture.componentInstance;
     fixture.detectChanges();
   });
@@ -177,8 +177,8 @@ describe('AgentTabsComponent — what the agent picker actually lists', () => {
  */
 @Component({
   standalone: true,
-  imports: [AgentTabsComponent],
-  template: `<app-agent-tabs></app-agent-tabs>`,
+  imports: [MemberContextComponent],
+  template: `<app-member-context></app-member-context>`,
 })
 class MemberPanelHostComponent {}
 
@@ -237,8 +237,8 @@ describe('The member pane, mounted without the hierarchy pane beside it', () => 
     });
 
     const component = fixture.debugElement.query(
-      (de) => de.componentInstance instanceof AgentTabsComponent,
-    ).componentInstance as AgentTabsComponent;
+      (de) => de.componentInstance instanceof MemberContextComponent,
+    ).componentInstance as MemberContextComponent;
 
     // The stream is fine — this is not an empty feed.
     expect(component.agentsByCategory.length)
