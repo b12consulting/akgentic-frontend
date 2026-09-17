@@ -1,0 +1,193 @@
+<!--
+  STEP 1 — choose the team type.
+
+  `[visible]` is bound to `step() === 'type'` and split from `(visibleChange)`,
+  the same host-owns-visibility shape the metadata modal and the namespace panel
+  already use. It is also what makes the two steps mutually exclusive: the
+  moment `step` becomes 'metadata' this dialog's `visible` is false, so there is
+  never a frame with two overlays and never two live Escape handlers.
+
+  `[closable]` / `[dismissableMask]` lock the dismissal channels while an
+  ungated create is in flight, matching the metadata modal's treatment of the
+  same moment: a create has been POSTed and closing the dialog would leave the
+  user with no indication of what happened to it.
+-->
+<p-dialog
+  [visible]="step() === 'type'"
+  (visibleChange)="onTypeDialogVisibleChange($event)"
+  [modal]="true"
+  [draggable]="false"
+  [style]="{ width: '30rem' }"
+  [closable]="!creation.creatingByGesture"
+  [dismissableMask]="!creation.creatingByGesture"
+  styleClass="team-creation-dialog"
+  data-test="team-creation-dialog"
+>
+  <ng-template pTemplate="header">
+    <span class="p-dialog-title" data-test="team-creation-header">
+      {{ 'creation.title' | translate }}
+    </span>
+  </ng-template>
+
+  <!--
+    ADR-028's admin toggle, reproduced here because R2 took the Create button —
+    and with it this list's widened form — off the management page. Hidden from
+    non-admins rather than disabled, exactly as on the page: a switch nobody may
+    use is a question nobody should be asked.
+
+    OUTSIDE the `@switch`, not inside the type list. An admin whose own
+    owner+public list is empty is exactly the admin who needs the widened one,
+    and a toggle drawn only beside a non-empty list would be missing precisely
+    then.
+
+    A NATIVE checkbox, not `p-toggleswitch`. This dialog already argues the case
+    for native radios below, and the argument is the same one: the browser
+    supplies the role, the label association and the forced-colours treatment,
+    and `accent-color` tints it without taking any of that away.
+  -->
+  @if (isAdmin()) {
+    <label class="team-creation__show-all">
+      <input
+        type="checkbox"
+        class="team-creation__show-all-input"
+        [checked]="showAllTypes()"
+        [disabled]="creation.creatingByGesture"
+        (change)="onShowAllChange($event)"
+        data-test="creation-show-all"
+      />
+      <span>{{ 'creation.showAllTypes' | translate }}</span>
+    </label>
+  }
+
+  @switch (typesState()) {
+    @case ('loading') {
+      <!--
+        Nothing is drawn while the fetch is in flight, and that is deliberate:
+        the only other thing to draw here is the empty state, which makes a
+        claim about the account ("no team type is available to you") that is
+        not yet true or false. A blank instant is honest; a premature "you have
+        none" is not. The primary button stays disabled throughout, so the
+        dialog never looks ready before it is.
+      -->
+    }
+    @case ('empty') {
+      <p class="team-creation__empty" data-test="team-creation-empty">
+        {{ 'creation.noTypes' | translate }}
+      </p>
+    }
+    @default {
+      <!--
+        NATIVE RADIOS, not buttons with `role="radio"`. The browser gives this
+        group arrow-key navigation, a single tab stop and the right
+        announcement for free; a hand-rolled radiogroup would owe all three a
+        roving-tabindex implementation, and the two that get forgotten are the
+        two nobody tests. `<fieldset>`/`<legend>` is how the group gets its
+        name — the same reason, applied to the label.
+      -->
+      <fieldset class="team-creation__types">
+        <legend class="team-creation__legend">
+          {{ 'creation.chooseType' | translate }}
+        </legend>
+
+        @for (ns of namespaces(); track ns.namespace) {
+          <!--
+            THE ROW ADVANCES. Clicking a type is the choice — see
+            `onTypeActivated`, which explains why this is on the label's click
+            rather than on the input's `change`, and why a keyboard activation
+            deliberately does not follow it through.
+          -->
+          <label
+            class="team-creation__type"
+            [class.team-creation__type--selected]="isSelected(ns)"
+            (click)="onTypeActivated(ns, $event)"
+          >
+            <input
+              type="radio"
+              class="team-creation__radio"
+              name="team-creation-type"
+              [value]="ns.namespace"
+              [checked]="isSelected(ns)"
+              [disabled]="creation.creatingByGesture"
+              (change)="onSelectType(ns)"
+              [attr.data-test]="'creation-type-' + ns.namespace"
+            />
+            <span class="team-creation__type-text">
+              <!-- `name` is catalog DATA, not copy: it is the deployment's own
+                   word for this team type and translating it would be a bug.
+                   `namespace` is the fallback for a row that carries no name,
+                   so a type is never rendered as a blank line. -->
+              <span class="team-creation__type-name">
+                {{ ns.name || ns.namespace }}
+                <!--
+                  Only on the rows the toggle ADDED. A badge on every row would
+                  say nothing; a badge on these says "this one is somebody
+                  else's", which is the single fact that makes creating here
+                  different from creating anywhere else in this list.
+                -->
+                @if (isForeign(ns)) {
+                  <span
+                    class="team-creation__foreign"
+                    [attr.data-test]="'creation-foreign-' + ns.namespace"
+                    >{{ 'creation.foreignType' | translate }}</span
+                  >
+                }
+              </span>
+              @if (ns.description) {
+                <span class="team-creation__type-desc">{{ ns.description }}</span>
+              }
+            </span>
+          </label>
+        }
+      </fieldset>
+    }
+  }
+
+  <div class="team-creation__actions">
+    <button
+      pButton
+      type="button"
+      size="small"
+      severity="secondary"
+      [label]="'common.cancel' | translate"
+      [disabled]="creation.creatingByGesture"
+      (click)="launcher.close()"
+      data-test="team-creation-cancel"
+    ></button>
+    <!--
+      ONE button for both outcomes, labelled by what it is about to do: "Next"
+      when the chosen type asks something, "Create" when it does not. The label
+      comes from the gate (`contractOf`), so the promise the button makes and
+      the decision `request()` takes cannot drift apart.
+    -->
+    <button
+      pButton
+      type="button"
+      size="small"
+      [label]="primaryLabelKey() | translate"
+      [icon]="creation.creatingByGesture ? 'pi pi-spinner pi-spin' : 'pi pi-plus'"
+      [disabled]="selected() === null || creation.creatingByGesture"
+      (click)="onPrimary()"
+      data-test="team-creation-primary"
+    ></button>
+  </div>
+</p-dialog>
+
+<!--
+  STEP 2 — the chosen type's own questions.
+
+  The metadata modal is REUSED VERBATIM: same five inputs, same two outputs, and
+  the same gate behind them that the teams page binds. Nothing about it is
+  wizard-specific, which is the point — a second copy specialised for this flow
+  would be a second dialog to keep in step with the contract.
+
+  `(cancelled)` routes to BACK rather than to close. See `onMetadataCancelled`.
+-->
+<app-team-metadata-modal
+  [visible]="step() === 'metadata'"
+  [contract]="creation.contract"
+  [namespaceLabel]="creation.namespaceLabel"
+  [errorMessage]="creation.errorMessage"
+  [pending]="creation.submitting"
+  (confirmed)="onMetadataConfirmed($event)"
+  (cancelled)="onMetadataCancelled()"
+/>

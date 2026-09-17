@@ -1,0 +1,55 @@
+<!--
+  Three sections, one column: the person, the team, the meter.
+
+  The human card is deliberately NOT part of the member loop. It is the only row
+  that is not an agent, it is always first, and it carries a different sub-line —
+  folding it into the list would mean a card that has to ask what it is.
+-->
+@if (view$ | async; as view) {
+  @if (view.human === null && view.members.length === 0) {
+    <!-- Reusing the panel keys that already exist for this exact state, rather
+         than importing the mock's placeholder prose as new copy. -->
+    <app-empty-state
+      titleKey="panels.noAgentsTitle"
+      blurbKey="panels.noAgentsDesc"
+    />
+  } @else {
+    <div class="team-panel">
+      @if (view.human !== null) {
+        <div class="human-card">
+          <!-- The one warm tone in the palette, and its whole job: this is a
+               person, not an agent. -->
+          <span class="human-avatar" aria-hidden="true">{{
+            view.human.initial
+          }}</span>
+          <span class="human-body">
+            <span class="human-name">{{ "inspector.human" | translate }}</span>
+            <span class="human-sub">{{
+              "inspector.humanSub" | translate: { team: view.humanTeam }
+            }}</span>
+          </span>
+          <!-- No status dot. The asymmetry against the member cards is the
+               point: a person is not something the team can stop. -->
+        </div>
+      }
+
+      <!--
+        Two destinations, two bindings. `selected` is re-emitted for the host to
+        route (it opens the Member tab); `readRequested` is HANDLED here,
+        because the reader it opens lives in the chat panel and no host in this
+        chain can reach it — see `onReadRequested`.
+      -->
+      @for (member of view.members; track member.id) {
+        <app-member-card
+          [member]="member"
+          (selected)="memberSelected.emit($event)"
+          (readRequested)="onReadRequested(view, $event)"
+        />
+      }
+
+      <app-tool-chips [tools]="view.tools" />
+
+      <app-token-usage-panel />
+    </div>
+  }
+}

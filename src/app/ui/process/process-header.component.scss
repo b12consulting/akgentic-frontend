@@ -1,0 +1,211 @@
+/*
+ * The process header.
+ *
+ * `flex: 0 0 auto` is load-bearing, not decoration. This is the first child of
+ * the conversation pane's flex column, and the transcript below it claims the
+ * rest with `flex: 1; min-height: 0`. A header that could grow or shrink would
+ * push the transcript's scroll region off the bottom of the viewport — the
+ * failure `process.component.scss` already documents once.
+ */
+:host {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 20px;
+  border-bottom: 1px solid var(--akg-hairline);
+}
+
+/*
+ * The title cluster takes the slack, and gives it up first. `min-width: 0` on
+ * both the cluster and the name is what actually lets the ellipsis happen: a
+ * flex item's default `min-width: auto` refuses to shrink below its content, so
+ * without it a long team name pushes Clear and Details off the right edge
+ * instead of truncating.
+ */
+.title-cluster {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.team-name {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--akg-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Shrinks before the pill does, but never past the point where the name stops
+     being recognisable at a glance. */
+  flex: 0 1 auto;
+  min-width: 90px;
+}
+
+/*
+ * A metadata chip: a quiet label and its value, as one object.
+ *
+ * NOT a filled pill. The status pill beside it is the only tinted thing in the
+ * header and it has to stay that way — a run state is a signal and a tenant name
+ * is a fact, and giving both a ground would make the header a row of badges with
+ * no hierarchy. The label carries the distinction instead, one type step down
+ * and in the meta tone.
+ *
+ * `flex: 0 1 auto` with `min-width: 0`: the chips give up space before the team
+ * name does (a truncated `Case id C-12…` still identifies the case; a truncated
+ * team name does not) and ellipsise rather than pushing Clear and Details off
+ * the right edge. Several chips on a narrow pane shrink together.
+ */
+.team-meta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--akg-control-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.team-meta__label {
+  flex: 0 0 auto;
+  color: var(--akg-text-muted);
+  font-weight: 300;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px 3px 7px;
+  border-radius: var(--akg-pill-radius);
+  font-size: 11.5px;
+  font-weight: 500;
+  flex: 0 0 auto;
+}
+
+/* Running and stopped differ in GROUND as well as in dot, so the state is
+   legible without relying on a 6px colour difference. */
+.status-pill--running {
+  background: var(--akg-accent-bg);
+  color: var(--akg-accent-fg);
+}
+
+.status-pill--stopped {
+  background: var(--akg-hairline);
+  color: var(--akg-text-muted);
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  /* The default is the INERT dot. "Live" is the modifier, so a state that
+     forgets to declare itself renders as not-live rather than as a false
+     heartbeat — which is precisely the mock's defect, inverted. */
+  background: var(--akg-dot-idle);
+  animation: none;
+}
+
+.status-dot--live {
+  background: var(--akg-accent-bright);
+  animation: pulseDot 2.4s ease-in-out infinite;
+}
+
+@keyframes pulseDot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.action-cluster {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.header-action {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px;
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+
+  svg {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 auto;
+  }
+
+  /*
+   * The mock ships `outline: none` and defines no focus state anywhere. Every
+   * interactive element in the console replaces it with the shared ring rather
+   * than reinstating the browser default, which would sit at a different offset
+   * on each of these two differently-framed buttons.
+   */
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.45;
+  }
+}
+
+/* Clear is the quiet one: no frame at rest, and it gains BOTH a ground and a
+   darker text colour on hover. The two-property hover is what makes a control
+   with no border read as reachable — a background alone leaves it looking
+   disabled-but-highlighted. */
+.header-action--quiet {
+  border: 0;
+  background: transparent;
+  color: var(--akg-text-muted);
+
+  &:hover:not(:disabled) {
+    background: var(--akg-panel-bg);
+    color: var(--akg-text);
+  }
+}
+
+/* Details is framed, and its ground reports the inspector's state: filled while
+   the pane is open, so the button reads as pressed rather than as merely
+   available. */
+.header-action--framed {
+  border: 1px solid var(--akg-panel-hover);
+  color: var(--akg-text);
+  background: var(--akg-overlay-bg);
+
+  &.is-open {
+    background: var(--akg-hairline);
+  }
+
+  &:hover {
+    background: var(--akg-hairline);
+  }
+}
+
+/* A heartbeat is a signal, and a signal that cannot be turned off is an
+   accessibility failure rather than a feature. The dot keeps its colour — only
+   the motion goes. */
+@media (prefers-reduced-motion: reduce) {
+  .status-dot--live {
+    animation: none;
+  }
+}

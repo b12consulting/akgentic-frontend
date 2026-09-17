@@ -1,0 +1,74 @@
+<!--
+  The Member pane: pick an agent, read what it has been told.
+
+  NO TAB STRIP ANY MORE. This was a `<p-tabs>` whose list held exactly one tab
+  ("Chat with X") plus the agent picker wedged in beside it. A one-entry tab
+  strip is a control that cannot be operated, and the strip's caption merely
+  repeated the name already showing in the picker — so the pane spent a whole
+  row of library chrome saying nothing. The picker is the pane's header now, and
+  the trace sits under it.
+
+  `agentsByCategory.length > 0`, not `agentsByCategory`. The array is
+  initialised to `[]` and reset to `[]` when the team has no agents, and `[]` is
+  truthy — so the "no agents" branch below could never be reached and an
+  agentless team got a disabled dropdown over blank space instead of the empty
+  state that was written for it.
+-->
+@if (agentsByCategory.length > 0) {
+  <div class="agent-panel">
+    <!--
+      THE PICKER TAKES THE PANE, whatever the pane is.
+
+      `minWidth: 220px` was sized for a full-width tab strip. In the 310px
+      inspector the lane is ~278px, so a 220px floor plus the tab label beside
+      it overflowed the strip and pushed the picker off its right edge — and
+      because it is a `min-width`, no amount of narrowing recovered it. The
+      `max-width: 300px` cap was the same number from the other side and is
+      equally an artefact of the old layout.
+
+      The rules moved out of an inline `[style]` into the stylesheet, which is
+      also what lets them be tokens rather than literals.
+    -->
+    <div class="agent-picker">
+      <p-dropdown
+        optionLabel="label"
+        [group]="grouped"
+        [placeholder]="'panels.selectAgent' | translate"
+        appendTo="body"
+        inputId="agent-dropdown"
+        [options]="pickerOptions"
+        [filter]="true"
+        [disabled]="agentsByCategory.length === 0"
+        [(ngModel)]="selectedAgent"
+        (onChange)="onAgentSelect($event)"
+      ></p-dropdown>
+    </div>
+
+    @if (traceVisible$ | async) {
+      <app-context-trace
+        class="agent-trace"
+        [context$]="context$"
+        [backstory$]="backstory$"
+        [agentId]="akgentId"
+        [agentName]="akgentName"
+      ></app-context-trace>
+    } @else {
+      <!--
+        An agent is picked but has neither a conversation nor a backstory — a
+        member that exists and has not run. The pane used to render the picker
+        over nothing at all, which is indistinguishable from a panel that failed
+        to load.
+
+        `panels.noAgentsDesc` is the existing sentence for exactly this state
+        ("…will appear here"), used as the headline because there is no second
+        thing worth saying underneath it.
+      -->
+      <app-empty-state titleKey="panels.noAgentsDesc" />
+    }
+  </div>
+} @else {
+  <app-empty-state
+    titleKey="panels.noAgentsTitle"
+    blurbKey="panels.noAgentsDesc"
+  />
+}

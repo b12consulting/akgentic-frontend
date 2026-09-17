@@ -1,0 +1,155 @@
+/* THE HEIGHT CHAIN — read this before changing any rule in this file.
+   
+   Every link from the shell down to the two scroll regions (the transcript and
+   the inspector's body) is a `flex: 1` box that has also been told
+   `min-height: 0`. The chain fails SILENTLY: nothing errors, nothing looks
+   obviously wrong, the regions simply run past the bottom of the window and
+   their scrollbars stop appearing. It has already broken here once, and the
+   broken link was an element with NO RULE AT ALL — the old template's outer
+   `<section>`, which took the flex default (`flex: 0 1 auto`), sized itself to
+   its content, and left every `flex: 1` beneath it dividing up a box that had
+   already collapsed. An element with nothing written about it is the easiest
+   kind to miss, so the chain is now stated end to end below with no gaps.
+   
+   Where the height comes from. The console shell's `<main>` is a bounded flex
+   column, so this view is handed a lane and takes 100% of it; it does NOT
+   measure off the viewport, because it does not own the page.
+
+   `--process-height` IS A VARIABLE WITH NO SECOND VALUE, and that is a
+   correction. It was introduced so the teams page could embed this view in a
+   pane and override the height to `auto`, sizing it with flex instead. R1
+   removed that embedding: a row click navigates to `/process/:id` now, and
+   nothing anywhere sets `--process-height`. What is left is a one-line
+   indirection over `100%`.
+
+   It stays, unbound, for two reasons and neither is inertia. The specs measure
+   this chain by PINNING the property on the host (see the height-chain spec in
+   `process.component.spec.ts`), which is what makes the assertion a statement
+   about the chain rather than about a shell that is not in the fixture. And a
+   height that can be overridden from outside is exactly what a second host
+   would need, which R3's arrangement work makes plausible again.
+
+   `flex: 1` below is load-bearing regardless of the variable: with the height
+   resolving against a flex parent, this is what makes the view fill the lane it
+   was given rather than shrink to its content. */
+:host {
+  --process-height: 100%;
+  display: flex;
+  flex-direction: column;
+  height: var(--process-height);
+  min-height: 0;
+  flex: 1;
+}
+
+/* The row the design draws as the second and third panes. The first — the team
+   rail — belongs to the shell and is deliberately not here; see
+   `console-shell.component.ts` for why the split is at this seam.
+
+   `min-width: 0` is harmless today and load-bearing from R3 on: this row now
+   holds a percentage-basis flex item and a divider, and a flex container that
+   refuses to shrink below its content's intrinsic width would push the pair
+   past the edge of the lane the shell gave it rather than dividing what it has.
+*/
+.console-panes {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* THE SWAP (R3), and it is `order` rather than a reordered template.
+
+   The DOM order is fixed — conversation, divider, inspector — because the
+   inspector cannot leave this template (it and the five projected panels
+   resolve four component-scoped providers off this component's `providers`) and
+   because the specs pin DIRECT-child selectors, which a wrapper or a structural
+   swap would break. `order` moves the painted arrangement and leaves both of
+   those alone.
+
+   The divider keeps the MIDDLE slot in either arrangement, which is the whole
+   point: it is the boundary between the two, not a decoration attached to one
+   of them.
+
+   Reading order stays conversation-first for a screen reader, deliberately.
+   Visual order is a preference about where to look; the conversation is still
+   the thing the page is about, and `order` does not, and should not, move it in
+   the accessibility tree. */
+.console-panes--swapped > .conversation-pane {
+  order: 3;
+}
+
+.console-panes--swapped > app-split-divider {
+  order: 2;
+}
+
+.console-panes--swapped > app-inspector {
+  order: 1;
+}
+
+/* `min-width: 0` (Epic 52 trap T4): at full width this pane never reaches its
+   content's intrinsic minimum, so the flex ratio was the whole story. In a
+   narrow pane it does, and without the unlock one long unbreakable line in a
+   message refuses to shrink and pushes the inspector off the edge. */
+.conversation-pane {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* The conversation reads as the page; the panes around it read as furniture.
+     That contrast is also what draws the edge against the inspector, which is
+     why neither side grows a border there. */
+  background: var(--akg-overlay-bg);
+}
+
+/* NO readability cap on the surface, deliberately. Line length is already
+   bounded where it belongs — `--akg-conversation-max-width` caps and centres
+   each turn INSIDE the message list — so capping the surface as well bounded
+   nothing extra and merely stopped the white ground reaching the edge of the
+   pane, which read as the conversation failing to fill it. */
+.chat-app {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The five visualisation panels, stacked in one box inside the inspector.
+   
+   They are PROJECTED into the inspector but styled from here, and that is not
+   an oversight: projected nodes carry the projecting component's
+   style-encapsulation attribute, so a `.inspector__body > *` rule written in
+   the inspector's own stylesheet would never match them. The wrapper exists so
+   these rules have a parent they are allowed to name. */
+.inspector-panels {
+  flex: 1;
+  min-height: 0;
+  /* The containing block for the absolutely positioned panels below. */
+  position: relative;
+}
+
+/* All five panels occupy the same space at once, so each is taken out of flow.
+   
+   The `inset` is where the pane's body padding went. An absolutely positioned
+   child resolves its offsets against its container's PADDING box, so padding on
+   the inspector's body would have been drawn over and would have inset nothing;
+   stating the same 4/16/18 here is the version that is actually applied, and it
+   is stated once. */
+.inspector-panels > * {
+  position: absolute;
+  inset: 4px 16px 18px;
+}
+
+/* Off-screen rather than unmounted: see the note in the template. Moving a
+   panel out of view preserves its dimensions, which is what lets echarts keep
+   its layout across a tab switch instead of re-running it. */
+.inspector-panels > .moved-offscreen {
+  transform: translateX(-100vw);
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* And the visible one is on top and reachable. */
+.inspector-panels > *:not(.moved-offscreen) {
+  z-index: 1;
+  pointer-events: auto;
+}

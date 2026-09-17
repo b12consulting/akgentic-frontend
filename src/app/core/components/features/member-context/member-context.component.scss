@@ -1,0 +1,103 @@
+/*
+ * THE PANE PROPAGATES ITS HEIGHT.
+ *
+ * `context-trace.component.scss` used to carry `height: calc(100vh - 370px)` with
+ * a comment naming the real obstacle: "the PrimeNG tab chain above this
+ * component does not propagate a usable height". That was true, and the fix was
+ * applied to the wrong element — measuring the window from inside a 310px pane
+ * gives a region taller than the pane clipping it, so the trace's scrollbar
+ * never appears and the chat input below it goes out of reach.
+ *
+ * The chain used to have four links (`host → p-tabs → p-tabpanels →
+ * p-tabpanel`) because a PrimeNG tab strip stood between the pane and the
+ * trace. The strip is gone — it held one inoperable tab — so the chain is two
+ * links and there is no library element in it to reach through with
+ * `::ng-deep`. That is the whole reason the deep selectors below disappeared:
+ * not a cleanup, but nothing left to select.
+ *
+ * `min-height: 0` is still stated at EVERY link rather than assumed. The chain
+ * fails SILENTLY — nothing errors, the region simply runs past the bottom and
+ * its scrollbar stops appearing — and the link that broke it last time was an
+ * element with no rule at all (see `process.component.scss`).
+ */
+:host {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.agent-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * The trace, and the only thing in this pane allowed to scroll. Two nested
+ * scroll regions is the arrangement where the wheel moves the wrong one.
+ */
+.agent-trace {
+  flex: 1;
+  min-height: 0;
+}
+
+/*
+ * The pane's header row: the picker, and nothing else.
+ *
+ * `width: 100%` with `min-width: 0` rather than the old `min-width: 220px` /
+ * `max-width: 300px` pair. Both were sized for a full-width tab strip; a floor
+ * of 220px inside a ~278px lane, with a tab label beside it, pushed the control
+ * off the strip's right edge — and a `min-width` is the one constraint that
+ * narrowing cannot recover from.
+ *
+ * `min-width: 0` on the flex item is what actually lets it shrink: the default
+ * `auto` refuses to go below the content's intrinsic size, so the control would
+ * hold its longest agent name's width and overflow anyway.
+ *
+ * The bottom hairline does the job the tab strip's border used to: it separates
+ * the control that chooses from the thing chosen. `--akg-hairline` and not
+ * `--akg-surface-border` because this is a rule INSIDE a surface, not the edge
+ * of one.
+ */
+.agent-picker {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--akg-hairline);
+}
+
+/*
+ * The picker is a library control on a tinted pane, so its own surfaces are
+ * restated in the palette's terms. Left to Aura's defaults it draws a white
+ * field with a blue-grey border — the one element in the inspector that a
+ * rebrand could not move.
+ */
+:host ::ng-deep .agent-picker .p-select {
+  width: 100%;
+  min-width: 0;
+  border-color: var(--akg-surface-border);
+  border-radius: var(--akg-card-radius);
+  background: var(--akg-overlay-bg);
+  font-family: var(--akg-font-ui);
+  font-size: 12.5px;
+}
+
+:host ::ng-deep .agent-picker .p-select-label {
+  padding: 7px 10px;
+  color: var(--akg-text);
+}
+
+:host ::ng-deep .agent-picker .p-select:not(.p-disabled):hover {
+  border-color: var(--akg-panel-hover);
+}
+
+:host ::ng-deep .agent-picker .p-select:not(.p-disabled).p-focus {
+  outline: none;
+  border-color: var(--akg-accent-fg);
+  box-shadow: var(--akg-focus-ring);
+}

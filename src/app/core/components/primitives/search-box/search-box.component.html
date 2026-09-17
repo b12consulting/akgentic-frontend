@@ -1,0 +1,29 @@
+<!--
+  The ring is on the FIELD, not the input. The mock ships `outline: none` with
+  no replacement and no `:focus-visible` anywhere, which leaves a keyboard user
+  with no way to tell where they are; framing the whole well is also the only
+  placement that reads as a focused control rather than as a stray box around
+  the text.
+-->
+<div class="search-box__field">
+  <svg
+    class="search-box__glyph"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="2"
+    stroke-linecap="round"
+    aria-hidden="true"
+  >
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-3.4-3.4" />
+  </svg>
+  <input
+    class="search-box__input"
+    type="search"
+    [value]="value"
+    [attr.placeholder]="'rail.search' | translate"
+    [attr.aria-label]="'rail.search' | translate"
+    (input)="onInput($event)"
+  />
+</div>

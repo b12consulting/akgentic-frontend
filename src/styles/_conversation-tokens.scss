@@ -162,7 +162,14 @@
   // Tools get their own hue so a step is identifiable at a glance without
   // reading it. Deliberately NOT the accent: the accent means "the product is
   // doing something", this means "a tool ran".
-  --akg-tool-accent: #6434da;
+  //
+  // The VALUE of graph stop 3, written out rather than aliased to it. The ramp
+  // below states the rule and the reason: an alias would let a rebrand move one
+  // stop onto another and silently destroy the separation that ramp exists for.
+  // A coinciding value is a coincidence worth keeping, not a dependency worth
+  // creating — which is how this token already worked, since #6434da was stop
+  // 2's value by the same coincidence.
+  --akg-tool-accent: #1f4fa8;
 
   // The ground a person's own words sit on.
   --akg-user-bubble-bg: #f0ece9;
@@ -243,11 +250,11 @@
   // Four aliases that name the ROLE rather than repeat the value.
   //
   // A team's state is drawn in two places — the teams table's row tag and the
-  // conversation header's pill — and until now the two agreed only by
+  // process header's pill — and until now the two agreed only by
   // accident: the header picked its pair by hand, the table asked PrimeNG for
   // a `severity` and got Aura's blue and green, which `app.theme.ts` re-points
   // for `primary` and for nothing else. These point at the exact pair the
-  // header already uses (conversation-header.component.scss), so the two
+  // header already uses (process-header.component.scss), so the two
   // surfaces now agree BY CONSTRUCTION — re-point the accent and both move.
   //
   // "live" covers running, working AND idle: all three ARE running, and only
@@ -300,6 +307,21 @@
   // reads as one object rather than as a colour pairing.
   --akg-avatar-human-fg: #42301f;
 
+  // THE INK ON AN AGENT'S COLOURED MARK.
+  //
+  // An agent's mark — the transcript's speaker tile, the inspector's member
+  // tile — is filled with that agent's own stop from `--akg-graph-category-*`,
+  // which is runtime data rather than a token this file can name. The MONOGRAM
+  // on top of it is not data, and it needs one value that works against every
+  // stop in the ramp rather than a pairing chosen for one of them.
+  //
+  // White is that value, and it is a property of the ramp: those ten stops were
+  // picked as marks to be told apart on a light ground, so all ten are dark
+  // enough to carry white at 4.5:1. Declared here rather than written `#ffffff`
+  // at the two call sites because a deployment that re-points the ramp to a
+  // pale one has to be able to re-point this with it.
+  --akg-agent-mark-fg: #ffffff;
+
   // A worker's avatar is an ALIAS, not a new colour: the mock fills it with a
   // hover ground. Naming the role is what stops the next reader inventing a
   // hex for it and quietly forking the palette in one component.
@@ -345,7 +367,7 @@
   // leaving the conversation — the thing the app is for — as a slot.
   // THE RAIL IS RESIZABLE NOW, so both of these have a TypeScript counterpart
   // and every edit here is a paired edit. The cascade applies the token, the
-  // drag arithmetic runs in `core/ui/pane-layout.ts`, and neither side can read
+  // drag arithmetic runs in `ui/console/pane-layout.ts`, and neither side can read
   // the other — so the numbers are written down twice on purpose and stay in
   // step only because this comment says they must. Same bargain, and the same
   // convention, as `--akg-inspector-min-width` below.
@@ -389,7 +411,7 @@
   // BECAUSE IT USUALLY WINS, THE DIVIDER HAS TO KNOW ABOUT IT. Its clamp is
   // the higher of `INSPECTOR_MIN_PERCENT` and this value converted at the
   // measured row width — see `INSPECTOR_MIN_WIDTH_PX` in
-  // `core/ui/pane-layout.ts`, which is this number's other half and the only
+  // `ui/console/pane-layout.ts`, which is this number's other half and the only
   // other place it is written down. Move one and you must move the other:
   // whenever they disagree the drag has a dead zone at its narrow end, where
   // the handle keeps tracking the pointer and the boundary stops.
@@ -540,9 +562,9 @@
   // it, it is an unparseable string. So the component RESOLVES these names
   // through `getComputedStyle` and hands echarts the literal — which is why
   // `graphCategoryColors()` lives beside the service that owns the legend, and
-  // why `graph.component.spec.ts` asserts that no colour reaching the canvas is
-  // still a `var(...)` string. The one place `var()` does work is the tooltip,
-  // which echarts renders as real DOM.
+  // why `team-graph.component.spec.ts` asserts that no colour reaching the
+  // canvas is still a `var(...)` string. The one place `var()` does work is
+  // the tooltip, which echarts renders as real DOM.
   //
   // Until this block existed the graph carried ten raw hexes in
   // `category.service.ts` — a cool blue-grey ramp (`#6A9BB6`, `#fac858`,

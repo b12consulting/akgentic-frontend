@@ -1,0 +1,108 @@
+<!--
+  Monogram, name over role, status dot — and a trailing action.
+
+  TWO CONTROLS, NOT ONE CONTROL DOING TWO THINGS. Hanging both destinations on
+  one click would switch the tab behind and then cover it with a dialog, so the
+  user would land somewhere they never asked for the moment they dismissed it.
+  A second affordance says which is which.
+
+  THE ROW OPENS THE READER; THE BUBBLE GOES TO THE MEMBER TAB. The two were the
+  other way round until the list grew to a full roster of specialists, and at
+  that size the weighting was backwards: reading what a member said is the thing
+  you want from a list of members, and it was the one behind the 14px target,
+  while the tab switch — the cheaper, more reversible move — had the whole row.
+  A destination that costs a dismissal belongs on the control you cannot miss.
+
+  The action button is a SIBLING of the card, not a child of it: a `<button>`
+  inside a `<button>` is invalid, and the browsers that tolerate it disagree
+  about which one a click reaches.
+
+  It is visible at rest rather than on hover. An affordance that only appears
+  once the pointer is already on the row is invisible to precisely the user who
+  is looking for it, which is the same failure the pane divider had.
+
+  `[style.--akg-depth]` publishes THE DEPTH, not the offset. The row says how
+  many steps in it is and the stylesheet decides how wide a step is
+  (`--akg-member-indent`), so the size of the indent has exactly one owner.
+  Binding the computed pixels here is what made that token dead: a deployment
+  could re-point it and this card would go on multiplying by a TypeScript
+  constant. A custom property rather than a class-per-depth ladder because the
+  depth is runtime data, and a ladder would restate the cap in the stylesheet
+  too.
+-->
+<div class="member-row">
+  <!--
+    `.working` carries the slow pulse that marks the agent currently running —
+    see the stylesheet. On the ROW rather than on the status dot: the row is
+    what you scan, and a 6px dot changing opacity is not something the eye
+    catches in a list of ten.
+  -->
+  <button
+    type="button"
+    class="member-card"
+    [class.supervisor]="member.kind === 'supervisor'"
+    [class.worker]="member.kind === 'worker'"
+    [class.working]="member.active"
+    [style.--akg-depth]="member.depth"
+    [attr.aria-haspopup]="'dialog'"
+    [attr.aria-label]="'inspector.readConversationOf' | translate : { agent: member.label }"
+    (click)="onRead()"
+  >
+    <!-- Decorative: the name beside it is what a screen reader should read, and
+         an initial announced on its own is a letter with no meaning. -->
+    <!--
+      Filled with the MEMBER'S OWN colour when the roster gave it one — the same
+      colour their node wears on the hierarchy graph and their speaker mark
+      wears in the transcript. Bound inline because it is data, one stop out of
+      a ten-stop ramp, which a stylesheet cannot enumerate; `.tinted` is what
+      fixes the ink that has to sit on top of it. A member with no colour keeps
+      the flat worker fill, so the tile is never blank.
+    -->
+    <span
+      class="member-avatar"
+      [class.tinted]="member.colour !== null"
+      [style.background-color]="member.colour"
+      aria-hidden="true"
+      >{{ member.initial }}</span
+    >
+
+    <span class="member-body">
+      <span class="member-name">{{ member.label }}</span>
+      <span class="member-role">{{ member.roleKey | translate }}</span>
+    </span>
+
+    <span
+      class="member-dot"
+      [class.idle]="!member.active"
+      [attr.title]="
+        (member.active ? 'inspector.memberActive' : 'inspector.memberIdle')
+          | translate
+      "
+    ></span>
+  </button>
+
+  <app-icon-button
+    class="member-read"
+    size="sm"
+    [label]="'inspector.openMemberTab' | translate"
+    (pressed)="onSelect()"
+  >
+    <!-- A speech bubble: the Member tab is this agent's own chat, so the mark is
+         a conversation rather than the member. It stays the same glyph it was
+         when the two controls traded places — what changed is which pane it
+         opens, not what it is a picture of. -->
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="1.8"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 9 9 0 0 1-3.4-.6L3 21l1.8-4.9A8.3 8.3 0 0 1 3.6 11 8.4 8.4 0 0 1 12 3h.5a8.4 8.4 0 0 1 8.5 8z"></path>
+    </svg>
+  </app-icon-button>
+</div>

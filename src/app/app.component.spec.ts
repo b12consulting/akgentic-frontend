@@ -9,17 +9,17 @@ import { MessageService } from 'primeng/api';
 import { BehaviorSubject, of } from 'rxjs';
 
 import { AppComponent } from './app.component';
-import { ConsoleShellComponent } from './components/console/console-shell.component';
-import { TeamCreationDialogComponent } from './components/console/team-creation/team-creation-dialog.component';
-import { TeamContext } from './core/context/team.interface';
-import { ApiService } from './core/http/api.service';
-import { AuthService } from './core/auth/auth.service';
-import { ConfigService } from './core/config/config.service';
-import { ContextService } from './core/context/context.service';
-import { FaviconService } from './core/config/favicon.service';
-import { NotificationToastService } from './core/ui/notification-toast.service';
-import { TeamCreationLauncher } from './core/ui/team-creation-launcher.service';
-import { ViewService } from './core/ui/view.service';
+import { ConsoleShellComponent } from './ui/console/console-shell.component';
+import { TeamCreationDialogComponent } from './ui/console/team-creation/team-creation-dialog.component';
+import { TeamContext } from './core/platform/context/team.interface';
+import { ApiService } from './core/platform/http/api.service';
+import { AuthService } from './core/platform/auth/auth.service';
+import { ConfigService } from './core/platform/config/config.service';
+import { ContextService } from './core/platform/context/context.service';
+import { FaviconService } from './core/platform/config/favicon.service';
+import { NotificationToastService } from './ui/console/notification-toast.service';
+import { TeamCreationLauncher } from './ui/console/team-creation-launcher.service';
+import { ViewService } from './ui/console/view.service';
 
 import { provideTranslateTesting } from '../testing/i18n-testing';
 
@@ -93,7 +93,7 @@ const TEST_ROUTES: Routes = [
 // and with it the three-way `combineLatest` over the open team, the session and
 // the inspector's collapse state, the `onLangChange` rebuild, and `buildMenu`.
 // Its contents were redistributed — team name, status, Clear and Details to the
-// conversation header; logo, account and All-teams to the rail — and each of
+// process header; logo, account and All-teams to the rail — and each of
 // those reads the state it needs where it is rendered.
 //
 // So the assertions that used to live here (AC12's "toggling the right column

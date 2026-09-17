@@ -1,0 +1,251 @@
+/*
+ * THE PANEL FILLS ITS PANE.
+ *
+ * Link in the Epic-56 height chain (`process.component.scss` states it end to
+ * end). The panel box is absolutely positioned by the inspector, so it already
+ * has a height; this is what passes it down to the table instead of the table
+ * measuring the window. The chain fails SILENTLY — nothing errors, the region
+ * simply runs past the bottom and its scrollbar stops appearing — so every link
+ * says `min-height: 0` explicitly rather than relying on a default.
+ */
+:host {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+	font-family: var(--akg-font-ui);
+}
+
+:host ::ng-deep p-table,
+:host ::ng-deep .p-datatable {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+}
+
+/*
+ * ONE LINE OF THE LOG.
+ *
+ * It was a bordered card — the global `.card-container`, declared
+ * unencapsulated in `src/styles.scss` with a hard `#e0e0e0` border and a `1rem`
+ * margin on all four sides. Fifty outlined boxes stacked down a 278px lane is
+ * fifty frames the eye has to cross to read one stream; a log is a stream, and
+ * the thing that separates its lines is a rule, not a box. So: no border, no
+ * radius, a hairline between neighbours, and the pane's own inset instead of a
+ * second one per card.
+ */
+.message-card {
+	padding: 10px 2px 12px;
+	border-bottom: 1px solid var(--akg-hairline);
+}
+
+/*
+ * The line's header: stamp, route, copy.
+ *
+ * It wraps rather than truncating — `@Sender to @Recipient` is two names and a
+ * preposition, and at this width it does not fit on one line, which the global
+ * rule written for a full-width table never had to consider.
+ */
+.message-card .card-header {
+	display: flex;
+	align-items: baseline;
+	flex-wrap: wrap;
+	column-gap: 8px;
+	row-gap: 2px;
+	overflow-wrap: anywhere;
+}
+
+/*
+ * The stamp, in the mono face and with tabular figures, so the column of times
+ * lines up under itself — the one thing a reader scans a log by.
+ */
+.log-time {
+	flex: 0 0 auto;
+	font-family: var(--akg-font-mono);
+	font-size: var(--akg-font-size-meta);
+	font-variant-numeric: tabular-nums;
+	color: var(--akg-text-muted);
+}
+
+/*
+ * INLINE FLOW, not a flex row.
+ *
+ * A flex row spaces its parts with `column-gap`, and a gap is not text: the
+ * line looked spaced and its accessible name ran together. The separators are
+ * real spaces in the DOM now (`&ngsp;` in the template), so this is ordinary
+ * text that wraps the way a sentence wraps.
+ */
+.log-route {
+	flex: 1 1 auto;
+	min-width: 0;
+	font-size: var(--akg-font-size-control);
+}
+
+.route-party {
+	min-width: 0;
+}
+
+/*
+ * The tie back to the hierarchy graph, and nothing else: the name beside it
+ * carries the meaning, so the dot is `aria-hidden` in the template and holds no
+ * information of its own. `--akg-dot-idle` is the resting value for a party the
+ * graph has not placed — an inline colour from the graph's own palette
+ * overrides it when there is one.
+ */
+.route-dot {
+	display: inline-block;
+	vertical-align: 0.05em;
+	width: 7px;
+	height: 7px;
+	margin-right: 4px;
+	border-radius: var(--akg-pill-radius);
+	background: var(--akg-dot-idle);
+}
+
+.route-name {
+	color: var(--akg-text);
+	font-weight: 500;
+}
+
+/* The preposition. Quieter than the names it joins — it is the grammar of the
+   line, not its content. */
+.route-verb {
+	color: var(--akg-text-muted);
+	font-weight: 400;
+}
+
+/* "everyone" is a description, not a name: no dot, and not bolded like one. */
+.route-name--everyone {
+	font-weight: 400;
+	color: var(--akg-text-muted);
+}
+
+/*
+ * Copy sits at the far end of the header row, and only surfaces on hover or
+ * keyboard focus: one control per line, times every line, is a column of
+ * buttons down a stream nobody is reading buttons in.
+ *
+ * No `::ng-deep` un-styling here any more: `copy-button.component.scss` used to
+ * position ITSELF with negative margins and a `top: -22px` tuned to hang off a
+ * PrimeNG fieldset border — the fieldset this panel no longer draws — and this
+ * block existed to cancel all six declarations. The shared control is an
+ * unpositioned inline button now, so `margin-left: auto` below is the whole of
+ * the placement, stated once, by the caller that wanted it.
+ */
+.log-copy {
+	margin-left: auto;
+	opacity: 0;
+	transition: opacity 120ms ease;
+}
+
+.message-card:hover .log-copy,
+.log-copy:focus-within {
+	opacity: 1;
+}
+
+
+/*
+ * The severity label, in the console's micro-label treatment — the same one the
+ * inspector's TOOLS heading and the workspace strip use, so "a labelled thing
+ * starts here" reads identically wherever it appears.
+ *
+ * `:empty` is load-bearing, not tidiness: a null-`content_type` error renders
+ * this element with no text (NFR2 — "no legend" has to stay distinguishable
+ * from "no notification"), and an empty inline-block would still take its
+ * margin and leave a gap above the body.
+ */
+.row-legend {
+	display: block;
+	margin: 6px 0 2px;
+	font-size: var(--akg-section-label-size);
+	font-weight: 600;
+	letter-spacing: var(--akg-section-label-tracking);
+	text-transform: uppercase;
+	color: var(--akg-text-muted);
+}
+
+.row-legend:empty {
+	display: none;
+}
+
+/*
+ * The payload. Interpolated text, so the whitespace in it is the whitespace the
+ * sender wrote — `pre-wrap` keeps the newlines a multi-paragraph payload
+ * depends on, and `anywhere` keeps an unbroken token (a URL, a base64 blob)
+ * from pushing the pane sideways.
+ */
+.text-container {
+	margin: 4px 0 0;
+	font-size: var(--akg-font-size-body);
+	line-height: 1.55;
+	color: var(--akg-turn-fg);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+/*
+ * Story 31-2 — notification severity colours, now the palette's own.
+ *
+ * They were three hexes declared on `:host` (`#a94442` / `#8a6d3b` / `#31708f`)
+ * — a private triad that `token-contrast.spec.ts` cannot see, because that spec
+ * reads `:root`, and that a deployment re-pointing the palette could not move.
+ * The mapping is onto tokens that already exist AND are already measured
+ * against every ground this palette declares:
+ *
+ *   error -> --akg-danger-fg      the console's failure colour everywhere else
+ *   warn  -> --akg-attention-fg   the console's "needs a look" amber
+ *   info  -> --akg-accent-fg      the console's own voice; an informational
+ *                                 notice is the product speaking, not an alarm
+ *
+ * The triad stays three DISTINGUISHABLE hues (red / amber / green), which is
+ * what a severity ramp is for. There is no `--akg-info-fg` to map onto; see the
+ * follow-up — declaring one is a palette decision, and inventing a fourth hue
+ * here is exactly how the private triad happened the first time.
+ */
+.notification-body--error {
+	color: var(--akg-danger-fg);
+}
+
+.notification-body--warn {
+	color: var(--akg-attention-fg);
+}
+
+.notification-body--info {
+	color: var(--akg-accent-fg);
+}
+
+// Story 31-6 (FR16) — the error branch's Relaunch button row. The body div no
+// longer carries `margin: 0.5rem 0 1rem`, so the gap that used to separate the
+// error text from this button lives here instead: on the row that needs it,
+// not on `.text-container`, which is shared with the buttonless warn/info
+// branches and with every SentMessage row.
+.notification-actions {
+	margin-top: 1rem;
+}
+
+/*
+ * The empty state is `<app-empty-state>` now, so the three blocks
+ * that used to live here — `.empty-section`, `.empty-section-box` and
+ * `.message-placeholder` — are gone rather than restyled. They were a copy of
+ * the knowledge-graph panel's placeholder, carried a dashed border and four
+ * untokenised greys, and none of those greys cleared AA on this pane's ground.
+ * Restyling them would have left the console with two empty-state idioms that
+ * merely looked alike.
+ */
+
+/*
+ * The table's own chrome, in the palette's terms. PrimeNG draws the row rule
+ * and the body ground from Aura's defaults, which are the last surfaces in this
+ * pane a deployment cannot re-point. The cell rule is REMOVED rather than
+ * re-coloured: the line's own hairline separates neighbours now, and two rules
+ * between two lines is one rule too many.
+ */
+:host ::ng-deep .p-datatable-tbody > tr {
+	background: transparent;
+}
+
+:host ::ng-deep .p-datatable-tbody > tr > td {
+	border: none;
+	padding: 0 2px;
+}

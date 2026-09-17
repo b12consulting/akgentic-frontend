@@ -1,0 +1,191 @@
+<ng-container
+  *ngIf="
+    filteredMessages && filteredMessages.length > 0;
+    else noMessagesPlaceholder
+  "
+>
+  <!--
+    SIZED BY ITS PANE, not by the viewport and not by a full-width layout.
+
+    Two values were wrong the moment this panel moved into the 310px inspector.
+    `min-width: 40rem` is 520px of table inside a 278px lane, so every row
+    overflowed horizontally by nearly twice the pane's width. And
+    `scrollHeight: calc(100vh - 185px)` re-derived a height from the WINDOW
+    inside a pane whose height already arrives through the Epic-56 flex chain —
+    185px was the chrome above this table in the layout it used to live in, a
+    number that has been meaningless since.
+
+    `scrollHeight="flex"` is PrimeNG's own answer: the body takes what the
+    table's box gives it. The box is `height: 100%` off the panel, which is the
+    same chain `process.component.scss` documents end to end.
+  -->
+  <p-table
+    #dataTable
+    [value]="filteredMessages"
+    [scrollable]="true"
+    scrollHeight="flex"
+    (mouseenter)="isMouseOverTable = true"
+    (mouseleave)="isMouseOverTable = false"
+  >
+    <ng-template #body let-message>
+      <!--
+        ONE LINE OF THE LOG: a header that says WHEN and BETWEEN WHOM, then the
+        payload. `.message-card` keeps its name — the pane's own class, never
+        the global `.card-container`, which is declared unencapsulated in
+        `src/styles.scss` with a hard `#e0e0e0` border and a `1rem` margin on
+        all four sides. In a 278px lane the side margins alone eat 32px, and
+        that border was the last untokenised edge on this surface.
+      -->
+      <div class="message-card">
+        <div class="card-header">
+          <!--
+            The stamp. `datetime` carries the full ISO instant for assistive
+            tech and for anyone copying the row, while the visible text is the
+            scannable `HH:MM:SS`.
+          -->
+          <time class="log-time" [attr.datetime]="message.timestamp">{{
+            formatTime(message.timestamp)
+          }}</time>
+
+          <!--
+            THE ROUTE, AS A SENTENCE.
+
+            It used to be `◼︎ @Worker ➔ ◼︎ @Manager`: two glyphs and an arrow,
+            which is punctuation standing in for words. The names now carry the
+            line and the connector is a translated word, so the row reads aloud
+            — and so a translator can put the preposition where their language
+            puts it.
+
+            The dots survive as DECORATION (aria-hidden): they tie a line back
+            to its node in the hierarchy graph, which is the one thing the
+            names alone cannot do. A party with no node yet has no colour, and
+            the stylesheet draws the neutral dot rather than inventing one.
+          -->
+          <span class="log-route" *ngIf="route(message) as line">
+            <span class="route-party">
+              <span
+                class="route-dot"
+                aria-hidden="true"
+                [style.background-color]="line.sender.color"
+              ></span>
+              <span class="route-name">{{ line.sender.name }}</span>
+            </span>
+            <!--
+              `&ngsp;` on BOTH sides of the preposition, and inline flow rather
+              than a flex row with a `column-gap`.
+
+              Angular strips whitespace-only text nodes, and a flex gap is not
+              text — so with either of those doing the spacing the line's
+              accessible name came out `@Worker<<to>>@Manager`, one run-together
+              token. It LOOKED like a sentence and did not READ as one, which is
+              the same defect as the arrow it replaced, one layer down.
+              `&ngsp;` is Angular's own escape for "a space that must survive",
+              and it puts the spaces in the DOM where a screen reader and a
+              copy-paste can both find them.
+            -->
+            <span class="route-verb">&ngsp;{{
+              "messageList.routeTo" | translate
+            }}&ngsp;</span>
+            <span class="route-party" *ngIf="line.recipient as to; else broadcast">
+              <span
+                class="route-dot"
+                aria-hidden="true"
+                [style.background-color]="to.color"
+              ></span>
+              <span class="route-name">{{ to.name }}</span>
+            </span>
+            <ng-template #broadcast>
+              <span class="route-name route-name--everyone">{{
+                "messageList.broadcast" | translate
+              }}</span>
+            </ng-template>
+          </span>
+
+          <!--
+            ONE copy control per line, on the line's header — not one per body
+            branch. A reader of a log copies A LINE; which of the two payload
+            shapes it happened to be is this component's problem, and
+            `copyableText` is where it stays.
+          -->
+          <app-copy-button
+            class="log-copy"
+            (click)="utilService.copyToClipboard(copyableText(message))"
+          />
+        </div>
+
+        <!-- Story 31-2: one branch for all three notification severities.
+             `*ngIf="… as severity"` binds once per row and is falsy for `null`,
+             so a SentMessage falls through to the container below exactly as
+             before. Colour comes from the severity class, not an inline style. -->
+        <ng-container *ngIf="notificationSeverity(message) as severity">
+          <!--
+            The severity label, rendered as the console's uppercase micro-label
+            — the same treatment the inspector's TOOLS heading and the
+            workspace strip use.
+
+            It was a PrimeNG `<p-fieldset>` legend, which brought a whole
+            bordered box with it: an outline around every notification in a
+            stream where the OTHER rows had no outline. The element renders
+            even when the text is empty (a null-`content_type` error, NFR2) so
+            that "no legend" stays distinguishable from "no notification", and
+            the stylesheet hides an empty one.
+          -->
+          <span class="row-legend">{{
+            (notificationLegend(message, severity) ?? "") | capitalize
+          }}</span>
+          <div
+            class="text-container"
+            [ngClass]="'notification-body--' + severity"
+          >{{ message.content }}</div>
+          <!-- Story 31-6 (FR16): the body's inline `margin: 0.5rem 0 1rem`
+               is gone, so the row matches a SentMessage row. The bottom
+               gap it used to provide belongs to the button row alone —
+               putting it back on `.text-container` would re-pad the
+               warn/info branches, which have no button. -->
+          <div class="notification-actions" *ngIf="severity === 'error'">
+            <p-button
+              size="small"
+              [label]="'messageList.relaunch' | translate"
+              (click)="relaunch($event, message)"
+              [disabled]="true"
+            />
+          </div>
+        </ng-container>
+
+        <ng-container *ngIf="!notificationSeverity(message)">
+          <ng-container
+            *ngFor="let content of getMessageContentKeys(message.message)"
+          >
+            <!--
+              Interpolated, NOT `[innerHTML]`. The body is model output, and a
+              log that parses what it is quoting is not quoting it. Newlines
+              survive through `white-space: pre-wrap` in the stylesheet, which
+              is what a multi-paragraph payload needs here and what the old
+              markup path destroyed.
+            -->
+            <div class="text-container" *ngIf="message.message[content]">{{
+              message.message[content]
+            }}</div>
+          </ng-container>
+        </ng-container>
+      </div>
+    </ng-template>
+  </p-table>
+</ng-container>
+<ng-template #noMessagesPlaceholder>
+  <!--
+    THE SHARED EMPTY STATE, not a fourth hand-drawn one.
+
+    This was a dashed-border box with its own glyph size, its own greys and its
+    own type scale — copied, by its own comment, from the knowledge-graph panel,
+    which had copied it from somewhere else. Three panes centring a glyph and a
+    sentence at three different sizes read as three unfinished screens rather
+    than one quiet one, and none of the greys cleared AA on this ground.
+
+    The COPY is unchanged: the same two keys, in the same order.
+  -->
+  <app-empty-state
+    titleKey="messageList.emptyTitle"
+    blurbKey="messageList.emptyDesc"
+  />
+</ng-template>

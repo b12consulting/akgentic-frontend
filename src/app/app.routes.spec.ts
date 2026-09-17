@@ -1,76 +1,65 @@
-import { Router, Routes } from '@angular/router';
 import { TestBed } from '@angular/core/testing';
-import { RouterTestingModule } from '@angular/router/testing';
+import { provideRouter, Router } from '@angular/router';
 
 import { routes } from './app.routes';
-import { AuthGuard } from './core/auth/auth.guard';
-import { namespacePanelCanDeactivate } from './components/catalog/namespace-panel/namespace-panel.guard';
 
 /**
- * Story 11.6 — route-registration tests for the deep-link route.
+ * The route table, after the catalog deep link was removed.
  *
- * Covers:
- * - AC 1 route entry shape (path, `loadComponent` function, AuthGuard on
- *   canActivate, functional `CanDeactivate` guard).
- * - AC 15 URL path-parameter parsing (`:namespace` is a path segment, not
- *   a query param) + URL-decoded round-trip.
- * - AC 16 guard is a function (functional CanDeactivateFn).
+ * This file used to be Story 11.6's spec for `/admin/catalog/namespace/:namespace`
+ * — its shape, its `canActivate`, its functional `CanDeactivate` guard and its
+ * URL parsing. That route is gone: nothing in the application ever linked to
+ * it, so it was reachable only by typing the URL, and it was deleted along with
+ * `ui/catalog/`.
+ *
+ * What is left is the check the old file carried as a footnote — that the
+ * surviving entries are the ones the shell expects. It is small on purpose. A
+ * route table is mostly declaration, and asserting each field back to itself
+ * tests the test; what is worth pinning is the SET of paths, because a page
+ * silently disappearing from it is the failure a reader of `app.routes.ts`
+ * cannot see.
  */
-describe('app.routes (Story 11.6 — deep-link route registration)', () => {
-  function findAdminRoute(rs: Routes) {
-    return rs.find(
-      (r) => r.path === 'admin/catalog/namespace/:namespace',
-    );
-  }
-
-  it('(AC1) admin route entry exists with expected shape', () => {
-    const route = findAdminRoute(routes);
-    expect(route).toBeDefined();
-    expect(route!.path).toBe('admin/catalog/namespace/:namespace');
-    expect(typeof route!.loadComponent).toBe('function');
-    expect(route!.component).toBeUndefined(); // lazy-loaded, not eager
-    expect(route!.title).toBe('title.catalogNamespace');
-    expect(route!.canActivate).toEqual([AuthGuard]);
-    expect(route!.canDeactivate).toEqual([namespacePanelCanDeactivate]);
-  });
-
-  it('(AC16) canDeactivate guard reference is a function', () => {
-    expect(typeof namespacePanelCanDeactivate).toBe('function');
-  });
-
-  it('(AC1) existing routes (home, process, login) remain intact', () => {
-    // Sanity-check that the story did NOT tamper with sibling entries.
+describe('app.routes', () => {
+  it('registers exactly the three pages the shell expects', () => {
     const paths = routes.map((r) => r.path);
+
     expect(paths).toContain('');
     expect(paths).toContain('process/:id');
     expect(paths).toContain('login');
-    expect(paths).toContain('admin/catalog/namespace/:namespace');
+
+    // The set, not just the members: an entry added without a decision shows up
+    // here rather than being discovered in the browser.
+    expect(paths.sort()).toEqual(['', 'login', 'process/:id']);
   });
 
-  describe('URL parsing (AC15)', () => {
+  it('no longer carries the catalog deep link', () => {
+    // Guards the deletion rather than the route: re-adding it silently is the
+    // regression, and `ui/catalog/` no longer exists to import from.
+    const paths = routes.map((r) => r.path ?? '');
+
+    expect(paths.some((p) => p.startsWith('admin/'))).toBeFalse();
+  });
+
+  describe('URL parsing', () => {
     let router: Router;
 
     beforeEach(() => {
-      TestBed.configureTestingModule({
-        imports: [RouterTestingModule.withRoutes(routes)],
-      });
+      TestBed.configureTestingModule({ providers: [provideRouter(routes)] });
       router = TestBed.inject(Router);
     });
 
-    it('(AC15) /admin/catalog/namespace/foo parses as path segments', () => {
-      const tree = router.parseUrl('/admin/catalog/namespace/foo');
-      const segments = tree.root.children['primary']!.segments.map(
-        (s) => s.path,
-      );
-      expect(segments).toEqual(['admin', 'catalog', 'namespace', 'foo']);
+    it('parses a team id as a path segment', () => {
+      const tree = router.parseUrl('/process/team-1');
+      const segments = tree.root.children['primary'].segments.map((s) => s.path);
+
+      expect(segments).toEqual(['process', 'team-1']);
     });
 
-    it('(AC15) URL-encoded namespace (my%20ns) decodes to "my ns"', () => {
-      const tree = router.parseUrl('/admin/catalog/namespace/my%20ns');
-      const segments = tree.root.children['primary']!.segments.map(
-        (s) => s.path,
-      );
-      expect(segments[3]).toBe('my ns');
+    it('decodes a percent-encoded team id', () => {
+      const tree = router.parseUrl('/process/my%20team');
+      const segments = tree.root.children['primary'].segments.map((s) => s.path);
+
+      expect(segments).toEqual(['process', 'my team']);
     });
   });
 });

@@ -1,0 +1,177 @@
+<aside class="rail" [attr.aria-label]="'rail.allTeams' | translate">
+  <!--
+    BRAND ROW. "Akgents" is a product name, not copy: it is the same word in
+    every language and translating it would be a bug. The qualifier beside it
+    IS copy and goes through the pipe.
+
+    THE MARK IS EITHER/OR, NEVER BOTH (W9c). The framework default for
+    `config.logo` (`akgent_logo.png`) is a raster of this very wordmark, so
+    drawing the image AND the type would put the same brand on screen twice on
+    every deployment that never configured one — which is nearly all of them.
+    So the wordmark is the DEFAULT and an explicitly configured logo REPLACES
+    it. `ConfigService.brandLogo` owns the definition of "explicitly"; the
+    login masthead asks it the same question and renders the same either/or, so
+    a deployment gets its mark in both places or in neither. One rule, two
+    surfaces, no surface with an opinion of its own.
+  -->
+  <div class="rail__brand">
+    @if (brandLogo) {
+      <!--
+        Not `alt=""`. This image is the only thing in the chrome identifying
+        whose product it is, which is the definition of informative rather than
+        decorative. The alt cannot BE the product's name — the framework does
+        not know a white-label deployment's name, only the path to its mark —
+        so it is a translated generic rather than a guess.
+      -->
+      <img
+        class="rail__logo"
+        [src]="brandLogo"
+        [alt]="'chrome.brandLogoAlt' | translate"
+      />
+    } @else {
+      <span class="rail__wordmark">
+        <span class="rail__wordmark-name">Akgents</span>
+        <span class="rail__wordmark-suffix">{{ 'rail.brandSuffix' | translate }}</span>
+      </span>
+    }
+    <app-icon-button
+      size="md"
+      [label]="'chrome.collapseSidebar' | translate"
+      (pressed)="viewService.toggleRail()"
+    >
+      <svg
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="1.7"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <rect x="3" y="4" width="18" height="16" rx="3" />
+        <path d="M9 4v16" />
+      </svg>
+    </app-icon-button>
+  </div>
+
+  <!--
+    PRIMARY ACTION. It opens the creation wizard in place and navigates nowhere:
+    a user asking for a new team should not lose the conversation they are
+    reading on the way to a Create button.
+
+    The dialog itself is NOT mounted here. A collapsed rail is `inert` +
+    `aria-hidden`, and a dialog inside an inert subtree is one nobody can type
+    into; it lives in `app.component.html`, outside the shell, beside the toast
+    and for the same overlay reason. All this button does is raise a flag — see
+    `onNewTeam` for why the creation gate deliberately does not live on the rail.
+  -->
+  <div class="rail__primary">
+    <button type="button" class="rail__new-team" (click)="onNewTeam()">
+      <svg
+        class="rail__new-team-glyph"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2"
+        stroke-linecap="round"
+        aria-hidden="true"
+      >
+        <path d="M12 5v14M5 12h14" />
+      </svg>
+      {{ 'rail.newTeam' | translate }}
+    </button>
+  </div>
+
+  <!--
+    THE WAY BACK, and it sits with the other navigation rather than in the
+    footer.
+
+    `onManage()` is the same call the footer's link made — `navigateHome()`,
+    which restores the list as the user left it, filter and page included — so
+    this is a promotion, not a new behaviour. Gated on the same `!hideHome`.
+
+    A row in the list's own idiom, not a second button: the rail already has
+    exactly one primary action and a second filled control beneath it would
+    compete with it. This reads as the first entry in the navigation the
+    recents below continue.
+  -->
+  @if (showAllTeams) {
+    <div class="rail__nav">
+      <button type="button" class="rail__nav-row" (click)="onManage()">
+        <svg
+          class="rail__nav-glyph"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.7"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="3" y="4" width="18" height="7" rx="2" />
+          <rect x="3" y="13" width="18" height="7" rx="2" />
+        </svg>
+        {{ 'rail.allTeams' | translate }}
+      </button>
+    </div>
+  }
+
+  <app-search-box
+    [value]="(query$ | async) ?? ''"
+    (valueChange)="onQueryChange($event)"
+  />
+
+  @if (view$ | async; as view) {
+    <div class="rail__list" [class.rail__list--dimmed]="view.dimmed">
+      @switch (view.state) {
+        @case ('loading') {
+          <p class="rail__notice">{{ 'rail.loading' | translate }}</p>
+        }
+        @case ('empty') {
+          <div class="rail__notice">
+            <p class="rail__notice-title">{{ 'rail.emptyTitle' | translate }}</p>
+            <p class="rail__notice-body">{{ 'rail.emptyDesc' | translate }}</p>
+          </div>
+        }
+        @case ('no-results') {
+          <!--
+            A DIFFERENT ANSWER from "no teams", and it has to be: the search is
+            client-side over the loaded page, so "no match" means "not on this
+            page" and the full list is one control away. Saying only "no teams"
+            here would tell a user with a typo that their work is gone.
+          -->
+          <div class="rail__notice">
+            <p class="rail__notice-title">
+              {{ 'rail.noResults' | translate: { query: view.query } }}
+            </p>
+            <p class="rail__notice-body">{{ 'rail.noResultsHint' | translate }}</p>
+            <button type="button" class="rail__notice-link" (click)="onManage()">
+              {{ 'rail.allTeams' | translate }}
+            </button>
+          </div>
+        }
+        @default {
+          @for (group of view.groups; track group.labelKey) {
+            <!--
+              Rendered inside the `@for`, so a group with no rows takes its
+              header with it: the selector never emits an empty group, and a
+              header standing over nothing reads as rows that failed to load.
+            -->
+            <p class="rail__group-label">{{ group.labelKey | translate }}</p>
+            @for (row of group.rows; track row.team.team_id) {
+              <app-rail-team-row
+                [row]="row"
+                [active]="row.team.team_id === view.activeTeamId"
+                (selected)="onSelect($event)"
+                (manageRequested)="onManage()"
+                (deleteRequested)="onDeleted($event)"
+              />
+            }
+          }
+        }
+      }
+    </div>
+  }
+
+  <app-rail-footer />
+</aside>
