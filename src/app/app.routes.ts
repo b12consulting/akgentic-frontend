@@ -3,7 +3,6 @@ import { AuthGuard } from './core/platform/auth/auth.guard';
 import { HomeComponent } from './ui/home/home.component';
 import { LoginComponent } from './ui/login/login.component';
 import { ProcessComponent } from './ui/process/process.component';
-import { namespacePanelCanDeactivate } from './ui/catalog/namespace-panel/namespace-panel.guard';
 import { PROCESS_PROVIDERS } from './core/services/process/session/process.providers';
 
 /**
@@ -35,20 +34,6 @@ export const routes: Routes = [
     title: 'title.process',
     canActivate: [AuthGuard],
     providers: PROCESS_PROVIDERS,
-  },
-  {
-    // Story 11.6 — deep-link route for the catalog namespace panel.
-    // `loadComponent` keeps the panel (and its Monaco bundle) out of the
-    // initial home-page chunk (NFR8). The functional `CanDeactivate` guard
-    // prompts before losing an operator's unsaved edit buffer.
-    path: 'admin/catalog/namespace/:namespace',
-    loadComponent: () =>
-      import(
-        './ui/catalog/namespace-panel/namespace-panel-route.component'
-      ).then((m) => m.NamespacePanelRouteComponent),
-    title: 'title.catalogNamespace',
-    canActivate: [AuthGuard],
-    canDeactivate: [namespacePanelCanDeactivate],
   },
   { path: 'login', component: LoginComponent, title: 'title.login' },
 ];

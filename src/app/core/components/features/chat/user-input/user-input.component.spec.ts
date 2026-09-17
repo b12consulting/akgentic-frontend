@@ -5,24 +5,24 @@ import { MessageService } from 'primeng/api';
 import { BehaviorSubject } from 'rxjs';
 
 import { ProcessUserInputComponent } from './user-input.component';
-import { ApiService } from '../../../platform/http/api.service';
-import { HttpError, NetworkError } from '../../../platform/http/fetch.service';
-import { ChatService } from '../../../services/process/selectors/chat.selector';
-import { ContextService } from '../../../platform/context/context.service';
-import { GraphDataService } from '../../../services/process/selectors/graph.selector';
-import { IngestionService } from '../../../services/process/event/ingestion.service';
+import { ApiService } from '../../../../platform/http/api.service';
+import { HttpError, NetworkError } from '../../../../platform/http/fetch.service';
+import { ChatService } from '../../../../services/process/selectors/chat.selector';
+import { ContextService } from '../../../../platform/context/context.service';
+import { GraphDataService } from '../../../../services/process/selectors/graph.selector';
+import { IngestionService } from '../../../../services/process/event/ingestion.service';
 import {
   TeamTokenTotals,
   TokenUsageSelector,
-} from '../../../services/process/selectors/token-usage.selector';
-import { ActorAddress, CommandDescriptor } from '../../../protocol/message.types';
-import { NodeInterface } from '../../../services/process/models/types';
-import { makeAgentNameUserFriendly } from '../../../shared/util/util';
+} from '../../../../services/process/selectors/token-usage.selector';
+import { ActorAddress, CommandDescriptor } from '../../../../protocol/message.types';
+import { NodeInterface } from '../../../../services/process/models/types';
+import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 
 import {
   provideTranslateTesting,
   setTestTranslations,
-} from '../../../../../testing/i18n-testing';
+} from '../../../../../../testing/i18n-testing';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {

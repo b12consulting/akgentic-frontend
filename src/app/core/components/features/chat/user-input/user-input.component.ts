@@ -12,27 +12,27 @@ import { TextareaModule } from 'primeng/textarea';
 import { TranslatePipe } from '@ngx-translate/core';
 import { MentionModule } from 'angular-mentions';
 
-import { TokenCountPipe } from '../../../shared/pipes/token-count.pipe';
+import { TokenCountPipe } from '../../../../shared/pipes/token-count.pipe';
 
-import { makeAgentNameUserFriendly } from '../../../shared/util/util';
-import { ConfigService } from '../../../platform/config/config.service';
+import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
+import { ConfigService } from '../../../../platform/config/config.service';
 
-import { ApiService } from '../../../platform/http/api.service';
-import { FetchFailure } from '../../../platform/http/fetch.service';
-import { ChatService } from '../../../services/process/selectors/chat.selector';
-import { ContextService } from '../../../platform/context/context.service';
-import { GraphDataService, HUMAN_ROLE } from '../../../services/process/selectors/graph.selector';
-import { IngestionService } from '../../../services/process/event/ingestion.service';
+import { ApiService } from '../../../../platform/http/api.service';
+import { FetchFailure } from '../../../../platform/http/fetch.service';
+import { ChatService } from '../../../../services/process/selectors/chat.selector';
+import { ContextService } from '../../../../platform/context/context.service';
+import { GraphDataService, HUMAN_ROLE } from '../../../../services/process/selectors/graph.selector';
+import { IngestionService } from '../../../../services/process/event/ingestion.service';
 
 import {
   TeamTokenTotals,
   TokenUsageSelector,
-} from '../../../services/process/selectors/token-usage.selector';
+} from '../../../../services/process/selectors/token-usage.selector';
 
-import { ENTRY_POINT_NAME } from '../../../services/process/selectors/chat-message.model';
-import { defaultRecipientName } from '../../../services/process/selectors/actor-kind';
-import { CommandDescriptor } from '../../../protocol/message.types';
-import { NodeInterface } from '../../../services/process/models/types';
+import { ENTRY_POINT_NAME } from '../../../../services/process/selectors/chat-message.model';
+import { defaultRecipientName } from '../../../../services/process/selectors/actor-kind';
+import { CommandDescriptor } from '../../../../protocol/message.types';
+import { NodeInterface } from '../../../../services/process/models/types';
 
 /**
  * MATCH ANYWHERE IN THE NAME, not just at the front.

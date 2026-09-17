@@ -53,7 +53,7 @@ import {
 } from './agent-reader.service';
 import { ChatMessageComponent } from './message/chat-message.component';
 import { ThinkingComponent } from './message/thinking.component';
-import { ProcessUserInputComponent } from '../composer/user-input.component';
+import { ProcessUserInputComponent } from './user-input/user-input.component';
 
 /**
  * The transcript row types now live in `../../selectors/display-items` — the
@@ -90,7 +90,7 @@ export type { DisplayItem, TurnDisplayItem } from '../../../services/process/sel
  * Entry-to-page (mount) scrolling is intentionally OUT of scope here.
  *
  * The per-agent `akgent-chat` trace keeps its own stick-to-bottom autoscroll —
- * the two surfaces diverge on purpose (see `agent-chat.component.ts#scroll()`).
+ * the two surfaces diverge on purpose (see `context-trace.component.ts#scroll()`).
  */
 /**
  * The status pill's key while the view is following the newest turn.
