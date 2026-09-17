@@ -879,3 +879,89 @@
 :host ::ng-deep .system-announcement .markdown-content > markdown > *:last-child {
   margin-bottom: 0;
 }
+
+/*
+ * MARKDOWN TABLES, on the console's own table idiom.
+ *
+ * `ngx-markdown` emits a bare `<table><thead><th>` with no classes, and
+ * nothing styled it — so an agent that answered with a table got three columns
+ * of naked text with no rules, no padding and no header separation. It did not
+ * read as a table at all; it read as a paragraph that had lost its spacing.
+ *
+ * The values are lifted from `team-list/team-table.component.scss` rather than
+ * chosen here: 9px/14px cells, an uppercase tracked header in the muted tone
+ * over `--akg-surface-border`, and row rules in the lighter `--akg-hairline`.
+ * A table an agent renders and a table the product renders should not be two
+ * different objects.
+ *
+ * `::ng-deep` is required and is not laziness: this content is injected by
+ * `ngx-markdown` at runtime, so it never carries this component's emulated
+ * encapsulation attribute and no scoped selector can reach it.
+ */
+:host ::ng-deep .markdown-content table {
+  margin: 8px 0;
+  border-collapse: collapse;
+  font-size: inherit;
+
+  /*
+   * THE ONE THING IN A TURN ALLOWED TO SCROLL SIDEWAYS.
+   *
+   * Everything else wide in this component wraps — `overflow-wrap: anywhere`
+   * for prose, `pre-wrap` for code. A table cannot: its cells have minimum
+   * widths, so a wide one would push past the bubble's `max-width: 78%` and
+   * drag the whole turn with it.
+   *
+   * `ngx-markdown` emits no wrapper to scroll, so the table has to be its own
+   * scroll box. `display: block` is what allows that; `width: max-content`
+   * gives back the shrink-to-fit a block would otherwise lose, so a three-column
+   * table stays three columns wide instead of stretching to the bubble; and
+   * `max-width: 100%` is the cap that makes the overflow actually engage.
+   * All four are load-bearing — drop any one and it either stops scrolling or
+   * stops shrink-wrapping.
+   */
+  display: block;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+:host ::ng-deep .markdown-content thead th {
+  padding: 9px 16px;
+  font-size: var(--akg-section-label-size);
+  font-weight: 600;
+  letter-spacing: var(--akg-section-label-tracking);
+  text-transform: uppercase;
+  text-align: left;
+  white-space: nowrap;
+  color: var(--akg-text-muted);
+  border-bottom: 1px solid var(--akg-surface-border);
+}
+
+:host ::ng-deep .markdown-content tbody td {
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--akg-hairline);
+  color: var(--akg-text);
+  vertical-align: top;
+}
+
+/* The last row draws no rule: a separator under the final row is a line against
+   nothing, which reads as a stray underline rather than a boundary. */
+:host ::ng-deep .markdown-content tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/*
+ * `align` is an ATTRIBUTE here, not a class. Markdown's `|---:|` column syntax
+ * compiles to `<th align="right">`, which browsers still honour — but the
+ * padding above would otherwise push a right-aligned number away from its own
+ * column edge. Matching on the attribute keeps the author's intent working.
+ */
+:host ::ng-deep .markdown-content th[align='right'],
+:host ::ng-deep .markdown-content td[align='right'] {
+  text-align: right;
+}
+
+:host ::ng-deep .markdown-content th[align='center'],
+:host ::ng-deep .markdown-content td[align='center'] {
+  text-align: center;
+}
