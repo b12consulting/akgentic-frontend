@@ -162,7 +162,14 @@
   // Tools get their own hue so a step is identifiable at a glance without
   // reading it. Deliberately NOT the accent: the accent means "the product is
   // doing something", this means "a tool ran".
-  --akg-tool-accent: #6434da;
+  //
+  // The VALUE of graph stop 3, written out rather than aliased to it. The ramp
+  // below states the rule and the reason: an alias would let a rebrand move one
+  // stop onto another and silently destroy the separation that ramp exists for.
+  // A coinciding value is a coincidence worth keeping, not a dependency worth
+  // creating — which is how this token already worked, since #6434da was stop
+  // 2's value by the same coincidence.
+  --akg-tool-accent: #1f4fa8;
 
   // The ground a person's own words sit on.
   --akg-user-bubble-bg: #f0ece9;
@@ -243,11 +250,11 @@
   // Four aliases that name the ROLE rather than repeat the value.
   //
   // A team's state is drawn in two places — the teams table's row tag and the
-  // conversation header's pill — and until now the two agreed only by
+  // process header's pill — and until now the two agreed only by
   // accident: the header picked its pair by hand, the table asked PrimeNG for
   // a `severity` and got Aura's blue and green, which `app.theme.ts` re-points
   // for `primary` and for nothing else. These point at the exact pair the
-  // header already uses (conversation-header.component.scss), so the two
+  // header already uses (process-header.component.scss), so the two
   // surfaces now agree BY CONSTRUCTION — re-point the accent and both move.
   //
   // "live" covers running, working AND idle: all three ARE running, and only
