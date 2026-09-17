@@ -10,26 +10,40 @@ workspace and has no Python import relationship with any other package — the c
 a network protocol, not a module dependency. It is distributed as an npm/container artifact, not on
 PyPI, so it is absent from the `akgentic-framework` bundle distribution.
 
-## What it renders
+## The surface
 
-A running team, from a single append-only event log fed by one WebSocket:
+![The console on /process/:id — the rail on the left, the conversation pane in the middle, and the
+inspector's Team tab on the right showing the roster, the team's tools and its token
+spend](screenshot.png)
 
-- **Chat panel** — the multi-party conversation, with per-agent thinking bubbles and tool-call
-  history. A message an agent absorbs **mid-run** — read out of its own inbox rather than waiting for
-  a turn — gets its own bubble, under the message it answers, instead of disappearing into the turn
-  that absorbed it
-- **Graph / tree** — live agent topology, built from `StartMessage`/`StopMessage` and message edges
-- **Messages tab** — the raw protocol log, including the error / warning / notification family
-- **Per-agent tabs** — state, LLM context, system prompt, token usage, workspace files
-- **Knowledge-graph panel** — reconnected through `ToolStateEvent`
-- **Catalog admin** — templates, tools, agents, teams
+Two pages, inside one persistent shell. Everything on them is derived from a single append-only
+event log fed by one WebSocket — there is no second source of truth and no polling.
 
-And the list you arrive at:
+**`/` — the teams list.** The teams you own, server-paginated, each row carrying the business
+metadata its team type declares. Filter by any searchable metadata field and by team type; the filter
+and page live in the URL, so a view can be shared, bookmarked, and survives a refresh or a trip into
+a team and back. The namespace editor opens from here, over the selected namespace.
 
-- **Teams list** — the teams you own, server-paginated, each row showing the business metadata its
-  team carries. Filter it by any metadata field the team type declares as searchable, and by team
-  type; the filter and page live in the URL, so a filtered view can be shared, bookmarked, and
-  survives a refresh or a trip into a team and back
+**`/process/:id` — a running team.** Two panes beside the shell's rail:
+
+- **The conversation pane** — the multi-party transcript, with per-agent thinking bubbles and
+  tool-call history. A message an agent absorbs **mid-run** — read out of its own inbox rather than
+  waiting for a turn — gets its own bubble under the message it answers, instead of disappearing into
+  the turn that absorbed it.
+- **The inspector** ("Team details"), a tab strip over six panels:
+
+| Tab | Shows |
+|---|---|
+| Team | the roster — members, their tools, and what the team has spent |
+| Hierarchy | agent topology as a force-directed graph and a tree, built from `StartMessage` / `StopMessage` and message edges |
+| Member | one member's LLM context: pick an agent, read the system prompt and the trace of what it was sent |
+| Workspaces | the files a team's agents can read and write |
+| Knowledge graph | present **only when a knowledge-graph tool is**, driven by `ToolStateEvent` |
+| Messages | the raw protocol log, including the error / warning / notification family |
+
+The Knowledge-graph tab is the one that appears and disappears: `ToolPresenceService.hasKnowledgeGraph$`
+adds it when the team actually carries that tool, so the strip reflects the team rather than a fixed
+menu.
 
 Architecture documentation lives in the parent
 [akgentic-framework](https://github.com/b12consulting/akgentic-framework) bundle at
@@ -104,6 +118,130 @@ The file is fetched once, before the app renders, relative to the document base 
 non-root `--base-href` deployment. A malformed or missing file is not an error: the build-time
 defaults stand. Verify what a running deployment resolved by fetching `<app-url>/config.json`
 directly in a browser.
+
+## Layout
+
+`src/app/` is **two top-level folders over seven ordered tiers**, split by DIRECTORY rather than by
+naming convention so the split cannot erode quietly. `core/` is the framework-maintained part;
+`ui/` is the part you replace.
+
+```
+src/app/
+├── app.config.ts  app.routes.ts  app.component.ts     composition root
+│      the ONLY place that names a `ui/` symbol
+│
+├── core/                                framework-maintained
+│   ├── protocol/        the wire contract with akgentic-infra
+│   ├── shared/          pure functions, pipes
+│   ├── platform/        http · auth · i18n · config · context
+│   ├── services/        ingestion · selectors · reactors · session ·
+│   │                    ui-state · workspace
+│   └── components/      THE LIBRARY
+│       ├── primitives/  domain-free controls
+│       └── features/    self-contained widgets, wired to services
+│
+└── ui/                  pages and shell. Nothing may import this.
+```
+
+`src/app/ui/README.md` covers the other half of this: how the shell, the two pages and the inspector
+fit together at runtime, and why the rail survives navigation while the inspector does not. This
+section is the import rules; that one is the arrangement.
+
+**`core/` is a namespace, not a tier.** Each tier below names itself; there is deliberately no
+element type covering `core/` as a whole, because one would make every edge inside it legal in both
+directions while the lint still passed.
+
+This is the normative table. It is not a description of intent: each row is an
+`eslint-plugin-boundaries` element type and each **May import** cell is that type's allow list. The
+rule set's default is `disallow`, so **any edge not in this table is refused**.
+
+| Element type | Folder | May import | May NOT import |
+|---|---|---|---|
+| `protocol` | `core/protocol/` | *nothing* | everything |
+| `shared` | `core/shared/` | `protocol` | `platform` `services` `primitives` `features` `ui` |
+| `platform` | `core/platform/` | `shared` `protocol` | `services` `primitives` `features` `ui` |
+| `services` | `core/services/` | `platform` `shared` `protocol`, and the `svc-*` sub-tiers below | **`primitives` `features`** `ui` |
+| `primitives` | `core/components/primitives/` | `platform` `shared` `protocol`, and each other | **`services`** `features` `ui` |
+| `features` | `core/components/features/` | `primitives` `services` `platform` `shared` `protocol`, and each other | `ui` |
+| `ui` | `ui/` | everything below, and each other | — |
+
+**`core/services/` has its own ordered taxonomy inside it**, and `svc-` is simply the element-type
+prefix for those sub-tiers — short for *service*. They are not extra folders: each name is the
+`boundaries` type covering one directory under `core/services/process/`, so the order *within* the
+data layer is enforced rather than flattened by the one folder name above it.
+
+| Element type | Directory | Holds |
+|---|---|---|
+| `svc-models` | `process/models/` | the shapes the rest of the tier folds into |
+| `svc-event` | `process/event/` | ingestion — the socket, the append-only log, replay, the per-agent stores, and the reactors that turn log entries into toasts and status changes |
+| `svc-selectors` | `process/selectors/` | pure folds of the log: chat, graphs, token usage, workspace registry |
+| `svc-ui-state` | `process/ui-state/` | selection and feedback — state a view reads, but not a view |
+| `svc-workspace` | `process/workspace/` | REST file contents and directory listings |
+| `svc-session` | `process/session/` | `TeamSessionService` — composes the others into "open a team" |
+
+The order runs `svc-models ← svc-event ← svc-selectors ← svc-ui-state`, with `svc-session`
+composing them. A selector may read events; an event unit may not read a selector.
+
+Three cells carry the design and a future reader will be tempted by each:
+
+- **`services` may not import `primitives` or `features`.** A selector reaching into a widget is the
+  inversion the whole tree exists to prevent.
+- **`primitives` may not import `services`.** This is what makes "primitive" decidable — see below.
+  It covers **type imports as well as injections**.
+- **Nothing may import `ui`.** That is the property that makes a second UI possible: a second console
+  is built by writing a new `ui/` against the same `core/components/` and `core/services/`.
+
+**Which outside packages a tier may draw on is enforced too**, by the same rule set and the same
+`disallow` default. The lower tiers carry exhaustive, measured allow lists — `core/shared/` may name
+`@angular/core`, `lodash` and `js-yaml` and nothing else — while `features/` and `ui/` are
+deliberately unrestricted, because drawing on the outside world is what they are for. The lists match
+the **whole specifier**, not the package name, which is how `core/services/` can use
+`@angular/cdk/clipboard` (headless) while `@angular/cdk/dialog` stays refused.
+
+### Which tier does a component belong to?
+
+A component is a **primitive** if it **names no domain concept**. It knows nothing of teams, agents,
+messages, workspaces, namespaces or the event log; its inputs are strings, numbers, booleans and
+i18n keys. Two tests, applied in order:
+
+1. **Mechanical, and lint-enforced:** does it import anything from `core/services/`? If yes it is not
+   a primitive. Type imports count.
+2. **Editorial, and settled by review:** is it meaningful outside one feature? If it belongs to one
+   capability, it lives in that capability's folder under `features/` — whether or not it injects
+   anything.
+
+Test 1 alone is not sufficient, and that is the substance of the rule. A team table might import
+nothing from `core/services/` and still be a table of *teams*; putting it in `primitives` would give
+the domain-free tier a teams list. Test 2 is what prevents that, and it is why the primitives tier is
+deliberately **small** — five components today. A primitives folder that grows a `TeamCard` has
+stopped being one, and only test 2 will catch it.
+
+Everything else in the library is a **feature**: a self-contained widget that may inject the data
+layer, nested by composition, so a component appearing only ever inside one other component is a
+subfolder of it. A **page or shell** — anything that assembles features into a route or into the
+chrome around one — is `ui/`.
+
+Two rules cover the team's services and are worth knowing before adding one:
+
+- They are provided on the **`process/:id` route**, not on `ProcessComponent`. A component that
+  silently requires a particular ancestor is not a component you can place, and that ancestor
+  requirement was the thing standing between these panels and being reusable.
+- Never `providedIn: 'root'`. The route injector dies when you leave the route; a root one would
+  carry one team's socket, log and per-agent stores into the next.
+
+### What the lint gate does and does not catch
+
+`eslint.config.js` enforces the direction with `boundaries`, and each layer is its own element
+**type** — a shared type would make every edge legal in both directions, because the plugin cannot
+express direction within a type.
+
+It catches a component importing `ui/`, a selector importing `ui-state`, a service importing a view.
+It does **not** catch a dumb component injecting a data service, and cannot: an `@Input` is typed by
+the selector that produces it, so a type import and a service injection are the same edge to the
+linter. That half is a review rule, and the classification above is how it is applied.
+
+`docs/message-display-flow.md` traces one boundary end to end: how a frame on the socket becomes a
+row in the transcript, and which file owns each stage.
 
 ## Language
 
@@ -208,113 +346,6 @@ CI (see *CI and releasing*).
 ```bash
 npm run lint                         # eslint over src/**/*.ts
 ```
-
-## Layout
-
-`src/app/` is **two top-level folders over seven ordered tiers**, split by DIRECTORY rather than by
-naming convention so the split cannot erode quietly. `core/` is the framework-maintained part;
-`ui/` is the part you replace.
-
-```
-src/app/
-├── app.config.ts  app.routes.ts  app.component.ts     composition root
-│      the ONLY place that names a `ui/` symbol
-│
-├── core/                                framework-maintained
-│   ├── protocol/        the wire contract with akgentic-infra
-│   ├── shared/          pure functions, pipes
-│   ├── platform/        http · auth · i18n · config · context
-│   ├── services/        ingestion · selectors · reactors · session ·
-│   │                    ui-state · workspace
-│   └── components/      THE LIBRARY
-│       ├── primitives/  domain-free controls
-│       └── features/    self-contained widgets, wired to services
-│
-└── ui/                  pages and shell. Nothing may import this.
-```
-
-**`core/` is a namespace, not a tier.** Each tier below names itself; there is deliberately no
-element type covering `core/` as a whole, because one would make every edge inside it legal in both
-directions while the lint still passed.
-
-This is the normative table. It is not a description of intent: each row is an
-`eslint-plugin-boundaries` element type and each **May import** cell is that type's allow list. The
-rule set's default is `disallow`, so **any edge not in this table is refused**.
-
-| Element type | Folder | May import | May NOT import |
-|---|---|---|---|
-| `protocol` | `core/protocol/` | *nothing* | everything |
-| `shared` | `core/shared/` | `protocol` | `platform` `services` `primitives` `features` `ui` |
-| `platform` | `core/platform/` | `shared` `protocol` | `services` `primitives` `features` `ui` |
-| `services` | `core/services/` | `platform` `shared` `protocol`, and the `svc-*` sub-tiers below | **`primitives` `features`** `ui` |
-| `primitives` | `core/components/primitives/` | `platform` `shared` `protocol`, and each other | **`services`** `features` `ui` |
-| `features` | `core/components/features/` | `primitives` `services` `platform` `shared` `protocol`, and each other | `ui` |
-| `ui` | `ui/` | everything below, and each other | — |
-
-`core/services/` keeps its own internal taxonomy: `svc-models ← svc-event ← svc-selectors ←
-svc-ui-state`, with `svc-session` composing them. Each is a separate element type, so the order
-inside the data layer is enforced too rather than being flattened by a folder name.
-
-Three cells carry the design and a future reader will be tempted by each:
-
-- **`services` may not import `primitives` or `features`.** A selector reaching into a widget is the
-  inversion the whole tree exists to prevent.
-- **`primitives` may not import `services`.** This is what makes "primitive" decidable — see below.
-  It covers **type imports as well as injections**.
-- **Nothing may import `ui`.** That is the property that makes a second UI possible: a second console
-  is built by writing a new `ui/` against the same `core/components/` and `core/services/`.
-
-**Which outside packages a tier may draw on is enforced too**, by the same rule set and the same
-`disallow` default. The lower tiers carry exhaustive, measured allow lists — `core/shared/` may name
-`@angular/core`, `lodash` and `js-yaml` and nothing else — while `features/` and `ui/` are
-deliberately unrestricted, because drawing on the outside world is what they are for. The lists match
-the **whole specifier**, not the package name, which is how `core/services/` can use
-`@angular/cdk/clipboard` (headless) while `@angular/cdk/dialog` stays refused.
-
-### Which tier does a component belong to?
-
-A component is a **primitive** if it **names no domain concept**. It knows nothing of teams, agents,
-messages, workspaces, namespaces or the event log; its inputs are strings, numbers, booleans and
-i18n keys. Two tests, applied in order:
-
-1. **Mechanical, and lint-enforced:** does it import anything from `core/services/`? If yes it is not
-   a primitive. Type imports count.
-2. **Editorial, and settled by review:** is it meaningful outside one feature? If it belongs to one
-   capability, it lives in that capability's folder under `features/` — whether or not it injects
-   anything.
-
-Test 1 alone is not sufficient, and that is the substance of the rule. A team table might import
-nothing from `core/services/` and still be a table of *teams*; putting it in `primitives` would give
-the domain-free tier a teams list. Test 2 is what prevents that, and it is why the primitives tier is
-deliberately **small** — five components today. A primitives folder that grows a `TeamCard` has
-stopped being one, and only test 2 will catch it.
-
-Everything else in the library is a **feature**: a self-contained widget that may inject the data
-layer, nested by composition, so a component appearing only ever inside one other component is a
-subfolder of it. A **page or shell** — anything that assembles features into a route or into the
-chrome around one — is `ui/`.
-
-Two rules cover the team's services and are worth knowing before adding one:
-
-- They are provided on the **`process/:id` route**, not on `ProcessComponent`. A component that
-  silently requires a particular ancestor is not a component you can place, and that ancestor
-  requirement was the thing standing between these panels and being reusable.
-- Never `providedIn: 'root'`. The route injector dies when you leave the route; a root one would
-  carry one team's socket, log and per-agent stores into the next.
-
-### What the lint gate does and does not catch
-
-`eslint.config.js` enforces the direction with `boundaries`, and each layer is its own element
-**type** — a shared type would make every edge legal in both directions, because the plugin cannot
-express direction within a type.
-
-It catches a component importing `ui/`, a selector importing `ui-state`, a service importing a view.
-It does **not** catch a dumb component injecting a data service, and cannot: an `@Input` is typed by
-the selector that produces it, so a type import and a service injection are the same edge to the
-linter. That half is a review rule, and the classification above is how it is applied.
-
-`docs/message-display-flow.md` traces one boundary end to end: how a frame on the socket becomes a
-row in the transcript, and which file owns each stage.
 
 ## Working in this repository
 
