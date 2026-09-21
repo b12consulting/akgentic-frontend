@@ -346,12 +346,47 @@ markdown {
     line-height: inherit;
   }
 
+  /*
+   * BOTH LIST TYPES SHARE ONE INDENT, so their markers share a left edge.
+   *
+   * Only `ul` was named here, which left `ol` on the browser's 40px default
+   * against the bullet list's 25px. A numbered item therefore sat 15px further
+   * right than the bullets belonging to it, and an answer that mixed the two
+   * read as misaligned for a reason nothing in this file mentioned.
+   *
+   * THIS ALIGNS; IT CANNOT RE-NEST, and the difference matters when reading a
+   * bug report about it. An agent commonly writes its sub-points at column 0:
+   *
+   *     1. **Daily home floor cleaning**
+   *     - **Intended user:** Homeowner
+   *
+   * CommonMark requires a nested list to be indented under its parent item, so
+   * that is not nesting — it is an `ol` of one item, then a sibling `ul`, then
+   * an `ol start="2"`. `marked` reads it exactly as written and the DOM is a
+   * flat run of alternating lists. The structure is gone before CSS sees it;
+   * no selector can put it back. What these rules do is stop the run looking
+   * broken. The fix for the nesting itself belongs upstream, in what the agent
+   * emits.
+   */
+  ol,
   ul {
     margin-block-start: 0.25em;
     margin-block-end: 0.25em;
     padding-inline-start: 25px;
   }
 
+  /*
+   * A real nested list steps in by less than the first level: a second 25px
+   * would put the sub-marker under its parent's TEXT rather than between the
+   * parent marker and it.
+   *
+   * All four combinations, not just `ul ul` — numbered sub-steps under a bullet
+   * are as common in an agent's answer as the reverse, and only one of the four
+   * was covered.
+   */
+  ol ol,
+  ol ul,
+  ul ol,
   ul ul {
     margin-block-start: 0.25em;
     margin-block-end: 0.25em;
