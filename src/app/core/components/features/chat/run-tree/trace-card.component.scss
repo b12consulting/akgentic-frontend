@@ -1,0 +1,133 @@
+/*
+ * The trace card. Keeps the activity fold's look (`thinking.component.scss`):
+ * a quiet card on the transcript's spine, muted type, tokens only.
+ */
+
+.trace-card {
+  margin-left: calc(var(--akg-avatar-gutter) - var(--akg-fold-inset-x));
+  padding: 10px var(--akg-fold-inset-x);
+  border: 1px solid var(--akg-hairline);
+  border-radius: 12px;
+  background: var(--akg-surface-muted);
+  color: var(--akg-text-muted);
+  font-size: 12.5px;
+}
+
+.trace-continues {
+  margin-bottom: 6px;
+  font-style: italic;
+}
+
+.trace-header {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.trace-icon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  color: var(--akg-tool-accent);
+}
+
+.trace-avatars {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+/* Stacked: each overlaps the one before it, as `.turn-avatar` initials. */
+.trace-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 600;
+  background: var(--akg-accent-fg);
+  color: var(--akg-accent-bright);
+  box-shadow: 0 0 0 1.5px var(--akg-surface-muted);
+
+  & + & {
+    margin-left: -5px;
+  }
+
+  &.tinted {
+    color: var(--akg-agent-mark-fg);
+  }
+}
+
+.trace-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--akg-text);
+}
+
+.trace-meta {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.trace-spacer {
+  flex: 1 1 auto;
+}
+
+.trace-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.trace-spinner {
+  font-size: 0.75rem;
+}
+
+.trace-dot--waiting {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  /* The attention tone: a waiting seat is a call to action (ADR-037 §D4). */
+  background: var(--akg-attention-fg);
+}
+
+.trace-toggle {
+  flex: 0 0 auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 6px;
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+  }
+}
+
+.trace-caret {
+  font-size: 0.7rem;
+}
+
+.trace-body {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.trace-run {
+  display: flex;
+  gap: 0.5rem;
+  padding: 2px 0;
+}
+
+.trace-run-agent {
+  color: var(--akg-text);
+}

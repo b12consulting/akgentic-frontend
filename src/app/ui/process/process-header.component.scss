@@ -184,6 +184,13 @@
   }
 }
 
+/* Epic 55: the New view switch is quiet like Clear, and keeps a ground while
+   pressed so the chosen view reads as on without a second glyph. */
+.chat-view-switch.is-open {
+  background: var(--akg-panel-bg);
+  color: var(--akg-text);
+}
+
 /* Details is framed, and its ground reports the inspector's state: filled while
    the pane is open, so the button reads as pressed rather than as merely
    available. */

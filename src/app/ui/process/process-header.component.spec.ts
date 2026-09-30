@@ -6,6 +6,7 @@ import { ProcessHeaderComponent } from './process-header.component';
 import { ContextService } from '../../core/platform/context/context.service';
 import { TeamContext } from '../../core/platform/context/team.interface';
 import { ViewService } from '../console/view.service';
+import { CHAT_VIEW_STORAGE_KEY, ChatViewService } from '../console/chat-view.service';
 import { provideTranslateTesting } from '../../../testing/i18n-testing';
 
 function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
@@ -335,6 +336,33 @@ describe('ProcessHeaderComponent', () => {
       // The no-op loader echoes the key, so this asserts the key was threaded
       // into the shared button's required `label` input.
       expect(button.componentInstance.label).toBe('chrome.showSidebar');
+    });
+  });
+
+  describe('New view switch (Epic 55)', () => {
+    function switchButton(): HTMLButtonElement {
+      return fixture.nativeElement.querySelector('.chat-view-switch');
+    }
+
+    afterEach(() => localStorage.removeItem(CHAT_VIEW_STORAGE_KEY));
+
+    it('is a real button labelled by its key, unpressed by default', () => {
+      const button = switchButton();
+      expect(button.tagName).toBe('BUTTON');
+      expect(button.textContent!.trim()).toBe('chat.view.newView');
+      expect(button.getAttribute('aria-pressed')).toBe('false');
+    });
+
+    it('toggles the view and reports it through aria-pressed', () => {
+      switchButton().click();
+      fixture.detectChanges();
+      expect(TestBed.inject(ChatViewService).newView()).toBeTrue();
+      expect(switchButton().getAttribute('aria-pressed')).toBe('true');
+      expect(switchButton().classList).toContain('is-open');
+
+      switchButton().click();
+      fixture.detectChanges();
+      expect(switchButton().getAttribute('aria-pressed')).toBe('false');
     });
   });
 });

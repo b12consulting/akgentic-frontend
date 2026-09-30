@@ -42,6 +42,8 @@ import { WorkspaceTabsComponent } from '../../core/components/features/workspace
 import { BehaviorSubject, combineLatest, Observable, Subscription } from 'rxjs';
 import { distinctUntilChanged, map, take } from 'rxjs/operators';
 import { ChatPanelComponent } from '../../core/components/features/chat/chat-panel.component';
+import { RunTreePanelComponent } from '../../core/components/features/chat/run-tree/run-tree-panel.component';
+import { ChatViewService } from '../console/chat-view.service';
 import { GraphDataService } from '../../core/services/process/selectors/graph.selector';
 import { SelectionService } from '../../core/services/process/ui-state/selection.service';
 
@@ -62,6 +64,8 @@ import { SplitDividerComponent } from '../../core/components/primitives/split-di
     KnowledgeGraphComponent,
     WorkspaceTabsComponent,
     ChatPanelComponent,
+    // Epic 55: the run-tree transcript, behind the header's New view switch.
+    RunTreePanelComponent,
     // The conversation's title bar and the inspector frame. Both are pieces of
     // the console shell that have to be mounted from INSIDE this component:
     // they sit either side of, or read, the component-scoped providers below,
@@ -114,6 +118,10 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
    * business, and this view does not toggle it.
    */
   private readonly viewService = inject(ViewService);
+
+  /** Which transcript the conversation pane shows (Epic 55). Root-scoped: the
+   *  choice is the viewer's and survives a team switch. */
+  readonly chatView: ChatViewService = inject(ChatViewService);
 
   /**
    * Story 52-1 (FR1): the team this view should show, supplied by whoever

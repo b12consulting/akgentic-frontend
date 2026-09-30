@@ -1,0 +1,125 @@
+<!--
+  A trace card: the header summarises the work one message of yours caused.
+  Collapsed by default; the whole header toggles, and so does the chevron,
+  which is the keyboard's way in.
+-->
+<div class="trace-card" [class.open]="open()" [attr.data-trace-root]="summary().root">
+  @if (continuesFrom(); as asker) {
+    <div class="trace-continues">
+      {{ 'chat.runTree.continuesTrace' | translate: { agent: asker.name } }}
+    </div>
+  }
+
+  <div class="trace-header" (click)="onToggle()">
+    <svg
+      class="trace-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M6 3v12M6 9h6a3 3 0 0 1 3 3v0M6 15h6a3 3 0 0 1 3 3" />
+      <circle cx="6" cy="3" r="1" />
+      <circle cx="17" cy="12" r="2" />
+      <circle cx="17" cy="18" r="2" />
+    </svg>
+
+    <span class="trace-avatars" aria-hidden="true">
+      @for (agent of summary().agents; track agent.agent_id) {
+        <span
+          class="trace-avatar"
+          [style.background-color]="colourOf(agent)"
+          [class.tinted]="colourOf(agent) !== null"
+          >{{ initialOf(agent) }}</span
+        >
+      }
+    </span>
+
+    <span class="trace-title">
+      @switch (summary().title) {
+        @case ('waiting') {
+          {{ 'chat.runTree.title.waiting' | translate: { agent: summary().waitingOn?.name } }}
+        }
+        @case ('running') {
+          @if (summary().activeTool; as tool) {
+            {{ 'chat.runTree.title.running' | translate: { agent: summary().activeAgent?.name, tool: tool } }}
+          } @else {
+            {{ 'chat.runTree.title.working' | translate: { agent: summary().activeAgent?.name } }}
+          }
+        }
+        @case ('doneMany') {
+          {{ 'chat.runTree.title.doneMany' | translate: { agent: lead().name, others: others() } }}
+        }
+        @default {
+          {{
+            'chat.runTree.title.doneOne'
+              | translate
+                : {
+                    agent: lead().name,
+                    runs: (runsKey() | translate: { count: summary().runCount }),
+                    tools: (toolsKey() | translate: { count: summary().toolCount }),
+                  }
+          }}
+        }
+      }
+    </span>
+
+    <span class="trace-meta">
+      {{
+        'chat.runTree.meta'
+          | translate
+            : {
+                runs: (runsKey() | translate: { count: summary().runCount }),
+                tools: (toolsKey() | translate: { count: summary().toolCount }),
+              }
+      }}@if (duration(); as d) { · {{ d }}}
+    </span>
+
+    <span class="trace-spacer"></span>
+
+    <span class="trace-status">
+      @switch (summary().title) {
+        @case ('waiting') {
+          <span class="trace-dot trace-dot--waiting" aria-hidden="true"></span>
+        }
+        @case ('running') {
+          <i class="pi pi-spin pi-spinner trace-spinner" aria-hidden="true"></i>
+          {{ 'chat.runTree.running' | translate: { count: summary().runningCount } }}
+        }
+        @default {
+          {{ summary().end | date: 'HH:mm' }}
+        }
+      }
+    </span>
+
+    <button
+      type="button"
+      class="trace-toggle"
+      [attr.aria-expanded]="open()"
+      [attr.aria-label]="(open() ? 'chat.runTree.collapse' : 'chat.runTree.expand') | translate"
+      (click)="onToggleFromButton($event)"
+    >
+      <i
+        class="pi trace-caret"
+        [ngClass]="open() ? 'pi-chevron-down' : 'pi-chevron-right'"
+        aria-hidden="true"
+      ></i>
+    </button>
+  </div>
+
+  @if (open()) {
+    <!-- PROVISIONAL (55-2): one line per run so the chevron and the links do
+         something visible. 55-3 replaces this list with the run tree. -->
+    <ol class="trace-body">
+      @for (row of runs(); track row.key) {
+        <li class="trace-run">
+          <span class="trace-run-agent">{{ row.agent.name }}</span>
+          <span class="trace-run-status">{{ row.status }}</span>
+        </li>
+      }
+    </ol>
+  }
+</div>

@@ -30,6 +30,7 @@ import { WorkspaceRegistryService } from '../../core/services/process/selectors/
 import { TeamContext } from '../../core/platform/context/team.interface';
 import { NodeInterface } from '../../core/services/process/models/types';
 import { ViewService } from '../console/view.service';
+import { CHAT_VIEW_STORAGE_KEY, ChatViewService } from '../console/chat-view.service';
 import { PaneLayoutService } from '../console/pane-layout.service';
 import {
   INSPECTOR_DEFAULT_PERCENT,
@@ -326,6 +327,34 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
       host.querySelector('.conversation-pane > app-process-header'),
     ).not.toBeNull();
     expect(host.querySelector('.console-panes > app-inspector')).not.toBeNull();
+  });
+
+  /**
+   * Epic 55: the header's New view switch picks the transcript. Both panels are
+   * direct children of the conversation pane and carry `.chat-app`, so the
+   * height chain above holds for either.
+   */
+  it('(Epic 55) the New view switch swaps the legacy panel for the run-tree panel', () => {
+    const host = fixture.nativeElement as HTMLElement;
+    const chatView = TestBed.inject(ChatViewService);
+    try {
+      expect(chatView.newView()).toBeFalse();
+      expect(host.querySelector('.conversation-pane > app-chat-panel.chat-app')).not.toBeNull();
+      expect(host.querySelector('app-run-tree-panel')).toBeNull();
+
+      chatView.toggle();
+      fixture.detectChanges();
+      expect(
+        host.querySelector('.conversation-pane > app-run-tree-panel.chat-app'),
+      ).not.toBeNull();
+      expect(host.querySelector('app-chat-panel')).toBeNull();
+
+      chatView.toggle();
+      fixture.detectChanges();
+      expect(host.querySelector('.conversation-pane > app-chat-panel.chat-app')).not.toBeNull();
+    } finally {
+      localStorage.removeItem(CHAT_VIEW_STORAGE_KEY);
+    }
   });
 
   /**

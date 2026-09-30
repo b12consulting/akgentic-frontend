@@ -149,6 +149,38 @@
     },
     "notice": {
       "contacted": "a contacté {{agent}}"
+    },
+    "view": {
+      "newView": "Nouvelle vue"
+    },
+    "runTree": {
+      "messageSent": "Message envoyé",
+      "messagesSent": "Messages envoyés",
+      "notReceivedYet": "→ {{agent}} · pas encore reçu",
+      "replyingTo": "en réponse à {{agent}}",
+      "sendAs": "en tant que {{agent}}",
+      "continuesTrace": "↳ poursuit la trace où {{agent}} vous a posé une question",
+      "absorbedNote": "{{agent}} était déjà en cours et a pris ce message en compte dans l'exécution ci-dessus",
+      "provenance": {
+        "yourMessage": "depuis l'exécution de {{agent}} sur votre message · profondeur {{depth}} · {{runs}} dans cette trace",
+        "answer": "depuis l'exécution de {{agent}} sur la réponse de {{from}} · profondeur {{depth}} · {{runs}} dans cette trace",
+        "reply": "depuis l'exécution de {{agent}} sur le retour de {{from}} · profondeur {{depth}} · {{runs}} dans cette trace"
+      },
+      "title": {
+        "waiting": "En attente de {{agent}}",
+        "running": "{{agent}} a utilisé {{tool}}",
+        "working": "{{agent}} travaille",
+        "doneMany": "{{agent}} a travaillé avec {{others}}",
+        "doneOne": "{{agent}} s'en est chargé en {{runs}} · {{tools}}"
+      },
+      "meta": "{{runs}} · {{tools}}",
+      "runsOne": "1 exécution",
+      "runsMany": "{{count}} exécutions",
+      "toolsOne": "1 outil",
+      "toolsMany": "{{count}} outils",
+      "running": "{{count}} en cours",
+      "expand": "Afficher les exécutions de cette trace",
+      "collapse": "Masquer les exécutions de cette trace"
     }
   },
   "messageList": {

@@ -16,6 +16,7 @@ import { ChatService } from '../selectors/chat.selector';
 import { GraphDataService } from '../selectors/graph.selector';
 import { KGStateReducer } from '../selectors/knowledge-graph.selector';
 import { RunGraphService } from '../selectors/run-graph.selector';
+import { RunTreeService } from '../selectors/run-tree-items';
 import { SystemPromptSelector } from '../selectors/system-prompt.selector';
 import { TokenUsageSelector } from '../selectors/token-usage.selector';
 import { ToolPresenceService } from '../selectors/tool-presence.selector';
@@ -23,16 +24,17 @@ import { WorkspaceInvalidationService } from '../selectors/workspace-invalidatio
 import { WorkspaceRegistryService } from '../selectors/workspace-registry.selector';
 import { FeedbackService } from '../ui-state/feedback.service';
 import { SelectionService } from '../ui-state/selection.service';
+import { TraceFoldState } from '../ui-state/trace-fold-state';
 
 /**
  * THE TEAM'S SERVICES, SCOPED TO THE ROUTE RATHER THAN TO A COMPONENT.
  *
  * TWO COUNTS RANGE OVER THIS ARRAY AND THEY ARE NOT THE SAME NUMBER. It holds
- * TWENTY-FIVE entries: TWENTY-FOUR service classes — the team's stack — plus
+ * TWENTY-SEVEN entries: TWENTY-SIX service classes — the team's stack — plus
  * Angular's `AsyncPipe`, which is a pipe and not one of the team's services.
  * Both numbers appear below; each says which set it counts.
  *
- * All twenty-four service classes used to be the `process/:id` route's
+ * All twenty-six service classes used to be the `process/:id` route's
  * providers, and every component that wanted one injected it bare — which meant
  * every one of them could only ever be mounted inside that component. That is
  * the coupling in the way of reusing a panel anywhere else, and of anybody
@@ -62,7 +64,7 @@ import { SelectionService } from '../ui-state/selection.service';
 /**
  * EXPORTED, and that is not incidental. A developer who clones this repo to
  * build a different console needs this array verbatim — it is the team's whole
- * service stack — and an unexported `const` left them copying twenty-five
+ * service stack — and an unexported `const` left them copying twenty-seven
  * entries by hand, in order, from the file they were about to replace.
  *
  * IT LIVES BESIDE `team-session.service.ts` RATHER THAN IN THE ROUTER, which is
@@ -170,6 +172,14 @@ export const PROCESS_PROVIDERS = [
   // `chat$`. Provided AFTER MessageLogService (which it injects); never
   // `providedIn: 'root'` — it shares the team-scoped log lifecycle.
   RunGraphService,
+  // Epic 55: the run-tree transcript's display list, `zip`ped from ONE log
+  // emission's `chat$` and `graph$`. Provided AFTER both (it injects them);
+  // never `providedIn: 'root'` — it shares the team-scoped log lifecycle.
+  RunTreeService,
+  // Epic 55: which trace cards are open, keyed by root run. Process-scoped so
+  // an open card survives the New view switch destroying the panel, and a
+  // team switch does not carry one team's open cards into the next.
+  TraceFoldState,
   SelectionService,
   FeedbackService,
 ];

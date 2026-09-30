@@ -149,6 +149,38 @@
     },
     "notice": {
       "contacted": "contacted {{agent}}"
+    },
+    "view": {
+      "newView": "New view"
+    },
+    "runTree": {
+      "messageSent": "Message sent",
+      "messagesSent": "Messages sent",
+      "notReceivedYet": "→ {{agent}} · not received yet",
+      "replyingTo": "replying to {{agent}}",
+      "sendAs": "as {{agent}}",
+      "continuesTrace": "↳ continues the trace where {{agent}} asked you a question",
+      "absorbedNote": "{{agent}} was already running, so it took in this message in the run above",
+      "provenance": {
+        "yourMessage": "from {{agent}}'s run on your message · depth {{depth}} · {{runs}} in this trace",
+        "answer": "from {{agent}}'s run on {{from}}'s answer · depth {{depth}} · {{runs}} in this trace",
+        "reply": "from {{agent}}'s run on {{from}}'s reply · depth {{depth}} · {{runs}} in this trace"
+      },
+      "title": {
+        "waiting": "Waiting for {{agent}}",
+        "running": "{{agent}} used {{tool}}",
+        "working": "{{agent}} is working",
+        "doneMany": "{{agent}} worked with {{others}}",
+        "doneOne": "{{agent}} handled this in {{runs}} · {{tools}}"
+      },
+      "meta": "{{runs}} · {{tools}}",
+      "runsOne": "1 run",
+      "runsMany": "{{count}} runs",
+      "toolsOne": "1 tool",
+      "toolsMany": "{{count}} tools",
+      "running": "{{count}} running",
+      "expand": "Show the runs in this trace",
+      "collapse": "Hide the runs in this trace"
     }
   },
   "messageList": {

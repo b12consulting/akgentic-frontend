@@ -1,0 +1,150 @@
+<div class="chat-container">
+  @if (hasContent) {
+    <div class="message-list" #scrollContainer (scroll)="scroll.onScroll()">
+      <!-- The timeline, sorted by position time (pick-up for yours). -->
+      @for (item of timeline; track trackItem($index, item)) {
+        @switch (item.kind) {
+          @case ('message') {
+            <!-- Notes are SIBLINGS of the bubble, never edits to it. The
+                 "replying to" / "as" label sits above your bubble. -->
+            @if (item.notes.replyingTo; as asker) {
+              <div class="run-note run-note--mine run-note--above">
+                {{ 'chat.runTree.replyingTo' | translate: { agent: asker.name } }}
+              </div>
+            }
+            @if (item.notes.sendAs; as seat) {
+              <div class="run-note run-note--mine run-note--above">
+                {{ 'chat.runTree.sendAs' | translate: { agent: seat.name } }}
+              </div>
+            }
+            <app-chat-message
+              [attr.data-message-id]="item.data.id"
+              [message]="item.data"
+              [defaultRecipient]="defaultRecipient"
+              [agentColours]="agentColours"
+              [notification]="false"
+              (messageSelected)="onMessageSelected($event)"
+              (agentSelected)="onAgentSelected($event)"
+              (toggleCollapse)="onToggleCollapse($event)"
+            ></app-chat-message>
+            @if (item.notes.absorbedBy; as absorbed) {
+              <button
+                type="button"
+                class="run-note run-note--mine run-link"
+                (click)="openTraceOf(absorbed.run)"
+              >
+                {{ 'chat.runTree.absorbedNote' | translate: { agent: absorbed.agent.name } }}
+              </button>
+            }
+            @if (item.notes.provenance; as p) {
+              <button
+                type="button"
+                class="run-note run-link run-link--provenance"
+                (click)="openTraceOf(p.run)"
+              >
+                {{
+                  provenanceKey(p)
+                    | translate
+                      : {
+                          agent: p.agent.name,
+                          from: p.from.name,
+                          depth: p.depth,
+                          runs: (runsKey(p.runsInTrace) | translate: { count: p.runsInTrace }),
+                        }
+                }}
+              </button>
+            }
+          }
+          @case ('trace') {
+            @if (cards.get(item.rootKey); as card) {
+              <app-trace-card
+                [summary]="card.summary"
+                [runs]="card.rows"
+                [continuesFrom]="item.continuesFrom"
+                [open]="folds.isOpen(item.rootKey)"
+                [agentColours]="agentColours"
+                (toggle)="folds.toggle($event)"
+              ></app-trace-card>
+            }
+          }
+          @case ('day') {
+            <div class="day-separator" role="separator">
+              <span class="day-separator-label">{{ item.data.label }}</span>
+            </div>
+          }
+        }
+      }
+
+      <!-- The not-yet-received tail: not sorted, no day separator. -->
+      @if (tail.length > 0) {
+        <div class="day-separator tail-divider" role="separator">
+          <span class="day-separator-label">{{
+            (tail.length === 1 ? 'chat.runTree.messageSent' : 'chat.runTree.messagesSent')
+              | translate
+          }}</span>
+        </div>
+        @for (m of tail; track m.id) {
+          <app-chat-message
+            [attr.data-message-id]="m.id"
+            [message]="m"
+            [defaultRecipient]="defaultRecipient"
+            [agentColours]="agentColours"
+            [notification]="false"
+            (messageSelected)="onMessageSelected($event)"
+            (agentSelected)="onAgentSelected($event)"
+          ></app-chat-message>
+          <div class="run-note run-note--mine run-note--tail">
+            {{ 'chat.runTree.notReceivedYet' | translate: { agent: m.recipient.name } }}
+          </div>
+        }
+      }
+
+      <!-- ADR-016: the trailing spacer is the LAST child; its min-height is
+           written imperatively by the scroll model. -->
+      <div class="message-spacer" #spacer></div>
+    </div>
+  } @else {
+    @if (loadingProcess$ | async) {
+      <div class="empty-section">
+        <div class="empty-section-box">
+          <i class="pi pi-spin pi-spinner chat-placeholder-icon"></i>
+          <div class="chat-placeholder-title">{{ 'chat.loadingTitle' | translate }}</div>
+          <div class="chat-placeholder-desc">{{ 'chat.loadingDesc' | translate }}</div>
+        </div>
+      </div>
+    } @else {
+      <div class="empty-section">
+        <div class="empty-section-box">
+          <i class="pi pi-comment chat-placeholder-icon"></i>
+          <div class="chat-placeholder-title">{{ 'chat.emptyTitle' | translate }}</div>
+          <div class="chat-placeholder-desc">{{ 'chat.emptyDesc' | translate }}</div>
+        </div>
+      </div>
+    }
+  }
+
+  <!-- Outside the scroll container, as in the legacy panel. -->
+  <div class="input-area">
+    @if (scroll.indicatorLabel) {
+      <button type="button" class="jump-to-latest" (click)="scroll.jumpToLatest()">
+        <i class="pi" [ngClass]="scroll.indicatorIcon"></i>
+        <span>{{ scroll.indicatorLabel | translate }}</span>
+      </button>
+    }
+    <app-user-input [processId]="processId"></app-user-input>
+  </div>
+
+  <app-conversation-modal
+    [visible]="readerVisible"
+    [agents]="readerAgents"
+    [agentColours]="agentColours"
+    [messages]="chatMessages"
+    [runs]="thinkingStates"
+    [selectedAgentId]="readerSelectedAgentId"
+    [pendingNotifications]="pendingNotifications"
+    [canSend]="readerCanSend"
+    (visibleChange)="onReaderVisibleChange($event)"
+    (agentSelected)="onReaderAgentSelected($event)"
+    (sendToAgent)="onReaderSend($event)"
+  ></app-conversation-modal>
+</div>
