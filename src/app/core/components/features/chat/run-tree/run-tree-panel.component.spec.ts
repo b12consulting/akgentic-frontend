@@ -23,6 +23,7 @@ import { SelectionService } from '../../../../services/process/ui-state/selectio
 import { TraceFoldState } from '../../../../services/process/ui-state/trace-fold-state';
 import { provideTranslateTesting } from '../../../../../../testing/i18n-testing';
 import {
+  ASSISTANT,
   compacted,
   envId,
   EXPERT,
@@ -37,6 +38,11 @@ import {
   toolReturn,
   welcome,
 } from '../../../../../../testing/run-log-builders';
+import {
+  CASE_5_ANSWER,
+  CASE_5_PREFIX,
+  CASE_5_VARIANT,
+} from '../../../../../../testing/run-log-cases';
 import { ChatPanelComponent } from '../chat-panel.component';
 import { RunTreePanelComponent } from './run-tree-panel.component';
 import { TranscriptScroll } from './transcript-scroll';
@@ -318,7 +324,7 @@ describe('RunTreePanelComponent', () => {
     card().querySelector<HTMLButtonElement>('.trace-toggle')!.click();
     fixture.detectChanges();
     const before = card();
-    expect(before.querySelectorAll('.trace-run').length).toBe(1);
+    expect(before.querySelectorAll('.tree-node').length).toBe(1);
 
     log.appendAll([
       sent('D', MANAGER, EXPERT, 'U1', 3),
@@ -328,7 +334,114 @@ describe('RunTreePanelComponent', () => {
     fixture.detectChanges();
     expect(card()).toBe(before);
     expect(card().querySelector('.trace-body')).not.toBeNull();
-    expect(card().querySelectorAll('.trace-run').length).toBe(2);
+    expect(card().querySelectorAll('.tree-node').length).toBe(2);
+  });
+
+  // -------------------------------------------------------------------------
+  // The tree in the panel (55-3)
+  // -------------------------------------------------------------------------
+
+  function openCard(fixture: ComponentFixture<unknown>, root: string): HTMLElement {
+    const card = el(fixture).querySelector<HTMLElement>(`[data-trace-root="${root}"]`)!;
+    card.querySelector<HTMLButtonElement>('.trace-toggle')!.click();
+    fixture.detectChanges();
+    return card;
+  }
+
+  function seatStatus(fixture: ComponentFixture<unknown>): string | null {
+    const seat = el(fixture).querySelector(`.tree-node[data-run-key="${runKey('S', SUPPORT.agent_id)}"]`);
+    return seat?.querySelector('.node-status')?.getAttribute('data-status') ?? null;
+  }
+
+  it('answers a waiting seat from its node, keyed by the question, with no optimistic insert', async () => {
+    log.appendAll(CASE_5_PREFIX);
+    const fixture = mount();
+    openCard(fixture, runKey('U1', M));
+    el(fixture).querySelector<HTMLButtonElement>('.node-answer')!.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const area = document.querySelector<HTMLTextAreaElement>('app-seat-answer-dialog textarea')!;
+    area.value = 'yes';
+    area.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    document.querySelector<HTMLButtonElement>('app-seat-answer-dialog .seat-send')!.click();
+    fixture.detectChanges();
+
+    // The question's INNER id: not the run key, not the envelope id.
+    expect(api.processHumanInput).toHaveBeenCalledOnceWith('team-1', 'yes', 'S');
+    expect(fixture.componentInstance.answerVisible).toBeFalse();
+    expect(seatStatus(fixture)).toBe('waiting');
+    expect(el(fixture).querySelector('.node-answer')).not.toBeNull();
+
+    log.appendAll(CASE_5_ANSWER);
+    fixture.detectChanges();
+    expect(seatStatus(fixture)).toBe('answered');
+    expect(el(fixture).querySelector('.node-answer')).toBeNull();
+  });
+
+  it('logs a failed answer; the dialog is already closed', async () => {
+    const error = spyOn(console, 'error');
+    api.processHumanInput.and.returnValue(Promise.reject(new Error('down')));
+    log.appendAll(CASE_5_PREFIX);
+    const fixture = mount();
+    fixture.componentInstance.onAnswer(runKey('S', SUPPORT.agent_id));
+    fixture.componentInstance.onSeatAnswer({ content: 'yes', messageId: 'S' });
+    await fixture.whenStable();
+    expect(fixture.componentInstance.answerVisible).toBeFalse();
+    expect(error).toHaveBeenCalledWith('Failed to send human input:', jasmine.any(Error));
+  });
+
+  it('opening a card reveals a seat two levels down; its sibling branch stays folded', () => {
+    log.appendAll(CASE_5_VARIANT);
+    const fixture = mount();
+    openCard(fixture, runKey('U1', M));
+    const keys = [...el(fixture).querySelectorAll('.tree-node')].map((n) =>
+      n.getAttribute('data-run-key'),
+    );
+    expect(keys).toEqual([
+      runKey('U1', M),
+      runKey('D1', EXPERT.agent_id),
+      runKey('S', SUPPORT.agent_id),
+      runKey('D2', ASSISTANT.agent_id),
+    ]);
+    expect(el(fixture).querySelector('.node-answer')).not.toBeNull();
+  });
+
+  it('the provenance link reveals the seat path too', () => {
+    log.appendAll([...CASE_5_VARIANT, sent('A', MANAGER, HUMAN, 'U1', 16)]);
+    const fixture = mount();
+    fixture.componentInstance.openTraceOf(runKey('U1', M));
+    fixture.detectChanges();
+    expect(el(fixture).querySelector('.node-answer')).not.toBeNull();
+  });
+
+  it('a @Human row highlights and flashes the matching bubble', () => {
+    const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView');
+    log.appendAll([
+      sent('U1', HUMAN, MANAGER, null, 1),
+      received('U1', MANAGER, 2),
+      sent('A1', MANAGER, HUMAN, 'U1', 3),
+      processed('U1', MANAGER, 4),
+    ]);
+    const fixture = mount();
+    openCard(fixture, runKey('U1', M));
+    const bubble = el(fixture).querySelector(`app-chat-message[data-message-id="${envId('A1', HUMAN)}"]`)!;
+    const row = el(fixture).querySelector<HTMLElement>('.tree-human')!;
+
+    row.dispatchEvent(new MouseEvent('mouseenter'));
+    fixture.detectChanges();
+    expect(bubble.classList).toContain('run-bubble--highlight');
+    row.dispatchEvent(new MouseEvent('mouseleave'));
+    fixture.detectChanges();
+    expect(bubble.classList).not.toContain('run-bubble--highlight');
+
+    row.querySelector<HTMLButtonElement>('.node-in-chat')!.click();
+    fixture.detectChanges();
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll.calls.mostRecent().object).toBe(bubble);
+    expect(bubble.classList).toContain('run-bubble--flash');
   });
 
   it('keeps a compaction marker open across emissions without mutating chat$', () => {

@@ -1,0 +1,49 @@
+<p-dialog
+  [header]="'chat.runTree.answerDialog.header' | translate: { agent: seat()?.name }"
+  [modal]="true"
+  [dismissableMask]="true"
+  [visible]="visible()"
+  (visibleChange)="onVisibleChange($event)"
+  [style]="{ width: '40rem' }"
+  [contentStyle]="{ 'max-height': '60vh', overflow: 'auto' }"
+>
+  @if (question(); as q) {
+    <div class="seat-question">
+      <div class="seat-asked">
+        {{
+          'chat.runTree.answerDialog.asked'
+            | translate: { agent: q.sender.name, time: (q.timestamp | date: 'HH:mm') }
+        }}
+      </div>
+      <div class="seat-question-content">
+        <markdown [data]="q.content ?? ''"></markdown>
+      </div>
+    </div>
+  }
+  <textarea
+    pTextarea
+    class="seat-draft"
+    [autoResize]="true"
+    [(ngModel)]="draft"
+    [placeholder]="'chat.runTree.answerDialog.placeholder' | translate"
+    (keydown.meta.enter)="onSend()"
+    (keydown.control.enter)="onSend()"
+  ></textarea>
+  <div class="seat-actions">
+    <p-button
+      styleClass="seat-cancel"
+      [label]="'chat.runTree.answerDialog.cancel' | translate"
+      severity="secondary"
+      [text]="true"
+      size="small"
+      (onClick)="close()"
+    />
+    <p-button
+      styleClass="seat-send"
+      [label]="'chat.runTree.answerDialog.send' | translate"
+      size="small"
+      [disabled]="!canSend"
+      (onClick)="onSend()"
+    />
+  </div>
+</p-dialog>

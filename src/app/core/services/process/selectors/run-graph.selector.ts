@@ -106,10 +106,15 @@ export interface RunGraph {
   runs: ReadonlyMap<RunKey, Run>;
 }
 
-export const EMPTY_RUN_GRAPH: RunGraph = {
-  messages: new Map(),
-  runs: new Map(),
-};
+/** A fresh empty graph. The fold starts from its own, so a caller that casts
+ *  `EMPTY_RUN_GRAPH` and writes into its maps cannot reach a later fold. */
+export function emptyRunGraph(): RunGraph {
+  return { messages: new Map(), runs: new Map() };
+}
+
+/** A placeholder for a view that has not received a graph yet. Never a fold's
+ *  seed (see `emptyRunGraph`). */
+export const EMPTY_RUN_GRAPH: RunGraph = Object.freeze(emptyRunGraph());
 
 export type RunStatus = 'running' | 'done' | 'waiting' | 'answered';
 
@@ -283,7 +288,8 @@ function applyToolReturn(
   const step = run.steps[idx];
   if (step.kind !== 'tool') return graph;
   const steps = [...run.steps];
-  steps[idx] = { ...step, done: true, success: event.success };
+  // A frame without `success` is "not reported", never `undefined`.
+  steps[idx] = { ...step, done: true, success: event.success ?? null };
   return withRun(graph, { ...run, steps });
 }
 
@@ -311,7 +317,52 @@ export function runGraphStep(graph: RunGraph, msg: AkgenticMessage): RunGraph {
 /** Pure fold over the full log: no timers, no `Date.now()`, no DOM.
  *  `new Date(msg.timestamp)` is deterministic given the log. */
 export function runGraphFold(log: AkgenticMessage[]): RunGraph {
-  return log.reduce(runGraphStep, EMPTY_RUN_GRAPH);
+  return log.reduce(runGraphStep, emptyRunGraph());
+}
+
+// ---------------------------------------------------------------------------
+// The per-graph index. A graph is never written after it is built (every
+// transition copies), so an index cached on the graph object cannot go stale,
+// and each emission pays for it once rather than once per message or link.
+// ---------------------------------------------------------------------------
+
+interface RunIndex {
+  byMessage: ReadonlyMap<string, readonly Run[]>;
+  children: ReadonlyMap<RunKey, readonly RunKey[]>;
+}
+
+const INDEX = new WeakMap<RunGraph, RunIndex>();
+
+function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+  const list = map.get(key);
+  if (list) list.push(value);
+  else map.set(key, [value]);
+}
+
+function runIndex(graph: RunGraph): RunIndex {
+  const cached = INDEX.get(graph);
+  if (cached !== undefined) return cached;
+  const byMessage = new Map<string, Run[]>();
+  const children = new Map<RunKey, RunKey[]>();
+  for (const run of graph.runs.values()) {
+    push(byMessage, run.message_id, run);
+    if (run.parent_key !== null && graph.runs.has(run.parent_key)) {
+      push(children, run.parent_key, run.key);
+    }
+  }
+  const index = { byMessage, children };
+  INDEX.set(graph, index);
+  return index;
+}
+
+/** Every run `messageId` triggered, one per recipient, in start order. */
+export function runsOf(graph: RunGraph, messageId: string): readonly Run[] {
+  return runIndex(graph).byMessage.get(messageId) ?? [];
+}
+
+/** The runs whose resolved parent is `key`, in start order. */
+export function childKeys(graph: RunGraph, key: RunKey): readonly RunKey[] {
+  return runIndex(graph).children.get(key) ?? [];
 }
 
 // ---------------------------------------------------------------------------
@@ -339,26 +390,20 @@ export function ancestors(graph: RunGraph, key: RunKey): RunKey[] {
 }
 
 /** Every run whose ancestor chain contains `key`, in `runs` insertion order,
- *  excluding `key`. One pass builds the child index, so a view calling this per
- *  node stays linear per call rather than re-walking every ancestor chain. */
+ *  excluding `key`. The child index is the graph's, built once, so a view
+ *  calling this per card or per link stays linear in the subtree. */
 export function descendants(graph: RunGraph, key: RunKey): RunKey[] {
-  const children = new Map<RunKey, RunKey[]>();
-  for (const run of graph.runs.values()) {
-    if (run.parent_key === null || !graph.runs.has(run.parent_key)) continue;
-    const siblings = children.get(run.parent_key);
-    if (siblings) siblings.push(run.key);
-    else children.set(run.parent_key, [run.key]);
-  }
   // The visited set is the cycle guard; the queue only ever grows.
   const found = new Set<RunKey>([key]);
   const queue = [key];
   for (let i = 0; i < queue.length; i++) {
-    for (const child of children.get(queue[i]) ?? []) {
+    for (const child of childKeys(graph, queue[i])) {
       if (found.has(child)) continue;
       found.add(child);
       queue.push(child);
     }
   }
+  if (found.size === 1) return [];
   return [...graph.runs.keys()].filter((k) => k !== key && found.has(k));
 }
 
@@ -409,8 +454,7 @@ function absorbedAt(graph: RunGraph, messageId: string): Date | null {
  *  runs, else the moment a running run absorbed it, else `null`. */
 export function pickedUpAt(graph: RunGraph, messageId: string): Date | null {
   let earliest: Date | null = null;
-  for (const run of graph.runs.values()) {
-    if (run.message_id !== messageId) continue;
+  for (const run of runsOf(graph, messageId)) {
     if (earliest === null || run.start.getTime() < earliest.getTime()) {
       earliest = run.start;
     }

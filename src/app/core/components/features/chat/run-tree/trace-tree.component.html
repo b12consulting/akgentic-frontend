@@ -1,0 +1,180 @@
+<!--
+  The run tree: one row per visible run node, leaf, @Human row or join row,
+  indented by depth. A run node is two lines: who ran on what, then chips.
+-->
+<ol class="tree">
+  @for (row of rows(); track row.track) {
+    @if (row.kind === 'run') {
+      <li
+        class="tree-node"
+        [class.tree-node--silent]="row.node.silent"
+        [attr.data-run-key]="row.node.key"
+        [attr.data-depth]="row.depth"
+        [style.padding-left.px]="row.depth * 18"
+      >
+        <div class="node-line">
+          @if (row.expandable) {
+            <button
+              type="button"
+              class="node-chevron"
+              [attr.aria-expanded]="row.expanded"
+              [attr.aria-label]="
+                (row.expanded ? 'chat.runTree.node.collapse' : 'chat.runTree.node.expand') | translate
+              "
+              (click)="onChevron(row.node.key)"
+            >
+              <i
+                class="pi"
+                [ngClass]="row.expanded ? 'pi-chevron-down' : 'pi-chevron-right'"
+                aria-hidden="true"
+              ></i>
+            </button>
+          } @else {
+            <span class="node-chevron-gap" aria-hidden="true"></span>
+          }
+
+          <button type="button" class="node-main" (click)="selectRun.emit(row.node.key)">
+            <span
+              class="node-avatar"
+              [style.background-color]="colourOf(row.node.run.agent)"
+              [class.tinted]="colourOf(row.node.run.agent) !== null"
+              aria-hidden="true"
+              >{{ initialOf(row.node.run.agent) }}</span
+            >
+            <span class="node-agent">{{ row.node.run.agent.name }}</span>
+            @if (row.node.trigger; as trigger) {
+              <span
+                class="node-from"
+                [attr.title]="'chat.runTree.node.from' | translate: { agent: trigger.sender.name }"
+                >←</span
+              >
+              <span class="node-excerpt">{{ excerptOf(row.node) }}</span>
+            }
+          </button>
+
+          @if (row.node.seat && row.node.status === 'waiting') {
+            <button type="button" class="node-answer" (click)="onAnswer($event, row.node.key)">
+              {{ 'chat.runTree.node.answer' | translate }}
+            </button>
+          }
+
+          <span class="node-status" [attr.data-status]="row.node.status">
+            @switch (row.node.status) {
+              @case ('running') {
+                <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+                {{ timeOf(row.node) }}
+              }
+              @case ('waiting') {
+                <span class="node-dot" aria-hidden="true"></span>
+                {{ 'chat.runTree.node.waiting' | translate: { duration: timeOf(row.node) } }}
+              }
+              @case ('answered') {
+                {{ 'chat.runTree.node.answeredAfter' | translate: { duration: timeOf(row.node) } }}
+              }
+              @default {
+                {{ timeOf(row.node) }}
+                <i class="pi pi-check" aria-hidden="true"></i>
+              }
+            }
+          </span>
+        </div>
+
+        <div class="node-chips">
+          @if (row.node.seat) {
+            <span class="chip chip--seat">{{ 'chat.runTree.node.humanSeat' | translate }}</span>
+          }
+          @for (tool of row.node.toolChips; track (tool.failed ? '✕' : '') + tool.name) {
+            @if (tool.failed) {
+              <span
+                class="chip chip--tool chip--failed"
+                [attr.aria-label]="'chat.runTree.node.toolFailed' | translate: { tool: tool.name }"
+                >{{ tool.name }}@if (tool.count > 1) { ×{{ tool.count }}} ✕</span
+              >
+            } @else {
+              <span class="chip chip--tool"
+                >{{ tool.name }}@if (tool.count > 1) { ×{{ tool.count }}}</span
+              >
+            }
+          }
+          @if (row.node.tookIn > 0) {
+            <span class="chip chip--took-in">{{
+              (row.node.tookIn === 1 ? 'chat.runTree.node.tookInOne' : 'chat.runTree.node.tookInMany')
+                | translate: { count: row.node.tookIn }
+            }}</span>
+          }
+          @if (row.node.silent) {
+            <span class="chip chip--silent">{{ 'chat.runTree.node.sentNothing' | translate }}</span>
+          }
+          @if (row.node.status === 'running') {
+            <span class="chip chip--live">
+              @if (row.node.liveTool; as tool) {
+                {{ 'chat.runTree.node.after' | translate: { tool: tool } }}
+              } @else {
+                {{ 'chat.runTree.node.thinking' | translate }}
+              }
+            </span>
+          }
+          @if (row.expandable && !row.expanded) {
+            @for (chip of row.node.messageChips; track chip.recipient.agent_id) {
+              <span class="chip chip--message"
+                >💬 {{ chip.recipient.name }}@if (chip.count > 1) { ×{{ chip.count }}}</span
+              >
+            }
+          }
+        </div>
+      </li>
+    } @else {
+      @if (row.leaf.kind === 'human') {
+        <li
+          class="tree-human"
+          [attr.data-inner-id]="row.leaf.messageId"
+          [style.padding-left.px]="row.depth * 18"
+          (mouseenter)="onHumanHover(row.leaf.messageId, true)"
+          (mouseleave)="onHumanHover(row.leaf.messageId, false)"
+        >
+          <div class="node-line">
+            <span class="node-chevron-gap" aria-hidden="true"></span>
+            <span
+              class="node-avatar"
+              [style.background-color]="colourOf(row.leaf.to)"
+              [class.tinted]="colourOf(row.leaf.to) !== null"
+              aria-hidden="true"
+              >{{ initialOf(row.leaf.to) }}</span
+            >
+            <span class="node-agent">{{ row.leaf.to.name }}</span>
+            <span
+              class="node-from"
+              [attr.title]="'chat.runTree.node.from' | translate: { agent: row.leaf.from.name }"
+              >←</span
+            >
+            <span class="node-excerpt">{{ row.leaf.excerpt }}</span>
+            @if (bubbleOf(row.leaf.messageId) !== null) {
+              <button
+                type="button"
+                class="node-in-chat"
+                (click)="onShowInChat(row.leaf.messageId)"
+              >
+                {{ 'chat.runTree.node.inChat' | translate }}
+              </button>
+            }
+          </div>
+        </li>
+      } @else if (row.leaf.kind === 'queued') {
+        <li class="tree-leaf tree-leaf--queued" [style.padding-left.px]="row.depth * 18 + 22">
+          {{ 'chat.runTree.node.queued' | translate: { agent: row.leaf.recipient.name } }}
+        </li>
+      } @else if (row.leaf.kind === 'absorbed') {
+        <li class="tree-leaf tree-leaf--absorbed" [style.padding-left.px]="row.depth * 18 + 22">
+          {{
+            'chat.runTree.node.absorbed'
+              | translate: { agent: row.leaf.recipient.name, by: row.leaf.by.name }
+          }}
+        </li>
+      } @else {
+        <li class="tree-join" [style.padding-left.px]="row.depth * 18 + 22">
+          {{ joinKey(row.leaf.phrase) | translate: { agent: row.leaf.from.name } }}
+        </li>
+      }
+    }
+  }
+</ol>

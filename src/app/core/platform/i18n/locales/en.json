@@ -180,7 +180,35 @@
       "toolsMany": "{{count}} tools",
       "running": "{{count}} running",
       "expand": "Show the runs in this trace",
-      "collapse": "Hide the runs in this trace"
+      "collapse": "Hide the runs in this trace",
+      "node": {
+        "from": "from {{agent}}",
+        "humanSeat": "human seat",
+        "sentNothing": "sent nothing",
+        "tookInOne": "took in 1 message",
+        "tookInMany": "took in {{count}} messages",
+        "after": "after {{tool}}…",
+        "thinking": "thinking…",
+        "toolFailed": "{{tool}} failed",
+        "waiting": "waiting {{duration}}",
+        "answeredAfter": "answered after {{duration}}",
+        "queued": "→ {{agent}} · queued",
+        "absorbed": "→ {{agent}} · absorbed by {{by}} ⤴",
+        "joinYours": "⤵ took in your message",
+        "joinAnswer": "⤵ took in {{agent}}'s answer",
+        "joinReply": "⤵ took in {{agent}}'s reply",
+        "inChat": "in chat ↓",
+        "answer": "Answer",
+        "expand": "Show what this run did",
+        "collapse": "Hide what this run did"
+      },
+      "answerDialog": {
+        "header": "Answer as {{agent}}",
+        "asked": "{{agent}} asked at {{time}}",
+        "placeholder": "Type your answer…",
+        "send": "Send answer",
+        "cancel": "Cancel"
+      }
     }
   },
   "messageList": {

@@ -16,6 +16,7 @@ import {
 import { MessageLogService } from '../event/message-log.service';
 import {
   ancestors,
+  childKeys,
   descendants,
   EMPTY_RUN_GRAPH,
   isHumanSeat,
@@ -28,6 +29,7 @@ import {
   runGraphStep,
   RunKey,
   runKey,
+  runsOf,
   runStatus,
   silent,
   traceRootOf,
@@ -1081,5 +1083,64 @@ describe('RunGraphService (selector over log$)', () => {
     a.unsubscribe();
     b.unsubscribe();
     expect(second[0]).toBe(first[first.length - 1]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fold hygiene and the per-graph index (the epic's deferred findings)
+// ---------------------------------------------------------------------------
+
+describe('fold hygiene', () => {
+  it('a caller writing into EMPTY_RUN_GRAPH cannot reach a fold', () => {
+    const runs = EMPTY_RUN_GRAPH.runs as Map<RunKey, Run>;
+    const stray = run(runGraphFold([received('X', MANAGER, 1)]), k('X', MANAGER));
+    runs.set(stray.key, stray);
+    try {
+      expect(runGraphFold([]).runs.size).toBe(0);
+      expect(keys(runGraphFold([received('U1', MANAGER, 2)]))).toEqual([k('U1', MANAGER)]);
+    } finally {
+      runs.delete(stray.key);
+    }
+    expect(Object.isFrozen(EMPTY_RUN_GRAPH)).toBeTrue();
+  });
+
+  it('a tool return without `success` records null, never undefined', () => {
+    const bare = toolReturn('t1', 'search', MANAGER, 'U1', 3);
+    delete (bare.event as { success?: boolean }).success;
+    const g = runGraphFold([received('U1', MANAGER, 1), toolCall('t1', 'search', MANAGER, 'U1', 2), bare]);
+    expect(run(g, k('U1', MANAGER)).steps[1]).toEqual(
+      jasmine.objectContaining({ done: true, success: null }),
+    );
+  });
+});
+
+describe('the per-graph index', () => {
+  const g = runGraphFold([
+    sent('M', HUMAN, MANAGER, null, 1),
+    sent('M', HUMAN, LEAD, null, 1),
+    received('M', MANAGER, 2),
+    received('M', LEAD, 3),
+    sent('D1', MANAGER, EXPERT, 'M', 4),
+    received('D1', EXPERT, 5),
+  ]);
+
+  it('runsOf lists every run a message triggered, in start order', () => {
+    expect(runsOf(g, 'M').map((r) => r.key)).toEqual([k('M', MANAGER), k('M', LEAD)]);
+    expect(runsOf(g, 'nope')).toEqual([]);
+  });
+
+  it('childKeys lists the resolved children of a run', () => {
+    expect(childKeys(g, k('M', MANAGER))).toEqual([k('D1', EXPERT)]);
+    expect(childKeys(g, k('M', LEAD))).toEqual([]);
+  });
+
+  it('never goes stale: a later graph sees the runs added since', () => {
+    expect(childKeys(g, k('D1', EXPERT))).toEqual([]);
+    const next = runGraphStep(
+      runGraphStep(g, sent('D2', EXPERT, ASSISTANT, 'D1', 6)),
+      received('D2', ASSISTANT, 7),
+    );
+    expect(childKeys(next, k('D1', EXPERT))).toEqual([k('D2', ASSISTANT)]);
+    expect(childKeys(g, k('D1', EXPERT))).toEqual([]);
   });
 });

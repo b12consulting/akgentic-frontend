@@ -15,6 +15,7 @@ import {
   RunGraphService,
   RunKey,
   runKey,
+  runsOf,
   traceRootOf,
 } from './run-graph.selector';
 import { isEntryPointRun, traceRuns } from './trace-summary';
@@ -126,10 +127,9 @@ export function traceItemsFor(
   graph: RunGraph,
   position: Date,
 ): TraceItem[] {
-  return [...graph.runs.values()]
+  return runsOf(graph, m.message_id)
     .filter(
       (run) =>
-        run.message_id === m.message_id &&
         !isEntryPointRun(run) &&
         traceRootOf(graph, run.key) === run.key,
     )

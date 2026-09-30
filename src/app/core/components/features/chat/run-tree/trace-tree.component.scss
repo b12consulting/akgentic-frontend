@@ -1,0 +1,195 @@
+/*
+ * The run tree inside an open trace card. The card's muted type, tokens only;
+ * a node is two lines, the second a row of small chips.
+ */
+
+.tree {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.tree-node,
+.tree-human,
+.tree-leaf,
+.tree-join {
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
+/* A run that sent nothing (ADR-037 §D7). */
+.tree-node--silent {
+  opacity: 0.55;
+}
+
+.node-line {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+%tree-button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+  }
+}
+
+.node-chevron {
+  @extend %tree-button;
+  flex: 0 0 auto;
+  width: 18px;
+  padding: 2px 0;
+  font-size: 0.65rem;
+}
+
+.node-chevron-gap {
+  flex: 0 0 auto;
+  width: 18px;
+}
+
+.node-main {
+  @extend %tree-button;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 1px 2px;
+  text-align: left;
+
+  &:hover {
+    background: var(--akg-row-hover);
+  }
+}
+
+.node-avatar {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 600;
+  background: var(--akg-accent-fg);
+  color: var(--akg-accent-bright);
+
+  &.tinted {
+    color: var(--akg-agent-mark-fg);
+  }
+}
+
+.node-agent {
+  flex: 0 0 auto;
+  color: var(--akg-text);
+  font-weight: 600;
+}
+
+.node-from {
+  flex: 0 0 auto;
+  cursor: help;
+}
+
+.node-excerpt {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node-answer {
+  @extend %tree-button;
+  flex: 0 0 auto;
+  padding: 1px 8px;
+  border: 1px solid var(--akg-attention-border);
+  background: var(--akg-attention-bg);
+  color: var(--akg-attention-fg);
+  font-weight: 600;
+}
+
+.node-in-chat {
+  @extend %tree-button;
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  color: var(--akg-tool-accent);
+}
+
+.node-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-size: 0.7rem;
+}
+
+.node-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--akg-attention-fg);
+}
+
+.node-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 2px 0 0 calc(18px + 0.4rem + 20px + 0.4rem);
+
+  &:empty {
+    display: none;
+  }
+}
+
+.chip {
+  padding: 0 6px;
+  border: 1px solid var(--akg-hairline);
+  border-radius: var(--akg-pill-radius);
+  font-size: 0.7rem;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.chip--tool {
+  font-family: var(--akg-font-mono);
+}
+
+.chip--failed {
+  border-color: var(--akg-danger-fg);
+  background: var(--akg-danger-bg);
+  color: var(--akg-danger-fg);
+}
+
+.chip--seat {
+  border-color: var(--akg-attention-border);
+  color: var(--akg-attention-fg);
+}
+
+.chip--live {
+  font-style: italic;
+}
+
+.tree-leaf {
+  font-style: italic;
+}
+
+.tree-join {
+  margin: 2px 0;
+  border: 1px dashed var(--akg-hairline);
+  border-radius: 6px;
+}
+
+.tree-human .node-avatar {
+  background: var(--akg-avatar-human-bg);
+  color: var(--akg-avatar-human-fg);
+}

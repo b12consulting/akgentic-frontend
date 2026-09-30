@@ -63,6 +63,18 @@ export function traceRuns(graph: RunGraph, root: RunKey): Run[] {
   return out;
 }
 
+/** The seats among `runs` that have not answered yet, in start order. */
+function waitingAmong(graph: RunGraph, runs: readonly Run[]): Run[] {
+  return runs.filter((run) => isHumanSeat(run) && runStatus(graph, run.key) === 'waiting');
+}
+
+/** The waiting seats of the trace rooted at `root`, in start order. The one
+ *  definition behind the header's "Waiting for @X" and the path a card reveals
+ *  when it opens (ADR-037 §D4, §D6). */
+export function waitingSeats(graph: RunGraph, root: RunKey): Run[] {
+  return waitingAmong(graph, traceRuns(graph, root));
+}
+
 function distinctAgents(runs: readonly Run[]): ActorAddress[] {
   const seen = new Map<string, ActorAddress>();
   for (const run of runs) {
@@ -107,9 +119,8 @@ export function traceSummary(graph: RunGraph, root: RunKey): TraceSummary | null
   if (runs.length === 0) return null;
   const statuses = runs.map((run) => runStatus(graph, run.key));
   const running = runs.filter((_, i) => statuses[i] === 'running');
-  const waiting = runs.find((run, i) => isHumanSeat(run) && statuses[i] === 'waiting');
   const agents = distinctAgents(runs);
-  const waitingOn = waiting?.agent ?? null;
+  const waitingOn = waitingAmong(graph, runs)[0]?.agent ?? null;
   const active = running.length > 0 ? running[running.length - 1] : null;
   return {
     root,

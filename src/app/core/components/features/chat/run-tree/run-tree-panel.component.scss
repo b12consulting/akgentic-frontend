@@ -171,6 +171,27 @@
     padding-left: var(--akg-avatar-gutter);
   }
 
+  /*
+   * A tree `@Human` row points at its bubble: a soft wash while hovered, and a
+   * short flash after "in chat ↓". Both sit on the bubble's HOST element.
+   */
+  .run-bubble--highlight,
+  .run-bubble--flash {
+    border-radius: var(--akg-turn-radius);
+    background-color: var(--akg-row-hover);
+  }
+
+  .run-bubble--flash {
+    box-shadow: var(--akg-focus-ring);
+    animation: run-bubble-flash 1.2s ease-out;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .run-bubble--flash {
+      animation: none;
+    }
+  }
+
   // Story 19-1 (ADR-016 §Decision 2): trailing spacer — visually inert flex
   // child that reserves scroll room below the anchored turn. No background /
   // border; `overflow-anchor: none` so the browser's scroll-anchoring never
@@ -291,4 +312,13 @@
 .chat-placeholder-desc {
   font-size: 0.95rem;
   color: var(--akg-text-muted);
+}
+
+@keyframes run-bubble-flash {
+  from {
+    background-color: var(--akg-attention-bg);
+  }
+  to {
+    background-color: var(--akg-row-hover);
+  }
 }

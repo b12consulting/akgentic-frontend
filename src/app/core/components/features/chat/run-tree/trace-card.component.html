@@ -111,15 +111,17 @@
   </div>
 
   @if (open()) {
-    <!-- PROVISIONAL (55-2): one line per run so the chevron and the links do
-         something visible. 55-3 replaces this list with the run tree. -->
-    <ol class="trace-body">
-      @for (row of runs(); track row.key) {
-        <li class="trace-run">
-          <span class="trace-run-agent">{{ row.agent.name }}</span>
-          <span class="trace-run-status">{{ row.status }}</span>
-        </li>
-      }
-    </ol>
+    <div class="trace-body">
+      <app-trace-tree
+        [graph]="graph()"
+        [root]="summary().root"
+        [agentColours]="agentColours()"
+        [bubbleIds]="bubbleIds()"
+        (answer)="answer.emit($event)"
+        (selectRun)="selectRun.emit($event)"
+        (humanRowHover)="humanRowHover.emit($event)"
+        (showInChat)="showInChat.emit($event)"
+      ></app-trace-tree>
+    </div>
   }
 </div>

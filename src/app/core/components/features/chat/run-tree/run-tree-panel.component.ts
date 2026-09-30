@@ -14,6 +14,7 @@ import { Subscription } from 'rxjs';
 
 import { ApiService } from '../../../../platform/http/api.service';
 import { ContextService } from '../../../../platform/context/context.service';
+import { ActorAddress } from '../../../../protocol/message.types';
 import { AkgentService } from '../../../../services/akgent.service';
 import { CategoryService } from '../../../../services/category.service';
 import { IngestionService } from '../../../../services/process/event/ingestion.service';
@@ -37,7 +38,7 @@ import {
   EMPTY_RUN_GRAPH,
   RunGraph,
   RunKey,
-  runStatus,
+  RunMessage,
   traceRootOf,
 } from '../../../../services/process/selectors/run-graph.selector';
 import {
@@ -50,11 +51,8 @@ import {
   RunTreeView,
   trackRunTreeItem,
 } from '../../../../services/process/selectors/run-tree-items';
-import {
-  traceRuns,
-  TraceSummary,
-  traceSummary,
-} from '../../../../services/process/selectors/trace-summary';
+import { TraceSummary, traceSummary } from '../../../../services/process/selectors/trace-summary';
+import { seatRevealKeys } from '../../../../services/process/selectors/trace-tree';
 import {
   Selectable,
   SelectionService,
@@ -67,14 +65,12 @@ import {
 } from '../conversation/conversation-modal.component';
 import { ChatMessageComponent } from '../message/chat-message.component';
 import { ProcessUserInputComponent } from '../user-input/user-input.component';
-import { TraceCardComponent, TraceRunRow } from './trace-card.component';
+import { SeatAnswer, SeatAnswerDialogComponent } from './seat-answer-dialog.component';
+import { TraceCardComponent } from './trace-card.component';
 import { TranscriptScroll } from './transcript-scroll';
 
-/** What a trace item renders: its header and its provisional body rows. */
-interface TraceCardModel {
-  summary: TraceSummary;
-  rows: TraceRunRow[];
-}
+/** How long an "in chat" flash stays on a bubble. */
+const FLASH_MS = 1200;
 
 /**
  * The run-tree transcript (Epic 55, ADR-037 §D3, §D4, §D8, §D10), behind the
@@ -84,12 +80,13 @@ interface TraceCardModel {
  *   taken up yet wait in a "Message(s) sent" tail at the bottom.
  * - Under each, one collapsed trace card per run it opened.
  * - Agent → you bubbles render as in the legacy view, plus a provenance link.
- * - No rule-3 or rule-4 rows: they live in the tree (55-3).
+ * - No rule-3 or rule-4 rows: they live in the tree, where a waiting seat is
+ *   answered through its node's Answer button.
  *
  * It reads the same process-scoped services as the legacy panel, so a switch
  * refetches nothing. Everything it shows is re-derived from them on each
- * emission; the only state that must outlive it — which cards are open — is in
- * the process-scoped `TraceFoldState`.
+ * emission; the only state that must outlive it — which cards and nodes are
+ * open — is in the process-scoped `TraceFoldState`.
  */
 @Component({
   selector: 'app-run-tree-panel',
@@ -99,6 +96,7 @@ interface TraceCardModel {
     ChatMessageComponent,
     ConversationModalComponent,
     ProcessUserInputComponent,
+    SeatAnswerDialogComponent,
     TraceCardComponent,
     TranslatePipe,
   ],
@@ -131,8 +129,20 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
   timeline: RunTreeItem[] = [];
   tail: ChatMessage[] = [];
   tailNotes: ReadonlyMap<string, MessageNotes> = new Map();
-  cards = new Map<RunKey, TraceCardModel>();
-  private graph: RunGraph = EMPTY_RUN_GRAPH;
+  cards = new Map<RunKey, TraceSummary>();
+  graph: RunGraph = EMPTY_RUN_GRAPH;
+  /** Inner id → envelope id of the timeline's bubbles, for the tree's
+   *  `@Human` rows (a bubble's `data-message-id` is its envelope id). */
+  bubbleIds: ReadonlyMap<string, string> = new Map();
+  /** The bubble a `@Human` row is hovering, and the one flashing. */
+  highlightedBubble: string | null = null;
+  flashingBubble: string | null = null;
+  private flashTimer: ReturnType<typeof setTimeout> | null = null;
+
+  // --- answering a seat from the tree --------------------------------------
+  answerVisible = false;
+  answerSeat: ActorAddress | null = null;
+  answerQuestion: RunMessage | null = null;
   private view: RunTreeView = { timeline: [], tail: [], tailNotes: new Map() };
   /** Rule-6 markers the reader opened; re-applied to each emission's copies. */
   private expandedMarkers = new Set<string>();
@@ -177,6 +187,7 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
 
   ngOnDestroy(): void {
     this.subscriptions.unsubscribe();
+    if (this.flashTimer !== null) clearTimeout(this.flashTimer);
   }
 
   ngAfterViewChecked(): void {
@@ -220,6 +231,7 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
     this.view = state.view;
     this.applyView();
     this.cards = this.buildCards(state);
+    this.bubbleIds = this.buildBubbleIds(state.view);
     this.scroll.onEmission(this.latestYoursId(), this.timeline.length + this.tail.length);
   }
 
@@ -237,20 +249,22 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
     );
   }
 
-  private buildCards(state: RunTreeState): Map<RunKey, TraceCardModel> {
-    const cards = new Map<RunKey, TraceCardModel>();
+  private buildCards(state: RunTreeState): Map<RunKey, TraceSummary> {
+    const cards = new Map<RunKey, TraceSummary>();
     for (const item of state.view.timeline) {
       if (item.kind !== 'trace') continue;
       const summary = traceSummary(state.graph, item.rootKey);
-      if (summary === null) continue;
-      const rows = traceRuns(state.graph, item.rootKey).map((run) => ({
-        key: run.key,
-        agent: run.agent,
-        status: runStatus(state.graph, run.key),
-      }));
-      cards.set(item.rootKey, { summary, rows });
+      if (summary !== null) cards.set(item.rootKey, summary);
     }
     return cards;
+  }
+
+  private buildBubbleIds(view: RunTreeView): Map<string, string> {
+    const ids = new Map<string, string>();
+    for (const item of view.timeline) {
+      if (item.kind === 'message') ids.set(item.data.message_id, item.data.id);
+    }
+    return ids;
   }
 
   /** The most recently SENT message of yours, over timeline and tail, by the
@@ -290,10 +304,65 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
     return count === 1 ? 'chat.runTree.runsOne' : 'chat.runTree.runsMany';
   }
 
+  /** Every card open goes through here or `openTraceOf`, so opening a card
+   *  always reveals the path to its waiting seats (ADR-037 §D6). */
+  toggleTrace(root: RunKey): void {
+    this.folds.toggle(root, seatRevealKeys(this.graph, root));
+  }
+
   /** The absorbed-message and provenance links open the card that holds the
    *  run; they never close one. 55-4 turns them into a selection. */
   openTraceOf(run: RunKey): void {
-    this.folds.open(traceRootOf(this.graph, run));
+    const root = traceRootOf(this.graph, run);
+    this.folds.open(root, seatRevealKeys(this.graph, root));
+  }
+
+  // ---------------------------------------------------------------------------
+  // The tree's outputs
+  // ---------------------------------------------------------------------------
+
+  /** A waiting seat's Answer button: the seat and its question. */
+  onAnswer(key: RunKey): void {
+    const run = this.graph.runs.get(key);
+    const question = run ? this.graph.messages.get(run.message_id) : undefined;
+    if (run === undefined || question === undefined) return;
+    this.answerSeat = run.agent;
+    this.answerQuestion = question;
+    this.answerVisible = true;
+  }
+
+  /** Keyed by the question's inner id. Nothing is inserted: the node turns
+   *  `answered` when the seat's reply arrives on the log. */
+  onSeatAnswer(answer: SeatAnswer): void {
+    this.answerVisible = false;
+    this.apiService
+      .processHumanInput(this.processId, answer.content, answer.messageId)
+      .catch((err) => console.error('Failed to send human input:', err));
+  }
+
+  onAnswerVisibleChange(visible: boolean): void {
+    this.answerVisible = visible;
+  }
+
+  onHumanRowHover(bubble: string | null): void {
+    this.highlightedBubble = bubble;
+  }
+
+  /** Scroll the bubble into view and flash it. A programmatic scroll may end
+   *  the send pin; the reader asked to move. */
+  flashBubble(bubble: string): void {
+    const el = this.scrollContainer?.nativeElement.querySelector<HTMLElement>(
+      `[data-message-id="${CSS.escape(bubble)}"]`,
+    );
+    if (!el) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
+    if (this.flashTimer !== null) clearTimeout(this.flashTimer);
+    this.flashingBubble = bubble;
+    this.flashTimer = setTimeout(() => {
+      this.flashingBubble = null;
+      this.flashTimer = null;
+    }, FLASH_MS);
   }
 
   onToggleCollapse(chatMsg: ChatMessage): void {

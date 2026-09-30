@@ -23,6 +23,7 @@ import {
   TraceSummary,
   traceSummary,
 } from '../../../../services/process/selectors/trace-summary';
+import { TraceFoldState } from '../../../../services/process/ui-state/trace-fold-state';
 import { TraceCardComponent } from './trace-card.component';
 
 const U1 = runKey('U1', MANAGER.agent_id);
@@ -83,7 +84,7 @@ describe('TraceCardComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [TraceCardComponent],
-      providers: [provideTranslateTesting()],
+      providers: [provideTranslateTesting(), TraceFoldState],
     }).compileComponents();
     fixture = TestBed.createComponent(TraceCardComponent);
   });
@@ -146,14 +147,33 @@ describe('TraceCardComponent', () => {
     );
   });
 
-  it('open: shows the provisional run list and an expanded chevron', () => {
-    fixture.componentRef.setInput('runs', [
-      { key: U1, agent: MANAGER, status: 'done' },
+  it('open: renders the tree rooted at the card\'s root, and an expanded chevron', () => {
+    const graph = runGraphFold(MANY);
+    fixture.componentRef.setInput('graph', graph);
+    const el = render(summaryOf(MANY), true);
+    const nodes = [...el.querySelectorAll('.trace-body app-trace-tree .tree-node')];
+    expect(nodes.map((n) => n.getAttribute('data-run-key'))).toEqual([
+      U1,
+      runKey('De', EXPERT.agent_id),
+      runKey('Da', ASSISTANT.agent_id),
     ]);
-    const el = render(summaryOf(CASE_1), true);
-    expect(text('.trace-run-agent')).toBe('@Manager');
-    expect(text('.trace-run-status')).toBe('done');
+    expect(nodes.map((n) => n.getAttribute('data-depth'))).toEqual(['0', '1', '1']);
     expect(el.querySelector('.trace-toggle')!.getAttribute('aria-expanded')).toBe('true');
+  });
+
+  it('passes the tree\'s Answer up with the seat\'s run key', () => {
+    fixture.componentRef.setInput('graph', runGraphFold(WAITING));
+    const el = render(summaryOf(WAITING), true);
+    const answered: string[] = [];
+    fixture.componentInstance.answer.subscribe((k) => answered.push(k));
+    el.querySelector<HTMLButtonElement>('.node-answer')!.click();
+    expect(answered).toEqual([runKey('S', SUPPORT.agent_id)]);
+  });
+
+  it('a trace waiting on a seat shows no duration in its meta', () => {
+    setTestTranslations(en);
+    render(summaryOf(WAITING));
+    expect(text('.trace-meta')).toBe('2 runs · 0 tools');
   });
 
   it('the header and the chevron each emit one toggle with the root key', () => {

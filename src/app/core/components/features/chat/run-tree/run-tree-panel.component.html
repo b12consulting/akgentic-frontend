@@ -17,8 +17,12 @@
                 {{ 'chat.runTree.sendAs' | translate: { agent: seat.name } }}
               </div>
             }
+            <!-- The tree's @Human rows highlight and flash this HOST element;
+                 the bubble component itself is never edited. -->
             <app-chat-message
               [attr.data-message-id]="item.data.id"
+              [class.run-bubble--highlight]="highlightedBubble === item.data.id"
+              [class.run-bubble--flash]="flashingBubble === item.data.id"
               [message]="item.data"
               [defaultRecipient]="defaultRecipient"
               [agentColours]="agentColours"
@@ -56,14 +60,18 @@
             }
           }
           @case ('trace') {
-            @if (cards.get(item.rootKey); as card) {
+            @if (cards.get(item.rootKey); as summary) {
               <app-trace-card
-                [summary]="card.summary"
-                [runs]="card.rows"
+                [summary]="summary"
+                [graph]="graph"
+                [bubbleIds]="bubbleIds"
                 [continuesFrom]="item.continuesFrom"
                 [open]="folds.isOpen(item.rootKey)"
                 [agentColours]="agentColours"
-                (toggle)="folds.toggle($event)"
+                (toggle)="toggleTrace($event)"
+                (answer)="onAnswer($event)"
+                (humanRowHover)="onHumanRowHover($event)"
+                (showInChat)="flashBubble($event)"
               ></app-trace-card>
             }
           }
@@ -144,6 +152,14 @@
     }
     <app-user-input [processId]="processId"></app-user-input>
   </div>
+
+  <app-seat-answer-dialog
+    [visible]="answerVisible"
+    [seat]="answerSeat"
+    [question]="answerQuestion"
+    (visibleChange)="onAnswerVisibleChange($event)"
+    (send)="onSeatAnswer($event)"
+  ></app-seat-answer-dialog>
 
   <app-conversation-modal
     [visible]="readerVisible"

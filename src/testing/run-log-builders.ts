@@ -148,6 +148,7 @@ export function toolReturn(
   agent: ActorAddress,
   parentId: string,
   t: number,
+  success = true,
 ): EventMessage {
   return {
     ...envelope(`evt-ret-${callId}`, agent, parentId, t),
@@ -157,7 +158,7 @@ export function toolReturn(
       run_id: 'llm-run',
       tool_name: toolName,
       tool_call_id: callId,
-      success: true,
+      success,
     },
   };
 }

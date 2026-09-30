@@ -180,7 +180,35 @@
       "toolsMany": "{{count}} outils",
       "running": "{{count}} en cours",
       "expand": "Afficher les exécutions de cette trace",
-      "collapse": "Masquer les exécutions de cette trace"
+      "collapse": "Masquer les exécutions de cette trace",
+      "node": {
+        "from": "de {{agent}}",
+        "humanSeat": "poste humain",
+        "sentNothing": "n'a rien envoyé",
+        "tookInOne": "a pris en compte 1 message",
+        "tookInMany": "a pris en compte {{count}} messages",
+        "after": "après {{tool}}…",
+        "thinking": "réflexion…",
+        "toolFailed": "{{tool}} a échoué",
+        "waiting": "en attente depuis {{duration}}",
+        "answeredAfter": "a répondu après {{duration}}",
+        "queued": "→ {{agent}} · en file d'attente",
+        "absorbed": "→ {{agent}} · pris en compte par {{by}} ⤴",
+        "joinYours": "⤵ a pris en compte votre message",
+        "joinAnswer": "⤵ a pris en compte la réponse de {{agent}}",
+        "joinReply": "⤵ a pris en compte le retour de {{agent}}",
+        "inChat": "dans le chat ↓",
+        "answer": "Répondre",
+        "expand": "Afficher ce que cette exécution a fait",
+        "collapse": "Masquer ce que cette exécution a fait"
+      },
+      "answerDialog": {
+        "header": "Répondre en tant que {{agent}}",
+        "asked": "{{agent}} a demandé à {{time}}",
+        "placeholder": "Saisissez votre réponse…",
+        "send": "Envoyer la réponse",
+        "cancel": "Annuler"
+      }
     }
   },
   "messageList": {

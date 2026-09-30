@@ -8,18 +8,16 @@ import {
   AgentColours,
   NO_AGENT_COLOURS,
 } from '../../../../services/process/selectors/agent-colour';
-import { RunKey, RunStatus } from '../../../../services/process/selectors/run-graph.selector';
+import {
+  EMPTY_RUN_GRAPH,
+  RunGraph,
+  RunKey,
+} from '../../../../services/process/selectors/run-graph.selector';
 import {
   traceDuration,
   TraceSummary,
 } from '../../../../services/process/selectors/trace-summary';
-
-/** One line of the provisional card body: a run and its status. */
-export interface TraceRunRow {
-  key: RunKey;
-  agent: ActorAddress;
-  status: RunStatus | null;
-}
+import { TraceTreeComponent } from './trace-tree.component';
 
 /**
  * A trace card (Epic 55, ADR-037 §D8): one per run a message of yours opened.
@@ -33,13 +31,13 @@ export interface TraceRunRow {
  * process-scoped `TraceFoldState`, keyed by the root run, so a card stays open
  * across re-emissions and across a switch of view (Trap 7).
  *
- * The open body is PROVISIONAL — one line per run — and 55-3 replaces it with
- * the run tree.
+ * The open body is the run tree (`TraceTreeComponent`), whose outputs the
+ * card passes up unchanged.
  */
 @Component({
   selector: 'app-trace-card',
   standalone: true,
-  imports: [CommonModule, TranslatePipe],
+  imports: [CommonModule, TranslatePipe, TraceTreeComponent],
   templateUrl: './trace-card.component.html',
   styleUrl: './trace-card.component.scss',
 })
@@ -49,9 +47,14 @@ export class TraceCardComponent {
   continuesFrom = input<ActorAddress | null>(null);
   open = input<boolean>(false);
   agentColours = input<AgentColours>(NO_AGENT_COLOURS);
-  /** Provisional body rows; see the class docstring. */
-  runs = input<readonly TraceRunRow[]>([]);
+  graph = input<RunGraph>(EMPTY_RUN_GRAPH);
+  /** Inner id → envelope id of the rendered bubbles, for the `@Human` rows. */
+  bubbleIds = input<ReadonlyMap<string, string>>(new Map());
   toggle = output<RunKey>();
+  answer = output<RunKey>();
+  selectRun = output<RunKey>();
+  humanRowHover = output<string | null>();
+  showInChat = output<string>();
 
   private readonly i18n = inject(I18nService);
 
@@ -78,9 +81,13 @@ export class TraceCardComponent {
     this.summary().toolCount === 1 ? 'chat.runTree.toolsOne' : 'chat.runTree.toolsMany',
   );
 
-  /** Shown only once the trace has ended; nothing ticks while it runs. */
+  /** Shown only once the trace has ended; nothing ticks while it runs. A
+   *  trace waiting on a seat has not ended, whatever its runs did, so it shows
+   *  none. */
   readonly duration = computed<string | null>(() =>
-    traceDuration(this.summary().start, this.summary().end),
+    this.summary().title === 'waiting'
+      ? null
+      : traceDuration(this.summary().start, this.summary().end),
   );
 
   colourOf(agent: ActorAddress): string | null {

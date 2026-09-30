@@ -117,17 +117,6 @@
 }
 
 .trace-body {
-  list-style: none;
-  margin: 8px 0 0;
-  padding: 0;
-}
-
-.trace-run {
-  display: flex;
-  gap: 0.5rem;
-  padding: 2px 0;
-}
-
-.trace-run-agent {
-  color: var(--akg-text);
+  margin-top: 4px;
+  border-top: 1px solid var(--akg-hairline);
 }
