@@ -262,7 +262,8 @@
    * HOST element. The spread of the shadow is the wash's padding: 8px of
    * breathing room around the text and the avatar that moves no layout.
    */
-  --run-bubble-wash: color-mix(in srgb, var(--akg-accent-fg) 7%, transparent);
+  /* The accent ramp's 50 step: the palette's own pastel of the accent. */
+  --run-bubble-wash: var(--akg-accent-bg);
 
   .message-list app-chat-message {
     border-radius: 14px;

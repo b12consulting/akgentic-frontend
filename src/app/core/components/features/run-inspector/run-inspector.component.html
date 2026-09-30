@@ -73,11 +73,14 @@
                   [attr.aria-current]="row.displayed ? 'true' : null"
                   (click)="selectFromTree(row.key)"
                 >
+                  <!-- The agent's own colour on the path; the quiet pair off it. -->
+                  @let ownColour = row.kind !== 'seat' && row.onPath ? colourOf(row.run.agent) : null;
                   <span
                     class="mini-avatar"
                     [class.mini-avatar--human]="row.kind === 'seat'"
-                    [class.tinted]="row.kind !== 'seat' && colourOf(row.run.agent) !== null"
-                    [style.background-color]="row.kind === 'seat' ? null : colourOf(row.run.agent)"
+                    [class.mini-avatar--quiet]="row.kind !== 'seat' && !row.onPath"
+                    [class.tinted]="ownColour !== null"
+                    [style.background-color]="ownColour"
                     aria-hidden="true"
                     >{{ initialOf(row.run.agent) }}</span
                   >

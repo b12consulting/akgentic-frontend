@@ -75,9 +75,11 @@
   margin-top: 7px;
 }
 
-/* A run that sent nothing (ADR-037 §D7). On the box, so the guides stay. */
-.tree-node--silent > .rn {
-  opacity: 0.55;
+/* A run that sent nothing (ADR-037 §D7): its name steps down to the muted
+   tone, as the rest of the row already is — a palette tone, not a fade. The
+   "sent nothing" chip says why. */
+.tree-node--silent .node-agent {
+  color: var(--akg-text-muted);
 }
 
 /* The selected run (ADR-037 §D9): its own box, outlined and lifted onto the
@@ -228,11 +230,11 @@
  * A soft pill on the accent ramp. The shared button reset zeroes the border,
  * so it is restated here, after the extend.
  *
- * Role tokens only (`_conversation-tokens.scss`): the ramp's 50 step for the
- * ground and its 100 step on hover, the 700 step for the text — the one accent
- * step that is a TEXT role, 7.3:1 on the ground and 6.4:1 on hover. The file
- * forbids reading the 200–600 rungs, so the border's mid tone is mixed from
- * two role tokens instead of taken from one.
+ * Palette role tokens only (`_conversation-tokens.scss`), the pair the
+ * request card already uses: the ramp's 50 step for the ground, its 100 step
+ * for the border and for the ground on hover, and the 700 step for the text —
+ * the one accent step that is a TEXT role, 7.3:1 on the ground and 6.4:1 on
+ * hover.
  */
 .node-in-chat {
   @extend %tree-button;
@@ -240,7 +242,7 @@
   /* At the row's right edge, whatever the excerpt's length. */
   margin-left: auto;
   padding: 0 8px;
-  border: 1px solid color-mix(in srgb, var(--akg-accent-fg) 35%, var(--akg-accent-bg));
+  border: 1px solid var(--akg-accent-border);
   border-radius: var(--akg-pill-radius);
   background: var(--akg-accent-bg);
   color: var(--akg-accent-fg);
