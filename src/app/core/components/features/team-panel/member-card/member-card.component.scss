@@ -6,24 +6,6 @@
 }
 
 /*
- * The card and its trailing action, on one line.
- *
- * The action sits BESIDE the card rather than inside it because a `<button>`
- * inside a `<button>` is invalid markup — and the browsers that tolerate it
- * disagree about which of the two a click reaches, which for a control that
- * opens a dialog is the difference between a reader and a tab switch.
- *
- * The indent stays on the CARD, not on this row. The card is the thing that
- * expresses depth; pushing the whole row in would take the action button with
- * it and the column of actions would zig-zag down the pane.
- */
-.member-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-/*
  * A member row.
  *
  * `<button>` reset first: the element is a button because the row is an
@@ -35,11 +17,12 @@
   display: flex;
   align-items: center;
   gap: 9px;
-  /* Takes the row and yields to the action button beside it. `min-width: 0` is
-     what actually lets it shrink: a flex item's automatic minimum is its
-     content's, so without this the longest member name would push the action
-     off the pane's right edge instead of ellipsising. */
-  flex: 1 1 auto;
+  /* The full width of the pane, less its indent. `min-width: 0` is what lets
+     it shrink: a block's automatic minimum is its content's, so without this
+     the longest member name would push past the pane's right edge instead of
+     ellipsising. */
+  box-sizing: border-box;
+  width: calc(100% - var(--akg-depth, 0) * var(--akg-member-indent));
   min-width: 0;
   /* One step of hierarchy per level, with the STEP owned by the token and the
      LEVEL bound by the row. The fallback matters: a caller that forgets the
@@ -201,17 +184,4 @@
     animation: none;
     box-shadow: inset 0 0 0 2px var(--akg-status-live-fg);
   }
-}
-
-/*
- * The trailing action. Quiet at rest and always present — NOT revealed on
- * hover.
- *
- * A control that only appears once the pointer is on the row is invisible to
- * the user who is looking for it, and unreachable by touch entirely. It is the
- * same failure mode as a pane divider that only announces itself once you have
- * already found it.
- */
-.member-read {
-  flex: 0 0 auto;
 }

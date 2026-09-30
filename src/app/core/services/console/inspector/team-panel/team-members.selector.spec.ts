@@ -294,27 +294,6 @@ describe('inspectorTeamsEqual', () => {
     expect(inspectorTeamsEqual(before, after)).toBe(false);
   });
 
-  /**
-   * The reader routes a message on `actorName`, and the friendly label cannot
-   * be turned back into one: `makeAgentNameUserFriendly` takes only the first
-   * two dash-separated segments, so both names below render as "Worker [0]".
-   * Comparing labels alone therefore reports "unchanged" for a node whose
-   * routing address moved, and the cached view keeps handing out the old one.
-   */
-  it('fails when only the actorName changes, which the label cannot show', () => {
-    const before = buildInspectorTeam(nodes);
-    const after = buildInspectorTeam([
-      node({ name: 'boss', actorName: 'Manager-Supervisor-0' }),
-      node({ name: 'w', actorName: 'Worker-0-BATCH-2', parentId: 'boss' }),
-      node({ name: 't', actorName: '#Tool' }),
-    ]);
-
-    expect(after.members.map((m) => m.label)).toEqual(
-      before.members.map((m) => m.label),
-    );
-    expect(inspectorTeamsEqual(before, after)).toBe(false);
-  });
-
   it('fails when the human appears', () => {
     const before = buildInspectorTeam(nodes);
     const after = buildInspectorTeam([

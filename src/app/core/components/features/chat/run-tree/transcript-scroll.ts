@@ -10,18 +10,18 @@ export interface ScrollHost {
 export const AUTO_SCROLLING_KEY = 'chat.autoScrolling';
 
 /**
- * The run-tree transcript's scroll model: ADR-016's anchor-on-send and
- * follow-on-demand, ported from `chat-panel.component.ts` (frozen until 55-6,
- * which deletes one copy), with the anchor amended for ADR-037 §D3.
+ * The chat's scroll model: ADR-016's anchor-on-send and follow-on-demand, with
+ * the anchor amended for ADR-037 §D3. It is the only copy: the chat panel it
+ * was first written for is gone (Epic 55).
  *
- * THE AMENDMENT. The legacy panel pins the echo once and then only resizes the
- * spacer, which works because the reply grows BELOW the anchor. Here your
+ * THE AMENDMENT. ADR-016 pins the echo once and then only resizes the spacer,
+ * which works because the reply grows BELOW the anchor. Here your
  * message first sits in the not-yet-received tail, where the run it is queued
  * behind keeps growing ABOVE it, and at pick-up it is destroyed and re-created
  * in the timeline. So while the anchor is live it is RE-PINNED whenever its
  * element is a different node, or its `offsetTop` moved, since the last pin.
  * Once it has settled in the timeline the reply grows below, nothing moves, and
- * the legacy spacer-shrink resumes until the spacer is gone.
+ * ADR-016's spacer-shrink resumes until the spacer is gone.
  *
  * Programmatic scrolls are instant under reduced motion and smooth otherwise;
  * a manual scroll ABOVE the pinned position cancels the anchor, which a pin's
@@ -70,10 +70,13 @@ export class TranscriptScroll {
   }
 
   /** A new view emission. `latestYoursId` is found with the "your message"
-   *  predicate over timeline AND tail — never the `@Human` name. */
-  onEmission(latestYoursId: string | null, count: number): void {
-    const grew = count > this.prevCount;
-    this.prevCount = count;
+   *  predicate over timeline AND tail — never the `@Human` name. `messageCount`
+   *  counts MESSAGE rows only (timeline messages plus tail bubbles): a trace
+   *  card or a day row is not something new to read, and a pick-up moves a
+   *  bubble without adding one, so neither raises "New messages". */
+  onEmission(latestYoursId: string | null, messageCount: number): void {
+    const grew = messageCount > this.prevCount;
+    this.prevCount = messageCount;
     if (this.awaitingEcho && latestYoursId && latestYoursId !== this.sendBaselineId) {
       this.anchorId = latestYoursId;
       this.anchorPinned = false;
@@ -83,7 +86,7 @@ export class TranscriptScroll {
       this.indicatorLabel = null;
     }
     if (grew && this.loaded && !this.following) this.unseen = true;
-    this.loaded = this.loaded || count > 0;
+    this.loaded = this.loaded || messageCount > 0;
   }
 
   /** Post-layout: pin, re-pin or resize; follow; refresh the pill. */

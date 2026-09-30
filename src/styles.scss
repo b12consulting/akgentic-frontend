@@ -106,7 +106,7 @@ body {
 //
 // Lists and p-fields
 //
-/* Kept, though the Epic-56 plan listed it for deletion with the legacy chat
+/* Kept, though the Epic-56 plan listed it for deletion with the old chat
    block below. It is not part of that block: `message-list.component.html`
    still wraps every row of the Messages tab in it and defines nothing of its
    own, so removing it here unboxes that whole tab. Retiring it belongs with
@@ -155,7 +155,7 @@ span.p-fieldset-legend-label {
 
    `.message-list` and `.message` are the reason this is a correctness change
    and not tidying. Both class names are ALSO used by the redesigned
-   conversation — `chat-panel.component.scss` scopes `.message-list` and
+   conversation — `run-tree-panel.component.scss` scopes `.message-list` and
    `chat-message.component.scss` scopes `.message` — and the scoped rules only
    won because component styles carry an extra attribute selector's worth of
    specificity. That is an accident, not a mechanism: a global here that ever

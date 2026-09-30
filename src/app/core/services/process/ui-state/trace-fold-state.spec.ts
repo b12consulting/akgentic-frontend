@@ -109,4 +109,16 @@ describe('TraceFoldState — nodes', () => {
     folds.toggle(ROOT, [EXPERT, ROOT]);
     expect(folds.isNodeExpanded(EXPERT, ROOT)).toBeTrue();
   });
+
+  it('reset closes every card and forgets every node', () => {
+    const folds = new TraceFoldState();
+    folds.open(ROOT, [EXPERT]);
+    folds.toggleNode(ROOT, ROOT);
+    folds.reset();
+    expect(folds.isOpen(ROOT)).toBeFalse();
+    expect(folds.openKeys().size).toBe(0);
+    // Back to the defaults: only a root starts expanded.
+    expect(folds.isNodeExpanded(ROOT, ROOT)).toBeTrue();
+    expect(folds.isNodeExpanded(EXPERT, ROOT)).toBeFalse();
+  });
 });

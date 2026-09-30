@@ -133,9 +133,6 @@
             [message]="m"
             [defaultRecipient]="defaultRecipient"
             [agentColours]="agentColours"
-            [notification]="false"
-            (messageSelected)="onMessageSelected($event)"
-            (agentSelected)="onAgentSelected($event)"
           ></app-chat-message>
           <div class="run-note run-note--mine run-note--tail">
             {{ 'chat.runTree.notReceivedYet' | translate: { agent: m.recipient.name } }}
@@ -167,7 +164,7 @@
     }
   }
 
-  <!-- Outside the scroll container, as in the legacy panel. -->
+  <!-- Outside the scroll container: the pill and the composer stay put. -->
   <div class="input-area">
     @if (scroll.indicatorLabel) {
       <button type="button" class="jump-to-latest" (click)="scroll.jumpToLatest()">
@@ -182,6 +179,7 @@
     [visible]="answerVisible"
     [seat]="answerSeat"
     [question]="answerQuestion"
+    [messageId]="answerMessageId"
     (visibleChange)="onAnswerVisibleChange($event)"
     (send)="onSeatAnswer($event)"
   ></app-seat-answer-dialog>
@@ -197,24 +195,8 @@
       [message]="m"
       [defaultRecipient]="defaultRecipient"
       [agentColours]="agentColours"
-      [notification]="false"
       [ratingEnabled]="!ownsRating(m)"
-      (messageSelected)="onMessageSelected($event)"
-      (agentSelected)="onAgentSelected($event)"
       (toggleCollapse)="onToggleCollapse($event)"
     ></app-chat-message>
   </ng-template>
-
-  <app-conversation-modal
-    [visible]="readerVisible"
-    [agents]="readerAgents"
-    [agentColours]="agentColours"
-    [messages]="chatMessages"
-    [graph]="graph"
-    [selectedAgentId]="readerSelectedAgentId"
-    [canSend]="readerCanSend"
-    (visibleChange)="onReaderVisibleChange($event)"
-    (agentSelected)="onReaderAgentSelected($event)"
-    (sendToAgent)="onReaderSend($event)"
-  ></app-conversation-modal>
 </div>

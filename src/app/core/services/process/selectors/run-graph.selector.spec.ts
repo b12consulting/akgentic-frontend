@@ -302,7 +302,7 @@ describe('runGraphStep — transitions', () => {
       buildPreview('{"path": "onboarding/sept-signups.csv"}', 160),
     );
     expect(first.kind === 'tool' && first.arguments_preview).toContain('onboarding/sept-signups.csv');
-    // The same limit the legacy thinking bubble cuts at.
+    // The preview limit.
     expect(TOOL_ARGUMENTS_PREVIEW_LENGTH).toBe(160);
     expect(second.kind === 'tool' && second.arguments_preview).toBe(buildPreview(long, 160));
     // Cut at 160, plus the legacy ellipsis.

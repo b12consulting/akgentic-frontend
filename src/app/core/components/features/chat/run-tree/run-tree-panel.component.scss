@@ -1,7 +1,7 @@
 /*
- * A copy of `chat-panel.component.scss` (frozen until 55-6, which deletes one
- * of the two panels), plus the run-tree notes. The scroll model measures this
- * geometry, so the two panels must lay out the same way.
+ * The chat's layout and the run-tree notes. The scroll model
+ * (`transcript-scroll.ts`) measures this geometry: the list scrolls, the
+ * spacer is its last child, and the pill and composer sit outside it.
  */
 .chat-container {
   display: flex;
@@ -44,37 +44,12 @@
 
     /*
      * SPACING BELONGS TO THE PAIR, so it is written between rows rather than
-     * as a `gap` on the list.
-     *
-     * A flex `gap` is one value for every pair, and the two kinds of row on
-     * this surface want different things. A turn is a paragraph and wants air.
-     * A folded system notice is one line saying something happened, and a run
-     * of them is ONE agent working — at paragraph spacing they read as a list
-     * of unrelated events.
-     *
-     * Stating it between siblings lets both cases be a plain declaration: this
-     * is the space after a row, and the next rule overrides it for the one pair
-     * that wants less. With `gap` the second rule could only have been a
-     * negative margin cancelling the first.
+     * as a `gap` on the list: a row can then override the space before it
+     * (see `.run-note--above`, `.run-answer--before-yours`) with a plain
+     * declaration rather than a negative margin cancelling a gap.
      */
     > * + * {
       margin-top: var(--akg-turn-gap);
-    }
-
-    /*
-     * Two quiet rows run together.
-     *
-     * A PAIR rule, not a property of the row: the first quiet row after a turn
-     * keeps its full separation from the conversation, and only a second one
-     * closes up against it.
-     *
-     * `.quiet-line` is set by `ChatMessageComponent` on its own host — see
-     * `isQuietLine` there. On the host because that is the element this list
-     * has as a child; the row's own class lives inside the child's style
-     * encapsulation, where a selector written here cannot reach it.
-     */
-    > .quiet-line + .quiet-line {
-      margin-top: 0;
     }
   }
 
@@ -82,7 +57,7 @@
    * Epic 54 — the day separator.
    *
    * A hairline with the date sitting in it. Deliberately QUIETER than a turn
-   * (NFR3): smaller than the collapsed line's 0.85rem, muted text, and the
+   * (NFR3): smaller than a turn's text, muted, and the
    * marker border rather than the surface border — it is the page telling you
    * where you are, not something anybody said. All colours come from the Epic 50
    * conversation tokens; nothing new is introduced.

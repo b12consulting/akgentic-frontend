@@ -34,7 +34,8 @@ import { isEntryPointRun, traceRuns } from './trace-summary';
  *
  * Rules 3 and 4 (agent → another seat, agent ↔ agent) are not rows here; they
  * live only in the tree (§D4). The one exception is a Send-as message, which
- * the legacy fold calls rule 4 but which opens a trace, so it is yours.
+ * the chat fold (`chatFold`) classifies as rule 4 but which opens a trace, so
+ * it is yours.
  */
 
 /** Why an agent → you bubble exists: the run that sent it, and where that run
@@ -88,7 +89,7 @@ type TraceItem = Extract<RunTreeItem, { kind: 'trace' }>;
 type PlacedItem = Exclude<RunTreeItem, { kind: 'day' }>;
 
 /** The fill behind your turn. Mirrors rule 1's in `chat-message.model.ts`,
- *  which that frozen file does not export. */
+ *  which does not export it. */
 const YOUR_FILL = 'var(--akg-surface)';
 
 /**
@@ -187,8 +188,8 @@ export function provenanceOf(m: ChatMessage, graph: RunGraph): Provenance | null
 }
 
 /** Your message as the view draws it. A Send-as message arrives as rule 4, so
- *  it is drawn from a rule-1 copy — never mutated, `chat$` is shared with the
- *  legacy panel. Its label is kept. */
+ *  it is drawn from a rule-1 copy — never mutated, `chat$` replays one shared
+ *  value. Its label is kept. */
 function asYours(m: ChatMessage): ChatMessage {
   if (m.rule === 1) return m;
   return { ...m, rule: 1, alignment: 'right', color: YOUR_FILL, collapsed: false };
@@ -323,6 +324,11 @@ export interface RunTreeState {
  * picked up in the same frame it was echoed would then render in the tail for
  * one pass and jump, breaking the pin. Both are `log$.pipe(map, shareReplay(1))`,
  * so `zip` pairs the two folds of one emission.
+ *
+ * REF-COUNTED: the view is rebuilt on every log emission, so `state$` stops
+ * when its last subscriber leaves rather than folding for nobody. A later
+ * subscriber still starts from the current state: `chat$` and `graph$` each
+ * replay their latest fold, and `zip` pairs the two replays.
  */
 @Injectable()
 export class RunTreeService {
@@ -334,6 +340,6 @@ export class RunTreeService {
     this.runGraph.graph$,
   ).pipe(
     map(([chat, graph]) => ({ graph, view: buildRunTreeView(chat.messages, graph) })),
-    shareReplay(1),
+    shareReplay({ bufferSize: 1, refCount: true }),
   );
 }

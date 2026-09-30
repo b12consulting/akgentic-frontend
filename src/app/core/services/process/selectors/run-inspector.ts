@@ -162,13 +162,11 @@ export function runSteps(graph: RunGraph, run: Run): RunStepRow[] {
           offset,
           name: step.tool_name,
           state: step.success === false ? 'failed' : step.done ? 'ok' : 'pending',
-          // The legacy thinking bubble's narration of the same call, so the
-          // two views describe a step in the same words.
+          // The step narration's summary of the call, so a step reads the same
+          // wherever it is described.
           summary: describeStep({
-            tool_call_id: step.tool_call_id,
             tool_name: step.tool_name,
             arguments_preview: step.arguments_preview,
-            done: step.done,
             kind: 'tool',
           }).detail,
         };

@@ -19,8 +19,11 @@ import { RunKey } from '../selectors/run-graph.selector';
  *   already open is not revealed.
  *
  * PROCESS-SCOPED, beside `RunGraphService`, rather than held by the panel: the
- * New view switch destroys the panel, and open cards and nodes must survive a
- * switch round trip. A team switch resets it with the rest of the team's state.
+ * inspector's mini-tree selects and reveals runs too, through
+ * `RunSelectionState`, whether or not the transcript is rendered. The route's
+ * injector outlives a team (the router reuses it when only `:id` changes), so
+ * `TeamSessionService.close()` calls `reset()` on a team switch: one team's
+ * open cards never carry into the next, or back into itself.
  *
  * It lives in `ui-state/` rather than beside the panel because
  * `PROCESS_PROVIDERS` may not import from the components tier.
@@ -76,5 +79,12 @@ export class TraceFoldState {
     const nodes = new Map(this._nodes());
     nodes.set(key, !this.isNodeExpanded(key, root));
     this._nodes.set(nodes);
+  }
+
+  /** Close every card and forget every node: the team this state described
+   *  is closing. */
+  reset(): void {
+    this._open.set(new Set());
+    this._nodes.set(new Map());
   }
 }

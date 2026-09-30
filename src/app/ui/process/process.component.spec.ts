@@ -34,7 +34,6 @@ import { WorkspaceRegistryService } from '../../core/services/process/selectors/
 import { TeamContext } from '../../core/platform/context/team.interface';
 import { NodeInterface } from '../../core/services/process/models/types';
 import { ViewService } from '../console/view.service';
-import { CHAT_VIEW_STORAGE_KEY, ChatViewService } from '../console/chat-view.service';
 import { PaneLayoutService } from '../console/pane-layout.service';
 import {
   INSPECTOR_DEFAULT_PERCENT,
@@ -187,9 +186,7 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
       nodes$: new BehaviorSubject<any[]>([]),
     };
 
-    const chatService = {
-      messages$: new BehaviorSubject<any[]>([]),
-    };
+    const chatService = {};
 
     const selectionService = {
       handleSelection: jasmine.createSpy('handleSelection'),
@@ -337,31 +334,17 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
   });
 
   /**
-   * Epic 55: the header's New view switch picks the transcript. Both panels are
-   * direct children of the conversation pane and carry `.chat-app`, so the
-   * height chain above holds for either.
+   * Epic 55: the run-tree transcript is the only chat. It is a direct child of
+   * the conversation pane and carries `.chat-app`, so the height chain above
+   * holds for it.
    */
-  it('(Epic 55) the New view switch swaps the legacy panel for the run-tree panel', () => {
+  it('(Epic 55) the conversation pane renders the run-tree panel as .chat-app, and no app-chat-panel', () => {
     const host = fixture.nativeElement as HTMLElement;
-    const chatView = TestBed.inject(ChatViewService);
-    try {
-      expect(chatView.newView()).toBeFalse();
-      expect(host.querySelector('.conversation-pane > app-chat-panel.chat-app')).not.toBeNull();
-      expect(host.querySelector('app-run-tree-panel')).toBeNull();
 
-      chatView.toggle();
-      fixture.detectChanges();
-      expect(
-        host.querySelector('.conversation-pane > app-run-tree-panel.chat-app'),
-      ).not.toBeNull();
-      expect(host.querySelector('app-chat-panel')).toBeNull();
-
-      chatView.toggle();
-      fixture.detectChanges();
-      expect(host.querySelector('.conversation-pane > app-chat-panel.chat-app')).not.toBeNull();
-    } finally {
-      localStorage.removeItem(CHAT_VIEW_STORAGE_KEY);
-    }
+    expect(
+      host.querySelector('.conversation-pane > app-run-tree-panel.chat-app'),
+    ).not.toBeNull();
+    expect(host.querySelector('app-chat-panel')).toBeNull();
   });
 
   /**
@@ -696,9 +679,7 @@ describe('ProcessComponent (Story 10-2 — single-fetch navigation)', () => {
       nodes$: new BehaviorSubject<any[]>([]),
     };
 
-    const chatService = {
-      messages$: new BehaviorSubject<any[]>([]),
-    };
+    const chatService = {};
 
     const selectionService = { handleSelection: jasmine.createSpy('handleSelection') };
     const feedbackService = {};
@@ -869,7 +850,7 @@ describe('ProcessComponent (Story 52-1 — team id as an input)', () => {
             nodes$: new BehaviorSubject<any[]>([]),
           },
         },
-        { provide: ChatService, useValue: { messages$: new BehaviorSubject<any[]>([]) } },
+        { provide: ChatService, useValue: {} },
         { provide: SelectionService, useValue: { handleSelection: () => undefined } },
         { provide: FeedbackService, useValue: {} },
         TraceFoldState,
@@ -1171,7 +1152,7 @@ describe('ProcessComponent (R3 — arrangeable, resizable panes)', () => {
             nodes$: new BehaviorSubject<any[]>([]),
           },
         },
-        { provide: ChatService, useValue: { messages$: new BehaviorSubject<any[]>([]) } },
+        { provide: ChatService, useValue: {} },
         { provide: SelectionService, useValue: { handleSelection: () => undefined } },
         { provide: FeedbackService, useValue: {} },
         TraceFoldState,
@@ -1766,7 +1747,7 @@ describe('ProcessComponent — hiding inspector tabs per deployment (W18b)', () 
       isLoading$: new BehaviorSubject<boolean>(false),
       nodes$: new BehaviorSubject<NodeInterface[]>([]),
     };
-    const chatService = { messages$: new BehaviorSubject<unknown[]>([]) };
+    const chatService = {};
 
     await TestBed.configureTestingModule({
       imports: [ProcessComponent, NoopAnimationsModule],
@@ -1927,7 +1908,7 @@ describe('ProcessComponent — a run selection opens the Run tab (Epic 55)', () 
             nodes$: new BehaviorSubject<NodeInterface[]>([]),
           },
         },
-        { provide: ChatService, useValue: { messages$: new BehaviorSubject<unknown[]>([]) } },
+        { provide: ChatService, useValue: {} },
         { provide: SelectionService, useValue: { handleSelection: () => undefined } },
         { provide: FeedbackService, useValue: {} },
         TraceFoldState,

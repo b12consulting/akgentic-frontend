@@ -44,9 +44,13 @@ describe('SeatAnswerDialogComponent', () => {
     fixture.detectChanges();
   });
 
-  async function open(): Promise<void> {
+  async function open(
+    question: RunMessage | null = QUESTION,
+    messageId: string | null = QUESTION.id,
+  ): Promise<void> {
     fixture.componentRef.setInput('seat', SUPPORT);
-    fixture.componentRef.setInput('question', QUESTION);
+    fixture.componentRef.setInput('question', question);
+    fixture.componentRef.setInput('messageId', messageId);
     fixture.componentRef.setInput('visible', true);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -91,6 +95,27 @@ describe('SeatAnswerDialogComponent', () => {
     expect(sent).toEqual([{ content: 'yes, refund it', messageId: 'S' }]);
     expect(visibility).toEqual([false]);
     expect(fixture.componentInstance.draft).toBe('');
+  });
+
+  it('a question missing from a replayed log is named as missing, and the answer still sends under the key', async () => {
+    await open(null, 'S');
+    expect(dialog().querySelector('.seat-asked')).toBeNull();
+    expect(text(dialog().querySelector('.seat-unknown-question'))).toBe(
+      'The question is not in the loaded log.',
+    );
+    await type('yes');
+    sendButton().click();
+    expect(sent).toEqual([{ content: 'yes', messageId: 'S' }]);
+  });
+
+  it('with no answer key nothing sends, even with a question and a draft', async () => {
+    await open(QUESTION, null);
+    await type('yes');
+    expect(sendButton().disabled).toBeTrue();
+    sendButton().click();
+    const area = dialog().querySelector<HTMLTextAreaElement>('textarea')!;
+    area.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true }));
+    expect(sent).toEqual([]);
   });
 
   it('an empty or whitespace-only answer sends nothing, by click or Ctrl/⌘+Enter', async () => {

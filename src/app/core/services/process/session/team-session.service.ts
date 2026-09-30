@@ -4,6 +4,8 @@ import { ContextService } from '../../../platform/context/context.service';
 import { isRunning } from '../../../platform/context/team.interface';
 import { AkgentService } from '../../akgent.service';
 import { IngestionService } from '../event/ingestion.service';
+import { RunSelectionState } from '../ui-state/run-selection';
+import { TraceFoldState } from '../ui-state/trace-fold-state';
 
 /**
  * WHAT IT TAKES TO HAVE A TEAM OPEN. The whole ritual, owned by the data layer.
@@ -50,6 +52,9 @@ export class TeamSessionService {
   private readonly contextService = inject(ContextService);
   private readonly akgentService = inject(AkgentService);
   private readonly ingestionService = inject(IngestionService);
+  // Epic 55: the transcript's folds and run selection, reset on a switch.
+  private readonly folds = inject(TraceFoldState);
+  private readonly runSelection = inject(RunSelectionState);
 
   /** The id currently open, or `''`. Read by callers that need to know what
    *  `open()` settled on without re-reading the route. */
@@ -124,11 +129,15 @@ export class TeamSessionService {
   /**
    * Release everything belonging to the team currently open.
    *
-   * Two things outlive a team switch and so have to be named. `close()` on the
+   * Four things outlive a team switch and so have to be named. `close()` on the
    * pipeline disposes the cycle AND empties the log — which is what unmounts
    * the knowledge-graph and workspace panels, since their presence is a fold
-   * over that log. `AkgentService` is the other: it is root-scoped, so the
+   * over that log. `AkgentService` is another: it is root-scoped, so the
    * previous team's selected agent survives a switch that destroys nothing.
+   * The last two are the transcript's open cards (`TraceFoldState`) and its
+   * selected run (`RunSelectionState`): route-scoped, and the route's injector
+   * is reused when only `:id` changes, so without a reset they would carry
+   * into the next team — and back into this one on a return trip.
    *
    * Safe to call when nothing is open; that is the `''` guard.
    */
@@ -138,6 +147,8 @@ export class TeamSessionService {
     }
     this.akgentService.unselect();
     this.ingestionService.close();
+    this.folds.reset();
+    this.runSelection.reset();
   }
 
   /**

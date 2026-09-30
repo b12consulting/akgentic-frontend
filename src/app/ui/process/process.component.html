@@ -25,14 +25,9 @@
 >
   <div class="conversation-pane">
     <app-process-header></app-process-header>
-    <!-- Epic 55: the header's *New view* switch picks the transcript. Both
-         read the same process-scoped services, so a switch refetches nothing,
-         and both stay direct children of the pane. -->
-    @if (chatView.newView()) {
-      <app-run-tree-panel class="chat-app" [processId]="processId"></app-run-tree-panel>
-    } @else {
-      <app-chat-panel class="chat-app" [processId]="processId"></app-chat-panel>
-    }
+    <!-- Epic 55: the run-tree transcript is the chat. A direct child of the
+         pane, which sizes it through `.chat-app`. -->
+    <app-run-tree-panel class="chat-app" [processId]="processId"></app-run-tree-panel>
   </div>
 
   <!--

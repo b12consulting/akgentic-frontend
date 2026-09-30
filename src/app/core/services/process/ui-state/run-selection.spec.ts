@@ -112,4 +112,12 @@ describe('RunSelectionState', () => {
     selection.selections$.subscribe((e) => late.push(e));
     expect(late).toEqual([]);
   });
+
+  it('reset clears the selection and emits nothing', () => {
+    selection.select(runGraphFold(CASE_5), runKey('S', S), 'tree');
+    events.length = 0;
+    selection.reset();
+    expect(selection.selected()).toBeNull();
+    expect(events).toEqual([]);
+  });
 });

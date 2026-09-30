@@ -56,7 +56,7 @@ describe('LoadingIndicator — the spinner subject (AC2, AC3)', () => {
   it('AC3: the subject instance survives every cycle, and an early subscriber sees the second cycle', () => {
     const unit = setup();
 
-    // Captured BEFORE the first cycle, exactly as `ChatPanelComponent` captures
+    // Captured BEFORE the first cycle, exactly as `RunTreePanelComponent` captures
     // it in a field initializer at construction time and binds it with
     // `| async` for the component's whole life.
     const ref = unit.loadingProcess$;

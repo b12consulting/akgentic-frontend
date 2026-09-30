@@ -18,14 +18,9 @@ import { Subscription } from 'rxjs';
 import { ApiService } from '../../../../platform/http/api.service';
 import { ContextService } from '../../../../platform/context/context.service';
 import { ActorAddress } from '../../../../protocol/message.types';
-import { AkgentService } from '../../../../services/akgent.service';
 import { CategoryService } from '../../../../services/category.service';
 import { IngestionService } from '../../../../services/process/event/ingestion.service';
-import { NodeInterface } from '../../../../services/process/models/types';
-import {
-  defaultRecipientName,
-  isAddressableAgent,
-} from '../../../../services/process/selectors/actor-kind';
+import { defaultRecipientName } from '../../../../services/process/selectors/actor-kind';
 import {
   AgentColours,
   agentColours,
@@ -58,19 +53,10 @@ import {
 import { TraceSummary, traceSummary } from '../../../../services/process/selectors/trace-summary';
 import { seatRevealKeys } from '../../../../services/process/selectors/trace-tree';
 import {
-  Selectable,
-  SelectionService,
-} from '../../../../services/process/ui-state/selection.service';
-import {
   RunSelectionOrigin,
   RunSelectionState,
 } from '../../../../services/process/ui-state/run-selection';
 import { TraceFoldState } from '../../../../services/process/ui-state/trace-fold-state';
-import { AgentReaderService, AgentRef } from '../agent-reader.service';
-import {
-  ConversationModalComponent,
-  ReaderSendRequest,
-} from '../conversation/conversation-modal.component';
 import { ChatMessageComponent } from '../message/chat-message.component';
 import { FeedbackComponent } from '../message/feedback.component';
 import { ProcessUserInputComponent } from '../user-input/user-input.component';
@@ -82,22 +68,22 @@ import { TranscriptScroll } from './transcript-scroll';
 const FLASH_MS = 1200;
 
 /**
- * The run-tree transcript (Epic 55, ADR-037 §D3, §D4, §D8, §D10), behind the
- * header's *New view* switch and beside the untouched `ChatPanelComponent`.
+ * The chat: the run-tree transcript (Epic 55, ADR-037 §D3, §D4, §D8, §D11).
  *
  * - Your messages sit where an agent picked them up; the ones no agent has
  *   taken up yet wait in a "Message(s) sent" tail at the bottom.
  * - Under each, one collapsed trace card per run it opened.
- * - Agent → you bubbles render as in the legacy view, plus a provenance link.
+ * - Agent → you bubbles render through `ChatMessageComponent`, plus a
+ *   provenance link.
  * - No rule-3 or rule-4 rows: they live in the tree, where a waiting seat is
  *   answered through its node's Answer button.
  * - A provenance link, an absorbed-message note or a tree node SELECTS a run
  *   (`RunSelectionState`), which the inspector's Run tab shows.
  *
- * It reads the same process-scoped services as the legacy panel, so a switch
- * refetches nothing. Everything it shows is re-derived from them on each
- * emission; the only state that must outlive it — which cards and nodes are
- * open — is in the process-scoped `TraceFoldState`.
+ * Everything it shows is re-derived from the process-scoped services on each
+ * emission; the state that must outlive a render — which cards and nodes are
+ * open, and which run is selected — is in the process-scoped `TraceFoldState`
+ * and `RunSelectionState`, which the inspector's mini-tree reads too.
  */
 @Component({
   selector: 'app-run-tree-panel',
@@ -105,7 +91,6 @@ const FLASH_MS = 1200;
   imports: [
     CommonModule,
     ChatMessageComponent,
-    ConversationModalComponent,
     FeedbackComponent,
     ProcessUserInputComponent,
     SeatAnswerDialogComponent,
@@ -132,10 +117,7 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
   private readonly ingestionService: IngestionService = inject(IngestionService);
   private readonly contextService: ContextService = inject(ContextService);
   private readonly apiService: ApiService = inject(ApiService);
-  private readonly selectionService: SelectionService = inject(SelectionService);
-  private readonly akgentService: AkgentService = inject(AkgentService);
   private readonly graphDataService: GraphDataService = inject(GraphDataService);
-  private readonly agentReader: AgentReaderService = inject(AgentReaderService);
   private readonly categoryService: CategoryService = inject(CategoryService);
 
   readonly loadingProcess$ = this.ingestionService.loadingProcess$;
@@ -164,23 +146,17 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
   answerVisible = false;
   answerSeat: ActorAddress | null = null;
   answerQuestion: RunMessage | null = null;
+  /** The question's inner id, the key the answer is posted under. */
+  answerMessageId: string | null = null;
   /** The seat run the open dialog answers, so an answer that lands from
    *  elsewhere closes it. */
   private answerKey: RunKey | null = null;
   private view: RunTreeView = { timeline: [], tail: [], tailNotes: new Map() };
-  /** Rule-6 markers the reader opened; re-applied to each emission's copies. */
+  /** Rule-6 markers the person reading opened; re-applied to each emission's copies. */
   private expandedMarkers = new Set<string>();
 
   defaultRecipient: string | null = null;
   agentColours: AgentColours = NO_AGENT_COLOURS;
-
-  // --- the sub-agent reader, hosted as in the legacy panel but fed the run
-  // graph: its runs, triggers and request state come from `graph` (55-5) ------
-  chatMessages: ChatMessage[] = [];
-  readerVisible = false;
-  readerAgents: NodeInterface[] = [];
-  readerSelectedAgentId: string | null = null;
-  readerCanSend = false;
 
   readonly scroll = new TranscriptScroll({
     container: () => this.scrollContainer?.nativeElement ?? null,
@@ -192,17 +168,15 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
 
   ngOnInit(): void {
     this.subscribeRoster();
-    this.subscribeReader();
     this.subscriptions.add(
       this.chatService.justSent$.subscribe(() =>
         this.scroll.armOnSend(this.latestYoursId()),
       ),
     );
     this.subscriptions.add(
-      this.contextService.currentTeamRunning$.subscribe((running) => {
-        this.readerCanSend = running;
-        this.scroll.onRunningChange(running);
-      }),
+      this.contextService.currentTeamRunning$.subscribe((running) =>
+        this.scroll.onRunningChange(running),
+      ),
     );
     this.subscriptions.add(this.runTree.state$.subscribe((s) => this.onState(s)));
   }
@@ -220,22 +194,9 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
   private subscribeRoster(): void {
     this.subscriptions.add(
       this.graphDataService.nodes$.subscribe((nodes) => {
-        this.readerAgents = nodes.filter(isAddressableAgent);
         this.defaultRecipient = defaultRecipientName(nodes, ENTRY_POINT_NAME);
         this.agentColours = agentColours(nodes, this.categoryService.COLORS);
       }),
-    );
-    this.subscriptions.add(
-      this.akgentService.selectedAkgent$.subscribe((akgent) => {
-        this.readerSelectedAgentId = akgent?.agentId ?? null;
-      }),
-    );
-  }
-
-  private subscribeReader(): void {
-    this.subscriptions.add(this.agentReader.open$.subscribe((a) => this.openReaderOn(a)));
-    this.subscriptions.add(
-      this.chatService.messages$.subscribe((m) => (this.chatMessages = m)),
     );
   }
 
@@ -251,11 +212,12 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
     this.cards = this.buildCards(state);
     this.bubbleIds = this.buildBubbleIds(state.view);
     this.closeAnsweredDialog();
-    this.scroll.onEmission(this.latestYoursId(), this.timeline.length + this.tail.length);
+    this.scroll.onEmission(this.latestYoursId(), this.messageRowCount());
   }
 
-  /** Re-apply the marker expand state onto COPIES: `chat$` is shared with the
-   *  legacy panel, so an emitted `ChatMessage` is never mutated. */
+  /** Re-apply the marker expand state onto COPIES: `chat$` replays one
+   *  shared value to every subscriber, so an emitted `ChatMessage` is never
+   *  mutated. */
   private applyView(): void {
     this.tail = this.view.tail;
     this.tailNotes = this.view.tailNotes;
@@ -314,6 +276,14 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
       if (latest === null || m.timestamp.getTime() >= latest.timestamp.getTime()) latest = m;
     }
     return latest?.id ?? null;
+  }
+
+  /** The message rows on screen: the timeline's messages and the tail's
+   *  bubbles. Trace cards and day rows are not messages, so a pick-up (a
+   *  bubble moving from the tail into the timeline with its card) or a new day
+   *  does not count as something new to read. */
+  private messageRowCount(): number {
+    return this.timeline.filter((item) => item.kind === 'message').length + this.tail.length;
   }
 
   get hasContent(): boolean {
@@ -391,19 +361,22 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
   // The tree's outputs
   // ---------------------------------------------------------------------------
 
-  /** A waiting seat's Answer button: the seat and its question. */
+  /** A waiting seat's Answer button: the seat, the answer key and, when the
+   *  log holds it, the question. A seat run's `message_id` IS the question's
+   *  inner id (ADR-037 §D4), so a replay that starts after the question was
+   *  asked can still answer it: the dialog then says the question is not in
+   *  the loaded log. */
   onAnswer(key: RunKey): void {
     const run = this.graph.runs.get(key);
-    const question = run ? this.graph.messages.get(run.message_id) : undefined;
-    if (run === undefined || question === undefined) return;
-    if (runStatus(this.graph, key) !== 'waiting') return;
+    if (run === undefined || runStatus(this.graph, key) !== 'waiting') return;
     this.answerKey = key;
     this.answerSeat = run.agent;
-    this.answerQuestion = question;
+    this.answerMessageId = run.message_id;
+    this.answerQuestion = this.graph.messages.get(run.message_id) ?? null;
     this.answerVisible = true;
   }
 
-  /** A seat answered from elsewhere (the legacy view, another tab) while its
+  /** A seat answered from elsewhere (another tab) while its
    *  dialog is open: close it, so a second answer is never posted. */
   private closeAnsweredDialog(): void {
     if (!this.answerVisible || this.answerKey === null) return;
@@ -428,7 +401,7 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
   }
 
   /** Scroll the bubble into view and flash it. A programmatic scroll may end
-   *  the send pin; the reader asked to move. */
+   *  the send pin; the person reading asked to move. */
   flashBubble(bubble: string): void {
     const el = this.scrollContainer?.nativeElement.querySelector<HTMLElement>(
       `[data-message-id="${CSS.escape(bubble)}"]`,
@@ -449,43 +422,5 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
     if (chatMsg.collapsed) this.expandedMarkers.add(chatMsg.id);
     else this.expandedMarkers.delete(chatMsg.id);
     this.applyView();
-  }
-
-  // ---------------------------------------------------------------------------
-  // The reader (as in the legacy panel)
-  // ---------------------------------------------------------------------------
-
-  onMessageSelected(chatMsg: ChatMessage): void {
-    this.openReaderOn({ agentId: chatMsg.sender.agent_id, actorName: chatMsg.sender.name });
-  }
-
-  onAgentSelected(agent: AgentRef): void {
-    this.openReaderOn(agent);
-  }
-
-  onReaderAgentSelected(agent: AgentRef): void {
-    this.selectAgent(agent.agentId, agent.actorName);
-  }
-
-  onReaderVisibleChange(visible: boolean): void {
-    this.readerVisible = visible;
-  }
-
-  /** The reader's composer: the existing send path, and deliberately NOT
-   *  `emitJustSent` — that pins the main transcript. */
-  onReaderSend(request: ReaderSendRequest): void {
-    this.apiService
-      .sendMessage(this.processId, request.content, request.actorName)
-      .catch((err) => console.error('Failed to send message to agent:', err));
-  }
-
-  private openReaderOn(agent: AgentRef): void {
-    this.selectAgent(agent.agentId, agent.actorName);
-    this.readerVisible = true;
-  }
-
-  private selectAgent(agentId: string, actorName: string): void {
-    const selectable: Selectable = { type: 'message', data: { name: agentId, actorName } };
-    this.selectionService.handleSelection(selectable);
   }
 }

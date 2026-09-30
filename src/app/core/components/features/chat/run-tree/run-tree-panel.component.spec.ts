@@ -1,4 +1,4 @@
-import { ApplicationRef, Component, inject } from '@angular/core';
+import { ApplicationRef } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideMarkdown } from 'ngx-markdown';
@@ -6,7 +6,6 @@ import { MessageService } from 'primeng/api';
 import { BehaviorSubject } from 'rxjs';
 
 import { PrimeNgNotificationAdapter } from '../../../../../ui/console/notification.adapter';
-import { CHAT_VIEW_STORAGE_KEY, ChatViewService } from '../../../../../ui/console/chat-view.service';
 import { ApiService } from '../../../../platform/http/api.service';
 import { NOTIFICATION_PORT } from '../../../../platform/notification/notification.port';
 import { ActorAddress, AkgenticMessage } from '../../../../protocol/message.types';
@@ -50,27 +49,10 @@ import {
   CASE_5_VARIANT,
 } from '../../../../../../testing/run-log-cases';
 import { RunInspectorComponent } from '../../run-inspector/run-inspector.component';
-import { ChatPanelComponent } from '../chat-panel.component';
 import { RunTreePanelComponent } from './run-tree-panel.component';
 import { TranscriptScroll } from './transcript-scroll';
 
 const M = MANAGER.agent_id;
-
-/** A host for the switch round trip: the process view's `@if`, in miniature. */
-@Component({
-  standalone: true,
-  imports: [RunTreePanelComponent, ChatPanelComponent],
-  template: `
-    @if (chatView.newView()) {
-      <app-run-tree-panel processId="team-1"></app-run-tree-panel>
-    } @else {
-      <app-chat-panel processId="team-1"></app-chat-panel>
-    }
-  `,
-})
-class SwitchHostComponent {
-  readonly chatView = inject(ChatViewService);
-}
 
 function apiSpy(): jasmine.SpyObj<ApiService> {
   const methods = Object.getOwnPropertyNames(ApiService.prototype).filter(
@@ -96,7 +78,7 @@ describe('RunTreePanelComponent', () => {
       init: jasmine.createSpy('init'),
     };
     await TestBed.configureTestingModule({
-      imports: [RunTreePanelComponent, SwitchHostComponent, NoopAnimationsModule],
+      imports: [RunTreePanelComponent, NoopAnimationsModule],
       providers: [
         provideTranslateTesting(),
         provideMarkdown(),
@@ -125,8 +107,6 @@ describe('RunTreePanelComponent', () => {
     }).compileComponents();
     log = TestBed.inject(MessageLogService);
   });
-
-  afterEach(() => localStorage.removeItem(CHAT_VIEW_STORAGE_KEY));
 
   function mount(): ComponentFixture<RunTreePanelComponent> {
     const fixture = TestBed.createComponent(RunTreePanelComponent);
@@ -184,41 +164,9 @@ describe('RunTreePanelComponent', () => {
     processed('Re', MANAGER, 14),
   ];
 
-  it('shows the empty state with the legacy keys', () => {
+  it('shows the empty state with its keys', () => {
     const fixture = mount();
     expect(text(el(fixture).querySelector('.chat-placeholder-title'))).toBe('chat.emptyTitle');
-  });
-
-  it('feeds the sub-agent reader the run graph: @Expert’s block is asked by @Manager', () => {
-    const node = (agentId: string, role: string, actorName: string): NodeInterface => ({
-      name: agentId,
-      role,
-      actorName,
-      parentId: '',
-      squadId: 'squad-1',
-      symbol: 'roundRect',
-      category: 0,
-      userMessage: false,
-    });
-    const nodes$ = TestBed.inject(GraphDataService).nodes$ as BehaviorSubject<NodeInterface[]>;
-    nodes$.next([node(M, 'Manager', '@Manager'), node(EXPERT.agent_id, 'Expert', '@Expert')]);
-    TestBed.inject(AkgentService).selectedAkgent$.next({
-      name: '@Expert',
-      agentId: EXPERT.agent_id,
-    });
-    log.appendAll(CASE_2);
-    const fixture = mount();
-
-    fixture.componentInstance.onAgentSelected({ agentId: EXPERT.agent_id, actorName: '@Expert' });
-    fixture.detectChanges();
-
-    const block = document.querySelector(
-      `app-conversation-modal [data-reader-run-key="${runKey('De', EXPERT.agent_id)}"]`,
-    );
-    expect(block).not.toBeNull();
-    expect(text(block!.querySelector('.reader-run-head'))).toContain('@Manager');
-    expect(block!.querySelector('.reader-run-asker-link')).not.toBeNull();
-    expect(document.querySelector('app-conversation-modal app-thinking')).toBeNull();
   });
 
   it('case 7: the queued follow-ups sit in the tail, then move into the timeline', () => {
@@ -411,7 +359,7 @@ describe('RunTreePanelComponent', () => {
     const fixture = mount();
     const root = runKey('U1', M);
     openCard(fixture, root);
-    // The reader folds @Expert's branch (the reveal had opened it for the seat).
+    // The person reading folds @Expert's branch (the reveal had opened it for the seat).
     const expert = runKey('D1', EXPERT.agent_id);
     el(fixture)
       .querySelector<HTMLButtonElement>(`.tree-node[data-run-key="${expert}"] .node-chevron`)!
@@ -651,6 +599,33 @@ describe('RunTreePanelComponent', () => {
     expect(error).toHaveBeenCalledWith('Failed to send human input:', jasmine.any(Error));
   });
 
+  it('answers a waiting seat whose question is not in the loaded log, keyed by the seat run', async () => {
+    // A replay that starts after @Manager asked: the seat's run is there, the
+    // question is not. The seat run's `message_id` is the question's inner id.
+    log.appendAll([received('S', SUPPORT, 6), processed('S', SUPPORT, 7)]);
+    const fixture = mount();
+    const seat = runKey('S', SUPPORT.agent_id);
+    fixture.componentInstance.onAnswer(seat);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance.answerVisible).toBeTrue();
+    expect(fixture.componentInstance.answerQuestion).toBeNull();
+    expect(text(document.querySelector('app-seat-answer-dialog .seat-unknown-question'))).toBe(
+      'chat.runTree.answerDialog.unknownQuestion',
+    );
+
+    const area = document.querySelector<HTMLTextAreaElement>('app-seat-answer-dialog textarea')!;
+    area.value = 'yes';
+    area.dispatchEvent(new Event('input'));
+    fixture.detectChanges();
+    document.querySelector<HTMLButtonElement>('app-seat-answer-dialog .seat-send')!.click();
+    fixture.detectChanges();
+
+    expect(api.processHumanInput).toHaveBeenCalledOnceWith('team-1', 'yes', 'S');
+  });
+
   it('opening a card reveals a seat two levels down; its sibling branch stays folded', () => {
     log.appendAll(CASE_5_VARIANT);
     const fixture = mount();
@@ -720,49 +695,9 @@ describe('RunTreePanelComponent', () => {
     expect(after?.kind === 'message' && after.data.collapsed).toBeFalse();
     let shared = true;
     TestBed.inject(ChatService)
-      .messages$.subscribe((ms) => (shared = ms.find((m) => m.rule === 6)!.collapsed))
+      .chat$.subscribe((s) => (shared = s.messages.find((m) => m.rule === 6)!.collapsed))
       .unsubscribe();
     expect(shared).toBeTrue();
-  });
-
-  // -------------------------------------------------------------------------
-  // The switch round trip (AC 2)
-  // -------------------------------------------------------------------------
-
-  it('switching back and forth refetches nothing and keeps an open card open', () => {
-    log.appendAll([
-      sent('U1', HUMAN, MANAGER, null, 1),
-      received('U1', MANAGER, 2),
-      sent('A1', MANAGER, HUMAN, 'U1', 3),
-      processed('U1', MANAGER, 4),
-    ]);
-    const logLength = log.snapshot().length;
-    const chatView = TestBed.inject(ChatViewService);
-    const fixture = TestBed.createComponent(SwitchHostComponent);
-    fixture.detectChanges();
-    expect(el(fixture).querySelector('app-chat-panel')).not.toBeNull();
-
-    chatView.toggle();
-    fixture.detectChanges();
-    const firstRows = rows(fixture);
-    el(fixture).querySelector<HTMLButtonElement>('.trace-toggle')!.click();
-    fixture.detectChanges();
-
-    chatView.toggle();
-    fixture.detectChanges();
-    expect(el(fixture).querySelector('app-run-tree-panel')).toBeNull();
-    chatView.toggle();
-    fixture.detectChanges();
-
-    expect(rows(fixture)).toEqual(firstRows);
-    expect(el(fixture).querySelector('.trace-body')).not.toBeNull();
-    expect(log.snapshot().length).toBe(logLength);
-    expect(ingestion.init).not.toHaveBeenCalled();
-    for (const name of Object.keys(api)) {
-      expect((api[name as keyof ApiService] as jasmine.Spy).calls.count())
-        .withContext(name)
-        .toBe(0);
-    }
   });
 
   // -------------------------------------------------------------------------
@@ -977,6 +912,42 @@ describe('RunTreePanelComponent', () => {
       expect(inTail(U1)).toBeFalse();
       expect(scrollTo).toHaveBeenCalledTimes(1);
       expectPinned(U1);
+    });
+
+    /** Settle, then let the pill's queued update land. */
+    async function pill(): Promise<string | null> {
+      settle();
+      await Promise.resolve();
+      return fixture.componentInstance.scroll.indicatorLabel;
+    }
+
+    it('a pick-up raises no "New messages"; a new answer below the fold does', async () => {
+      const turns: AkgenticMessage[] = [];
+      for (let i = 1; i <= 6; i++) {
+        const t = i * 10;
+        turns.push(
+          sent('U' + i, HUMAN, MANAGER, null, t),
+          received('U' + i, MANAGER, t + 1),
+          sent('A' + i, MANAGER, HUMAN, 'U' + i, t + 2),
+          processed('U' + i, MANAGER, t + 3),
+        );
+      }
+      log.appendAll([...turns, sent('U7', HUMAN, MANAGER, null, 70)]);
+      settle();
+      const container = host.querySelector('.message-list') as HTMLElement;
+      container.scrollTop = 0;
+      fixture.componentInstance.scroll.onScroll();
+      expect(await pill()).toBe('chat.messages');
+
+      // The pick-up: U7 leaves the tail for the timeline and gains a trace
+      // card. Nothing new to read.
+      log.append(received('U7', MANAGER, 71));
+      expect(await pill()).toBe('chat.messages');
+      expect(inTail(envId('U7', MANAGER))).toBeFalse();
+
+      // An agent → you answer below the fold is.
+      log.append(sent('A7', MANAGER, HUMAN, 'U7', 72));
+      expect(await pill()).toBe('chat.newMessages');
     });
   });
 });

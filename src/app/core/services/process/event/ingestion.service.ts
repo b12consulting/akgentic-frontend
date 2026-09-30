@@ -128,7 +128,7 @@ export class IngestionService {
 
   /**
    * Story 4-10 (AC7) / Epic 18 (ADR-015 §2): the loading-spinner state, read by
-   * `ChatPanelComponent` from here. An alias onto `LoadingIndicator`'s subject —
+   * `RunTreePanelComponent` from here. An alias onto `LoadingIndicator`'s subject —
    * the same object, not a copy, and never a `.pipe(...)` derivative: the type
    * stays `BehaviorSubject<boolean>` because `.value` is part of the surface,
    * and the reference must survive every cycle because the chat panel captures

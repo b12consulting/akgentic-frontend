@@ -72,10 +72,7 @@
     "autoScrolling": "Défilement automatique",
     "newMessages": "Nouveaux messages",
     "messages": "Messages",
-    "reply": "Répondre",
     "sentTo": "Envoyé à {{agent}}",
-    "messageForYou": "Message pour vous",
-    "teamMessage": "Message d'équipe",
     "input": {
       "sendToPrefix": "Envoyer à {{agents}}",
       "clearSendTo": "Effacer la sélection des destinataires",
@@ -91,48 +88,14 @@
       "send": "Envoyer",
       "sendAsSelf": "Vous"
     },
-    "human": {
-      "header": "Intervention humaine",
-      "noRequests": "Aucune demande pour cette paire.",
-      "answered": "Traitées",
-      "pending": "En attente",
-      "yourReply": "Votre réponse :",
-      "replyPlaceholder": "Saisissez votre réponse...",
-      "send": "Envoyer"
-    },
     "reader": {
-      "header": "Conversation de l’agent",
-      "agentList": "Agents de l'équipe",
-      "noAgents": "Cette équipe n'a encore aucun agent.",
-      "noTurns": "{{agent}} n'a encore envoyé ni reçu aucun message.",
-      "selectAgent": "Sélectionnez un agent pour lire sa conversation.",
       "composer": {
-        "placeholder": "Message à {{agent}}",
-        "send": "Envoyer",
-        "stoppedHint": "Démarrez l’équipe pour envoyer un message."
-      },
-      "run": {
-        "askedBy": "demandé par",
-        "askedByYou": "demandé par vous",
-        "stepsOne": "1 étape",
-        "stepsMany": "{{count}} étapes",
-        "expand": "Afficher les étapes de cette exécution",
-        "collapse": "Masquer les étapes de cette exécution"
+        "placeholder": "Message à {{agent}}"
       }
     },
     "activity": {
-      "latest": "utilise {{tool}}",
-      "latestDone": "a utilisé {{tool}}",
-      "step": "{{tool}}",
-      "steps": "{{count}} étapes",
-      "expand": "Ce qui s’est passé",
-      "collapse": "Masquer",
-      "latestContact": "contacte {{tool}}",
-      "latestContactDone": "a contacté {{tool}}",
       "stepContact": "a contacté {{tool}}",
       "contactTitle": "A demandé à {{tool}}",
-      "showRaw": "Afficher le détail",
-      "hideRaw": "Masquer le détail",
       "tool": {
         "hireMembers": "A recruté un membre de l'équipe",
         "readMessage": "A lu un message de la boîte de réception",
@@ -149,17 +112,6 @@
       "placeholder": "Saisissez votre retour ici...",
       "cancel": "Annuler",
       "submit": "Envoyer"
-    },
-    "request": {
-      "asks": "A demandé à {{agent}}",
-      "pending": "En attente de votre réponse",
-      "answered": "Répondu"
-    },
-    "notice": {
-      "contacted": "a contacté {{agent}}"
-    },
-    "view": {
-      "newView": "Nouvelle vue"
     },
     "runTree": {
       "messageSent": "Message envoyé",
@@ -215,7 +167,8 @@
         "asked": "{{agent}} a demandé à {{time}}",
         "placeholder": "Saisissez votre réponse…",
         "send": "Envoyer la réponse",
-        "cancel": "Annuler"
+        "cancel": "Annuler",
+        "unknownQuestion": "La question ne figure pas dans le journal chargé."
       }
     }
   },
@@ -410,9 +363,7 @@
         "abort": "annulée"
       }
     },
-    "readConversation": "Lire la conversation",
-    "readConversationOf": "Lire la conversation de {{agent}}",
-    "openMemberTab": "Ouvrir dans l'onglet Membre"
+    "openMemberDetails": "Ouvrir la fiche de {{agent}}"
   },
   "login": {
     "heading": "Connexion",

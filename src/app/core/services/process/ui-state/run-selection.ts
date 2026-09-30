@@ -20,16 +20,15 @@ export interface RunSelection {
  * Nothing selects on its own, so nothing is highlighted until the user asks.
  *
  * The reveal is done HERE rather than by the transcript panel: a mini-tree
- * click happens in the inspector, possibly while the legacy view is showing
- * and the panel does not exist. The folds are process-scoped, so the reveal is
- * too, and switching to the new view later shows the card open.
+ * click happens in the inspector, not in the transcript. The folds are
+ * process-scoped, so the reveal is too.
  *
  * Opening the inspector on the Run tab is the host's (`ProcessComponent`), the
  * only tier allowed to touch the tab mode; it answers `selections$`.
  *
- * Never cleared: there is no "deselect" gesture. Nor does a team switch clear
- * it: the route's injector outlives the team, so a selection survives a round
- * trip back to the same team (a deferred finding of Epic 55).
+ * There is no "deselect" gesture. A team switch clears it: the route's
+ * injector outlives a team, so `TeamSessionService.close()` calls `reset()`,
+ * and a selection never carries into the next team or back into its own.
  */
 @Injectable()
 export class RunSelectionState {
@@ -53,5 +52,11 @@ export class RunSelectionState {
     this.folds.expandNodes(revealKeysFor(graph, key));
     this._selected.set(key);
     this._selections.next({ key, origin });
+  }
+
+  /** Forget the selection: the team it belongs to is closing. Emits nothing on
+   *  `selections$`, since nobody asked to see a run. */
+  reset(): void {
+    this._selected.set(null);
   }
 }

@@ -18,6 +18,13 @@
   line-height: 1.5;
 }
 
+/* The question is not in the loaded log: say so, quietly. */
+.seat-unknown-question {
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--akg-text-muted);
+}
+
 .seat-draft {
   width: 100%;
   min-height: 80px;

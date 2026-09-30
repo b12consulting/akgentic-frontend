@@ -159,9 +159,6 @@ export const PROCESS_PROVIDERS = [
   // team's frames into the next team's log.
   LogFeeder,
   IngestionService,
-  // The open/close ritual itself. Provided AFTER IngestionService for the same
-  // reading-order reason as everything else here; it injects it.
-  TeamSessionService,
   // Epic 26 (ADR-022): route-scoped read surface over the `tokenUsage`
   // PerAgentStore. Provided AFTER IngestionService (which it injects); never
   // `providedIn: 'root'` — it shares the team-scoped log lifecycle, so a team
@@ -177,14 +174,20 @@ export const PROCESS_PROVIDERS = [
   // emission's `chat$` and `graph$`. Provided AFTER both (it injects them);
   // never `providedIn: 'root'` — it shares the team-scoped log lifecycle.
   RunTreeService,
-  // Epic 55: which trace cards are open, keyed by root run. Process-scoped so
-  // an open card survives the New view switch destroying the panel, and a
-  // team switch does not carry one team's open cards into the next.
+  // Epic 55: which trace cards are open, keyed by root run. Process-scoped
+  // because the inspector's mini-tree reveals runs in it too; reset by
+  // TeamSessionService on a team switch, so one team's open cards never carry
+  // into the next.
   TraceFoldState,
   // Epic 55: the selected run, shared by the transcript and the inspector's
   // Run tab. Provided AFTER TraceFoldState (it injects it: a selection reveals
   // its run in the transcript's folds). Process-scoped for the same reasons.
   RunSelectionState,
+  // The open/close ritual itself. Provided AFTER IngestionService,
+  // TraceFoldState and RunSelectionState, for the same reading-order reason as
+  // everything else here: it injects all three, and resets the last two when
+  // it closes a team.
+  TeamSessionService,
   SelectionService,
   FeedbackService,
 ];

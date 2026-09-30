@@ -80,8 +80,8 @@ function pad(value: number): string {
 /**
  * THE ALL-TRAFFIC LOG.
  *
- * Every other reader in the console is scoped to somebody: the chat panel is
- * the human's turns, the sub-agent reader is one participant's. This panel is
+ * Every other view in the console is scoped to somebody: the chat is the
+ * human's turns, the Member tab is one participant's. This panel is
  * the only place where every message the team exchanged appears in one
  * chronological stream, which is why it survived the round that considered
  * dropping it (W16) — and it is now built as what it is, rather than as a

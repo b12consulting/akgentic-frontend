@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { BehaviorSubject } from 'rxjs';
 
 import { AkgenticMessage } from '../../../protocol/message.types';
 import {
@@ -603,5 +604,43 @@ describe('RunTreeService', () => {
       ];
       expect(inView.sort()).toEqual(inGraph.sort());
     }
+  });
+
+  it('a new subscriber after the last one left still gets the current state', () => {
+    const first = service.state$.subscribe();
+    log.appendAll([sent('U1', HUMAN, MANAGER, null, 1), received('U1', MANAGER, 2)]);
+    first.unsubscribe();
+
+    let latest: RunTreeState | undefined;
+    service.state$.subscribe((s) => (latest = s)).unsubscribe();
+    expect(latest).toBeDefined();
+    expect(shape(latest!.view)).toEqual(['msg:U1', `trace:${k('U1', M)}`]);
+    expect(latest!.graph.messages.has('U1')).toBeTrue();
+  });
+});
+
+/** `state$` stops folding when nobody listens: the upstream folds are faked
+ *  here so their subscription is observable. */
+describe('RunTreeService — ref-counted', () => {
+  it('stops running buildRunTreeView after the last unsubscribe', () => {
+    const chat$ = new BehaviorSubject(chatFold([]));
+    const graph$ = new BehaviorSubject(runGraphFold([]));
+    TestBed.configureTestingModule({
+      providers: [
+        RunTreeService,
+        { provide: ChatService, useValue: { chat$ } },
+        { provide: RunGraphService, useValue: { graph$ } },
+      ],
+    });
+    const service = TestBed.inject(RunTreeService);
+
+    const a = service.state$.subscribe();
+    const b = service.state$.subscribe();
+    expect(chat$.observed).toBeTrue();
+    a.unsubscribe();
+    expect(chat$.observed).withContext('one subscriber left').toBeTrue();
+    b.unsubscribe();
+    expect(chat$.observed).withContext('nobody left').toBeFalse();
+    expect(graph$.observed).toBeFalse();
   });
 });

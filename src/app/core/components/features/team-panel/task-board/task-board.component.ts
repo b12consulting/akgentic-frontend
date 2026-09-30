@@ -117,7 +117,7 @@ export class TaskBoardComponent {
   }
 
   /** `localStorage` throws outright when the browser blocks storage; a refused
-   *  read means "show everything". The `chat-view.service.ts` pattern. */
+   *  read means "show everything". */
   private readHideClosed(): boolean {
     try {
       return localStorage.getItem(TASK_BOARD_HIDE_CLOSED_KEY) === 'true';

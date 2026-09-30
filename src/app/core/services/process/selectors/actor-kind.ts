@@ -95,9 +95,9 @@ export function isHumanNode(node: Pick<ActorNode, 'role'>): boolean {
  * The graph's node list is everything the team contains, and every surface that
  * offers a list of PEOPLE narrows it the same way: no tools, and not the user
  * themselves. Stated once, as one predicate, because the two exclusions had
- * started being applied in different combinations — the reader's left-hand
- * column dropped the tools and kept the human, so the person reading it was
- * offered their own transcript beside the agents', which is the main chat.
+ * started being applied in different combinations — the sub-agent reader's
+ * left-hand column (since removed, Epic 55) dropped the tools and kept the
+ * human, offering the person reading it their own transcript.
  */
 export function isAddressableAgent(
   node: Pick<ActorNode, 'actorName' | 'role'>,

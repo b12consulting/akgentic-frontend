@@ -20,9 +20,11 @@ export interface SeatAnswer {
  * "Answer as @X" (Epic 55, ADR-037 §D4): answering a waiting human seat from
  * the node the question sits on.
  *
- * One question, one text area. It emits the trimmed answer keyed by the
- * question's inner id (`RunMessage.id`), as the legacy dialog keys its replies
- * by `ChatMessage.message_id`; it never keys by a run key or an envelope id.
+ * One question, one text area. It emits the trimmed answer keyed by
+ * `messageId`, the question's inner id, which the host takes from the seat
+ * run (ADR-037 §D4); it never keys by a run key or an envelope id. The key is
+ * separate from `question` because a replay that starts mid-conversation may
+ * not hold the question: the dialog then says so, and still sends.
  * Nothing is shown optimistically: the seat's node turns `answered` when its
  * reply arrives on the log.
  *
@@ -47,7 +49,10 @@ export interface SeatAnswer {
 export class SeatAnswerDialogComponent {
   visible = input<boolean>(false);
   seat = input<ActorAddress | null>(null);
+  /** The question, when the loaded log holds it. Display only. */
   question = input<RunMessage | null>(null);
+  /** The question's inner id: the answer key. Without it nothing sends. */
+  messageId = input<string | null>(null);
 
   visibleChange = output<boolean>();
   send = output<SeatAnswer>();
@@ -63,14 +68,14 @@ export class SeatAnswerDialogComponent {
   }
 
   get canSend(): boolean {
-    return this.draft.trim().length > 0 && this.question() !== null;
+    return this.draft.trim().length > 0 && this.messageId() !== null;
   }
 
   onSend(): void {
-    const question = this.question();
+    const messageId = this.messageId();
     const content = this.draft.trim();
-    if (question === null || !content) return;
-    this.send.emit({ content, messageId: question.id });
+    if (messageId === null || !content) return;
+    this.send.emit({ content, messageId });
     this.close();
   }
 

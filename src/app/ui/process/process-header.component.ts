@@ -6,7 +6,6 @@ import { TranslatePipe } from '@ngx-translate/core';
 
 import { ContextService } from '../../core/platform/context/context.service';
 import { TeamMetadataPipe } from '../../core/platform/context/team-metadata.pipe';
-import { ChatViewService } from '../console/chat-view.service';
 import { ViewService } from '../console/view.service';
 import { IconButtonComponent } from '../../core/components/primitives/icon-button/icon-button.component';
 
@@ -49,8 +48,6 @@ import { IconButtonComponent } from '../../core/components/primitives/icon-butto
 export class ProcessHeaderComponent {
   readonly contextService: ContextService = inject(ContextService);
   readonly viewService: ViewService = inject(ViewService);
-  /** The *New view* switch (Epic 55): which chat transcript the pane shows. */
-  readonly chatView: ChatViewService = inject(ChatViewService);
 
   /**
    * Is a team open at all?

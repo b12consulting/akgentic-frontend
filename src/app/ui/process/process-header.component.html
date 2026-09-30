@@ -94,24 +94,6 @@
     {{ 'chrome.clear' | translate }}
   </button>
 
-  <!--
-    Epic 55: the run-tree *New view* switch. A real button with `aria-pressed`,
-    so its state is announced rather than inferred from a tint. It stays
-    available with no team open: it is the viewer's preference, not the team's.
-  -->
-  <button
-    type="button"
-    class="header-action header-action--quiet chat-view-switch"
-    [class.is-open]="chatView.newView()"
-    [attr.aria-pressed]="chatView.newView()"
-    (click)="chatView.toggle()"
-  >
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
-      <path d="M5 4v16M5 8h6M5 16h6M11 6h8v4h-8zM11 14h8v4h-8z" />
-    </svg>
-    {{ 'chat.view.newView' | translate }}
-  </button>
-
   @if (teamOpen$ | async) {
     <!--
       `aria-controls` names the inspector's <aside>, which is rendered by a

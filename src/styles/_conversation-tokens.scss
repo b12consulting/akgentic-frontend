@@ -186,11 +186,8 @@
   // paragraphs want air — but it was measured against a transcript of speech,
   // and it sits on top of each turn's own `--akg-turn-padding`.
   //
-  // THE SPACE BETWEEN TWO TURNS, which is not the only spacing on the surface.
-  // A run of one-line system notices is one agent working rather than a list of
-  // unrelated events, and those close up against each other instead — see
-  // `.quiet-line + .quiet-line` in `chat-panel.component.scss`. Stating that
-  // exception there is what lets this value stay about turns.
+  // THE SPACE BETWEEN TWO ROWS of the transcript (`run-tree-panel.component.scss`
+  // writes it between siblings); a row that wants less overrides it there.
   --akg-turn-gap: 18px;
   --akg-turn-font-size: 14.5px;
   --akg-turn-line-height: 1.65;

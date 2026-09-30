@@ -34,8 +34,7 @@ const AGENT_MARK = '\u0001';
  *
  * The HEADER is the whole of this story's card: tree icon, stacked avatars, a
  * title in one of four states, `N runs · M tools · duration`, a status and a
- * chevron. It keeps the look of the activity fold it replaces
- * (`thinking.component`).
+ * chevron: the quiet look of the activity fold it replaced.
  *
  * It starts collapsed and owns no fold state: the panel reads `open` from the
  * process-scoped `TraceFoldState`, keyed by the root run, so a card stays open
@@ -74,7 +73,7 @@ export class TraceCardComponent {
   readonly lead = computed<ActorAddress>(() => this.summary().agents[0]);
 
   /** Every agent after the root's, joined by the locale's own list rules —
-   *  `Intl.ListFormat`, as `thinking.component` does. */
+   *  `Intl.ListFormat`. */
   readonly others = computed<string>(() =>
     new Intl.ListFormat(this.i18n.currentLanguage || undefined, {
       style: 'long',
@@ -169,7 +168,7 @@ export class TraceCardComponent {
   }
 
   /** The chevron sits inside the clickable header: stop the bubbling click so
-   *  the card does not toggle twice (the `thinking.component` pattern). */
+   *  the card does not toggle twice. */
   onToggleFromButton(event: MouseEvent): void {
     event.stopPropagation();
     this.onToggle();

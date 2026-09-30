@@ -72,10 +72,7 @@
     "autoScrolling": "Auto scrolling",
     "newMessages": "New messages",
     "messages": "Messages",
-    "reply": "Reply",
     "sentTo": "Sent to {{agent}}",
-    "messageForYou": "Message for you",
-    "teamMessage": "Team message",
     "input": {
       "sendToPrefix": "Send to {{agents}}",
       "clearSendTo": "Clear Send-to selection",
@@ -91,48 +88,14 @@
       "send": "Send",
       "sendAsSelf": "You"
     },
-    "human": {
-      "header": "Human Input",
-      "noRequests": "No requests for this pair.",
-      "answered": "Answered",
-      "pending": "Pending",
-      "yourReply": "Your reply:",
-      "replyPlaceholder": "Type your reply...",
-      "send": "Send"
-    },
     "reader": {
-      "header": "Agent conversation",
-      "agentList": "Team agents",
-      "noAgents": "This team has no agents yet.",
-      "noTurns": "{{agent}} has not sent or received any messages yet.",
-      "selectAgent": "Select an agent to read its conversation.",
       "composer": {
-        "placeholder": "Message {{agent}}",
-        "send": "Send",
-        "stoppedHint": "Start the team to send a message."
-      },
-      "run": {
-        "askedBy": "asked by",
-        "askedByYou": "asked by you",
-        "stepsOne": "1 step",
-        "stepsMany": "{{count}} steps",
-        "expand": "Show this run's steps",
-        "collapse": "Hide this run's steps"
+        "placeholder": "Message {{agent}}"
       }
     },
     "activity": {
-      "latest": "is using {{tool}}",
-      "latestDone": "used {{tool}}",
-      "step": "{{tool}}",
-      "steps": "{{count}} steps",
-      "expand": "What happened",
-      "collapse": "Hide",
-      "latestContact": "contacted {{tool}}",
-      "latestContactDone": "contacted {{tool}}",
       "stepContact": "contacted {{tool}}",
       "contactTitle": "Asked {{tool}}",
-      "showRaw": "Show raw",
-      "hideRaw": "Hide raw",
       "tool": {
         "hireMembers": "Brought in a team member",
         "readMessage": "Read a message from the inbox",
@@ -149,17 +112,6 @@
       "placeholder": "Enter your feedback here...",
       "cancel": "Cancel",
       "submit": "Submit"
-    },
-    "request": {
-      "asks": "Asked {{agent}}",
-      "pending": "Awaiting your reply",
-      "answered": "Answered"
-    },
-    "notice": {
-      "contacted": "contacted {{agent}}"
-    },
-    "view": {
-      "newView": "New view"
     },
     "runTree": {
       "messageSent": "Message sent",
@@ -215,7 +167,8 @@
         "asked": "{{agent}} asked at {{time}}",
         "placeholder": "Type your answer…",
         "send": "Send answer",
-        "cancel": "Cancel"
+        "cancel": "Cancel",
+        "unknownQuestion": "The question is not in the loaded log."
       }
     }
   },
@@ -410,9 +363,7 @@
         "abort": "aborted"
       }
     },
-    "readConversation": "Read the conversation",
-    "readConversationOf": "Read {{agent}}'s conversation",
-    "openMemberTab": "Open in the Member tab"
+    "openMemberDetails": "Open {{agent}}'s details"
   },
   "login": {
     "heading": "Sign in",

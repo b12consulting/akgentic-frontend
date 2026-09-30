@@ -59,8 +59,8 @@ export type RunStep =
       at: Date;
       tool_call_id: string;
       tool_name: string;
-      /** What it was called with: the legacy thinking bubble's one-line
-       *  preview of the JSON arguments, `''` when there were none. The
+      /** What it was called with: a one-line preview of the JSON
+       *  arguments, `''` when there were none. The
        *  preview, not the payload — a fold must not hold every argument. */
       arguments_preview: string;
       done: boolean;
@@ -256,10 +256,11 @@ function applyHandled(graph: RunGraph, msg: HandledMessage): RunGraph {
   );
 }
 
-/** The legacy thinking bubble's preview length (`applyToolCallToThinking`). */
+/** A tool call's arguments preview length: long enough for the step's
+ *  supporting line and its "Show raw". */
 export const TOOL_ARGUMENTS_PREVIEW_LENGTH = 160;
 
-/** A call's arguments as one line, through the legacy `buildPreview`. An empty
+/** A call's arguments as one line, through `buildPreview`. An empty
  *  object is no arguments at all: the step then shows its name alone. */
 export function toolArgumentsPreview(argumentsJson: string | null | undefined): string {
   const json = (argumentsJson ?? '').trim();

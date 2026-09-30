@@ -3,10 +3,6 @@ import { TranslationObject } from '@ngx-translate/core';
 import { BehaviorSubject, of } from 'rxjs';
 
 import { TeamPanelComponent } from './team-panel.component';
-import {
-  AgentReaderService,
-  AgentRef,
-} from '../chat/agent-reader.service';
 import { IngestionService } from '../../../services/process/event/ingestion.service';
 import { NodeInterface } from '../../../services/process/models/types';
 import { GraphDataService } from '../../../services/process/selectors/graph.selector';
@@ -244,91 +240,42 @@ describe('TeamPanelComponent', () => {
       const seen: string[] = [];
       fixture.componentInstance.memberSelected.subscribe((id) => seen.push(id));
 
-      // The ICON carries the selection now; the row opens the reader.
-      host().querySelector<HTMLButtonElement>('.member-read button')?.click();
+      // The whole card is the control; it opens the Member tab.
+      host().querySelector<HTMLButtonElement>('.member-card')?.click();
 
       expect(seen).toEqual(['boss']);
     });
-  });
 
-  // ==========================================================================
-  // W5a — opening the sub-agent reader from a member row.
-  //
-  // The reader is mounted in the chat panel, past the split, so this panel asks
-  // the root-scoped launcher instead of emitting. These specs pin BOTH halves:
-  // that the ask happens, and that the pre-existing selection path is not
-  // quietly rerouted into it.
-  // ==========================================================================
-  describe('opening the reader', () => {
-    /** THE ROW is the read action now; the icon carries the tab switch. */
-    function readAction(): HTMLButtonElement {
-      const el = host().querySelector<HTMLButtonElement>('.member-card');
-      if (el === null) {
-        throw new Error('the member row did not render');
-      }
-      return el;
-    }
-
-    it('asks the reader service for the clicked member, id AND raw actor name', async () => {
-      // The actor name is what the reader's composer addresses a reply to, and
-      // it must be the RAW one — the friendly label ('Manager [Supervisor]')
-      // is not a thing the API can route on.
-      await setup([node({ name: 'boss', actorName: 'Manager-Supervisor-0' })]);
-      const asked: AgentRef[] = [];
-      TestBed.inject(AgentReaderService).open$.subscribe((a) => asked.push(a));
-
-      readAction().click();
-
-      expect(asked).toEqual([
-        { agentId: 'boss', actorName: 'Manager-Supervisor-0' },
-      ]);
-    });
-
-    it('does not also emit memberSelected — the tab must not move behind the dialog', async () => {
-      await setup([node({ name: 'boss', actorName: 'Manager-Supervisor-0' })]);
-      const selected: string[] = [];
-      fixture.componentInstance.memberSelected.subscribe((id) =>
-        selected.push(id),
-      );
-
-      readAction().click();
-
-      expect(selected).toEqual([]);
-    });
-
-    it('leaves the icon alone: it selects and asks for no reader', async () => {
-      // The Epic-56 path is the one thing this change must not cost. It moved
-      // from the row to the icon; what must not happen is it disappearing, or
-      // both destinations firing from one press.
-      await setup([node({ name: 'boss', actorName: 'Manager-Supervisor-0' })]);
-      const asked: AgentRef[] = [];
-      const selected: string[] = [];
-      TestBed.inject(AgentReaderService).open$.subscribe((a) => asked.push(a));
-      fixture.componentInstance.memberSelected.subscribe((id) =>
-        selected.push(id),
-      );
-
-      host().querySelector<HTMLButtonElement>('.member-read button')?.click();
-
-      expect(selected).toEqual(['boss']);
-      expect(asked).toEqual([]);
-    });
-
-    it('asks for the row that was activated, not the first one on the pane', async () => {
+    it('reports the card that was activated, not the first one on the pane', async () => {
       await setup([
         node({ name: 'boss', actorName: 'Manager-Supervisor-0' }),
         node({ name: 'w1', actorName: 'Alpha-Worker-0', parentId: 'boss' }),
       ]);
-      const asked: AgentRef[] = [];
-      TestBed.inject(AgentReaderService).open$.subscribe((a) => asked.push(a));
+      const seen: string[] = [];
+      fixture.componentInstance.memberSelected.subscribe((id) => seen.push(id));
 
-      const rows = host().querySelectorAll<HTMLButtonElement>('.member-card');
-      expect(rows.length).toBe(2);
-      rows[1].click();
+      const cards = host().querySelectorAll<HTMLButtonElement>('.member-card');
+      expect(cards.length).toBe(2);
+      cards[1].click();
 
-      expect(asked).toEqual([
-        { agentId: 'w1', actorName: 'Alpha-Worker-0' },
+      expect(seen).toEqual(['w1']);
+    });
+
+    /** The Member tab lists agents only, so the human card has nothing to open. */
+    it('leaves the human card a plain card that emits nothing', async () => {
+      await setup([
+        node({ name: 'me', actorName: 'Human-Proxy-0', role: HUMAN_ROLE }),
+        node({ name: 'boss', actorName: 'Manager-Supervisor-0' }),
       ]);
+      const seen: string[] = [];
+      fixture.componentInstance.memberSelected.subscribe((id) => seen.push(id));
+
+      const human = host().querySelector<HTMLElement>('.human-card')!;
+      expect(human.tagName).toBe('DIV');
+      expect(human.querySelector('button')).toBeNull();
+      human.click();
+
+      expect(seen).toEqual([]);
     });
   });
 });
