@@ -383,6 +383,22 @@ describe('buildRunTreeView — a Send-as message', () => {
   });
 });
 
+describe('buildRunTreeView — notes on a queued message', () => {
+  it('a Send-as message waiting in the tail keeps its "as" note', () => {
+    const v = view([sent('X', SUPPORT, MANAGER, null, 1)]);
+    expect(v.tail.map((m) => m.message_id)).toEqual(['X']);
+    expect(v.tailNotes.get(envId('X', MANAGER))?.sendAs).toEqual(SUPPORT);
+  });
+
+  it('a reply to a question waiting in the tail keeps "replying to"', () => {
+    // Case 4 up to `Sent U2`: nobody has taken the reply up yet.
+    const v = view(CASE_4.slice(0, 7));
+    expect(v.tail.map((m) => m.message_id)).toEqual(['U2']);
+    expect(v.tailNotes.get(envId('U2', MANAGER))?.replyingTo).toEqual(MANAGER);
+    expect(v.tailNotes.get(envId('U2', MANAGER))?.sendAs).toBeUndefined();
+  });
+});
+
 describe('buildRunTreeView — orphan traces (fail-open)', () => {
   it('a run whose trigger is unknown is a trace card at its start, with no bubble', () => {
     const v = view([

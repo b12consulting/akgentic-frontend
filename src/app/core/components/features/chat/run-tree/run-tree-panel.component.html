@@ -84,6 +84,17 @@
           }}</span>
         </div>
         @for (m of tail; track m.id) {
+          <!-- A queued message keeps its "replying to" / "as" label. -->
+          @if (tailNotes.get(m.id)?.replyingTo; as asker) {
+            <div class="run-note run-note--mine run-note--above">
+              {{ 'chat.runTree.replyingTo' | translate: { agent: asker.name } }}
+            </div>
+          }
+          @if (tailNotes.get(m.id)?.sendAs; as seat) {
+            <div class="run-note run-note--mine run-note--above">
+              {{ 'chat.runTree.sendAs' | translate: { agent: seat.name } }}
+            </div>
+          }
           <app-chat-message
             [attr.data-message-id]="m.id"
             [message]="m"

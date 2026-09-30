@@ -42,6 +42,7 @@ import {
 } from '../../../../services/process/selectors/run-graph.selector';
 import {
   isYourMessage,
+  MessageNotes,
   Provenance,
   RunTreeItem,
   RunTreeService,
@@ -129,9 +130,10 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
 
   timeline: RunTreeItem[] = [];
   tail: ChatMessage[] = [];
+  tailNotes: ReadonlyMap<string, MessageNotes> = new Map();
   cards = new Map<RunKey, TraceCardModel>();
   private graph: RunGraph = EMPTY_RUN_GRAPH;
-  private view: RunTreeView = { timeline: [], tail: [] };
+  private view: RunTreeView = { timeline: [], tail: [], tailNotes: new Map() };
   /** Rule-6 markers the reader opened; re-applied to each emission's copies. */
   private expandedMarkers = new Set<string>();
 
@@ -225,6 +227,7 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
    *  legacy panel, so an emitted `ChatMessage` is never mutated. */
   private applyView(): void {
     this.tail = this.view.tail;
+    this.tailNotes = this.view.tailNotes;
     this.timeline = this.view.timeline.map((item) =>
       item.kind === 'message' &&
       item.data.rule === 6 &&

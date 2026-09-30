@@ -258,6 +258,13 @@ describe('RunTreePanelComponent', () => {
     expect(text(el(fixture).querySelector('.run-note--above'))).toBe('chat.runTree.sendAs');
   });
 
+  it('a queued Send-as message keeps its "as" label above the tail bubble', () => {
+    log.appendAll([sent('X', SUPPORT, MANAGER, null, 1)]);
+    const fixture = mount();
+    expect(rows(fixture)).toEqual(['divider', 'note', 'msg:' + envId('X', MANAGER), 'note']);
+    expect(text(el(fixture).querySelector('.run-note--above'))).toBe('chat.runTree.sendAs');
+  });
+
   it('the provenance link opens the trace card that produced the answer', () => {
     log.appendAll([
       sent('U1', HUMAN, MANAGER, null, 1),

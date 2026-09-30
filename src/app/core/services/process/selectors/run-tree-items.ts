@@ -78,6 +78,9 @@ export type RunTreeItem =
 export interface RunTreeView {
   timeline: RunTreeItem[];
   tail: ChatMessage[];
+  /** The notes a queued message of yours carries ("replying to", "as"), by
+   *  envelope id. A message keeps them while it waits in the tail. */
+  tailNotes: ReadonlyMap<string, MessageNotes>;
 }
 
 type TraceItem = Extract<RunTreeItem, { kind: 'trace' }>;
@@ -271,6 +274,7 @@ export function buildRunTreeView(
   const yours = new Set<string>();
   const groups: Group[] = [];
   const tail: ChatMessage[] = [];
+  const tailNotes = new Map<string, MessageNotes>();
   for (const m of messages) {
     if (isYourMessage(m, graph)) {
       // One bubble per inner message: a send to several supervisors echoes
@@ -278,8 +282,10 @@ export function buildRunTreeView(
       if (yours.has(m.message_id)) continue;
       yours.add(m.message_id);
       const position = pickedUpAt(graph, m.message_id);
-      if (position === null) tail.push(asYours(m));
-      else groups.push(yourGroup(m, graph, position));
+      if (position === null) {
+        tail.push(asYours(m));
+        tailNotes.set(m.id, yourNotes(m, graph, 0));
+      } else groups.push(yourGroup(m, graph, position));
     } else if (m.rule !== 3 && m.rule !== 4) {
       groups.push(otherGroup(m, graph));
     }
@@ -287,7 +293,7 @@ export function buildRunTreeView(
   groups.push(...orphanGroups(graph, yours));
   // Stable: equal times keep log order, and a message's traces ride with it.
   groups.sort((a, b) => a.time - b.time);
-  return { timeline: withDaySeparators(groups.flatMap((g) => g.items)), tail };
+  return { timeline: withDaySeparators(groups.flatMap((g) => g.items)), tail, tailNotes };
 }
 
 /** Stable `@for` key. A trace is keyed by its root run (Trap 7), a day by its
