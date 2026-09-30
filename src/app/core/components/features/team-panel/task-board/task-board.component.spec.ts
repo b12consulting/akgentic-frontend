@@ -1,13 +1,17 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { BehaviorSubject } from 'rxjs';
 
+import en from '../../../../platform/i18n/locales/en.json';
 import { CategoryService } from '../../../../services/category.service';
 import { IngestionService } from '../../../../services/process/event/ingestion.service';
 import { AgentStateValue } from '../../../../services/process/event/per-agent-specs';
 import { GraphDataService } from '../../../../services/process/selectors/graph.selector';
 import { PLANNING_ACTOR_NAME } from '../../../../services/process/selectors/task-board';
-import { provideTranslateTesting } from '../../../../../../testing/i18n-testing';
-import { TaskBoardComponent } from './task-board.component';
+import {
+  provideTranslateTesting,
+  setTestTranslations,
+} from '../../../../../../testing/i18n-testing';
+import { TASK_BOARD_HIDE_CLOSED_KEY, TaskBoardComponent } from './task-board.component';
 
 type Node = { actorName: string; name: string; role: string };
 
@@ -26,12 +30,20 @@ function plan(tasks: Record<string, unknown>[]): ReadonlyMap<string, AgentStateV
   return new Map([['planning-id', { schema: {}, state: { task_list: tasks } }]]);
 }
 
+const MIXED = [
+  task(4, 'abort', '@Expert'),
+  task(3, 'completed', '@Manager'),
+  task(2, 'pending', '@Expert'),
+  task(1, 'pending', ''),
+  task(5, 'started', '@Manager'),
+];
+
 describe('TaskBoardComponent', () => {
   let fixture: ComponentFixture<TaskBoardComponent>;
   let nodes$: BehaviorSubject<Node[]>;
   let states$: BehaviorSubject<ReadonlyMap<string, AgentStateValue>>;
 
-  beforeEach(async () => {
+  async function mount(): Promise<void> {
     nodes$ = new BehaviorSubject<Node[]>(ROSTER);
     states$ = new BehaviorSubject<ReadonlyMap<string, AgentStateValue>>(new Map());
     await TestBed.configureTestingModule({
@@ -43,9 +55,13 @@ describe('TaskBoardComponent', () => {
         { provide: CategoryService, useValue: { COLORS: ['#101010', '#202020'] } },
       ],
     }).compileComponents();
+    setTestTranslations(en);
     fixture = TestBed.createComponent(TaskBoardComponent);
     fixture.detectChanges();
-  });
+  }
+
+  beforeEach(() => localStorage.removeItem(TASK_BOARD_HIDE_CLOSED_KEY));
+  afterEach(() => localStorage.removeItem(TASK_BOARD_HIDE_CLOSED_KEY));
 
   function host(): HTMLElement {
     return fixture.nativeElement as HTMLElement;
@@ -55,85 +71,134 @@ describe('TaskBoardComponent', () => {
     return (el?.textContent ?? '').replace(/\s+/g, ' ').trim();
   }
 
-  it('draws nothing with no plan, and nothing for an empty one', () => {
-    expect(host().querySelector('.board')).toBeNull();
-    states$.next(plan([]));
+  function show(tasks: Record<string, unknown>[]): void {
+    states$.next(plan(tasks));
     fixture.detectChanges();
+  }
+
+  function ids(): (string | null)[] {
+    return Array.from(host().querySelectorAll('.task')).map((r) => r.getAttribute('data-task-id'));
+  }
+
+  it('draws nothing with no plan, and nothing for an empty one', async () => {
+    await mount();
+    expect(host().querySelector('.board')).toBeNull();
+    show([]);
     expect(host().querySelector('.board')).toBeNull();
   });
 
-  it('draws a row per task, started → pending → completed → aborted, then by id', () => {
-    states$.next(
-      plan([
-        task(4, 'abort', '@Expert'),
-        task(3, 'completed', '@Manager'),
-        task(2, 'pending', '@Expert'),
-        task(1, 'pending', ''),
-        task(5, 'started', '@Manager'),
-      ]),
-    );
-    fixture.detectChanges();
-
-    const rows = Array.from(host().querySelectorAll('.task'));
-    expect(rows.map((r) => r.getAttribute('data-task-id'))).toEqual(['5', '1', '2', '3', '4']);
-    expect(text(host().querySelector('.board-label'))).toBe('inspector.tasks.title 5');
-
-    const [started, unassigned, , done, aborted] = rows;
-    expect(text(started.querySelector('.task-id'))).toBe('#5');
-    expect(text(started.querySelector('.chip'))).toBe('inspector.tasks.status.started');
-    expect(started.querySelector('.chip')!.getAttribute('data-tone')).toBe('started');
-    expect(text(started.querySelector('.owner-name'))).toBe('@Manager');
-    expect(text(started.querySelector('.owner-avatar'))).toBe('M');
-    // The full description rides on `title`; the row ellipsises it.
-    expect(started.querySelector('.task-description')!.getAttribute('title')).toContain('task 5');
-    expect(text(unassigned.querySelector('.task-owner'))).toBe('inspector.tasks.unassigned');
-    // Settled work reads muted; open work does not.
-    expect(done.classList).toContain('task--settled');
-    expect(aborted.classList).toContain('task--settled');
-    expect(started.classList).not.toContain('task--settled');
+  it('orders the rows by id, whatever their status', async () => {
+    await mount();
+    show(MIXED);
+    expect(ids()).toEqual(['1', '2', '3', '4', '5']);
+    expect(text(host().querySelector('.board-label'))).toBe('Tasks 5');
   });
 
-  it('sums the statuses in one line of chips, in board order', () => {
-    states$.next(
-      plan([
-        task(1, 'pending', ''),
-        task(2, 'pending', ''),
-        task(3, 'started', ''),
-        task(4, 'completed', ''),
-        task(5, 'abort', ''),
-      ]),
-    );
-    fixture.detectChanges();
-
-    expect(Array.from(host().querySelectorAll('.board-summary .chip')).map(text)).toEqual([
-      '1 inspector.tasks.status.started',
-      '2 inspector.tasks.status.pending',
-      '1 inspector.tasks.status.completed',
-      '1 inspector.tasks.status.abort',
+  it('marks each row with one glyph for its status, named for assistive tech', async () => {
+    await mount();
+    show([...MIXED, task(6, 'blocked', '')]);
+    const glyphs = Array.from(host().querySelectorAll('.task-glyph')).map((g) => [
+      g.querySelector('i')!.className.replace('glyph', '').trim(),
+      g.getAttribute('aria-label'),
+    ]);
+    expect(glyphs).toEqual([
+      ['pi pi-circle', 'pending'],
+      ['pi pi-circle', 'pending'],
+      ['pi pi-check', 'done'],
+      ['pi pi-times', 'aborted'],
+      ['pi pi-spinner', 'started'],
+      // An unknown status: a neutral "?", named as sent.
+      ['pi pi-question', 'blocked'],
     ]);
   });
 
-  it('shows an unknown status as sent, on a neutral chip', () => {
-    states$.next(plan([task(1, 'blocked', '')]));
-    fixture.detectChanges();
-    const chip = host().querySelector('.task .chip')!;
-    expect(text(chip)).toBe('blocked');
-    expect(chip.getAttribute('data-tone')).toBe('unknown');
+  it('is monochrome: no chip anywhere, closed rows muted', async () => {
+    await mount();
+    show(MIXED);
+    expect(host().querySelector('.chip')).toBeNull();
+    const closed = Array.from(host().querySelectorAll('.task--closed')).map((r) =>
+      r.getAttribute('data-task-id'),
+    );
+    expect(closed).toEqual(['3', '4']);
   });
 
-  it('follows the plan live as new states arrive', () => {
-    states$.next(plan([task(1, 'pending', '@Expert')]));
-    fixture.detectChanges();
-    expect(host().querySelector('.task .chip')!.getAttribute('data-tone')).toBe('pending');
-
-    states$.next(plan([task(1, 'started', '@Expert')]));
-    fixture.detectChanges();
-    expect(host().querySelector('.task .chip')!.getAttribute('data-tone')).toBe('started');
+  it('sums the plan in glyphs, each count named', async () => {
+    await mount();
+    show(MIXED);
+    const items = Array.from(host().querySelectorAll('.summary-item'));
+    expect(items.map((i) => i.getAttribute('aria-label'))).toEqual([
+      '2 pending',
+      '1 started',
+      '1 done',
+      '1 aborted',
+    ]);
+    expect(items.map((i) => text(i))).toEqual(['2', '1', '1', '1']);
   });
 
-  it('draws a person owner in the human avatar pair, not an agent colour', () => {
-    states$.next(plan([task(1, 'pending', '@Human'), task(2, 'pending', '@Expert')]));
+  it('shows the owner as its avatar only, the name in its title and label, at any width', async () => {
+    await mount();
+    show(MIXED);
+    const row = host().querySelector('.task[data-task-id="5"]')!;
+    const avatar = row.querySelector('.owner-avatar')!;
+    expect(avatar.getAttribute('title')).toBe('Owner: @Manager');
+    expect(avatar.getAttribute('aria-label')).toBe('Owner: @Manager');
+    // No name anywhere in the row's visible text.
+    expect(text(row)).not.toContain('@Manager');
+    for (const width of [480, 240]) {
+      (host() as HTMLElement).style.width = `${width}px`;
+      fixture.detectChanges();
+      expect(host().textContent).not.toContain('@Manager');
+      expect(host().textContent).not.toContain('@Expert');
+    }
+
+    const nobody = host().querySelector('.task[data-task-id="1"] .owner-avatar')!;
+    expect(nobody.classList).toContain('owner-avatar--none');
+    expect(nobody.getAttribute('title')).toBe('unassigned');
+    expect(text(nobody)).toBe('');
+  });
+
+  it('"Hide closed" hides done and aborted tasks, and remembers the choice', async () => {
+    await mount();
+    show(MIXED);
+    const toggle = host().querySelector<HTMLButtonElement>('.board-toggle')!;
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+
+    toggle.click();
     fixture.detectChanges();
+    expect(toggle.getAttribute('aria-pressed')).toBe('true');
+    expect(ids()).toEqual(['1', '2', '5']);
+    // The header still counts the whole plan.
+    expect(text(host().querySelector('.board-label'))).toBe('Tasks 5');
+    expect(localStorage.getItem(TASK_BOARD_HIDE_CLOSED_KEY)).toBe('true');
+
+    // A fresh board reads the choice back.
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    await mount();
+    show(MIXED);
+    expect(ids()).toEqual(['1', '2', '5']);
+  });
+
+  it('says "All tasks closed" rather than an empty card when everything is hidden', async () => {
+    localStorage.setItem(TASK_BOARD_HIDE_CLOSED_KEY, 'true');
+    await mount();
+    show([task(1, 'completed', ''), task(2, 'abort', '')]);
+    expect(host().querySelector('.board')).not.toBeNull();
+    expect(host().querySelector('.board-list')).toBeNull();
+    expect(text(host().querySelector('.board-closed'))).toBe('All tasks closed');
+  });
+
+  it('follows the plan live as new states arrive', async () => {
+    await mount();
+    show([task(1, 'pending', '@Expert')]);
+    expect(host().querySelector('.task')!.getAttribute('data-status')).toBe('pending');
+    show([task(1, 'started', '@Expert')]);
+    expect(host().querySelector('.task')!.getAttribute('data-status')).toBe('started');
+  });
+
+  it('draws a person owner in the human avatar pair, not an agent colour', async () => {
+    await mount();
+    show([task(1, 'pending', '@Human'), task(2, 'pending', '@Expert')]);
     const [human, agent] = Array.from(host().querySelectorAll('.owner-avatar'));
     expect(human.classList).toContain('owner-avatar--human');
     expect((human as HTMLElement).style.backgroundColor).toBe('');

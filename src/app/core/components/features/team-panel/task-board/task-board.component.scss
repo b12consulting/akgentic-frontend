@@ -1,9 +1,11 @@
 /*
  * The task board: a card of the usage card's family, one line per task.
- * Palette tokens only.
+ * MONOCHROME — text and muted tones from the palette, the accent spent once,
+ * on the started glyph. No chips.
  */
 
 .board {
+  container: board / inline-size;
   margin-top: 18px;
   padding: 10px 12px;
   border: 1px solid var(--akg-surface-border);
@@ -11,12 +13,16 @@
   background: var(--akg-overlay-bg);
 }
 
+/*
+ * THE HEADER: "TASKS 4", the glyph summary, and "Hide closed" at the right.
+ * In a narrow card the summary drops under the title and the toggle keeps the
+ * title's line.
+ */
 .board-head {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 4px 8px;
+  gap: 4px 10px;
   margin-bottom: 6px;
 }
 
@@ -28,6 +34,7 @@
   letter-spacing: var(--akg-section-label-tracking);
   text-transform: uppercase;
   color: var(--akg-text-muted);
+  white-space: nowrap;
 }
 
 .board-count {
@@ -37,9 +44,65 @@
 }
 
 .board-summary {
+  order: 1;
   display: inline-flex;
   flex-wrap: wrap;
+  gap: 8px;
+  font-size: var(--akg-font-size-meta);
+  color: var(--akg-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.summary-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
+}
+
+.board-toggle {
+  order: 2;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
   gap: 4px;
+  padding: 1px 6px;
+  border: 0;
+  border-radius: var(--akg-control-radius);
+  background: transparent;
+  color: var(--akg-text-muted);
+  font: inherit;
+  font-size: var(--akg-font-size-meta);
+  white-space: nowrap;
+  cursor: pointer;
+
+  .pi {
+    font-size: 11px;
+  }
+
+  &:hover {
+    background: var(--akg-row-hover);
+    color: var(--akg-text);
+  }
+
+  &[aria-pressed='true'] {
+    color: var(--akg-text);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+  }
+}
+
+@container board (max-width: 360px) {
+  .board-toggle {
+    order: 0;
+  }
+
+  .board-summary {
+    flex-basis: 100%;
+  }
 }
 
 /* A long plan scrolls inside its own card rather than pushing usage away. */
@@ -51,62 +114,65 @@
   list-style: none;
 }
 
+/*
+ * ONE ROW: [glyph] #id description [owner]. The glyph and id columns are
+ * fixed, so every description starts on the same line; the description takes
+ * what is left and ellipsises.
+ */
 .task {
-  display: flex;
+  display: grid;
+  grid-template-columns: 14px 3.2em minmax(0, 1fr) 16px;
   align-items: center;
-  gap: 6px;
-  min-width: 0;
+  column-gap: 6px;
   padding: 3px 0;
   font-size: var(--akg-font-size-meta);
   color: var(--akg-text);
 }
 
 /* Done or abandoned: the muted tone, so the open work stands out. */
-.task--settled {
+.task--closed {
   color: var(--akg-text-muted);
 }
 
+/* An abandoned task is struck through as well. */
+.task[data-status='abort'] .task-description {
+  text-decoration: line-through;
+}
+
+.task-glyph {
+  display: grid;
+  place-items: center;
+}
+
+.glyph {
+  font-size: 10px;
+}
+
+/* The one accent on the board: work in progress. */
+[data-status='started'] .glyph {
+  color: var(--akg-accent-fg);
+}
+
 .task-id {
-  flex: 0 0 auto;
   font-family: var(--akg-font-mono);
   font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
   color: var(--akg-text-muted);
 }
 
 .task-description {
-  flex: 1 1 auto;
-  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.task-owner {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  max-width: 40%;
-  min-width: 0;
-}
-
-.task-owner--none {
-  color: var(--akg-text-muted);
-  font-style: italic;
-}
-
-.owner-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+/* The owner, as its mark alone; the name is in the mark's title. */
 .owner-avatar {
-  flex: 0 0 auto;
   display: grid;
   place-items: center;
   width: 16px;
   height: 16px;
+  box-sizing: border-box;
   border-radius: 5px;
   font-size: 9px;
   font-weight: 600;
@@ -125,43 +191,14 @@
   color: var(--akg-avatar-human-fg);
 }
 
-/*
- * THE STATUS CHIP, one palette pair per status the tool declares:
- * pending neutral, started the accent, completed the accent outlined (done,
- * no longer asking for attention), abort the danger pair. Anything else is
- * neutral and outlined.
- */
-.chip {
-  flex: 0 0 auto;
-  padding: 0 6px;
-  border: 1px solid transparent;
-  border-radius: var(--akg-pill-radius);
-  font-size: 10.5px;
-  line-height: 1.6;
-  white-space: nowrap;
+/* Nobody yet: an empty mark. */
+.owner-avatar--none {
+  border: 1px dashed var(--akg-marker-border);
+  background: transparent;
+}
 
-  &[data-tone='pending'] {
-    background: var(--akg-status-neutral-bg);
-    color: var(--akg-status-neutral-fg);
-  }
-
-  &[data-tone='started'] {
-    background: var(--akg-status-live-bg);
-    color: var(--akg-status-live-fg);
-  }
-
-  &[data-tone='completed'] {
-    border-color: var(--akg-accent-border);
-    color: var(--akg-accent-fg);
-  }
-
-  &[data-tone='abort'] {
-    background: var(--akg-danger-bg);
-    color: var(--akg-danger-fg);
-  }
-
-  &[data-tone='unknown'] {
-    border-color: var(--akg-marker-border);
-    color: var(--akg-text-muted);
-  }
+.board-closed {
+  margin: 0;
+  font-size: var(--akg-font-size-meta);
+  color: var(--akg-text-muted);
 }

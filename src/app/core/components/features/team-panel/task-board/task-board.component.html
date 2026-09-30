@@ -1,69 +1,94 @@
 <!--
-  The planning tool's tasks, one line each. Absent — not empty — when the team
-  has no planning tool or nothing planned yet.
+  The planning tool's tasks, one line each: [glyph] #id description [owner].
+  Absent — not empty — when the team has no planning tool or nothing planned.
 -->
 @if (view$ | async; as view) {
-  @if (view.tasks.length > 0) {
+  @if (view.total > 0) {
     <section class="board">
       <header class="board-head">
         <p class="board-label">
           {{ "inspector.tasks.title" | translate }}
-          <span class="board-count">{{ view.tasks.length }}</span>
+          <span class="board-count">{{ view.total }}</span>
         </p>
+        <button
+          type="button"
+          class="board-toggle"
+          [attr.aria-pressed]="hideClosed()"
+          (click)="toggleHideClosed()"
+        >
+          <i
+            class="pi"
+            [class.pi-eye-slash]="hideClosed()"
+            [class.pi-eye]="!hideClosed()"
+            aria-hidden="true"
+          ></i>
+          {{ "inspector.tasks.hideClosed" | translate }}
+        </button>
+        <!-- The plan in glyphs: how many of each, in one monochrome line. -->
         <span class="board-summary">
           @for (entry of view.counts; track entry.status) {
-            <span class="chip" [attr.data-tone]="statusTone(entry.status)"
-              >{{ entry.count }}
-              @if (statusKey(entry.status); as key) {
-                {{ key | translate }}
-              } @else {
-                {{ entry.status }}
-              }</span
+            @let key = labelKeyOf(entry.status);
+            @let label = key ? (key | translate) : entry.status;
+            <span
+              class="summary-item"
+              [attr.data-status]="entry.status"
+              [attr.aria-label]="entry.count + ' ' + label"
+              [attr.title]="label"
             >
+              <i class="glyph" [class]="glyphOf(entry.status)" aria-hidden="true"></i>
+              <span aria-hidden="true">{{ entry.count }}</span>
+            </span>
           }
         </span>
       </header>
 
-      <ol class="board-list">
-        @for (task of view.tasks; track task.id) {
-          <li
-            class="task"
-            [class.task--settled]="isSettled(task.status)"
-            [attr.data-task-id]="task.id"
-          >
-            <span class="task-id">#{{ task.id }}</span>
-            <span class="chip" [attr.data-tone]="statusTone(task.status)">
-              @if (statusKey(task.status); as key) {
-                {{ key | translate }}
-              } @else {
-                {{ task.status }}
-              }
-            </span>
-            <span class="task-description" [attr.title]="task.description">{{
-              task.description
-            }}</span>
-            @if (task.owner) {
-              <span class="task-owner">
+      @if (view.rows.length > 0) {
+        <ol class="board-list">
+          @for (task of view.rows; track task.id) {
+            @let key = labelKeyOf(task.status);
+            @let label = key ? (key | translate) : task.status;
+            <li
+              class="task"
+              [class.task--closed]="isClosed(task)"
+              [attr.data-task-id]="task.id"
+              [attr.data-status]="task.status"
+            >
+              <span class="task-glyph" role="img" [attr.aria-label]="label" [attr.title]="label">
+                <i class="glyph" [class]="glyphOf(task.status)" aria-hidden="true"></i>
+              </span>
+              <span class="task-id">#{{ task.id }}</span>
+              <span class="task-description" [attr.title]="task.description">{{
+                task.description
+              }}</span>
+              @if (task.owner) {
+                @let owner = "inspector.tasks.owner" | translate: { agent: task.owner };
                 <span
                   class="owner-avatar"
+                  role="img"
                   [class.owner-avatar--human]="view.humans.has(task.owner)"
                   [class.tinted]="!view.humans.has(task.owner) && view.colours.of(task.owner) !== null"
                   [style.background-color]="
                     view.humans.has(task.owner) ? null : view.colours.of(task.owner)
                   "
-                  aria-hidden="true"
-                  >{{ initialOf(task.owner) }}</span
+                  [attr.aria-label]="owner"
+                  [attr.title]="owner"
+                  ><span aria-hidden="true">{{ initialOf(task.owner) }}</span></span
                 >
-                <span class="owner-name">{{ task.owner }}</span>
-              </span>
-            } @else {
-              <span class="task-owner task-owner--none">{{
-                "inspector.tasks.unassigned" | translate
-              }}</span>
-            }
-          </li>
-        }
-      </ol>
+              } @else {
+                @let none = "inspector.tasks.unassigned" | translate;
+                <span
+                  class="owner-avatar owner-avatar--none"
+                  role="img"
+                  [attr.aria-label]="none"
+                  [attr.title]="none"
+                ></span>
+              }
+            </li>
+          }
+        </ol>
+      } @else {
+        <p class="board-closed">{{ "inspector.tasks.allClosed" | translate }}</p>
+      }
     </section>
   }
 }

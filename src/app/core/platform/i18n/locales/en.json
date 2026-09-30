@@ -400,6 +400,9 @@
     "tasks": {
       "title": "Tasks",
       "unassigned": "unassigned",
+      "owner": "Owner: {{agent}}",
+      "hideClosed": "Hide closed",
+      "allClosed": "All tasks closed",
       "status": {
         "started": "started",
         "pending": "pending",

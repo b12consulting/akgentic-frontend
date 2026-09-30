@@ -20,12 +20,17 @@ import { AgentStateValue } from '../event/per-agent-specs';
 export const PLANNING_ACTOR_NAME = '#PlanningTool';
 
 /**
- * The statuses `planning_actor.py` declares (`TaskStatus`). Note `abort`, not
- * `aborted`: that is the wire value. Anything else is drawn as an unknown,
- * neutral status rather than dropped.
+ * The statuses `planning_actor.py` declares (`TaskStatus`), in the order the
+ * summary lists them. Note `abort`, not `aborted`: that is the wire value.
+ * Anything else is drawn as an unknown status rather than dropped.
  */
-export const TASK_STATUSES = ['started', 'pending', 'completed', 'abort'] as const;
+export const TASK_STATUSES = ['pending', 'started', 'completed', 'abort'] as const;
 export type KnownTaskStatus = (typeof TASK_STATUSES)[number];
+
+/** Done or abandoned: what "Hide closed" hides. */
+export function isClosedTask(task: Pick<PlanTask, 'status'>): boolean {
+  return task.status === 'completed' || task.status === 'abort';
+}
 
 /** One task, as `planning_actor.Task` serialises it. */
 export interface PlanTask {
@@ -58,7 +63,7 @@ export function isKnownTaskStatus(status: string): status is KnownTaskStatus {
   return (TASK_STATUSES as readonly string[]).includes(status);
 }
 
-/** Board order: started → pending → completed → abort → anything else. */
+/** Summary order: pending → started → completed → abort → anything else. */
 function statusRank(status: string): number {
   const at = (TASK_STATUSES as readonly string[]).indexOf(status);
   return at < 0 ? TASK_STATUSES.length : at;
@@ -94,15 +99,16 @@ function parseTask(value: unknown): PlanTask | null {
   };
 }
 
-/** The tasks in a planning state, parsed and in board order. `[]` for
- *  anything that is not a `{ task_list: [...] }`. */
+/** The tasks in a planning state, parsed, by id — the order the plan was
+ *  made in, which a status never reshuffles. `[]` for anything that is not a
+ *  `{ task_list: [...] }`. */
 export function parseTaskList(state: unknown): PlanTask[] {
   const list = asRecord(state)?.['task_list'];
   if (!Array.isArray(list)) return [];
   return list
     .map(parseTask)
     .filter((task): task is PlanTask => task !== null)
-    .sort((a, b) => statusRank(a.status) - statusRank(b.status) || a.id - b.id);
+    .sort((a, b) => a.id - b.id);
 }
 
 /**
@@ -119,7 +125,7 @@ export function planningTasks(
   return parseTaskList(states.get(actor.name)?.state);
 }
 
-/** Non-zero counts per status, in board order. */
+/** Non-zero counts per status, in summary order. */
 export function taskStatusCounts(tasks: readonly PlanTask[]): TaskStatusCount[] {
   const counts = new Map<string, number>();
   for (const task of tasks) counts.set(task.status, (counts.get(task.status) ?? 0) + 1);

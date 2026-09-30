@@ -1,5 +1,6 @@
 import { AsyncPipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { toObservable } from '@angular/core/rxjs-interop';
 import { TranslatePipe } from '@ngx-translate/core';
 import { combineLatest, map, Observable } from 'rxjs';
 
@@ -12,6 +13,7 @@ import {
 } from '../../../../services/process/selectors/agent-colour';
 import { GraphDataService } from '../../../../services/process/selectors/graph.selector';
 import {
+  isClosedTask,
   isKnownTaskStatus,
   KnownTaskStatus,
   PlanTask,
@@ -20,23 +22,35 @@ import {
   taskStatusCounts,
 } from '../../../../services/process/selectors/task-board';
 
-/** The board as drawn: its tasks, their status counts, and how to paint an
- *  owner. */
+/** The board as drawn. */
 export interface TaskBoardView {
-  tasks: PlanTask[];
+  /** Every task — the count and the summary are the whole plan's. */
+  total: number;
   counts: TaskStatusCount[];
+  /** The rows shown: every task, or the open ones while closed are hidden. */
+  rows: PlanTask[];
   colours: AgentColours;
   /** Owner names that are people rather than agents. */
   humans: ReadonlySet<string>;
 }
 
-/** Literal keys, so the i18n audit can see every one of them. */
-const STATUS_KEYS: Record<KnownTaskStatus, string> = {
-  started: 'inspector.tasks.status.started',
-  pending: 'inspector.tasks.status.pending',
-  completed: 'inspector.tasks.status.completed',
-  abort: 'inspector.tasks.status.abort',
+/** One glyph per status the tool declares; its label key names it. */
+interface StatusGlyph {
+  icon: string;
+  labelKey: string;
+}
+
+const GLYPHS: Record<KnownTaskStatus, StatusGlyph> = {
+  pending: { icon: 'pi pi-circle', labelKey: 'inspector.tasks.status.pending' },
+  started: { icon: 'pi pi-spinner', labelKey: 'inspector.tasks.status.started' },
+  completed: { icon: 'pi pi-check', labelKey: 'inspector.tasks.status.completed' },
+  abort: { icon: 'pi pi-times', labelKey: 'inspector.tasks.status.abort' },
 };
+
+const UNKNOWN_GLYPH = 'pi pi-question';
+
+/** Where the viewer's "Hide closed" choice is kept, per browser. */
+export const TASK_BOARD_HIDE_CLOSED_KEY = 'akgentic.taskBoard.hideClosed';
 
 /**
  * The Team tab's task board: the planning tool's tasks, as the agents see
@@ -44,8 +58,11 @@ const STATUS_KEYS: Record<KnownTaskStatus, string> = {
  *
  * A projection of the roster and the per-agent state store — see
  * `task-board.ts` — so it follows every `StateChangedMessage` live and on
- * replay with nothing of its own to keep in step. Draws nothing at all when the
- * team has no planning tool or no tasks.
+ * replay. Draws nothing when the team has no planning tool or no tasks.
+ *
+ * MONOCHROME: one glyph per status, text and muted tones only, the accent
+ * spent once on the started glyph. The owner is its avatar alone, the name in
+ * its title, so the description keeps the width at any pane size.
  */
 @Component({
   selector: 'app-task-board',
@@ -58,39 +75,65 @@ const STATUS_KEYS: Record<KnownTaskStatus, string> = {
 export class TaskBoardComponent {
   private readonly categories = inject(CategoryService);
 
+  /** The viewer's "Hide closed" choice, remembered across visits. */
+  readonly hideClosed = signal(this.readHideClosed());
+
   readonly view$: Observable<TaskBoardView> = combineLatest([
     inject(GraphDataService).nodes$,
     inject(IngestionService).state.all$,
+    toObservable(this.hideClosed),
   ]).pipe(
-    map(([nodes, states]) => {
+    map(([nodes, states, hideClosed]) => {
       const tasks = planningTasks(nodes, states);
       return {
-        tasks,
+        total: tasks.length,
         counts: taskStatusCounts(tasks),
+        rows: hideClosed ? tasks.filter((task) => !isClosedTask(task)) : tasks,
         colours: agentColours(nodes, this.categories.COLORS),
         humans: new Set(nodes.filter(isHumanNode).map((node) => node.actorName)),
       };
     }),
   );
 
-  /** A known status's label key; an unknown status is shown as sent. */
-  statusKey(status: string): string | null {
-    return isKnownTaskStatus(status) ? STATUS_KEYS[status] : null;
+  toggleHideClosed(): void {
+    this.hideClosed.update((hide) => !hide);
+    this.writeHideClosed();
   }
 
-  /** Tone class for a status chip: its own for the four the tool declares,
-   *  neutral for anything else. */
-  statusTone(status: string): string {
-    return isKnownTaskStatus(status) ? status : 'unknown';
+  /** The status's glyph, `?` for one the tool does not declare. */
+  glyphOf(status: string): string {
+    return isKnownTaskStatus(status) ? GLYPHS[status].icon : UNKNOWN_GLYPH;
   }
 
-  /** Finished work reads quieter than work still to do. */
-  isSettled(status: string): boolean {
-    return status === 'completed' || status === 'abort';
+  /** A known status's label key; `null` for an unknown one, named as sent. */
+  labelKeyOf(status: string): string | null {
+    return isKnownTaskStatus(status) ? GLYPHS[status].labelKey : null;
+  }
+
+  isClosed(task: PlanTask): boolean {
+    return isClosedTask(task);
   }
 
   initialOf(name: string): string {
     const bare = name.replace(/^@/, '').trim();
     return bare ? bare.slice(0, 1).toUpperCase() : '·';
+  }
+
+  /** `localStorage` throws outright when the browser blocks storage; a refused
+   *  read means "show everything". The `chat-view.service.ts` pattern. */
+  private readHideClosed(): boolean {
+    try {
+      return localStorage.getItem(TASK_BOARD_HIDE_CLOSED_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  private writeHideClosed(): void {
+    try {
+      localStorage.setItem(TASK_BOARD_HIDE_CLOSED_KEY, String(this.hideClosed()));
+    } catch {
+      /* storage unavailable — the choice still applies for this visit */
+    }
   }
 }

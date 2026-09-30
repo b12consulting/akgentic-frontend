@@ -400,6 +400,9 @@
     "tasks": {
       "title": "Tâches",
       "unassigned": "non assignée",
+      "owner": "Responsable : {{agent}}",
+      "hideClosed": "Masquer les closes",
+      "allClosed": "Toutes les tâches sont closes",
       "status": {
         "started": "en cours",
         "pending": "en attente",

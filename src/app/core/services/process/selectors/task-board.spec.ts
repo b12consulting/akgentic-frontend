@@ -1,5 +1,6 @@
 import { AgentStateValue } from '../event/per-agent-specs';
 import {
+  isClosedTask,
   parseTaskList,
   PLANNING_ACTOR_NAME,
   planningTasks,
@@ -35,10 +36,10 @@ describe('task board selector', () => {
       states([['planning-id', { task_list: [task(1, 'pending'), task(2, 'started')] }]]),
     );
     expect(tasks.map((t) => [t.id, t.status])).toEqual([
-      [2, 'started'],
       [1, 'pending'],
+      [2, 'started'],
     ]);
-    expect(tasks[0]).toEqual({
+    expect(tasks[1]).toEqual({
       id: 2,
       status: 'started',
       description: 'task 2',
@@ -65,7 +66,7 @@ describe('task board selector', () => {
     expect(planningTasks(ROSTER, states([['planning-id', { task_list: [] }]]))).toEqual([]);
   });
 
-  it('orders started → pending → completed → abort → unknown, then by id', () => {
+  it('orders by id alone — a status never reshuffles the plan', () => {
     const tasks = parseTaskList({
       task_list: [
         task(5, 'abort'),
@@ -76,7 +77,13 @@ describe('task board selector', () => {
         task(6, 'started'),
       ],
     });
-    expect(tasks.map((t) => t.id)).toEqual([6, 1, 3, 4, 5, 7]);
+    expect(tasks.map((t) => t.id)).toEqual([1, 3, 4, 5, 6, 7]);
+  });
+
+  it('calls done and aborted tasks closed, and nothing else', () => {
+    expect(['pending', 'started', 'completed', 'abort', 'blocked'].map((s) =>
+      isClosedTask({ status: s }),
+    )).toEqual([false, false, true, true, false]);
   });
 
   it('drops a malformed task rather than drawing half of it, and fills optional fields', () => {
@@ -99,13 +106,13 @@ describe('task board selector', () => {
     expect(parseTaskList({ task_list: 'nope' })).toEqual([]);
   });
 
-  it('counts each status once, in board order, skipping the empty ones', () => {
+  it('counts each status once, pending → started → done → aborted, skipping the empty ones', () => {
     const tasks = parseTaskList({
       task_list: [task(1, 'pending'), task(2, 'pending'), task(3, 'completed'), task(4, 'started')],
     });
     expect(taskStatusCounts(tasks)).toEqual([
-      { status: 'started', count: 1 },
       { status: 'pending', count: 2 },
+      { status: 'started', count: 1 },
       { status: 'completed', count: 1 },
     ]);
   });
