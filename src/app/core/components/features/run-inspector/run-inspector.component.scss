@@ -197,10 +197,12 @@ button.mini-main {
   font-weight: 600;
 }
 
+/* The same box as the Event log below it, so the two read as one family. */
 .ri-text {
-  padding: 6px 8px;
-  border: 1px solid var(--akg-hairline);
-  border-radius: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--akg-surface-border);
+  border-radius: 10px;
+  background: var(--akg-surface-muted);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
