@@ -304,7 +304,7 @@ export function runGraphStep(graph: RunGraph, msg: AkgenticMessage): RunGraph {
   if (isProcessedMessage(msg)) return applyProcessed(graph, msg);
   if (isReceivedMessage(msg)) return applyReceived(graph, msg);
   if (isHandledMessage(msg)) return applyHandled(graph, msg);
-  if (isEventMessage(msg)) return applyEvent(graph, msg as EventMessage);
+  if (isEventMessage(msg)) return applyEvent(graph, msg);
   return graph;
 }
 
@@ -339,15 +339,27 @@ export function ancestors(graph: RunGraph, key: RunKey): RunKey[] {
 }
 
 /** Every run whose ancestor chain contains `key`, in `runs` insertion order,
- *  excluding `key`. */
+ *  excluding `key`. One pass builds the child index, so a view calling this per
+ *  node stays linear per call rather than re-walking every ancestor chain. */
 export function descendants(graph: RunGraph, key: RunKey): RunKey[] {
-  const out: RunKey[] = [];
+  const children = new Map<RunKey, RunKey[]>();
   for (const run of graph.runs.values()) {
-    if (run.key !== key && ancestors(graph, run.key).includes(key)) {
-      out.push(run.key);
+    if (run.parent_key === null || !graph.runs.has(run.parent_key)) continue;
+    const siblings = children.get(run.parent_key);
+    if (siblings) siblings.push(run.key);
+    else children.set(run.parent_key, [run.key]);
+  }
+  // The visited set is the cycle guard; the queue only ever grows.
+  const found = new Set<RunKey>([key]);
+  const queue = [key];
+  for (let i = 0; i < queue.length; i++) {
+    for (const child of children.get(queue[i]) ?? []) {
+      if (found.has(child)) continue;
+      found.add(child);
+      queue.push(child);
     }
   }
-  return out;
+  return [...graph.runs.keys()].filter((k) => k !== key && found.has(k));
 }
 
 export function isHumanSeat(run: Run): boolean {

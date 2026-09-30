@@ -372,6 +372,19 @@ describe('runGraphStep — passthrough returns the same reference', () => {
     expect(runGraphStep(base, msg)).toBe(base);
   });
 
+  it('a ToolStateEvent (out of scope: its parent_id is unverified)', () => {
+    const msg: EventMessage = {
+      ...envelope('evt-3', MANAGER, 'U1', 3),
+      __model__: `${ORCH}.EventMessage`,
+      event: {
+        __model__: 'akgentic.tool.event.ToolStateEvent',
+        tool_call_id: 't1',
+        tool_name: 'search',
+      },
+    };
+    expect(runGraphStep(base, msg)).toBe(base);
+  });
+
   it('an EventMessage with no event', () => {
     const msg = {
       ...envelope('evt-2', MANAGER, 'U1', 3),
@@ -477,7 +490,30 @@ describe('run graph helpers', () => {
       ]),
     };
     expect(ancestors(cyclic, a.key)).toEqual([b.key]);
-    expect([a.key, b.key]).toContain(traceRootOf(cyclic, a.key));
+    // a → b → (a, visited): the walk stops on the last run it reached.
+    expect(traceRootOf(cyclic, a.key)).toBe(b.key);
+    expect(descendants(cyclic, a.key)).toEqual([b.key]);
+  });
+
+  it('descendants follows runs insertion order, not tree depth', () => {
+    // (D2,Assistant) starts before its uncle (S,Support): a breadth-first walk
+    // would list S first.
+    const g = runGraphFold([
+      sent('U1', HUMAN, MANAGER, null, 1),
+      received('U1', MANAGER, 2),
+      sent('D1', MANAGER, EXPERT, 'U1', 3),
+      sent('S', MANAGER, SUPPORT, 'U1', 4),
+      received('D1', EXPERT, 5),
+      sent('D2', EXPERT, ASSISTANT, 'D1', 6),
+      received('D2', ASSISTANT, 7),
+      received('S', SUPPORT, 8),
+    ]);
+    expect(descendants(g, k('U1', MANAGER))).toEqual([
+      k('D1', EXPERT),
+      k('D2', ASSISTANT),
+      k('S', SUPPORT),
+    ]);
+    expect(descendants(g, k('nope', MANAGER))).toEqual([]);
   });
 
   it('traceRootOf uses the Human ROLE: a Send-as sender not named @Human opens a trace', () => {
@@ -1034,5 +1070,16 @@ describe('RunGraphService (selector over log$)', () => {
     expect(emitted.length).toBeGreaterThan(1);
     expect(last.runs.has(k('U1', MANAGER))).toBeTrue();
     expect(last.messages.has('U1')).toBeTrue();
+  });
+
+  it('shares one fold between subscribers', () => {
+    log.append(received('U1', MANAGER, 2));
+    const first: RunGraph[] = [];
+    const second: RunGraph[] = [];
+    const a = service.graph$.subscribe((g) => first.push(g));
+    const b = service.graph$.subscribe((g) => second.push(g));
+    a.unsubscribe();
+    b.unsubscribe();
+    expect(second[0]).toBe(first[first.length - 1]);
   });
 });
