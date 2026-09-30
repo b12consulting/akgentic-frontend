@@ -61,7 +61,7 @@
                     [attr.title]="'chat.runTree.node.from' | translate: { agent: trigger.sender.name }"
                     >←</span
                   >
-                  <span class="node-excerpt">{{ excerptOf(row.node) }}</span>
+                  <span class="node-excerpt">“{{ excerptOf(row.node) }}”</span>
                 }
               </button>
 
@@ -163,7 +163,7 @@
                 [attr.title]="'chat.runTree.node.from' | translate: { agent: row.leaf.from.name }"
                 >←</span
               >
-              <span class="node-excerpt">{{ row.leaf.excerpt }}</span>
+              <span class="node-excerpt">“{{ row.leaf.excerpt }}”</span>
               @if (bubbleOf(row.leaf.messageId) !== null) {
                 <button
                   type="button"

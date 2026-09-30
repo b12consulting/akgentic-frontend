@@ -65,11 +65,17 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The one strong word in the header: who handled it. */
+.trace-agent {
   color: var(--akg-text);
 }
 
+/* The duration, set a little apart from the title. */
 .trace-meta {
   flex: 0 0 auto;
+  margin-left: 6px;
   white-space: nowrap;
 }
 

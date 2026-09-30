@@ -61,7 +61,7 @@
 
 .tree-node > .rn > .rn-body:hover,
 .tree-human > .rn > .rn-body:hover {
-  background-color: var(--akg-row-hover);
+  background-color: var(--akg-user-bubble-bg);
 
   /* The chips share the hover ground's tone; lift them off it. */
   .chip {
@@ -196,9 +196,11 @@
   font-weight: 600;
 }
 
+/* The trigger, quoted, after its arrow: both muted, under the strong name. */
 .node-from {
   flex: 0 0 auto;
   cursor: help;
+  color: var(--akg-text-muted);
 }
 
 .node-excerpt {
@@ -207,6 +209,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--akg-text-muted);
 }
 
 .node-answer {
@@ -226,6 +229,8 @@
 .node-in-chat {
   @extend %tree-button;
   flex: 0 0 auto;
+  /* At the row's right edge, whatever the excerpt's length. */
+  margin-left: auto;
   padding: 0 8px;
   border: 1px solid currentColor;
   border-radius: var(--akg-pill-radius);
@@ -245,6 +250,11 @@
   flex: 0 0 auto;
   white-space: nowrap;
   font-size: 0.7rem;
+
+  /* A finished run's check is the ok tone, not the muted type beside it. */
+  .pi-check {
+    color: var(--akg-status-live-fg);
+  }
 }
 
 .node-dot {

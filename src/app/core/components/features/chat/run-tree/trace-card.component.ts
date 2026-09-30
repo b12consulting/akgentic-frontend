@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, input, output } from '@angular/core';
-import { TranslatePipe } from '@ngx-translate/core';
+import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
 import { I18nService } from '../../../../platform/i18n/i18n.service';
 import { ActorAddress } from '../../../../protocol/message.types';
@@ -18,6 +18,16 @@ import {
   TraceSummary,
 } from '../../../../services/process/selectors/trace-summary';
 import { TraceTreeComponent } from './trace-tree.component';
+
+/** The header title, around the agent it names. */
+export interface TitleParts {
+  before: string;
+  agent: string;
+  after: string;
+}
+
+/** Stands in for the agent while the title is translated; never shown. */
+const AGENT_MARK = '\u0001';
 
 /**
  * A trace card (Epic 55, ADR-037 §D8): one per run a message of yours opened.
@@ -59,6 +69,7 @@ export class TraceCardComponent {
   showInChat = output<string>();
 
   private readonly i18n = inject(I18nService);
+  private readonly translate = inject(TranslateService);
 
   readonly lead = computed<ActorAddress>(() => this.summary().agents[0]);
 
@@ -95,6 +106,54 @@ export class TraceCardComponent {
       ? null
       : traceDuration(this.summary().start, this.summary().end),
   );
+
+  /**
+   * The title in one of its four states, cut around the agent it names so the
+   * name alone can be set strong. The agent is translated as a marker and the
+   * string split there, so the name lands wherever the locale puts it. A
+   * method, not a `computed`: it follows a change of language like the pipe.
+   */
+  titleParts(): TitleParts {
+    const { key, agent, params } = this.titleSource();
+    const text = this.translate.instant(key, { ...params, agent: AGENT_MARK }) as string;
+    const at = text.indexOf(AGENT_MARK);
+    return at < 0
+      ? { before: text, agent: '', after: '' }
+      : { before: text.slice(0, at), agent, after: text.slice(at + AGENT_MARK.length) };
+  }
+
+  private titleSource(): {
+    key: string;
+    agent: string;
+    params: Record<string, string | undefined>;
+  } {
+    const s = this.summary();
+    switch (s.title) {
+      case 'waiting':
+        return { key: 'chat.runTree.title.waiting', agent: s.waitingOn?.name ?? '', params: {} };
+      case 'running':
+        return {
+          key: s.activeTool ? 'chat.runTree.title.running' : 'chat.runTree.title.working',
+          agent: s.activeAgent?.name ?? '',
+          params: { tool: s.activeTool ?? undefined },
+        };
+      case 'doneMany':
+        return {
+          key: 'chat.runTree.title.doneMany',
+          agent: this.lead().name,
+          params: { others: this.others() },
+        };
+      case 'doneOne':
+        return {
+          key: 'chat.runTree.title.doneOne',
+          agent: this.lead().name,
+          params: {
+            runs: this.translate.instant(this.runsKey(), { count: s.runCount }) as string,
+            tools: this.translate.instant(this.toolsKey(), { count: s.toolCount }) as string,
+          },
+        };
+    }
+  }
 
   colourOf(agent: ActorAddress): string | null {
     return this.agentColours().of(agent.name);

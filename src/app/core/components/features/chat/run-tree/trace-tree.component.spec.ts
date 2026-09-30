@@ -113,7 +113,7 @@ describe('TraceTreeComponent', () => {
     const expert = node(k('De', EXPERT));
     expect(text(expert.querySelector('.node-agent'))).toBe('@Expert');
     expect(expert.querySelector('.node-from')!.getAttribute('title')).toBe('from @Manager');
-    expect(text(expert.querySelector('.node-excerpt'))).toBe('content of De');
+    expect(text(expert.querySelector('.node-excerpt'))).toBe('“content of De”');
     // De: received at 6, processed at 9.
     expect(text(expert.querySelector('.node-status'))).toBe('3s');
     expect(expert.querySelector('.node-status .pi-check')).not.toBeNull();
@@ -309,7 +309,7 @@ describe('TraceTreeComponent', () => {
       expect(row.closest('button')).toBeNull();
       expect(text(row.querySelector('.node-agent'))).toBe('@Human');
       expect(row.querySelector('.node-from')!.getAttribute('title')).toBe('from @Manager');
-      expect(text(row.querySelector('.node-excerpt'))).toBe('content of Q');
+      expect(text(row.querySelector('.node-excerpt'))).toBe('“content of Q”');
 
       const hovered: (string | null)[] = [];
       const shown: string[] = [];

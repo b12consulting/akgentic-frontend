@@ -98,6 +98,14 @@ describe('TraceCardComponent', () => {
       expect(text('.trace-title')).toBe('@Manager handled this in 1 run · 1 tool');
       // The title already carries the counts, so the meta is the duration alone.
       expect(text('.trace-meta')).toBe('4s');
+      // Only the agent it names is set strong; the rest of the title is muted.
+      expect(text('.trace-title .trace-agent')).toBe('@Manager');
+    });
+
+    it('sets the named agent strong wherever the locale puts it', () => {
+      render(summaryOf(WAITING));
+      expect(text('.trace-title')).toBe('Waiting for @Support');
+      expect(text('.trace-title .trace-agent')).toBe('@Support');
     });
 
     it('running: the latest tool of the most recent running run, and "N running"', () => {

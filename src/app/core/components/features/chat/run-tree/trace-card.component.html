@@ -38,33 +38,10 @@
       }
     </span>
 
+    <!-- Muted, with only the agent it names set strong. -->
     <span class="trace-title">
-      @switch (summary().title) {
-        @case ('waiting') {
-          {{ 'chat.runTree.title.waiting' | translate: { agent: summary().waitingOn?.name } }}
-        }
-        @case ('running') {
-          @if (summary().activeTool; as tool) {
-            {{ 'chat.runTree.title.running' | translate: { agent: summary().activeAgent?.name, tool: tool } }}
-          } @else {
-            {{ 'chat.runTree.title.working' | translate: { agent: summary().activeAgent?.name } }}
-          }
-        }
-        @case ('doneMany') {
-          {{ 'chat.runTree.title.doneMany' | translate: { agent: lead().name, others: others() } }}
-        }
-        @default {
-          {{
-            'chat.runTree.title.doneOne'
-              | translate
-                : {
-                    agent: lead().name,
-                    runs: (runsKey() | translate: { count: summary().runCount }),
-                    tools: (toolsKey() | translate: { count: summary().toolCount }),
-                  }
-          }}
-        }
-      }
+      @let title = titleParts();
+      {{ title.before }}<span class="trace-agent">{{ title.agent }}</span>{{ title.after }}
     </span>
 
     <!-- A solo trace's title already says the counts: its meta is the duration. -->
