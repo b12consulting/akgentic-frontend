@@ -21,6 +21,7 @@ import {
   silent,
   traceRootOf,
 } from './run-graph.selector';
+import { describeStep } from './step-narration';
 import { isEntryPointRun, traceDuration } from './trace-summary';
 import { excerpt, isEntryPoint, tookInCount } from './trace-tree';
 
@@ -36,7 +37,15 @@ export type RunPill = 'running' | 'done' | 'doneSilent' | 'waiting' | 'answered'
 
 export type RunStepRow =
   | { kind: 'received'; offset: string }
-  | { kind: 'tool'; offset: string; name: string; state: 'ok' | 'failed' | 'pending' }
+  | {
+      kind: 'tool';
+      offset: string;
+      name: string;
+      state: 'ok' | 'failed' | 'pending';
+      /** What it was called with, one line; `''` for a call with no
+       *  arguments. */
+      summary: string;
+    }
   | { kind: 'absorbed'; offset: string; from: ActorAddress | null }
   | { kind: 'sent'; offset: string; to: ActorAddress }
   | { kind: 'processed'; offset: string };
@@ -153,6 +162,15 @@ export function runSteps(graph: RunGraph, run: Run): RunStepRow[] {
           offset,
           name: step.tool_name,
           state: step.success === false ? 'failed' : step.done ? 'ok' : 'pending',
+          // The legacy thinking bubble's narration of the same call, so the
+          // two views describe a step in the same words.
+          summary: describeStep({
+            tool_call_id: step.tool_call_id,
+            tool_name: step.tool_name,
+            arguments_preview: step.arguments_preview,
+            done: step.done,
+            kind: 'tool',
+          }).detail,
         };
       case 'absorbed':
         return {

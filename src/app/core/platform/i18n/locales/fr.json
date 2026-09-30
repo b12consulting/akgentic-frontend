@@ -274,8 +274,8 @@
     },
     "step": {
       "received": "reçu",
-      "failed": "{{tool}} · échec",
-      "pending": "{{tool}} · en cours…",
+      "failed": "· échec",
+      "pending": "· en cours…",
       "absorbed": "a intégré le message de {{agent}}",
       "sent": "envoyé à {{agent}}",
       "processed": "traité"

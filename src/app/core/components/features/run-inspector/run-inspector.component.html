@@ -175,21 +175,25 @@
                 <span class="ri-step-label">{{ 'runInspector.step.received' | translate }}</span>
               }
               @case ('tool') {
-                @switch (step.state) {
-                  @case ('failed') {
-                    <span class="ri-step-label ri-mono ri-step--failed">{{
-                      'runInspector.step.failed' | translate: { tool: step.name }
-                    }}</span>
+                <!-- The tool, what it was called with (muted, one line, whole
+                     on hover), then its state when it is not simply done. -->
+                <span
+                  class="ri-step-label ri-step-tool"
+                  [class.ri-step--failed]="step.state === 'failed'"
+                  [attr.title]="step.summary || null"
+                >
+                  <span class="ri-mono ri-tool-name">{{ step.name }}</span>
+                  <!-- Each part opens with a space, so the line still reads as
+                       words when copied or read aloud. -->
+                  @if (step.summary) {
+                    <span class="ri-mono ri-tool-args"> {{ step.summary }}</span>
                   }
-                  @case ('pending') {
-                    <span class="ri-step-label ri-mono">{{
-                      'runInspector.step.pending' | translate: { tool: step.name }
-                    }}</span>
+                  @if (step.state === 'failed') {
+                    <span class="ri-tool-state"> {{ 'runInspector.step.failed' | translate }}</span>
+                  } @else if (step.state === 'pending') {
+                    <span class="ri-tool-state"> {{ 'runInspector.step.pending' | translate }}</span>
                   }
-                  @default {
-                    <span class="ri-step-label ri-mono">{{ step.name }}</span>
-                  }
-                }
+                </span>
               }
               @case ('absorbed') {
                 <span class="ri-step-label">{{

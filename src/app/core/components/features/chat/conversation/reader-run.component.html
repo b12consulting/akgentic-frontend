@@ -100,14 +100,14 @@
           @case ('tool') {
             @switch (step.row.state) {
               @case ('failed') {
-                <span class="reader-run-mono reader-run-step--failed">{{
-                  'runInspector.step.failed' | translate: { tool: step.row.name }
-                }}</span>
+                <span class="reader-run-mono reader-run-step--failed"
+                  >{{ step.row.name }} {{ 'runInspector.step.failed' | translate }}</span
+                >
               }
               @case ('pending') {
-                <span class="reader-run-mono">{{
-                  'runInspector.step.pending' | translate: { tool: step.row.name }
-                }}</span>
+                <span class="reader-run-mono"
+                  >{{ step.row.name }} {{ 'runInspector.step.pending' | translate }}</span
+                >
               }
               @default {
                 <span class="reader-run-mono">{{ step.row.name }}</span>

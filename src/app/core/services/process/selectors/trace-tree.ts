@@ -40,6 +40,9 @@ export interface ToolChip {
   count: number;
   /** A separate chip per name for the calls that failed (`success === false`). */
   failed: boolean;
+  /** What the grouped calls were made with, one distinct preview per line;
+   *  `''` when none had arguments. A tooltip, never chip text. */
+  summary: string;
 }
 
 export interface TraceRunNode {
@@ -124,6 +127,7 @@ export function trackTraceChild(child: TraceTreeChild): string {
  *  into its own group for that name. */
 export function toolChips(run: Run): ToolChip[] {
   const chips = new Map<string, ToolChip>();
+  const previews = new Map<string, Set<string>>();
   for (const step of run.steps) {
     if (step.kind !== 'tool') continue;
     const failed = step.success === false;
@@ -131,10 +135,18 @@ export function toolChips(run: Run): ToolChip[] {
     const chip = chips.get(id);
     chips.set(
       id,
-      chip ? { ...chip, count: chip.count + 1 } : { name: step.tool_name, count: 1, failed },
+      chip
+        ? { ...chip, count: chip.count + 1 }
+        : { name: step.tool_name, count: 1, failed, summary: '' },
     );
+    if (step.arguments_preview) {
+      previews.set(id, (previews.get(id) ?? new Set()).add(step.arguments_preview));
+    }
   }
-  return [...chips.values()];
+  return [...chips.entries()].map(([id, chip]) => ({
+    ...chip,
+    summary: [...(previews.get(id) ?? [])].join('\n'),
+  }));
 }
 
 /** How many messages the run took in while it was going. */

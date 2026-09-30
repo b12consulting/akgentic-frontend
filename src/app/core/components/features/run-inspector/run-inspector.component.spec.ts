@@ -9,9 +9,13 @@ import {
 import {
   ASSISTANT,
   EXPERT,
+  HUMAN,
   MANAGER,
   received,
+  sent,
   SUPPORT,
+  toolCall,
+  toolReturn,
 } from '../../../../../testing/run-log-builders';
 import {
   CASE_2,
@@ -157,6 +161,36 @@ describe('RunInspectorComponent', () => {
       'processed',
     ]);
     expect(host().querySelectorAll('.ri-step--failed').length).toBe(1);
+  });
+
+  it('a tool step names its tool, then what it was called with; a call with none, the name alone', () => {
+    const call = (id: string, name: string, args: string, t: number) => {
+      const m = toolCall(id, name, MANAGER, 'U1', t);
+      (m.event as { arguments: string }).arguments = args;
+      return m;
+    };
+    log.appendAll([
+      sent('U1', HUMAN, MANAGER, null, 1),
+      received('U1', MANAGER, 2),
+      call('t1', 'workspace_read', '{"path": "onboarding/sept-signups.csv"}', 3),
+      toolReturn('t1', 'workspace_read', MANAGER, 'U1', 4),
+      call('t2', 'get_planning', '{}', 5),
+      toolReturn('t2', 'get_planning', MANAGER, 'U1', 6),
+    ]);
+    mount();
+    select(runKey('U1', M));
+
+    const tools = Array.from(host().querySelectorAll('.ri-step[data-step="tool"]'));
+    const [read, plan] = tools;
+    expect(text(read.querySelector('.ri-tool-name'))).toBe('workspace_read');
+    const args = text(read.querySelector('.ri-tool-args'));
+    expect(args).toContain('onboarding/sept-signups.csv');
+    // The whole preview on hover, since the line is cut to the pane.
+    expect(read.querySelector('.ri-step-tool')!.getAttribute('title')).toBe(args);
+
+    expect(text(plan.querySelector('.ri-tool-name'))).toBe('get_planning');
+    expect(plan.querySelector('.ri-tool-args')).toBeNull();
+    expect(plan.querySelector('.ri-step-tool')!.getAttribute('title')).toBeNull();
   });
 
   it('a seat reads "waiting for a person", then "answered"', () => {

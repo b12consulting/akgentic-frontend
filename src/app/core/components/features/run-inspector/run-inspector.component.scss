@@ -386,6 +386,32 @@ button.mini-main {
   color: var(--akg-danger-fg);
 }
 
+/* A tool step: the name, then its arguments on the same line — muted, cut to
+   the pane with the whole preview on hover — then its state, which never
+   gets cut. */
+.ri-step-tool {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 0;
+  overflow-wrap: normal;
+}
+
+.ri-tool-name,
+.ri-tool-state {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.ri-tool-args {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--akg-text-muted);
+}
+
 /* --- event log ----------------------------------------------------------- */
 
 .ri-log-head {

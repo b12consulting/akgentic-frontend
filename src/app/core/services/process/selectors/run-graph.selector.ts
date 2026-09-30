@@ -2,7 +2,7 @@ import { inject, Injectable } from '@angular/core';
 import { map, Observable, shareReplay } from 'rxjs';
 
 import { HUMAN_ROLE } from './actor-kind';
-import { ENTRY_POINT_NAME } from './chat-message.model';
+import { buildPreview, ENTRY_POINT_NAME } from './chat-message.model';
 import {
   ActorAddress,
   AkgenticMessage,
@@ -59,6 +59,10 @@ export type RunStep =
       at: Date;
       tool_call_id: string;
       tool_name: string;
+      /** What it was called with: the legacy thinking bubble's one-line
+       *  preview of the JSON arguments, `''` when there were none. The
+       *  preview, not the payload — a fold must not hold every argument. */
+      arguments_preview: string;
       done: boolean;
       success: boolean | null;
     }
@@ -252,6 +256,17 @@ function applyHandled(graph: RunGraph, msg: HandledMessage): RunGraph {
   );
 }
 
+/** The legacy thinking bubble's preview length (`applyToolCallToThinking`). */
+export const TOOL_ARGUMENTS_PREVIEW_LENGTH = 160;
+
+/** A call's arguments as one line, through the legacy `buildPreview`. An empty
+ *  object is no arguments at all: the step then shows its name alone. */
+export function toolArgumentsPreview(argumentsJson: string | null | undefined): string {
+  const json = (argumentsJson ?? '').trim();
+  if (json === '' || json === '{}' || json === 'null') return '';
+  return buildPreview(json, TOOL_ARGUMENTS_PREVIEW_LENGTH);
+}
+
 function applyToolCall(
   graph: RunGraph,
   msg: EventMessage,
@@ -266,6 +281,7 @@ function applyToolCall(
       at: new Date(msg.timestamp),
       tool_call_id: event.tool_call_id,
       tool_name: event.tool_name,
+      arguments_preview: toolArgumentsPreview(event.arguments),
       done: false,
       success: null,
     }),

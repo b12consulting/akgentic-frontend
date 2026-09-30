@@ -101,10 +101,13 @@
                   <span
                     class="chip chip--tool chip--failed"
                     [attr.aria-label]="'chat.runTree.node.toolFailed' | translate: { tool: tool.name }"
+                    [attr.title]="tool.summary || null"
                     >{{ tool.name }}@if (tool.count > 1) { ×{{ tool.count }}} ✕</span
                   >
                 } @else {
-                  <span class="chip chip--tool"
+                  <!-- What it was called with rides on the tooltip; the chip
+                       stays its name. -->
+                  <span class="chip chip--tool" [attr.title]="tool.summary || null"
                     >{{ tool.name }}@if (tool.count > 1) { ×{{ tool.count }}}</span
                   >
                 }

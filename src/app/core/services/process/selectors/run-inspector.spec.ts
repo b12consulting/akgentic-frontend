@@ -102,9 +102,9 @@ describe('runSteps', () => {
     const run = graph.runs.get(runKey('D2', A))!;
     expect(runSteps(graph, run)).toEqual([
       { kind: 'received', offset: '+0s' },
-      { kind: 'tool', offset: '+1s', name: 'workspace_read', state: 'failed' },
-      { kind: 'tool', offset: '+3s', name: 'workspace_list', state: 'ok' },
-      { kind: 'tool', offset: '+5s', name: 'workspace_read', state: 'ok' },
+      { kind: 'tool', offset: '+1s', name: 'workspace_read', state: 'failed', summary: '' },
+      { kind: 'tool', offset: '+3s', name: 'workspace_list', state: 'ok', summary: '' },
+      { kind: 'tool', offset: '+5s', name: 'workspace_read', state: 'ok', summary: '' },
       { kind: 'sent', offset: '+7s', to: EXPERT },
       { kind: 'processed', offset: '+8s' },
     ]);
@@ -136,6 +136,7 @@ describe('runSteps', () => {
       offset: '+1s',
       name: 'search',
       state: 'pending',
+      summary: '',
     });
     const ret = toolReturn('t1', 'search', MANAGER, 'U1', 4);
     delete (ret.event as { success?: boolean }).success;

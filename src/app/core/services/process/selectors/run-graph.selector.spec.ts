@@ -32,8 +32,10 @@ import {
   runsOf,
   runStatus,
   silent,
+  TOOL_ARGUMENTS_PREVIEW_LENGTH,
   traceRootOf,
 } from './run-graph.selector';
+import { buildPreview } from './chat-message.model';
 
 // ---------------------------------------------------------------------------
 // Builders: real wire shapes (message.types.ts). Timestamps are whole seconds
@@ -276,9 +278,36 @@ describe('runGraphStep — transitions', () => {
       at: at(3),
       tool_call_id: 't1',
       tool_name: 'search',
+      // `{}` is no arguments at all.
+      arguments_preview: '',
       done: false,
       success: null,
     });
+  });
+
+  it('a tool step keeps the legacy one-line preview of its arguments, cut at the same length', () => {
+    const call = (id: string, args: string) => {
+      const m = toolCall(id, 'workspace_read', MANAGER, 'U1', 3);
+      (m.event as { arguments: string }).arguments = args;
+      return m;
+    };
+    const long = JSON.stringify({ path: 'x'.repeat(400) });
+    const g = runGraphFold([
+      received('U1', MANAGER, 2),
+      call('t1', '{"path": "onboarding/sept-signups.csv"}'),
+      call('t2', long),
+    ]);
+    const [, first, second] = run(g, k('U1', MANAGER)).steps;
+    expect(first.kind === 'tool' && first.arguments_preview).toBe(
+      buildPreview('{"path": "onboarding/sept-signups.csv"}', 160),
+    );
+    expect(first.kind === 'tool' && first.arguments_preview).toContain('onboarding/sept-signups.csv');
+    // The same limit the legacy thinking bubble cuts at.
+    expect(TOOL_ARGUMENTS_PREVIEW_LENGTH).toBe(160);
+    expect(second.kind === 'tool' && second.arguments_preview).toBe(buildPreview(long, 160));
+    // Cut at 160, plus the legacy ellipsis.
+    expect(second.kind === 'tool' && second.arguments_preview.length).toBeLessThanOrEqual(163);
+    expect(second.kind === 'tool' && second.arguments_preview.length).toBeLessThan(long.length);
   });
 
   it('ToolReturnEvent marks the step with that tool_call_id done and records success', () => {

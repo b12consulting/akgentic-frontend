@@ -112,8 +112,8 @@ describe('buildTraceTree', () => {
     const ra = find(t, k('Ra', MANAGER));
     expect(ra.tookIn).toBe(1);
     expect(ra.toolChips).toEqual([
-      { name: 'search', count: 1, failed: false },
-      { name: 'read_mailbox', count: 1, failed: false },
+      { name: 'search', count: 1, failed: false, summary: '' },
+      { name: 'read_mailbox', count: 1, failed: false, summary: '' },
     ]);
   });
 
@@ -144,9 +144,9 @@ describe('buildTraceTree', () => {
     const assistant = find(t, k('D2', ASSISTANT));
     expect(assistant.status).toBe('done');
     expect(assistant.toolChips).toEqual([
-      { name: 'workspace_read', count: 1, failed: true },
-      { name: 'workspace_list', count: 1, failed: false },
-      { name: 'workspace_read', count: 1, failed: false },
+      { name: 'workspace_read', count: 1, failed: true, summary: '' },
+      { name: 'workspace_list', count: 1, failed: false, summary: '' },
+      { name: 'workspace_read', count: 1, failed: false, summary: '' },
     ]);
     const seat = find(t, k('S', SUPPORT));
     expect(seat.seat).toBeTrue();
@@ -287,8 +287,8 @@ describe('trace-tree helpers', () => {
       k('U1', MANAGER),
     );
     expect(toolChips(r)).toEqual([
-      { name: 'web_search', count: 2, failed: false },
-      { name: 'read', count: 1, failed: true },
+      { name: 'web_search', count: 2, failed: false, summary: '' },
+      { name: 'read', count: 1, failed: true, summary: '' },
     ]);
   });
 
