@@ -162,6 +162,7 @@
   place-items: center;
   width: 16px;
   height: 18px;
+  margin-right: 4px;
   padding: 0;
   font-size: 0.6rem;
   color: var(--akg-text-muted);
@@ -175,9 +176,12 @@
   transform: rotate(90deg);
 }
 
+/* Same footprint as the chevron, its 4px breathing room included, so a row
+   without children keeps its name on the same column as one with a chevron. */
 .mini-chevron-gap {
   flex: 0 0 auto;
   width: 16px;
+  margin-right: 4px;
 }
 
 .mini-main {
