@@ -119,7 +119,10 @@ describe('ReaderRunComponent', () => {
     it('threads the step count into the toggle', () => {
       setTestTranslations({ chat: { reader: { run: { stepsMany: '<<{{count}}>>' } } } });
       const el = render(blockOf(CASE_2, EXPERT.agent_id, 'De'));
-      expect(el.querySelector('.reader-run-toggle')?.textContent).toContain('<<2>>');
+      const toggle = el.querySelector('.reader-run-toggle')!;
+      expect(toggle.textContent).toContain('<<2>>');
+      // The visible count stays in the accessible name (label in name).
+      expect(toggle.getAttribute('aria-label')).toContain('<<2>>');
     });
   });
 
@@ -132,7 +135,9 @@ describe('ReaderRunComponent', () => {
       expect(toggle.tagName).toBe('BUTTON');
       expect(toggle.getAttribute('type')).toBe('button');
       expect(toggle.getAttribute('aria-expanded')).toBe('false');
-      expect(toggle.getAttribute('aria-label')).toBe('chat.reader.run.expand');
+      expect(toggle.getAttribute('aria-label')).toBe(
+        'chat.reader.run.expand, chat.reader.run.stepsMany',
+      );
     });
 
     it('shows the activity steps with their offsets once expanded', () => {
@@ -144,7 +149,9 @@ describe('ReaderRunComponent', () => {
       expect(offsets).toEqual(['+0s', '+3s']);
       const toggle = el.querySelector('.reader-run-toggle')!;
       expect(toggle.getAttribute('aria-expanded')).toBe('true');
-      expect(toggle.getAttribute('aria-label')).toBe('chat.reader.run.collapse');
+      expect(toggle.getAttribute('aria-label')).toBe(
+        'chat.reader.run.collapse, chat.reader.run.stepsMany',
+      );
     });
 
     it('asks the host to toggle, by run key', () => {

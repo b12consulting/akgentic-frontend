@@ -26,7 +26,9 @@
       class="reader-run-toggle"
       [attr.aria-expanded]="expanded()"
       [attr.aria-label]="
-        (expanded() ? 'chat.reader.run.collapse' : 'chat.reader.run.expand') | translate
+        ((expanded() ? 'chat.reader.run.collapse' : 'chat.reader.run.expand') | translate) +
+        ', ' +
+        (stepsKey(b.activityCount) | translate: { count: b.activityCount })
       "
       (click)="blockToggle.emit(b.key)"
     >

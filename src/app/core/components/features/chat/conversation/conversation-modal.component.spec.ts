@@ -947,6 +947,23 @@ describe('in the run-tree view (a graph is bound)', () => {
     expect(expanded(b)).toBe('false');
   });
 
+  it('expands a folded bubble inside a block on a copy, not the shared message', () => {
+    openLog(CASE_2, EXPERT_ADDR.agent_id);
+    const shared = component.messages().find((m) => m.id === 'env-De-expert-id')!;
+    const block = (): Element =>
+      document.querySelector(`[data-reader-run-key="${runKey('De', EXPERT_ADDR.agent_id)}"]`)!;
+    expect(shared.collapsed).toBe(true);
+    expect(block().querySelector('.notice-text.expanded')).toBeNull();
+
+    component.onToggleCollapse(shared);
+    fixture.detectChanges();
+
+    expect(block().querySelector('.notice-text.expanded')).not.toBeNull();
+    expect(shared.collapsed)
+      .withContext('the shared message object must be untouched')
+      .toBe(true);
+  });
+
   it('says an agent with no runs and no messages has nothing to show', () => {
     openLog(CASE_2, 'quiet-id');
 

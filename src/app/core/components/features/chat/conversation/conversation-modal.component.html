@@ -30,9 +30,9 @@
 
     <!-- The dialogue, and the box that writes to it. -->
     <div class="conversation-pane">
-      <!-- Rendered by the SAME message + activity components as the main
-           conversation, over the SAME merged display list — see the class
-           docstring. -->
+      <!-- Rendered by the SAME message component as the main conversation: over
+           the SAME merged display list in the legacy view, over the run graph
+           when one is bound — see the class docstring. -->
       <div class="conversation-column">
         <ng-container *ngIf="hasTurns(); else noTurns">
           <!-- The legacy source, unless a run graph is bound (see the class
