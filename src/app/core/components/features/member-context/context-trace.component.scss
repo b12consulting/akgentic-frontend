@@ -289,20 +289,31 @@
 }
 
 /*
- * KIND, NAME, PROVENANCE — in three weights, on one line that may wrap.
- *
- * `align-items: baseline` rather than `center`: the kind is a 10.5px
- * micro-label and the name is 13px, and centring two different type sizes
- * against each other leaves neither sitting on the line the reader is following.
+ * THE HEADER ROW: the title, then the copy control, centred on each other.
  */
 .card-header {
   display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   padding: 0 0 7px;
   font-size: inherit;
   font-weight: inherit;
+}
+
+/*
+ * KIND, NAME, PROVENANCE — in three weights, on one line that may wrap.
+ *
+ * `align-items: baseline` rather than `center`: the kind is a micro-label and
+ * the name a step larger, and centring two different type sizes against each
+ * other leaves neither sitting on the line the reader is following.
+ */
+.entry-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
 }
 
 /* The same uppercase micro-label the rail's group headers, the inspector's
@@ -320,7 +331,8 @@
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
-  font-size: 13px;
+  /* The type scale's top step, one above the 13px it was. */
+  font-size: var(--akg-font-size-body);
   font-weight: 400;
   color: var(--akg-text);
   text-overflow: ellipsis;
@@ -406,6 +418,14 @@
   flex: 0 0 auto;
   align-self: center;
   margin-left: auto;
+}
+
+/* A tighter button than the chat row's: 2px less around the same 16px glyph
+   on every side. Scoped to this pane's copy control; the primitive's own size
+   is untouched. */
+:host ::ng-deep .entry-copy .icon-button {
+  width: calc(var(--akg-icon-button-size-sm) - 4px);
+  height: calc(var(--akg-icon-button-size-sm) - 4px);
 }
 
 /*

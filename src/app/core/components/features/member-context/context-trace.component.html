@@ -66,8 +66,10 @@
           other place those strings appear.
         -->
         <header class="card-header">
-          <span class="entry-kind">{{ row.type | capitalize }}</span>
-          <span class="entry-name">{{ row.name }}</span>
+          <span class="entry-title">
+            <span class="entry-kind">{{ row.type | capitalize }}</span>
+            <span class="entry-name">{{ row.name }}</span>
+          </span>
           <ng-container
             *ngTemplateOutlet="copyControl; context: { $implicit: row.content }"
           ></ng-container>
@@ -85,13 +87,15 @@
     @for (message of context; track $index) {
       <article class="card-container trace-entry">
         <header class="card-header">
-          <span class="entry-kind">{{ message.type | capitalize }}</span>
-          <span class="entry-name">{{ message.name }}</span>
-          <!-- Which model produced this turn is provenance, not conversation:
-               it sits at the quiet end and wraps to its own line rather than
-               pushing the name out of the pane. -->
-          <span *ngIf="message.model_name" class="model-info">
-            {{ message.provider_name }}/{{ message.model_name }}
+          <span class="entry-title">
+            <span class="entry-kind">{{ message.type | capitalize }}</span>
+            <span class="entry-name">{{ message.name }}</span>
+            <!-- Which model produced this turn is provenance, not conversation:
+                 it sits at the quiet end and wraps to its own line rather than
+                 pushing the name out of the pane. -->
+            <span *ngIf="message.model_name" class="model-info">
+              {{ message.provider_name }}/{{ message.model_name }}
+            </span>
           </span>
           @if (['system', 'ai', 'tool', 'human', 'tool_result'].includes(message.type)) {
             <ng-container

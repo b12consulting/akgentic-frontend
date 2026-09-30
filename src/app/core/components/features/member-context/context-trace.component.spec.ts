@@ -58,7 +58,10 @@ const NEUTRAL_TOKEN_USAGE_SELECTOR = {
  * about — without pinning the punctuation between them.
  */
 function headerText(header: Element): string {
-  return Array.from(header.children)
+  // The words live in the header's title group; the copy control beside it
+  // carries none.
+  const title = header.querySelector('.entry-title') ?? header;
+  return Array.from(title.children)
     .map((child) => (child.textContent ?? '').replace(/\s+/g, ' ').trim())
     .filter((text) => text.length > 0)
     .join(' ');
