@@ -278,6 +278,9 @@ describe('TraceTreeComponent', () => {
     fixture.detectChanges();
     expect(node(k('Da', ASSISTANT)).classList).toContain('tree-node--flash');
     expect(node(ROOT).classList).not.toContain('tree-node--flash');
+    // A static ring, not only the fade: reduced motion drops the animation,
+    // and the flash must still show.
+    expect(getComputedStyle(node(k('Da', ASSISTANT))).boxShadow).not.toBe('none');
   });
 
   describe('the @Human row', () => {

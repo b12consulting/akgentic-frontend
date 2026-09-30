@@ -13,8 +13,8 @@
         >{{ initialOf(r.agent) }}</span
       >
       <span class="ri-agent">{{ r.agent.name }}</span>
-      @if (pillKey(); as key) {
-        <span class="ri-pill" [attr.data-pill]="key">{{ key | translate }}</span>
+      @if (pill(); as p) {
+        <span class="ri-pill" [attr.data-pill]="p">{{ pillKeys[p] | translate }}</span>
       }
     </header>
 

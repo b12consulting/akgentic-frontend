@@ -27,8 +27,9 @@ export interface RunSelection {
  * Opening the inspector on the Run tab is the host's (`ProcessComponent`), the
  * only tier allowed to touch the tab mode; it answers `selections$`.
  *
- * Never cleared: there is no "deselect" gesture. A team switch resets it with
- * the rest of the process scope.
+ * Never cleared: there is no "deselect" gesture. Nor does a team switch clear
+ * it: the route's injector outlives the team, so a selection survives a round
+ * trip back to the same team (a deferred finding of Epic 55).
  */
 @Injectable()
 export class RunSelectionState {

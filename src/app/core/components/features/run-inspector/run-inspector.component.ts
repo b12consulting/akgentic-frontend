@@ -1,5 +1,13 @@
 import { DatePipe } from '@angular/common';
-import { Component, computed, effect, inject, signal, untracked } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  computed,
+  effect,
+  inject,
+  signal,
+  untracked,
+} from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { TranslatePipe } from '@ngx-translate/core';
 import { map, zip } from 'rxjs';
@@ -33,6 +41,7 @@ import {
 } from '../../../services/process/selectors/run-inspector';
 import { RunSelectionState } from '../../../services/process/ui-state/run-selection';
 import { EmptyStateComponent } from '../../primitives/empty-state/empty-state.component';
+
 /** A mini-tree row as drawn: whether its children show. */
 export interface MiniRowView extends MiniTreeRow {
   expanded: boolean;
@@ -80,11 +89,13 @@ interface InspectorState {
  *
  * Always mounted behind `.moved-offscreen`, like every inspector panel, so the
  * default path stays cheap: the whole-team ledger is built only while that
- * mode is on.
+ * mode is on, and OnPush keeps the template's method calls (`agentList`,
+ * `colourOf`) off every app-wide tick — everything it shows is a signal.
  */
 @Component({
   selector: 'app-run-inspector',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [DatePipe, TranslatePipe, EmptyStateComponent],
   templateUrl: './run-inspector.component.html',
   styleUrl: './run-inspector.component.scss',
@@ -113,11 +124,11 @@ export class RunInspectorComponent {
   readonly run = computed(() => displayedRun(this.state().graph, this.selection.selected()));
   private readonly runKey = computed(() => this.run()?.key ?? null);
 
-  readonly pillKey = computed<string | null>(() => {
+  readonly pill = computed<RunPill | null>(() => {
     const key = this.runKey();
-    const pill = key === null ? null : runPill(this.state().graph, key);
-    return pill === null ? null : PILL_KEYS[pill];
+    return key === null ? null : runPill(this.state().graph, key);
   });
+  readonly pillKeys = PILL_KEYS;
 
   readonly trigger = computed(() => {
     const run = this.run();

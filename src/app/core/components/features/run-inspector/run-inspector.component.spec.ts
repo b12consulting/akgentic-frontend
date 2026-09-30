@@ -156,9 +156,12 @@ describe('RunInspectorComponent', () => {
     mount();
     select(runKey('S', S));
     expect(text(host().querySelector('.ri-pill'))).toBe('waiting for a person');
+    // Styled by the pill's value, never by its translation key.
+    expect(host().querySelector('.ri-pill')!.getAttribute('data-pill')).toBe('waiting');
     log.appendAll(CASE_5_ANSWER);
     fixture.detectChanges();
     expect(text(host().querySelector('.ri-pill'))).toBe('answered');
+    expect(host().querySelector('.ri-pill')!.getAttribute('data-pill')).toBe('answered');
   });
 
   it('an unknown trigger replaces Handling\'s fields with one note', () => {

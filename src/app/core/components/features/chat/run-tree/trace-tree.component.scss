@@ -30,9 +30,11 @@
   box-shadow: inset 2px 0 0 var(--akg-text);
 }
 
-/* A provenance click's flash on the node it scrolled to. */
+/* A provenance click's flash on the node it scrolled to. The ring is static,
+   as on the bubble flash, so reduced motion drops the fade, not the cue. */
 .tree-node--flash {
   border-radius: 6px;
+  box-shadow: var(--akg-focus-ring);
   animation: tree-node-flash 1.2s ease-out;
 }
 

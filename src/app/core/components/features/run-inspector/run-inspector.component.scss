@@ -76,7 +76,7 @@
   white-space: nowrap;
   color: var(--akg-text-muted);
 
-  &[data-pill='runInspector.status.waiting'] {
+  &[data-pill='waiting'] {
     border-color: var(--akg-attention-border);
     background: var(--akg-attention-bg);
     color: var(--akg-attention-fg);
