@@ -15,6 +15,7 @@ import {
 import { TranslatePipe } from '@ngx-translate/core';
 import { Subscription } from 'rxjs';
 
+import { DisplayActorNamePipe } from '../../../../shared/util/util';
 import { ApiService } from '../../../../platform/http/api.service';
 import { ContextService } from '../../../../platform/context/context.service';
 import { ActorAddress } from '../../../../protocol/message.types';
@@ -91,6 +92,7 @@ const FLASH_MS = 1200;
   imports: [
     CommonModule,
     ChatMessageComponent,
+    DisplayActorNamePipe,
     FeedbackComponent,
     ProcessUserInputComponent,
     SeatAnswerDialogComponent,

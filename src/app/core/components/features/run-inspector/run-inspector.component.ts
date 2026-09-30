@@ -41,6 +41,7 @@ import {
   RunStepRow,
 } from '../../../services/process/selectors/run-inspector';
 import { RunSelectionState } from '../../../services/process/ui-state/run-selection';
+import { actorInitial, displayActorName, DisplayActorNamePipe } from '../../../shared/util/util';
 import { EmptyStateComponent } from '../../primitives/empty-state/empty-state.component';
 
 /** A mini-tree row as drawn: whether its children show. */
@@ -97,7 +98,7 @@ interface InspectorState {
   selector: 'app-run-inspector',
   standalone: true,
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [DatePipe, TranslatePipe, EmptyStateComponent],
+  imports: [DatePipe, DisplayActorNamePipe, TranslatePipe, EmptyStateComponent],
   templateUrl: './run-inspector.component.html',
   styleUrl: './run-inspector.component.scss',
 })
@@ -201,7 +202,7 @@ export class RunInspectorComponent {
     return new Intl.ListFormat(this.i18n.currentLanguage || undefined, {
       style: 'long',
       type: 'conjunction',
-    }).format(agents.map((a) => a.name));
+    }).format(agents.map((a) => displayActorName(a.name)));
   }
 
   colourOf(agent: ActorAddress): string | null {
@@ -209,7 +210,6 @@ export class RunInspectorComponent {
   }
 
   initialOf(agent: ActorAddress): string {
-    const name = (agent.name ?? '').replace(/^@/, '').trim();
-    return name ? name.slice(0, 1).toUpperCase() : '·';
+    return actorInitial(agent.name);
   }
 }

@@ -45,7 +45,7 @@
                 task.description
               }}</span>
               @if (task.owner) {
-                @let owner = "inspector.tasks.owner" | translate: { agent: task.owner };
+                @let owner = "inspector.tasks.owner" | translate: { agent: (task.owner | displayActorName) };
                 <span
                   class="owner-avatar"
                   role="img"

@@ -185,6 +185,23 @@ describe('TraceTreeComponent', () => {
     expect(chips(ROOT)).toEqual(['💬 @Expert', '💬 @Human ×2']);
   });
 
+  it('a message chip to the workspace actor names only its leaf', () => {
+    const workspace = addr(
+      '#Workspace-anonymous/_meta/folder-Documents',
+      'ToolActor',
+      'workspace-id',
+    );
+    render([
+      sent('U1', HUMAN, MANAGER, null, 1),
+      received('U1', MANAGER, 2),
+      sent('W', MANAGER, workspace, 'U1', 3),
+      processed('U1', MANAGER, 4),
+    ]);
+    node(ROOT).querySelector<HTMLButtonElement>('.node-chevron')!.click();
+    fixture.detectChanges();
+    expect(chips(ROOT)).toEqual(['💬 Workspace/folder-Documents']);
+  });
+
   it('a folded node\'s toggle persists across a re-emission, by run key', () => {
     render(CASE_2.slice(0, 9));
     expand(k('De', EXPERT));

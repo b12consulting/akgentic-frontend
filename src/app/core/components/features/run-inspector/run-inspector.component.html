@@ -12,7 +12,7 @@
         aria-hidden="true"
         >{{ initialOf(r.agent) }}</span
       >
-      <span class="ri-agent">{{ r.agent.name }}</span>
+      <span class="ri-agent">{{ r.agent.name | displayActorName }}</span>
       @if (pill(); as p) {
         <span class="ri-pill" [attr.data-pill]="p">{{ pillKeys[p] | translate }}</span>
       }
@@ -24,8 +24,8 @@
       <div class="mini-box">
         @if (root(); as top) {
           <div class="mini-root">
-            {{ top.fromYou ? ('runInspector.miniTree.you' | translate) : top.from.name }} →
-            {{ top.to.name }} <span class="mini-id">#{{ top.shortId }}</span>
+            {{ top.fromYou ? ('runInspector.miniTree.you' | translate) : (top.from.name | displayActorName) }} →
+            {{ top.to.name | displayActorName }} <span class="mini-id">#{{ top.shortId }}</span>
           </div>
         }
         <ol class="mini-tree">
@@ -84,7 +84,7 @@
                     aria-hidden="true"
                     >{{ initialOf(row.run.agent) }}</span
                   >
-                  <span class="mini-name">{{ row.run.agent.name }}</span>
+                  <span class="mini-name">{{ row.run.agent.name | displayActorName }}</span>
                   @if (row.kind === 'seat') {
                     <span class="mini-hint">{{ 'chat.runTree.node.humanSeat' | translate }}</span>
                   }
@@ -126,11 +126,11 @@
               @for (leaf of row.leaves; track $index) {
                 <li class="mini-leaf" [style.--depth]="row.depth + 1">
                   @if (leaf.kind === 'queued') {
-                    {{ 'chat.runTree.node.queued' | translate: { agent: leaf.recipient.name } }}
+                    {{ 'chat.runTree.node.queued' | translate: { agent: (leaf.recipient.name | displayActorName) } }}
                   } @else if (leaf.kind === 'absorbed') {
                     {{
                       'chat.runTree.node.absorbed'
-                        | translate: { agent: leaf.recipient.name, by: leaf.by.name }
+                        | translate: { agent: (leaf.recipient.name | displayActorName), by: (leaf.by.name | displayActorName) }
                     }}
                   } @else {
                     ⤵
@@ -151,7 +151,7 @@
     <section class="ri-section">
       <h3 class="ri-section-title">{{ 'runInspector.section.handling' | translate }}</h3>
       @if (trigger(); as t) {
-        <div class="ri-route">{{ t.sender.name }} → {{ t.recipient.name }}</div>
+        <div class="ri-route">{{ t.sender.name | displayActorName }} → {{ t.recipient.name | displayActorName }}</div>
         <div class="ri-text">{{ t.content }}</div>
       } @else {
         <p class="ri-note">{{ 'runInspector.handling.unknown' | translate }}</p>
@@ -197,12 +197,12 @@
               }
               @case ('absorbed') {
                 <span class="ri-step-label">{{
-                  'runInspector.step.absorbed' | translate: { agent: step.from?.name ?? '—' }
+                  'runInspector.step.absorbed' | translate: { agent: (step.from?.name | displayActorName) || '—' }
                 }}</span>
               }
               @case ('sent') {
                 <span class="ri-step-label">{{
-                  'runInspector.step.sent' | translate: { agent: step.to.name }
+                  'runInspector.step.sent' | translate: { agent: (step.to.name | displayActorName) }
                 }}</span>
               }
               @case ('processed') {

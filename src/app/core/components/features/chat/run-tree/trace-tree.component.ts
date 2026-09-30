@@ -28,6 +28,7 @@ import {
   TraceRunNode,
   TraceTreeChild,
 } from '../../../../services/process/selectors/trace-tree';
+import { actorInitial, DisplayActorNamePipe } from '../../../../shared/util/util';
 import { RunSelectionState } from '../../../../services/process/ui-state/run-selection';
 import { TraceFoldState } from '../../../../services/process/ui-state/trace-fold-state';
 
@@ -80,7 +81,7 @@ export function visibleRows(
 @Component({
   selector: 'app-trace-tree',
   standalone: true,
-  imports: [CommonModule, TranslatePipe],
+  imports: [CommonModule, DisplayActorNamePipe, TranslatePipe],
   templateUrl: './trace-tree.component.html',
   styleUrl: './trace-tree.component.scss',
 })
@@ -192,8 +193,7 @@ export class TraceTreeComponent {
   }
 
   initialOf(agent: ActorAddress): string {
-    const name = (agent.name ?? '').replace(/^@/, '').trim();
-    return name ? name.slice(0, 1).toUpperCase() : '·';
+    return actorInitial(agent.name);
   }
 
   bubbleOf(messageId: string): string | null {

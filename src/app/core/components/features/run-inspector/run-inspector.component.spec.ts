@@ -7,10 +7,12 @@ import {
   setTestTranslations,
 } from '../../../../../testing/i18n-testing';
 import {
+  addr,
   ASSISTANT,
   EXPERT,
   HUMAN,
   MANAGER,
+  processed,
   received,
   sent,
   SUPPORT,
@@ -204,6 +206,31 @@ describe('RunInspectorComponent', () => {
     fixture.detectChanges();
     expect(text(host().querySelector('.ri-pill'))).toBe('answered');
     expect(host().querySelector('.ri-pill')!.getAttribute('data-pill')).toBe('answered');
+  });
+
+  it('names the workspace actor by its leaf, in the header, the route and a step', () => {
+    const workspace = addr(
+      '#Workspace-anonymous/_meta/folder-Documents',
+      'ToolActor',
+      'workspace-id',
+    );
+    log.appendAll([
+      sent('U1', HUMAN, MANAGER, null, 1),
+      received('U1', MANAGER, 2),
+      sent('W', MANAGER, workspace, 'U1', 3),
+      processed('U1', MANAGER, 4),
+      received('W', workspace, 5),
+      processed('W', workspace, 6),
+    ]);
+    mount();
+
+    select(runKey('W', workspace.agent_id));
+    expect(text(host().querySelector('.ri-agent'))).toBe('Workspace/folder-Documents');
+    expect(text(host().querySelector('.ri-avatar'))).toBe('W');
+    expect(text(host().querySelector('.ri-route'))).toBe('@Manager → Workspace/folder-Documents');
+
+    select(runKey('U1', M));
+    expect(texts('.ri-step-label')).toContain('sent to Workspace/folder-Documents');
   });
 
   it('an unknown trigger replaces Handling\'s route and text with one note', () => {

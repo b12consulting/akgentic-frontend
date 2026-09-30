@@ -9,12 +9,12 @@
                  "replying to" / "as" label sits above your bubble. -->
             @if (item.notes.replyingTo; as asker) {
               <div class="run-note run-note--mine run-note--above">
-                {{ 'chat.runTree.replyingTo' | translate: { agent: asker.name } }}
+                {{ 'chat.runTree.replyingTo' | translate: { agent: (asker.name | displayActorName) } }}
               </div>
             }
             @if (item.notes.sendAs; as seat) {
               <div class="run-note run-note--mine run-note--above">
-                {{ 'chat.runTree.sendAs' | translate: { agent: seat.name } }}
+                {{ 'chat.runTree.sendAs' | translate: { agent: (seat.name | displayActorName) } }}
               </div>
             }
             @if (ownsRating(item.data) || item.notes.provenance) {
@@ -57,8 +57,8 @@
                         provenanceKey(p)
                           | translate
                             : {
-                                agent: p.agent.name,
-                                from: p.from.name,
+                                agent: (p.agent.name | displayActorName),
+                                from: (p.from.name | displayActorName),
                                 depth: p.depth,
                                 runs: (runsKey(p.runsInTrace) | translate: { count: p.runsInTrace }),
                               }
@@ -77,7 +77,7 @@
                   class="run-note run-note--mine run-link"
                   (click)="selectRun(absorbed.run, 'absorbed')"
                 >
-                  {{ 'chat.runTree.absorbedNote' | translate: { agent: absorbed.agent.name } }}
+                  {{ 'chat.runTree.absorbedNote' | translate: { agent: (absorbed.agent.name | displayActorName) } }}
                 </button>
               }
             }
@@ -120,12 +120,12 @@
           <!-- A queued message keeps its "replying to" / "as" label. -->
           @if (tailNotes.get(m.id)?.replyingTo; as asker) {
             <div class="run-note run-note--mine run-note--above">
-              {{ 'chat.runTree.replyingTo' | translate: { agent: asker.name } }}
+              {{ 'chat.runTree.replyingTo' | translate: { agent: (asker.name | displayActorName) } }}
             </div>
           }
           @if (tailNotes.get(m.id)?.sendAs; as seat) {
             <div class="run-note run-note--mine run-note--above">
-              {{ 'chat.runTree.sendAs' | translate: { agent: seat.name } }}
+              {{ 'chat.runTree.sendAs' | translate: { agent: (seat.name | displayActorName) } }}
             </div>
           }
           <app-chat-message
@@ -135,7 +135,7 @@
             [agentColours]="agentColours"
           ></app-chat-message>
           <div class="run-note run-note--mine run-note--tail">
-            {{ 'chat.runTree.notReceivedYet' | translate: { agent: m.recipient.name } }}
+            {{ 'chat.runTree.notReceivedYet' | translate: { agent: (m.recipient.name | displayActorName) } }}
           </div>
         }
       }

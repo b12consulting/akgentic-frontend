@@ -17,6 +17,7 @@ import {
   traceDuration,
   TraceSummary,
 } from '../../../../services/process/selectors/trace-summary';
+import { actorInitial, displayActorName, DisplayActorNamePipe } from '../../../../shared/util/util';
 import { TraceTreeComponent } from './trace-tree.component';
 
 /** The header title, around the agent it names. */
@@ -46,7 +47,7 @@ const AGENT_MARK = '\u0001';
 @Component({
   selector: 'app-trace-card',
   standalone: true,
-  imports: [CommonModule, TranslatePipe, TraceTreeComponent],
+  imports: [CommonModule, DisplayActorNamePipe, TranslatePipe, TraceTreeComponent],
   templateUrl: './trace-card.component.html',
   styleUrl: './trace-card.component.scss',
 })
@@ -81,7 +82,7 @@ export class TraceCardComponent {
     }).format(
       this.summary()
         .agents.slice(1)
-        .map((a) => a.name),
+        .map((a) => displayActorName(a.name)),
     ),
   );
 
@@ -129,23 +130,27 @@ export class TraceCardComponent {
     const s = this.summary();
     switch (s.title) {
       case 'waiting':
-        return { key: 'chat.runTree.title.waiting', agent: s.waitingOn?.name ?? '', params: {} };
+        return {
+          key: 'chat.runTree.title.waiting',
+          agent: displayActorName(s.waitingOn?.name ?? ''),
+          params: {},
+        };
       case 'running':
         return {
           key: s.activeTool ? 'chat.runTree.title.running' : 'chat.runTree.title.working',
-          agent: s.activeAgent?.name ?? '',
+          agent: displayActorName(s.activeAgent?.name ?? ''),
           params: { tool: s.activeTool ?? undefined },
         };
       case 'doneMany':
         return {
           key: 'chat.runTree.title.doneMany',
-          agent: this.lead().name,
+          agent: displayActorName(this.lead().name),
           params: { others: this.others() },
         };
       case 'doneOne':
         return {
           key: 'chat.runTree.title.doneOne',
-          agent: this.lead().name,
+          agent: displayActorName(this.lead().name),
           params: {
             runs: this.translate.instant(this.runsKey(), { count: s.runCount }) as string,
             tools: this.translate.instant(this.toolsKey(), { count: s.toolCount }) as string,
@@ -159,8 +164,7 @@ export class TraceCardComponent {
   }
 
   initialOf(agent: ActorAddress): string {
-    const name = (agent.name ?? '').replace(/^@/, '').trim();
-    return name ? name.slice(0, 1).toUpperCase() : '·';
+    return actorInitial(agent.name);
   }
 
   onToggle(): void {

@@ -19,6 +19,7 @@ import {
   PlanTask,
   planningTasks,
 } from '../../../../services/process/selectors/task-board';
+import { actorInitial, DisplayActorNamePipe } from '../../../../shared/util/util';
 
 /** The board as drawn. */
 export interface TaskBoardView {
@@ -65,7 +66,7 @@ export const TASK_BOARD_HIDE_CLOSED_KEY = 'akgentic.taskBoard.hideClosed';
 @Component({
   selector: 'app-task-board',
   standalone: true,
-  imports: [AsyncPipe, TranslatePipe],
+  imports: [AsyncPipe, DisplayActorNamePipe, TranslatePipe],
   templateUrl: './task-board.component.html',
   styleUrl: './task-board.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -112,8 +113,7 @@ export class TaskBoardComponent {
   }
 
   initialOf(name: string): string {
-    const bare = name.replace(/^@/, '').trim();
-    return bare ? bare.slice(0, 1).toUpperCase() : '·';
+    return actorInitial(name);
   }
 
   /** `localStorage` throws outright when the browser blocks storage; a refused

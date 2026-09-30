@@ -54,11 +54,11 @@
                   aria-hidden="true"
                   >{{ initialOf(row.node.run.agent) }}</span
                 >
-                <span class="node-agent">{{ row.node.run.agent.name }}</span>
+                <span class="node-agent">{{ row.node.run.agent.name | displayActorName }}</span>
                 @if (row.node.trigger; as trigger) {
                   <span
                     class="node-from"
-                    [attr.title]="'chat.runTree.node.from' | translate: { agent: trigger.sender.name }"
+                    [attr.title]="'chat.runTree.node.from' | translate: { agent: (trigger.sender.name | displayActorName) }"
                     >←</span
                   >
                   <span class="node-excerpt">“{{ excerptOf(row.node) }}”</span>
@@ -133,7 +133,7 @@
               @if (row.expandable && !row.expanded) {
                 @for (chip of row.node.messageChips; track chip.recipient.agent_id) {
                   <span class="chip chip--message"
-                    >💬 {{ chip.recipient.name }}@if (chip.count > 1) { ×{{ chip.count }}}</span
+                    >💬 {{ chip.recipient.name | displayActorName }}@if (chip.count > 1) { ×{{ chip.count }}}</span
                   >
                 }
               }
@@ -160,10 +160,10 @@
                 aria-hidden="true"
                 >{{ initialOf(row.leaf.to) }}</span
               >
-              <span class="node-agent">{{ row.leaf.to.name }}</span>
+              <span class="node-agent">{{ row.leaf.to.name | displayActorName }}</span>
               <span
                 class="node-from"
-                [attr.title]="'chat.runTree.node.from' | translate: { agent: row.leaf.from.name }"
+                [attr.title]="'chat.runTree.node.from' | translate: { agent: (row.leaf.from.name | displayActorName) }"
                 >←</span
               >
               <span class="node-excerpt">“{{ row.leaf.excerpt }}”</span>
@@ -184,7 +184,7 @@
           <div class="rn">
             <span class="node-chevron-gap" aria-hidden="true"></span>
             <span class="rn-body">{{
-              'chat.runTree.node.queued' | translate: { agent: row.leaf.recipient.name }
+              'chat.runTree.node.queued' | translate: { agent: (row.leaf.recipient.name | displayActorName) }
             }}</span>
           </div>
         </li>
@@ -194,7 +194,7 @@
             <span class="node-chevron-gap" aria-hidden="true"></span>
             <span class="rn-body">{{
               'chat.runTree.node.absorbed'
-                | translate: { agent: row.leaf.recipient.name, by: row.leaf.by.name }
+                | translate: { agent: (row.leaf.recipient.name | displayActorName), by: (row.leaf.by.name | displayActorName) }
             }}</span>
           </div>
         </li>
@@ -203,7 +203,7 @@
           <div class="rn">
             <span class="node-chevron-gap" aria-hidden="true"></span>
             <span class="rn-body">{{
-              joinKey(row.leaf.phrase) | translate: { agent: row.leaf.from.name }
+              joinKey(row.leaf.phrase) | translate: { agent: (row.leaf.from.name | displayActorName) }
             }}</span>
           </div>
         </li>

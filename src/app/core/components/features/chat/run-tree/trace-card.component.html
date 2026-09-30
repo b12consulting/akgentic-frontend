@@ -6,7 +6,7 @@
 <div class="trace-card" [class.open]="open()" [attr.data-trace-root]="summary().root">
   @if (continuesFrom(); as asker) {
     <div class="trace-continues">
-      {{ 'chat.runTree.continuesTrace' | translate: { agent: asker.name } }}
+      {{ 'chat.runTree.continuesTrace' | translate: { agent: (asker.name | displayActorName) } }}
     </div>
   }
 
