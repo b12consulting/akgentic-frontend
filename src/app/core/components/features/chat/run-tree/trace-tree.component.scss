@@ -221,11 +221,21 @@
   font-weight: 600;
 }
 
+/* A pill whose border is its own ink. The shared button reset zeroes the
+   border, so it is restated here, after the extend. */
 .node-in-chat {
   @extend %tree-button;
   flex: 0 0 auto;
-  padding: 1px 6px;
+  padding: 0 8px;
+  border: 1px solid currentColor;
+  border-radius: var(--akg-pill-radius);
   color: var(--akg-tool-accent);
+  font-size: 11.5px;
+  white-space: nowrap;
+
+  &:hover {
+    background: color-mix(in srgb, currentColor 8%, transparent);
+  }
 }
 
 .node-status {
