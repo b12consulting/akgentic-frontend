@@ -42,7 +42,7 @@ import {
 } from '../../../services/process/event/per-agent-specs';
 import { CommandDescriptor } from '../../../protocol/message.types';
 
-import { CopyButtonComponent } from '../../primitives/copy-button/copy-button.component';
+import { IconButtonComponent } from '../../primitives/icon-button/icon-button.component';
 
 /**
  * ContextTraceComponent - Displays chat messages with JSON-formatted arguments using Monaco Editor
@@ -62,7 +62,7 @@ import { CopyButtonComponent } from '../../primitives/copy-button/copy-button.co
     MentionModule,
     CapitalizePipe,
     TokenCountPipe,
-    CopyButtonComponent,
+    IconButtonComponent,
     TranslatePipe,
   ],
   templateUrl: './context-trace.component.html',

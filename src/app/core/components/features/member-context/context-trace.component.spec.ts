@@ -97,7 +97,7 @@ describe('ContextTraceComponent — slash-command mention (Story 15-1 / 17-3)', 
     TestBed.configureTestingModule({
       imports: [ContextTraceComponent],
       providers: [
-        // `CopyButtonComponent`, imported by the component under test, now
+        // The copy control in the template under test now
         // resolves its label through `TranslatePipe` rather than a hardcoded
         // English string, so rendering it needs a TranslateService.
         provideTranslateTesting(),
@@ -350,7 +350,7 @@ describe('ContextTraceComponent — head system block (Story 16-2)', () => {
     TestBed.configureTestingModule({
       imports: [ContextTraceComponent],
       providers: [
-        // `CopyButtonComponent`, imported by the component under test, now
+        // The copy control in the template under test now
         // resolves its label through `TranslatePipe` rather than a hardcoded
         // English string, so rendering it needs a TranslateService.
         provideTranslateTesting(),
@@ -647,7 +647,7 @@ describe('ContextTraceComponent — never-run backstory head block (Story 20-1)'
     TestBed.configureTestingModule({
       imports: [ContextTraceComponent],
       providers: [
-        // `CopyButtonComponent`, imported by the component under test, now
+        // The copy control in the template under test now
         // resolves its label through `TranslatePipe` rather than a hardcoded
         // English string, so rendering it needs a TranslateService.
         provideTranslateTesting(),
@@ -783,7 +783,7 @@ describe('ContextTraceComponent — never-run backstory head block (Story 20-1)'
     TestBed.configureTestingModule({
       imports: [ContextTraceComponent],
       providers: [
-        // `CopyButtonComponent`, imported by the component under test, now
+        // The copy control in the template under test now
         // resolves its label through `TranslatePipe` rather than a hardcoded
         // English string, so rendering it needs a TranslateService.
         provideTranslateTesting(),
@@ -843,7 +843,7 @@ describe('ContextTraceComponent — follow mode + status pill', () => {
     TestBed.configureTestingModule({
       imports: [ContextTraceComponent],
       providers: [
-        // `CopyButtonComponent`, imported by the component under test, now
+        // The copy control in the template under test now
         // resolves its label through `TranslatePipe` rather than a hardcoded
         // English string, so rendering it needs a TranslateService.
         provideTranslateTesting(),
@@ -1024,7 +1024,7 @@ describe('ContextTraceComponent — keyboard submit parity', () => {
     TestBed.configureTestingModule({
       imports: [ContextTraceComponent],
       providers: [
-        // `CopyButtonComponent`, imported by the component under test, now
+        // The copy control in the template under test now
         // resolves its label through `TranslatePipe` rather than a hardcoded
         // English string, so rendering it needs a TranslateService.
         provideTranslateTesting(),
@@ -1142,7 +1142,7 @@ describe('ContextTraceComponent — token-usage pill (Story 26-2)', () => {
     TestBed.configureTestingModule({
       imports: [ContextTraceComponent],
       providers: [
-        // `CopyButtonComponent`, imported by the component under test, now
+        // The copy control in the template under test now
         // resolves its label through `TranslatePipe` rather than a hardcoded
         // English string, so rendering it needs a TranslateService.
         provideTranslateTesting(),
@@ -1377,7 +1377,7 @@ describe('ContextTraceComponent — usage popover (Story 30-2)', () => {
     TestBed.configureTestingModule({
       imports: [ContextTraceComponent],
       providers: [
-        // `CopyButtonComponent`, imported by the component under test, now
+        // The copy control in the template under test now
         // resolves its label through `TranslatePipe` rather than a hardcoded
         // English string, so rendering it needs a TranslateService.
         provideTranslateTesting(),
@@ -1560,7 +1560,7 @@ describe('ContextTraceComponent — folded compaction summary (Story 29-3)', () 
     TestBed.configureTestingModule({
       imports: [ContextTraceComponent],
       providers: [
-        // `CopyButtonComponent`, imported by the component under test, now
+        // The copy control in the template under test now
         // resolves its label through `TranslatePipe` rather than a hardcoded
         // English string, so rendering it needs a TranslateService.
         provideTranslateTesting(),
@@ -1710,7 +1710,7 @@ describe('ContextTraceComponent — OnPush regression (Story 30-3)', () => {
     TestBed.configureTestingModule({
       imports: [ContextTraceComponent],
       providers: [
-        // `CopyButtonComponent`, imported by the component under test, now
+        // The copy control in the template under test now
         // resolves its label through `TranslatePipe` rather than a hardcoded
         // English string, so rendering it needs a TranslateService.
         provideTranslateTesting(),

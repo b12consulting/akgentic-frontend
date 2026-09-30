@@ -387,13 +387,25 @@
   color: var(--akg-text-muted);
 }
 
-/* Top-right of its own well, not floating in the card. A copy control that is
-   not inside the thing it copies has to be guessed at. */
+/* A box's label row: the label, then its copy control at the right end. */
+.entry-well-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin: 0 0 5px;
+
+  .entry-well-label {
+    margin: 0;
+  }
+}
+
+/* The copy control ends the header row of the thing it copies — never over
+   its text. Centred on the row's line rather than on its baseline. */
 .entry-copy {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  z-index: 1;
+  flex: 0 0 auto;
+  align-self: center;
+  margin-left: auto;
 }
 
 /*

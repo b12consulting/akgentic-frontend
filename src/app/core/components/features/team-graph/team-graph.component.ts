@@ -347,7 +347,7 @@ export class TeamGraphComponent {
         fontSize: 12.5,
         // Capped and ellipsised rather than allowed to run. `truncate` ends the
         // name with an ellipsis, which READS as shortened; the canvas edge
-        // cutting it mid-glyph reads as broken. Full name in the tooltip.
+        // cutting it mid-glyph reads as broken.
         width: 120,
         overflow: 'truncate',
         // A halo in the ground colour, so a name that crosses an edge or
@@ -414,28 +414,15 @@ export class TeamGraphComponent {
           'max-width: 300px; white-space: normal; word-wrap: break-word;',
         formatter: (params: any) => {
           if (params.dataType !== 'node') return '';
-          // ESCAPED, BOTH OF THEM. echarts renders this tooltip as real DOM
-          // (which is why `var()` resolves in it), so everything interpolated
-          // below is an HTML sink. The name is no safer than the error message
-          // beside it: it comes off `NodeInterface.actorName`, i.e. from the
-          // backend's actor address, and `makeAgentNameUserFriendly` only
-          // reshapes it. While the formatter returned '' for every node without
-          // an error the sink needed an errored agent to reach; now that every
-          // node has a tooltip, hovering is enough.
-          const name = escapeHtml(
-            makeAgentNameUserFriendly(params.data.actorName),
-          );
-          // THE TOOLTIP IS WHERE THE FULL NAME LIVES NOW. Labels on the canvas
-          // are capped and ellipsised (`label.width`, above) because an
-          // uncapped one ran off the edge of a 310px pane and was CUT — the
-          // user's screenshot shows `#KnowledgeGraphToo` and `#VectorSt`. A
-          // truncation the user can un-truncate is a different thing from a
-          // clip; this is the un-truncating. It used to return `''` for every
-          // node without an error, so there was nowhere to read the rest.
+          // NO NAME CARD. Every node showed a tooltip repeating the name
+          // already drawn above it; an empty string shows none. The one thing
+          // a hover still has to say is what the canvas cannot: why an agent
+          // failed. ESCAPED — echarts renders this as real DOM (which is why
+          // `var()` resolves in it), and the message comes off the wire.
           const escaped = escapeHtml(params.data.errorMessage ?? '');
           return escaped
-            ? `<b>${name}</b><br/><span style="color:var(--akg-danger-fg); font-size:11px">${escaped}</span>`
-            : `<b>${name}</b>`;
+            ? `<span style="color:var(--akg-danger-fg); font-size:11px">${escaped}</span>`
+            : '';
         },
       },
       legend: [legend],

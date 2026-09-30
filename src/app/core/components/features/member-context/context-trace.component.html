@@ -21,6 +21,25 @@
   TOGETHER with the conversation so neither can overflow the pane and push the
   composer out of reach.
 -->
+<!--
+  THE COPY CONTROL: the chat action row's copy button — same primitive, same
+  glyph, same size — at the right end of the header of the thing it copies,
+  never over its text. The "copied" toast is `copyToClipboard`'s own.
+-->
+<ng-template #copyControl let-text>
+  <app-icon-button
+    class="entry-copy"
+    size="sm"
+    [label]="'chat.action.copy' | translate"
+    (pressed)="utilService.copyToClipboard(text)"
+  >
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V5a2 2 0 0 1 2-2h8" />
+    </svg>
+  </app-icon-button>
+</ng-template>
+
 <div class="trace-scroll" #traceScroll (scroll)="onScroll()">
   <!--
     Head system block — sourced from `headRows$`: the event-sourced
@@ -49,12 +68,11 @@
         <header class="card-header">
           <span class="entry-kind">{{ row.type | capitalize }}</span>
           <span class="entry-name">{{ row.name }}</span>
+          <ng-container
+            *ngTemplateOutlet="copyControl; context: { $implicit: row.content }"
+          ></ng-container>
         </header>
         <div class="entry-well">
-          <app-copy-button
-            class="entry-copy"
-            (click)="utilService.copyToClipboard(row.content)"
-          />
           <div class="text-container" [innerHTML]="row.content"></div>
         </div>
       </article>
@@ -75,6 +93,11 @@
           <span *ngIf="message.model_name" class="model-info">
             {{ message.provider_name }}/{{ message.model_name }}
           </span>
+          @if (['system', 'ai', 'tool', 'human', 'tool_result'].includes(message.type)) {
+            <ng-container
+              *ngTemplateOutlet="copyControl; context: { $implicit: message.content }"
+            ></ng-container>
+          }
         </header>
 
         <ng-container
@@ -85,10 +108,6 @@
           "
         >
           <div class="entry-well">
-            <app-copy-button
-              class="entry-copy"
-              (click)="utilService.copyToClipboard(message.content)"
-            />
             <div class="text-container" [innerHTML]="message.content"></div>
           </div>
         </ng-container>
@@ -101,14 +120,18 @@
           place on this card the same string appeared.
         -->
         <ng-container *ngIf="['tool_call'].includes(message.type)">
+          <!-- A tool call's two boxes each copy their own content, so each
+               label row is that box's header and carries its copy control. -->
           <div class="entry-well entry-well-tool">
-            <p class="entry-well-label">{{ "inspector.trace.args" | translate }}</p>
-            <app-copy-button
-              class="entry-copy"
-              (click)="
-                utilService.copyToClipboard(utilService.formatJSON(message.args))
-              "
-            />
+            <div class="entry-well-head">
+              <p class="entry-well-label">{{ "inspector.trace.args" | translate }}</p>
+              <ng-container
+                *ngTemplateOutlet="
+                  copyControl;
+                  context: { $implicit: utilService.formatJSON(message.args) }
+                "
+              ></ng-container>
+            </div>
             <pre class="text-container">{{
               utilService.formatJSON(message.args)
             }}</pre>
@@ -117,11 +140,12 @@
             class="entry-well entry-well-tool"
             *ngIf="message.result !== null && message.result !== undefined"
           >
-            <p class="entry-well-label">{{ "inspector.trace.result" | translate }}</p>
-            <app-copy-button
-              class="entry-copy"
-              (click)="utilService.copyToClipboard(message.result)"
-            />
+            <div class="entry-well-head">
+              <p class="entry-well-label">{{ "inspector.trace.result" | translate }}</p>
+              <ng-container
+                *ngTemplateOutlet="copyControl; context: { $implicit: message.result }"
+              ></ng-container>
+            </div>
             <pre class="text-container">{{
               utilService.formatJSON(message.result)
             }}</pre>

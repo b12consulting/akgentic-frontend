@@ -158,6 +158,38 @@ describe('ContextTraceComponent — the trace, in the console\'s language', () =
       .toBe(1);
   });
 
+  it('puts the copy control in the card header, and it copies the card\'s content', () => {
+    const { fixture, component } = setup();
+    const copy = spyOn(TestBed.inject(UtilService), 'copyToClipboard');
+    component.context$.next([aiTurn('the answer')] as any[]);
+    fixture.detectChanges();
+
+    const card = html(fixture).querySelector('.collapsible-container .card-container')!;
+    const control = card.querySelector<HTMLButtonElement>('.card-header .entry-copy button')!;
+    expect(control).withContext('copy control in the header').not.toBeNull();
+    expect(control.getAttribute('aria-label')).toBe('chat.action.copy');
+    expect(control.getAttribute('title')).toBe('chat.action.copy');
+    // Nothing sits over the text any more.
+    expect(card.querySelector('.entry-well .entry-copy')).toBeNull();
+
+    control.click();
+    expect(copy).toHaveBeenCalledOnceWith('the answer');
+  });
+
+  it('a tool call copies its arguments and its result from each box\'s own label row', () => {
+    const { fixture, component } = setup();
+    const copy = spyOn(TestBed.inject(UtilService), 'copyToClipboard');
+    component.context$.next(toolCallExchange() as any[]);
+    fixture.detectChanges();
+
+    const controls = Array.from(
+      html(fixture).querySelectorAll<HTMLButtonElement>('.entry-well-head .entry-copy button'),
+    );
+    expect(controls.length).toBe(2);
+    controls[1].click();
+    expect(copy).toHaveBeenCalledOnceWith('three hits');
+  });
+
   it('keeps what was asked and what came back, each under its own label', () => {
     const { fixture, component } = setup();
     component.context$.next(toolCallExchange() as any[]);
