@@ -34,6 +34,7 @@ import {
   LedgerScope,
   ledgerLines,
   MiniTreeRow,
+  miniTreeRoot,
   RunPill,
   runPill,
   runSteps,
@@ -150,6 +151,8 @@ export class RunInspectorComponent {
     return key === null ? [] : buildMiniTree(this.state().graph, key);
   });
   readonly miniRows = computed(() => visibleMiniRows(this.tree(), this.miniFolds()));
+  /** The message the tree's top run handles, drawn above the tree. */
+  readonly root = computed(() => miniTreeRoot(this.state().graph, this.tree()));
 
   // --- event log -------------------------------------------------------------
 

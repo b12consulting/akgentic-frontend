@@ -285,7 +285,9 @@
       "expand": "Show the runs under this one",
       "collapse": "Hide the runs under this one",
       "youAnswered": "you answered",
-      "toYou": "to you"
+      "toYou": "to you",
+      "you": "you",
+      "silent": "silent"
     },
     "log": {
       "scope": "Which events to list",

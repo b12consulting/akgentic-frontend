@@ -554,9 +554,9 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
   it('scenario 5 — no regression: Team / Member / Messages entries remain present under both KG presence states (order preserved)', async () => {
     // Workspace presence is reactive (ADR-020): declare a WorkspaceTool so the
     // Workspaces tab is present, then verify the order holds without KG —
-    // `[team, hierarchy, member, workspace, messages, run]` — and with KG —
-    // `[team, hierarchy, member, knowledge-graph, workspace, messages, run]`.
-    // `run` is Epic 55's seventh tab, always last.
+    // `[team, hierarchy, run, member, workspace, messages]` — and with KG —
+    // `[team, hierarchy, run, member, knowledge-graph, workspace, messages]`.
+    // `run` is Epic 55's seventh tab, third in the strip.
     //
     // `hierarchy` is Epic 56 / H2: the Team tab now shows the redesign's
     // roster panel, and the team tree + graph that used to live there kept a
@@ -567,10 +567,10 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
     expect(labels).toEqual([
       'team',
       'hierarchy',
+      'run',
       'member',
       'workspace',
       'messages',
-      'run',
     ]);
 
     log.append(makeKgStart('kg-start-1'));
@@ -579,26 +579,26 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
     expect(labels).toEqual([
       'team',
       'hierarchy',
+      'run',
       'member',
       'knowledge-graph',
       'workspace',
       'messages',
-      'run',
     ]);
   });
 
   it('scenario 6 — Workspaces appears between KG and Messages once a WorkspaceTool exists', async () => {
     // With a WorkspaceTool but no KG, the order is
-    // [team, hierarchy, member, workspace, messages, run].
+    // [team, hierarchy, run, member, workspace, messages].
     log.append(makeWorkspaceAttached('ws-start-1', 'Worker'));
     let options = await firstValue(component.visualizationOptions$);
     expect(options.map((o) => o.value)).toEqual([
       'team',
       'hierarchy',
+      'run',
       'member',
       'workspace',
       'messages',
-      'run',
     ]);
 
     // With KG present, Workspace sits between KG and Messages (order).
@@ -607,11 +607,11 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
     expect(options.map((o) => o.value)).toEqual([
       'team',
       'hierarchy',
+      'run',
       'member',
       'knowledge-graph',
       'workspace',
       'messages',
-      'run',
     ]);
   });
 

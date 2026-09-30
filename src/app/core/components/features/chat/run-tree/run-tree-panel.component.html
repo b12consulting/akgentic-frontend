@@ -21,7 +21,10 @@
               <!-- An answer: ONE turn element, the bubble and its action row
                    [copy] [👍] [👎] [pill], revealed together on hover or focus
                    of the whole turn. -->
-              <div class="run-answer">
+              <div
+                class="run-answer"
+                [class.run-answer--before-yours]="beforeYours.has(item.data.id)"
+              >
                 <ng-container
                   *ngTemplateOutlet="bubble; context: { $implicit: item.data }"
                 ></ng-container>

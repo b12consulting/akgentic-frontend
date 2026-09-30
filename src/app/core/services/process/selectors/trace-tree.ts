@@ -181,7 +181,8 @@ export function seatRevealKeys(graph: RunGraph, root: RunKey): RunKey[] {
 // The tree
 // ---------------------------------------------------------------------------
 
-function isEntryPoint(address: ActorAddress): boolean {
+/** The address is the entry point — "you". */
+export function isEntryPoint(address: ActorAddress): boolean {
   return address.role === HUMAN_ROLE && address.name === ENTRY_POINT_NAME;
 }
 

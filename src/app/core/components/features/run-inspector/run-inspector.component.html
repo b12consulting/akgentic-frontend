@@ -21,73 +21,127 @@
     <!-- 1. Where this run sits: the connected tree that holds it. -->
     <section class="ri-section">
       <h3 class="ri-section-title">{{ 'runInspector.section.where' | translate }}</h3>
-      <ol class="mini-tree">
-        @for (row of miniRows(); track row.key) {
-          <li
-            class="mini-node"
-            [class.mini-node--path]="row.onPath"
-            [class.mini-node--displayed]="row.displayed"
-            [attr.data-mini-run-key]="row.key"
-            [style.padding-left.px]="row.depth * 18"
-          >
-            @if (row.childCount > 0) {
-              <button
-                type="button"
-                class="mini-chevron"
-                [attr.aria-expanded]="row.expanded"
-                [attr.aria-label]="
-                  (row.expanded ? 'runInspector.miniTree.collapse' : 'runInspector.miniTree.expand')
-                    | translate
-                "
-                (click)="toggleMini(row)"
-              >
-                <i
-                  class="pi"
-                  [class.pi-chevron-down]="row.expanded"
-                  [class.pi-chevron-right]="!row.expanded"
-                  aria-hidden="true"
-                ></i>
-              </button>
-            } @else {
-              <span class="mini-chevron-gap" aria-hidden="true"></span>
-            }
-
-            @if (row.kind === 'entry') {
-              <!-- You receiving a message: drawn, never selected. -->
-              <span class="mini-main mini-main--entry">
-                <span class="mini-name">{{ row.run.agent.name }}</span>
-                <span class="mini-hint">{{
-                  (row.childCount > 0 ? 'runInspector.miniTree.youAnswered' : 'runInspector.miniTree.toYou')
-                    | translate
-                }}</span>
-              </span>
-            } @else {
-              <button
-                type="button"
-                class="mini-main"
-                [attr.aria-current]="row.displayed ? 'true' : null"
-                (click)="selectFromTree(row.key)"
-              >
-                <span class="mini-name">{{ row.run.agent.name }}</span>
-                @if (row.kind === 'seat') {
-                  <span class="mini-hint">{{ 'chat.runTree.node.humanSeat' | translate }}</span>
-                }
-              </button>
-            }
-
-            @if (row.childCount > 0 && !row.expanded && row.foldedRuns > 0) {
-              <span class="mini-folded">{{
-                'runInspector.miniTree.folded'
-                  | translate
-                    : {
-                        runs: (runsKey(row.foldedRuns) | translate: { count: row.foldedRuns }),
-                        agents: agentList(row.foldedAgents),
-                      }
-              }}</span>
-            }
-          </li>
+      <div class="mini-box">
+        @if (root(); as top) {
+          <div class="mini-root">
+            {{ top.fromYou ? ('runInspector.miniTree.you' | translate) : top.from.name }} →
+            {{ top.to.name }} <span class="mini-id">#{{ top.shortId }}</span>
+          </div>
         }
-      </ol>
+        <ol class="mini-tree">
+          @for (row of miniRows(); track row.key) {
+            <li
+              class="mini-node"
+              [class.mini-node--path]="row.onPath"
+              [class.mini-node--displayed]="row.displayed"
+              [attr.data-mini-run-key]="row.key"
+              [style.--depth]="row.depth"
+            >
+              @if (row.childCount > 0) {
+                <button
+                  type="button"
+                  class="mini-chevron"
+                  [class.mini-chevron--open]="row.expanded"
+                  [attr.aria-expanded]="row.expanded"
+                  [attr.aria-label]="
+                    (row.expanded ? 'runInspector.miniTree.collapse' : 'runInspector.miniTree.expand')
+                      | translate
+                  "
+                  (click)="toggleMini(row)"
+                >
+                  <i class="pi pi-chevron-right" aria-hidden="true"></i>
+                </button>
+              } @else {
+                <span class="mini-chevron-gap" aria-hidden="true"></span>
+              }
+
+              @if (row.kind === 'entry') {
+                <!-- You receiving a message: drawn, never selected. -->
+                <span class="mini-main mini-main--entry">
+                  <span class="mini-avatar mini-avatar--human" aria-hidden="true">{{
+                    initialOf(row.run.agent)
+                  }}</span>
+                  <span class="mini-hint">{{
+                    (row.childCount > 0 ? 'runInspector.miniTree.youAnswered' : 'runInspector.miniTree.toYou')
+                      | translate
+                  }}</span>
+                </span>
+              } @else {
+                <button
+                  type="button"
+                  class="mini-main"
+                  [attr.aria-current]="row.displayed ? 'true' : null"
+                  (click)="selectFromTree(row.key)"
+                >
+                  <span
+                    class="mini-avatar"
+                    [class.mini-avatar--human]="row.kind === 'seat'"
+                    [class.tinted]="row.kind !== 'seat' && colourOf(row.run.agent) !== null"
+                    [style.background-color]="row.kind === 'seat' ? null : colourOf(row.run.agent)"
+                    aria-hidden="true"
+                    >{{ initialOf(row.run.agent) }}</span
+                  >
+                  <span class="mini-name">{{ row.run.agent.name }}</span>
+                  @if (row.kind === 'seat') {
+                    <span class="mini-hint">{{ 'chat.runTree.node.humanSeat' | translate }}</span>
+                  }
+                  <span class="mini-id">#{{ row.shortId }}</span>
+                  @switch (row.pill) {
+                    @case ('running') {
+                      <i class="pi pi-spin pi-spinner mini-mark" aria-hidden="true"></i>
+                    }
+                    @case ('waiting') {
+                      <span class="mini-mark mini-dot" aria-hidden="true"></span>
+                    }
+                    @case ('doneSilent') {
+                      <span class="mini-mark mini-silent">{{
+                        'runInspector.miniTree.silent' | translate
+                      }}</span>
+                    }
+                  }
+                </button>
+              }
+
+              @if (row.childCount > 0 && !row.expanded && row.foldedRuns > 0) {
+                <!-- The fold's summary is also its way open. -->
+                <button type="button" class="mini-folded" (click)="toggleMini(row)">
+                  @if (row.foldedLive) {
+                    <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+                  }
+                  {{
+                    'runInspector.miniTree.folded'
+                      | translate
+                        : {
+                            runs: (runsKey(row.foldedRuns) | translate: { count: row.foldedRuns }),
+                            agents: agentList(row.foldedAgents),
+                          }
+                  }}
+                </button>
+              }
+            </li>
+            @if (row.childCount === 0 || row.expanded) {
+              @for (leaf of row.leaves; track $index) {
+                <li class="mini-leaf" [style.--depth]="row.depth + 1">
+                  @if (leaf.kind === 'queued') {
+                    {{ 'chat.runTree.node.queued' | translate: { agent: leaf.recipient.name } }}
+                  } @else if (leaf.kind === 'absorbed') {
+                    {{
+                      'chat.runTree.node.absorbed'
+                        | translate: { agent: leaf.recipient.name, by: leaf.by.name }
+                    }}
+                  } @else {
+                    ⤵
+                    {{
+                      (leaf.count === 1 ? 'chat.runTree.node.tookInOne' : 'chat.runTree.node.tookInMany')
+                        | translate: { count: leaf.count }
+                    }}
+                  }
+                </li>
+              }
+            }
+          }
+        </ol>
+      </div>
     </section>
 
     <!-- 2. Handling: the message that started the run. -->

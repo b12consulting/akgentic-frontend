@@ -27,6 +27,7 @@ import {
   buildMiniTree,
   displayedRun,
   ledgerLines,
+  miniTreeRoot,
   revealKeysFor,
   runPill,
   runSteps,
@@ -232,6 +233,32 @@ describe('buildMiniTree', () => {
 
   it('is empty for an unknown key', () => {
     expect(buildMiniTree(emptyRunGraph(), 'x|y')).toEqual([]);
+  });
+
+  it('a row carries its status mark, its short id, and its leaves; the root line names you', () => {
+    const graph = graphOf([
+      sent('U1-0123456789', HUMAN, MANAGER, null, 1),
+      received('U1-0123456789', MANAGER, 2),
+      sent('D', MANAGER, EXPERT, 'U1-0123456789', 3),
+    ]);
+    const rows = buildMiniTree(graph, runKey('U1-0123456789', M));
+    expect(rows.length).toBe(1);
+    expect(rows[0].pill).toBe('running');
+    expect(rows[0].shortId).toBe('U1-01234');
+    // @Expert never picked it up: a queued leaf, not a row.
+    expect(rows[0].leaves).toEqual([{ kind: 'queued', recipient: EXPERT }]);
+    expect(miniTreeRoot(graph, rows)).toEqual({
+      from: HUMAN,
+      fromYou: true,
+      to: MANAGER,
+      shortId: 'U1-01234',
+    });
+  });
+
+  it('a fold says when something under it is still running', () => {
+    const rows = buildMiniTree(graphOf(CASE_2.slice(0, 7)), runKey('Da', A));
+    expect(rows[0].foldedLive).toBeTrue();
+    expect(buildMiniTree(graphOf(CASE_2), runKey('Ra', M))[0].foldedLive).toBeFalse();
   });
 });
 

@@ -218,6 +218,29 @@ describe('RunInspectorComponent', () => {
       expect(text(miniNode(runKey('S', S)).querySelector('.mini-folded'))).toBe('1 run · @Manager');
     });
 
+    it('sits in a box under a root line; each node shows an avatar and its short id', () => {
+      const box = host().querySelector('.mini-box')!;
+      expect(box).not.toBeNull();
+      expect(box.querySelector('.mini-tree')).not.toBeNull();
+      // The top run's trigger: you → @Manager, and the id as the Event log cuts it.
+      expect(text(box.querySelector('.mini-root'))).toBe('you → @Manager #U1');
+      const manager = miniNode(runKey('U1', M));
+      expect(text(manager.querySelector('.mini-avatar'))).toBe('M');
+      expect(text(manager.querySelector('.mini-id'))).toBe('#U1');
+      // A seat's avatar is round; an agent's is not.
+      expect(miniNode(runKey('S', S)).querySelector('.mini-avatar--human')).not.toBeNull();
+      expect(manager.querySelector('.mini-avatar--human')).toBeNull();
+    });
+
+    it('a folded node\'s summary pill counts what it hides and opens it', () => {
+      const pill = miniNode(runKey('S', S)).querySelector<HTMLButtonElement>('button.mini-folded')!;
+      expect(text(pill)).toBe('1 run · @Manager');
+      pill.click();
+      fixture.detectChanges();
+      expect(miniKeys()).toContain(runKey('Sa', M));
+      expect(miniNode(runKey('S', S)).querySelector('.mini-folded')).toBeNull();
+    });
+
     it('a seat is a button; a click selects from the mini-tree and scrolls nothing', () => {
       const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView');
       const events: RunSelection[] = [];
@@ -273,7 +296,8 @@ describe('RunInspectorComponent', () => {
     const entry = miniNode(runKey('Q', 'human-id'));
     expect(entry.querySelector('button')).not.toBeNull(); // its chevron only
     expect(entry.querySelector('button.mini-main')).toBeNull();
-    expect(text(entry.querySelector('.mini-name'))).toBe('@Human');
+    // The same row form, not a button: a round H, then plain muted words.
+    expect(text(entry.querySelector('.mini-avatar--human'))).toBe('H');
     expect(text(entry.querySelector('.mini-hint'))).toBe('you answered');
     // Below your reply's run: the answer you received, still not a button.
     const answer = miniNode(runKey('A', 'human-id'));

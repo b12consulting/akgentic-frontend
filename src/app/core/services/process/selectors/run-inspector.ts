@@ -16,12 +16,13 @@ import {
   Run,
   RunGraph,
   RunKey,
+  runKey,
   runStatus,
   silent,
   traceRootOf,
 } from './run-graph.selector';
 import { isEntryPointRun, traceDuration } from './trace-summary';
-import { excerpt } from './trace-tree';
+import { excerpt, isEntryPoint, tookInCount } from './trace-tree';
 
 /**
  * The inspector's Run tab (Epic 55, ADR-037 §D9), as data.
@@ -40,6 +41,13 @@ export type RunStepRow =
   | { kind: 'sent'; offset: string; to: ActorAddress }
   | { kind: 'processed'; offset: string };
 
+/** What a run did that is not a run of its own: a message still waiting for
+ *  its recipient, one another run took in, or messages it took in itself. */
+export type MiniLeaf =
+  | { kind: 'queued'; recipient: ActorAddress }
+  | { kind: 'absorbed'; recipient: ActorAddress; by: ActorAddress }
+  | { kind: 'tookIn'; count: number };
+
 /** One run of the mini-tree, in pre-order, with its indentation. */
 export interface MiniTreeRow {
   key: RunKey;
@@ -51,10 +59,31 @@ export interface MiniTreeRow {
   onPath: boolean;
   displayed: boolean;
   childCount: number;
+  /** The run's status mark: running, waiting, silent — or none. */
+  pill: RunPill | null;
+  /** The trigger's id, cut as the Event log cuts it. */
+  shortId: string;
+  leaves: MiniLeaf[];
   /** The subtree below this run, entry-point runs excluded: what a fold hides. */
   foldedRuns: number;
   /** That subtree's agents, distinct by `agent_id`, in start order. */
   foldedAgents: ActorAddress[];
+  /** Something in that subtree is still running. */
+  foldedLive: boolean;
+}
+
+/** The message the tree's top run handles: who sent it to whom, and its id. */
+export interface MiniTreeRoot {
+  from: ActorAddress;
+  /** The sender is the entry point: drawn as "you". */
+  fromYou: boolean;
+  to: ActorAddress;
+  shortId: string;
+}
+
+/** The 8-character id prefix the Event log shows. */
+export function shortId(id: string): string {
+  return id.slice(0, 8);
 }
 
 export type LedgerScope = 'run' | 'team';
@@ -181,8 +210,12 @@ function walk(
       onPath: path.has(next.key),
       displayed: next.key === key,
       childCount: children.length,
+      pill: runPill(graph, next.key),
+      shortId: shortId(run.message_id),
+      leaves: leavesOf(graph, run),
       foldedRuns: 0,
       foldedAgents: [],
+      foldedLive: false,
     });
     for (let i = children.length - 1; i >= 0; i--) {
       stack.push({ key: children[i], depth: next.depth + 1 });
@@ -214,8 +247,47 @@ function withFoldSummaries(rows: MiniTreeRow[]): MiniTreeRow[] {
     for (const run of runs) {
       if (!agents.has(run.agent.agent_id)) agents.set(run.agent.agent_id, run.agent);
     }
-    return { ...row, foldedRuns: runs.length, foldedAgents: [...agents.values()] };
+    return {
+      ...row,
+      foldedRuns: runs.length,
+      foldedAgents: [...agents.values()],
+      foldedLive: runs.some((run) => run.status === 'running'),
+    };
   });
+}
+
+/** A run's leaves: each message it sent that opened no run — still queued,
+ *  or taken in by another run — then how many it took in. Messages to the
+ *  entry point are not leaves: their runs, when they exist, are rows. */
+function leavesOf(graph: RunGraph, run: Run): MiniLeaf[] {
+  const leaves: MiniLeaf[] = [];
+  for (const step of run.steps) {
+    if (step.kind !== 'sent' || isEntryPoint(step.recipient)) continue;
+    if (graph.runs.has(runKey(step.message_id, step.recipient.agent_id))) continue;
+    const absorbedBy = graph.messages.get(step.message_id)?.absorbed_by;
+    const by = absorbedBy ? graph.runs.get(absorbedBy) : undefined;
+    leaves.push(
+      by === undefined
+        ? { kind: 'queued', recipient: step.recipient }
+        : { kind: 'absorbed', recipient: step.recipient, by: by.agent },
+    );
+  }
+  const count = tookInCount(run);
+  if (count > 0) leaves.push({ kind: 'tookIn', count });
+  return leaves;
+}
+
+/** The trigger of the tree's top run, or `null` when it is not in the log. */
+export function miniTreeRoot(graph: RunGraph, rows: readonly MiniTreeRow[]): MiniTreeRoot | null {
+  const top = rows[0];
+  const trigger = top === undefined ? undefined : graph.messages.get(top.run.message_id);
+  if (top === undefined || trigger === undefined) return null;
+  return {
+    from: trigger.sender,
+    fromYou: isEntryPoint(trigger.sender),
+    to: top.run.agent,
+    shortId: shortId(top.run.message_id),
+  };
 }
 
 /**

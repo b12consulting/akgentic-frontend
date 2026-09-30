@@ -41,6 +41,7 @@ function allSevenOptions(): VisualizationOption[] {
       value: 'hierarchy',
       icon: 'pi pi-share-alt',
     },
+    { labelKey: 'visualization.run', value: 'run', icon: 'pi pi-align-left' },
     { labelKey: 'visualization.member', value: 'member', icon: 'pi pi-id-card' },
     {
       labelKey: 'visualization.knowledgeGraph',
@@ -57,7 +58,6 @@ function allSevenOptions(): VisualizationOption[] {
       value: 'messages',
       icon: 'pi pi-envelope',
     },
-    { labelKey: 'visualization.run', value: 'run', icon: 'pi pi-align-left' },
   ];
 }
 
@@ -188,7 +188,7 @@ describe('InspectorTabsComponent', () => {
     fixture.detectChanges();
 
     expect(tabs()[0].textContent?.trim()).toBe('');
-    expect(tabs()[5].textContent?.trim()).toBe('visualization.messages');
+    expect(tabs()[6].textContent?.trim()).toBe('visualization.messages');
   });
 
   /**

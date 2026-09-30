@@ -148,6 +148,9 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
   /** Inner id → envelope id of the timeline's bubbles, for the tree's
    *  `@Human` rows (a bubble's `data-message-id` is its envelope id). */
   bubbleIds: ReadonlyMap<string, string> = new Map();
+  /** Envelope ids of the timeline messages a message of yours follows: an
+   *  answer there ends a turn and takes the extra space after it. */
+  beforeYours: ReadonlySet<string> = new Set();
   /** The bubble a `@Human` row is hovering, and the one flashing. */
   highlightedBubble: string | null = null;
   flashingBubble: string | null = null;
@@ -244,6 +247,7 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
     this.graph = state.graph;
     this.view = state.view;
     this.applyView();
+    this.beforeYours = this.buildBeforeYours();
     this.cards = this.buildCards(state);
     this.bubbleIds = this.buildBubbleIds(state.view);
     this.closeAnsweredDialog();
@@ -262,6 +266,22 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
         ? { ...item, data: { ...item.data, collapsed: false } }
         : item,
     );
+  }
+
+  /** The timeline messages the next row after is a message of yours — the
+   *  next timeline item, or the tail's first bubble after the last one. */
+  private buildBeforeYours(): Set<string> {
+    const ids = new Set<string>();
+    this.timeline.forEach((item, i) => {
+      if (item.kind !== 'message') return;
+      const next = this.timeline[i + 1];
+      const yoursNext =
+        next === undefined
+          ? this.tail.length > 0
+          : next.kind === 'message' && isYourMessage(next.data, this.graph);
+      if (yoursNext) ids.add(item.data.id);
+    });
+    return ids;
   }
 
   private buildCards(state: RunTreeState): Map<RunKey, TraceSummary> {

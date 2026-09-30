@@ -285,7 +285,9 @@
       "expand": "Afficher les exécutions sous celle-ci",
       "collapse": "Masquer les exécutions sous celle-ci",
       "youAnswered": "vous avez répondu",
-      "toYou": "pour vous"
+      "toYou": "pour vous",
+      "you": "vous",
+      "silent": "silencieux"
     },
     "log": {
       "scope": "Événements à afficher",

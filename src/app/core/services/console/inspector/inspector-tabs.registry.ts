@@ -183,6 +183,13 @@ export const INSPECTOR_TABS: readonly InspectorTabDefinition[] = [
     icon: 'pi pi-share-alt',
     needsRoom: true,
   },
+  // Epic 55: the selected run in detail, THIRD — right after the team and its
+  // tree, the run is what a reader opens most. Every section is a list, so it
+  // reads at the 240px floor and needs no room. `pi-align-left`, whose indented
+  // lines read as a tree: both of primeicons' tree glyphs are taken
+  // (`pi-sitemap`, `pi-share-alt`), and the strip cannot draw the trace card's
+  // inline SVG.
+  { labelKey: 'visualization.run', value: 'run', icon: 'pi pi-align-left' },
   // `pi-id-card`, NOT `pi-user`. Beside `pi-users` on the Team tab the two were
   // one head against two at 13px — a difference a reader has to hunt for, on a
   // strip where the glyph is the primary way six of the seven tabs are told
@@ -208,11 +215,6 @@ export const INSPECTOR_TABS: readonly InspectorTabDefinition[] = [
     value: 'messages',
     icon: 'pi pi-envelope',
   },
-  // Epic 55: the selected run in detail. Every section is a list, so it reads
-  // at the 240px floor and needs no room. `pi-align-left`, whose indented lines
-  // read as a tree: both of primeicons' tree glyphs are taken (`pi-sitemap`,
-  // `pi-share-alt`), and the strip cannot draw the trace card's inline SVG.
-  { labelKey: 'visualization.run', value: 'run', icon: 'pi pi-align-left' },
 ];
 
 /**

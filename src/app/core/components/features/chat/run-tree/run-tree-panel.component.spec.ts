@@ -496,6 +496,33 @@ describe('RunTreePanelComponent', () => {
     expect(getComputedStyle(rowEl).opacity).toBe('1');
   });
 
+  it('only an answer your message follows takes the end-of-turn space', () => {
+    log.appendAll([
+      sent('U1', HUMAN, MANAGER, null, 1),
+      received('U1', MANAGER, 2),
+      sent('A1', MANAGER, HUMAN, 'U1', 3),
+      sent('A2', MANAGER, HUMAN, 'U1', 4),
+      processed('U1', MANAGER, 5),
+      sent('U2', HUMAN, MANAGER, null, 6),
+      received('U2', MANAGER, 7),
+    ]);
+    const fixture = mount();
+    const answerOf = (id: string): HTMLElement =>
+      el(fixture).querySelector(`[data-message-id="${envId(id, HUMAN)}"]`)!.parentElement!;
+    const first = answerOf('A1');
+    const last = answerOf('A2');
+    expect(first.nextElementSibling).toBe(last);
+
+    // Answer → answer: the reserved row is the gap; nothing is added to it.
+    expect(first.classList).not.toContain('run-answer--before-yours');
+    expect(getComputedStyle(first).marginBottom).toBe('0px');
+    expect(getComputedStyle(last).marginTop).toBe('0px');
+    // Answer → your message: the turn gap, plus the end-of-turn space.
+    expect(last.classList).toContain('run-answer--before-yours');
+    expect(getComputedStyle(last).marginBottom).toBe('24px');
+    expect(getComputedStyle(last.nextElementSibling!).marginTop).toBe('18px');
+  });
+
   it('an agent reply with no known run renders without a link (fail-open)', () => {
     log.appendAll([sent('A', MANAGER, HUMAN, 'unknown', 1)]);
     const fixture = mount();
