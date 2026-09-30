@@ -150,6 +150,8 @@ describe('RunTreePanelComponent', () => {
       if (card) return ['trace:' + card.getAttribute('data-trace-root')];
       if (child.classList.contains('tail-divider')) return ['divider'];
       if (child.classList.contains('run-note')) return ['note'];
+      // An answer's action row counts as a note when it carries the link.
+      if (child.querySelector('.run-link--provenance')) return ['note'];
       if (child.classList.contains('day-separator')) return ['day'];
       return [];
     });
@@ -457,6 +459,28 @@ describe('RunTreePanelComponent', () => {
     expect(el(fixture).querySelector('.tree-human')).toBeNull();
     expect(fixture.componentInstance.highlightedBubble).toBeNull();
     expect(el(fixture).querySelector('.run-bubble--highlight')).toBeNull();
+  });
+
+  it('an answer shows copy, both thumbs and the provenance pill in one row, without hover', () => {
+    log.appendAll([
+      sent('U1', HUMAN, MANAGER, null, 1),
+      received('U1', MANAGER, 2),
+      sent('A1', MANAGER, HUMAN, 'U1', 3),
+      processed('U1', MANAGER, 4),
+    ]);
+    const fixture = mount();
+    const answer = el(fixture).querySelector(`[data-message-id="${envId('A1', HUMAN)}"]`)!;
+    // The bubble's own hover-revealed row is off in this view; the panel's
+    // row replaces it.
+    expect(answer.querySelector('.turn-feedback')).toBeNull();
+    const row = answer.nextElementSibling!;
+    expect(row.classList).toContain('run-actions');
+    expect(
+      [...row.querySelectorAll('.action-copy, .action-thumb-up, .action-thumb-down, .run-link--provenance')]
+        .map((e) => e.classList[0]),
+    ).toEqual(['action-copy', 'action-thumb-up', 'action-thumb-down', 'run-link']);
+    // Nothing publishes a hover opacity here: the controls are always shown.
+    expect(getComputedStyle(row.querySelector('.action-row')!).opacity).toBe('1');
   });
 
   it('an agent reply with no known run renders without a link (fail-open)', () => {
@@ -835,12 +859,6 @@ describe('RunTreePanelComponent', () => {
         expect(offenders).withContext('elements past the list edge').toEqual([]);
         expect(list.scrollWidth).toBeLessThanOrEqual(list.clientWidth);
 
-        // The provenance pill rides in the answer's rating row, not below it.
-        const answer = host.querySelector(`[data-message-id="${envId('A1', HUMAN)}"]`)!;
-        expect(answer.querySelector('.turn-feedback')).withContext('rating row').not.toBeNull();
-        const pill = host.querySelector('.run-link--provenance')!.getBoundingClientRect();
-        const bubble = answer.getBoundingClientRect();
-        expect(pill.top).toBeLessThan(bubble.bottom);
 
         // The run row is one block: its box holds line 1, the status and the
         // chips, and a click anywhere on it — a chip included — hits the run.

@@ -37,6 +37,7 @@ import {
 } from '../../../../services/process/selectors/chat-message.model';
 import { ChatService } from '../../../../services/process/selectors/chat.selector';
 import { GraphDataService } from '../../../../services/process/selectors/graph.selector';
+import { isRateable } from '../../../../services/process/selectors/rateable';
 import {
   EMPTY_RUN_GRAPH,
   RunGraph,
@@ -71,6 +72,7 @@ import {
   ReaderSendRequest,
 } from '../conversation/conversation-modal.component';
 import { ChatMessageComponent } from '../message/chat-message.component';
+import { FeedbackComponent } from '../message/feedback.component';
 import { ProcessUserInputComponent } from '../user-input/user-input.component';
 import { SeatAnswer, SeatAnswerDialogComponent } from './seat-answer-dialog.component';
 import { TraceCardComponent } from './trace-card.component';
@@ -104,6 +106,7 @@ const FLASH_MS = 1200;
     CommonModule,
     ChatMessageComponent,
     ConversationModalComponent,
+    FeedbackComponent,
     ProcessUserInputComponent,
     SeatAnswerDialogComponent,
     TraceCardComponent,
@@ -310,6 +313,13 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
       case 'reply':
         return 'chat.runTree.provenance.reply';
     }
+  }
+
+  /** An agent → you answer: this view draws its rating controls itself, always
+   *  shown, in one row with the provenance pill — the bubble's own row is
+   *  hover-revealed and could not hold the pill. */
+  ownsRating(message: ChatMessage): boolean {
+    return message.rule === 2 && isRateable(message);
   }
 
   runsKey(count: number): string {

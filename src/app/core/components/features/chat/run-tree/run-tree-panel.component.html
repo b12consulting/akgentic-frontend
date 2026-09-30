@@ -27,6 +27,7 @@
               [defaultRecipient]="defaultRecipient"
               [agentColours]="agentColours"
               [notification]="false"
+              [ratingEnabled]="!ownsRating(item.data)"
               (messageSelected)="onMessageSelected($event)"
               (agentSelected)="onAgentSelected($event)"
               (toggleCollapse)="onToggleCollapse($event)"
@@ -40,39 +41,46 @@
                 {{ 'chat.runTree.absorbedNote' | translate: { agent: absorbed.agent.name } }}
               </button>
             }
-            @if (item.notes.provenance; as p) {
-              <div class="run-note run-provenance">
-                <button
-                  type="button"
-                  class="run-link run-link--provenance"
-                  (click)="selectFromProvenance(p.run)"
-                >
-                  <svg
-                    class="run-link-icon"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    stroke-width="2"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    aria-hidden="true"
+            <!-- An answer's action row: the rating controls, always shown in
+                 this view, then the provenance pill, in one static row. -->
+            @if (ownsRating(item.data) || item.notes.provenance) {
+              <div class="run-actions">
+                @if (ownsRating(item.data)) {
+                  <app-feedback [message]="item.data"></app-feedback>
+                }
+                @if (item.notes.provenance; as p) {
+                  <button
+                    type="button"
+                    class="run-link run-link--provenance"
+                    (click)="selectFromProvenance(p.run)"
                   >
-                    <path d="M6 3v12M6 9h6a3 3 0 0 1 3 3v0M6 15h6a3 3 0 0 1 3 3" />
-                    <circle cx="6" cy="3" r="1" />
-                    <circle cx="17" cy="12" r="2" />
-                    <circle cx="17" cy="18" r="2" />
-                  </svg>
-                  {{
-                    provenanceKey(p)
-                      | translate
-                        : {
-                            agent: p.agent.name,
-                            from: p.from.name,
-                            depth: p.depth,
-                            runs: (runsKey(p.runsInTrace) | translate: { count: p.runsInTrace }),
-                          }
-                  }}
-                </button>
+                    <svg
+                      class="run-link-icon"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M6 3v12M6 9h6a3 3 0 0 1 3 3v0M6 15h6a3 3 0 0 1 3 3" />
+                      <circle cx="6" cy="3" r="1" />
+                      <circle cx="17" cy="12" r="2" />
+                      <circle cx="17" cy="18" r="2" />
+                    </svg>
+                    {{
+                      provenanceKey(p)
+                        | translate
+                          : {
+                              agent: p.agent.name,
+                              from: p.from.name,
+                              depth: p.depth,
+                              runs: (runsKey(p.runsInTrace) | translate: { count: p.runsInTrace }),
+                            }
+                    }}
+                  </button>
+                }
               </div>
             }
           }

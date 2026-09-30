@@ -167,14 +167,22 @@
   }
 
   /*
-   * The provenance link: a dashed pill on the agent's spine, 8px under its
-   * text. The row is the note; the pill inside it is the button, so it is only
-   * as wide as what it says.
+   * An answer's action row: [copy] [👍] [👎] [provenance pill], static, on the
+   * agent's text column, 8px under the text. Always shown in this view — a
+   * hover-revealed row with the pill beside it was a hover loop.
+   *
+   * The space AFTER it belongs to the end of an answer: 24px on top of the
+   * turn gap, so the next message of yours reads as a new turn.
    */
-  .message-list > .run-provenance {
+  .message-list > .run-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
     /* Full-width row with an inset: the inset must not add to the width. */
     box-sizing: border-box;
     margin-top: 8px;
+    margin-bottom: 24px;
     padding-left: var(--akg-avatar-gutter);
   }
 
@@ -381,32 +389,8 @@
   }
 }
 
-/*
- * THE PROVENANCE LINK SHARES THE RATING ROW when its bubble has one.
- *
- * A rateable turn reserves a row of three `--akg-icon-button-size-sm` buttons,
- * 2px apart, under its text — hover-revealed, but holding its space so nothing
- * reflows. A link placed after it sat ~45px under the words it annotates, below
- * an apparently empty band. Instead the link lifts into that row, after the
- * buttons: up by the bubble's 2px padding and 2px border, half a button and
- * half the 26px pill. The row keeps its clicks — the note box lets the pointer
- * through and only the pill takes it.
- *
- * `::ng-deep` because `.turn-feedback` lives in the bubble's own template; the
- * repeated classes out-rank the encapsulated `.message-list > .run-provenance`.
- */
-:host ::ng-deep
-  .chat-container
-  .message-list
-  > app-chat-message:has(.turn-feedback)
-  + .run-note.run-provenance {
-  margin-top: calc(-1 * (4px + var(--akg-icon-button-size-sm) / 2 + 13px));
-  padding-left: calc(
-    var(--akg-avatar-gutter) + 2px + 3 * var(--akg-icon-button-size-sm) + 2 * 2px + 10px
-  );
-  pointer-events: none;
-
-  > .run-link--provenance {
-    pointer-events: auto;
-  }
+/* The feedback row's own 10px top margin separates it from prose inside a
+   bubble; in this row the row itself carries the spacing. */
+:host ::ng-deep .run-actions .action-row {
+  margin-top: 0;
 }
