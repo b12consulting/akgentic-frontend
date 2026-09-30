@@ -136,9 +136,17 @@ describe('RunInspectorComponent', () => {
       'Steps',
       'Event log',
     ]);
-    expect(text(host().querySelector('.ri-route'))).toBe('@Expert → @Assistant');
-    expect(texts('.ri-fields dd').slice(0, 2)).toEqual(['D2', 'D1']);
-    expect(text(host().querySelector('.ri-text'))).toBe('content of D2');
+    // Handling: the route and the message, nothing else — the ids and the
+    // send time live in the Event log.
+    const handling = host().querySelectorAll('.ri-section')[1];
+    expect(text(handling.querySelector('.ri-route'))).toBe('@Expert → @Assistant');
+    expect(text(handling.querySelector('.ri-text'))).toBe('content of D2');
+    expect([...handling.children].map((c) => c.className)).toEqual([
+      'ri-section-title',
+      'ri-route',
+      'ri-text',
+    ]);
+    expect(handling.querySelector('dl, dt, dd')).toBeNull();
     expect(texts('.ri-offset')).toEqual(['+0s', '+1s', '+3s', '+5s', '+7s', '+8s']);
     expect(texts('.ri-step-label')).toEqual([
       'received',
@@ -164,12 +172,13 @@ describe('RunInspectorComponent', () => {
     expect(host().querySelector('.ri-pill')!.getAttribute('data-pill')).toBe('answered');
   });
 
-  it('an unknown trigger replaces Handling\'s fields with one note', () => {
+  it('an unknown trigger replaces Handling\'s route and text with one note', () => {
     // A replay that starts at the ReceivedMessage: the send was never loaded.
     log.appendAll([received('D2', ASSISTANT, 11)]);
     mount();
     expect(text(host().querySelector('.ri-agent'))).toBe('@Assistant');
-    expect(host().querySelector('.ri-fields')).toBeNull();
+    expect(host().querySelector('.ri-route')).toBeNull();
+    expect(host().querySelector('.ri-text')).toBeNull();
     expect(texts('.ri-note')).toContain(
       'The message that started this run is not in the loaded log.',
     );

@@ -190,26 +190,11 @@ button.mini-main {
 
 /* --- handling ------------------------------------------------------------ */
 
+/* Who sent the run its message, and the message. The ids and the send time
+   are in the Event log. */
 .ri-route {
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   font-weight: 600;
-}
-
-.ri-fields {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 2px 8px;
-  margin: 0 0 6px;
-
-  dt {
-    color: var(--akg-text-muted);
-  }
-
-  dd {
-    margin: 0;
-    min-width: 0;
-    overflow-wrap: anywhere;
-  }
 }
 
 .ri-text {

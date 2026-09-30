@@ -95,14 +95,6 @@
       <h3 class="ri-section-title">{{ 'runInspector.section.handling' | translate }}</h3>
       @if (trigger(); as t) {
         <div class="ri-route">{{ t.sender.name }} → {{ t.recipient.name }}</div>
-        <dl class="ri-fields">
-          <dt>{{ 'runInspector.handling.id' | translate }}</dt>
-          <dd class="ri-mono">{{ t.id }}</dd>
-          <dt>{{ 'runInspector.handling.parent' | translate }}</dt>
-          <dd class="ri-mono">{{ t.parent_id ?? '—' }}</dd>
-          <dt>{{ 'runInspector.handling.sentAt' | translate }}</dt>
-          <dd>{{ t.timestamp | date: 'HH:mm:ss' }}</dd>
-        </dl>
         <div class="ri-text">{{ t.content }}</div>
       } @else {
         <p class="ri-note">{{ 'runInspector.handling.unknown' | translate }}</p>
