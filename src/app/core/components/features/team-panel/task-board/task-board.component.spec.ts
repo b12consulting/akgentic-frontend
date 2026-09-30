@@ -155,12 +155,12 @@ describe('TaskBoardComponent', () => {
     }
   });
 
-  it('gives the owner mark the same pointer as the status glyph', async () => {
+  it('gives the owner mark and the status glyph the arrow cursor, not the hand', async () => {
     await mount();
     show(MIXED);
     const row = host().querySelector('.task[data-task-id="5"]')!;
-    expect(getComputedStyle(row.querySelector('.owner-avatar')!).cursor).toBe('pointer');
-    expect(getComputedStyle(row.querySelector('.task-glyph')!).cursor).toBe('pointer');
+    expect(getComputedStyle(row.querySelector('.owner-avatar')!).cursor).toBe('default');
+    expect(getComputedStyle(row.querySelector('.task-glyph')!).cursor).toBe('default');
     // Neither is a keyboard stop: they only explain themselves on hover.
     expect(row.querySelector('.owner-avatar')!.hasAttribute('tabindex')).toBeFalse();
     expect(row.querySelector('.task-glyph')!.hasAttribute('tabindex')).toBeFalse();

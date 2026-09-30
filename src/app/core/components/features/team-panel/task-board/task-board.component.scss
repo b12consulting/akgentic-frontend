@@ -111,11 +111,12 @@
   text-decoration: line-through;
 }
 
-/* Both marks only explain themselves on hover: the same pointer on each, and
-   neither is a stop for the keyboard. */
+/* Both marks only explain themselves on hover, and neither is a stop for the
+   keyboard. They are not clickable, so they show the arrow, not the hand; the
+   same cursor on each. */
 .task-glyph,
 .owner-avatar {
-  cursor: pointer;
+  cursor: default;
 }
 
 .task-glyph {
