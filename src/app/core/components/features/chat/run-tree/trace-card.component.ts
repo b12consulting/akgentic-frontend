@@ -83,6 +83,10 @@ export class TraceCardComponent {
     this.summary().toolCount === 1 ? 'chat.runTree.toolsOne' : 'chat.runTree.toolsMany',
   );
 
+  /** The `doneOne` title carries the run and tool counts itself; repeating
+   *  them in the meta said everything twice. */
+  readonly metaHasCounts = computed<boolean>(() => this.summary().title !== 'doneOne');
+
   /** Shown only once the trace has ended; nothing ticks while it runs. A
    *  trace waiting on a seat has not ended, whatever its runs did, so it shows
    *  none. */

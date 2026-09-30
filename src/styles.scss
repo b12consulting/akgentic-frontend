@@ -324,8 +324,12 @@ markdown {
   /* Conversation tokens, not PrimeNG's togglebutton variables. A code block in
      an answer took its ground and its rule from whatever the component library
      happened to theme a toggle button as, so re-pointing the palette moved
-     every surface in the app except this one. */
+     every surface in the app except this one.
+
+     `overflow-x: auto` keeps a long line inside the block: without it one wide
+     line of command output pushed the whole transcript into a sideways scroll. */
   pre {
+    overflow-x: auto;
     font-size: 0.9em;
     margin: 0.5rem;
     padding: 0.5rem;

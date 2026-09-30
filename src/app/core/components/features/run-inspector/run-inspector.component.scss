@@ -228,18 +228,49 @@ button.mini-main {
   padding: 0;
 }
 
+/* A timeline: the offset, right-aligned; a dot saying what kind of step it
+   was; then the step. */
 .ri-step {
-  display: flex;
-  gap: 8px;
-  padding: 1px 0;
-  min-width: 0;
+  display: grid;
+  grid-template-columns: 46px 14px minmax(0, 1fr);
+  column-gap: 6px;
+  align-items: start;
+  padding: 2px 0;
+  line-height: 18px;
   overflow-wrap: anywhere;
 }
 
 .ri-offset {
-  flex: 0 0 48px;
   font-family: var(--akg-font-mono);
+  text-align: right;
   color: var(--akg-text-muted);
+}
+
+.ri-dot {
+  justify-self: center;
+  width: 9px;
+  height: 9px;
+  margin-top: calc((18px - 9px) / 2);
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--akg-text);
+}
+
+.ri-step[data-step='tool'] .ri-dot {
+  background: var(--akg-tool-accent);
+}
+
+.ri-step[data-state='failed'] .ri-dot {
+  background: var(--akg-danger-fg);
+}
+
+.ri-step[data-step='sent'] .ri-dot {
+  background: var(--akg-status-live-fg);
+}
+
+.ri-step[data-step='absorbed'] .ri-dot {
+  border: 1.5px dashed var(--akg-text-muted);
+  background: transparent;
 }
 
 .ri-step--failed {
@@ -274,22 +305,35 @@ button.mini-main {
   }
 }
 
+/* The raw ledger, in a box: one event per line, never wrapped. A long line
+   scrolls sideways inside the box rather than folding back to its left edge. */
 .ri-ledger {
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 10px 12px;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--akg-surface-border);
+  border-radius: 10px;
+  background: var(--akg-surface-muted);
   font-family: var(--akg-font-mono);
   font-size: 11px;
+  line-height: 1.7;
 }
 
+/* As wide as its text, and at least the box: the own-line wash spans the
+   scrolled width, not just the visible part. */
 .ri-line {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 6px;
-  padding: 1px 4px;
+  width: max-content;
+  min-width: 100%;
+  box-sizing: border-box;
+  padding: 0 4px;
   border-radius: 4px;
-  min-width: 0;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+
+  > span + span {
+    margin-left: 6px;
+  }
 }
 
 .ri-line-time,

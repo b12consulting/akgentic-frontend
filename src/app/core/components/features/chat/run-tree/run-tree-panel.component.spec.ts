@@ -9,7 +9,7 @@ import { PrimeNgNotificationAdapter } from '../../../../../ui/console/notificati
 import { CHAT_VIEW_STORAGE_KEY, ChatViewService } from '../../../../../ui/console/chat-view.service';
 import { ApiService } from '../../../../platform/http/api.service';
 import { NOTIFICATION_PORT } from '../../../../platform/notification/notification.port';
-import { AkgenticMessage } from '../../../../protocol/message.types';
+import { ActorAddress, AkgenticMessage } from '../../../../protocol/message.types';
 import { AkgentService } from '../../../../services/akgent.service';
 import { IngestionService } from '../../../../services/process/event/ingestion.service';
 import { MessageLogService } from '../../../../services/process/event/message-log.service';
@@ -776,6 +776,89 @@ describe('RunTreePanelComponent', () => {
       expect(inTail(U2)).toBeFalse();
       expectPinned(U2);
     });
+
+    for (const width of [900, 420]) {
+      // A long line of command output in a code block used to widen the whole
+      // stream; so could any nowrap row of the tree.
+      it(`never scrolls sideways at ${width}px, with a card open, a row selected and a bubble highlighted`, async () => {
+        host.style.width = `${width}px`;
+        const long = (
+          id: string,
+          from: ActorAddress,
+          to: ActorAddress,
+          parent: string | null,
+          t: number,
+        ): AkgenticMessage => {
+          const m = sent(id, from, to, parent, t);
+          m.message.content =
+            'search the rag for the hugging face report '.repeat(6) +
+            '\n\n```\n' +
+            '-rw-r--r--  1 agent  staff  2048 hugging-face-incident-report-aug-2026.pdf '.repeat(4) +
+            '\n```\n';
+          return m;
+        };
+        log.appendAll([
+          long('U1', HUMAN, MANAGER, null, 1),
+          received('U1', MANAGER, 2),
+          toolCall('t1', 'workspace_rag_search', MANAGER, 'U1', 3),
+          toolReturn('t1', 'workspace_rag_search', MANAGER, 'U1', 4),
+          toolCall('t2', 'workspace_read', MANAGER, 'U1', 5),
+          toolReturn('t2', 'workspace_read', MANAGER, 'U1', 6),
+          long('A1', MANAGER, HUMAN, 'U1', 7),
+          processed('U1', MANAGER, 8),
+        ]);
+        settle();
+        host.querySelector<HTMLButtonElement>('.trace-toggle')!.click();
+        settle();
+        host.querySelector<HTMLButtonElement>('.node-main')!.click();
+        host.querySelector<HTMLElement>('.tree-human')!.dispatchEvent(new MouseEvent('mouseenter'));
+        settle();
+        // The answer's markdown renders asynchronously.
+        await fixture.whenStable();
+        await new Promise((resolve) => setTimeout(resolve));
+        settle();
+        expect(host.querySelector('.markdown-content pre')).withContext('code block').not.toBeNull();
+
+        const list = host.querySelector('.message-list') as HTMLElement;
+        const right = list.getBoundingClientRect().right;
+        // Content inside its own sideways scroller (the code block) is clipped
+        // there and cannot widen the stream.
+        const clipped = (e: HTMLElement): boolean => {
+          for (let a = e.parentElement; a && a !== list; a = a.parentElement) {
+            if (getComputedStyle(a).overflowX !== 'visible') return true;
+          }
+          return false;
+        };
+        const offenders = [...list.querySelectorAll<HTMLElement>('*')]
+          .filter((e) => e.getBoundingClientRect().right > right + 0.5 && !clipped(e))
+          .map((e) => `${e.tagName.toLowerCase()}.${[...e.classList].join('.')}`);
+        expect(offenders).withContext('elements past the list edge').toEqual([]);
+        expect(list.scrollWidth).toBeLessThanOrEqual(list.clientWidth);
+
+        // The provenance pill rides in the answer's rating row, not below it.
+        const answer = host.querySelector(`[data-message-id="${envId('A1', HUMAN)}"]`)!;
+        expect(answer.querySelector('.turn-feedback')).withContext('rating row').not.toBeNull();
+        const pill = host.querySelector('.run-link--provenance')!.getBoundingClientRect();
+        const bubble = answer.getBoundingClientRect();
+        expect(pill.top).toBeLessThan(bubble.bottom);
+
+        // The run row is one block: its box holds line 1, the status and the
+        // chips, and a click anywhere on it — a chip included — hits the run.
+        const runBox = host.querySelector('.tree-node--selected .rn-body')!.getBoundingClientRect();
+        for (const part of ['.node-status', '.node-chips']) {
+          const r = host.querySelector(`.tree-node--selected ${part}`)!.getBoundingClientRect();
+          expect(r.top >= runBox.top && r.bottom <= runBox.bottom && r.right <= runBox.right)
+            .withContext(`${part} inside the run box`)
+            .toBeTrue();
+        }
+        const chipEl = host.querySelector<HTMLElement>('.tree-node--selected .chip')!;
+        chipEl.scrollIntoView({ block: 'center' });
+        const chip = chipEl.getBoundingClientRect();
+        const hit = document.elementFromPoint(chip.left + chip.width / 2, chip.top + chip.height / 2);
+        expect(hit).withContext('the chip is on screen').not.toBeNull();
+        expect(hit!.closest('.node-main')).withContext('a chip hits the run').not.toBeNull();
+      });
+    }
 
     it('a message picked up in the frame of its echo pins once and never sits in the tail', () => {
       const U1 = envId('U1', MANAGER);

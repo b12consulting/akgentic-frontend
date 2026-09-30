@@ -166,23 +166,75 @@
     }
   }
 
-  /* The provenance link sits on the agent's spine, under its text. */
-  .run-link--provenance {
+  /*
+   * The provenance link: a dashed pill on the agent's spine, 8px under its
+   * text. The row is the note; the pill inside it is the button, so it is only
+   * as wide as what it says.
+   */
+  .message-list > .run-provenance {
+    /* Full-width row with an inset: the inset must not add to the width. */
+    box-sizing: border-box;
+    margin-top: 8px;
     padding-left: var(--akg-avatar-gutter);
   }
 
-  /*
-   * A tree `@Human` row points at its bubble: a soft wash while hovered, and a
-   * short flash after "in chat ↓". Both sit on the bubble's HOST element.
-   */
-  .run-bubble--highlight,
-  .run-bubble--flash {
-    border-radius: var(--akg-turn-radius);
-    background-color: var(--akg-row-hover);
+  .run-link--provenance {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border: 1px dashed var(--akg-marker-border);
+    border-radius: var(--akg-pill-radius);
+    background: transparent;
+    color: var(--akg-text-muted);
+    font: inherit;
+    font-size: 12.5px;
+    line-height: 18px;
+    text-align: left;
+    text-decoration: none;
+    /* A narrow pane wraps the pill's text rather than widening the stream. */
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-wrap: anywhere;
+
+    &:hover {
+      border-style: solid;
+      color: var(--akg-text);
+    }
   }
 
+  .run-link-icon {
+    flex: 0 0 auto;
+    width: 13px;
+    height: 13px;
+  }
+
+  /*
+   * A tree `@Human` row points at its bubble: a soft accent wash while
+   * hovered, and a short flash after "in chat ↓". Both sit on the bubble's
+   * HOST element. The spread of the shadow is the wash's padding: 8px of
+   * breathing room around the text and the avatar that moves no layout.
+   */
+  --run-bubble-wash: color-mix(in srgb, var(--akg-accent-fg) 7%, transparent);
+
+  .message-list > app-chat-message {
+    border-radius: 14px;
+    transition:
+      background-color 0.15s,
+      box-shadow 0.15s;
+  }
+
+  .run-bubble--highlight,
   .run-bubble--flash {
-    box-shadow: var(--akg-focus-ring);
+    background-color: var(--run-bubble-wash);
+    box-shadow: 0 0 0 8px var(--run-bubble-wash);
+  }
+
+  /* The flash adds a ring outside the wash, so reduced motion keeps a cue. */
+  .run-bubble--flash {
+    box-shadow:
+      0 0 0 8px var(--run-bubble-wash),
+      0 0 0 10px var(--akg-accent-border);
     animation: run-bubble-flash 1.2s ease-out;
   }
 
@@ -317,8 +369,44 @@
 @keyframes run-bubble-flash {
   from {
     background-color: var(--akg-attention-bg);
+    box-shadow:
+      0 0 0 8px var(--akg-attention-bg),
+      0 0 0 10px var(--akg-accent-border);
   }
   to {
-    background-color: var(--akg-row-hover);
+    background-color: var(--run-bubble-wash);
+    box-shadow:
+      0 0 0 8px var(--run-bubble-wash),
+      0 0 0 10px var(--akg-accent-border);
+  }
+}
+
+/*
+ * THE PROVENANCE LINK SHARES THE RATING ROW when its bubble has one.
+ *
+ * A rateable turn reserves a row of three `--akg-icon-button-size-sm` buttons,
+ * 2px apart, under its text — hover-revealed, but holding its space so nothing
+ * reflows. A link placed after it sat ~45px under the words it annotates, below
+ * an apparently empty band. Instead the link lifts into that row, after the
+ * buttons: up by the bubble's 2px padding and 2px border, half a button and
+ * half the 26px pill. The row keeps its clicks — the note box lets the pointer
+ * through and only the pill takes it.
+ *
+ * `::ng-deep` because `.turn-feedback` lives in the bubble's own template; the
+ * repeated classes out-rank the encapsulated `.message-list > .run-provenance`.
+ */
+:host ::ng-deep
+  .chat-container
+  .message-list
+  > app-chat-message:has(.turn-feedback)
+  + .run-note.run-provenance {
+  margin-top: calc(-1 * (4px + var(--akg-icon-button-size-sm) / 2 + 13px));
+  padding-left: calc(
+    var(--akg-avatar-gutter) + 2px + 3 * var(--akg-icon-button-size-sm) + 2 * 2px + 10px
+  );
+  pointer-events: none;
+
+  > .run-link--provenance {
+    pointer-events: auto;
   }
 }

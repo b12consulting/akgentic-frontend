@@ -9,37 +9,93 @@
   padding: 0;
 }
 
+/*
+ * THE ROW'S INDENT AND ITS GUIDES live on the `li`; the row's own box is
+ * `.rn` inside it. The list is flat (one `li` per visible row, with a depth),
+ * so each ancestor level's guide line is painted as a stripe of the indent:
+ * one 1px line, 8px into every 20px step — the nested `border-left` a real
+ * nested list would draw. A selected row's fill stops at its own box and
+ * never runs under the guides.
+ */
 .tree-node,
 .tree-human,
 .tree-leaf,
 .tree-join {
-  padding-top: 3px;
-  padding-bottom: 3px;
+  --tree-step: 20px;
+  padding: 1px 0 1px calc(var(--depth, 0) * var(--tree-step));
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0 8px,
+    var(--akg-marker-border) 8px 9px,
+    transparent 9px var(--tree-step)
+  );
+  background-repeat: no-repeat;
+  background-size: calc(var(--depth, 0) * var(--tree-step)) 100%;
 }
 
-/* A run that sent nothing (ADR-037 §D7). */
-.tree-node--silent {
+/* One grid for every row, run or leaf: the chevron lane, then the row's box,
+   so a leaf lines up with the run row above it. */
+.rn {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 2px;
+  align-items: start;
+}
+
+/*
+ * THE ROW'S BOX: both lines and the status, one block. Hover, selection and
+ * the flash ring all paint here, so none of them stops at line 1. The chevron
+ * stays outside it, in its own lane.
+ *
+ * The run's `.node-main` button stretches over this whole box (its `::after`),
+ * so a click on the chips or the status selects the run too; the Answer
+ * button is lifted above that layer.
+ */
+.rn-body {
+  position: relative;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+
+.tree-node > .rn > .rn-body:hover,
+.tree-human > .rn > .rn-body:hover {
+  background-color: var(--akg-row-hover);
+
+  /* The chips share the hover ground's tone; lift them off it. */
+  .chip {
+    background: var(--akg-overlay-bg);
+  }
+}
+
+/* The chevron, centred on line 1 inside the box's padding and border. */
+.node-chevron,
+.node-chevron-gap {
+  margin-top: 7px;
+}
+
+/* A run that sent nothing (ADR-037 §D7). On the box, so the guides stay. */
+.tree-node--silent > .rn {
   opacity: 0.55;
 }
 
-/* The selected run (ADR-037 §D9): the row hover fill, held, with the ring on
-   its left edge so it reads as "this one" without shouting. */
-.tree-node--selected {
-  border-radius: 6px;
-  background-color: var(--akg-row-hover);
-  box-shadow: inset 2px 0 0 var(--akg-text);
+/* The selected run (ADR-037 §D9): its own box, outlined and lifted onto the
+   page ground — "this one", without a bar or a fill running to the edge. */
+.tree-node--selected > .rn > .rn-body {
+  border-color: var(--akg-marker-border);
+  background-color: var(--akg-page-bg);
 }
 
 /* A provenance click's flash on the node it scrolled to. The ring is static,
    as on the bubble flash, so reduced motion drops the fade, not the cue. */
-.tree-node--flash {
-  border-radius: 6px;
+.tree-node--flash > .rn > .rn-body {
   box-shadow: var(--akg-focus-ring);
   animation: tree-node-flash 1.2s ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .tree-node--flash {
+  .tree-node--flash > .rn > .rn-body {
     animation: none;
   }
 }
@@ -49,7 +105,7 @@
     background-color: var(--akg-attention-bg);
   }
   to {
-    background-color: var(--akg-row-hover);
+    background-color: var(--akg-page-bg);
   }
 }
 
@@ -58,6 +114,7 @@
   align-items: center;
   gap: 0.4rem;
   min-width: 0;
+  min-height: 20px;
 }
 
 %tree-button {
@@ -76,14 +133,15 @@
 
 .node-chevron {
   @extend %tree-button;
-  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
   width: 18px;
-  padding: 2px 0;
+  height: 20px;
+  padding: 0;
   font-size: 0.65rem;
 }
 
 .node-chevron-gap {
-  flex: 0 0 auto;
   width: 18px;
 }
 
@@ -97,8 +155,21 @@
   padding: 1px 2px;
   text-align: left;
 
-  &:hover {
-    background: var(--akg-row-hover);
+  /* The stretched hit area and, for the keyboard, the ring round the whole
+     box rather than line 1. */
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 10px;
+  }
+
+  &:focus-visible {
+    box-shadow: none;
+  }
+
+  &:focus-visible::after {
+    box-shadow: var(--akg-focus-ring);
   }
 }
 
@@ -140,6 +211,8 @@
 
 .node-answer {
   @extend %tree-button;
+  position: relative;
+  z-index: 1;
   flex: 0 0 auto;
   padding: 1px 8px;
   border: 1px solid var(--akg-attention-border);
@@ -171,11 +244,14 @@
   background: var(--akg-attention-fg);
 }
 
+/* Line 2 starts under the agent's name: past `.node-main`'s padding, the
+   avatar and the gap after it. */
 .node-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem;
-  margin: 2px 0 0 calc(18px + 0.4rem + 20px + 0.4rem);
+  gap: 4px;
+  margin-top: 4px;
+  padding-left: calc(2px + 18px + 0.4rem);
 
   &:empty {
     display: none;
@@ -183,10 +259,11 @@
 }
 
 .chip {
-  padding: 0 6px;
-  border: 1px solid var(--akg-hairline);
+  padding: 1px 7px;
   border-radius: var(--akg-pill-radius);
-  font-size: 0.7rem;
+  background: var(--akg-user-bubble-bg);
+  color: var(--akg-text-muted);
+  font-size: 11px;
   line-height: 1.5;
   white-space: nowrap;
 }
@@ -196,13 +273,12 @@
 }
 
 .chip--failed {
-  border-color: var(--akg-danger-fg);
   background: var(--akg-danger-bg);
   color: var(--akg-danger-fg);
 }
 
 .chip--seat {
-  border-color: var(--akg-attention-border);
+  background: var(--akg-attention-bg);
   color: var(--akg-attention-fg);
 }
 
@@ -214,10 +290,8 @@
   font-style: italic;
 }
 
-.tree-join {
-  margin: 2px 0;
-  border: 1px dashed var(--akg-hairline);
-  border-radius: 6px;
+.tree-join > .rn > .rn-body {
+  border: 1px dashed var(--akg-marker-border);
 }
 
 .tree-human .node-avatar {

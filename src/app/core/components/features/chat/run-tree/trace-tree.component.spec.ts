@@ -279,8 +279,9 @@ describe('TraceTreeComponent', () => {
     expect(node(k('Da', ASSISTANT)).classList).toContain('tree-node--flash');
     expect(node(ROOT).classList).not.toContain('tree-node--flash');
     // A static ring, not only the fade: reduced motion drops the animation,
-    // and the flash must still show.
-    expect(getComputedStyle(node(k('Da', ASSISTANT))).boxShadow).not.toBe('none');
+    // and the flash must still show. On the row's own box, not the indented li.
+    const box = node(k('Da', ASSISTANT)).querySelector('.rn-body')!;
+    expect(getComputedStyle(box).boxShadow).not.toBe('none');
   });
 
   describe('the @Human row', () => {
@@ -319,6 +320,19 @@ describe('TraceTreeComponent', () => {
       row.querySelector<HTMLButtonElement>('button.node-in-chat')!.click();
       expect(hovered).toEqual([Q_ENVELOPE, null]);
       expect(shown).toEqual([Q_ENVELOPE]);
+    });
+
+    it('"in chat" releases the hover before it sends the reader to the bubble', () => {
+      fixture.componentRef.setInput('bubbleIds', new Map([['Q', Q_ENVELOPE]]));
+      render(CASE_4);
+      const row = host().querySelector<HTMLElement>('.tree-human')!;
+      const events: string[] = [];
+      fixture.componentInstance.humanRowHover.subscribe((id) => events.push(`hover:${id}`));
+      fixture.componentInstance.showInChat.subscribe((id) => events.push(`show:${id}`));
+      // The scroll carries the row away from the pointer: no mouseleave follows.
+      row.dispatchEvent(new MouseEvent('mouseenter'));
+      row.querySelector<HTMLButtonElement>('button.node-in-chat')!.click();
+      expect(events).toEqual([`hover:${Q_ENVELOPE}`, 'hover:null', `show:${Q_ENVELOPE}`]);
     });
 
     it('fails open when its bubble is not rendered', () => {

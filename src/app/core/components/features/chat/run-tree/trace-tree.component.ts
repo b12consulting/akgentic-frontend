@@ -135,6 +135,11 @@ export class TraceTreeComponent {
     inject(DestroyRef).onDestroy(() => this.stopClock());
   }
 
+  /** Clear the hovered `@Human` row's highlight without a `mouseleave`. */
+  private releaseHover(): void {
+    if (this.hoveredHuman !== null) this.onHumanHover(this.hoveredHuman, false);
+  }
+
   private startClock(): void {
     if (this.timer !== null) return;
     this.now.set(Date.now());
@@ -222,7 +227,10 @@ export class TraceTreeComponent {
     this.humanRowHover.emit(entering ? bubble : null);
   }
 
+  /** The scroll moves the row out from under the pointer, and the flash takes
+   *  over from the hover wash: release the hover first. */
   onShowInChat(messageId: string): void {
+    this.releaseHover();
     const bubble = this.bubbleOf(messageId);
     if (bubble !== null) this.showInChat.emit(bubble);
   }

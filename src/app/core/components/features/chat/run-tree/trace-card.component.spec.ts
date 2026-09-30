@@ -96,7 +96,8 @@ describe('TraceCardComponent', () => {
     it('case 1 reads "@Manager handled this in 1 run · 1 tool"', () => {
       render(summaryOf(CASE_1));
       expect(text('.trace-title')).toBe('@Manager handled this in 1 run · 1 tool');
-      expect(text('.trace-meta')).toBe('1 run · 1 tool · 4s');
+      // The title already carries the counts, so the meta is the duration alone.
+      expect(text('.trace-meta')).toBe('4s');
     });
 
     it('running: the latest tool of the most recent running run, and "N running"', () => {
@@ -115,6 +116,8 @@ describe('TraceCardComponent', () => {
     it('done with several agents: the root agent, then the others', () => {
       render(summaryOf([...MANY, processed('De', EXPERT, 10)]));
       expect(text('.trace-title')).toBe('@Manager worked with @Expert and @Assistant');
+      // This title names no counts, so the meta keeps them.
+      expect(text('.trace-meta')).toMatch(/^3 runs · 1 tool · \d+s$/);
     });
   });
 

@@ -114,8 +114,13 @@
       <h3 class="ri-section-title">{{ 'runInspector.section.steps' | translate }}</h3>
       <ol class="ri-steps">
         @for (step of steps(); track $index) {
-          <li class="ri-step" [attr.data-step]="step.kind">
+          <li
+            class="ri-step"
+            [attr.data-step]="step.kind"
+            [attr.data-state]="step.kind === 'tool' ? step.state : null"
+          >
             <span class="ri-offset">{{ step.offset }}</span>
+            <span class="ri-dot" aria-hidden="true"></span>
             @switch (step.kind) {
               @case ('received') {
                 <span class="ri-step-label">{{ 'runInspector.step.received' | translate }}</span>

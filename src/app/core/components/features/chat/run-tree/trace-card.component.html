@@ -67,15 +67,20 @@
       }
     </span>
 
+    <!-- A solo trace's title already says the counts: its meta is the duration. -->
     <span class="trace-meta">
-      {{
-        'chat.runTree.meta'
-          | translate
-            : {
-                runs: (runsKey() | translate: { count: summary().runCount }),
-                tools: (toolsKey() | translate: { count: summary().toolCount }),
-              }
-      }}@if (duration(); as d) { · {{ d }}}
+      @if (metaHasCounts()) {
+        {{
+          'chat.runTree.meta'
+            | translate
+              : {
+                  runs: (runsKey() | translate: { count: summary().runCount }),
+                  tools: (toolsKey() | translate: { count: summary().toolCount }),
+                }
+        }}@if (duration(); as d) { · {{ d }}}
+      } @else {
+        {{ duration() }}
+      }
     </span>
 
     <span class="trace-spacer"></span>
