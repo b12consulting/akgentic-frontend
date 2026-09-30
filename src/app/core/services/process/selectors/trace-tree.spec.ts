@@ -251,9 +251,24 @@ describe('buildTraceTree', () => {
     const t = tree(CASE_3);
     expect(trackTraceChild(t)).toBe(ROOT);
     const expert = t.children[0] as TraceRunNode;
-    expect(trackTraceChild(expert.children[0])).toBe('absorbed:Re');
+    expect(trackTraceChild(expert.children[0])).toBe(`absorbed:Re:${MANAGER.agent_id}`);
     const ra = find(t, k('Ra', MANAGER));
-    expect(ra.children.map(trackTraceChild)).toEqual(['join:Re', 'human:A']);
+    expect(ra.children.map(trackTraceChild)).toEqual([
+      `join:Re:${k('Ra', MANAGER)}`,
+      'human:A',
+    ]);
+  });
+
+  it('one message id sent to two recipients gives two leaves with distinct keys', () => {
+    const t = tree([
+      sent('U1', HUMAN, MANAGER, null, 1),
+      received('U1', MANAGER, 2),
+      sent('D', MANAGER, EXPERT, 'U1', 3),
+      sent('D', MANAGER, ASSISTANT, 'U1', 3),
+    ]);
+    expect(shape(t)).toEqual(['@Manager running', '  → @Expert queued', '  → @Assistant queued']);
+    const keys = t.children.map(trackTraceChild);
+    expect(new Set(keys).size).toBe(2);
   });
 });
 
@@ -296,6 +311,8 @@ describe('trace-tree helpers', () => {
     expect(excerpt('  a\n\n b\t c ')).toBe('a b c');
     expect(excerpt('x'.repeat(200)).length).toBe(140);
     expect(excerpt(null)).toBe('');
+    // An emoji straddling the cut is kept whole, never half a surrogate pair.
+    expect(excerpt('x'.repeat(139) + '😀tail')).toBe('x'.repeat(139) + '😀');
   });
 
   it('answeredAfter is the first send less the start, or null', () => {

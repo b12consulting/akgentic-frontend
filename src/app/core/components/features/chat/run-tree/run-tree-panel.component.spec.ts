@@ -381,6 +381,22 @@ describe('RunTreePanelComponent', () => {
     expect(el(fixture).querySelector('.node-answer')).toBeNull();
   });
 
+  it('an answer that lands from elsewhere closes the open dialog; an answered seat never opens it', () => {
+    log.appendAll(CASE_5_PREFIX);
+    const fixture = mount();
+    const seat = runKey('S', SUPPORT.agent_id);
+    fixture.componentInstance.onAnswer(seat);
+    expect(fixture.componentInstance.answerVisible).toBeTrue();
+
+    log.appendAll(CASE_5_ANSWER);
+    fixture.detectChanges();
+    expect(fixture.componentInstance.answerVisible).toBeFalse();
+
+    fixture.componentInstance.onAnswer(seat);
+    expect(fixture.componentInstance.answerVisible).toBeFalse();
+    expect(api.processHumanInput).not.toHaveBeenCalled();
+  });
+
   it('logs a failed answer; the dialog is already closed', async () => {
     const error = spyOn(console, 'error');
     api.processHumanInput.and.returnValue(Promise.reject(new Error('down')));

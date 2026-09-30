@@ -39,6 +39,7 @@ import {
   RunGraph,
   RunKey,
   RunMessage,
+  runStatus,
   traceRootOf,
 } from '../../../../services/process/selectors/run-graph.selector';
 import {
@@ -143,6 +144,9 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
   answerVisible = false;
   answerSeat: ActorAddress | null = null;
   answerQuestion: RunMessage | null = null;
+  /** The seat run the open dialog answers, so an answer that lands from
+   *  elsewhere closes it. */
+  private answerKey: RunKey | null = null;
   private view: RunTreeView = { timeline: [], tail: [], tailNotes: new Map() };
   /** Rule-6 markers the reader opened; re-applied to each emission's copies. */
   private expandedMarkers = new Set<string>();
@@ -232,6 +236,7 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
     this.applyView();
     this.cards = this.buildCards(state);
     this.bubbleIds = this.buildBubbleIds(state.view);
+    this.closeAnsweredDialog();
     this.scroll.onEmission(this.latestYoursId(), this.timeline.length + this.tail.length);
   }
 
@@ -326,9 +331,18 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
     const run = this.graph.runs.get(key);
     const question = run ? this.graph.messages.get(run.message_id) : undefined;
     if (run === undefined || question === undefined) return;
+    if (runStatus(this.graph, key) !== 'waiting') return;
+    this.answerKey = key;
     this.answerSeat = run.agent;
     this.answerQuestion = question;
     this.answerVisible = true;
+  }
+
+  /** A seat answered from elsewhere (the legacy view, another tab) while its
+   *  dialog is open: close it, so a second answer is never posted. */
+  private closeAnsweredDialog(): void {
+    if (!this.answerVisible || this.answerKey === null) return;
+    if (runStatus(this.graph, this.answerKey) !== 'waiting') this.answerVisible = false;
   }
 
   /** Keyed by the question's inner id. Nothing is inserted: the node turns

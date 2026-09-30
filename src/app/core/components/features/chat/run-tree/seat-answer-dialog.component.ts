@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { Component, input, output } from '@angular/core';
+import { Component, effect, input, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TranslatePipe } from '@ngx-translate/core';
 import { MarkdownModule } from 'ngx-markdown';
@@ -53,6 +53,14 @@ export class SeatAnswerDialogComponent {
   send = output<SeatAnswer>();
 
   draft = '';
+
+  constructor() {
+    // The host can close the dialog too (its seat was answered elsewhere); a
+    // draft never carries over to the next question.
+    effect(() => {
+      if (!this.visible()) this.draft = '';
+    });
+  }
 
   get canSend(): boolean {
     return this.draft.trim().length > 0 && this.question() !== null;

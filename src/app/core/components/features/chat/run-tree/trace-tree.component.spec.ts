@@ -321,6 +321,20 @@ describe('TraceTreeComponent', () => {
       expect(status()).toBe('10s');
     });
 
+    it('repaints on its own: the out-of-zone tick needs no manual change detection', () => {
+      jasmine.clock().mockDate(at(10));
+      render(RUNNING);
+      fixture.autoDetectChanges(true);
+      const status = (): string => text(node(ROOT).querySelector('.node-status'));
+      expect(status()).toBe('8s');
+
+      // The interval runs outside the zone; only the signal write can schedule
+      // the render. No `detectChanges()` here on purpose.
+      jasmine.clock().tick(1000);
+      jasmine.clock().tick(20);
+      expect(status()).toBe('9s');
+    });
+
     it('a running run whose last step is not a tool is "thinking…"', () => {
       jasmine.clock().mockDate(at(10));
       render(RUNNING.slice(0, 2));

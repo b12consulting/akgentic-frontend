@@ -140,6 +140,15 @@ describe('SeatAnswerDialogComponent', () => {
     expect(visibility).toEqual([false]);
   });
 
+  it('a close by the host clears the draft for the next question', async () => {
+    await open();
+    await type('draft');
+    fixture.componentRef.setInput('visible', false);
+    fixture.detectChanges();
+    expect(fixture.componentInstance.draft).toBe('');
+    expect(sent).toEqual([]);
+  });
+
   it('Escape closes without sending', async () => {
     await open();
     await type('draft');

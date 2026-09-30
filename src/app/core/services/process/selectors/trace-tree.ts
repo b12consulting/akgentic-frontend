@@ -85,6 +85,8 @@ export interface TraceAbsorbedLeaf {
 export interface TraceJoinRow {
   kind: 'join';
   messageId: string;
+  /** The run that took the message in. */
+  into: RunKey;
   from: ActorAddress;
   phrase: JoinPhrase;
 }
@@ -97,9 +99,21 @@ export type TraceTreeChild =
   | TraceJoinRow;
 
 /** The `@for` key: a run by its key, anything else by kind and message id —
- *  never by index (Trap 7). */
+ *  never by index (Trap 7). One message id can go to several recipients and be
+ *  taken in by several runs, and the rows are flattened over the whole tree, so
+ *  a leaf also names its recipient and a join its absorbing run. */
 export function trackTraceChild(child: TraceTreeChild): string {
-  return child.kind === 'run' ? child.key : `${child.kind}:${child.messageId}`;
+  switch (child.kind) {
+    case 'run':
+      return child.key;
+    case 'queued':
+    case 'absorbed':
+      return `${child.kind}:${child.messageId}:${child.recipient.agent_id}`;
+    case 'join':
+      return `join:${child.messageId}:${child.into}`;
+    case 'human':
+      return `human:${child.messageId}`;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -136,10 +150,12 @@ export function liveTool(run: Run): string | null {
   return last?.kind === 'tool' ? last.tool_name : null;
 }
 
-/** Whitespace collapsed, trimmed, cut at 140 characters. CSS draws the
- *  visual ellipsis. */
+/** Whitespace collapsed, trimmed, cut at 140 characters — code points, so an
+ *  emoji at the cut is never split in half. CSS draws the visual ellipsis. */
 export function excerpt(content: string | null | undefined): string {
-  return (content ?? '').replace(/\s+/g, ' ').trim().slice(0, 140);
+  return Array.from((content ?? '').replace(/\s+/g, ' ').trim())
+    .slice(0, 140)
+    .join('');
 }
 
 /** A seat's reply time: its first `sent` step, less its start, in ms. */
@@ -220,10 +236,16 @@ function sentChild(
   return { kind: 'queued', messageId: step.message_id, recipient: step.recipient };
 }
 
-function joinChild(walk: Walk, messageId: string): TraceJoinRow | null {
+function joinChild(walk: Walk, run: Run, messageId: string): TraceJoinRow | null {
   const message = walk.graph.messages.get(messageId);
   if (message === undefined) return null;
-  return { kind: 'join', messageId, from: message.sender, phrase: joinPhrase(walk.graph, message) };
+  return {
+    kind: 'join',
+    messageId,
+    into: run.key,
+    from: message.sender,
+    phrase: joinPhrase(walk.graph, message),
+  };
 }
 
 /** Fail-open: a child run no `sent` step produced (a missing frame) still
@@ -246,7 +268,7 @@ function childrenOf(walk: Walk, run: Run): TraceTreeChild[] {
       step.kind === 'sent'
         ? sentChild(walk, run, step)
         : step.kind === 'absorbed'
-          ? joinChild(walk, step.message_id)
+          ? joinChild(walk, run, step.message_id)
           : null;
     if (child !== null) out.push(child);
   }
