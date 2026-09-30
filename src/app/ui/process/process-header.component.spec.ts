@@ -23,16 +23,15 @@ function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
 describe('ProcessHeaderComponent', () => {
   let fixture: ComponentFixture<ProcessHeaderComponent>;
 
-  // The header reads root state and writes to it through two service methods,
-  // so the doubles are subjects the spec drives directly plus spies on the two
-  // writes. Nothing here stubs a rendering decision — every assertion below
+  // The header reads root state and writes to it through the view service,
+  // so the doubles are subjects the spec drives directly plus a spy on the
+  // rail toggle. Nothing here stubs a rendering decision — every assertion below
   // goes through the DOM the component actually produced.
   let currentTeam$: BehaviorSubject<TeamContext | null>;
   let currentTeamRunning$: BehaviorSubject<boolean>;
   let currentProcessId$: BehaviorSubject<string>;
   let isRailCollapsed$: BehaviorSubject<boolean>;
   let isRightColumnCollapsed$: BehaviorSubject<boolean>;
-  let clearSpy: jasmine.Spy;
   let toggleRailSpy: jasmine.Spy;
 
   beforeEach(async () => {
@@ -41,7 +40,6 @@ describe('ProcessHeaderComponent', () => {
     currentProcessId$ = new BehaviorSubject<string>('');
     isRailCollapsed$ = new BehaviorSubject<boolean>(false);
     isRightColumnCollapsed$ = new BehaviorSubject<boolean>(false);
-    clearSpy = jasmine.createSpy('clear').and.returnValue(Promise.resolve());
     toggleRailSpy = jasmine.createSpy('toggleRail');
 
     await TestBed.configureTestingModule({
@@ -54,7 +52,6 @@ describe('ProcessHeaderComponent', () => {
             currentTeam$,
             currentTeamRunning$,
             currentProcessId$,
-            clear: clearSpy,
           },
         },
         {
@@ -88,10 +85,6 @@ describe('ProcessHeaderComponent', () => {
 
   function title(): string {
     return fixture.nativeElement.querySelector('.team-name').textContent.trim();
-  }
-
-  function clearButton(): HTMLButtonElement {
-    return fixture.nativeElement.querySelector('.header-action--quiet');
   }
 
   function detailsButton(): HTMLButtonElement | null {
@@ -241,30 +234,24 @@ describe('ProcessHeaderComponent', () => {
     });
   });
 
-  describe('Clear', () => {
-    it('is disabled while no team is open', () => {
-      expect(clearButton().disabled).toBeTrue();
-    });
+  describe('no destructive action', () => {
+    it('renders no Clear or delete control, with or without an open team', () => {
+      // The header once carried a "Clear" that deleted the open team with no
+      // confirmation. Deleting a team belongs to the team list, behind its own
+      // confirm; the conversation's header only reports and reveals.
+      const labels = (): string[] =>
+        [...fixture.nativeElement.querySelectorAll('button')].map((b: HTMLButtonElement) =>
+          (b.textContent ?? '').trim().toLowerCase(),
+        );
 
-    it('clears the OPEN team by id once a team is open', () => {
-      openTeam(makeTeam({ team_id: 'team-42' }));
+      expect(labels().some((l) => l.includes('clear') || l.includes('delete'))).toBeFalse();
 
-      clearButton().click();
+      openTeam();
 
-      expect(clearButton().disabled).toBeFalse();
-      expect(clearSpy).toHaveBeenCalledOnceWith('team-42');
-    });
-
-    it('passes the id as of the click, not as of the render', () => {
-      // `clear()` reads `currentProcessId$.value` at click time. Binding the id
-      // instead would let a team switch between render and click send the
-      // deletion to the team that just left the screen.
-      openTeam(makeTeam({ team_id: 'team-first' }));
-      currentProcessId$.next('team-second');
-
-      clearButton().click();
-
-      expect(clearSpy).toHaveBeenCalledOnceWith('team-second');
+      const actions = fixture.nativeElement.querySelectorAll('.action-cluster button');
+      expect(actions.length).toBe(1);
+      expect(actions[0]).toBe(detailsButton());
+      expect(labels().some((l) => l.includes('clear') || l.includes('delete'))).toBeFalse();
     });
   });
 

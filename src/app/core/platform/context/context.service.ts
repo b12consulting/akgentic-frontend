@@ -439,22 +439,6 @@ export class ContextService {
     this._context$.next(prev.filter((t: TeamContext) => t.team_id !== teamId));
   }
 
-  async clear(teamId: string) {
-    await this.deleteTeam(teamId);
-    // Back to the list as it was: deleting a team you had filtered your way to
-    // should not also discard the filter that found it.
-    //
-    // EXCEPT the open team, which is the one thing that must not survive: since
-    // Epic 52 `homeQueryParams` carries `team=`, and the team just deleted is
-    // usually exactly the one it names. Replaying it would send the home page
-    // straight back into a pane for a team that no longer exists. The filter and
-    // the page are kept; only the selection is dropped.
-    if (this.homeQueryParams['team'] === teamId) {
-      this.homeQueryParams = { ...this.homeQueryParams, team: null };
-    }
-    await this.navigateHome();
-  }
-
   /**
    * Create a team from a catalog namespace, cache it, and RETURN ITS ID.
    *

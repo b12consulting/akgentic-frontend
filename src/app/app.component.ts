@@ -47,7 +47,7 @@ function isBareRoute(url: string): boolean {
  * state, plus a language-change subscription to rebuild them again because
  * PrimeNG takes resolved strings rather than keys. All of it is gone — the menu
  * redistributed into the rail (logo, account, all-teams) and the conversation
- * header (team name, status, Clear, Details), each of which reads the state it
+ * header (team name, status, Details), each of which reads the state it
  * needs where it is rendered instead of having it pushed down from the root.
  *
  * What is left is the frame and two overlays, and the three are unrelated to

@@ -342,33 +342,6 @@ describe('ContextService', () => {
     expect(next.map((t) => t.team_id)).toEqual(['a', 'c']);
   });
 
-  it('(AC5) clear(teamId) shrinks, ends with currentTeamRunning$.value === false via derived pipeline, and navigates home', async () => {
-    const teams = [makeTeam('a'), makeTeam('b')];
-    apiSpy.getTeams.and.returnValue(Promise.resolve(teams));
-    await service.getTeams();
-
-    apiSpy.deleteTeam.and.returnValue(Promise.resolve());
-    routerSpy.navigate.and.returnValue(Promise.resolve(true));
-
-    // Point currentProcessId$ at 'a' so the derived pipeline flips to `true`
-    // first, then `false` after `clear('a')` removes the team.
-    service.currentProcessId$.next('a');
-    await Promise.resolve();
-    expect(service.currentTeamRunning$.value).toBe(true);
-
-    await service.clear('a');
-
-    const next = await firstValueFrom(service.teams$);
-    expect(next.map((t) => t.team_id)).toEqual(['b']);
-    // Derived pipeline emitted `false` because `currentTeam$` → null.
-    expect(service.currentTeamRunning$.value).toBe(false);
-    // The home ROUTE, now carrying whatever query parameters the teams list
-    // last wrote (Story 48.2): deleting a team you filtered your way to must
-    // not also discard the filter that found it. Empty here — no home page has
-    // run in this spec — so the target is the same list, restored.
-    expect(routerSpy.navigate).toHaveBeenCalledWith([''], { queryParams: {} });
-  });
-
   // --- AC11 (Story 10.1 late-subscriber on teams$) -----------------------
 
   it('(AC11 10.1) late-subscriber receives the current value synchronously', async () => {
@@ -712,7 +685,6 @@ describe('ContextService', () => {
       'getTeams',
       'getCurrentTeam',
       'deleteTeam',
-      'clear',
       'createTeam',
       'stopTeamAndAwait',
     ];
@@ -742,7 +714,6 @@ describe('ContextService', () => {
       'getTeams',
       'getCurrentTeam',
       'deleteTeam',
-      'clear',
       'createTeam',
       'stopTeamAndAwait',
     ];

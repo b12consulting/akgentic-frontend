@@ -182,7 +182,6 @@
   "chrome": {
     "brandLogoAlt": "Logo",
     "home": "Accueil",
-    "clear": "Effacer",
     "showDetails": "Afficher les détails",
     "hideDetails": "Masquer les détails",
     "logout": "Déconnexion",

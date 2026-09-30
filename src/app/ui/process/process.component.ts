@@ -530,8 +530,8 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
     this.routeSub?.unsubscribe();
     this.routeSub = null;
     // Story 52-1 (trap T3): the single writer retracts its own value. Nothing
-    // is open once this view is gone, and the header's team name, its Clear
-    // action and its details toggle all read that subject. Before the split it
+    // is open once this view is gone, and the header's team name, its status
+    // and its details toggle all read that subject. Before the split it
     // was `AppComponent`'s navigation handlers that cleared it, which worked
     // only because leaving the view was always a navigation.
     //

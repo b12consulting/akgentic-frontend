@@ -82,18 +82,6 @@
 
 <!-- Cluster 3 — the things you can do to the conversation as a whole. -->
 <div class="action-cluster">
-  <button
-    type="button"
-    class="header-action header-action--quiet"
-    [disabled]="(teamOpen$ | async) === false"
-    (click)="clear()"
-  >
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
-      <path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" />
-    </svg>
-    {{ 'chrome.clear' | translate }}
-  </button>
-
   @if (teamOpen$ | async) {
     <!--
       `aria-controls` names the inspector's <aside>, which is rendered by a
