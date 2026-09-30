@@ -80,6 +80,27 @@ describe('TraceFoldState — nodes', () => {
     expect(folds.isNodeExpanded(EXPERT, ROOT)).toBeTrue();
   });
 
+  it('expandNodes expands exactly its keys and keeps every other override', () => {
+    const folds = new TraceFoldState();
+    const SIBLING = 'D3|expert-id';
+    const OTHER_ROOT = 'U2|manager-id';
+    folds.toggleNode(SIBLING, ROOT); // the reader opened a sibling branch
+    folds.toggleNode(OTHER_ROOT, OTHER_ROOT); // and folded another card's root
+    folds.toggleNode(ROOT, ROOT);
+    folds.expandNodes([ROOT, EXPERT]);
+    expect(folds.isNodeExpanded(ROOT, ROOT)).toBeTrue();
+    expect(folds.isNodeExpanded(EXPERT, ROOT)).toBeTrue();
+    expect(folds.isNodeExpanded(SIBLING, ROOT)).toBeTrue();
+    expect(folds.isNodeExpanded(OTHER_ROOT, OTHER_ROOT)).toBeFalse();
+    expect(folds.isNodeExpanded(ASSISTANT, ROOT)).toBeFalse();
+  });
+
+  it('expandNodes opens no card', () => {
+    const folds = new TraceFoldState();
+    folds.expandNodes([ROOT, EXPERT]);
+    expect(folds.isOpen(ROOT)).toBeFalse();
+  });
+
   it('re-opening re-applies reveal over a fold made in between', () => {
     const folds = new TraceFoldState();
     folds.open(ROOT, [EXPERT, ROOT]);

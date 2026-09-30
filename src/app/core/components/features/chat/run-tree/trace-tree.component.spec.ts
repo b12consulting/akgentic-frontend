@@ -28,6 +28,7 @@ import {
   setTestTranslations,
 } from '../../../../../../testing/i18n-testing';
 import { runGraphFold, RunKey, runKey } from '../../../../services/process/selectors/run-graph.selector';
+import { RunSelectionState } from '../../../../services/process/ui-state/run-selection';
 import { TraceFoldState } from '../../../../services/process/ui-state/trace-fold-state';
 import { TraceTreeComponent } from './trace-tree.component';
 
@@ -41,7 +42,7 @@ describe('TraceTreeComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [TraceTreeComponent],
-      providers: [provideTranslateTesting(), TraceFoldState],
+      providers: [provideTranslateTesting(), TraceFoldState, RunSelectionState],
     }).compileComponents();
     setTestTranslations(en);
     folds = TestBed.inject(TraceFoldState);
@@ -258,8 +259,43 @@ describe('TraceTreeComponent', () => {
     expect(folds.isNodeExpanded(k('De', EXPERT), ROOT)).toBeTrue();
   });
 
+  it('draws the selected run, and only it, with aria-current — nothing before a selection', () => {
+    render(CASE_2);
+    expect(host().querySelector('.tree-node--selected')).toBeNull();
+    expect(host().querySelector('[aria-current]')).toBeNull();
+
+    TestBed.inject(RunSelectionState).select(runGraphFold(CASE_2), k('De', EXPERT), 'tree');
+    fixture.detectChanges();
+    const selected = [...host().querySelectorAll('.tree-node--selected')];
+    expect(selected.map((n) => n.getAttribute('data-run-key'))).toEqual([k('De', EXPERT)]);
+    expect(selected[0].querySelector('.node-main')!.getAttribute('aria-current')).toBe('true');
+    expect(host().querySelectorAll('[aria-current]').length).toBe(1);
+  });
+
+  it('flashes the node the panel names', () => {
+    render(CASE_2);
+    fixture.componentRef.setInput('flashingRun', k('Da', ASSISTANT));
+    fixture.detectChanges();
+    expect(node(k('Da', ASSISTANT)).classList).toContain('tree-node--flash');
+    expect(node(ROOT).classList).not.toContain('tree-node--flash');
+  });
+
   describe('the @Human row', () => {
     const Q_ENVELOPE = envId('Q', HUMAN);
+
+    it('folded away under the pointer, clears its bubble highlight', () => {
+      fixture.componentRef.setInput('bubbleIds', new Map([['Q', Q_ENVELOPE]]));
+      render(CASE_4);
+      const hovered: (string | null)[] = [];
+      fixture.componentInstance.humanRowHover.subscribe((id) => hovered.push(id));
+      host().querySelector<HTMLElement>('.tree-human')!.dispatchEvent(new MouseEvent('mouseenter'));
+
+      // The root's chevron folds the row away; no mouseleave will ever fire.
+      node(ROOT).querySelector<HTMLButtonElement>('.node-chevron')!.click();
+      fixture.detectChanges();
+      expect(host().querySelector('.tree-human')).toBeNull();
+      expect(hovered).toEqual([Q_ENVELOPE, null]);
+    });
 
     it('is not a button and speaks in envelope ids', () => {
       fixture.componentRef.setInput('bubbleIds', new Map([['Q', Q_ENVELOPE]]));

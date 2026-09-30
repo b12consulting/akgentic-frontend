@@ -33,10 +33,10 @@ export interface VisualizationOption {
 
   /**
    * The tab's visible content wherever it is NOT the selected one — which is
-   * five of the six at any moment.
+   * six of the seven at any moment.
    *
    * It stopped being an ornament beside a caption when the strip stopped
-   * drawing six of them (see `inspector-tabs.component.scss` for why six
+   * drawing all of them (see `inspector-tabs.component.scss` for why seven
    * labelled tabs cannot fit the pane). So the host's obligation changed with
    * it: two entries sharing a glyph are two tabs a sighted user cannot tell
    * apart until they select one, where before the caption disambiguated them
@@ -163,10 +163,11 @@ export const INSPECTOR_NARROW_MAX_PX = 256;
  *
  * A NOTE ON TAB COUNT, carried forward from `ProcessComponent` because it is
  * still true and still load-bearing: the strip is icon-only plus the selected
- * tab's caption, and that is what makes six fit in one row at any width the
- * divider can reach. Six captions need twice the pane in English and more in
- * French. A SEVENTH entry is a decision to take against the arithmetic in
- * `inspector-tabs.component.scss`, not a free one.
+ * tab's caption, and that is what makes seven fit in one row at any width the
+ * divider can reach. Seven captions need well over twice the pane in English
+ * and more in French. The seventh (Epic 55, `run`) was taken against the
+ * arithmetic in `inspector-tabs.component.scss`, which was re-done for it; an
+ * EIGHTH is the same decision again, not a free one.
  */
 export const INSPECTOR_TABS: readonly InspectorTabDefinition[] = [
   { labelKey: 'visualization.team', value: 'team', icon: 'pi pi-users' },
@@ -184,7 +185,7 @@ export const INSPECTOR_TABS: readonly InspectorTabDefinition[] = [
   },
   // `pi-id-card`, NOT `pi-user`. Beside `pi-users` on the Team tab the two were
   // one head against two at 13px — a difference a reader has to hunt for, on a
-  // strip where the glyph is the primary way five of the six tabs are told
+  // strip where the glyph is the primary way six of the seven tabs are told
   // apart. A card silhouette differs in OUTLINE rather than in count, which is
   // what survives at this size.
   { labelKey: 'visualization.member', value: 'member', icon: 'pi pi-id-card' },
@@ -207,6 +208,11 @@ export const INSPECTOR_TABS: readonly InspectorTabDefinition[] = [
     value: 'messages',
     icon: 'pi pi-envelope',
   },
+  // Epic 55: the selected run in detail. Every section is a list, so it reads
+  // at the 240px floor and needs no room. `pi-align-left`, whose indented lines
+  // read as a tree: both of primeicons' tree glyphs are taken (`pi-sitemap`,
+  // `pi-share-alt`), and the strip cannot draw the trace card's inline SVG.
+  { labelKey: 'visualization.run', value: 'run', icon: 'pi pi-align-left' },
 ];
 
 /**

@@ -50,6 +50,8 @@ export class TraceCardComponent {
   graph = input<RunGraph>(EMPTY_RUN_GRAPH);
   /** Inner id → envelope id of the rendered bubbles, for the `@Human` rows. */
   bubbleIds = input<ReadonlyMap<string, string>>(new Map());
+  /** The run node a provenance click is flashing, passed to the tree. */
+  flashingRun = input<RunKey | null>(null);
   toggle = output<RunKey>();
   answer = output<RunKey>();
   selectRun = output<RunKey>();

@@ -35,7 +35,7 @@
               <button
                 type="button"
                 class="run-note run-note--mine run-link"
-                (click)="openTraceOf(absorbed.run)"
+                (click)="selectRun(absorbed.run, 'absorbed')"
               >
                 {{ 'chat.runTree.absorbedNote' | translate: { agent: absorbed.agent.name } }}
               </button>
@@ -44,7 +44,7 @@
               <button
                 type="button"
                 class="run-note run-link run-link--provenance"
-                (click)="openTraceOf(p.run)"
+                (click)="selectFromProvenance(p.run)"
               >
                 {{
                   provenanceKey(p)
@@ -68,7 +68,9 @@
                 [continuesFrom]="item.continuesFrom"
                 [open]="folds.isOpen(item.rootKey)"
                 [agentColours]="agentColours"
+                [flashingRun]="flashingRun()"
                 (toggle)="toggleTrace($event)"
+                (selectRun)="selectRun($event, 'tree')"
                 (answer)="onAnswer($event)"
                 (humanRowHover)="onHumanRowHover($event)"
                 (showInChat)="flashBubble($event)"

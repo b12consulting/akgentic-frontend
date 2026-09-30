@@ -8,6 +8,8 @@
       <li
         class="tree-node"
         [class.tree-node--silent]="row.node.silent"
+        [class.tree-node--selected]="selection.selected() === row.node.key"
+        [class.tree-node--flash]="flashingRun() === row.node.key"
         [attr.data-run-key]="row.node.key"
         [attr.data-depth]="row.depth"
         [style.padding-left.px]="row.depth * 18"
@@ -33,7 +35,12 @@
             <span class="node-chevron-gap" aria-hidden="true"></span>
           }
 
-          <button type="button" class="node-main" (click)="selectRun.emit(row.node.key)">
+          <button
+            type="button"
+            class="node-main"
+            [attr.aria-current]="selection.selected() === row.node.key ? 'true' : null"
+            (click)="selectRun.emit(row.node.key)"
+          >
             <span
               class="node-avatar"
               [style.background-color]="colourOf(row.node.run.agent)"

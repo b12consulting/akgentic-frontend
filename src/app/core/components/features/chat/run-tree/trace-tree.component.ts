@@ -28,6 +28,7 @@ import {
   TraceRunNode,
   TraceTreeChild,
 } from '../../../../services/process/selectors/trace-tree';
+import { RunSelectionState } from '../../../../services/process/ui-state/run-selection';
 import { TraceFoldState } from '../../../../services/process/ui-state/trace-fold-state';
 
 type TraceLeaf = Exclude<TraceTreeChild, TraceRunNode>;
@@ -89,10 +90,12 @@ export class TraceTreeComponent {
   agentColours = input<AgentColours>(NO_AGENT_COLOURS);
   /** Inner id → envelope id of the bubbles the transcript renders. */
   bubbleIds = input<ReadonlyMap<string, string>>(new Map());
+  /** The node a provenance click is flashing. */
+  flashingRun = input<RunKey | null>(null);
 
   /** A waiting seat's Answer button, by the seat's run key. */
   answer = output<RunKey>();
-  /** A run node was clicked. Nothing consumes it until selection (55-4). */
+  /** A run node was clicked: the panel selects it. */
   selectRun = output<RunKey>();
   /** The `@Human` row under the pointer, as its bubble's envelope id. */
   humanRowHover = output<string | null>();
@@ -100,6 +103,11 @@ export class TraceTreeComponent {
   showInChat = output<string>();
 
   readonly folds = inject(TraceFoldState);
+  /** The selected run, drawn as such wherever its node is visible. Read, never
+   *  written here: the node's click goes up as `selectRun`. */
+  readonly selection = inject(RunSelectionState);
+  /** The `@Human` row under the pointer, by inner id. */
+  private hoveredHuman: string | null = null;
 
   readonly tree = computed(() => buildTraceTree(this.graph(), this.root()));
 
@@ -187,8 +195,16 @@ export class TraceTreeComponent {
     return this.bubbleIds().get(messageId) ?? null;
   }
 
+  /** A fold that hides the hovered `@Human` row clears its bubble's highlight:
+   *  a row that is gone fires no `mouseleave`. */
   onChevron(key: RunKey): void {
     this.folds.toggleNode(key, this.root());
+    const hovered = this.hoveredHuman;
+    if (hovered === null) return;
+    const visible = this.rows().some(
+      (r) => r.kind === 'leaf' && r.leaf.kind === 'human' && r.leaf.messageId === hovered,
+    );
+    if (!visible) this.onHumanHover(hovered, false);
   }
 
   /** Answer sits beside the node button; stop the click all the same, so a
@@ -200,6 +216,7 @@ export class TraceTreeComponent {
 
   /** Fail-open: a row whose bubble is not rendered highlights nothing. */
   onHumanHover(messageId: string, entering: boolean): void {
+    this.hoveredHuman = entering ? messageId : null;
     const bubble = this.bubbleOf(messageId);
     if (bubble === null) return;
     this.humanRowHover.emit(entering ? bubble : null);

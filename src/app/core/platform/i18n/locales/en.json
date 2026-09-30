@@ -240,7 +240,54 @@
     "member": "Member",
     "knowledgeGraph": "Knowledge graph",
     "workspaces": "Workspaces",
-    "messages": "Messages"
+    "messages": "Messages",
+    "run": "Run"
+  },
+  "runInspector": {
+    "empty": {
+      "title": "No run yet",
+      "blurb": "When an agent starts on a message, its run shows here."
+    },
+    "status": {
+      "running": "running",
+      "done": "done",
+      "doneSilent": "done · sent nothing",
+      "waiting": "waiting for a person",
+      "answered": "answered"
+    },
+    "section": {
+      "where": "Where this run sits",
+      "handling": "Handling",
+      "steps": "Steps",
+      "eventLog": "Event log"
+    },
+    "handling": {
+      "id": "id",
+      "parent": "parent_id",
+      "sentAt": "sent at",
+      "unknown": "The message that started this run is not in the loaded log."
+    },
+    "step": {
+      "received": "received",
+      "failed": "{{tool}} · failed",
+      "pending": "{{tool}} · running…",
+      "absorbed": "took in {{agent}}'s message",
+      "sent": "sent to {{agent}}",
+      "processed": "processed"
+    },
+    "miniTree": {
+      "folded": "{{runs}} · {{agents}}",
+      "expand": "Show the runs under this one",
+      "collapse": "Hide the runs under this one",
+      "youAnswered": "you answered",
+      "toYou": "to you"
+    },
+    "log": {
+      "scope": "Which events to list",
+      "thisRun": "This run",
+      "wholeTeam": "Whole team",
+      "empty": "No events for this run yet."
+    }
   },
   "panels": {
     "selectAgent": "Select agent",

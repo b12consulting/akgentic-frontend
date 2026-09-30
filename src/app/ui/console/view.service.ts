@@ -42,6 +42,11 @@ export class ViewService {
     this.isRightColumnCollapsed$.next(!this.isRightColumnCollapsed$.value);
   }
 
+  /** Open, never close: a run selection brings the inspector back (Epic 55). */
+  showRightColumn(): void {
+    if (this.isRightColumnCollapsed$.value) this.isRightColumnCollapsed$.next(false);
+  }
+
   toggleRail(): void {
     this.isRailCollapsed$.next(!this.isRailCollapsed$.value);
   }

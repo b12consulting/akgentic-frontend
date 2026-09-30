@@ -1,0 +1,307 @@
+/*
+ * The Run tab. Tight type for a 240–310px pane, tokens only; the mini-tree
+ * borrows the transcript tree's indentation and the tab strip's selected-pill
+ * inversion for the displayed run.
+ */
+
+:host {
+  display: block;
+}
+
+.ri {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--akg-text);
+}
+
+%ri-button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+  }
+}
+
+/* --- header -------------------------------------------------------------- */
+
+.ri-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ri-avatar {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--akg-accent-fg);
+  color: var(--akg-accent-bright);
+
+  &.tinted {
+    color: var(--akg-agent-mark-fg);
+  }
+}
+
+.ri-agent {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ri-pill {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 8px;
+  border: 1px solid var(--akg-hairline);
+  border-radius: var(--akg-pill-radius);
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--akg-text-muted);
+
+  &[data-pill='runInspector.status.waiting'] {
+    border-color: var(--akg-attention-border);
+    background: var(--akg-attention-bg);
+    color: var(--akg-attention-fg);
+  }
+}
+
+/* --- sections ------------------------------------------------------------ */
+
+.ri-section-title {
+  margin: 0 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--akg-text-muted);
+}
+
+.ri-note {
+  margin: 0;
+  color: var(--akg-text-muted);
+  font-style: italic;
+}
+
+.ri-mono {
+  font-family: var(--akg-font-mono);
+}
+
+/* --- where this run sits ------------------------------------------------- */
+
+.mini-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.mini-node {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  padding-top: 1px;
+  padding-bottom: 1px;
+  color: var(--akg-text-muted);
+}
+
+.mini-node--path {
+  font-weight: 600;
+  color: var(--akg-text);
+}
+
+.mini-chevron {
+  @extend %ri-button;
+  flex: 0 0 auto;
+  width: 16px;
+  padding: 2px 0;
+  font-size: 0.6rem;
+}
+
+.mini-chevron-gap {
+  flex: 0 0 auto;
+  width: 16px;
+}
+
+.mini-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 1px 6px;
+  border-radius: var(--akg-pill-radius);
+}
+
+button.mini-main {
+  @extend %ri-button;
+  font-weight: inherit;
+
+  &:hover {
+    background: var(--akg-row-hover);
+  }
+}
+
+.mini-node--displayed button.mini-main {
+  background: var(--akg-text);
+  color: var(--akg-overlay-bg);
+}
+
+.mini-main--entry {
+  font-style: italic;
+}
+
+.mini-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mini-hint,
+.mini-folded {
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--akg-text-muted);
+}
+
+.mini-folded {
+  padding: 0 6px;
+  border: 1px solid var(--akg-hairline);
+  border-radius: var(--akg-pill-radius);
+  white-space: nowrap;
+}
+
+/* --- handling ------------------------------------------------------------ */
+
+.ri-route {
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.ri-fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  margin: 0 0 6px;
+
+  dt {
+    color: var(--akg-text-muted);
+  }
+
+  dd {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+.ri-text {
+  padding: 6px 8px;
+  border: 1px solid var(--akg-hairline);
+  border-radius: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* --- steps --------------------------------------------------------------- */
+
+.ri-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ri-step {
+  display: flex;
+  gap: 8px;
+  padding: 1px 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ri-offset {
+  flex: 0 0 48px;
+  font-family: var(--akg-font-mono);
+  color: var(--akg-text-muted);
+}
+
+.ri-step--failed {
+  color: var(--akg-danger-fg);
+}
+
+/* --- event log ----------------------------------------------------------- */
+
+.ri-log-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ri-scope {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.ri-scope-button {
+  @extend %ri-button;
+  padding: 2px 8px;
+  border-radius: var(--akg-pill-radius);
+  font-size: 11px;
+  color: var(--akg-text-muted);
+
+  &[aria-pressed='true'] {
+    background: var(--akg-text);
+    color: var(--akg-overlay-bg);
+  }
+}
+
+.ri-ledger {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--akg-font-mono);
+  font-size: 11px;
+}
+
+.ri-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 6px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ri-line-time,
+.ri-line-sender {
+  color: var(--akg-text-muted);
+}
+
+.ri-line--own {
+  background: var(--akg-row-hover);
+}
+
+.ri-line--dimmed {
+  color: var(--akg-text-muted);
+  opacity: 0.6;
+}

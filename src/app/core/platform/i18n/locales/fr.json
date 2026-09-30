@@ -240,7 +240,54 @@
     "member": "Membre",
     "knowledgeGraph": "Graphe de connaissances",
     "workspaces": "Espaces de travail",
-    "messages": "Messages"
+    "messages": "Messages",
+    "run": "Exécution"
+  },
+  "runInspector": {
+    "empty": {
+      "title": "Aucune exécution pour l'instant",
+      "blurb": "Quand un agent commence à traiter un message, son exécution s'affiche ici."
+    },
+    "status": {
+      "running": "en cours",
+      "done": "terminée",
+      "doneSilent": "terminée · rien envoyé",
+      "waiting": "attend une personne",
+      "answered": "répondu"
+    },
+    "section": {
+      "where": "Place de cette exécution",
+      "handling": "Traitement",
+      "steps": "Étapes",
+      "eventLog": "Journal des événements"
+    },
+    "handling": {
+      "id": "id",
+      "parent": "parent_id",
+      "sentAt": "heure d'envoi",
+      "unknown": "Le message qui a lancé cette exécution n'est pas dans le journal chargé."
+    },
+    "step": {
+      "received": "reçu",
+      "failed": "{{tool}} · échec",
+      "pending": "{{tool}} · en cours…",
+      "absorbed": "a intégré le message de {{agent}}",
+      "sent": "envoyé à {{agent}}",
+      "processed": "traité"
+    },
+    "miniTree": {
+      "folded": "{{runs}} · {{agents}}",
+      "expand": "Afficher les exécutions sous celle-ci",
+      "collapse": "Masquer les exécutions sous celle-ci",
+      "youAnswered": "vous avez répondu",
+      "toYou": "pour vous"
+    },
+    "log": {
+      "scope": "Événements à afficher",
+      "thisRun": "Cette exécution",
+      "wholeTeam": "Toute l'équipe",
+      "empty": "Aucun événement pour cette exécution."
+    }
   },
   "panels": {
     "selectAgent": "Sélectionner un agent",

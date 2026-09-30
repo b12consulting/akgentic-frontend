@@ -1,0 +1,205 @@
+<!--
+  The Run tab: one run, four sections. Every section is a list, so it reads at
+  the pane's 240px floor. Nothing here ticks.
+-->
+@if (run(); as r) {
+  <div class="ri">
+    <header class="ri-header">
+      <span
+        class="ri-avatar"
+        [style.background-color]="colourOf(r.agent)"
+        [class.tinted]="colourOf(r.agent) !== null"
+        aria-hidden="true"
+        >{{ initialOf(r.agent) }}</span
+      >
+      <span class="ri-agent">{{ r.agent.name }}</span>
+      @if (pillKey(); as key) {
+        <span class="ri-pill" [attr.data-pill]="key">{{ key | translate }}</span>
+      }
+    </header>
+
+    <!-- 1. Where this run sits: the connected tree that holds it. -->
+    <section class="ri-section">
+      <h3 class="ri-section-title">{{ 'runInspector.section.where' | translate }}</h3>
+      <ol class="mini-tree">
+        @for (row of miniRows(); track row.key) {
+          <li
+            class="mini-node"
+            [class.mini-node--path]="row.onPath"
+            [class.mini-node--displayed]="row.displayed"
+            [attr.data-mini-run-key]="row.key"
+            [style.padding-left.px]="row.depth * 18"
+          >
+            @if (row.childCount > 0) {
+              <button
+                type="button"
+                class="mini-chevron"
+                [attr.aria-expanded]="row.expanded"
+                [attr.aria-label]="
+                  (row.expanded ? 'runInspector.miniTree.collapse' : 'runInspector.miniTree.expand')
+                    | translate
+                "
+                (click)="toggleMini(row)"
+              >
+                <i
+                  class="pi"
+                  [class.pi-chevron-down]="row.expanded"
+                  [class.pi-chevron-right]="!row.expanded"
+                  aria-hidden="true"
+                ></i>
+              </button>
+            } @else {
+              <span class="mini-chevron-gap" aria-hidden="true"></span>
+            }
+
+            @if (row.kind === 'entry') {
+              <!-- You receiving a message: drawn, never selected. -->
+              <span class="mini-main mini-main--entry">
+                <span class="mini-name">{{ row.run.agent.name }}</span>
+                <span class="mini-hint">{{
+                  (row.childCount > 0 ? 'runInspector.miniTree.youAnswered' : 'runInspector.miniTree.toYou')
+                    | translate
+                }}</span>
+              </span>
+            } @else {
+              <button
+                type="button"
+                class="mini-main"
+                [attr.aria-current]="row.displayed ? 'true' : null"
+                (click)="selectFromTree(row.key)"
+              >
+                <span class="mini-name">{{ row.run.agent.name }}</span>
+                @if (row.kind === 'seat') {
+                  <span class="mini-hint">{{ 'chat.runTree.node.humanSeat' | translate }}</span>
+                }
+              </button>
+            }
+
+            @if (row.childCount > 0 && !row.expanded && row.foldedRuns > 0) {
+              <span class="mini-folded">{{
+                'runInspector.miniTree.folded'
+                  | translate
+                    : {
+                        runs: (runsKey(row.foldedRuns) | translate: { count: row.foldedRuns }),
+                        agents: agentList(row.foldedAgents),
+                      }
+              }}</span>
+            }
+          </li>
+        }
+      </ol>
+    </section>
+
+    <!-- 2. Handling: the message that started the run. -->
+    <section class="ri-section">
+      <h3 class="ri-section-title">{{ 'runInspector.section.handling' | translate }}</h3>
+      @if (trigger(); as t) {
+        <div class="ri-route">{{ t.sender.name }} → {{ t.recipient.name }}</div>
+        <dl class="ri-fields">
+          <dt>{{ 'runInspector.handling.id' | translate }}</dt>
+          <dd class="ri-mono">{{ t.id }}</dd>
+          <dt>{{ 'runInspector.handling.parent' | translate }}</dt>
+          <dd class="ri-mono">{{ t.parent_id ?? '—' }}</dd>
+          <dt>{{ 'runInspector.handling.sentAt' | translate }}</dt>
+          <dd>{{ t.timestamp | date: 'HH:mm:ss' }}</dd>
+        </dl>
+        <div class="ri-text">{{ t.content }}</div>
+      } @else {
+        <p class="ri-note">{{ 'runInspector.handling.unknown' | translate }}</p>
+      }
+    </section>
+
+    <!-- 3. Steps, offset from the run's start. -->
+    <section class="ri-section">
+      <h3 class="ri-section-title">{{ 'runInspector.section.steps' | translate }}</h3>
+      <ol class="ri-steps">
+        @for (step of steps(); track $index) {
+          <li class="ri-step" [attr.data-step]="step.kind">
+            <span class="ri-offset">{{ step.offset }}</span>
+            @switch (step.kind) {
+              @case ('received') {
+                <span class="ri-step-label">{{ 'runInspector.step.received' | translate }}</span>
+              }
+              @case ('tool') {
+                @switch (step.state) {
+                  @case ('failed') {
+                    <span class="ri-step-label ri-mono ri-step--failed">{{
+                      'runInspector.step.failed' | translate: { tool: step.name }
+                    }}</span>
+                  }
+                  @case ('pending') {
+                    <span class="ri-step-label ri-mono">{{
+                      'runInspector.step.pending' | translate: { tool: step.name }
+                    }}</span>
+                  }
+                  @default {
+                    <span class="ri-step-label ri-mono">{{ step.name }}</span>
+                  }
+                }
+              }
+              @case ('absorbed') {
+                <span class="ri-step-label">{{
+                  'runInspector.step.absorbed' | translate: { agent: step.from?.name ?? '—' }
+                }}</span>
+              }
+              @case ('sent') {
+                <span class="ri-step-label">{{
+                  'runInspector.step.sent' | translate: { agent: step.to.name }
+                }}</span>
+              }
+              @case ('processed') {
+                <span class="ri-step-label">{{ 'runInspector.step.processed' | translate }}</span>
+              }
+            }
+          </li>
+        }
+      </ol>
+    </section>
+
+    <!-- 4. Event log: the raw ledger lines of this run, or of everyone. -->
+    <section class="ri-section">
+      <div class="ri-log-head">
+        <h3 class="ri-section-title">{{ 'runInspector.section.eventLog' | translate }}</h3>
+        <div class="ri-scope" role="group" [attr.aria-label]="'runInspector.log.scope' | translate">
+          <button
+            type="button"
+            class="ri-scope-button"
+            [attr.aria-pressed]="scope() === 'run'"
+            (click)="setScope('run')"
+          >
+            {{ 'runInspector.log.thisRun' | translate }}
+          </button>
+          <button
+            type="button"
+            class="ri-scope-button"
+            [attr.aria-pressed]="scope() === 'team'"
+            (click)="setScope('team')"
+          >
+            {{ 'runInspector.log.wholeTeam' | translate }}
+          </button>
+        </div>
+      </div>
+      @if (ledger().length > 0) {
+        <ol class="ri-ledger" [class.ri-ledger--team]="scope() === 'team'">
+          @for (line of ledger(); track line.index) {
+            <li
+              class="ri-line"
+              [class.ri-line--own]="scope() === 'team' && line.own"
+              [class.ri-line--dimmed]="!line.own"
+              [attr.data-log-index]="line.index"
+            >
+              <span class="ri-line-time">{{ line.at | date: 'HH:mm:ss' }}</span>
+              <span class="ri-line-kind">{{ line.kind }}</span>
+              <span class="ri-line-sender">{{ line.sender }}</span>
+              <span class="ri-line-detail">{{ line.detail }}</span>
+            </li>
+          }
+        </ol>
+      } @else {
+        <p class="ri-note">{{ 'runInspector.log.empty' | translate }}</p>
+      }
+    </section>
+  </div>
+} @else {
+  <app-empty-state titleKey="runInspector.empty.title" blurbKey="runInspector.empty.blurb" />
+}

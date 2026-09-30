@@ -22,6 +22,35 @@
   opacity: 0.55;
 }
 
+/* The selected run (ADR-037 §D9): the row hover fill, held, with the ring on
+   its left edge so it reads as "this one" without shouting. */
+.tree-node--selected {
+  border-radius: 6px;
+  background-color: var(--akg-row-hover);
+  box-shadow: inset 2px 0 0 var(--akg-text);
+}
+
+/* A provenance click's flash on the node it scrolled to. */
+.tree-node--flash {
+  border-radius: 6px;
+  animation: tree-node-flash 1.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tree-node--flash {
+    animation: none;
+  }
+}
+
+@keyframes tree-node-flash {
+  from {
+    background-color: var(--akg-attention-bg);
+  }
+  to {
+    background-color: var(--akg-row-hover);
+  }
+}
+
 .node-line {
   display: flex;
   align-items: center;

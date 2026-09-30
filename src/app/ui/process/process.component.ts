@@ -46,6 +46,8 @@ import { RunTreePanelComponent } from '../../core/components/features/chat/run-t
 import { ChatViewService } from '../console/chat-view.service';
 import { GraphDataService } from '../../core/services/process/selectors/graph.selector';
 import { SelectionService } from '../../core/services/process/ui-state/selection.service';
+import { RunSelectionState } from '../../core/services/process/ui-state/run-selection';
+import { RunInspectorComponent } from '../../core/components/features/run-inspector/run-inspector.component';
 
 import { ProcessHeaderComponent } from './process-header.component';
 import { InspectorComponent } from '../console/inspector/inspector.component';
@@ -66,6 +68,8 @@ import { SplitDividerComponent } from '../../core/components/primitives/split-di
     ChatPanelComponent,
     // Epic 55: the run-tree transcript, behind the header's New view switch.
     RunTreePanelComponent,
+    // Epic 55: the inspector's Run tab, the selected run in detail.
+    RunInspectorComponent,
     // The conversation's title bar and the inspector frame. Both are pieces of
     // the console shell that have to be mounted from INSIDE this component:
     // they sit either side of, or read, the component-scoped providers below,
@@ -326,6 +330,10 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
 
 
   private presenceSub: Subscription | null = null;
+  private selectionSub: Subscription | null = null;
+  /** The strip as last offered, for "is the Run tab here to switch to". */
+  private visibleTabs: VisualizationOption[] = [];
+  private readonly runSelection = inject(RunSelectionState);
   private animationTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
@@ -360,6 +368,7 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
     // `resolveInspectorTab` falls back to the first VISIBLE tab instead, which
     // is still 'team' everywhere that has not hidden it.
     this.presenceSub = this.visualizationOptions$.subscribe((options) => {
+      this.visibleTabs = options;
       const resolved = resolveInspectorTab(
         this.currentVisualizationMode,
         options,
@@ -368,6 +377,23 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
         this.visualizationMode$.next(resolved);
       }
     });
+    this.selectionSub = this.runSelection.selections$.subscribe(() =>
+      this.showRunTab(),
+    );
+  }
+
+  /**
+   * A run was selected (Epic 55, ADR-037 §D9): open the inspector if it is
+   * shut, and show the Run tab. Only this host may touch the tab mode, which is
+   * why the selection reaches it as an event. A deployment that hides `run`
+   * keeps its inspector as it was: the transcript still reveals and highlights.
+   */
+  private showRunTab(): void {
+    if (!this.visibleTabs.some((option) => option.value === 'run')) {
+      return;
+    }
+    this.viewService.showRightColumn();
+    this.setVisualizationMode('run');
   }
 
   /**
@@ -506,6 +532,8 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
     this.paneLayout.setTrackWidth(null);
     this.presenceSub?.unsubscribe();
     this.presenceSub = null;
+    this.selectionSub?.unsubscribe();
+    this.selectionSub = null;
     this.routeSub?.unsubscribe();
     this.routeSub = null;
     // Story 52-1 (trap T3): the single writer retracts its own value. Nothing

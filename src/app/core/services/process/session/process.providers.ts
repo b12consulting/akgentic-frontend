@@ -23,6 +23,7 @@ import { ToolPresenceService } from '../selectors/tool-presence.selector';
 import { WorkspaceInvalidationService } from '../selectors/workspace-invalidation.selector';
 import { WorkspaceRegistryService } from '../selectors/workspace-registry.selector';
 import { FeedbackService } from '../ui-state/feedback.service';
+import { RunSelectionState } from '../ui-state/run-selection';
 import { SelectionService } from '../ui-state/selection.service';
 import { TraceFoldState } from '../ui-state/trace-fold-state';
 
@@ -30,11 +31,11 @@ import { TraceFoldState } from '../ui-state/trace-fold-state';
  * THE TEAM'S SERVICES, SCOPED TO THE ROUTE RATHER THAN TO A COMPONENT.
  *
  * TWO COUNTS RANGE OVER THIS ARRAY AND THEY ARE NOT THE SAME NUMBER. It holds
- * TWENTY-SEVEN entries: TWENTY-SIX service classes — the team's stack — plus
+ * TWENTY-EIGHT entries: TWENTY-SEVEN service classes — the team's stack — plus
  * Angular's `AsyncPipe`, which is a pipe and not one of the team's services.
  * Both numbers appear below; each says which set it counts.
  *
- * All twenty-six service classes used to be the `process/:id` route's
+ * All twenty-seven service classes used to be the `process/:id` route's
  * providers, and every component that wanted one injected it bare — which meant
  * every one of them could only ever be mounted inside that component. That is
  * the coupling in the way of reusing a panel anywhere else, and of anybody
@@ -64,7 +65,7 @@ import { TraceFoldState } from '../ui-state/trace-fold-state';
 /**
  * EXPORTED, and that is not incidental. A developer who clones this repo to
  * build a different console needs this array verbatim — it is the team's whole
- * service stack — and an unexported `const` left them copying twenty-seven
+ * service stack — and an unexported `const` left them copying twenty-eight
  * entries by hand, in order, from the file they were about to replace.
  *
  * IT LIVES BESIDE `team-session.service.ts` RATHER THAN IN THE ROUTER, which is
@@ -180,6 +181,10 @@ export const PROCESS_PROVIDERS = [
   // an open card survives the New view switch destroying the panel, and a
   // team switch does not carry one team's open cards into the next.
   TraceFoldState,
+  // Epic 55: the selected run, shared by the transcript and the inspector's
+  // Run tab. Provided AFTER TraceFoldState (it injects it: a selection reveals
+  // its run in the transcript's folds). Process-scoped for the same reasons.
+  RunSelectionState,
   SelectionService,
   FeedbackService,
 ];

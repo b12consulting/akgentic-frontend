@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { ApplicationRef, Component, inject } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { provideMarkdown } from 'ngx-markdown';
@@ -20,6 +20,10 @@ import { RunGraphService, runKey } from '../../../../services/process/selectors/
 import { RunTreeService } from '../../../../services/process/selectors/run-tree-items';
 import { Feedback, FeedbackService } from '../../../../services/process/ui-state/feedback.service';
 import { SelectionService } from '../../../../services/process/ui-state/selection.service';
+import {
+  RunSelection,
+  RunSelectionState,
+} from '../../../../services/process/ui-state/run-selection';
 import { TraceFoldState } from '../../../../services/process/ui-state/trace-fold-state';
 import { provideTranslateTesting } from '../../../../../../testing/i18n-testing';
 import {
@@ -39,10 +43,12 @@ import {
   welcome,
 } from '../../../../../../testing/run-log-builders';
 import {
+  CASE_5,
   CASE_5_ANSWER,
   CASE_5_PREFIX,
   CASE_5_VARIANT,
 } from '../../../../../../testing/run-log-cases';
+import { RunInspectorComponent } from '../../run-inspector/run-inspector.component';
 import { ChatPanelComponent } from '../chat-panel.component';
 import { RunTreePanelComponent } from './run-tree-panel.component';
 import { TranscriptScroll } from './transcript-scroll';
@@ -98,6 +104,7 @@ describe('RunTreePanelComponent', () => {
         RunGraphService,
         RunTreeService,
         TraceFoldState,
+        RunSelectionState,
         {
           provide: FeedbackService,
           useValue: {
@@ -271,7 +278,7 @@ describe('RunTreePanelComponent', () => {
     expect(text(el(fixture).querySelector('.run-note--above'))).toBe('chat.runTree.sendAs');
   });
 
-  it('the provenance link opens the trace card that produced the answer', () => {
+  it('the provenance link selects the run that produced the answer and opens its card', () => {
     log.appendAll([
       sent('U1', HUMAN, MANAGER, null, 1),
       received('U1', MANAGER, 2),
@@ -285,7 +292,138 @@ describe('RunTreePanelComponent', () => {
     link.click();
     fixture.detectChanges();
     expect(TestBed.inject(TraceFoldState).isOpen(runKey('U1', M))).toBeTrue();
+    expect(TestBed.inject(RunSelectionState).selected()).toBe(runKey('U1', M));
     expect(el(fixture).querySelector('.trace-body')).not.toBeNull();
+  });
+
+  // -------------------------------------------------------------------------
+  // Selection (55-4)
+  // -------------------------------------------------------------------------
+
+  /** Render, then run the after-render hooks a real tick would run. */
+  function settleRender(fixture: ComponentFixture<unknown>): void {
+    fixture.detectChanges();
+    TestBed.inject(ApplicationRef).tick();
+    fixture.detectChanges();
+  }
+
+  function selectedKeys(fixture: ComponentFixture<unknown>): (string | null)[] {
+    return [...el(fixture).querySelectorAll('.tree-node--selected')].map((n) =>
+      n.getAttribute('data-run-key'),
+    );
+  }
+
+  it('case 5: the provenance link selects @Manager\'s report run, reveals, highlights, scrolls and flashes it', () => {
+    const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView');
+    log.appendAll(CASE_5);
+    const fixture = mount();
+    expect(selectedKeys(fixture)).toEqual([]);
+    const report = runKey('Sa', M);
+
+    el(fixture).querySelector<HTMLButtonElement>('.run-link--provenance')!.click();
+    settleRender(fixture);
+
+    // The card is open with the path down to the run expanded; @Expert's
+    // branch, off the path, keeps its default fold.
+    const keys = [...el(fixture).querySelectorAll('.tree-node')].map((n) =>
+      n.getAttribute('data-run-key'),
+    );
+    expect(keys).toEqual([
+      runKey('U1', M),
+      runKey('D1', EXPERT.agent_id),
+      runKey('S', SUPPORT.agent_id),
+      report,
+    ]);
+    expect(TestBed.inject(TraceFoldState).isNodeExpanded(runKey('D1', EXPERT.agent_id), runKey('U1', M)))
+      .toBeFalse();
+    expect(selectedKeys(fixture)).toEqual([report]);
+    const reportNode = el(fixture).querySelector(`.tree-node[data-run-key="${report}"]`)!;
+    expect(reportNode.querySelector('.node-main')!.getAttribute('aria-current')).toBe('true');
+    expect(reportNode.classList).toContain('tree-node--flash');
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll.calls.mostRecent().object).toBe(reportNode);
+  });
+
+  it('the flash ends after its time; a re-flash restarts it', () => {
+    jasmine.clock().install();
+    try {
+      spyOn(HTMLElement.prototype, 'scrollIntoView');
+      log.appendAll(CASE_5);
+      const fixture = mount();
+      const link = el(fixture).querySelector<HTMLButtonElement>('.run-link--provenance')!;
+      link.click();
+      settleRender(fixture);
+      expect(fixture.componentInstance.flashingRun()).toBe(runKey('Sa', M));
+      jasmine.clock().tick(1000);
+      link.click();
+      settleRender(fixture);
+      jasmine.clock().tick(1000);
+      expect(fixture.componentInstance.flashingRun()).toBe(runKey('Sa', M));
+      jasmine.clock().tick(300);
+      expect(fixture.componentInstance.flashingRun()).toBeNull();
+    } finally {
+      jasmine.clock().uninstall();
+    }
+  });
+
+  it('a tree-node click selects without scrolling; a user-folded sibling stays folded', () => {
+    const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView');
+    log.appendAll(CASE_5_VARIANT);
+    const fixture = mount();
+    const root = runKey('U1', M);
+    openCard(fixture, root);
+    // The reader folds @Expert's branch (the reveal had opened it for the seat).
+    const expert = runKey('D1', EXPERT.agent_id);
+    el(fixture)
+      .querySelector<HTMLButtonElement>(`.tree-node[data-run-key="${expert}"] .node-chevron`)!
+      .click();
+    fixture.detectChanges();
+
+    const assistant = runKey('D2', ASSISTANT.agent_id);
+    el(fixture)
+      .querySelector<HTMLButtonElement>(`.tree-node[data-run-key="${assistant}"] .node-main`)!
+      .click();
+    settleRender(fixture);
+
+    expect(TestBed.inject(RunSelectionState).selected()).toBe(assistant);
+    expect(selectedKeys(fixture)).toEqual([assistant]);
+    expect(TestBed.inject(TraceFoldState).isNodeExpanded(expert, root)).toBeFalse();
+    expect(scroll).not.toHaveBeenCalled();
+  });
+
+  it('nothing is highlighted before a click, even with the Run tab showing a run', () => {
+    log.appendAll(CASE_5);
+    const fixture = mount();
+    // The inspector's Run tab, mounted beside the transcript as in the console:
+    // it DISPLAYS a fallback run, and must not select it.
+    const inspector = TestBed.createComponent(RunInspectorComponent);
+    inspector.detectChanges();
+    expect(el(inspector).querySelector('.ri-agent')).not.toBeNull();
+    openCard(fixture, runKey('U1', M));
+    fixture.detectChanges();
+    expect(el(fixture).querySelectorAll('.tree-node').length).toBeGreaterThan(0);
+    expect(selectedKeys(fixture)).toEqual([]);
+    expect(TestBed.inject(RunSelectionState).selected()).toBeNull();
+  });
+
+  it('folding a card away under a hovered @Human row clears the bubble highlight', () => {
+    log.appendAll([
+      sent('U1', HUMAN, MANAGER, null, 1),
+      received('U1', MANAGER, 2),
+      sent('A1', MANAGER, HUMAN, 'U1', 3),
+      processed('U1', MANAGER, 4),
+    ]);
+    const fixture = mount();
+    const card = openCard(fixture, runKey('U1', M));
+    el(fixture).querySelector<HTMLElement>('.tree-human')!.dispatchEvent(new MouseEvent('mouseenter'));
+    fixture.detectChanges();
+    expect(fixture.componentInstance.highlightedBubble).toBe(envId('A1', HUMAN));
+
+    card.querySelector<HTMLButtonElement>('.trace-toggle')!.click();
+    fixture.detectChanges();
+    expect(el(fixture).querySelector('.tree-human')).toBeNull();
+    expect(fixture.componentInstance.highlightedBubble).toBeNull();
+    expect(el(fixture).querySelector('.run-bubble--highlight')).toBeNull();
   });
 
   it('an agent reply with no known run renders without a link (fail-open)', () => {
@@ -295,7 +433,8 @@ describe('RunTreePanelComponent', () => {
     expect(el(fixture).querySelector('.run-link--provenance')).toBeNull();
   });
 
-  it('case 6: the absorbed note has no card of its own and opens the absorbing trace', () => {
+  it('case 6: the absorbed note has no card of its own and selects the absorbing run, without scrolling', () => {
+    const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView');
     log.appendAll([
       sent('U1', HUMAN, MANAGER, null, 1),
       received('U1', MANAGER, 2),
@@ -303,6 +442,8 @@ describe('RunTreePanelComponent', () => {
       handled('U2', MANAGER, 'U1', 5),
     ]);
     const fixture = mount();
+    const events: RunSelection[] = [];
+    TestBed.inject(RunSelectionState).selections$.subscribe((e) => events.push(e));
     expect(rows(fixture)).toEqual([
       'msg:' + envId('U1', MANAGER),
       'trace:' + runKey('U1', M),
@@ -313,7 +454,10 @@ describe('RunTreePanelComponent', () => {
     expect(text(note)).toBe('chat.runTree.absorbedNote');
     note.click();
     fixture.detectChanges();
+    TestBed.inject(ApplicationRef).tick();
     expect(TestBed.inject(TraceFoldState).isOpen(runKey('U1', M))).toBeTrue();
+    expect(events).toEqual([{ key: runKey('U1', M), origin: 'absorbed' }]);
+    expect(scroll).not.toHaveBeenCalled();
   });
 
   it('a card starts collapsed and stays open as its trace grows (Trap 7)', () => {
@@ -426,9 +570,10 @@ describe('RunTreePanelComponent', () => {
   });
 
   it('the provenance link reveals the seat path too', () => {
+    spyOn(HTMLElement.prototype, 'scrollIntoView');
     log.appendAll([...CASE_5_VARIANT, sent('A', MANAGER, HUMAN, 'U1', 16)]);
     const fixture = mount();
-    fixture.componentInstance.openTraceOf(runKey('U1', M));
+    el(fixture).querySelector<HTMLButtonElement>('.run-link--provenance')!.click();
     fixture.detectChanges();
     expect(el(fixture).querySelector('.node-answer')).not.toBeNull();
   });

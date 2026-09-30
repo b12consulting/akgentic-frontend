@@ -1,12 +1,15 @@
 import { CommonModule } from '@angular/common';
 import {
   AfterViewChecked,
+  afterNextRender,
   Component,
   ElementRef,
   inject,
+  Injector,
   Input,
   OnDestroy,
   OnInit,
+  signal,
   ViewChild,
 } from '@angular/core';
 import { TranslatePipe } from '@ngx-translate/core';
@@ -40,7 +43,6 @@ import {
   RunKey,
   RunMessage,
   runStatus,
-  traceRootOf,
 } from '../../../../services/process/selectors/run-graph.selector';
 import {
   isYourMessage,
@@ -58,6 +60,10 @@ import {
   Selectable,
   SelectionService,
 } from '../../../../services/process/ui-state/selection.service';
+import {
+  RunSelectionOrigin,
+  RunSelectionState,
+} from '../../../../services/process/ui-state/run-selection';
 import { TraceFoldState } from '../../../../services/process/ui-state/trace-fold-state';
 import { AgentReaderService, AgentRef } from '../agent-reader.service';
 import {
@@ -83,6 +89,8 @@ const FLASH_MS = 1200;
  * - Agent → you bubbles render as in the legacy view, plus a provenance link.
  * - No rule-3 or rule-4 rows: they live in the tree, where a waiting seat is
  *   answered through its node's Answer button.
+ * - A provenance link, an absorbed-message note or a tree node SELECTS a run
+ *   (`RunSelectionState`), which the inspector's Run tab shows.
  *
  * It reads the same process-scoped services as the legacy panel, so a switch
  * refetches nothing. Everything it shows is re-derived from them on each
@@ -115,6 +123,8 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
 
   readonly chatService: ChatService = inject(ChatService);
   readonly folds: TraceFoldState = inject(TraceFoldState);
+  private readonly runSelection: RunSelectionState = inject(RunSelectionState);
+  private readonly injector: Injector = inject(Injector);
   private readonly runTree: RunTreeService = inject(RunTreeService);
   private readonly ingestionService: IngestionService = inject(IngestionService);
   private readonly contextService: ContextService = inject(ContextService);
@@ -139,6 +149,10 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
   highlightedBubble: string | null = null;
   flashingBubble: string | null = null;
   private flashTimer: ReturnType<typeof setTimeout> | null = null;
+  /** The run node a provenance click flashes. A signal: it is set after
+   *  render, where a plain field would wait for an unrelated tick. */
+  readonly flashingRun = signal<RunKey | null>(null);
+  private nodeFlashTimer: ReturnType<typeof setTimeout> | null = null;
 
   // --- answering a seat from the tree --------------------------------------
   answerVisible = false;
@@ -192,6 +206,7 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
   ngOnDestroy(): void {
     this.subscriptions.unsubscribe();
     if (this.flashTimer !== null) clearTimeout(this.flashTimer);
+    if (this.nodeFlashTimer !== null) clearTimeout(this.nodeFlashTimer);
   }
 
   ngAfterViewChecked(): void {
@@ -309,17 +324,45 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
     return count === 1 ? 'chat.runTree.runsOne' : 'chat.runTree.runsMany';
   }
 
-  /** Every card open goes through here or `openTraceOf`, so opening a card
-   *  always reveals the path to its waiting seats (ADR-037 §D6). */
+  /** Every card open goes through here or a selection, so opening a card
+   *  always reveals the path to its waiting seats (ADR-037 §D6). A card that
+   *  folds away under the pointer takes its `@Human` rows' highlight with it:
+   *  no `mouseleave` fires for a row that is no longer there. */
   toggleTrace(root: RunKey): void {
+    this.highlightedBubble = null;
     this.folds.toggle(root, seatRevealKeys(this.graph, root));
   }
 
-  /** The absorbed-message and provenance links open the card that holds the
-   *  run; they never close one. 55-4 turns them into a selection. */
-  openTraceOf(run: RunKey): void {
-    const root = traceRootOf(this.graph, run);
-    this.folds.open(root, seatRevealKeys(this.graph, root));
+  /** The provenance link, the absorbed-message note and a tree node select a
+   *  run: its card opens, its path expands, the inspector shows it (§D8, §D9). */
+  selectRun(key: RunKey, origin: RunSelectionOrigin): void {
+    this.runSelection.select(this.graph, key, origin);
+  }
+
+  /** The provenance link also brings the run's node into view and flashes it,
+   *  once the card it just opened has rendered. Fail-open: no node, no scroll. */
+  selectFromProvenance(key: RunKey): void {
+    this.selectRun(key, 'provenance');
+    this.flashNode(key);
+  }
+
+  flashNode(key: RunKey): void {
+    afterNextRender(() => this.revealNode(key), { injector: this.injector });
+  }
+
+  private revealNode(key: RunKey): void {
+    const el = this.scrollContainer?.nativeElement.querySelector<HTMLElement>(
+      `[data-run-key="${CSS.escape(key)}"]`,
+    );
+    if (!el) return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    el.scrollIntoView({ block: 'center', behavior: reduce ? 'auto' : 'smooth' });
+    if (this.nodeFlashTimer !== null) clearTimeout(this.nodeFlashTimer);
+    this.flashingRun.set(key);
+    this.nodeFlashTimer = setTimeout(() => {
+      this.flashingRun.set(null);
+      this.nodeFlashTimer = null;
+    }, FLASH_MS);
   }
 
   // ---------------------------------------------------------------------------

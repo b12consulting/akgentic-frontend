@@ -23,6 +23,7 @@ import {
   TraceSummary,
   traceSummary,
 } from '../../../../services/process/selectors/trace-summary';
+import { RunSelectionState } from '../../../../services/process/ui-state/run-selection';
 import { TraceFoldState } from '../../../../services/process/ui-state/trace-fold-state';
 import { TraceCardComponent } from './trace-card.component';
 
@@ -84,7 +85,7 @@ describe('TraceCardComponent', () => {
   beforeEach(async () => {
     await TestBed.configureTestingModule({
       imports: [TraceCardComponent],
-      providers: [provideTranslateTesting(), TraceFoldState],
+      providers: [provideTranslateTesting(), TraceFoldState, RunSelectionState],
     }).compileComponents();
     fixture = TestBed.createComponent(TraceCardComponent);
   });

@@ -22,6 +22,10 @@ import { MessageLogService } from '../../core/services/process/event/message-log
 import { TeamSessionService } from '../../core/services/process/session/team-session.service';
 import { IngestionService } from '../../core/services/process/event/ingestion.service';
 import { SelectionService } from '../../core/services/process/ui-state/selection.service';
+import { RunSelectionState } from '../../core/services/process/ui-state/run-selection';
+import { TraceFoldState } from '../../core/services/process/ui-state/trace-fold-state';
+import { RunGraph, runGraphFold, runKey } from '../../core/services/process/selectors/run-graph.selector';
+import { HUMAN, MANAGER, received, sent } from '../../../testing/run-log-builders';
 import {
   KG_ACTOR_NAME,
   ToolPresenceService,
@@ -233,6 +237,9 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
         { provide: ChatService, useValue: chatService },
         { provide: SelectionService, useValue: selectionService },
         { provide: FeedbackService, useValue: feedbackService },
+        // Epic 55: the host answers a run selection.
+        TraceFoldState,
+        RunSelectionState,
         { provide: ViewService, useValue: viewService },
         { provide: Router, useValue: router },
         { provide: ActivatedRoute, useValue: activatedRoute },
@@ -438,7 +445,7 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
   it('(Epic 56) gives every panel the tabpanel id its tab points at', () => {
     const host = fixture.nativeElement as HTMLElement;
 
-    for (const value of ['team', 'hierarchy', 'member', 'messages']) {
+    for (const value of ['team', 'hierarchy', 'member', 'messages', 'run']) {
       const panel = host.querySelector('#inspector-panel-' + value);
       expect(panel).withContext(value).not.toBeNull();
       expect(panel!.getAttribute('role')).toBe('tabpanel');
@@ -547,8 +554,9 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
   it('scenario 5 — no regression: Team / Member / Messages entries remain present under both KG presence states (order preserved)', async () => {
     // Workspace presence is reactive (ADR-020): declare a WorkspaceTool so the
     // Workspaces tab is present, then verify the order holds without KG —
-    // `[team, hierarchy, member, workspace, messages]` — and with KG —
-    // `[team, hierarchy, member, knowledge-graph, workspace, messages]`.
+    // `[team, hierarchy, member, workspace, messages, run]` — and with KG —
+    // `[team, hierarchy, member, knowledge-graph, workspace, messages, run]`.
+    // `run` is Epic 55's seventh tab, always last.
     //
     // `hierarchy` is Epic 56 / H2: the Team tab now shows the redesign's
     // roster panel, and the team tree + graph that used to live there kept a
@@ -562,6 +570,7 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
       'member',
       'workspace',
       'messages',
+      'run',
     ]);
 
     log.append(makeKgStart('kg-start-1'));
@@ -574,12 +583,13 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
       'knowledge-graph',
       'workspace',
       'messages',
+      'run',
     ]);
   });
 
   it('scenario 6 — Workspaces appears between KG and Messages once a WorkspaceTool exists', async () => {
     // With a WorkspaceTool but no KG, the order is
-    // [team, hierarchy, member, workspace, messages].
+    // [team, hierarchy, member, workspace, messages, run].
     log.append(makeWorkspaceAttached('ws-start-1', 'Worker'));
     let options = await firstValue(component.visualizationOptions$);
     expect(options.map((o) => o.value)).toEqual([
@@ -588,6 +598,7 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
       'member',
       'workspace',
       'messages',
+      'run',
     ]);
 
     // With KG present, Workspace sits between KG and Messages (order).
@@ -600,6 +611,7 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
       'knowledge-graph',
       'workspace',
       'messages',
+      'run',
     ]);
   });
 
@@ -721,6 +733,9 @@ describe('ProcessComponent (Story 10-2 — single-fetch navigation)', () => {
         { provide: ChatService, useValue: chatService },
         { provide: SelectionService, useValue: selectionService },
         { provide: FeedbackService, useValue: feedbackService },
+        // Epic 55: the host answers a run selection.
+        TraceFoldState,
+        RunSelectionState,
         { provide: ViewService, useValue: viewService },
         { provide: Router, useValue: router },
         { provide: ActivatedRoute, useValue: activatedRoute },
@@ -857,6 +872,8 @@ describe('ProcessComponent (Story 52-1 — team id as an input)', () => {
         { provide: ChatService, useValue: { messages$: new BehaviorSubject<any[]>([]) } },
         { provide: SelectionService, useValue: { handleSelection: () => undefined } },
         { provide: FeedbackService, useValue: {} },
+        TraceFoldState,
+        RunSelectionState,
         {
           provide: ViewService,
           useValue: { isRightColumnCollapsed$: new BehaviorSubject<boolean>(false) },
@@ -1157,6 +1174,8 @@ describe('ProcessComponent (R3 — arrangeable, resizable panes)', () => {
         { provide: ChatService, useValue: { messages$: new BehaviorSubject<any[]>([]) } },
         { provide: SelectionService, useValue: { handleSelection: () => undefined } },
         { provide: FeedbackService, useValue: {} },
+        TraceFoldState,
+        RunSelectionState,
         {
           provide: ViewService,
           useValue: {
@@ -1772,6 +1791,8 @@ describe('ProcessComponent — hiding inspector tabs per deployment (W18b)', () 
           useValue: { handleSelection: jasmine.createSpy('handleSelection') },
         },
         { provide: FeedbackService, useValue: {} },
+        TraceFoldState,
+        RunSelectionState,
         {
           provide: ViewService,
           useValue: { isRightColumnCollapsed$: new BehaviorSubject<boolean>(false) },
@@ -1848,5 +1869,143 @@ describe('ProcessComponent — hiding inspector tabs per deployment (W18b)', () 
     expect(
       options.some((o) => o.value === component.currentVisualizationMode),
     ).toBeTrue();
+  });
+});
+
+/**
+ * Epic 55 — a run selection opens the inspector on the Run tab. The selection
+ * reaches this host as an event because only `ui/` may touch the pane and the
+ * tab mode; the REAL `ViewService` is used so "opens" means the collapse flag.
+ */
+describe('ProcessComponent — a run selection opens the Run tab (Epic 55)', () => {
+  const graph: RunGraph = runGraphFold([
+    sent('U1', HUMAN, MANAGER, null, 1),
+    received('U1', MANAGER, 2),
+  ]);
+  const U1 = runKey('U1', MANAGER.agent_id);
+
+  async function mount(options: {
+    collapsed: boolean;
+    hidden?: readonly string[];
+    selectFirst?: boolean;
+  }): Promise<{ component: ProcessComponent; view: ViewService }> {
+    await TestBed.configureTestingModule({
+      imports: [ProcessComponent, NoopAnimationsModule],
+      providers: [
+        provideTranslateTesting(),
+        MessageLogService,
+        ToolPresenceService,
+        KGStateReducer,
+        WorkspaceRegistryService,
+        {
+          provide: ContextService,
+          useValue: {
+            currentProcessId$: new BehaviorSubject<string>(''),
+            getCurrentTeam: jasmine.createSpy('getCurrentTeam').and.callFake(async () => makeTeam()),
+            navigateHome: jasmine.createSpy('navigateHome').and.resolveTo(true),
+          },
+        },
+        {
+          provide: IngestionService,
+          useValue: {
+            init: jasmine.createSpy('init').and.returnValue(Promise.resolve()),
+            close: jasmine.createSpy('close'),
+          },
+        },
+        TeamSessionService,
+        {
+          provide: AkgentService,
+          useValue: {
+            unselect: jasmine.createSpy('unselect'),
+            selectedAkgent$: new BehaviorSubject<NodeInterface | null>(null),
+          },
+        },
+        {
+          provide: GraphDataService,
+          useValue: {
+            isLoading$: new BehaviorSubject<boolean>(false),
+            nodes$: new BehaviorSubject<NodeInterface[]>([]),
+          },
+        },
+        { provide: ChatService, useValue: { messages$: new BehaviorSubject<unknown[]>([]) } },
+        { provide: SelectionService, useValue: { handleSelection: () => undefined } },
+        { provide: FeedbackService, useValue: {} },
+        TraceFoldState,
+        RunSelectionState,
+        ViewService,
+        {
+          provide: ConfigService,
+          useValue: {
+            hiddenInspectorTabs: options.hidden ?? [],
+            initRightPanelCollapsed: options.collapsed,
+            initRailCollapsed: false,
+          },
+        },
+        {
+          provide: Router,
+          useValue: { navigate: jasmine.createSpy('navigate').and.returnValue(Promise.resolve(true)) },
+        },
+        {
+          provide: ActivatedRoute,
+          useValue: { snapshot: { params: { id: 'team-1' } }, params: of({ id: 'team-1' }) },
+        },
+      ],
+    })
+      .overrideComponent(ProcessComponent, {
+        set: {
+          imports: [CommonModule, TranslatePipe, SplitDividerComponent],
+          providers: [],
+          schemas: [CUSTOM_ELEMENTS_SCHEMA],
+        },
+      })
+      .compileComponents();
+
+    if (options.selectFirst) TestBed.inject(RunSelectionState).select(graph, U1, 'tree');
+    const fixture = TestBed.createComponent(ProcessComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return { component: fixture.componentInstance, view: TestBed.inject(ViewService) };
+  }
+
+  afterEach(() => TestBed.resetTestingModule());
+
+  it('opens a collapsed inspector and switches it to Run', async () => {
+    const { component, view } = await mount({ collapsed: true });
+    expect(view.isRightColumnCollapsed$.value).toBeTrue();
+
+    TestBed.inject(RunSelectionState).select(graph, U1, 'provenance');
+
+    expect(view.isRightColumnCollapsed$.value).toBeFalse();
+    expect(component.currentVisualizationMode).toBe('run');
+  });
+
+  it('switches an open inspector from Team to Run, and again after the user moves off', async () => {
+    const { component } = await mount({ collapsed: false });
+    expect(component.currentVisualizationMode).toBe('team');
+    const selection = TestBed.inject(RunSelectionState);
+
+    selection.select(graph, U1, 'tree');
+    expect(component.currentVisualizationMode).toBe('run');
+
+    component.setVisualizationMode('team');
+    selection.select(graph, U1, 'tree');
+    expect(component.currentVisualizationMode).toBe('run');
+  });
+
+  it('with `run` hidden by the deployment, leaves the inspector alone', async () => {
+    const { component, view } = await mount({ collapsed: true, hidden: ['run'] });
+
+    TestBed.inject(RunSelectionState).select(graph, U1, 'provenance');
+
+    expect(view.isRightColumnCollapsed$.value).toBeTrue();
+    expect(component.currentVisualizationMode).toBe('team');
+  });
+
+  it('a selection made before the host exists is not replayed into it', async () => {
+    const { component, view } = await mount({ collapsed: true, selectFirst: true });
+
+    expect(view.isRightColumnCollapsed$.value).toBeTrue();
+    expect(component.currentVisualizationMode).toBe('team');
   });
 });

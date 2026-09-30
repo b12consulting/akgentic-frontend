@@ -14,8 +14,9 @@ import { RunKey } from '../selectors/run-graph.selector';
  *   every other node starts folded until the reader toggles it.
  * - Opening a card (closed → open, by any path) expands the path to each
  *   waiting seat — the `reveal` keys — so its Answer button is visible. That is
- *   the only thing that ever expands a node on its own: a seat that starts
- *   waiting in a card already open is not revealed.
+ *   one of two things that expand a node without its chevron — the other is a
+ *   selection (`expandNodes`) — and a seat that starts waiting in a card
+ *   already open is not revealed.
  *
  * PROCESS-SCOPED, beside `RunGraphService`, rather than held by the panel: the
  * New view switch destroys the panel, and open cards and nodes must survive a
@@ -61,6 +62,14 @@ export class TraceFoldState {
   /** Whether node `key` of the card rooted at `root` shows its children. */
   isNodeExpanded(key: RunKey, root: RunKey): boolean {
     return this._nodes().get(key) ?? key === root;
+  }
+
+  /** Expand each of `keys` and touch no other node: a selection's reveal
+   *  (ADR-037 §D6). Opens no card. */
+  expandNodes(keys: readonly RunKey[]): void {
+    const nodes = new Map(this._nodes());
+    for (const key of keys) nodes.set(key, true);
+    this._nodes.set(nodes);
   }
 
   toggleNode(key: RunKey, root: RunKey): void {
