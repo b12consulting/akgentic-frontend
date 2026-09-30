@@ -9,17 +9,18 @@
   min-height: 0;
 }
 
-/* `position: relative` is the positioning context for the empty-state overlay
-   below. Stated on the same rule rather than a second one: the panel boxes are
-   themselves absolutely positioned, so an overlay left to find its own ancestor
-   would resolve `inset: 0` against the whole pane and cover the human-request
-   row as well. */
+/* The column that holds the graph card and the human-request row under it.
+   The card (`.akg-graph-card`, global — the knowledge graph's card) is the
+   positioning context for the empty-state overlay, so `inset: 0` covers the
+   canvas and never the request row. `padding-top` is the knowledge graph's
+   `.kg-view` inset, so the two cards start the same distance below the strip. */
 .graph-component-container {
   display: flex;
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  position: relative;
+  padding-top: 10px;
+  box-sizing: border-box;
 }
 
 /*

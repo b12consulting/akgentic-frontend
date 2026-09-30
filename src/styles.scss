@@ -141,6 +141,26 @@ span.p-fieldset-legend-label {
 // Lists and p-fields | END
 //
 
+/* The card a graph canvas is drawn in — the knowledge graph and the hierarchy
+   share it, so the two inspector graphs read as one surface rather than one
+   carded and one loose on the pane. A flex column that fills and may shrink
+   (`min-height: 0`), so the echarts element inside takes `flex: 1` and its
+   ResizeObserver re-measures as the pane moves. `position: relative` is the
+   containing block for each graph's empty-state overlay. The canvas itself
+   paints nothing: the background here is the ground the graph is drawn on,
+   and `--akg-graph-ground` points at the same token. */
+.akg-graph-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--akg-surface-border);
+  border-radius: var(--akg-card-radius);
+  background: var(--akg-surface-muted);
+}
+
 .mb-8 {
   margin-bottom: 0.8rem;
 }

@@ -100,7 +100,7 @@ function deltaE(a: string, b: string): number {
  */
 const MIN_SEPARATION = 25;
 
-/** The ground the hierarchy tab is painted on: the inspector's panel. */
+/** The ground the hierarchy tab is painted on: the graph card's surface. */
 const GROUND = '--akg-graph-ground';
 
 describe('the hierarchy graph palette', () => {

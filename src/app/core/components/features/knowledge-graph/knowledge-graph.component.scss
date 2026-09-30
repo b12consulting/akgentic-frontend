@@ -589,19 +589,10 @@
     }
 }
 
+/* The card itself — border, radius, surface, fill and the containing block for
+   `.kg-graph-empty` — is the shared `.akg-graph-card` in `styles.scss`, which
+   the hierarchy graph wears too. */
 .graph-canvas {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    border: 1px solid var(--akg-surface-border);
-    border-radius: var(--akg-card-radius);
-    background: var(--akg-surface-muted);
-    overflow: hidden;
-    /* Containing block for `.kg-graph-empty`, which is `inset: 0` over the
-       canvas rather than beside it. */
-    position: relative;
-
     .echarts-container {
         flex: 1;
         min-height: 0;

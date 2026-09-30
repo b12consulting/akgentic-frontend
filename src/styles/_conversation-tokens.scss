@@ -603,13 +603,14 @@
   --akg-graph-category-9: #c2185b;
   --akg-graph-category-10: #8a5f4a;
 
-  // The ground the canvas is drawn ON. It is `--akg-panel-bg` because that is
-  // what the inspector paints behind it, and the graph needs the value as a
-  // COLOUR rather than as a backdrop: nodes carry a ring of it so two
-  // overlapping squares still read as two, and labels carry a halo of it so a
-  // name crossing an edge stays legible. Both are cut-outs, and a cut-out that
-  // does not match its ground is a visible outline.
-  --akg-graph-ground: var(--akg-panel-bg);
+  // The ground the canvas is drawn ON. It is `--akg-surface-muted` because that
+  // is what the graph card (`.akg-graph-card`) paints behind it, and the graph
+  // needs the value as a COLOUR rather than as a backdrop: nodes carry a ring
+  // of it so two overlapping squares still read as two, and labels carry a
+  // halo of it so a name crossing an edge stays legible. Both are cut-outs,
+  // and a cut-out that does not match its ground is a visible outline — which
+  // is what a `--akg-panel-bg` halo would draw on the card.
+  --akg-graph-ground: var(--akg-surface-muted);
 
   // The message arrows. `--akg-glyph-quiet` is already the palette's "present
   // but not speaking" tone and measures 3.26:1 on the ground above, which is

@@ -105,6 +105,33 @@ describe('TeamGraphComponent — the empty-state overlay', () => {
       .toBeNull();
   });
 
+  it('draws the canvas and its overlay inside the shared graph card, not the request row', () => {
+    // The knowledge graph's card. The request row stays outside it, and the
+    // overlay stays inside it, so `inset: 0` covers the canvas and nothing else.
+    const card = fixture.nativeElement.querySelector('.akg-graph-card') as HTMLElement;
+    expect(card).not.toBeNull();
+    expect(card.querySelector('[echarts]')).not.toBeNull();
+    expect(card.querySelector('.graph-empty')).not.toBeNull();
+    expect(card.querySelector('app-pending-request')).toBeNull();
+  });
+
+  it('cuts node rings and label halos out of the card surface, not the pane behind it', () => {
+    // The halo and ring are painted in `--akg-graph-ground`. On a card whose
+    // surface differs from that colour they read as a second block of colour
+    // around every name, so the two must resolve to the same value.
+    const card = fixture.nativeElement.querySelector('.akg-graph-card') as HTMLElement;
+    const probe = document.createElement('div');
+    probe.style.backgroundColor = 'var(--akg-graph-ground)';
+    document.body.appendChild(probe);
+    try {
+      expect(getComputedStyle(card).backgroundColor).toBe(
+        getComputedStyle(probe).backgroundColor,
+      );
+    } finally {
+      probe.remove();
+    }
+  });
+
   it('brings the overlay back if the graph empties again', async () => {
     const zone = TestBed.inject(NgZone);
     zone.runOutsideAngular(() => nodes$.next([node('@Generalist')]));
