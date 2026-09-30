@@ -24,22 +24,6 @@
           ></i>
           {{ "inspector.tasks.hideClosed" | translate }}
         </button>
-        <!-- The plan in glyphs: how many of each, in one monochrome line. -->
-        <span class="board-summary">
-          @for (entry of view.counts; track entry.status) {
-            @let key = labelKeyOf(entry.status);
-            @let label = key ? (key | translate) : entry.status;
-            <span
-              class="summary-item"
-              [attr.data-status]="entry.status"
-              [attr.aria-label]="entry.count + ' ' + label"
-              [attr.title]="label"
-            >
-              <i class="glyph" [class]="glyphOf(entry.status)" aria-hidden="true"></i>
-              <span aria-hidden="true">{{ entry.count }}</span>
-            </span>
-          }
-        </span>
       </header>
 
       @if (view.rows.length > 0) {

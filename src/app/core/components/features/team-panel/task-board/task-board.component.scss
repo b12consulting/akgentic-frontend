@@ -5,7 +5,6 @@
  */
 
 .board {
-  container: board / inline-size;
   margin-top: 18px;
   padding: 10px 12px;
   border: 1px solid var(--akg-surface-border);
@@ -13,16 +12,11 @@
   background: var(--akg-overlay-bg);
 }
 
-/*
- * THE HEADER: "TASKS 4", the glyph summary, and "Hide closed" at the right.
- * In a narrow card the summary drops under the title and the toggle keeps the
- * title's line.
- */
+/* THE HEADER: "TASKS 4", and "Hide closed" at the right. */
 .board-head {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 4px 10px;
+  gap: 10px;
   margin-bottom: 6px;
 }
 
@@ -43,25 +37,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.board-summary {
-  order: 1;
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  font-size: var(--akg-font-size-meta);
-  color: var(--akg-text);
-  font-variant-numeric: tabular-nums;
-}
-
-.summary-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  white-space: nowrap;
-}
-
 .board-toggle {
-  order: 2;
   margin-left: auto;
   display: inline-flex;
   align-items: center;
@@ -95,18 +71,18 @@
   }
 }
 
-@container board (max-width: 360px) {
-  .board-toggle {
-    order: 0;
-  }
-
-  .board-summary {
-    flex-basis: 100%;
-  }
-}
-
-/* A long plan scrolls inside its own card rather than pushing usage away. */
+/*
+ * ONE ROW: [glyph] #id description [owner]. The list is one grid, its rows
+ * `subgrid`s, so the id column is as wide as the widest id on the board and
+ * every description still starts on the same line; the description takes
+ * what is left and ellipsises.
+ */
 .board-list {
+  display: grid;
+  grid-template-columns: 14px auto minmax(0, 1fr) 16px;
+  align-content: start;
+  column-gap: 6px;
+  /* A long plan scrolls inside its own card rather than pushing usage away. */
   max-height: 220px;
   margin: 0;
   padding: 0;
@@ -114,14 +90,10 @@
   list-style: none;
 }
 
-/*
- * ONE ROW: [glyph] #id description [owner]. The glyph and id columns are
- * fixed, so every description starts on the same line; the description takes
- * what is left and ellipsises.
- */
 .task {
   display: grid;
-  grid-template-columns: 14px 3.2em minmax(0, 1fr) 16px;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
   align-items: center;
   column-gap: 6px;
   padding: 3px 0;
@@ -139,6 +111,13 @@
   text-decoration: line-through;
 }
 
+/* Both marks only explain themselves on hover: the same pointer on each, and
+   neither is a stop for the keyboard. */
+.task-glyph,
+.owner-avatar {
+  cursor: pointer;
+}
+
 .task-glyph {
   display: grid;
   place-items: center;
@@ -148,12 +127,19 @@
   font-size: 10px;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .glyph.pi-spin {
+    animation: none;
+  }
+}
+
 /* The one accent on the board: work in progress. */
 [data-status='started'] .glyph {
   color: var(--akg-accent-fg);
 }
 
 .task-id {
+  justify-self: end;
   font-family: var(--akg-font-mono);
   font-size: 10.5px;
   font-variant-numeric: tabular-nums;

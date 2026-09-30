@@ -18,15 +18,12 @@ import {
   KnownTaskStatus,
   PlanTask,
   planningTasks,
-  TaskStatusCount,
-  taskStatusCounts,
 } from '../../../../services/process/selectors/task-board';
 
 /** The board as drawn. */
 export interface TaskBoardView {
-  /** Every task — the count and the summary are the whole plan's. */
+  /** Every task — the header counts the whole plan. */
   total: number;
-  counts: TaskStatusCount[];
   /** The rows shown: every task, or the open ones while closed are hidden. */
   rows: PlanTask[];
   colours: AgentColours;
@@ -42,7 +39,8 @@ interface StatusGlyph {
 
 const GLYPHS: Record<KnownTaskStatus, StatusGlyph> = {
   pending: { icon: 'pi pi-circle', labelKey: 'inspector.tasks.status.pending' },
-  started: { icon: 'pi pi-spinner', labelKey: 'inspector.tasks.status.started' },
+  // Spinning: work in progress. Reduced motion stops it (the stylesheet).
+  started: { icon: 'pi pi-spinner pi-spin', labelKey: 'inspector.tasks.status.started' },
   completed: { icon: 'pi pi-check', labelKey: 'inspector.tasks.status.completed' },
   abort: { icon: 'pi pi-times', labelKey: 'inspector.tasks.status.abort' },
 };
@@ -87,7 +85,6 @@ export class TaskBoardComponent {
       const tasks = planningTasks(nodes, states);
       return {
         total: tasks.length,
-        counts: taskStatusCounts(tasks),
         rows: hideClosed ? tasks.filter((task) => !isClosedTask(task)) : tasks,
         colours: agentColours(nodes, this.categories.COLORS),
         humans: new Set(nodes.filter(isHumanNode).map((node) => node.actorName)),

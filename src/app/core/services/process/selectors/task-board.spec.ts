@@ -4,7 +4,6 @@ import {
   parseTaskList,
   PLANNING_ACTOR_NAME,
   planningTasks,
-  taskStatusCounts,
 } from './task-board';
 
 function task(id: number, status: string, owner = '@Expert'): Record<string, unknown> {
@@ -104,16 +103,5 @@ describe('task board selector', () => {
     ]);
     expect(parseTaskList(null)).toEqual([]);
     expect(parseTaskList({ task_list: 'nope' })).toEqual([]);
-  });
-
-  it('counts each status once, pending → started → done → aborted, skipping the empty ones', () => {
-    const tasks = parseTaskList({
-      task_list: [task(1, 'pending'), task(2, 'pending'), task(3, 'completed'), task(4, 'started')],
-    });
-    expect(taskStatusCounts(tasks)).toEqual([
-      { status: 'pending', count: 2 },
-      { status: 'started', count: 1 },
-      { status: 'completed', count: 1 },
-    ]);
   });
 });

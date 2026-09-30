@@ -98,7 +98,11 @@ describe('TaskBoardComponent', () => {
     await mount();
     show([...MIXED, task(6, 'blocked', '')]);
     const glyphs = Array.from(host().querySelectorAll('.task-glyph')).map((g) => [
-      g.querySelector('i')!.className.replace('glyph', '').trim(),
+      // Class order is the renderer's, not ours: compare the set.
+      [...g.querySelector('i')!.classList]
+        .filter((c) => c !== 'glyph')
+        .sort()
+        .join(' '),
       g.getAttribute('aria-label'),
     ]);
     expect(glyphs).toEqual([
@@ -106,7 +110,8 @@ describe('TaskBoardComponent', () => {
       ['pi pi-circle', 'pending'],
       ['pi pi-check', 'done'],
       ['pi pi-times', 'aborted'],
-      ['pi pi-spinner', 'started'],
+      // Started spins (reduced motion stops it in the stylesheet).
+      ['pi pi-spin pi-spinner', 'started'],
       // An unknown status: a neutral "?", named as sent.
       ['pi pi-question', 'blocked'],
     ]);
@@ -122,17 +127,25 @@ describe('TaskBoardComponent', () => {
     expect(closed).toEqual(['3', '4']);
   });
 
-  it('sums the plan in glyphs, each count named', async () => {
+  it('heads the card with the title, the count and the toggle — no status summary', async () => {
     await mount();
     show(MIXED);
-    const items = Array.from(host().querySelectorAll('.summary-item'));
-    expect(items.map((i) => i.getAttribute('aria-label'))).toEqual([
-      '2 pending',
-      '1 started',
-      '1 done',
-      '1 aborted',
-    ]);
-    expect(items.map((i) => text(i))).toEqual(['2', '1', '1', '1']);
+    const head = host().querySelector('.board-head')!;
+    expect(head.querySelector('.board-summary, .summary-item')).toBeNull();
+    expect(head.querySelector('.glyph')).toBeNull();
+    expect(text(head.querySelector('.board-label'))).toBe('Tasks 5');
+    expect(head.querySelector('.board-toggle')).not.toBeNull();
+  });
+
+  it('gives the owner mark the same pointer as the status glyph', async () => {
+    await mount();
+    show(MIXED);
+    const row = host().querySelector('.task[data-task-id="5"]')!;
+    expect(getComputedStyle(row.querySelector('.owner-avatar')!).cursor).toBe('pointer');
+    expect(getComputedStyle(row.querySelector('.task-glyph')!).cursor).toBe('pointer');
+    // Neither is a keyboard stop: they only explain themselves on hover.
+    expect(row.querySelector('.owner-avatar')!.hasAttribute('tabindex')).toBeFalse();
+    expect(row.querySelector('.task-glyph')!.hasAttribute('tabindex')).toBeFalse();
   });
 
   it('shows the owner as its avatar only, the name in its title and label, at any width', async () => {

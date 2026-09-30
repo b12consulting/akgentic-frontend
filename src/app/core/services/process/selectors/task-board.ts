@@ -20,8 +20,8 @@ import { AgentStateValue } from '../event/per-agent-specs';
 export const PLANNING_ACTOR_NAME = '#PlanningTool';
 
 /**
- * The statuses `planning_actor.py` declares (`TaskStatus`), in the order the
- * summary lists them. Note `abort`, not `aborted`: that is the wire value.
+ * The statuses `planning_actor.py` declares (`TaskStatus`). Note `abort`, not
+ * `aborted`: that is the wire value.
  * Anything else is drawn as an unknown status rather than dropped.
  */
 export const TASK_STATUSES = ['pending', 'started', 'completed', 'abort'] as const;
@@ -47,12 +47,6 @@ export interface PlanTask {
   updated_at: string;
 }
 
-/** One status's count, for the board's summary line. */
-export interface TaskStatusCount {
-  status: string;
-  count: number;
-}
-
 /** The roster fields the lookup needs: the actor's display name and its id. */
 export interface PlanningRosterNode {
   actorName: string;
@@ -61,12 +55,6 @@ export interface PlanningRosterNode {
 
 export function isKnownTaskStatus(status: string): status is KnownTaskStatus {
   return (TASK_STATUSES as readonly string[]).includes(status);
-}
-
-/** Summary order: pending → started → completed → abort → anything else. */
-function statusRank(status: string): number {
-  const at = (TASK_STATUSES as readonly string[]).indexOf(status);
-  return at < 0 ? TASK_STATUSES.length : at;
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -125,11 +113,3 @@ export function planningTasks(
   return parseTaskList(states.get(actor.name)?.state);
 }
 
-/** Non-zero counts per status, in summary order. */
-export function taskStatusCounts(tasks: readonly PlanTask[]): TaskStatusCount[] {
-  const counts = new Map<string, number>();
-  for (const task of tasks) counts.set(task.status, (counts.get(task.status) ?? 0) + 1);
-  return [...counts.entries()]
-    .map(([status, count]) => ({ status, count }))
-    .sort((a, b) => statusRank(a.status) - statusRank(b.status));
-}
