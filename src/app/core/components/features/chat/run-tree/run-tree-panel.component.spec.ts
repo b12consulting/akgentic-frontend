@@ -9,7 +9,6 @@ import { PrimeNgNotificationAdapter } from '../../../../../ui/console/notificati
 import { ApiService } from '../../../../platform/http/api.service';
 import { NOTIFICATION_PORT } from '../../../../platform/notification/notification.port';
 import { ActorAddress, AkgenticMessage } from '../../../../protocol/message.types';
-import { AkgentService } from '../../../../services/akgent.service';
 import { IngestionService } from '../../../../services/process/event/ingestion.service';
 import { MessageLogService } from '../../../../services/process/event/message-log.service';
 import { NodeInterface } from '../../../../services/process/models/types';
@@ -18,7 +17,6 @@ import { GraphDataService } from '../../../../services/process/selectors/graph.s
 import { RunGraphService, runKey } from '../../../../services/process/selectors/run-graph.selector';
 import { RunTreeService } from '../../../../services/process/selectors/run-tree-items';
 import { Feedback, FeedbackService } from '../../../../services/process/ui-state/feedback.service';
-import { SelectionService } from '../../../../services/process/ui-state/selection.service';
 import {
   RunSelection,
   RunSelectionState,
@@ -42,7 +40,6 @@ import {
   welcome,
 } from '../../../../../../testing/run-log-builders';
 import {
-  CASE_2,
   CASE_5,
   CASE_5_ANSWER,
   CASE_5_PREFIX,
@@ -96,9 +93,7 @@ describe('RunTreePanelComponent', () => {
             setFeedback: () => Promise.resolve(),
           },
         },
-        { provide: SelectionService, useValue: jasmine.createSpyObj('SelectionService', ['handleSelection']) },
         { provide: ApiService, useValue: api },
-        { provide: AkgentService, useValue: { selectedAkgent$: new BehaviorSubject(null) } },
         { provide: GraphDataService, useValue: { nodes$: new BehaviorSubject<NodeInterface[]>([]) } },
         { provide: IngestionService, useValue: ingestion },
         MessageService,

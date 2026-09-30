@@ -100,12 +100,7 @@
     -->
     <div class="bubble-header" *ngIf="message().rule !== 1">
       <!-- The speaker's name, as plain text: it opens nothing. -->
-      <span
-        *ngIf="showAgentNames"
-        class="label-pill"
-        [class.tinted]="senderColour() !== null"
-        [style.--akg-party-colour]="senderColour()"
-      >
+      <span *ngIf="showAgentNames" class="label-pill">
         {{ message().label }}
       </span>
       <span class="bubble-timestamp">{{

@@ -756,8 +756,8 @@ describe('MessageListComponent row padding (Story 31-6)', () => {
 // W16 — the Messages tab, redesigned as THE RAW LOG
 //
 // The tab was considered for removal and deliberately kept: it is the only
-// place every message appears in one chronological stream, and the sub-agent
-// reader is per-participant. These specs pin the three things that follow from
+// place every message appears in one chronological stream, and the Member tab
+// is per-participant. These specs pin the three things that follow from
 // calling it a log rather than a table of cards — a stamp, a route that reads
 // as a sentence, and a body that is quoted rather than re-rendered — plus the
 // one copy control per line that makes a log usable.
