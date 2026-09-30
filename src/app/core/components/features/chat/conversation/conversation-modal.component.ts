@@ -10,6 +10,14 @@ import {
 import { DialogModule } from 'primeng/dialog';
 
 import { agentConversation } from '../../../../services/process/selectors/agent-conversation.selector';
+import {
+  agentReaderItems,
+  ReaderItem,
+  ReaderRunBlock,
+  ReaderStep,
+  seatQuestionPending,
+  trackReaderItem,
+} from '../../../../services/process/selectors/agent-reader-items';
 import { ChatMessage } from '../../../../services/process/selectors/chat-message.model';
 import { ThinkingState } from '../../../../services/process/selectors/chat.selector';
 import {
@@ -23,6 +31,7 @@ import {
   AgentColours,
   NO_AGENT_COLOURS,
 } from '../../../../services/process/selectors/agent-colour';
+import { RunGraph, RunKey } from '../../../../services/process/selectors/run-graph.selector';
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 import { TranslatePipe } from '@ngx-translate/core';
 
@@ -30,6 +39,7 @@ import type { AgentRef } from '../agent-reader.service';
 
 import { ChatMessageComponent } from '../message/chat-message.component';
 import { ThinkingComponent } from '../message/thinking.component';
+import { ReaderRunComponent } from './reader-run.component';
 
 /** What the reader's composer asks its host to send. */
 export interface ReaderSendRequest extends AgentRef {
@@ -49,6 +59,48 @@ export type { AgentRef } from '../agent-reader.service';
 /** The rules that render as a collapsed one-liner until the reader opens them.
  *  3/4 are the agent-to-agent lines; 6 is the compaction fold. */
 const COLLAPSIBLE_RULES: ReadonlySet<number> = new Set([3, 4, 6]);
+
+/** A collapsible message as a COPY carrying the reader's own collapse state;
+ *  any other message as it is. The shared object is never mutated. */
+function readerCopy(m: ChatMessage, expanded: ReadonlySet<string>): ChatMessage {
+  return COLLAPSIBLE_RULES.has(m.rule) ? { ...m, collapsed: !expanded.has(m.id) } : m;
+}
+
+function readerStepCopy(step: ReaderStep, expanded: ReadonlySet<string>): ReaderStep {
+  if (step.kind !== 'message' || step.message === null) return step;
+  return { ...step, message: readerCopy(step.message, expanded) };
+}
+
+/** The reader's collapse state applied to every bubble a list item shows. */
+function readerItemCopy(item: ReaderItem, expanded: ReadonlySet<string>): ReaderItem {
+  switch (item.kind) {
+    case 'message':
+      return { kind: 'message', data: readerCopy(item.data, expanded) };
+    case 'run': {
+      const block = item.data;
+      return {
+        kind: 'run',
+        data: {
+          ...block,
+          trigger: block.trigger && readerCopy(block.trigger, expanded),
+          steps: block.steps.map((s) => readerStepCopy(s, expanded)),
+        },
+      };
+    }
+    case 'day':
+      return item;
+  }
+}
+
+/** Every bubble a list item shows: a loose message, a trigger, a message step. */
+function itemMessages(item: ReaderItem): ChatMessage[] {
+  if (item.kind === 'message') return [item.data];
+  if (item.kind === 'day') return [];
+  const steps = item.data.steps.flatMap((s) =>
+    s.kind === 'message' && s.message !== null ? [s.message] : [],
+  );
+  return item.data.trigger === null ? steps : [item.data.trigger, ...steps];
+}
 
 /**
  * A READER for one agent's conversation: the team down the left, the selected
@@ -81,10 +133,17 @@ const COLLAPSIBLE_RULES: ReadonlySet<number> = new Set([3, 4, 6]);
  * named agent" call — the same one the main composer's Send-to makes. The
  * transcript itself stays inert: no reply affordance, no rating, no edit.
  *
- * WHAT IT SHOWS is scoped by the same rule the main transcript uses (W3): the
- * selected agent's own turns, interleaved with the selected agent's own runs.
- * Before, the reader showed no activity at all while the main panel showed
- * everyone's — two wrong answers to one question.
+ * WHAT IT SHOWS comes from one of two sources, chosen by the `graph` input.
+ *
+ * - `graph` unbound (`null`, the legacy view): scoped by the same rule the main
+ *   transcript uses (W3) — the selected agent's own turns, interleaved with the
+ *   selected agent's own activity folds (`runs`), request state from
+ *   `pendingNotifications`.
+ * - `graph` bound (the run-tree view, Epic 55 / ADR-037 §D10): the selected
+ *   agent's runs from the run graph, each with its trigger, who asked, and its
+ *   steps, plus the agent's messages that none of those runs renders. Request
+ *   state is read from the graph; `runs` and `pendingNotifications` are not
+ *   read.
  */
 @Component({
   selector: 'app-conversation-modal',
@@ -93,6 +152,7 @@ const COLLAPSIBLE_RULES: ReadonlySet<number> = new Set([3, 4, 6]);
     CommonModule,
     DialogModule,
     ChatMessageComponent,
+    ReaderRunComponent,
     ThinkingComponent,
     TranslatePipe,
   ],
@@ -135,6 +195,10 @@ export class ConversationModalComponent {
 
   /** Whether the team can accept a message at all (the process is running). */
   canSend = input<boolean>(false);
+
+  /** The run graph, in the run-tree view only. `null` keeps the legacy source
+   *  (`runs` + `pendingNotifications`) exactly as it was. */
+  graph = input<RunGraph | null>(null);
 
   @Output() visibleChange = new EventEmitter<boolean>();
   @Output() agentSelected = new EventEmitter<AgentRef>();
@@ -196,6 +260,42 @@ export class ConversationModalComponent {
     buildDisplayItems(this.conversation(), agentRuns(this.runs(), this.selectedAgentId())),
   );
 
+  /** The graph-backed list (run-tree view): empty while `graph` is unbound. */
+  readonly readerItems = computed<ReaderItem[]>(() => {
+    const graph = this.graph();
+    return graph === null
+      ? []
+      : agentReaderItems(graph, this.messages(), this.selectedAgentId());
+  });
+
+  /** `readerItems` with this reader's collapse state applied, on copies. */
+  readonly graphItems = computed<ReaderItem[]>(() => {
+    const expanded = this.expandedIds();
+    return this.readerItems().map((item) => readerItemCopy(item, expanded));
+  });
+
+  /** Inner ids of the rule-3 questions in `readerItems` still owed an answer,
+   *  read from the graph (ADR-037 §D4). */
+  readonly pendingInnerIds = computed<ReadonlySet<string>>(() => {
+    const graph = this.graph();
+    const ids = new Set<string>();
+    if (graph === null) return ids;
+    for (const m of this.readerItems().flatMap(itemMessages)) {
+      if (seatQuestionPending(graph, m)) ids.add(m.message_id);
+    }
+    return ids;
+  });
+
+  /** The active list is non-empty: the empty state applies to both sources. */
+  readonly hasTurns = computed<boolean>(() =>
+    this.graph() === null ? this.displayItems().length > 0 : this.readerItems().length > 0,
+  );
+
+  /** Run keys of the blocks this reader has opened. Its OWN set, keyed by run
+   *  key (Trap 7) so a re-emission that adds a run moves no fold; it never
+   *  touches the transcript's `TraceFoldState`. */
+  private readonly expandedRunKeys = signal<ReadonlySet<RunKey>>(new Set<RunKey>());
+
   /** True once there is an agent to address and a team able to receive. */
   readonly composerEnabled = computed<boolean>(
     () => this.canSend() && this.selectedAgent() !== null,
@@ -224,6 +324,33 @@ export class ConversationModalComponent {
       next.add(anchorId);
     }
     this.expandedRunIds.set(next);
+  }
+
+  /** The graph-backed list's request state: see `pendingInnerIds`. */
+  isGraphPending(message: ChatMessage): boolean {
+    return message.rule === 3 && this.pendingInnerIds().has(message.message_id);
+  }
+
+  isRunBlockExpanded(key: RunKey): boolean {
+    return this.expandedRunKeys().has(key);
+  }
+
+  onToggleRunBlock(key: RunKey): void {
+    const next = new Set(this.expandedRunKeys());
+    if (next.has(key)) {
+      next.delete(key);
+    } else {
+      next.add(key);
+    }
+    this.expandedRunKeys.set(next);
+  }
+
+  /** "Asked by @X" is a control only where a click could move the reader: @X
+   *  is on this dialog's list and is not the agent already open. */
+  isAskerSelectable(block: ReaderRunBlock): boolean {
+    const asker = block.askedBy;
+    if (asker === null || asker.agent_id === this.selectedAgentId()) return false;
+    return this.agents().some((a) => a.name === asker.agent_id);
   }
 
   /** Reads the box. Takes the event rather than a string so the template needs
@@ -343,5 +470,9 @@ export class ConversationModalComponent {
   /** The SAME key function the main panel uses — one row, one identity. */
   trackByDisplayItem(index: number, item: DisplayItem): string {
     return trackDisplayItem(index, item);
+  }
+
+  trackByReaderItem(index: number, item: ReaderItem): string {
+    return trackReaderItem(index, item);
   }
 }

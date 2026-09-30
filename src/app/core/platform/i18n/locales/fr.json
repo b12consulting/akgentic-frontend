@@ -110,6 +110,14 @@
         "placeholder": "Message à {{agent}}",
         "send": "Envoyer",
         "stoppedHint": "Démarrez l’équipe pour envoyer un message."
+      },
+      "run": {
+        "askedBy": "demandé par",
+        "askedByYou": "demandé par vous",
+        "stepsOne": "1 étape",
+        "stepsMany": "{{count}} étapes",
+        "expand": "Afficher les étapes de cette exécution",
+        "collapse": "Masquer les étapes de cette exécution"
       }
     },
     "activity": {

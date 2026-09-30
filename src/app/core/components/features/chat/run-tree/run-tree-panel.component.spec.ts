@@ -43,6 +43,7 @@ import {
   welcome,
 } from '../../../../../../testing/run-log-builders';
 import {
+  CASE_2,
   CASE_5,
   CASE_5_ANSWER,
   CASE_5_PREFIX,
@@ -180,6 +181,38 @@ describe('RunTreePanelComponent', () => {
   it('shows the empty state with the legacy keys', () => {
     const fixture = mount();
     expect(text(el(fixture).querySelector('.chat-placeholder-title'))).toBe('chat.emptyTitle');
+  });
+
+  it('feeds the sub-agent reader the run graph: @Expert’s block is asked by @Manager', () => {
+    const node = (agentId: string, role: string, actorName: string): NodeInterface => ({
+      name: agentId,
+      role,
+      actorName,
+      parentId: '',
+      squadId: 'squad-1',
+      symbol: 'roundRect',
+      category: 0,
+      userMessage: false,
+    });
+    const nodes$ = TestBed.inject(GraphDataService).nodes$ as BehaviorSubject<NodeInterface[]>;
+    nodes$.next([node(M, 'Manager', '@Manager'), node(EXPERT.agent_id, 'Expert', '@Expert')]);
+    TestBed.inject(AkgentService).selectedAkgent$.next({
+      name: '@Expert',
+      agentId: EXPERT.agent_id,
+    });
+    log.appendAll(CASE_2);
+    const fixture = mount();
+
+    fixture.componentInstance.onAgentSelected({ agentId: EXPERT.agent_id, actorName: '@Expert' });
+    fixture.detectChanges();
+
+    const block = document.querySelector(
+      `app-conversation-modal [data-reader-run-key="${runKey('De', EXPERT.agent_id)}"]`,
+    );
+    expect(block).not.toBeNull();
+    expect(text(block!.querySelector('.reader-run-head'))).toContain('@Manager');
+    expect(block!.querySelector('.reader-run-asker-link')).not.toBeNull();
+    expect(document.querySelector('app-conversation-modal app-thinking')).toBeNull();
   });
 
   it('case 7: the queued follow-ups sit in the tail, then move into the timeline', () => {

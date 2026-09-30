@@ -35,7 +35,7 @@ import {
   ChatMessage,
   ENTRY_POINT_NAME,
 } from '../../../../services/process/selectors/chat-message.model';
-import { ChatService, ThinkingState } from '../../../../services/process/selectors/chat.selector';
+import { ChatService } from '../../../../services/process/selectors/chat.selector';
 import { GraphDataService } from '../../../../services/process/selectors/graph.selector';
 import {
   EMPTY_RUN_GRAPH,
@@ -168,11 +168,9 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
   defaultRecipient: string | null = null;
   agentColours: AgentColours = NO_AGENT_COLOURS;
 
-  // --- the sub-agent reader, hosted as in the legacy panel (55-5 moves its
-  // source to the graph) ------------------------------------------------------
+  // --- the sub-agent reader, hosted as in the legacy panel but fed the run
+  // graph: its runs, triggers and request state come from `graph` (55-5) ------
   chatMessages: ChatMessage[] = [];
-  thinkingStates: ThinkingState[] = [];
-  pendingNotifications: Set<string> = new Set();
   readerVisible = false;
   readerAgents: NodeInterface[] = [];
   readerSelectedAgentId: string | null = null;
@@ -232,12 +230,6 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
     this.subscriptions.add(this.agentReader.open$.subscribe((a) => this.openReaderOn(a)));
     this.subscriptions.add(
       this.chatService.messages$.subscribe((m) => (this.chatMessages = m)),
-    );
-    this.subscriptions.add(
-      this.chatService.thinkingAgents$.subscribe((t) => (this.thinkingStates = t)),
-    );
-    this.subscriptions.add(
-      this.chatService.pendingNotifications$.subscribe((p) => (this.pendingNotifications = p)),
     );
   }
 

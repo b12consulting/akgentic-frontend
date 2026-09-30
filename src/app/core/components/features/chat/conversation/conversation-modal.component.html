@@ -34,7 +34,10 @@
            conversation, over the SAME merged display list — see the class
            docstring. -->
       <div class="conversation-column">
-        <ng-container *ngIf="displayItems().length > 0; else noTurns">
+        <ng-container *ngIf="hasTurns(); else noTurns">
+          <!-- The legacy source, unless a run graph is bound (see the class
+               docstring). -->
+          <ng-container *ngIf="graph() === null; else graphList">
           <ng-container
             *ngFor="let item of displayItems(); trackBy: trackByDisplayItem"
           >
@@ -69,7 +72,49 @@
               (toggleExpanded)="onToggleRunExpanded($event)"
             ></app-thinking>
           </ng-container>
+          </ng-container>
         </ng-container>
+        <!-- The run-tree view's source: the agent's runs, each with its trigger
+             and steps, and the loose messages no run renders. The same bubble
+             bindings as above; request state read from the graph. -->
+        <ng-template #graphList>
+          @for (item of graphItems(); track trackByReaderItem($index, item)) {
+            @switch (item.kind) {
+              @case ('run') {
+                <app-reader-run
+                  [block]="item.data"
+                  [expanded]="isRunBlockExpanded(item.data.key)"
+                  [askerSelectable]="isAskerSelectable(item.data)"
+                  [agentColours]="agentColours()"
+                  [pendingIds]="pendingInnerIds()"
+                  (blockToggle)="onToggleRunBlock($event)"
+                  (askerSelected)="onPartyClick($event)"
+                  (messageSelected)="onMessageAgentClick($event)"
+                  (agentSelected)="onPartyClick($event)"
+                  (toggleCollapse)="onToggleCollapse($event)"
+                ></app-reader-run>
+              }
+              @case ('message') {
+                <app-chat-message
+                  [attr.data-message-id]="item.data.id"
+                  [message]="item.data"
+                  [ratingEnabled]="false"
+                  [replyEnabled]="false"
+                  [notification]="isGraphPending(item.data)"
+                  [agentColours]="agentColours()"
+                  (messageSelected)="onMessageAgentClick($event)"
+                  (agentSelected)="onPartyClick($event)"
+                  (toggleCollapse)="onToggleCollapse($event)"
+                ></app-chat-message>
+              }
+              @case ('day') {
+                <div class="day-separator" role="separator">
+                  <span class="day-separator-label">{{ item.data.label }}</span>
+                </div>
+              }
+            }
+          }
+        </ng-template>
         <ng-template #noTurns>
           <div class="empty-state">
             <ng-container *ngIf="selectedAgent(); else noAgent">

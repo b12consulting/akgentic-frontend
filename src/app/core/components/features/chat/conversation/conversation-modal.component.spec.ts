@@ -17,6 +17,24 @@ import {
   provideTranslateTesting,
   setTestTranslations,
 } from '../../../../../../testing/i18n-testing';
+import { AkgenticMessage } from '../../../../protocol/message.types';
+import { chatFold } from '../../../../services/process/selectors/chat.selector';
+import { runGraphFold, runKey } from '../../../../services/process/selectors/run-graph.selector';
+import {
+  compacted,
+  EXPERT as EXPERT_ADDR,
+  MANAGER as MANAGER_ADDR,
+  processed,
+  received,
+  sent,
+  SUPPORT as SUPPORT_ADDR,
+} from '../../../../../../testing/run-log-builders';
+import {
+  CASE_2,
+  CASE_3,
+  CASE_5,
+  CASE_5_PREFIX,
+} from '../../../../../../testing/run-log-cases';
 
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {
@@ -765,5 +783,174 @@ describe('ConversationModalComponent', () => {
     // echo one back.
     component.onVisibleChange(true);
     expect(seen).toEqual([false]);
+  });
+});
+
+// --- the run-tree view (Story 55-5) ------------------------------------------
+//
+// With a run graph bound, the reader lists the open agent's runs from the
+// graph, each with its trigger and who asked, plus the loose messages no run
+// renders. The legacy specs above stay the regression net for the unbound path.
+describe('in the run-tree view (a graph is bound)', () => {
+  let component: ConversationModalComponent;
+  let fixture: ComponentFixture<ConversationModalComponent>;
+
+  // Graph nodes named by the logs' agent ids.
+  const MANAGER_NODE = makeNode({ name: MANAGER_ADDR.agent_id, actorName: '@Manager' });
+  const EXPERT_NODE = makeNode({
+    name: EXPERT_ADDR.agent_id,
+    role: 'Expert',
+    actorName: '@Expert',
+  });
+  const QUIET_NODE = makeNode({ name: 'quiet-id', role: 'Quiet', actorName: '@Quiet' });
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [ConversationModalComponent, NoopAnimationsModule],
+      providers: [provideMarkdown(), provideTranslateTesting()],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(ConversationModalComponent);
+    component = fixture.componentInstance;
+  });
+
+  /** Fold `log` as production does and open the reader on `agentId`. No
+   *  `runs` and no `pendingNotifications` are bound: the graph is the source. */
+  function openLog(log: AkgenticMessage[], agentId: string): void {
+    fixture.componentRef.setInput('visible', true);
+    fixture.componentRef.setInput('agents', [MANAGER_NODE, EXPERT_NODE, QUIET_NODE]);
+    fixture.componentRef.setInput('messages', chatFold(log).messages);
+    fixture.componentRef.setInput('graph', runGraphFold(log));
+    fixture.componentRef.setInput('selectedAgentId', agentId);
+    fixture.detectChanges();
+  }
+
+  function blockKeys(): string[] {
+    return Array.from(document.querySelectorAll('.conversation-column [data-reader-run-key]')).map(
+      (b) => b.getAttribute('data-reader-run-key') ?? '',
+    );
+  }
+
+  function bubbleCount(envelopeId: string): number {
+    return document.querySelectorAll(
+      `.conversation-column app-chat-message[data-message-id="${envelopeId}"]`,
+    ).length;
+  }
+
+  it('shows @Expert one run block asked by @Manager, and no activity fold', () => {
+    openLog(CASE_2, EXPERT_ADDR.agent_id);
+
+    expect(blockKeys()).toEqual([runKey('De', EXPERT_ADDR.agent_id)]);
+    const head = document.querySelector('.reader-run-head')!;
+    expect(head.textContent).toContain('chat.reader.run.askedBy');
+    expect(head.textContent).toContain('@Manager');
+    expect(document.querySelectorAll('app-thinking').length).toBe(0);
+    // The trigger is shown once, inside the block, never again as a loose row.
+    expect(bubbleCount('env-De-expert-id')).toBe(1);
+  });
+
+  it('re-scopes the blocks when the open agent changes', () => {
+    openLog(CASE_2, EXPERT_ADDR.agent_id);
+    fixture.componentRef.setInput('selectedAgentId', MANAGER_ADDR.agent_id);
+    fixture.detectChanges();
+
+    expect(blockKeys()).toEqual([
+      runKey('U1', MANAGER_ADDR.agent_id),
+      runKey('Re', MANAGER_ADDR.agent_id),
+      runKey('Ra', MANAGER_ADDR.agent_id),
+    ]);
+  });
+
+  it('moves the reader to the asker, and leaves "asked by you" as text', () => {
+    openLog(CASE_2, EXPERT_ADDR.agent_id);
+    const seen: AgentRef[] = [];
+    component.agentSelected.subscribe((a) => seen.push(a));
+
+    document.querySelector<HTMLButtonElement>('.reader-run-asker-link')!.click();
+    expect(seen).toEqual([{ agentId: MANAGER_ADDR.agent_id, actorName: '@Manager' }]);
+
+    fixture.componentRef.setInput('selectedAgentId', MANAGER_ADDR.agent_id);
+    fixture.detectChanges();
+    const u1 = document.querySelector(
+      `[data-reader-run-key="${runKey('U1', MANAGER_ADDR.agent_id)}"]`,
+    )!;
+    expect(u1.textContent).toContain('chat.reader.run.askedByYou');
+    expect(u1.querySelector('.reader-run-asker-link')).toBeNull();
+  });
+
+  it('shows Re once in @Expert’s reader and once in @Manager’s (case 3)', () => {
+    openLog(CASE_3, EXPERT_ADDR.agent_id);
+    expect(bubbleCount('env-Re-manager-id')).toBe(1);
+
+    fixture.componentRef.setInput('selectedAgentId', MANAGER_ADDR.agent_id);
+    fixture.detectChanges();
+    expect(bubbleCount('env-Re-manager-id')).toBe(1);
+    const ra = document.querySelector(
+      `[data-reader-run-key="${runKey('Ra', MANAGER_ADDR.agent_id)}"]`,
+    )!;
+    expect(ra.querySelector('app-chat-message[data-message-id="env-Re-manager-id"]')).not.toBeNull();
+  });
+
+  it('keeps a compaction marker as a loose row', () => {
+    openLog([...CASE_2, compacted('K', EXPERT_ADDR, 20)], EXPERT_ADDR.agent_id);
+
+    const loose = Array.from(
+      document.querySelectorAll('.conversation-column > app-chat-message'),
+    ).map((b) => b.getAttribute('data-message-id'));
+    expect(loose).toEqual(['K']);
+  });
+
+  it('reads a question to a seat as pending, then answered, from the graph', () => {
+    const question = (): Element =>
+      document.querySelector(
+        `app-chat-message[data-message-id="env-S-${SUPPORT_ADDR.agent_id}"] .collapsed-request`,
+      )!;
+
+    openLog(CASE_5_PREFIX, MANAGER_ADDR.agent_id);
+    expect(question()).not.toBeNull();
+    expect(question().classList.contains('answered')).toBe(false);
+    // The reader still offers no Answer control.
+    expect(document.querySelector('.conversation-column .open-button')).toBeNull();
+
+    openLog(CASE_5, MANAGER_ADDR.agent_id);
+    expect(question().classList.contains('answered')).toBe(true);
+  });
+
+  it('keeps block A open across a re-emission that adds an earlier run, B folded', () => {
+    const log = [
+      sent('D1', MANAGER_ADDR, EXPERT_ADDR, null, 1),
+      received('D1', EXPERT_ADDR, 2),
+      processed('D1', EXPERT_ADDR, 3),
+      sent('D2', MANAGER_ADDR, EXPERT_ADDR, null, 4),
+      received('D2', EXPERT_ADDR, 5),
+      processed('D2', EXPERT_ADDR, 6),
+    ];
+    const a = runKey('D1', EXPERT_ADDR.agent_id);
+    const b = runKey('D2', EXPERT_ADDR.agent_id);
+    const expanded = (key: string): string | null | undefined =>
+      document
+        .querySelector(`[data-reader-run-key="${key}"] .reader-run-toggle`)
+        ?.getAttribute('aria-expanded');
+
+    openLog(log, EXPERT_ADDR.agent_id);
+    document.querySelector<HTMLButtonElement>(`[data-reader-run-key="${a}"] .reader-run-toggle`)!.click();
+    fixture.detectChanges();
+    expect(expanded(a)).toBe('true');
+
+    // A run that starts BEFORE A lands on the log.
+    const earlier = runKey('Z', EXPERT_ADDR.agent_id);
+    openLog([...log, received('Z', EXPERT_ADDR, 0)], EXPERT_ADDR.agent_id);
+
+    expect(blockKeys()).toEqual([earlier, a, b]);
+    expect(expanded(earlier)).toBe('false');
+    expect(expanded(a)).toBe('true');
+    expect(expanded(b)).toBe('false');
+  });
+
+  it('says an agent with no runs and no messages has nothing to show', () => {
+    openLog(CASE_2, 'quiet-id');
+
+    expect(document.querySelector('.conversation-column .empty-state')).not.toBeNull();
+    expect(blockKeys()).toEqual([]);
   });
 });

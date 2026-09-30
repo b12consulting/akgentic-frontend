@@ -110,6 +110,14 @@
         "placeholder": "Message {{agent}}",
         "send": "Send",
         "stoppedHint": "Start the team to send a message."
+      },
+      "run": {
+        "askedBy": "asked by",
+        "askedByYou": "asked by you",
+        "stepsOne": "1 step",
+        "stepsMany": "{{count}} steps",
+        "expand": "Show this run's steps",
+        "collapse": "Hide this run's steps"
       }
     },
     "activity": {
