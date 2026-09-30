@@ -169,12 +169,16 @@
   /*
    * An answer is ONE turn element: its bubble and its action row.
    *
-   * THE RESERVED ROW IS THE GAP. The hidden row keeps its 8px + 28px so the
-   * reveal moves nothing, and that band already separates this answer from
-   * the next row — so the next row adds no turn gap on top of it. Only when
-   * the next row is a message of YOURS does the answer end a turn: then it
-   * takes the turn gap back, plus 24px, so your message reads as a new turn.
-   * Which answers those are is computed by the panel (`beforeYours`).
+   * THE RESERVED ROW IS THE GAP, AND IT SITS HALFWAY. The hidden row keeps
+   * its space so the reveal moves nothing, and that band separates this
+   * answer from the next one — so the next row takes no turn gap, only the
+   * space that CENTRES the row: the same 12px below it as above it. Above is
+   * the last paragraph's 0.25em (≈3.6px), the bubble's 2px padding and 2px
+   * border, and the row's 4px margin.
+   *
+   * Only when the next row is a message of YOURS does the answer end a turn:
+   * then it takes the turn gap back, plus 24px, so your message reads as a
+   * new turn. Which answers those are is computed by the panel (`beforeYours`).
    */
   .message-list > .run-answer {
     > app-chat-message {
@@ -182,7 +186,7 @@
     }
 
     + * {
-      margin-top: 0;
+      margin-top: 12px;
     }
   }
 
@@ -196,7 +200,7 @@
 
   /*
    * The action row: [copy] [👍] [👎] [provenance pill], in normal flow on the
-   * agent's text column, 8px under the text.
+   * agent's text column, about 12px under the text (see `.run-answer`).
    *
    * ONE REVEAL RULE FOR THE WHOLE ROW, keyed on the whole turn: hover or focus
    * anywhere on the answer — text, row, or the gap between — shows it; so does
@@ -211,7 +215,7 @@
     gap: 8px;
     /* Full-width row with an inset: the inset must not add to the width. */
     box-sizing: border-box;
-    margin-top: 8px;
+    margin-top: 4px;
     padding-left: var(--akg-avatar-gutter);
     opacity: 0;
     pointer-events: none;

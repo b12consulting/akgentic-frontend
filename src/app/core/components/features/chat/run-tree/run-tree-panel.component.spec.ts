@@ -513,10 +513,11 @@ describe('RunTreePanelComponent', () => {
     const last = answerOf('A2');
     expect(first.nextElementSibling).toBe(last);
 
-    // Answer → answer: the reserved row is the gap; nothing is added to it.
+    // Answer → answer: the reserved row is the gap; the next answer takes only
+    // the space that centres the row, not a turn gap.
     expect(first.classList).not.toContain('run-answer--before-yours');
     expect(getComputedStyle(first).marginBottom).toBe('0px');
-    expect(getComputedStyle(last).marginTop).toBe('0px');
+    expect(getComputedStyle(last).marginTop).toBe('12px');
     // Answer → your message: the turn gap, plus the end-of-turn space.
     expect(last.classList).toContain('run-answer--before-yours');
     expect(getComputedStyle(last).marginBottom).toBe('24px');
@@ -917,6 +918,47 @@ describe('RunTreePanelComponent', () => {
         expect(hit!.closest('.node-main')).withContext('a chip hits the run').not.toBeNull();
       });
     }
+
+    it('centres an answer\'s action row between its text and the next row', async () => {
+      host.style.width = '900px';
+      log.appendAll([
+        sent('U1', HUMAN, MANAGER, null, 1),
+        received('U1', MANAGER, 2),
+        sent('A1', MANAGER, HUMAN, 'U1', 3),
+        sent('A2', MANAGER, HUMAN, 'U1', 4),
+        processed('U1', MANAGER, 5),
+        sent('U2', HUMAN, MANAGER, null, 6),
+        received('U2', MANAGER, 7),
+      ]);
+      settle();
+      // The answers' markdown renders asynchronously.
+      await fixture.whenStable();
+      await new Promise((resolve) => setTimeout(resolve));
+      settle();
+
+      /** Text bottom → row top, and row bottom → the next row's top. */
+      const gaps = (id: string): { above: number; below: number } => {
+        const bubble = host.querySelector(`[data-message-id="${envId(id, HUMAN)}"]`)!;
+        const text = bubble.querySelector('.markdown-content markdown > :last-child')!;
+        const answer = bubble.parentElement!;
+        const row = answer.querySelector('.run-actions')!.getBoundingClientRect();
+        const next = answer.nextElementSibling!.getBoundingClientRect();
+        return {
+          above: row.top - text.getBoundingClientRect().bottom,
+          below: next.top - row.bottom,
+        };
+      };
+
+      // Answer → answer: the row sits halfway.
+      const between = gaps('A1');
+      expect(Math.abs(between.above - between.below))
+        .withContext(`above ${between.above}px, below ${between.below}px`)
+        .toBeLessThanOrEqual(2);
+      // Answer → your message: the same space above, visibly more below.
+      const beforeYours = gaps('A2');
+      expect(Math.abs(beforeYours.above - between.above)).toBeLessThanOrEqual(1);
+      expect(beforeYours.below).toBeGreaterThan(between.below + 16);
+    });
 
     it('a message picked up in the frame of its echo pins once and never sits in the tail', () => {
       const U1 = envId('U1', MANAGER);
