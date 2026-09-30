@@ -335,13 +335,13 @@ describe('TraceTreeComponent', () => {
       expect(events).toEqual([`hover:${Q_ENVELOPE}`, 'hover:null', `show:${Q_ENVELOPE}`]);
     });
 
-    it('"in chat" is a pill bordered in its own ink', () => {
+    it('"in chat" is a bordered pill on a soft ground', () => {
       fixture.componentRef.setInput('bubbleIds', new Map([['Q', Q_ENVELOPE]]));
       render(CASE_4);
       const style = getComputedStyle(host().querySelector('.node-in-chat')!);
       expect(style.borderTopStyle).toBe('solid');
       expect(style.borderTopWidth).toBe('1px');
-      expect(style.borderTopColor).toBe(style.color);
+      expect(style.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
     });
 
     it('fails open when its bubble is not rendered', () => {
