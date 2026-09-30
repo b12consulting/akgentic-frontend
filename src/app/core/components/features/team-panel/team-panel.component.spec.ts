@@ -7,6 +7,7 @@ import {
   AgentReaderService,
   AgentRef,
 } from '../chat/agent-reader.service';
+import { IngestionService } from '../../../services/process/event/ingestion.service';
 import { NodeInterface } from '../../../services/process/models/types';
 import { GraphDataService } from '../../../services/process/selectors/graph.selector';
 import {
@@ -84,6 +85,8 @@ describe('TeamPanelComponent', () => {
             perAgent$: (_id: string) => of(undefined),
           },
         },
+        // The task board reads the per-agent state store; no plan here.
+        { provide: IngestionService, useValue: { state: { all$: of(new Map()) } } },
         provideTranslateTesting(),
       ],
     }).compileComponents();

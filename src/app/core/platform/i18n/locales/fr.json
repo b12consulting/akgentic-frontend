@@ -396,6 +396,17 @@
     "tokensIn": "Jetons entrants",
     "cached": "En cache",
     "tokensOut": "Jetons sortants",
+    "usageSummary": "Jetons entrants {{sent}}, en cache {{cached}}, jetons sortants {{received}}",
+    "tasks": {
+      "title": "Tâches",
+      "unassigned": "non assignée",
+      "status": {
+        "started": "en cours",
+        "pending": "en attente",
+        "completed": "terminée",
+        "abort": "annulée"
+      }
+    },
     "readConversation": "Lire la conversation",
     "readConversationOf": "Lire la conversation de {{agent}}",
     "openMemberTab": "Ouvrir dans l'onglet Membre"

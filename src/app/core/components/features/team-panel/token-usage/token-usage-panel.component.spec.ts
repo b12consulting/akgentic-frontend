@@ -58,31 +58,42 @@ describe('TokenUsagePanelComponent', () => {
     fixture.detectChanges();
   }
 
-  function rows(): { name: string; value: string }[] {
+  /** The one-line totals, glyph included: in / cached / out. */
+  function headline(): string[] {
     return Array.from(
-      (fixture.nativeElement as HTMLElement).querySelectorAll('.usage-row'),
-    ).map((row) => ({
-      name: (row.querySelector('.usage-name')?.textContent ?? '').trim(),
-      value: (row.querySelector('.usage-value')?.textContent ?? '').trim(),
-    }));
+      (fixture.nativeElement as HTMLElement).querySelectorAll('.usage-head .usage-total'),
+    ).map((figure) => (figure.textContent ?? '').trim());
   }
 
-  it('renders exactly three rows, keyed to in / cached / out', async () => {
-    await setup();
+  function totalsGroup(): HTMLElement {
+    return (fixture.nativeElement as HTMLElement).querySelector('.usage-totals')!;
+  }
 
-    expect(rows().map((r) => r.name)).toEqual([
-      'inspector.tokensIn',
-      'inspector.cached',
-      'inspector.tokensOut',
-    ]);
-  });
-
-  it('binds each row to its own total rather than repeating one figure', async () => {
+  it('puts the three totals on the label\'s line, in the per-model glyphs', async () => {
     await setup(
       totals({ totalSent: 24_900, totalCacheRead: 1200, totalReceived: 412 }),
     );
 
-    expect(rows().map((r) => r.value)).toEqual(['24.9k', '1.2k', '412']);
+    const head = (fixture.nativeElement as HTMLElement).querySelector('.usage-head')!;
+    expect(head.querySelector('.usage-label')).not.toBeNull();
+    expect(headline()).toEqual(['↑24.9k', '⚡1.2k', '↓412']);
+    // No labelled rows any more: the glyphs name the figures.
+    expect((fixture.nativeElement as HTMLElement).querySelector('.usage-row')).toBeNull();
+  });
+
+  it('says the totals in words to assistive tech, once, on the group', async () => {
+    await setup(
+      totals({ totalSent: 37_400, totalCacheRead: 12_400, totalReceived: 483 }),
+    );
+
+    const group = totalsGroup();
+    expect(group.getAttribute('role')).toBe('group');
+    expect(group.getAttribute('aria-label')).toBe('inspector.usageSummary');
+    expect(group.getAttribute('title')).toBe('inspector.usageSummary');
+    // The figures themselves are not read out one glyph at a time.
+    for (const figure of Array.from(group.querySelectorAll('.usage-total'))) {
+      expect(figure.getAttribute('aria-hidden')).toBe('true');
+    }
   });
 
   it('renders an untouched team as zeros, because all-zero IS the empty state', async () => {
@@ -91,16 +102,16 @@ describe('TokenUsagePanelComponent', () => {
     // has happened yet.
     await setup();
 
-    expect(rows().map((r) => r.value)).toEqual(['0', '0', '0']);
+    expect(headline()).toEqual(['↑0', '⚡0', '↓0']);
   });
 
   it('does not surface cache WRITES, which the provider never reports', async () => {
-    // A structurally-zero fourth row reads as a broken meter, not as an absence
-    // in the data. If the write figure is ever real, it is a deliberate
+    // A structurally-zero fourth figure reads as a broken meter, not as an
+    // absence in the data. If the write figure is ever real, it is a deliberate
     // addition rather than an oversight being corrected.
     await setup(totals({ totalCacheWrite: 9999 }));
 
-    expect(rows().length).toBe(3);
+    expect(headline().length).toBe(3);
     expect(
       (fixture.nativeElement as HTMLElement).textContent ?? '',
     ).not.toContain('9999');
@@ -112,7 +123,7 @@ describe('TokenUsagePanelComponent', () => {
     totals$.next(totals({ totalSent: 1_500_000 }));
     fixture.detectChanges();
 
-    expect(rows()[0].value).toBe('1.5M');
+    expect(headline()[0]).toBe('↑1.5M');
   });
 
   it('renders the section header through the translation layer', async () => {
@@ -252,19 +263,15 @@ describe('TokenUsagePanelComponent', () => {
     expect(modelRows().length).toBe(2);
   });
 
-  it('leaves the three headline rows alone — the breakdown is an addition, not a replacement', async () => {
+  it('leaves the headline totals alone — the breakdown is an addition, not a replacement', async () => {
     await setup(
       totals({ totalSent: 12_000, totalCacheRead: 10_000, totalReceived: 100 }),
       [GPT],
     );
 
-    // `.usage-row` and `.usage-model-row` are separate classes on purpose: the
-    // totals are the headline and must not be diluted into the list below them.
-    expect(rows().map((r) => r.name)).toEqual([
-      'inspector.tokensIn',
-      'inspector.cached',
-      'inspector.tokensOut',
-    ]);
+    // The totals are the headline and must not be diluted into the list below
+    // them: they sit on the label's line, the models under the rule.
+    expect(headline()).toEqual(['↑12.0k', '⚡10.0k', '↓100']);
   });
 
   it('keeps the model name on `title`, because the visible label truncates', async () => {

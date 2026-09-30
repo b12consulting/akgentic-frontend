@@ -396,6 +396,17 @@
     "tokensIn": "Tokens in",
     "cached": "Cached",
     "tokensOut": "Tokens out",
+    "usageSummary": "Tokens in {{sent}}, cached {{cached}}, tokens out {{received}}",
+    "tasks": {
+      "title": "Tasks",
+      "unassigned": "unassigned",
+      "status": {
+        "started": "started",
+        "pending": "pending",
+        "completed": "done",
+        "abort": "aborted"
+      }
+    },
     "readConversation": "Read the conversation",
     "readConversationOf": "Read {{agent}}'s conversation",
     "openMemberTab": "Open in the Member tab"

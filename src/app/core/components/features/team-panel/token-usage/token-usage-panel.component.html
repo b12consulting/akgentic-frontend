@@ -1,7 +1,6 @@
 <!--
-  A card, and the pane's last block. Three rows, label left and figure right, so
-  the numbers form a column the eye can compare down rather than three values
-  hunted out of three sentences.
+  A card, and the pane's last block: the team's totals on the label's line,
+  then one line per model.
 
   THE PER-MODEL BREAKDOWN IS PART OF THIS CARD NOW (Epic 56 / W6). It used to
   live in a popover hanging off the team tree's footer, and the team tree has
@@ -17,21 +16,41 @@
 -->
 @if (totals$ | async; as totals) {
   <div class="usage">
-    <p class="usage-label">{{ "inspector.usage" | translate }}</p>
-
-    <div class="usage-row">
-      <span class="usage-name">{{ "inspector.tokensIn" | translate }}</span>
-      <span class="usage-value">{{ totals.totalSent | tokenCount }}</span>
-    </div>
-
-    <div class="usage-row">
-      <span class="usage-name">{{ "inspector.cached" | translate }}</span>
-      <span class="usage-value">{{ totals.totalCacheRead | tokenCount }}</span>
-    </div>
-
-    <div class="usage-row">
-      <span class="usage-name">{{ "inspector.tokensOut" | translate }}</span>
-      <span class="usage-value">{{ totals.totalReceived | tokenCount }}</span>
+    <!--
+      THE TOTALS, ON THE LABEL'S LINE: "USAGE ↑37.4k ⚡12.4k ↓483", in the
+      per-model rows' own glyphs. Three labelled rows spent half the card
+      restating what the glyphs already say. The figures are hidden from
+      assistive tech and the group carries one sentence instead, so a screen
+      reader hears "Tokens in 37.4k, cached 12.4k, tokens out 483" rather than
+      three arrows. The cached figure stays even at zero: these are the team's
+      totals, and the line keeps its shape.
+    -->
+    <div class="usage-head">
+      <p class="usage-label">{{ "inspector.usage" | translate }}</p>
+      @let summary =
+        "inspector.usageSummary"
+          | translate
+            : {
+                sent: (totals.totalSent | tokenCount),
+                cached: (totals.totalCacheRead | tokenCount),
+                received: (totals.totalReceived | tokenCount),
+              };
+      <span
+        class="usage-totals"
+        role="group"
+        [attr.aria-label]="summary"
+        [attr.title]="summary"
+      >
+        <span class="usage-total" aria-hidden="true"
+          >↑{{ totals.totalSent | tokenCount }}</span
+        >
+        <span class="usage-total" aria-hidden="true"
+          >⚡{{ totals.totalCacheRead | tokenCount }}</span
+        >
+        <span class="usage-total" aria-hidden="true"
+          >↓{{ totals.totalReceived | tokenCount }}</span
+        >
+      </span>
     </div>
 
     <!--

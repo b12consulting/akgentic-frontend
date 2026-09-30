@@ -1,0 +1,167 @@
+/*
+ * The task board: a card of the usage card's family, one line per task.
+ * Palette tokens only.
+ */
+
+.board {
+  margin-top: 18px;
+  padding: 10px 12px;
+  border: 1px solid var(--akg-surface-border);
+  border-radius: var(--akg-card-radius);
+  background: var(--akg-overlay-bg);
+}
+
+.board-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+  margin-bottom: 6px;
+}
+
+/* The section label every inspector card opens with. */
+.board-label {
+  margin: 0;
+  font-size: var(--akg-section-label-size);
+  font-weight: 500;
+  letter-spacing: var(--akg-section-label-tracking);
+  text-transform: uppercase;
+  color: var(--akg-text-muted);
+}
+
+.board-count {
+  margin-left: 4px;
+  color: var(--akg-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.board-summary {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* A long plan scrolls inside its own card rather than pushing usage away. */
+.board-list {
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.task {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 0;
+  font-size: var(--akg-font-size-meta);
+  color: var(--akg-text);
+}
+
+/* Done or abandoned: the muted tone, so the open work stands out. */
+.task--settled {
+  color: var(--akg-text-muted);
+}
+
+.task-id {
+  flex: 0 0 auto;
+  font-family: var(--akg-font-mono);
+  font-size: 10.5px;
+  color: var(--akg-text-muted);
+}
+
+.task-description {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-owner {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 40%;
+  min-width: 0;
+}
+
+.task-owner--none {
+  color: var(--akg-text-muted);
+  font-style: italic;
+}
+
+.owner-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owner-avatar {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 600;
+  background: var(--akg-accent-fg);
+  color: var(--akg-accent-bright);
+
+  &.tinted {
+    color: var(--akg-agent-mark-fg);
+  }
+}
+
+/* A person, in the Team tab's human pair. */
+.owner-avatar--human {
+  border-radius: 50%;
+  background: var(--akg-avatar-human-bg);
+  color: var(--akg-avatar-human-fg);
+}
+
+/*
+ * THE STATUS CHIP, one palette pair per status the tool declares:
+ * pending neutral, started the accent, completed the accent outlined (done,
+ * no longer asking for attention), abort the danger pair. Anything else is
+ * neutral and outlined.
+ */
+.chip {
+  flex: 0 0 auto;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: var(--akg-pill-radius);
+  font-size: 10.5px;
+  line-height: 1.6;
+  white-space: nowrap;
+
+  &[data-tone='pending'] {
+    background: var(--akg-status-neutral-bg);
+    color: var(--akg-status-neutral-fg);
+  }
+
+  &[data-tone='started'] {
+    background: var(--akg-status-live-bg);
+    color: var(--akg-status-live-fg);
+  }
+
+  &[data-tone='completed'] {
+    border-color: var(--akg-accent-border);
+    color: var(--akg-accent-fg);
+  }
+
+  &[data-tone='abort'] {
+    background: var(--akg-danger-bg);
+    color: var(--akg-danger-fg);
+  }
+
+  &[data-tone='unknown'] {
+    border-color: var(--akg-marker-border);
+    color: var(--akg-text-muted);
+  }
+}

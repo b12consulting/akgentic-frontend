@@ -49,6 +49,10 @@
 
       <app-tool-chips [tools]="view.tools" />
 
+      <!-- The planning tool's tasks, just above what the team has spent.
+           Draws nothing when there is no plan. -->
+      <app-task-board />
+
       <app-token-usage-panel />
     </div>
   }

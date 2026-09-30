@@ -19,6 +19,7 @@ import { EmptyStateComponent } from '../../primitives/empty-state/empty-state.co
 import { MemberCardComponent } from './member-card/member-card.component';
 import { ToolChipsComponent } from './member-card/tool-chips.component';
 import { TokenUsagePanelComponent } from './token-usage/token-usage-panel.component';
+import { TaskBoardComponent } from './task-board/task-board.component';
 import { AgentReaderService } from '../chat/agent-reader.service';
 import { CategoryService } from '../../../services/category.service';
 import { agentColours } from '../../../services/process/selectors/agent-colour';
@@ -62,6 +63,7 @@ import { agentColours } from '../../../services/process/selectors/agent-colour';
     EmptyStateComponent,
     MemberCardComponent,
     ToolChipsComponent,
+    TaskBoardComponent,
     TokenUsagePanelComponent,
   ],
   templateUrl: './team-panel.component.html',

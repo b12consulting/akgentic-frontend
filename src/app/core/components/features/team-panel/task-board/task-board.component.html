@@ -1,0 +1,69 @@
+<!--
+  The planning tool's tasks, one line each. Absent — not empty — when the team
+  has no planning tool or nothing planned yet.
+-->
+@if (view$ | async; as view) {
+  @if (view.tasks.length > 0) {
+    <section class="board">
+      <header class="board-head">
+        <p class="board-label">
+          {{ "inspector.tasks.title" | translate }}
+          <span class="board-count">{{ view.tasks.length }}</span>
+        </p>
+        <span class="board-summary">
+          @for (entry of view.counts; track entry.status) {
+            <span class="chip" [attr.data-tone]="statusTone(entry.status)"
+              >{{ entry.count }}
+              @if (statusKey(entry.status); as key) {
+                {{ key | translate }}
+              } @else {
+                {{ entry.status }}
+              }</span
+            >
+          }
+        </span>
+      </header>
+
+      <ol class="board-list">
+        @for (task of view.tasks; track task.id) {
+          <li
+            class="task"
+            [class.task--settled]="isSettled(task.status)"
+            [attr.data-task-id]="task.id"
+          >
+            <span class="task-id">#{{ task.id }}</span>
+            <span class="chip" [attr.data-tone]="statusTone(task.status)">
+              @if (statusKey(task.status); as key) {
+                {{ key | translate }}
+              } @else {
+                {{ task.status }}
+              }
+            </span>
+            <span class="task-description" [attr.title]="task.description">{{
+              task.description
+            }}</span>
+            @if (task.owner) {
+              <span class="task-owner">
+                <span
+                  class="owner-avatar"
+                  [class.owner-avatar--human]="view.humans.has(task.owner)"
+                  [class.tinted]="!view.humans.has(task.owner) && view.colours.of(task.owner) !== null"
+                  [style.background-color]="
+                    view.humans.has(task.owner) ? null : view.colours.of(task.owner)
+                  "
+                  aria-hidden="true"
+                  >{{ initialOf(task.owner) }}</span
+                >
+                <span class="owner-name">{{ task.owner }}</span>
+              </span>
+            } @else {
+              <span class="task-owner task-owner--none">{{
+                "inspector.tasks.unassigned" | translate
+              }}</span>
+            }
+          </li>
+        }
+      </ol>
+    </section>
+  }
+}
