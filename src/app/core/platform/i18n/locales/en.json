@@ -62,6 +62,11 @@
       "stop": "Stop Team",
       "restore": "Restore Team",
       "delete": "Delete Team"
+    },
+    "deleteConfirm": {
+      "title": "Delete team?",
+      "message": "Delete “{{name}}”? It is stopped and its conversation and history are removed. This cannot be undone.",
+      "confirm": "Delete"
     }
   },
   "chat": {

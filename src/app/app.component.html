@@ -43,3 +43,12 @@
 @if (creationLauncher.isOpen()) {
   <app-team-creation-dialog />
 }
+
+<!--
+  THE CONFIRMATION DIALOG, once for the whole app. Outside the shell for the
+  toast's and the wizard's reason — it is asked from the rail, which can be
+  collapsed and `inert` behind it. It renders nothing until
+  `ConfirmDialogService.confirm` opens a request.
+-->
+<app-confirm-dialog />
+

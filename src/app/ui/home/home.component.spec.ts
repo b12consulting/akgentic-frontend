@@ -30,6 +30,7 @@ import {
   TeamMetadataContract,
 } from '../../core/protocol/catalog.interface';
 import { HomeComponent } from './home.component';
+import { TeamDeleteConfirmService } from '../console/team-delete-confirm.service';
 import { HomeGreetingComponent } from './greeting/home-greeting.component';
 import { TeamCreationService } from '../../core/services/home/team-creation/team-creation.service';
 import { TeamFilterComponent } from '../../core/components/features/team-list/team-filter.component';
@@ -172,10 +173,16 @@ describe('HomeComponent', () => {
   // (isAdmin$ derived from currentUser$) can be driven from tests.
   let currentUser$: BehaviorSubject<any>;
   let routerSpy: jasmine.SpyObj<Router>;
+  let deleteConfirmSpy: jasmine.SpyObj<TeamDeleteConfirmService>;
 
   beforeEach(async () => {
     teams$ = new BehaviorSubject<TeamContext[]>([]);
     totalCount$ = new BehaviorSubject<number>(0);
+
+    // Confirms by default, so every delete spec below reads as "the user
+    // pressed Delete". The Cancel path is asserted on its own.
+    deleteConfirmSpy = jasmine.createSpyObj('TeamDeleteConfirmService', ['ask']);
+    deleteConfirmSpy.ask.and.resolveTo(true);
 
     apiSpy = jasmine.createSpyObj('ApiService', [
       'getNamespaces',
@@ -298,6 +305,7 @@ describe('HomeComponent', () => {
         { provide: ConfigService, useValue: { hideHome: false } },
         { provide: Router, useValue: routerSpy },
         { provide: ActivatedRoute, useValue: routeStub },
+        { provide: TeamDeleteConfirmService, useValue: deleteConfirmSpy },
       ],
       schemas: [CUSTOM_ELEMENTS_SCHEMA],
     }).compileComponents();
@@ -368,8 +376,48 @@ describe('HomeComponent', () => {
 
   it('(AC7) deleteTeam(id) delegates to contextService.deleteTeam and does NOT call apiService.deleteTeam directly', async () => {
     await component.deleteTeam('t-1');
+    expect(deleteConfirmSpy.ask).toHaveBeenCalledTimes(1);
     expect(contextSpy.deleteTeam).toHaveBeenCalledOnceWith('t-1');
     expect(apiSpy.deleteTeam).not.toHaveBeenCalled();
+  });
+
+  it('deleting asks first, naming the team, and Delete deletes it once', async () => {
+    teams$.next([makeTeam({ team_id: 't-1', name: 'Research Crew' })]);
+    let settle!: (confirmed: boolean) => void;
+    deleteConfirmSpy.ask.and.returnValue(new Promise((r) => (settle = r)));
+
+    const done = component.deleteTeam('t-1');
+    await fixture.whenStable();
+
+    expect(deleteConfirmSpy.ask).toHaveBeenCalledOnceWith('Research Crew');
+    expect(contextSpy.deleteTeam).not.toHaveBeenCalled();
+
+    settle(true);
+    await done;
+    expect(contextSpy.deleteTeam).toHaveBeenCalledOnceWith('t-1');
+  });
+
+  it('deleting names the team by its declared title when the namespace nominates one', async () => {
+    component.selectedNamespace$.next(
+      nsSummary('ns', 'NS', '', contract([field('topic', { is_title: true })])),
+    );
+    teams$.next([makeTeam({ team_id: 't-1', metadata: { topic: 'Q3 pricing' } })]);
+
+    await component.deleteTeam('t-1');
+
+    expect(deleteConfirmSpy.ask).toHaveBeenCalledOnceWith('Q3 pricing');
+  });
+
+  it('Cancel on the delete confirm calls nothing and navigates nowhere', async () => {
+    deleteConfirmSpy.ask.and.resolveTo(false);
+    routerSpy.navigate.calls.reset();
+
+    await component.deleteTeam('t-1');
+
+    expect(deleteConfirmSpy.ask).toHaveBeenCalledTimes(1);
+    expect(contextSpy.deleteTeam).not.toHaveBeenCalled();
+    expect(apiSpy.deleteTeam).not.toHaveBeenCalled();
+    expect(routerSpy.navigate).not.toHaveBeenCalled();
   });
 
   it('(28.2 AC4) refreshContext() reloads through the service\'s reloadTeams (REPLACE), not getTeams', async () => {
@@ -1545,8 +1593,10 @@ describe('HomeComponent', () => {
     const table = await renderedTable();
 
     table.deleteRequested.emit('row-1');
-    await fixture.whenStable();
+    // The handler asks first; let the confirm's promise chain settle.
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
+    expect(deleteConfirmSpy.ask).toHaveBeenCalledTimes(1);
     expect(contextSpy.deleteTeam).toHaveBeenCalledWith('row-1');
   });
 
