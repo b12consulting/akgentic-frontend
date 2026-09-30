@@ -47,15 +47,13 @@ export const ORCHESTRATOR_CLASS = 'akgentic.core.orchestrator.Orchestrator';
  * MEMOISED because this is called from the fold, which re-runs over the WHOLE
  * log on every websocket frame, and `getComputedStyle` flushes layout.
  *
- * FALLS BACK to the old keyword when the token is undeclared. `readToken`
- * returns `''` for a missing property, and `''` as a fill is not "no colour" —
- * it is a parse failure that would leave a failed agent indistinguishable from
- * a healthy one. A stylesheet that never loaded should degrade to the previous
- * behaviour, not to silence.
+ * NO LITERAL FALLBACK. Every colour on this canvas comes from the palette;
+ * the token file is part of the global stylesheet, so the token is always
+ * declared where this runs.
  */
 let dangerInkCache: string | null = null;
 export function dangerInk(): string {
-  dangerInkCache ??= readToken('--akg-danger-fg') || 'darkred';
+  dangerInkCache ??= readToken('--akg-danger-fg');
   return dangerInkCache;
 }
 

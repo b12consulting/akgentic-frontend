@@ -33,7 +33,7 @@ import {
 } from '../../../services/category.service';
 
 // Import the shared GraphDataService
-import { isToolNode } from '../../../services/process/selectors/actor-kind';
+import { isHumanNode, isToolNode } from '../../../services/process/selectors/actor-kind';
 import { agentColours } from '../../../services/process/selectors/agent-colour';
 import { makeAgentNameUserFriendly } from '../../../shared/util/util';
 import { GraphDataService } from '../../../services/process/selectors/graph.selector';
@@ -80,8 +80,18 @@ function escapeHtml(value: string): string {
  */
 let liveInkCache: string | null = null;
 function liveInk(): string {
-  liveInkCache ??= readToken('--akg-status-live-fg') || '#005d46';
+  liveInkCache ??= readToken('--akg-status-live-fg');
   return liveInkCache;
+}
+
+/**
+ * The person's fill: the Team tab's human avatar ground, resolved, so a person
+ * is the same colour in every view. Memoised like the inks above.
+ */
+let humanInkCache: string | null = null;
+function humanInk(): string {
+  humanInkCache ??= readToken('--akg-avatar-human-bg');
+  return humanInkCache;
 }
 
 @Component({
@@ -375,7 +385,7 @@ export class TeamGraphComponent {
         curveness: 0.1,
         width: 1.5,
         type: 'solid',
-        opacity: 0.9,
+        // Full strength: the edge token IS the edge colour, not a base to fade.
       },
       emphasis: {
         focus: 'adjacency',
@@ -488,7 +498,10 @@ export class TeamGraphComponent {
     const live = liveInk();
     const painted = nodes.map((n) => {
       const signal = n.itemStyle?.color;
-      const own = colours.of(n.actorName);
+      // A PERSON IS NOT AN AGENT: the human node takes the human avatar
+      // ground the Team tab draws, by the same `isHumanNode` test, never a
+      // stop of the agents' ramp.
+      const own = isHumanNode(n) ? humanInk() : colours.of(n.actorName);
       /*
        * A RING WHILE IT IS WORKING, derived from `node.thinking` rather than
        * read back out of the style the fold used to write there. The fold now

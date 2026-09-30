@@ -131,6 +131,26 @@ describe('the hierarchy canvas', () => {
     fixture.autoDetectChanges();
   });
 
+  it('draws the person in the Team tab\'s human avatar colour, not an agent\'s', async () => {
+    const zone = TestBed.inject(NgZone);
+    await quiesce();
+    zone.runOutsideAngular(() => {
+      categories$.next([squad('Team 0', '#005d46')]);
+      nodes$.next([
+        { ...node('@Human'), role: 'Human' },
+        { ...node('@Manager'), role: 'Manager' },
+      ]);
+    });
+    await quiesce();
+
+    const fill = (name: string): string =>
+      chart().getOption().series[0].data.find((d: any) => d.name === name).itemStyle.color;
+    const human = readToken('--akg-avatar-human-bg');
+    expect(human).not.toBe('');
+    expect(fill('@Human')).toBe(human);
+    expect(fill('@Manager')).not.toBe(human);
+  });
+
   it('never hands ngx-echarts a SECOND option object', async () => {
     // `[options]` is a second channel into the same chart, and it does not
     // merge. ngx-echarts skips only the FIRST change on that input; every
