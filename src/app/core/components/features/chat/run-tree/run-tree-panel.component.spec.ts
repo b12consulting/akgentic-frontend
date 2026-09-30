@@ -146,12 +146,16 @@ describe('RunTreePanelComponent', () => {
     return [...(list?.children ?? [])].flatMap((child) => {
       const id = child.getAttribute('data-message-id');
       if (id) return ['msg:' + id];
+      // An answer: its bubble, then its action row as a note when it carries
+      // the provenance link.
+      if (child.classList.contains('run-answer')) {
+        const bubble = child.querySelector('[data-message-id]')!.getAttribute('data-message-id');
+        return ['msg:' + bubble, ...(child.querySelector('.run-link--provenance') ? ['note'] : [])];
+      }
       const card = child.querySelector('[data-trace-root]');
       if (card) return ['trace:' + card.getAttribute('data-trace-root')];
       if (child.classList.contains('tail-divider')) return ['divider'];
       if (child.classList.contains('run-note')) return ['note'];
-      // An answer's action row counts as a note when it carries the link.
-      if (child.querySelector('.run-link--provenance')) return ['note'];
       if (child.classList.contains('day-separator')) return ['day'];
       return [];
     });
@@ -461,7 +465,7 @@ describe('RunTreePanelComponent', () => {
     expect(el(fixture).querySelector('.run-bubble--highlight')).toBeNull();
   });
 
-  it('an answer shows copy, both thumbs and the provenance pill in one row, without hover', () => {
+  it('an answer\'s copy, thumbs and provenance pill share one row and one reveal, which holds its space', () => {
     log.appendAll([
       sent('U1', HUMAN, MANAGER, null, 1),
       received('U1', MANAGER, 2),
@@ -479,8 +483,17 @@ describe('RunTreePanelComponent', () => {
       [...row.querySelectorAll('.action-copy, .action-thumb-up, .action-thumb-down, .run-link--provenance')]
         .map((e) => e.classList[0]),
     ).toEqual(['action-copy', 'action-thumb-up', 'action-thumb-down', 'run-link']);
-    // Nothing publishes a hover opacity here: the controls are always shown.
+    // ONE reveal: the row is hidden at rest and the buttons carry no reveal of
+    // their own; hidden, the row still holds its space.
+    const rowEl = row as HTMLElement;
+    rowEl.style.transition = 'none';
+    expect(getComputedStyle(rowEl).opacity).toBe('0');
     expect(getComputedStyle(row.querySelector('.action-row')!).opacity).toBe('1');
+    expect(rowEl.getBoundingClientRect().height).toBeGreaterThan(0);
+    // Focus anywhere in the answer reveals the whole row at once.
+    expect(row.parentElement!.classList).toContain('run-answer');
+    row.querySelector<HTMLButtonElement>('.run-link--provenance')!.focus();
+    expect(getComputedStyle(rowEl).opacity).toBe('1');
   });
 
   it('an agent reply with no known run renders without a link (fail-open)', () => {

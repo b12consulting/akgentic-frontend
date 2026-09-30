@@ -315,9 +315,9 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
     }
   }
 
-  /** An agent → you answer: this view draws its rating controls itself, always
-   *  shown, in one row with the provenance pill — the bubble's own row is
-   *  hover-revealed and could not hold the pill. */
+  /** An agent → you answer: this view draws its rating controls itself, in
+   *  one row with the provenance pill that reveals as a whole — the bubble's
+   *  own row sits inside it and could not hold the pill. */
   ownsRating(message: ChatMessage): boolean {
     return message.rule === 2 && isRateable(message);
   }

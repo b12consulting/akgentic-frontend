@@ -167,14 +167,29 @@
   }
 
   /*
-   * An answer's action row: [copy] [👍] [👎] [provenance pill], static, on the
-   * agent's text column, 8px under the text. Always shown in this view — a
-   * hover-revealed row with the pill beside it was a hover loop.
-   *
-   * The space AFTER it belongs to the end of an answer: 24px on top of the
-   * turn gap, so the next message of yours reads as a new turn.
+   * An answer is ONE turn element: its bubble and its action row. The space
+   * AFTER it belongs to the end of an answer — 24px on top of the turn gap,
+   * so the next message of yours reads as a new turn.
    */
-  .message-list > .run-actions {
+  .message-list > .run-answer {
+    margin-bottom: 24px;
+
+    > app-chat-message {
+      display: block;
+    }
+  }
+
+  /*
+   * The action row: [copy] [👍] [👎] [provenance pill], in normal flow on the
+   * agent's text column, 8px under the text.
+   *
+   * ONE REVEAL RULE FOR THE WHOLE ROW, keyed on the whole turn: hover or focus
+   * anywhere on the answer — text, row, or the gap between — shows it; so does
+   * a rating already given, as the bubble's own row does. Hidden by opacity
+   * alone: the row always holds its space and its box never moves, so reaching
+   * the pill changes nothing its position or hit box depends on.
+   */
+  .run-actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -182,8 +197,17 @@
     /* Full-width row with an inset: the inset must not add to the width. */
     box-sizing: border-box;
     margin-top: 8px;
-    margin-bottom: 24px;
     padding-left: var(--akg-avatar-gutter);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease-in-out;
+  }
+
+  .run-answer:hover > .run-actions,
+  .run-answer:focus-within > .run-actions,
+  .run-actions:has(app-feedback.rated) {
+    opacity: 1;
+    pointer-events: auto;
   }
 
   .run-link--provenance {
@@ -225,7 +249,7 @@
    */
   --run-bubble-wash: color-mix(in srgb, var(--akg-accent-fg) 7%, transparent);
 
-  .message-list > app-chat-message {
+  .message-list app-chat-message {
     border-radius: 14px;
     transition:
       background-color 0.15s,
