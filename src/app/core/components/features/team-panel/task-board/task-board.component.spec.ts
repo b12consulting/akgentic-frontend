@@ -137,6 +137,24 @@ describe('TaskBoardComponent', () => {
     expect(head.querySelector('.board-toggle')).not.toBeNull();
   });
 
+  it('sets each #id with equal space to the glyph and to the description', async () => {
+    await mount();
+    host().style.display = 'block';
+    host().style.width = '320px';
+    show([task(1, 'pending', '@Expert'), task(12, 'started', '@Manager')]);
+
+    for (const row of Array.from(host().querySelectorAll('.task'))) {
+      const glyph = row.querySelector('.task-glyph')!.getBoundingClientRect();
+      const id = row.querySelector('.task-id')!.getBoundingClientRect();
+      const description = row.querySelector('.task-description')!.getBoundingClientRect();
+      const before = id.left - glyph.right;
+      const after = description.left - id.right;
+      expect(Math.abs(before - after))
+        .withContext(`#${row.getAttribute('data-task-id')}: ${before}px | ${after}px`)
+        .toBeLessThanOrEqual(1);
+    }
+  });
+
   it('gives the owner mark the same pointer as the status glyph', async () => {
     await mount();
     show(MIXED);

@@ -79,7 +79,7 @@
  */
 .board-list {
   display: grid;
-  grid-template-columns: 14px auto minmax(0, 1fr) 16px;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
   align-content: start;
   column-gap: 6px;
   /* A long plan scrolls inside its own card rather than pushing usage away. */
@@ -139,7 +139,9 @@
 }
 
 .task-id {
-  justify-self: end;
+  /* Centred in the widest id's width: equal space to the glyph and to the
+     description, and every description still starts on one line. */
+  justify-self: center;
   font-family: var(--akg-font-mono);
   font-size: 10.5px;
   font-variant-numeric: tabular-nums;
