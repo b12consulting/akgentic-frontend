@@ -180,6 +180,12 @@ export class ContextService {
   // this service inventing a second copy of the paginator's 250.
   private _pageSize: number | undefined = undefined;
 
+  // The page the list currently shows, recorded on every path that fetches
+  // one, so `reloadTeams` can refetch WHAT IS ON SCREEN rather than page 1.
+  // A refresh from the rail while the table sits on page 3 must not swap the
+  // table's rows for page 1 under a paginator that still says 3.
+  private _page: number | undefined = undefined;
+
   /** Derived selector: the team whose id matches `currentProcessId$`, or
    *  `null` if none matches (including the empty-string initial id). The
    *  `shareReplay(1, refCount:false)` gives late-subscriber safety without
@@ -235,6 +241,9 @@ export class ContextService {
         distinctUntilChanged(teamFilterEquals),
         switchMap((next) => {
           this.beginRequest();
+          // A filter change always lands on page 1; record it so a later
+          // `reloadTeams` replays the page this fetch put on screen.
+          this._page = 1;
           return from(this.apiService.getTeamsPage(1, this._pageSize, next)).pipe(
             catchError(() => EMPTY),
             // Covers all three endings — resolved, rejected, and UNSUBSCRIBED
@@ -339,6 +348,7 @@ export class ContextService {
    */
   async loadTeamsPage(page?: number, size?: number): Promise<TeamPage> {
     this._pageSize = size ?? this._pageSize;
+    this._page = page ?? this._page;
     this.beginRequest();
     try {
       const result = await this.apiService.getTeamsPage(page, size, this._filter$.value);
@@ -373,6 +383,25 @@ export class ContextService {
       return;
     }
     await this.loadTeamsPage(1, this._pageSize ?? 250);
+  }
+
+  /**
+   * Refetch the page the list is showing (the rail's refresh control).
+   *
+   * REPLAYS, never resets: the last page and size any fetch path recorded are
+   * what go back out, so the rail's control and the table's own Refresh button
+   * reload the same thing — `HomeComponent.refreshContext` passes its
+   * `currentPage` explicitly, and this is the same call for a caller that has
+   * no page state of its own. Before anything has been fetched both are
+   * `undefined` and the server applies its defaults, which is the same first
+   * page `ensureTeamsLoaded` would have asked for.
+   *
+   * Goes through `loadTeamsPage`, so the active filter, the in-flight count
+   * and the REPLACE-not-append write all come for free — the rows dim while
+   * this runs and are never emptied.
+   */
+  async reloadTeams(): Promise<void> {
+    await this.loadTeamsPage(this._page, this._pageSize);
   }
 
   /** Clear team-list state on team-switch / context reset so a stale page or

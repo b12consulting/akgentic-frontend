@@ -114,6 +114,7 @@ describe('ConsoleRailComponent', () => {
       'ContextService',
       [
         'ensureTeamsLoaded',
+        'reloadTeams',
         'navigateHome',
         'stopTeamAndAwait',
         'restoreTeamAndAwait',
@@ -122,6 +123,7 @@ describe('ConsoleRailComponent', () => {
       { teams$, loading$ },
     ) as jasmine.SpyObj<ContextService>;
     contextSpy.ensureTeamsLoaded.and.returnValue(Promise.resolve());
+    contextSpy.reloadTeams.and.returnValue(Promise.resolve());
     contextSpy.navigateHome.and.returnValue(Promise.resolve(true));
     contextSpy.deleteTeam.and.returnValue(Promise.resolve());
     // A real subject, not a spy property: the rail must be able to READ it and
@@ -386,17 +388,62 @@ describe('ConsoleRailComponent', () => {
     expect(host.getAttribute('aria-hidden')).toBeNull();
   });
 
+  // BY LABEL, not by position: the brand row now carries two icon buttons, and
+  // a spec that reached for the first one would pin their order rather than
+  // the control it means.
+  const iconButton = (label: string) =>
+    qa('app-icon-button').find((el) => el.componentInstance.label === label);
+
   it('toggles the rail from its own control', async () => {
     await render();
-    const toggle = q('app-icon-button');
-    toggle.componentInstance.pressed.emit();
+    const toggle = iconButton('chrome.collapseSidebar');
+    expect(toggle).withContext('the collapse control is missing').toBeDefined();
+    toggle!.componentInstance.pressed.emit();
 
     expect(viewStub.toggleRail).toHaveBeenCalledTimes(1);
+    expect(contextSpy.reloadTeams).not.toHaveBeenCalled();
   });
 
   it('gives the collapse control an accessible name — it is icon-only', async () => {
     await render();
-    expect(q('app-icon-button').componentInstance.label).toBe('chrome.collapseSidebar');
+    expect(iconButton('chrome.collapseSidebar')).toBeDefined();
+  });
+
+  describe('the refresh control', () => {
+    it('sits in the brand row beside the collapse toggle, and collapse keeps the outer edge', async () => {
+      await render();
+      const actions = qa('.rail__brand .rail__brand-actions app-icon-button');
+      expect(actions.map((el) => el.componentInstance.label)).toEqual([
+        'chrome.refreshTeams',
+        'chrome.collapseSidebar',
+      ]);
+    });
+
+    it('refetches the list in place through the service, and navigates NOWHERE', async () => {
+      await render();
+      iconButton('chrome.refreshTeams')!.componentInstance.pressed.emit();
+
+      expect(contextSpy.reloadTeams).toHaveBeenCalledTimes(1);
+      expect(viewStub.toggleRail).not.toHaveBeenCalled();
+      expect(routerStub.navigate).not.toHaveBeenCalled();
+      expect(contextSpy.navigateHome).not.toHaveBeenCalled();
+    });
+
+    it('does not go through the mount-time seeder, which no-ops once rows exist', async () => {
+      teams$.next([makeTeam()]);
+      await render();
+      contextSpy.ensureTeamsLoaded.calls.reset();
+
+      iconButton('chrome.refreshTeams')!.componentInstance.pressed.emit();
+
+      expect(contextSpy.reloadTeams).toHaveBeenCalledTimes(1);
+      expect(contextSpy.ensureTeamsLoaded).not.toHaveBeenCalled();
+    });
+
+    it('gives the refresh control an accessible name — it is icon-only', async () => {
+      await render();
+      expect(iconButton('chrome.refreshTeams')).toBeDefined();
+    });
   });
 
   /**

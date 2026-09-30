@@ -166,7 +166,8 @@
     "hideDetails": "Hide details",
     "logout": "Logout",
     "showSidebar": "Show sidebar",
-    "collapseSidebar": "Collapse sidebar"
+    "collapseSidebar": "Collapse sidebar",
+    "refreshTeams": "Refresh teams"
   },
   "title": {
     "home": "Home",
