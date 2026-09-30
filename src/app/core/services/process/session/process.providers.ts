@@ -15,6 +15,7 @@ import { AgentsByIdService } from '../selectors/agents-by-id.selector';
 import { ChatService } from '../selectors/chat.selector';
 import { GraphDataService } from '../selectors/graph.selector';
 import { KGStateReducer } from '../selectors/knowledge-graph.selector';
+import { RunGraphService } from '../selectors/run-graph.selector';
 import { SystemPromptSelector } from '../selectors/system-prompt.selector';
 import { TokenUsageSelector } from '../selectors/token-usage.selector';
 import { ToolPresenceService } from '../selectors/tool-presence.selector';
@@ -27,11 +28,11 @@ import { SelectionService } from '../ui-state/selection.service';
  * THE TEAM'S SERVICES, SCOPED TO THE ROUTE RATHER THAN TO A COMPONENT.
  *
  * TWO COUNTS RANGE OVER THIS ARRAY AND THEY ARE NOT THE SAME NUMBER. It holds
- * TWENTY-FOUR entries: TWENTY-THREE service classes — the team's stack — plus
+ * TWENTY-FIVE entries: TWENTY-FOUR service classes — the team's stack — plus
  * Angular's `AsyncPipe`, which is a pipe and not one of the team's services.
  * Both numbers appear below; each says which set it counts.
  *
- * All twenty-three service classes used to be the `process/:id` route's
+ * All twenty-four service classes used to be the `process/:id` route's
  * providers, and every component that wanted one injected it bare — which meant
  * every one of them could only ever be mounted inside that component. That is
  * the coupling in the way of reusing a panel anywhere else, and of anybody
@@ -61,7 +62,7 @@ import { SelectionService } from '../ui-state/selection.service';
 /**
  * EXPORTED, and that is not incidental. A developer who clones this repo to
  * build a different console needs this array verbatim — it is the team's whole
- * service stack — and an unexported `const` left them copying twenty-four
+ * service stack — and an unexported `const` left them copying twenty-five
  * entries by hand, in order, from the file they were about to replace.
  *
  * IT LIVES BESIDE `team-session.service.ts` RATHER THAN IN THE ROUTER, which is
@@ -165,6 +166,10 @@ export const PROCESS_PROVIDERS = [
   TokenUsageSelector,
   GraphDataService,
   ChatService,
+  // Epic 55 (ADR-037 §D10): the run graph, a pure fold over `log$` beside
+  // `chat$`. Provided AFTER MessageLogService (which it injects); never
+  // `providedIn: 'root'` — it shares the team-scoped log lifecycle.
+  RunGraphService,
   SelectionService,
   FeedbackService,
 ];
