@@ -1,3 +1,7 @@
+import { inject } from '@angular/core';
+import { map, Observable } from 'rxjs';
+
+import { Akgent, AkgentService } from '../../akgent.service';
 import { ConnectionToast } from '../event/connection-toast';
 import { IngestionService } from '../event/ingestion.service';
 import { TeamSessionService } from './team-session.service';
@@ -8,6 +12,7 @@ import { NotificationToasts } from '../event/notification-toasts';
 import { PerAgentStoreRegistry } from '../event/per-agent-store';
 import { ProcessStores } from '../event/process-stores';
 import { ReplaySeeder } from '../event/replay-seeder';
+import { SELECTED_AGENT_ID } from '../event/selected-agent';
 import { TeamSocket } from '../event/team-socket';
 import { TeamStatusReactor } from '../event/team-status-reactor';
 import { AgentsByIdService } from '../selectors/agents-by-id.selector';
@@ -29,7 +34,9 @@ import { TraceFoldState } from '../ui-state/trace-fold-state';
 /**
  * THE TEAM'S SERVICES, SCOPED TO THE ROUTE RATHER THAN TO A COMPONENT.
  *
- * It holds TWENTY-SEVEN entries, every one a service class: the team's stack.
+ * It holds TWENTY-EIGHT entries: twenty-seven service classes — the team's
+ * stack — and one factory provider, `SELECTED_AGENT_ID`, which hands the event
+ * tier the root-scoped member selection it may not import directly.
  *
  * All twenty-seven service classes used to be the `process/:id` route's
  * providers, and every component that wanted one injected it bare — which meant
@@ -61,7 +68,7 @@ import { TraceFoldState } from '../ui-state/trace-fold-state';
 /**
  * EXPORTED, and that is not incidental. A developer who clones this repo to
  * build a different console needs this array verbatim — it is the team's whole
- * service stack — and an unexported `const` left them copying twenty-seven
+ * service stack — and an unexported `const` left them copying twenty-eight
  * entries by hand, in order, from the file they were about to replace.
  *
  * IT LIVES BESIDE `team-session.service.ts` RATHER THAN IN THE ROUTER, which is
@@ -153,6 +160,17 @@ export const PROCESS_PROVIDERS = [
   // stream). Never `providedIn: 'root'` — a root instance would feed one
   // team's frames into the next team's log.
   LogFeeder,
+  // Epic 56 (ADR-038 D4): the selected member's id, for IngestionService's
+  // selection fetch. A factory over the root-scoped AkgentService, provided
+  // HERE because `svc-session` may reach both tiers and `svc-event` may not
+  // reach `services`. No root default: IngestionService requires it.
+  {
+    provide: SELECTED_AGENT_ID,
+    useFactory: (): Observable<string | null> =>
+      inject(AkgentService).selectedAkgent$.pipe(
+        map((akgent: Akgent | null) => akgent?.agentId || null),
+      ),
+  },
   IngestionService,
   // Epic 26 (ADR-022): route-scoped read surface over the `tokenUsage`
   // PerAgentStore. Provided AFTER IngestionService (which it injects); never

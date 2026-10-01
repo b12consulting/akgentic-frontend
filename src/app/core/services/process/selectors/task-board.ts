@@ -1,4 +1,5 @@
 import { AgentStateValue } from '../event/per-agent-specs';
+import { PLANNING_ACTOR_NAME } from '../event/planning-refresh';
 
 /**
  * The team's task board, read from the planning tool's own state.
@@ -16,8 +17,9 @@ import { AgentStateValue } from '../event/per-agent-specs';
  * than drawn half-empty.
  */
 
-/** The planning actor's name, as the tool declares it. */
-export const PLANNING_ACTOR_NAME = '#PlanningTool';
+// The planning actor's name lives in the event tier, which needs it to find
+// the actor's id and may not import a selector. Re-exported, one definition.
+export { PLANNING_ACTOR_NAME };
 
 /**
  * The statuses `planning_actor.py` declares (`TaskStatus`). Note `abort`, not

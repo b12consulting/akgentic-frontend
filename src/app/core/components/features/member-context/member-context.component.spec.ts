@@ -1,5 +1,5 @@
 import { TestBed } from '@angular/core/testing';
-import { BehaviorSubject, Subject } from 'rxjs';
+import { BehaviorSubject, map, Subject } from 'rxjs';
 import { MessageService } from 'primeng/api';
 
 import { NOTIFICATION_PORT } from '../../../platform/notification/notification.port';
@@ -14,6 +14,7 @@ import { MessageLogService } from '../../../services/process/event/message-log.s
 import { PerAgentStoreRegistry } from '../../../services/process/event/per-agent-store';
 import { ProcessStores } from '../../../services/process/event/process-stores';
 import { ReplaySeeder } from '../../../services/process/event/replay-seeder';
+import { SELECTED_AGENT_ID } from '../../../services/process/event/selected-agent';
 import { ConnectionToast } from '../../../services/process/event/connection-toast';
 import { NotificationToasts } from '../../../services/process/event/notification-toasts';
 import { LogFeeder } from '../../../services/process/event/log-feeder';
@@ -115,6 +116,14 @@ describe('MemberContextComponent — store-backed state/context wiring (Story 17
         LogFeeder,
         TeamStatusReactor,
         IngestionService,
+        // Epic 56: the selection stream IngestionService fetches on, bound to
+        // THIS bed's `selectedAkgent$` exactly as `PROCESS_PROVIDERS` binds it
+        // to the real `AkgentService`, so a selection below drives the fetch.
+        {
+          provide: SELECTED_AGENT_ID,
+          useFactory: () =>
+            selectedAkgent$.pipe(map((a: Akgent | null) => a?.agentId || null)),
+        },
         // Story 37-2: `IngestionService` injects `TeamStatusReactor`, which
         // injects the root-scoped `ContextService`. A real one would need a
         // `Router` this bed has no use for.
@@ -140,11 +149,10 @@ describe('MemberContextComponent — store-backed state/context wiring (Story 17
           provide: ApiService,
           useValue: {
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
-            // akgentic-core ADR-020 §4: init() seeds the state store from
-            // getAgentStates for EVERY team, running included — the stream
-            // subscribers no longer carry StateChangedMessage, so this is the
-            // only source. This spec drives the state store through the log
-            // directly, so the seed resolves empty.
+            // Epic 56 (ADR-038 D4): selecting a member fetches ITS state —
+            // the stream carries no StateChangedMessage, so this is the only
+            // source. Most specs here drive the state store through the log
+            // directly, so the fetch resolves empty; the AC9 spec overrides it.
             getAgentStates: jasmine
               .createSpy('getAgentStates')
               .and.resolveTo([]),
@@ -318,6 +326,39 @@ describe('MemberContextComponent — store-backed state/context wiring (Story 17
 
     expect(backstory()).toBe('');
     expect(tabVisible()).toBeFalse();
+  });
+
+  it('Epic 56 AC9: a never-run member\'s backstory appears once its selection fetch lands', async () => {
+    // Nothing is fetched at open; the backstory reaches the client only through
+    // the per-selection fetch, which this spec holds open until it resolves.
+    const api = TestBed.inject(ApiService) as unknown as {
+      getAgentStates: jasmine.Spy;
+    };
+    let release: (states: unknown[]) => void = () => undefined;
+    api.getAgentStates.and.returnValue(
+      new Promise<unknown[]>((resolve) => (release = resolve)),
+    );
+
+    selectedAkgent$.next({ name: '@agent-A', agentId: 'agent-A' });
+
+    expect(api.getAgentStates).toHaveBeenCalledWith('proc-1', 'agent-A');
+    expect(component.context$.value).toEqual([]);
+    expect(backstory()).toBe('');
+    expect(tabVisible()).toBeFalse();
+
+    release([
+      {
+        agent_id: 'agent-A',
+        name: '@agent-A',
+        state: { backstory: '  You are Bob.\n' },
+        updated_at: '2026-10-01T00:00:00Z',
+      },
+    ]);
+    // The jasmine clock is installed, so drain the promise chain by hand.
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+
+    expect(backstory()).toBe('You are Bob.');
+    expect(tabVisible()).toBeTrue();
   });
 
   it('AC3 context-only: an agent with conversation context (no backstory) is visible', () => {

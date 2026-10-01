@@ -1,4 +1,5 @@
 import { TestBed } from '@angular/core/testing';
+import { BehaviorSubject } from 'rxjs';
 import { NOTIFICATION_PORT } from '../../../platform/notification/notification.port';
 
 import { AkgenticMessage } from '../../../protocol/message.types';
@@ -9,6 +10,7 @@ import { IngestionService } from '../event/ingestion.service';
 import { PerAgentStore, PerAgentStoreRegistry } from '../event/per-agent-store';
 import { ProcessStores } from '../event/process-stores';
 import { ReplaySeeder } from '../event/replay-seeder';
+import { SELECTED_AGENT_ID } from '../event/selected-agent';
 import { ConnectionToast } from '../event/connection-toast';
 import { NotificationToasts } from '../event/notification-toasts';
 import { LogFeeder } from '../event/log-feeder';
@@ -153,6 +155,10 @@ function configureBed(): {
       LogFeeder,
       TeamStatusReactor,
       IngestionService,
+      {
+        provide: SELECTED_AGENT_ID,
+        useValue: new BehaviorSubject<string | null>(null),
+      },
       // Story 37-2: `IngestionService` injects `TeamStatusReactor`, which
       // injects the root-scoped `ContextService`. A real one would need a
       // `Router` this bed has no use for.

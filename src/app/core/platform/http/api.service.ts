@@ -323,17 +323,31 @@ export class ApiService {
   // --- Agent states (ADR-020 §2) ---
 
   /**
-   * Per-agent state snapshots for a team — the read-path that seeds the
-   * `state` store on init so the backstory head-block renders for STOPPED
-   * teams (the durable event log carries no `StateChangedMessage`, ADR-013).
+   * Per-agent state snapshots for a team — the per-agent read behind the
+   * planning refresh and the selection fetch (ADR-038). The stream suppresses
+   * `StateChangedMessage`, so this is the only source of the `state` store.
    * Mirrors `getEvents`: hits `GET /teams/{teamId}/agent-states` and unwraps
    * the `states` list, defaulting to `[]` when the body is absent/empty.
    * Each item's `agent_id` is the agent UUID (team Epic 23), so the caller
    * can key the `state` store directly with no name→UUID resolution.
+   *
+   * `agentId` narrows the read to one agent (`?agent_id=`, encoded). Absent or
+   * empty, the URL is byte for byte the un-narrowed one. An older server
+   * ignores the parameter and returns every snapshot; the caller folds them
+   * all, so nothing here filters.
    */
-  async getAgentStates(teamId: string): Promise<AgentStateResponse[]> {
+  async getAgentStates(
+    teamId: string,
+    agentId?: string,
+  ): Promise<AgentStateResponse[]> {
+    const params = new URLSearchParams();
+    if (agentId) {
+      params.set('agent_id', agentId);
+    }
+    const query = params.toString();
+    const base = `${this.apiUrl}/teams/${teamId}/agent-states`;
     const response: AgentStateListResponse = await this.fetchService.fetch({
-      url: `${this.apiUrl}/teams/${teamId}/agent-states`,
+      url: query ? `${base}?${query}` : base,
     });
     // Empty/204 body only — a failed request throws (ADR-026), so an empty
     // snapshot list means the team genuinely has no per-agent state yet.

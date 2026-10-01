@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 
-import { BehaviorSubject, concatAll, Subscription } from 'rxjs';
+import { BehaviorSubject, concatAll, Observable, Subscription } from 'rxjs';
 import {
   AkgenticMessage,
   CommandDescriptor,
@@ -12,7 +12,7 @@ import { LogFeeder } from './log-feeder';
 import { MessageLogService } from './message-log.service';
 import { NotificationToasts } from './notification-toasts';
 import { PerAgentStore } from './per-agent-store';
-import { planningRefresh } from './planning-refresh';
+import { planningActorId, planningRefresh } from './planning-refresh';
 import {
   AgentStateValue,
   AgentTokenUsage,
@@ -20,6 +20,7 @@ import {
 } from './per-agent-specs';
 import { ProcessStores } from './process-stores';
 import { ReplaySeeder } from './replay-seeder';
+import { SELECTED_AGENT_ID, selectionFetch } from './selected-agent';
 import { TeamSocket, TeamSocketStatus } from './team-socket';
 import { TeamStatusReactor } from './team-status-reactor';
 import { NOTIFICATION_PORT } from '../../../platform/notification/notification.port';
@@ -42,8 +43,10 @@ import { NOTIFICATION_PORT } from '../../../platform/notification/notification.p
  *     seam, `inbound$` / `frames$` / `status$`.
  *   - `LogFeeder` (`log-feeder.ts`) — `bufferTime(16)` → `log.appendAll`, the
  *     only live-path writer of the log.
- *   - `ReplaySeeder` (`replay-seeder.ts`) — the two stopped-team REST calls. The
- *     `appendAll` of what it returns stays HERE, because it is a sequenced step.
+ *   - `ReplaySeeder` (`replay-seeder.ts`) — the REST reads: the stopped-team
+ *     event replay and the per-agent state fetch. The `appendAll` of what it
+ *     returns stays HERE — the replay because it is a sequenced step, the
+ *     per-agent fetches because their subscriptions live in the cycle bag.
  *   - `ProcessStores` (`process-stores.ts`) — declares the five per-agent stores.
  *   - `LoadingIndicator` (`loading-indicator.ts`) — the spinner floor; the only
  *     `Date.now()` and `setTimeout` in the layer.
@@ -83,7 +86,8 @@ export class IngestionService {
   /**
    * Story 6.1 (ADR-005 §Decision 1): component-scoped append-only log of every
    * WS + REST-replay message. Reset in step (b) of every cycle; written by
-   * `LogFeeder` on the live path and by the two replay `appendAll` calls below.
+   * `LogFeeder` on the live path, by the event-replay `appendAll` in step (c) and
+   * by the two per-agent state fetches wired in step (d).
    */
   private log: MessageLogService = inject(MessageLogService);
 
@@ -101,8 +105,16 @@ export class IngestionService {
   /** Epic 34 (ADR-025 §1): the frame-batched log feed. Wired FIRST in step (d). */
   private readonly feeder: LogFeeder = inject(LogFeeder);
 
-  /** Epic 34 (ADR-025 §1): the stopped-team REST replay source. */
+  /** Epic 34 (ADR-025 §1): the REST source — event replay and per-agent state. */
   private readonly replay: ReplaySeeder = inject(ReplaySeeder);
+
+  /**
+   * Epic 56 (ADR-038 D4): the selected member's id, bound by
+   * `PROCESS_PROVIDERS` to the root-scoped `AkgentService`. Required: a missing
+   * provider fails here rather than silently dropping the selection fetch.
+   */
+  private readonly selectedAgentId$: Observable<string | null> =
+    inject(SELECTED_AGENT_ID);
 
   /**
    * Epic 34 (ADR-025 §0-§1): the spinner-floor reactor. Declared ABOVE the
@@ -186,7 +198,8 @@ export class IngestionService {
   /**
    * Story 52-1 (FR2): which cycle is the CURRENT one.
    *
-   * `init()` is `async` and awaits two REST calls in step (c). Until Epic 52
+   * `init()` is `async` and, for a stopped team, awaits the event replay in
+   * step (c). Until Epic 52
    * that await could not be raced: a team switch was a route change, which
    * destroyed `ProcessComponent` and with it this service and its log, so an
    * abandoned `init()` resumed against objects nobody was reading any more.
@@ -219,12 +232,15 @@ export class IngestionService {
    *       Story 35-1 (ADR-027 §3) also starts `NotificationToasts` here, since
    *       it now reads the log rather than the socket and the replay in (c)
    *       must find it already subscribed;
-   *   (c) seed the replay — `getAgentStates` for EVERY team (ADR-020 §4), then
-   *       `getEvents` for stopped teams only → `appendAll`. Every selector then
-   *       holds its history;
+   *   (c) replay the history — `getEvents` for stopped teams only →
+   *       `appendAll`. Every selector then holds its history. No agent state
+   *       is fetched at open (Epic 56, ADR-038 D2);
    *   (d) wire the consumers, THEN open the socket. Both halves matter: the
    *       consumers must be live before the first frame, and the socket must
-   *       open after the replay so nothing can arrive between (b) and (d).
+   *       open after the replay so nothing can arrive between (b) and (d). The
+   *       two per-agent state fetches (planning actor, selected member) are
+   *       wired here, in the cycle bag; they land after the replay and are
+   *       always the newer value, so latest-wins needs no sequencing.
    *
    * The non-ordering side effects keep their current relative positions: the
    * toast clear and the disconnect re-arm sit after the reset and before the
@@ -284,39 +300,22 @@ export class IngestionService {
     // live-path spec stays green.
     this.teamStatusReactor.start(this.log.appended$.pipe(concatAll()));
 
-    // --- (c) seed the replay -----------------------------------------
-    // The agent-state snapshot seed runs for EVERY team, running or stopped
-    // (akgentic-core ADR-020 §4 option (a)). It used to be gated on `!running`
-    // because a running team received its `StateChangedMessage`(s) on the
-    // cursor-0 WS replay — that is no longer true: the stream subscribers now
-    // suppress the message (it is a snapshot, not an event; a full serialized
-    // state per mutation grew the backing store without bound). With the gate in
-    // place a running team has NO source for `state`, so `backstory$` is `''`,
-    // and after a `/clear` empties `context` the Member chat tab disappears
-    // entirely (`member-context.component.ts:traceVisible$`). `getAgentStates` is
-    // the named source the ADR asks for; the latest-wins fold means a real
-    // `StateChangedMessage` still overwrites the seed if one ever returns.
-    //
-    // TWO sequential awaits and TWO appends, never `Promise.all` and never one
-    // merged array: the state seed must be folded BEFORE the event replay,
-    // since `stateSpec` is latest-wins and a real replayed
-    // `StateChangedMessage` has to be able to overwrite a synthesized seed
-    // (never the reverse).
-    const seeds: AkgenticMessage[] = await this.replay.seedMessages(processId);
-    // Story 52-1: another team was opened while that request was in flight.
-    // The log below is now ITS log — writing this team's seed into it is the
-    // duplication trap T2 describes, and the appended ids would be
-    // attributed to the team on screen. Kept when the `!running` gate above was
-    // removed: un-gating the seed makes this race MORE reachable, not less,
-    // since it now runs for every team rather than only cold stopped ones.
-    if (token !== this.cycleToken) return;
-    this.log.appendAll(seeds);
-
+    // --- (c) replay the history ---------------------------------------
+    // Opening a team fetches NO agent state (Epic 56, ADR-038 D2). The stream
+    // suppresses `StateChangedMessage` (a snapshot, not an event), so `state`
+    // is filled only by the two per-agent fetches wired in step (d) — the
+    // planning actor's and the selected member's. Each lands after this replay
+    // and is always the newer value, so the latest-wins fold needs no ordering
+    // against it.
     if (!running) {
       // The durable EVENT replay stays stopped-team-only: a running team gets
       // the same history on the cursor-0 WS replay opened in step (d).
       const replayMessages: AkgenticMessage[] =
         await this.replay.replayMessages(processId);
+      // Story 52-1: another team was opened while that request was in flight.
+      // The log below is now ITS log — writing this team's history into it is
+      // the duplication trap T2 describes, and the appended ids would be
+      // attributed to the team on screen.
       if (token !== this.cycleToken) return;
       this.log.appendAll(replayMessages);
 
@@ -339,14 +338,30 @@ export class IngestionService {
     // The log feed FIRST, so "the frame reaches the log, then the toast fires"
     // survives the decomposition.
     cycle.add(this.feeder.start(this.socket.inbound$));
-    // The live task board: a completed planning write re-reads the agent
-    // states and folds them in like the seed above. Wired HERE, below the
-    // replay block, on purpose — `appended$` replays nothing, so a stopped
-    // team's REST history (already covered by the seed) can never trigger it.
-    // In the cycle bag, so a team switch drops a pending or in-flight refetch.
+    // The two per-agent state fetches (Epic 56, ADR-038 D3-D5), both in the
+    // cycle bag so a team switch drops a pending debounce or an in-flight
+    // response before it can reach the next team's log.
+    //
+    // The live task board: the planning actor's state, fetched when the actor
+    // appears and after each completed planning write. Its id comes from
+    // `log$`, never `appended$` — on a stopped team the actor's `StartMessage`
+    // arrived in the replay above, before this subscription, and `appended$`
+    // replays nothing. The writes DO come from `appended$`, for the same
+    // reason inverted: the replay's past writes are already reflected in the
+    // arrival fetch and must not trigger another.
     cycle.add(
-      planningRefresh(this.log.appended$.pipe(concatAll()), () =>
-        this.replay.seedMessages(processId),
+      planningRefresh(
+        planningActorId(this.log.log$),
+        this.log.appended$.pipe(concatAll()),
+        (agentId: string) => this.replay.seedMessages(processId, agentId),
+      ).subscribe((states: AkgenticMessage[]) => this.log.appendAll(states)),
+    );
+    // The Member panel: the selected member's state, fetched on each
+    // selection. The selection is root-scoped and outlives this cycle, which
+    // is exactly why the subscription lives HERE and not in a component.
+    cycle.add(
+      selectionFetch(this.selectedAgentId$, (agentId: string) =>
+        this.replay.seedMessages(processId, agentId),
       ).subscribe((states: AkgenticMessage[]) => this.log.appendAll(states)),
     );
     // The spinner's `take(1)` side-channel on the protocol stream. Owned and

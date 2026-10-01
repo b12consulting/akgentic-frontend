@@ -82,9 +82,9 @@ describe('ReplaySeeder.seedMessages — agent-state snapshots (Story 25-1, Epic 
       snapshot(UUID_A, { backstory: 'A seasoned researcher.' }),
     ]);
 
-    const msgs = await seeder.seedMessages('team-1');
+    const msgs = await seeder.seedMessages('team-1', UUID_A);
 
-    expect(api.getAgentStates).toHaveBeenCalledWith('team-1');
+    expect(api.getAgentStates).toHaveBeenCalledWith('team-1', UUID_A);
     expect(msgs.length).toBe(1);
 
     const seeded = msgs[0] as StateChangedMessage;
@@ -96,6 +96,29 @@ describe('ReplaySeeder.seedMessages — agent-state snapshots (Story 25-1, Epic 
     expect(seeded.__model__).toBe(
       'akgentic.core.messages.orchestrator.StateChangedMessage',
     );
+  });
+
+  it('passes the agentId through to getAgentStates (Epic 56, ADR-038 D5)', async () => {
+    const { seeder, api } = setup();
+
+    await seeder.seedMessages('team-1', UUID_B);
+
+    expect(api.getAgentStates).toHaveBeenCalledOnceWith('team-1', UUID_B);
+  });
+
+  it('folds every snapshot an older server returns for a narrowed call (no client-side filter)', async () => {
+    const { seeder, api } = setup();
+    // An older server ignores `?agent_id=` and answers with the whole team.
+    api.getAgentStates.and.resolveTo([
+      snapshot(UUID_A, { backstory: 'A.' }),
+      snapshot(UUID_B, { backstory: 'B.' }, '@Writer'),
+    ]);
+
+    const msgs = await seeder.seedMessages('team-1', UUID_A);
+
+    expect(
+      msgs.map((m) => (m as StateChangedMessage).sender?.agent_id),
+    ).toEqual([UUID_A, UUID_B]);
   });
 
   it('gives every synthesized entry an EMPTY id', async () => {
@@ -135,8 +158,8 @@ describe('ReplaySeeder.seedMessages — agent-state snapshots (Story 25-1, Epic 
 
     // A source that remembers is a source with a bug (ADR-025 §0): no cache, no
     // cursor, no already-seeded flag may creep in here.
-    const first = await seeder.seedMessages('team-1');
-    const second = await seeder.seedMessages('team-1');
+    const first = await seeder.seedMessages('team-1', UUID_A);
+    const second = await seeder.seedMessages('team-1', UUID_A);
 
     expect(second).toEqual(first);
     // Equal results alone would ALSO be true of a unit that memoized the first
