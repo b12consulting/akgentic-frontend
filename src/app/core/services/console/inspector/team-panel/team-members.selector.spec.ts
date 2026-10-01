@@ -173,6 +173,22 @@ describe('buildInspectorTeam', () => {
       expect(view.members.map((m) => m.id)).toEqual(['a']);
     });
 
+    it('shows a workspace tool by its leaf, keeping two workspaces that share one', () => {
+      const view = buildInspectorTeam([
+        node({ name: 'w1', actorName: '#Workspace-anonymous/_meta/folder-Documents' }),
+        node({ name: 'p', actorName: '#PlanningTool' }),
+        // Another workspace with the same leaf: a different tool, so a second
+        // chip, not folded into the first by its display name.
+        node({ name: 'w2', actorName: '#Workspace-_shared/_id/folder-Documents' }),
+      ]);
+
+      expect(view.tools).toEqual([
+        'Workspace/folder-Documents',
+        'PlanningTool',
+        'Workspace/folder-Documents',
+      ]);
+    });
+
     it('does not let a tool actor become a parent of an agent', () => {
       // Tools are removed before the tree is built, so an agent pointing at one
       // is an orphan and stays visible at depth 0.

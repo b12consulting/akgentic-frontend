@@ -1,5 +1,8 @@
 import { NodeInterface } from '../../../process/models/types';
-import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
+import {
+  displayActorName,
+  makeAgentNameUserFriendly,
+} from '../../../../shared/util/util';
 import {
   isHumanNode,
   isToolNode,
@@ -63,7 +66,9 @@ export interface InspectorTeamView {
    *  recursion — a recursive template in a 310px pane is a lot of machinery to
    *  render an indent. */
   readonly members: readonly InspectorMember[];
-  /** `toolLabel` of every tool actor, de-duped, first-seen order. */
+  /** Every tool actor's display label (`toolLabel`, then `displayActorName`, so a
+   *  workspace reads `Workspace/<leaf>`), de-duped on the real name, first-seen
+   *  order. */
   readonly tools: readonly string[];
 }
 
@@ -176,10 +181,12 @@ export function buildInspectorTeam(
       continue;
     }
     if (isToolNode(node)) {
+      // De-dupe on the real name, display the friendly one: two workspaces
+      // sharing a leaf are still two tools, so they stay two chips.
       const label = toolLabel(node);
       if (!seenTools.has(label)) {
         seenTools.add(label);
-        tools.push(label);
+        tools.push(displayActorName(label));
       }
       continue;
     }
