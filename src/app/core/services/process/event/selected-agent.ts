@@ -25,11 +25,10 @@ export const SELECTED_AGENT_ID = new InjectionToken<Observable<string | null>>(
 );
 
 /**
- * The Member panel's source: fetch the selected member's state once per agent
- * per team cycle — an agent whose state is already stored (`isKnown`) is not
- * fetched again — and an unselect fetches nothing. `switchMap` drops a response
- * a newer selection has superseded; a failed fetch is logged and swallowed
- * INSIDE the switch, so the next selection still fetches.
+ * The Member panel's source: fetch the selected member's state once per team
+ * cycle — an agent already in the `state` store (`isKnown`) is not fetched
+ * again, and an unselect fetches nothing. `switchMap` drops a superseded
+ * response; a failed fetch is logged and swallowed inside the switch.
  *
  * Emits the fetched messages; the caller appends them and holds the
  * subscription in its cycle bag, so a team switch drops an in-flight response.
