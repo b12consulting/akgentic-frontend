@@ -209,6 +209,21 @@ describe('planningRefresh', () => {
     expect(fetchStates).toHaveBeenCalledOnceWith(PLANNING_ID);
   }));
 
+  it('a write in the same turn as the id\'s arrival is already in the arrival fetch', fakeAsync(() => {
+    start();
+    planningId$.next(PLANNING_ID);
+    messages$.next(toolEvent(PLANNING_UPDATE_TOOL));
+    tick(PLANNING_REFRESH_DEBOUNCE_MS * 2);
+    flushMicrotasks();
+    expect(fetchStates).toHaveBeenCalledOnceWith(PLANNING_ID);
+
+    // From the next turn on, a write refetches.
+    messages$.next(toolEvent(PLANNING_UPDATE_TOOL));
+    tick(PLANNING_REFRESH_DEBOUNCE_MS);
+    flushMicrotasks();
+    expect(fetchStates).toHaveBeenCalledTimes(2);
+  }));
+
   it('a burst of three returns fetches once', fakeAsync(() => {
     startKnown();
     messages$.next(toolEvent(PLANNING_UPDATE_TOOL));

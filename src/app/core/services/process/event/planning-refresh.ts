@@ -1,4 +1,5 @@
 import {
+  asapScheduler,
   catchError,
   concat,
   debounceTime,
@@ -9,6 +10,7 @@ import {
   map,
   Observable,
   of,
+  subscribeOn,
   switchMap,
 } from 'rxjs';
 
@@ -112,6 +114,11 @@ export function planningActorId(
  * earlier write. The fetch id is always the planning actor's — the write's
  * sender is the CALLING agent and is never read.
  *
+ * The write listener opens one microtask AFTER the id arrives. Fed from
+ * `MessageLogService`, the id comes off `log$`, which emits a batch BEFORE
+ * `appended$` hands out the same batch; listening at once would count that
+ * batch's writes — already reflected in the arrival fetch — and fetch twice.
+ *
  * Emits the fetched messages; the CALLER appends them, so the latest-wins
  * `state` fold overwrites the stale entry. `debounceTime` coalesces a burst of
  * writes into one fetch; `switchMap` drops an in-flight response when a newer
@@ -134,6 +141,7 @@ export function planningRefresh(
       concat(
         of(null),
         messages$.pipe(
+          subscribeOn(asapScheduler),
           filter(isPlanningUpdateReturn),
           debounceTime(PLANNING_REFRESH_DEBOUNCE_MS),
         ),

@@ -199,10 +199,10 @@ export class IngestionService {
    * Story 52-1 (FR2): which cycle is the CURRENT one.
    *
    * `init()` is `async` and, for a stopped team, awaits the event replay in
-   * step (c). Until Epic 52
-   * that await could not be raced: a team switch was a route change, which
-   * destroyed `ProcessComponent` and with it this service and its log, so an
-   * abandoned `init()` resumed against objects nobody was reading any more.
+   * step (c). Until Epic 52 that await could not be raced: a team switch was
+   * a route change, which destroyed `ProcessComponent` and with it this
+   * service and its log, so an abandoned `init()` resumed against objects
+   * nobody was reading any more.
    *
    * A `ProcessComponent` that stays MOUNTED while its id changes removes that
    * protection — one `MessageLogService` now serves every team the view opens.

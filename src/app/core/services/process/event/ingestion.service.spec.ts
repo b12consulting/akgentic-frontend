@@ -3956,6 +3956,29 @@ describe('IngestionService — live task board refresh', () => {
     teardown();
   }));
 
+  it('AC5/AC7: writes delivered in the SAME frame as the planning actor fetch once, not twice', fakeAsync(() => {
+    // A running team's cursor-0 replay: the actor's StartMessage and past
+    // writes, on either side of it, land in one 16ms batch. `log$` announces
+    // the id before `appended$` hands out that batch, so a write listener
+    // opened on the id would otherwise see writes the arrival fetch already
+    // reflects.
+    service.init('team-1', true);
+    flushMicrotasks();
+    fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
+    fakeSocket.next(plannerStart());
+    fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
+    settleLiveFrame();
+    settleLiveFrame();
+
+    expect(api.getAgentStates.calls.allArgs()).toEqual([['team-1', PLANNER_ID]]);
+
+    // The next frame's write is live, and still refetches.
+    fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
+    settleLiveFrame();
+    expect(api.getAgentStates).toHaveBeenCalledTimes(2);
+    teardown();
+  }));
+
   it('AC5: a team with no planning actor issues no planning fetch', fakeAsync(() => {
     service.init('team-1', true);
     flushMicrotasks();
