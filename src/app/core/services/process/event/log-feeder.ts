@@ -18,9 +18,9 @@ const FRAME_WINDOW_MS = 16;
 /**
  * `LogFeeder` — the live-path log SOURCE (Epic 34 / ADR-025 §1). It owns the
  * whole batching policy and is the ONLY live-path caller of
- * `MessageLogService.appendAll`; the sole other call site in the tree is
- * `IngestionService.init()`'s replay seeding, which stays there because it is a
- * sequenced step (ADR-005 §Decision 6 step 3) rather than a stream.
+ * `MessageLogService.appendAll`; the other call sites are in `IngestionService`
+ * — the replay because it is a sequenced step (ADR-005 §Decision 6 step 3), the
+ * per-agent state fetches because their subscriptions live in the cycle bag.
  *
  * A source: it writes the log and holds no derived state, no cursor and no
  * cache. Ordering within a batch is preserved, and the empty-batch filter is

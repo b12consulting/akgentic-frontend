@@ -158,7 +158,7 @@ export class LoadingIndicator {
    * Called from FOUR sites (all share the same floor semantics):
    *   - WS first-event path (running=true) — via `flipOnFirstEvent`
    *   - WS error path (failure-safety) — via `flipOnFirstEvent`
-   *   - stopped-team path (after HTTP replay seeds state) — directly
+   *   - stopped-team path (after the HTTP event replay is appended) — directly
    *   - synchronous `createWebSocket` throw (failure-safety) — directly
    */
   scheduleSpinnerFlipFalse(): void {

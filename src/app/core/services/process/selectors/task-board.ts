@@ -1,4 +1,5 @@
 import { AgentStateValue } from '../event/per-agent-specs';
+import { PLANNING_ACTOR_NAME } from '../event/planning-refresh';
 
 /**
  * The team's task board, read from the planning tool's own state.
@@ -15,9 +16,6 @@ import { AgentStateValue } from '../event/per-agent-specs';
  * through a guard and a task without an `id` and `status` is dropped rather
  * than drawn half-empty.
  */
-
-/** The planning actor's name, as the tool declares it. */
-export const PLANNING_ACTOR_NAME = '#PlanningTool';
 
 /**
  * The statuses `planning_actor.py` declares (`TaskStatus`). Note `abort`, not

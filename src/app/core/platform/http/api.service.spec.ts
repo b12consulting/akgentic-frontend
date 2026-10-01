@@ -364,6 +364,54 @@ describe('ApiService', () => {
 
       expect(result).toEqual([]);
     });
+
+    // Epic 56 (ADR-038 D5): the per-agent narrowing.
+    it('without an agentId, the URL carries no query string at all', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve({ states: [] }));
+
+      await service.getAgentStates('team-1');
+
+      const url: string = fetchServiceSpy.fetch.calls.first().args[0].url;
+      expect(url).toMatch(/\/teams\/team-1\/agent-states$/);
+      expect(url).not.toContain('?');
+    });
+
+    it('an empty agentId narrows nothing', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve({ states: [] }));
+
+      await service.getAgentStates('team-1', '');
+
+      const url: string = fetchServiceSpy.fetch.calls.first().args[0].url;
+      expect(url).not.toContain('?');
+    });
+
+    it('with an agentId, the URL is narrowed by ?agent_id=', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve({ states: [] }));
+
+      await service.getAgentStates(
+        'team-1',
+        '11111111-1111-1111-1111-111111111111',
+      );
+
+      const url: string = fetchServiceSpy.fetch.calls.first().args[0].url;
+      expect(url).toMatch(
+        /\/teams\/team-1\/agent-states\?agent_id=11111111-1111-1111-1111-111111111111$/,
+      );
+    });
+
+    it('an agentId with reserved characters reaches the URL encoded, never raw', async () => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve({ states: [] }));
+
+      await service.getAgentStates('team-1', 'a b&c/d#e');
+
+      const url: string = fetchServiceSpy.fetch.calls.first().args[0].url;
+      const query = url.slice(url.indexOf('?') + 1);
+      expect(query).not.toContain('&');
+      expect(query).not.toContain('#');
+      expect(query).not.toContain('/');
+      expect(query).not.toContain(' ');
+      expect(new URLSearchParams(query).get('agent_id')).toBe('a b&c/d#e');
+    });
   });
 
   describe('getTeamsPage (Story 28.1)', () => {

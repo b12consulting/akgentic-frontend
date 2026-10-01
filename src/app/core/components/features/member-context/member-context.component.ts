@@ -134,9 +134,11 @@ export class MemberContextComponent implements OnInit {
   state$: BehaviorSubject<any> = new BehaviorSubject<any>(null);
 
   // akgentic-agent ADR-007 §4: a NEVER-RUN agent has NO `LlmSystemPromptEvent` (the backend
-  // emits no creation event). Its backstory is already on the client as the
-  // serialized `AgentState.backstory`, folded by the `state` PerAgentStore
-  // (value shape `{ schema, state }`). Project the trimmed backstory string so
+  // emits no creation event). Its backstory is the serialized
+  // `AgentState.backstory`, folded by the `state` PerAgentStore (value shape
+  // `{ schema, state }`); it arrives through the per-selection state fetch
+  // (`IngestionService` step (d)), one round-trip after selection, and until
+  // then this emits `''`. Project the trimmed backstory string so
   // the chat component can render it as the head-block fallback and so chat-tab
   // visibility can account for it. Emits `''` when there is no backstory.
   backstory$ = this.state$.pipe(map((state) => this.readBackstory(state)));

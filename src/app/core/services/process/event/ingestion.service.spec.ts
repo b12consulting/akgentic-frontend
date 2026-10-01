@@ -7,7 +7,7 @@ import {
 } from '@angular/core/testing';
 import { MessageService } from 'primeng/api';
 import { Toast } from 'primeng/toast';
-import { BehaviorSubject, ReplaySubject, Subject, Subscription } from 'rxjs';
+import { BehaviorSubject, of, ReplaySubject, Subject, Subscription } from 'rxjs';
 import { WebSocketSubject } from 'rxjs/webSocket';
 
 import { IngestionService } from './ingestion.service';
@@ -18,18 +18,20 @@ import { NotificationToastService } from '../../../../ui/console/notification-to
 import { NOTIFICATION_PORT } from '../../../platform/notification/notification.port';
 import { PrimeNgNotificationAdapter } from '../../../../ui/console/notification.adapter';
 import { ChatService } from '../selectors/chat.selector';
-import { parseTaskList } from '../selectors/task-board';
+import { planningTasks } from '../selectors/task-board';
 import { ConnectionToast } from './connection-toast';
 import { LoadingIndicator } from './loading-indicator';
 import { MessageLogService } from './message-log.service';
 import { NotificationToasts } from './notification-toasts';
 import { PerAgentStore, PerAgentStoreRegistry } from './per-agent-store';
 import {
+  PLANNING_ACTOR_NAME,
   PLANNING_REFRESH_DEBOUNCE_MS,
   PLANNING_UPDATE_TOOL,
 } from './planning-refresh';
 import { ProcessStores } from './process-stores';
 import { ReplaySeeder } from './replay-seeder';
+import { SELECTED_AGENT_ID } from './selected-agent';
 import { TeamStatusReactor } from './team-status-reactor';
 import { ContextService } from '../../../platform/context/context.service';
 import {
@@ -126,6 +128,10 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
         LogFeeder,
         TeamStatusReactor,
         IngestionService,
+        {
+          provide: SELECTED_AGENT_ID,
+          useValue: new BehaviorSubject<string | null>(null),
+        },
         { provide: ContextService, useValue: contextServiceDouble() },
         ChatService,
         {
@@ -133,11 +139,8 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
           useValue: {
             // Only used by the `!running` branch; default empty list is fine.
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
-            // Story 25-1 (!running gate): init() seeds the `state` store from
-            // this endpoint ONLY for stopped teams. The running=false tests in
-            // this suite hit that path; default to an empty snapshot list so
-            // they exercise the no-op seed (and the running=true tests never
-            // call it).
+            // Epic 56: per-agent state fetch. Nothing in this suite selects a
+            // member or announces a planning actor, so it is never called.
             getAgentStates: jasmine
               .createSpy('getAgentStates')
               .and.resolveTo([]),
@@ -403,17 +406,18 @@ describe('IngestionService — Story 6.1 (frame-batched log ingestion)', () => {
         LogFeeder,
         TeamStatusReactor,
         IngestionService,
+        {
+          provide: SELECTED_AGENT_ID,
+          useValue: new BehaviorSubject<string | null>(null),
+        },
         { provide: ContextService, useValue: contextServiceDouble() },
         ChatService,
         {
           provide: ApiService,
           useValue: {
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
-            // Story 25-1 (!running gate): init() seeds the `state` store from
-            // this endpoint ONLY for stopped teams. The running=false tests in
-            // this suite hit that path; default to an empty snapshot list so
-            // they exercise the no-op seed (and the running=true tests never
-            // call it).
+            // Epic 56: per-agent state fetch. Nothing in this suite selects a
+            // member or announces a planning actor, so it is never called.
             getAgentStates: jasmine
               .createSpy('getAgentStates')
               .and.resolveTo([]),
@@ -765,17 +769,18 @@ describe('IngestionService — commands PerAgentStore (Story 17-3, ADR-014/ADR-0
         LogFeeder,
         TeamStatusReactor,
         IngestionService,
+        {
+          provide: SELECTED_AGENT_ID,
+          useValue: new BehaviorSubject<string | null>(null),
+        },
         { provide: ContextService, useValue: contextServiceDouble() },
         ChatService,
         {
           provide: ApiService,
           useValue: {
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
-            // Story 25-1 (!running gate): init() seeds the `state` store from
-            // this endpoint ONLY for stopped teams. The running=false tests in
-            // this suite hit that path; default to an empty snapshot list so
-            // they exercise the no-op seed (and the running=true tests never
-            // call it).
+            // Epic 56: per-agent state fetch. Nothing in this suite selects a
+            // member or announces a planning actor, so it is never called.
             getAgentStates: jasmine
               .createSpy('getAgentStates')
               .and.resolveTo([]),
@@ -1004,17 +1009,21 @@ describe('IngestionService — registry is the only per-agent owner (Epic 17, AD
         LogFeeder,
         TeamStatusReactor,
         IngestionService,
+        // A plain Observable, as PROCESS_PROVIDERS delivers it (a piped stream,
+        // never a subject): a bare BehaviorSubject — or an `asObservable()` view
+        // of one — held in a field would trip the per-agent probe below.
+        {
+          provide: SELECTED_AGENT_ID,
+          useValue: of<string | null>(null),
+        },
         { provide: ContextService, useValue: contextServiceDouble() },
         ChatService,
         {
           provide: ApiService,
           useValue: {
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
-            // Story 25-1 (!running gate): init() seeds the `state` store from
-            // this endpoint ONLY for stopped teams. The running=false tests in
-            // this suite hit that path; default to an empty snapshot list so
-            // they exercise the no-op seed (and the running=true tests never
-            // call it).
+            // Epic 56: per-agent state fetch. Nothing in this suite selects a
+            // member or announces a planning actor, so it is never called.
             getAgentStates: jasmine
               .createSpy('getAgentStates')
               .and.resolveTo([]),
@@ -1122,17 +1131,18 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
         LogFeeder,
         TeamStatusReactor,
         IngestionService,
+        {
+          provide: SELECTED_AGENT_ID,
+          useValue: new BehaviorSubject<string | null>(null),
+        },
         { provide: ContextService, useValue: contextServiceDouble() },
         ChatService,
         {
           provide: ApiService,
           useValue: {
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
-            // Story 25-1 (!running gate): init() seeds the `state` store from
-            // this endpoint ONLY for stopped teams. The running=false tests in
-            // this suite hit that path; default to an empty snapshot list so
-            // they exercise the no-op seed (and the running=true tests never
-            // call it).
+            // Epic 56: per-agent state fetch. Nothing in this suite selects a
+            // member or announces a planning actor, so it is never called.
             getAgentStates: jasmine
               .createSpy('getAgentStates')
               .and.resolveTo([]),
@@ -1410,17 +1420,18 @@ describe('IngestionService — state + context PerAgentStore (Story 17-2)', () =
         LogFeeder,
         TeamStatusReactor,
         IngestionService,
+        {
+          provide: SELECTED_AGENT_ID,
+          useValue: new BehaviorSubject<string | null>(null),
+        },
         { provide: ContextService, useValue: contextServiceDouble() },
         ChatService,
         {
           provide: ApiService,
           useValue: {
             getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
-            // Story 25-1 (!running gate): init() seeds the `state` store from
-            // this endpoint ONLY for stopped teams. The running=false tests in
-            // this suite hit that path; default to an empty snapshot list so
-            // they exercise the no-op seed (and the running=true tests never
-            // call it).
+            // Epic 56: per-agent state fetch. Nothing in this suite selects a
+            // member or announces a planning actor, so it is never called.
             getAgentStates: jasmine
               .createSpy('getAgentStates')
               .and.resolveTo([]),
@@ -1594,35 +1605,49 @@ describe('IngestionService — state + context PerAgentStore (Story 17-2)', () =
 });
 
 // ---------------------------------------------------------------------------
-// Story 25-1 (ADR-020 §2) — seed the `state` store from getAgentStates on init
+// Epic 56 (ADR-038) — an agent's state is fetched when it is needed
 //
-// init() fetches per-agent snapshots (every status) AFTER log.reset() and
-// log.appendAll()s synthesized StateChangedMessage entries so the registry's
-// stateSpec folds them into the `state` store, keyed by sender.agent_id = the
-// agent UUID (team Epic 23). Load-bearing case: a STOPPED team whose durable
-// event log carries no StateChangedMessage (ADR-013) still shows the backstory
-// head-block on load. These tests drive the REAL log fold (no store mocking),
-// mocking only the HTTP layer (ApiService) per the story's testing standards.
+// Opening a team fetches NO agent state. The `state` store is filled by two
+// per-agent fetches held in the cycle bag: the selected member's (this block)
+// and the planning actor's (the live task board block below). Every fetch is
+// synthesized into `StateChangedMessage` entries and folded by the REAL log,
+// keyed by `sender.agent_id` = the agent UUID (team Epic 23). Only the HTTP
+// layer (ApiService) is mocked.
 // ---------------------------------------------------------------------------
 
-describe('IngestionService — seed agent state on init (Story 25-1)', () => {
+describe('IngestionService — a member\'s state is fetched on selection (Epic 56)', () => {
   let service: IngestionService;
   let log: MessageLogService;
   let apiService: any;
   let fakeSocket: Subject<any>;
+  let selected$: BehaviorSubject<string | null>;
 
   // A realistic agent UUID (team Epic 23) — distinct from the display name so
   // the UUID-keying assertion is meaningful.
   const UUID = '7f3c1e90-2a4b-4c6d-8e10-1234567890ab';
+  const UUID_B = '0a0a0a0a-bbbb-cccc-dddd-eeeeeeeeeeee';
   const NAME = '@Researcher';
 
-  function snapshot(state: Record<string, unknown>): any {
+  function snapshot(state: Record<string, unknown>, agentId = UUID): any {
     return {
-      agent_id: UUID,
+      agent_id: agentId,
       name: NAME,
       state,
       updated_at: '2026-06-18T00:00:00Z',
     };
+  }
+
+  /** Drain the fetch → synthesize → append promise chain. */
+  async function settle(): Promise<void> {
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+  }
+
+  function useNewSocket(): Subject<any> {
+    const socket = new Subject<any>();
+    (teamSocket() as any).createWebSocket = jasmine
+      .createSpy('createWebSocket')
+      .and.returnValue(socket as unknown as WebSocketSubject<any>);
+    return socket;
   }
 
   beforeEach(() => {
@@ -1630,6 +1655,7 @@ describe('IngestionService — seed agent state on init (Story 25-1)', () => {
     jasmine.clock().mockDate(new Date(0));
 
     fakeSocket = new Subject<any>();
+    selected$ = new BehaviorSubject<string | null>(null);
 
     TestBed.configureTestingModule({
       providers: [
@@ -1644,6 +1670,7 @@ describe('IngestionService — seed agent state on init (Story 25-1)', () => {
         LogFeeder,
         TeamStatusReactor,
         IngestionService,
+        { provide: SELECTED_AGENT_ID, useValue: selected$ },
         { provide: ContextService, useValue: contextServiceDouble() },
         ChatService,
         {
@@ -1683,123 +1710,17 @@ describe('IngestionService — seed agent state on init (Story 25-1)', () => {
     jasmine.clock().uninstall();
   });
 
-  it('AC1/AC3: getAgentStates is fetched on init (stopped team)', async () => {
-    await service.init('team-1', false);
-    expect(apiService.getAgentStates).toHaveBeenCalledWith('team-1');
-  });
+  // ---------- AC3: team open fetches no agent state ------------------------
 
-  it('AC3/AC5: stopped-team init seeds state.forAgent(uuid) keyed by UUID with the backstory present', async () => {
-    apiService.getAgentStates.and.resolveTo([
-      snapshot({ backstory: 'A seasoned researcher.' }),
-    ]);
-
-    await service.init('team-1', false);
-
-    // Keyed by the agent UUID (team Epic 23), value `{ schema: {}, state }`.
-    expect(service.state.snapshot(UUID)).toEqual({
-      schema: {},
-      state: { backstory: 'A seasoned researcher.' },
-    });
-    // NOT keyed by the display name.
-    expect(service.state.snapshot(NAME)).toBeUndefined();
-  });
-
-  it('AC3: running-team init DOES call getAgentStates and seeds the state store', async () => {
-    // The `!running` gate is gone (akgentic-core ADR-020 §4 option (a)): the
-    // stream subscribers now suppress StateChangedMessage, so the cursor-0 WS
-    // replay is no longer a source of agent state and a running team would
-    // otherwise have none — a blank backstory head-block, and no Member chat tab
-    // at all once /clear has emptied `context`.
-    apiService.getAgentStates.and.resolveTo([
-      snapshot({ backstory: 'Seeded for a running team too.' }),
-    ]);
-
+  it('AC3: a running-team init fetches no agent state', async () => {
     await service.init('team-1', true);
+    await settle();
 
-    expect(apiService.getAgentStates).toHaveBeenCalledWith('team-1');
-    expect(service.state.snapshot(UUID)).toEqual({
-      schema: {},
-      state: { backstory: 'Seeded for a running team too.' },
-    });
-  });
-
-  it('AC3: the durable event replay stays stopped-team-only', async () => {
-    // Only the state seed was lifted out of the `!running` gate. A running team
-    // still gets its history from the cursor-0 WS replay, never from getEvents.
-    await service.init('team-1', true);
-
+    expect(apiService.getAgentStates).not.toHaveBeenCalled();
     expect(apiService.getEvents).not.toHaveBeenCalled();
   });
 
-  it('AC6: the synthesized seed does NOT render as a chat bubble (messageList$ excludes it)', async () => {
-    apiService.getAgentStates.and.resolveTo([
-      snapshot({ backstory: 'Backstory.' }),
-    ]);
-
-    let list: any[] | null = null;
-    const sub = log.messageList$.subscribe((v) => (list = v));
-
-    await service.init('team-1', false);
-
-    // The seed populated the state store but contributes NO message-list entry
-    // (messageListFold admits only SentMessage / ErrorMessage).
-    expect(service.state.snapshot(UUID)).toBeDefined();
-    expect(list as any[] | null).toEqual([]);
-    sub.unsubscribe();
-  });
-
-  it('AC6: the synthesized seed does NOT perturb context or commands', async () => {
-    apiService.getAgentStates.and.resolveTo([
-      snapshot({ backstory: 'Backstory.' }),
-    ]);
-
-    await service.init('team-1', false);
-
-    // The StateChangedMessage matcher rejects for context (LlmMessageEvent) and
-    // commands (CommandsAnnouncedEvent), so neither store is touched.
-    expect(service.context.snapshot(UUID)).toBeUndefined();
-    expect(service.commands.snapshot(UUID)).toBeUndefined();
-  });
-
-  it('AC3: multiple agents are each seeded under their own UUID key', async () => {
-    const uuidB = '0a0a0a0a-bbbb-cccc-dddd-eeeeeeeeeeee';
-    apiService.getAgentStates.and.resolveTo([
-      snapshot({ backstory: 'A.' }),
-      {
-        agent_id: uuidB,
-        name: '@Writer',
-        state: { backstory: 'B.' },
-        updated_at: '2026-06-18T00:00:01Z',
-      },
-    ]);
-
-    await service.init('team-1', false);
-
-    expect(service.state.snapshot(UUID)).toEqual({
-      schema: {},
-      state: { backstory: 'A.' },
-    });
-    expect(service.state.snapshot(uuidB)).toEqual({
-      schema: {},
-      state: { backstory: 'B.' },
-    });
-  });
-
-  it('AC3: an empty snapshot list leaves the state store empty (no-op seed)', async () => {
-    apiService.getAgentStates.and.resolveTo([]);
-
-    await service.init('team-1', false);
-
-    expect(service.state.snapshot(UUID)).toBeUndefined();
-    expect(log.snapshot()).toEqual([]);
-  });
-
-  it('AC6: the existing getEvents replay still seeds the log unchanged alongside the state seed', async () => {
-    apiService.getAgentStates.and.resolveTo([
-      snapshot({ backstory: 'Backstory.' }),
-    ]);
-    // A SentMessage in the durable event log replays into the message list as
-    // before; the state seed is additive and does not disturb it.
+  it('AC3: a stopped-team init fetches no agent state, and replays its events exactly once', async () => {
     const sent = {
       id: 'sent-1',
       parent_id: null,
@@ -1811,86 +1732,207 @@ describe('IngestionService — seed agent state on init (Story 25-1)', () => {
       __model__: 'akgentic.core.messages.orchestrator.SentMessage',
     };
     apiService.getEvents.and.resolveTo([{ event: sent }]);
-
-    let list: any[] | null = null;
-    const sub = log.messageList$.subscribe((v) => (list = v));
-
-    await service.init('team-1', false);
-
-    // getEvents replay still produces the bubble; the state seed is keyed in the
-    // state store and contributes no bubble.
-    expect((list as any[] | null)?.map((m) => m.id)).toEqual(['sent-1']);
-    expect(service.state.snapshot(UUID)).toBeDefined();
-    sub.unsubscribe();
-  });
-
-  // ---------- Epic 34 story 34-2: the ordering the extraction must not lose ----
-  // The REST replay now lives in `ReplaySeeder`, but the two `log.appendAll`
-  // calls stay HERE because they are two of the four centrally sequenced steps
-  // (dispose -> reset -> seed -> open socket). Nothing pinned that until these
-  // two specs: merging the seeder's two awaits into one array and one
-  // `appendAll` reorders nothing today, so every other spec in this suite stays
-  // green while the guarantee quietly disappears.
-
-  it('34-2: a stopped-team init makes exactly TWO appendAll calls — state seed FIRST, event replay SECOND', async () => {
-    apiService.getAgentStates.and.resolveTo([snapshot({ backstory: 'A.' })]);
-    apiService.getEvents.and.resolveTo([
-      {
-        event: {
-          id: 'sent-1',
-          parent_id: null,
-          team_id: 'team-1',
-          timestamp: '2026-06-18T00:00:00Z',
-          sender: makeAddress({ role: 'Worker' }),
-          display_type: 'ai',
-          content: 'hello',
-          __model__: 'akgentic.core.messages.orchestrator.SentMessage',
-        },
-      },
-    ]);
-
     const appendSpy = spyOn(log, 'appendAll').and.callThrough();
 
     await service.init('team-1', false);
+    await settle();
 
-    // One merged batch would collapse two `log$` emissions into one AND remove
-    // the seed-before-replay guarantee: `stateSpec` is latest-wins, so a real
-    // replayed `StateChangedMessage` has to be able to overwrite a synthesized
-    // seed — never the reverse.
-    expect(appendSpy).toHaveBeenCalledTimes(2);
-    const batches = appendSpy.calls.allArgs().map((args: any[]) => args[0]);
-    expect(batches[0].map((m: any) => m.__model__)).toEqual([
-      'akgentic.core.messages.orchestrator.StateChangedMessage',
+    expect(apiService.getAgentStates).not.toHaveBeenCalled();
+    expect(apiService.getEvents).toHaveBeenCalledOnceWith('team-1');
+    // Step (c) makes exactly ONE appendAll — the event replay. The open-time
+    // state seed that used to precede it is gone.
+    expect(appendSpy).toHaveBeenCalledTimes(1);
+    expect(appendSpy.calls.first().args[0].map((m: any) => m.id)).toEqual([
+      'sent-1',
     ]);
-    expect(batches[1].map((m: any) => m.id)).toEqual(['sent-1']);
   });
 
-  it('34-2: a getAgentStates rejection rejects init() and getEvents is never issued', async () => {
-    apiService.getAgentStates.and.rejectWith(new Error('boom'));
+  // ---------- AC8: the selected member's state is fetched -----------------
 
-    // Two sequential awaits, no try/catch: the seed failing means the event
-    // replay is never requested and `init()` rejects before the socket opens.
-    // `Promise.all` would issue `getEvents` anyway and swallow that ordering.
-    await expectAsync(service.init('team-1', false)).toBeRejected();
-
-    expect(apiService.getEvents).not.toHaveBeenCalled();
-  });
-
-  it('AC5: a team switch clears the seeded state (re-seeded from the new team on re-init)', async () => {
+  it('AC8: the selection current when step (d) subscribes is fetched and folded under its UUID', async () => {
     apiService.getAgentStates.and.resolveTo([
-      snapshot({ backstory: 'Team A backstory.' }),
+      snapshot({ backstory: 'A seasoned researcher.' }),
     ]);
-    await service.init('team-A', false);
+    selected$.next(UUID);
+
+    await service.init('team-1', false);
+    await settle();
+
+    expect(apiService.getAgentStates).toHaveBeenCalledOnceWith('team-1', UUID);
+    expect(service.state.snapshot(UUID)).toEqual({
+      schema: {},
+      state: { backstory: 'A seasoned researcher.' },
+    });
+    // NOT keyed by the display name.
+    expect(service.state.snapshot(NAME)).toBeUndefined();
+  });
+
+  it('AC8: an agent is fetched once per team; re-selecting it and unselect fetch nothing', async () => {
+    apiService.getAgentStates.and.callFake((_team: string, agentId: string) =>
+      Promise.resolve([snapshot({ backstory: agentId }, agentId)]),
+    );
+    await service.init('team-1', true);
+
+    selected$.next(UUID);
+    await settle();
+    selected$.next(UUID_B);
+    await settle();
+    selected$.next(null);
+    selected$.next(UUID);
+    await settle();
+
+    expect(apiService.getAgentStates.calls.allArgs()).toEqual([
+      ['team-1', UUID],
+      ['team-1', UUID_B],
+    ]);
+  });
+
+  it('AC8: selecting an agent whose state is already in the store fetches nothing', async () => {
+    // An older server answers A's narrowed call with B's snapshot too, so B's
+    // state is in the store before B is ever selected.
+    apiService.getAgentStates.and.resolveTo([
+      snapshot({ backstory: 'A.' }),
+      snapshot({ backstory: 'B.' }, UUID_B),
+    ]);
+    await service.init('team-1', true);
+    selected$.next(UUID);
+    await settle();
+    apiService.getAgentStates.calls.reset();
+
+    selected$.next(UUID_B);
+    await settle();
+
+    expect(apiService.getAgentStates).not.toHaveBeenCalled();
+  });
+
+  it('AC8: an agent whose fetch returned no snapshot is fetched again on the next selection', async () => {
+    await service.init('team-1', true);
+
+    selected$.next(UUID);
+    await settle();
+    selected$.next(null);
+    selected$.next(UUID);
+    await settle();
+
+    expect(apiService.getAgentStates.calls.allArgs()).toEqual([
+      ['team-1', UUID],
+      ['team-1', UUID],
+    ]);
+    expect(service.state.snapshot(UUID)).toBeUndefined();
+  });
+
+  it('AC8: a failed selection fetch is logged and the next selection still fetches', async () => {
+    const error = spyOn(console, 'error');
+    let calls = 0;
+    apiService.getAgentStates.and.callFake(() =>
+      ++calls === 1
+        ? Promise.reject(new Error('HTTP 500'))
+        : Promise.resolve([snapshot({ backstory: 'B.' }, UUID_B)]),
+    );
+    await service.init('team-1', true);
+
+    selected$.next(UUID);
+    await settle();
+    expect(error).toHaveBeenCalled();
+
+    selected$.next(UUID_B);
+    await settle();
+    expect(service.state.snapshot(UUID_B)).toEqual({
+      schema: {},
+      state: { backstory: 'B.' },
+    });
+  });
+
+  it('the synthesized snapshot renders no chat bubble and touches neither context nor commands', async () => {
+    apiService.getAgentStates.and.resolveTo([snapshot({ backstory: 'B.' })]);
+    let list: any[] | null = null;
+    const sub = log.messageList$.subscribe((v) => (list = v));
+
+    await service.init('team-1', true);
+    selected$.next(UUID);
+    await settle();
+
+    expect(service.state.snapshot(UUID)).toBeDefined();
+    expect(list as any[] | null).toEqual([]);
+    expect(service.context.snapshot(UUID)).toBeUndefined();
+    expect(service.commands.snapshot(UUID)).toBeUndefined();
+    sub.unsubscribe();
+  });
+
+  // ---------- AC11: an older server's full list is folded ------------------
+
+  it('AC11: a narrowed call answered with several snapshots folds every one (latest-wins)', async () => {
+    // An older server ignores `?agent_id=` and returns the whole team.
+    apiService.getAgentStates.and.resolveTo([
+      snapshot({ backstory: 'A.' }),
+      snapshot({ backstory: 'B.' }, UUID_B),
+    ]);
+    await service.init('team-1', true);
+
+    selected$.next(UUID);
+    await settle();
+
+    expect(service.state.snapshot(UUID)).toEqual({
+      schema: {},
+      state: { backstory: 'A.' },
+    });
+    expect(service.state.snapshot(UUID_B)).toEqual({
+      schema: {},
+      state: { backstory: 'B.' },
+    });
+  });
+
+  // ---------- AC10: a team switch never leaks a response -------------------
+
+  it('AC10: a selection fetch resolved after close() never reaches the log', async () => {
+    let release: (states: any[]) => void = () => undefined;
+    apiService.getAgentStates.and.returnValue(
+      new Promise<any[]>((r) => (release = r)),
+    );
+    await service.init('team-A', true);
+    selected$.next(UUID);
+    expect(apiService.getAgentStates).toHaveBeenCalledTimes(1);
+
+    service.close();
+    release([snapshot({ backstory: 'Team A.' })]);
+    await settle();
+
+    expect(log.snapshot()).toEqual([]);
+    expect(service.state.snapshot(UUID)).toBeUndefined();
+  });
+
+  it("AC10: a selection fetch resolved after a NEWER init never reaches the new team's log", async () => {
+    const releases: ((states: any[]) => void)[] = [];
+    apiService.getAgentStates.and.callFake(
+      () => new Promise<any[]>((r) => releases.push(r)),
+    );
+    await service.init('team-A', true);
+    selected$.next(UUID);
+    expect(releases.length).toBe(1);
+
+    // Team B opens while A's fetch is in flight. The root-scoped selection
+    // replays into B's cycle (a fetch B answers on its own), which is harmless.
+    const socketB = useNewSocket();
+    await service.init('team-B', true);
+    releases[0]([snapshot({ backstory: 'Team A.' })]);
+    await settle();
+
+    expect(log.snapshot()).toEqual([]);
+    expect(service.state.snapshot(UUID)).toBeUndefined();
+    socketB.complete();
+  });
+
+  it('a team switch clears the fetched state', async () => {
+    apiService.getAgentStates.and.resolveTo([snapshot({ backstory: 'Team A.' })]);
+    await service.init('team-A', true);
+    selected$.next(UUID);
+    await settle();
     expect(service.state.snapshot(UUID)).toBeDefined();
 
-    // Re-init (team switch) with NO snapshots → log.reset() clears the registry
-    // maps and the empty seed leaves the store empty.
-    apiService.getAgentStates.and.resolveTo([]);
-    const socketB = new Subject<any>();
-    (teamSocket() as any).createWebSocket = jasmine
-      .createSpy('createWebSocket')
-      .and.returnValue(socketB as unknown as WebSocketSubject<any>);
-    await service.init('team-B', false);
+    selected$.next(null);
+    const socketB = useNewSocket();
+    await service.init('team-B', true);
+    await settle();
 
     expect(service.state.snapshot(UUID)).toBeUndefined();
     socketB.complete();
@@ -1979,6 +2021,10 @@ describe('IngestionService — Story 31-3 (notification toast)', () => {
         LogFeeder,
         TeamStatusReactor,
         IngestionService,
+        {
+          provide: SELECTED_AGENT_ID,
+          useValue: new BehaviorSubject<string | null>(null),
+        },
         { provide: ContextService, useValue: contextServiceDouble() },
         ChatService,
         {
@@ -2088,6 +2134,10 @@ describe('IngestionService — Story 31-6 (error parity, severity, summary)', ()
         LogFeeder,
         TeamStatusReactor,
         IngestionService,
+        {
+          provide: SELECTED_AGENT_ID,
+          useValue: new BehaviorSubject<string | null>(null),
+        },
         { provide: ContextService, useValue: contextServiceDouble() },
         ChatService,
         {
@@ -2257,6 +2307,10 @@ describe('IngestionService — Story 31-4 (closed-notification suppression)', ()
         LogFeeder,
         TeamStatusReactor,
         IngestionService,
+        {
+          provide: SELECTED_AGENT_ID,
+          useValue: new BehaviorSubject<string | null>(null),
+        },
         { provide: ContextService, useValue: contextServiceDouble() },
         ChatService,
         {
@@ -2499,6 +2553,10 @@ describe('IngestionService — Story 31-5 (reactive toast removal)', () => {
         LogFeeder,
         TeamStatusReactor,
         IngestionService,
+        {
+          provide: SELECTED_AGENT_ID,
+          useValue: new BehaviorSubject<string | null>(null),
+        },
         { provide: ContextService, useValue: contextServiceDouble() },
         ChatService,
         MessageService,
@@ -2749,6 +2807,10 @@ describe('IngestionService — notification-toast reactor sequencing (Epic 34)',
         LogFeeder,
         TeamStatusReactor,
         IngestionService,
+        {
+          provide: SELECTED_AGENT_ID,
+          useValue: new BehaviorSubject<string | null>(null),
+        },
         { provide: ContextService, useValue: contextServiceDouble() },
         ChatService,
         {
@@ -2929,6 +2991,10 @@ describe('IngestionService — init() ordering + self-wiring (Story 34-6)', () =
         LogFeeder,
         TeamStatusReactor,
         IngestionService,
+        {
+          provide: SELECTED_AGENT_ID,
+          useValue: new BehaviorSubject<string | null>(null),
+        },
         { provide: ContextService, useValue: contextServiceDouble() },
         ChatService,
         {
@@ -3188,6 +3254,10 @@ describe('IngestionService — Story 35-1 (toasts dispatch from the log)', () =>
         LogFeeder,
         TeamStatusReactor,
         IngestionService,
+        {
+          provide: SELECTED_AGENT_ID,
+          useValue: new BehaviorSubject<string | null>(null),
+        },
         { provide: ContextService, useValue: contextServiceDouble() },
         ChatService,
         {
@@ -3406,6 +3476,10 @@ describe('IngestionService — Story 37-2 (team-stopping reactor wiring)', () =>
         LogFeeder,
         TeamStatusReactor,
         IngestionService,
+        {
+          provide: SELECTED_AGENT_ID,
+          useValue: new BehaviorSubject<string | null>(null),
+        },
         { provide: ContextService, useValue: contextServiceDouble() },
         ChatService,
         {
@@ -3515,9 +3589,10 @@ describe('IngestionService — Story 37-2 (team-stopping reactor wiring)', () =>
     expect(context.markStopped).not.toHaveBeenCalled();
   });
 
-  // AC11 — nothing was added on the replay side. `ReplaySeeder` still makes the
-  // same two calls for a stopped team and none for a running one, and no
-  // stop-event-driven refetch was introduced anywhere on the path.
+  // AC11 — nothing was added on the replay side. A stopped team makes exactly
+  // its one event replay, a running team none, and no stop-event-driven refetch
+  // was introduced anywhere on the path. Neither issues an agent-state fetch at
+  // open (Epic 56): with no planning actor and no selection, none ever runs.
   it('AC11: ReplaySeeder and ApiService keep their existing call pattern', async () => {
     const api = TestBed.inject(ApiService) as any;
     api.getEvents.and.resolveTo([
@@ -3527,12 +3602,12 @@ describe('IngestionService — Story 37-2 (team-stopping reactor wiring)', () =>
     await service.init('team-A', false);
     jasmine.clock().tick(600);
 
-    expect(api.getAgentStates).toHaveBeenCalledTimes(1);
+    expect(api.getAgentStates).not.toHaveBeenCalled();
     expect(api.getEvents).toHaveBeenCalledTimes(1);
 
     // A running team still issues no EVENT replay — the `!running` gate around
     // getEvents is untouched, which is why a restored team never re-reads its
-    // own stop event. It does take the state seed (ADR-020 §4).
+    // own stop event.
     api.getAgentStates.calls.reset();
     api.getEvents.calls.reset();
     const socketB = new Subject<any>();
@@ -3543,7 +3618,7 @@ describe('IngestionService — Story 37-2 (team-stopping reactor wiring)', () =>
     await service.init('team-B', true);
     jasmine.clock().tick(600);
 
-    expect(api.getAgentStates).toHaveBeenCalledTimes(1);
+    expect(api.getAgentStates).not.toHaveBeenCalled();
     expect(api.getEvents).not.toHaveBeenCalled();
     socketB.complete();
   });
@@ -3584,6 +3659,26 @@ describe('IngestionService — Story 52-1 (superseded cycles)', () => {
     };
   }
 
+  /** The planning actor's roster entry — what step (d) fetches on arrival. */
+  function plannerStart(): any {
+    return {
+      id: 'start-planner',
+      parent_id: null,
+      team_id: 'team-A',
+      timestamp: '2026-08-27T10:00:00Z',
+      sender: makeAddress({
+        name: PLANNING_ACTOR_NAME,
+        role: 'ToolActor',
+        agent_id: 'planner-A',
+      }),
+      display_type: 'other',
+      content: null,
+      __model__: 'akgentic.core.messages.orchestrator.StartMessage',
+      config: {},
+      parent: null,
+    };
+  }
+
   beforeEach(() => {
     fakeSocket = new Subject<any>();
     api = {
@@ -3604,6 +3699,10 @@ describe('IngestionService — Story 52-1 (superseded cycles)', () => {
         LogFeeder,
         TeamStatusReactor,
         IngestionService,
+        {
+          provide: SELECTED_AGENT_ID,
+          useValue: new BehaviorSubject<string | null>(null),
+        },
         { provide: ContextService, useValue: contextServiceDouble() },
         ChatService,
         { provide: ApiService, useValue: api },
@@ -3641,8 +3740,7 @@ describe('IngestionService — Story 52-1 (superseded cycles)', () => {
     );
 
     const pending = service.init('team-A', false);
-    // Let `getAgentStates` settle so `init()` is parked on `getEvents`.
-    await Promise.resolve();
+    // `init()` is parked on `getEvents`.
     await Promise.resolve();
 
     service.close();
@@ -3662,7 +3760,6 @@ describe('IngestionService — Story 52-1 (superseded cycles)', () => {
 
     const pending = service.init('team-A', false);
     await Promise.resolve();
-    await Promise.resolve();
 
     // Team B is opened while A's history is still in flight.
     await service.init('team-B', true);
@@ -3672,9 +3769,9 @@ describe('IngestionService — Story 52-1 (superseded cycles)', () => {
     expect(log.snapshot()).toEqual([]);
   });
 
-  it('the state seed of a superseded cycle never issues its event replay', async () => {
-    let release: (states: any[]) => void = () => undefined;
-    api.getAgentStates.and.returnValue(
+  it('a superseded stopped-team init issues no agent-state fetch at all', async () => {
+    let release: (events: any[]) => void = () => undefined;
+    api.getEvents.and.returnValue(
       new Promise<any[]>((r) => {
         release = r;
       }),
@@ -3684,12 +3781,15 @@ describe('IngestionService — Story 52-1 (superseded cycles)', () => {
     await Promise.resolve();
 
     service.close();
-    release([{ agent_id: 'a-1', name: '@A', state: {}, updated_at: '2026-08-27T10:00:00Z' }]);
+    // The replay carries the planning actor's `StartMessage`: a cycle that
+    // reached step (d) would fetch its state on arrival.
+    release([replayed('evt-A-1'), { event: plannerStart() }]);
     await pending;
 
     expect(log.snapshot()).toEqual([]);
-    // The second half of the replay belongs to a cycle that no longer exists.
-    expect(api.getEvents).not.toHaveBeenCalled();
+    // The superseded cycle never reaches step (d), where the per-agent fetches
+    // are wired.
+    expect(api.getAgentStates).not.toHaveBeenCalled();
   });
 
   it('close() empties the log and leaves the transport reusable for the next team', async () => {
@@ -3714,21 +3814,27 @@ describe('IngestionService — Story 52-1 (superseded cycles)', () => {
 });
 
 // =====================================================================
-// The live task board — a planning write refetches the agent states
+// The live task board — the planning actor's state, fetched on its own
 //
-// The stream subscribers suppress `StateChangedMessage`, so after the
-// open-time seed the planning actor's state never changes in `state` unless
-// something re-reads it. The trigger is the CALLING agent's
-// `ToolReturnEvent(update_planning)`.
+// The stream subscribers suppress `StateChangedMessage`, so the planning
+// actor's state reaches `state` only by a fetch: once when the actor appears
+// in the roster (its `#PlanningTool` `StartMessage`), and again after each
+// CALLING agent's `ToolReturnEvent(update_planning)`. Every fetch is for the
+// planning actor's id alone (Epic 56, ADR-038 D3).
 // =====================================================================
 
 describe('IngestionService — live task board refresh', () => {
   const PLANNER_ID = 'planner-1';
+  const MANAGER_ID = 'manager-1';
+  const MEMBER_ID = 'member-1';
   const TOOL_RETURN_MODEL = 'akgentic.llm.event.ToolReturnEvent';
+  const START_MODEL = 'akgentic.core.messages.orchestrator.StartMessage';
 
   let service: IngestionService;
+  let log: MessageLogService;
   let api: any;
   let fakeSocket: Subject<any>;
+  let selected$: BehaviorSubject<string | null>;
   let seq = 0;
 
   function plannerState(status: string): any {
@@ -3753,6 +3859,27 @@ describe('IngestionService — live task board refresh', () => {
     };
   }
 
+  /** The planning actor's roster entry — the source of its id. */
+  function plannerStart(): any {
+    return {
+      id: 'start-planner',
+      parent_id: null,
+      team_id: 'team-1',
+      timestamp: '2026-10-01T10:00:00Z',
+      sender: makeAddress({
+        name: '#PlanningTool',
+        role: 'ToolActor',
+        agent_id: PLANNER_ID,
+      }),
+      display_type: 'other',
+      content: null,
+      __model__: START_MODEL,
+      config: {},
+      parent: null,
+    };
+  }
+
+  /** A tool return, emitted by the CALLING agent (`@Manager`). */
   function toolReturn(toolName: string): any {
     seq++;
     return {
@@ -3760,7 +3887,7 @@ describe('IngestionService — live task board refresh', () => {
       parent_id: null,
       team_id: 'team-1',
       timestamp: '2026-10-01T10:00:01Z',
-      sender: makeAddress({ name: '@Manager', agent_id: 'manager-1' }),
+      sender: makeAddress({ name: '@Manager', agent_id: MANAGER_ID }),
       display_type: 'other',
       content: null,
       __model__: EVENT_MESSAGE_MODEL,
@@ -3774,8 +3901,25 @@ describe('IngestionService — live task board refresh', () => {
     };
   }
 
+  /** The board as the console draws it: `planningTasks` over roster + store. */
+  function board(): ReturnType<typeof planningTasks> {
+    const states = new Map<string, any>();
+    const value = service.state.snapshot(PLANNER_ID);
+    if (value) states.set(PLANNER_ID, value);
+    return planningTasks(
+      [{ actorName: PLANNING_ACTOR_NAME, name: PLANNER_ID }] as any,
+      states,
+    );
+  }
+
   function boardStatus(): string | undefined {
-    return parseTaskList(service.state.snapshot(PLANNER_ID)?.state)[0]?.status;
+    return board()[0]?.status;
+  }
+
+  /** The feeder's 16ms frame window, then the fetch. */
+  function settleFrame(): void {
+    tick(16);
+    flushMicrotasks();
   }
 
   /** The feeder's 16ms frame window, then the refresh debounce, then the fetch. */
@@ -3792,9 +3936,10 @@ describe('IngestionService — live task board refresh', () => {
 
   beforeEach(() => {
     fakeSocket = new Subject<any>();
+    selected$ = new BehaviorSubject<string | null>(null);
     api = {
       getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
-      getAgentStates: jasmine.createSpy('getAgentStates'),
+      getAgentStates: jasmine.createSpy('getAgentStates').and.resolveTo([]),
     };
 
     TestBed.configureTestingModule({
@@ -3810,6 +3955,7 @@ describe('IngestionService — live task board refresh', () => {
         LogFeeder,
         TeamStatusReactor,
         IngestionService,
+        { provide: SELECTED_AGENT_ID, useValue: selected$ },
         { provide: ContextService, useValue: contextServiceDouble() },
         { provide: ApiService, useValue: api },
         {
@@ -3823,31 +3969,118 @@ describe('IngestionService — live task board refresh', () => {
       ],
     });
     service = TestBed.inject(IngestionService);
+    log = TestBed.inject(MessageLogService);
     (teamSocket() as any).createWebSocket = () => fakeSocket;
   });
 
-  it('a live update_planning return refetches once and the board shows the new status', fakeAsync(() => {
+  // ---------- AC5 / AC12: the arrival fetch fills the board --------------
+
+  it('AC5 stopped team: a planning actor found in the REST replay is fetched once and fills the board', fakeAsync(() => {
+    // The `StartMessage` arrives ONLY in step (c)'s replay, appended before
+    // step (d) subscribes — and so do two past writes, which must not fetch.
+    api.getEvents.and.resolveTo([
+      { event: plannerStart() },
+      { event: toolReturn(PLANNING_UPDATE_TOOL) },
+      { event: toolReturn(PLANNING_UPDATE_TOOL) },
+    ]);
+    api.getAgentStates.and.resolveTo([plannerState('started')]);
+
+    service.init('team-1', false);
+    flushMicrotasks();
+    settleLiveFrame();
+
+    expect(api.getAgentStates.calls.allArgs()).toEqual([['team-1', PLANNER_ID]]);
+    expect(board().length).toBe(1);
+    expect(boardStatus()).toBe('started');
+    teardown();
+  }));
+
+  it('AC5 running team: a live planning StartMessage fetches once and fills the board', fakeAsync(() => {
+    api.getAgentStates.and.resolveTo([plannerState('pending')]);
+    service.init('team-1', true);
+    flushMicrotasks();
+    expect(api.getAgentStates).not.toHaveBeenCalled();
+    expect(board()).toEqual([]);
+
+    fakeSocket.next(plannerStart());
+    settleFrame();
+
+    expect(api.getAgentStates.calls.allArgs()).toEqual([['team-1', PLANNER_ID]]);
+    expect(boardStatus()).toBe('pending');
+
+    // Any later frame re-emits the log with the same planning id: no refetch.
+    fakeSocket.next(toolReturn('workspace_write'));
+    settleLiveFrame();
+    expect(api.getAgentStates).toHaveBeenCalledTimes(1);
+    teardown();
+  }));
+
+  it('AC5/AC7: writes delivered in the SAME frame as the planning actor fetch once, not twice', fakeAsync(() => {
+    // A running team's cursor-0 replay: the actor's StartMessage and past
+    // writes, on either side of it, land in one 16ms batch. `log$` announces
+    // the id before `appended$` hands out that batch, so a write listener
+    // opened on the id would otherwise see writes the arrival fetch already
+    // reflects.
+    service.init('team-1', true);
+    flushMicrotasks();
+    fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
+    fakeSocket.next(plannerStart());
+    fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
+    settleLiveFrame();
+    settleLiveFrame();
+
+    expect(api.getAgentStates.calls.allArgs()).toEqual([['team-1', PLANNER_ID]]);
+
+    // The next frame's write is live, and still refetches.
+    fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
+    settleLiveFrame();
+    expect(api.getAgentStates).toHaveBeenCalledTimes(2);
+    teardown();
+  }));
+
+  it('AC5: a team with no planning actor issues no planning fetch', fakeAsync(() => {
+    service.init('team-1', true);
+    flushMicrotasks();
+
+    fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
+    settleLiveFrame();
+
+    expect(api.getAgentStates).not.toHaveBeenCalled();
+    teardown();
+  }));
+
+  // ---------- AC6 / AC12: a write refetches the planning actor -----------
+
+  it('AC6: a live update_planning return refetches the PLANNING actor and the board shows the new status', fakeAsync(() => {
     api.getAgentStates.and.returnValues(
       Promise.resolve([plannerState('pending')]),
       Promise.resolve([plannerState('abort')]),
     );
     service.init('team-1', true);
     flushMicrotasks();
+    fakeSocket.next(plannerStart());
+    settleFrame();
     expect(boardStatus()).toBe('pending');
 
+    // The return's sender is `@Manager` — the fetch must still name the
+    // planning actor.
     fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
     settleLiveFrame();
 
-    expect(api.getAgentStates).toHaveBeenCalledTimes(2);
-    expect(api.getAgentStates.calls.mostRecent().args).toEqual(['team-1']);
+    expect(api.getAgentStates.calls.allArgs()).toEqual([
+      ['team-1', PLANNER_ID],
+      ['team-1', PLANNER_ID],
+    ]);
     expect(boardStatus()).toBe('abort');
     teardown();
   }));
 
-  it('a burst of three returns refetches once', fakeAsync(() => {
-    api.getAgentStates.and.resolveTo([plannerState('pending')]);
+  it('AC6: a burst of three returns refetches once', fakeAsync(() => {
     service.init('team-1', true);
     flushMicrotasks();
+    fakeSocket.next(plannerStart());
+    settleFrame();
+    api.getAgentStates.calls.reset();
 
     fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
     fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
@@ -3855,50 +4088,161 @@ describe('IngestionService — live task board refresh', () => {
     fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
     settleLiveFrame();
 
-    // One seed at open, one refetch for the burst.
-    expect(api.getAgentStates).toHaveBeenCalledTimes(2);
+    expect(api.getAgentStates).toHaveBeenCalledTimes(1);
     teardown();
   }));
 
-  it('other tool returns fetch nothing', fakeAsync(() => {
-    api.getAgentStates.and.resolveTo([plannerState('pending')]);
+  it('AC6: other tool returns fetch nothing', fakeAsync(() => {
     service.init('team-1', true);
     flushMicrotasks();
+    fakeSocket.next(plannerStart());
+    settleFrame();
+    api.getAgentStates.calls.reset();
 
     fakeSocket.next(toolReturn('workspace_write'));
     fakeSocket.next(toolReturn('get_planning_task'));
     settleLiveFrame();
 
-    expect(api.getAgentStates).toHaveBeenCalledTimes(1);
+    expect(api.getAgentStates).not.toHaveBeenCalled();
     teardown();
   }));
 
-  it('replayed history at open fetches nothing beyond the seed', fakeAsync(() => {
-    api.getAgentStates.and.resolveTo([plannerState('abort')]);
-    api.getEvents.and.resolveTo([
-      { event: toolReturn(PLANNING_UPDATE_TOOL) },
-      { event: toolReturn(PLANNING_UPDATE_TOOL) },
-    ]);
-    service.init('team-1', false);
+  it('AC6: a failed refetch is logged and the next write still refetches', fakeAsync(() => {
+    const error = spyOn(console, 'error');
+    let calls = 0;
+    api.getAgentStates.and.callFake(() =>
+      ++calls === 2
+        ? Promise.reject(new Error('HTTP 500'))
+        : Promise.resolve([plannerState(calls === 1 ? 'pending' : 'completed')]),
+    );
+    service.init('team-1', true);
     flushMicrotasks();
+    fakeSocket.next(plannerStart());
+    settleFrame();
+
+    fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
+    settleLiveFrame();
+    expect(error).toHaveBeenCalled();
+    expect(boardStatus()).toBe('pending');
+
+    fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
+    settleLiveFrame();
+    expect(api.getAgentStates).toHaveBeenCalledTimes(3);
+    expect(boardStatus()).toBe('completed');
+    teardown();
+  }));
+
+  // ---------- AC7: a write before the id is known -------------------------
+
+  it('AC7: a write seen before the planning actor is neither queued nor lost', fakeAsync(() => {
+    service.init('team-1', true);
+    flushMicrotasks();
+
+    fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
+    settleLiveFrame();
+    expect(api.getAgentStates).not.toHaveBeenCalled();
+
+    fakeSocket.next(plannerStart());
+    settleLiveFrame();
     settleLiveFrame();
 
-    expect(api.getAgentStates).toHaveBeenCalledTimes(1);
-    expect(boardStatus()).toBe('abort');
+    // ONE fetch — the arrival fetch, which already reflects the write.
+    expect(api.getAgentStates.calls.allArgs()).toEqual([['team-1', PLANNER_ID]]);
     teardown();
   }));
 
-  it('a team switch mid-fetch drops the response', fakeAsync(() => {
+  // ---------- AC11: an older server's full list ---------------------------
+
+  it('AC11: a narrowed planning fetch answered with several snapshots folds every one', fakeAsync(() => {
+    api.getAgentStates.and.resolveTo([
+      plannerState('pending'),
+      {
+        agent_id: MEMBER_ID,
+        name: '@Member',
+        state: { backstory: 'Unasked for.' },
+        updated_at: '2026-10-01T10:00:00Z',
+      },
+    ]);
+    service.init('team-1', true);
+    flushMicrotasks();
+    fakeSocket.next(plannerStart());
+    settleFrame();
+
+    expect(boardStatus()).toBe('pending');
+    expect(service.state.snapshot(MEMBER_ID)).toEqual({
+      schema: {},
+      state: { backstory: 'Unasked for.' },
+    });
+    teardown();
+  }));
+
+  // ---------- AC4: no un-narrowed call remains ----------------------------
+
+  it('AC4: every getAgentStates call, running or stopped, names an agent', fakeAsync(() => {
+    api.getAgentStates.and.resolveTo([plannerState('pending')]);
+
+    // A running team: planning actor live, a write, a member selection.
+    service.init('team-1', true);
+    flushMicrotasks();
+    fakeSocket.next(plannerStart());
+    settleFrame();
+    fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
+    settleLiveFrame();
+    selected$.next(MEMBER_ID);
+    flushMicrotasks();
+
+    // A stopped team: planning actor in the replay, a member selection.
+    selected$.next(null);
+    fakeSocket = new Subject<any>();
+    api.getEvents.and.resolveTo([{ event: plannerStart() }]);
+    service.init('team-2', false);
+    flushMicrotasks();
+    selected$.next(MEMBER_ID);
+    settleLiveFrame();
+
+    const calls: any[][] = api.getAgentStates.calls.allArgs();
+    expect(calls.length).toBe(5);
+    for (const args of calls) {
+      expect(typeof args[1]).toBe('string');
+      expect(args[1].length).toBeGreaterThan(0);
+    }
+    teardown();
+  }));
+
+  // ---------- AC10: a team switch never leaks a response ------------------
+
+  it('AC10: a planning fetch resolved after close() never reaches the log', fakeAsync(() => {
+    let release: (states: any[]) => void = () => undefined;
+    api.getAgentStates.and.returnValue(
+      new Promise<any[]>((r) => (release = r)),
+    );
+    service.init('team-1', true);
+    flushMicrotasks();
+    fakeSocket.next(plannerStart());
+    tick(16);
+    expect(api.getAgentStates).toHaveBeenCalledTimes(1);
+
+    service.close();
+    release([plannerState('abort')]);
+    flushMicrotasks();
+
+    expect(log.snapshot()).toEqual([]);
+    expect(service.state.snapshot(PLANNER_ID)).toBeUndefined();
+    teardown();
+  }));
+
+  it("AC10: a planning refetch resolved after a NEWER init never reaches the new team's log", fakeAsync(() => {
     let release: (states: any[]) => void = () => undefined;
     api.getAgentStates.and.returnValues(
       Promise.resolve([plannerState('pending')]),
       new Promise<any[]>((r) => {
         release = r;
       }),
-      Promise.resolve([]),
     );
     service.init('team-1', true);
     flushMicrotasks();
+    fakeSocket.next(plannerStart());
+    settleFrame();
 
     fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
     tick(16);
@@ -3915,4 +4259,22 @@ describe('IngestionService — live task board refresh', () => {
     expect(service.state.snapshot(PLANNER_ID)).toBeUndefined();
     teardown();
   }));
+
+  it('AC10: close() drops a pending planning debounce', fakeAsync(() => {
+    service.init('team-1', true);
+    flushMicrotasks();
+    fakeSocket.next(plannerStart());
+    settleFrame();
+    api.getAgentStates.calls.reset();
+
+    fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
+    tick(16);
+    service.close();
+    tick(PLANNING_REFRESH_DEBOUNCE_MS * 2);
+    flushMicrotasks();
+
+    expect(api.getAgentStates).not.toHaveBeenCalled();
+    teardown();
+  }));
 });
+

@@ -5,8 +5,8 @@ import en from '../../../../platform/i18n/locales/en.json';
 import { CategoryService } from '../../../../services/category.service';
 import { IngestionService } from '../../../../services/process/event/ingestion.service';
 import { AgentStateValue } from '../../../../services/process/event/per-agent-specs';
+import { PLANNING_ACTOR_NAME } from '../../../../services/process/event/planning-refresh';
 import { GraphDataService } from '../../../../services/process/selectors/graph.selector';
-import { PLANNING_ACTOR_NAME } from '../../../../services/process/selectors/task-board';
 import {
   provideTranslateTesting,
   setTestTranslations,

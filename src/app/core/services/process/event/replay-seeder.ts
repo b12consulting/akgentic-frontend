@@ -47,24 +47,28 @@ function synthesizeStateChanged(snapshot: AgentStateResponse): StateChangedMessa
 
 /**
  * `ReplaySeeder` — the REST replay SOURCE (Epic 34 / ADR-025 §0-§1). It owns
- * both calls that reconstruct a stopped team's history — `getAgentStates` and
- * `getEvents` — and turns each into `AkgenticMessage[]`.
+ * the two REST reads the ingestion layer folds — `getEvents`, which
+ * reconstructs a stopped team's history, and `getAgentStates`, the per-agent
+ * state read (Epic 56) — and turns each into `AkgenticMessage[]`.
  *
  * It PRODUCES messages and appends nothing. `MessageLogService` is deliberately
- * NOT injected: the two `log.appendAll` calls stay in `IngestionService.init()`
- * because they are two of the four centrally sequenced steps
- * (dispose → reset → seed → open socket, ADR-005 §Decision 6), and burying one
- * inside an unsequenced unit is exactly the erosion ADR-025 §2 exists to
- * prevent. The payoff is that this whole path specs against a fake `ApiService`
- * with no WebSocket, no log and no toast harness.
+ * NOT injected: every `log.appendAll` of what it returns stays in
+ * `IngestionService.init()` — the event replay because it is one of the four
+ * centrally sequenced steps (dispose → reset → replay → open socket, ADR-005
+ * §Decision 6), the per-agent reads because their subscriptions live in that
+ * cycle's bag. Burying either inside an unsequenced unit is exactly the
+ * erosion ADR-025 §2 exists to prevent. The payoff is that this whole path
+ * specs against a fake `ApiService` with no WebSocket, no log and no toast
+ * harness.
  *
  * A source, so it holds NOTHING between calls — no cache, no cursor, no flag.
- * Two identical `seedMessages(id)` calls must produce two identical results.
+ * Two identical `seedMessages(id, agentId)` calls must produce two identical
+ * results.
  *
  * No `start` / `stop` / `ngOnDestroy`, and nothing self-wired in the
  * constructor: the two methods ARE the explicit invocation points ADR-025 §2
  * asks for. There is no subscription here whose opening moment DI could decide
- * — just two awaited calls the orchestrator sequences. What the rule forbids,
+ * — just awaited calls the orchestrator drives. What the rule forbids,
  * and what must never be added, is a constructor or field initializer that
  * fires either REST call.
  *
@@ -77,24 +81,28 @@ export class ReplaySeeder {
   private readonly api: ApiService = inject(ApiService);
 
   /**
-   * Story 25-1 (ADR-020 §2): fetch per-agent state snapshots and shape them as
-   * synthesized `StateChangedMessage` entries, so appending them lets the
-   * registry's `stateSpec` fold them into the `state` store exactly as it folds
-   * live WS frames.
+   * Story 25-1 (ADR-020 §2) / Epic 56 (ADR-038 D5): fetch ONE agent's state
+   * snapshot and shape it as a synthesized `StateChangedMessage`, so appending
+   * it lets the registry's `stateSpec` fold it into the `state` store exactly
+   * as it folds live WS frames.
    *
-   * The `!running` gate that decides whether this runs at all now lives in the
-   * CALLER (`IngestionService.init()`, inside its `if (!running)` block), not
-   * here: this unit has no knowledge of team status. The gate matters because a
-   * running — including a freshly restored, team Story 23-3 — team already
-   * receives its `StateChangedMessage`(s) on the cursor-0 WS replay, which makes
-   * the REST seed redundant there and `getAgentStates` a call that MUST NOT be
-   * issued for it.
+   * Called per agent, never at team open: by the planning refresh (the planning
+   * actor, on appearance and after each write) and by the selection fetch (the
+   * selected member), both held in `IngestionService.init()`'s cycle bag. An
+   * older server ignores `agentId` and answers with every snapshot; all of them
+   * are returned — the latest-wins fold makes that correct, merely unnarrowed.
    *
    * An empty snapshot list simply returns `[]`; the caller's `appendAll([])` is
    * a no-op (`message-log.service.ts`), so no early-return guard is needed.
    */
-  async seedMessages(processId: string): Promise<AkgenticMessage[]> {
-    const states: AgentStateResponse[] = await this.api.getAgentStates(processId);
+  async seedMessages(
+    processId: string,
+    agentId?: string,
+  ): Promise<AkgenticMessage[]> {
+    const states: AgentStateResponse[] = await this.api.getAgentStates(
+      processId,
+      agentId,
+    );
     return states.map((s) => synthesizeStateChanged(s));
   }
 
