@@ -328,8 +328,8 @@ export class ApiService {
    * `StateChangedMessage`, so this is the only source of the `state` store.
    * Mirrors `getEvents`: hits `GET /teams/{teamId}/agent-states` and unwraps
    * the `states` list, defaulting to `[]` when the body is absent/empty.
-   * Each item's `agent_id` is the agent UUID (team Epic 23), so the caller
-   * can key the `state` store directly with no name→UUID resolution.
+   * Each item's `agent_id` is returned as stored — the agent UUID since team
+   * Epic 23, a name for older snapshots — and keys the `state` store as is.
    *
    * `agentId` narrows the read to one agent (`?agent_id=`, encoded). Absent or
    * empty, the URL is byte for byte the un-narrowed one. An older server

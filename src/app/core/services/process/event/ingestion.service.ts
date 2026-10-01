@@ -347,8 +347,11 @@ export class IngestionService {
     // `log$`, never `appended$` — on a stopped team the actor's `StartMessage`
     // arrived in the replay above, before this subscription, and `appended$`
     // replays nothing. The writes DO come from `appended$`, for the same
-    // reason inverted: the replay's past writes are already reflected in the
-    // arrival fetch and must not trigger another.
+    // reason inverted: a stopped team's REST replay is appended before this
+    // subscription, so its past writes, already reflected in the arrival
+    // fetch, trigger no other. A running team's cursor-0 replay arrives on the
+    // socket after it, so its past writes may cause at most one extra
+    // debounced fetch of the same value.
     cycle.add(
       planningRefresh(
         planningActorId(this.log.log$),
@@ -359,6 +362,8 @@ export class IngestionService {
     // The Member panel: the selected member's state, fetched on each
     // selection. The selection is root-scoped and outlives this cycle, which
     // is exactly why the subscription lives HERE and not in a component.
+    // `TeamSessionService.close()` unselects before a team switch, so no stale
+    // selection crosses into this cycle.
     cycle.add(
       selectionFetch(this.selectedAgentId$, (agentId: string) =>
         this.replay.seedMessages(processId, agentId),

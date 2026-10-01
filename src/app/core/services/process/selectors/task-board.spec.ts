@@ -1,10 +1,6 @@
 import { AgentStateValue } from '../event/per-agent-specs';
-import {
-  isClosedTask,
-  parseTaskList,
-  PLANNING_ACTOR_NAME,
-  planningTasks,
-} from './task-board';
+import { PLANNING_ACTOR_NAME } from '../event/planning-refresh';
+import { isClosedTask, parseTaskList, planningTasks } from './task-board';
 
 function task(id: number, status: string, owner = '@Expert'): Record<string, unknown> {
   return {

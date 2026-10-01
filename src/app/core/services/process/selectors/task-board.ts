@@ -17,10 +17,6 @@ import { PLANNING_ACTOR_NAME } from '../event/planning-refresh';
  * than drawn half-empty.
  */
 
-// The planning actor's name lives in the event tier, which needs it to find
-// the actor's id and may not import a selector. Re-exported, one definition.
-export { PLANNING_ACTOR_NAME };
-
 /**
  * The statuses `planning_actor.py` declares (`TaskStatus`). Note `abort`, not
  * `aborted`: that is the wire value.

@@ -18,13 +18,14 @@ import { NotificationToastService } from '../../../../ui/console/notification-to
 import { NOTIFICATION_PORT } from '../../../platform/notification/notification.port';
 import { PrimeNgNotificationAdapter } from '../../../../ui/console/notification.adapter';
 import { ChatService } from '../selectors/chat.selector';
-import { PLANNING_ACTOR_NAME, planningTasks } from '../selectors/task-board';
+import { planningTasks } from '../selectors/task-board';
 import { ConnectionToast } from './connection-toast';
 import { LoadingIndicator } from './loading-indicator';
 import { MessageLogService } from './message-log.service';
 import { NotificationToasts } from './notification-toasts';
 import { PerAgentStore, PerAgentStoreRegistry } from './per-agent-store';
 import {
+  PLANNING_ACTOR_NAME,
   PLANNING_REFRESH_DEBOUNCE_MS,
   PLANNING_UPDATE_TOOL,
 } from './planning-refresh';
@@ -3620,6 +3621,26 @@ describe('IngestionService — Story 52-1 (superseded cycles)', () => {
     };
   }
 
+  /** The planning actor's roster entry — what step (d) fetches on arrival. */
+  function plannerStart(): any {
+    return {
+      id: 'start-planner',
+      parent_id: null,
+      team_id: 'team-A',
+      timestamp: '2026-08-27T10:00:00Z',
+      sender: makeAddress({
+        name: PLANNING_ACTOR_NAME,
+        role: 'ToolActor',
+        agent_id: 'planner-A',
+      }),
+      display_type: 'other',
+      content: null,
+      __model__: 'akgentic.core.messages.orchestrator.StartMessage',
+      config: {},
+      parent: null,
+    };
+  }
+
   beforeEach(() => {
     fakeSocket = new Subject<any>();
     api = {
@@ -3683,7 +3704,6 @@ describe('IngestionService — Story 52-1 (superseded cycles)', () => {
     const pending = service.init('team-A', false);
     // `init()` is parked on `getEvents`.
     await Promise.resolve();
-    await Promise.resolve();
 
     service.close();
     release([replayed('evt-A-1')]);
@@ -3701,7 +3721,6 @@ describe('IngestionService — Story 52-1 (superseded cycles)', () => {
     );
 
     const pending = service.init('team-A', false);
-    await Promise.resolve();
     await Promise.resolve();
 
     // Team B is opened while A's history is still in flight.
@@ -3724,12 +3743,14 @@ describe('IngestionService — Story 52-1 (superseded cycles)', () => {
     await Promise.resolve();
 
     service.close();
-    release([replayed('evt-A-1')]);
+    // The replay carries the planning actor's `StartMessage`: a cycle that
+    // reached step (d) would fetch its state on arrival.
+    release([replayed('evt-A-1'), { event: plannerStart() }]);
     await pending;
 
     expect(log.snapshot()).toEqual([]);
-    // Open fetches no agent state (Epic 56), and the superseded cycle never
-    // reaches step (d), where the per-agent fetches are wired.
+    // The superseded cycle never reaches step (d), where the per-agent fetches
+    // are wired.
     expect(api.getAgentStates).not.toHaveBeenCalled();
   });
 
