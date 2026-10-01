@@ -137,6 +137,12 @@
 .inspector-panels > * {
   position: absolute;
   inset: 4px 16px 18px;
+  /* Each panel scrolls ITSELF. Without this its content overflowed the panel
+     box into the inspector body's scroll area, and since the off-screen panels
+     are only translated sideways, the TALLEST panel set the scroll height for
+     all of them: a short tab (Team) scrolled into the empty height of a long
+     one (Messages, Run). Clipping here keeps every tab's scroll its own. */
+  overflow-y: auto;
 }
 
 /* Off-screen rather than unmounted: see the note in the template. Moving a
