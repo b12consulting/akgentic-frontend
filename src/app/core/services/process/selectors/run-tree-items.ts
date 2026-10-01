@@ -106,12 +106,6 @@ export function isYourMessage(m: ChatMessage, graph: RunGraph): boolean {
   return parent === undefined || !isHumanSeat(parent);
 }
 
-/** Where `m` sits in the timeline: pick-up time for yours (`null` while no
- *  agent has taken it up), send time for everything else. */
-export function positionTime(m: ChatMessage, graph: RunGraph): Date | null {
-  return isYourMessage(m, graph) ? pickedUpAt(graph, m.message_id) : m.timestamp;
-}
-
 /** The asker whose question a trace root answers, from its parent run's
  *  trigger (case 4: the parent is `(Q, @Human)`, Q's sender is the asker). */
 function continuesFromOf(graph: RunGraph, run: Run): ActorAddress | null {

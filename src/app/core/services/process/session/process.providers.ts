@@ -1,4 +1,3 @@
-import { AsyncPipe } from '@angular/common';
 import { ConnectionToast } from '../event/connection-toast';
 import { IngestionService } from '../event/ingestion.service';
 import { TeamSessionService } from './team-session.service';
@@ -30,10 +29,7 @@ import { TraceFoldState } from '../ui-state/trace-fold-state';
 /**
  * THE TEAM'S SERVICES, SCOPED TO THE ROUTE RATHER THAN TO A COMPONENT.
  *
- * TWO COUNTS RANGE OVER THIS ARRAY AND THEY ARE NOT THE SAME NUMBER. It holds
- * TWENTY-EIGHT entries: TWENTY-SEVEN service classes — the team's stack — plus
- * Angular's `AsyncPipe`, which is a pipe and not one of the team's services.
- * Both numbers appear below; each says which set it counts.
+ * It holds TWENTY-SEVEN entries, every one a service class: the team's stack.
  *
  * All twenty-seven service classes used to be the `process/:id` route's
  * providers, and every component that wanted one injected it bare — which meant
@@ -65,7 +61,7 @@ import { TraceFoldState } from '../ui-state/trace-fold-state';
 /**
  * EXPORTED, and that is not incidental. A developer who clones this repo to
  * build a different console needs this array verbatim — it is the team's whole
- * service stack — and an unexported `const` left them copying twenty-eight
+ * service stack — and an unexported `const` left them copying twenty-seven
  * entries by hand, in order, from the file they were about to replace.
  *
  * IT LIVES BESIDE `team-session.service.ts` RATHER THAN IN THE ROUTER, which is
@@ -77,7 +73,6 @@ import { TraceFoldState } from '../ui-state/trace-fold-state';
  * unit in the data layer whose job is to assemble the others.
  */
 export const PROCESS_PROVIDERS = [
-  AsyncPipe,
   MessageLogService,
   // Epic 23 (ADR-019): route-scoped registry that folds the message log
   // into the set of WorkspaceDescriptors driving the workspace sub-tabs. Must

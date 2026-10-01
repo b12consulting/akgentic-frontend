@@ -1,6 +1,4 @@
 import { inject, Injectable } from '@angular/core';
-import { Router } from '@angular/router';
-import { AuthService } from '../auth/auth.service';
 import { ConfigService } from '../config/config.service';
 import { FetchService } from './fetch.service';
 import {
@@ -45,8 +43,6 @@ export const MIN_FILTER_TERM_LENGTH = 3;
 })
 export class ApiService {
   fetchService: FetchService = inject(FetchService);
-  authService: AuthService = inject(AuthService);
-  router: Router = inject(Router);
   private config = inject(ConfigService);
 
   private get apiUrl(): string { return this.config.api; }

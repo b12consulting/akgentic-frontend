@@ -206,12 +206,9 @@
   // were visibly different widths the moment one of the numbers moved.
   --akg-fold-inset-x: 13px;
 
-  // --- Collapsed rows and markers -----------------------------------------
-  // The agent-to-agent lines the conversation folds away, and the synthetic
-  // context-management markers. Quieter than a turn by design: they are what
-  // happened, not what was said.
-  --akg-collapsed-border: #ece6e1;
-  --akg-collapsed-hover: #f8f5f5;
+  // --- Markers -----------------------------------------------------------
+  // The synthetic context-management markers. Quieter than a turn by design:
+  // they are what happened, not what was said.
   --akg-marker-border: #e2dcd7;
   --akg-marker-bg: #fcfbfa;
   --akg-marker-hover: #f4f0ed;
@@ -224,9 +221,6 @@
   --akg-overlay-shadow-strong: 0 8px 28px -12px rgb(16 20 19 / 30%);
 
   // --- Status -------------------------------------------------------------
-  // One hue for "something arrived": the notification glyph.
-  --akg-notify-fg: var(--akg-accent-bright);
-
   // The first ERROR tone the palette has ever owned. Everything red on screen
   // until now reached PAST this file for it — the metadata modal asks PrimeNG
   // for `var(--p-red-500, #e24c4c)` and elsewhere writes the CSS keyword

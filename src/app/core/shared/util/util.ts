@@ -2,15 +2,6 @@ import { Pipe, PipeTransform } from '@angular/core';
 import { upperFirst } from 'lodash';
 
 @Pipe({
-  name: 'makeAgentNameUserFriendly',
-})
-export class MakeAgentNameUserFriendlyPipe implements PipeTransform {
-  transform(agentName: string): string {
-    return makeAgentNameUserFriendly(agentName);
-  }
-}
-
-@Pipe({
   name: 'displayActorName',
 })
 export class DisplayActorNamePipe implements PipeTransform {

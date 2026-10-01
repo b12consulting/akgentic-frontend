@@ -182,7 +182,6 @@ describe('ProcessComponent (Story 6.2 — log-driven presence)', () => {
     };
 
     const graphDataService = {
-      isLoading$: new BehaviorSubject<boolean>(false),
       nodes$: new BehaviorSubject<any[]>([]),
     };
 
@@ -675,7 +674,6 @@ describe('ProcessComponent (Story 10-2 — single-fetch navigation)', () => {
     };
 
     const graphDataService = {
-      isLoading$: new BehaviorSubject<boolean>(false),
       nodes$: new BehaviorSubject<any[]>([]),
     };
 
@@ -846,7 +844,6 @@ describe('ProcessComponent (Story 52-1 — team id as an input)', () => {
         {
           provide: GraphDataService,
           useValue: {
-            isLoading$: new BehaviorSubject<boolean>(false),
             nodes$: new BehaviorSubject<any[]>([]),
           },
         },
@@ -1148,7 +1145,6 @@ describe('ProcessComponent (R3 — arrangeable, resizable panes)', () => {
         {
           provide: GraphDataService,
           useValue: {
-            isLoading$: new BehaviorSubject<boolean>(false),
             nodes$: new BehaviorSubject<any[]>([]),
           },
         },
@@ -1744,7 +1740,6 @@ describe('ProcessComponent — hiding inspector tabs per deployment (W18b)', () 
       selectedAkgent$: new BehaviorSubject<NodeInterface | null>(null),
     };
     const graphDataService = {
-      isLoading$: new BehaviorSubject<boolean>(false),
       nodes$: new BehaviorSubject<NodeInterface[]>([]),
     };
     const chatService = {};
@@ -1904,7 +1899,6 @@ describe('ProcessComponent — a run selection opens the Run tab (Epic 55)', () 
         {
           provide: GraphDataService,
           useValue: {
-            isLoading$: new BehaviorSubject<boolean>(false),
             nodes$: new BehaviorSubject<NodeInterface[]>([]),
           },
         },

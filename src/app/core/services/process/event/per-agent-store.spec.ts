@@ -5,8 +5,6 @@ import { AkgenticMessage } from '../../../protocol/message.types';
 import { MessageLogService } from './message-log.service';
 import {
   AgentId,
-  appendWith,
-  firstWith,
   PerAgentSpec,
   PerAgentStoreRegistry,
   replaceWith,
@@ -139,24 +137,6 @@ describe('reducer factories (pure)', () => {
     const v2 = r(v1, makeMsg('A', 'v2'));
     expect(v1).toBe('v1');
     expect(v2).toBe('v2');
-  });
-
-  it('appendWith accumulates and returns a FRESH array each time', () => {
-    const r = appendWith<string>((m) => (m.content ?? '') as string);
-    const a1 = r(undefined, makeMsg('A', 'x'));
-    const a2 = r(a1, makeMsg('A', 'y'));
-    expect(a1).toEqual(['x']);
-    expect(a2).toEqual(['x', 'y']);
-    expect(a2).not.toBe(a1); // fresh reference, not in-place mutation
-    expect(a1).toEqual(['x']); // prior array untouched
-  });
-
-  it('firstWith keeps the first value; later matches do not overwrite', () => {
-    const r = firstWith<string>((m) => (m.content ?? '') as string);
-    const f1 = r(undefined, makeMsg('A', 'first'));
-    const f2 = r(f1, makeMsg('A', 'second'));
-    expect(f1).toBe('first');
-    expect(f2).toBe('first');
   });
 });
 

@@ -1456,10 +1456,6 @@ export class WorkspaceExplorerComponent {
     }
   }
 
-  toggleSidebar() {
-    this.sidebarVisible = !this.sidebarVisible;
-  }
-
   onNavigatorHover() {
     // Only expand on hover if collapsed
     if (!this.sidebarVisible) {

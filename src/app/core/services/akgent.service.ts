@@ -1,6 +1,5 @@
-import { inject, Injectable } from '@angular/core';
-import { ApiService } from '../platform/http/api.service';
-import { BehaviorSubject, Subject } from 'rxjs';
+import { Injectable } from '@angular/core';
+import { BehaviorSubject } from 'rxjs';
 
 export class Akgent {
   name!: string;
@@ -11,8 +10,6 @@ export class Akgent {
   providedIn: 'root',
 })
 export class AkgentService {
-  apiService: ApiService = inject(ApiService);
-
   selectedAkgent$: BehaviorSubject<Akgent | null> =
     new BehaviorSubject<Akgent | null>(null);
 
@@ -25,15 +22,5 @@ export class AkgentService {
 
   unselect(): void {
     this.selectedAkgent$.next(null);
-  }
-
-  isSavingState: { [key: string]: boolean } = {};
-
-  async sendMessage(
-    processId: string,
-    agentId: string,
-    userInput: string
-  ): Promise<void> {
-    await this.apiService.sendMessage(processId, userInput, agentId);
   }
 }

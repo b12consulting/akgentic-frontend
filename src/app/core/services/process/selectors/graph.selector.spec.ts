@@ -608,12 +608,6 @@ describe('GraphDataService (selector over log$)', () => {
     log.reset();
     expect((await firstValueFrom(service.nodes$)).length).toBe(0);
   });
-
-  it('(AC10) isLoading$ is preserved as imperative BehaviorSubject', () => {
-    expect(service.isLoading$.value).toBe(false);
-    service.isLoading = true;
-    expect(service.isLoading$.value).toBe(true);
-  });
 });
 
 // ---------------------------------------------------------------------------

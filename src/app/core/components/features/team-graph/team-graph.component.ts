@@ -24,8 +24,6 @@ import { EChartsCoreOption } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { NgxEchartsDirective, provideEchartsCore } from 'ngx-echarts';
 
-import { AkgentService } from '../../../services/akgent.service';
-import { ApiService } from '../../../platform/http/api.service';
 import {
   CategoryService,
   graphCategoryColors,
@@ -114,8 +112,6 @@ function humanInk(): string {
 export class TeamGraphComponent {
   zone: NgZone = inject(NgZone);
   private readonly cdr: ChangeDetectorRef = inject(ChangeDetectorRef);
-  apiService: ApiService = inject(ApiService);
-  akgentService: AkgentService = inject(AkgentService);
   categoryService: CategoryService = inject(CategoryService);
   graphDataService: GraphDataService = inject(GraphDataService);
   selectionService: SelectionService = inject(SelectionService);
@@ -187,8 +183,8 @@ export class TeamGraphComponent {
       // Angular zone. `onChartInit`'s legend handler already reaches for
       // `zone.run` for the same underlying reason.
       //
-      // The whole assignment goes inside, not just the flag: `edges` and
-      // `categories` feed `<app-pending-request [nodes]>` and the legend, and a
+      // The whole assignment goes inside, not just the flag: `nodes` and
+      // `categories` feed the empty-state overlay and the legend, and a
       // half-zoned update is the version that works until someone binds the
       // next field.
       this.zone.run(() => {
@@ -458,8 +454,7 @@ export class TeamGraphComponent {
     // to restate the '#'-prefix rule inline, which made three copies of it in
     // a codebase whose `actor-kind.ts` opens by warning that a rule written
     // twice is a rule that drifts. `this.nodes` keeps every actor, because it
-    // is also what `<app-pending-request [nodes]>` reads and what the empty-state
-    // overlay counts — a team of one agent and six tools is not an empty team,
+    // is also what the empty-state overlay counts — a team of one agent and six tools is not an empty team,
     // and a human request raised by an agent must still be findable.
     const nodes = (this.nodes || []).filter((n) => !isToolNode(n));
 

@@ -11,7 +11,6 @@ import { Menu, MenuModule } from 'primeng/menu';
 import { map, Observable } from 'rxjs';
 
 import { AuthService } from '../../../core/platform/auth/auth.service';
-import { ConfigService } from '../../../core/platform/config/config.service';
 import { IconButtonComponent } from '../../../core/components/primitives/icon-button/icon-button.component';
 
 /** What the footer needs to know about the signed-in user, and nothing else. */
@@ -53,7 +52,6 @@ export interface RailFooterUser {
 })
 export class RailFooterComponent {
   private readonly authService = inject(AuthService);
-  private readonly configService = inject(ConfigService);
   private readonly translate = inject(TranslateService);
 
   @ViewChild(Menu) private menu?: Menu;

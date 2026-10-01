@@ -18,7 +18,6 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 
-import { AkgentService } from '../../core/services/akgent.service';
 import {
   inspectorPercentFromLeading,
   INSPECTOR_DEFAULT_PERCENT,
@@ -29,7 +28,6 @@ import { ViewService } from '../console/view.service';
 import { TeamSessionService } from '../../core/services/process/session/team-session.service';
 import { ConfigService } from '../../core/platform/config/config.service';
 import { ContextService } from '../../core/platform/context/context.service';
-import { IngestionService } from '../../core/services/process/event/ingestion.service';
 import { ToolPresenceService } from '../../core/services/process/selectors/tool-presence.selector';
 import { WorkspaceRegistryService } from '../../core/services/process/selectors/workspace-registry.selector';
 
@@ -88,12 +86,10 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
   route: ActivatedRoute = inject(ActivatedRoute);
   router: Router = inject(Router);
 
-  akgentService: AkgentService = inject(AkgentService);
   /** The team's open/close ritual, owned by the data layer so a second
    *  frontend inherits it instead of having to rediscover it. */
   private readonly session = inject(TeamSessionService);
   contextService: ContextService = inject(ContextService);
-  ingestionService: IngestionService = inject(IngestionService);
   graphDataService: GraphDataService = inject(GraphDataService);
   private readonly selectionService = inject(SelectionService);
   toolPresenceService: ToolPresenceService = inject(ToolPresenceService);
@@ -179,17 +175,6 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
    * test cannot do while `processId` is still `''`.
    */
   private opened = false;
-
-  /**
-   * The generation of the current open.
-   *
-   * `openTeam()` awaits `getCurrentTeam` before it touches the ingestion
-   * layer. Two selections in quick succession therefore have two awaits in
-   * flight, and the SLOWER one must not be allowed to finish the job: it would
-   * initialise the pipeline for a team the user has already moved off, leaving
-   * the previous team's conversation under the current team's name.
-   */
-  private openEpoch = 0;
 
   /**
    * Reactive presence observable for the `#KnowledgeGraphTool` actor.

@@ -3258,7 +3258,7 @@ entries: {}
   // ---------------------------------------------------------------------
   // Custom confirmation modal + secondary-modal interaction contract
   // (ADR-018): no <p-confirmDialog>; Clone-idiom custom modal; focused
-  // proceed button / Esc cancels; hasSecondaryPanelOpen predicate; no
+  // proceed button / Esc cancels; no
   // backdrop; shared dark-red destructive style.
   // ---------------------------------------------------------------------
 
@@ -3384,31 +3384,6 @@ entries: {}
 
     expect(component.confirmRequest).toBeNull();
     expect(component.confirmDialogVisible).toBeFalse();
-  });
-
-  // ----- hasSecondaryPanelOpen predicate -----
-
-  it('(22.3 AC12) hasSecondaryPanelOpen is true when the Clone modal is open, false otherwise', async () => {
-    await loadedWithCloneSrc(['src']);
-    expect(component.hasSecondaryPanelOpen).toBeFalse();
-
-    component.onCloneClick();
-    expect(component.hasSecondaryPanelOpen).toBeTrue();
-
-    component.onCloneDialogVisibleChange(false);
-    expect(component.hasSecondaryPanelOpen).toBeFalse();
-  });
-
-  it('(22.3 AC12) hasSecondaryPanelOpen is true when the confirmation modal is open, false otherwise', async () => {
-    await loaded('foo: 1\n');
-    expect(component.hasSecondaryPanelOpen).toBeFalse();
-
-    component.buffer = 'foo: 2\n';
-    component.onResetClick();
-    expect(component.hasSecondaryPanelOpen).toBeTrue();
-
-    component.onConfirmDialogHide();
-    expect(component.hasSecondaryPanelOpen).toBeFalse();
   });
 
   // ----- transparent-mask modals (ADR-018) -----
@@ -3695,7 +3670,8 @@ entries: {}
 
   it('(ADR-018 §b) handleSecondaryEscape returns false when no secondary modal is open (host then closes the config panel)', async () => {
     await loaded('foo: 1\n');
-    expect(component.hasSecondaryPanelOpen).toBeFalse();
+    expect(component.cloneDialogVisible).toBeFalse();
+    expect(component.confirmDialogVisible).toBeFalse();
 
     expect(component.handleSecondaryEscape()).toBeFalse();
   });

@@ -42,9 +42,6 @@ describe('TeamTabsComponent (W6)', () => {
             edges$: new BehaviorSubject<unknown[]>([]),
             categories$: new BehaviorSubject<unknown[]>([]),
             categoryService: { COLORS: ['#fff', '#000'] },
-            set isLoading(_v: boolean) {
-              /* irrelevant here */
-            },
           },
         },
         {

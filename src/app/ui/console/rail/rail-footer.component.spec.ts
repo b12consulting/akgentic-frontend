@@ -4,7 +4,6 @@ import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 import { BehaviorSubject } from 'rxjs';
 
 import { AuthService } from '../../../core/platform/auth/auth.service';
-import { ConfigService } from '../../../core/platform/config/config.service';
 import { ContextService } from '../../../core/platform/context/context.service';
 import { IconButtonComponent } from '../../../core/components/primitives/icon-button/icon-button.component';
 import { provideTranslateTesting } from '../../../../testing/i18n-testing';
@@ -16,7 +15,6 @@ describe('RailFooterComponent', () => {
   let currentUser$: BehaviorSubject<unknown>;
   let authSpy: jasmine.SpyObj<AuthService>;
   let contextSpy: jasmine.SpyObj<ContextService>;
-  let config: { hideHome: boolean };
 
   const text = (selector: string): string | null => {
     const found = fixture.debugElement.query(By.css(selector));
@@ -29,7 +27,6 @@ describe('RailFooterComponent', () => {
       providers: [
         provideTranslateTesting(),
         { provide: AuthService, useValue: authSpy },
-        { provide: ConfigService, useValue: config },
         { provide: ContextService, useValue: contextSpy },
       ],
     }).compileComponents();
@@ -51,7 +48,6 @@ describe('RailFooterComponent', () => {
       'navigateHome',
     ]);
     contextSpy.navigateHome.and.returnValue(Promise.resolve(true));
-    config = { hideHome: false };
   });
 
   it('prints the name verbatim — a person\'s name is not copy', async () => {

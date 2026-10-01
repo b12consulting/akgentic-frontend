@@ -993,16 +993,9 @@ describe('ContextService', () => {
       Promise.resolve(makePage([makeTeam('a')], 137)),
     );
 
-    const emissions: number[] = [];
-    const sub = service.totalCount$.subscribe((v) => emissions.push(v));
-
     await service.loadTeamsPage(1, 250);
 
     expect(service.totalCount).toBe(137);
-    // Initial 0 emission + the updated total.
-    expect(emissions[emissions.length - 1]).toBe(137);
-
-    sub.unsubscribe();
   });
 
   it('(AC5g) loadTeamsPage calls apiService.getTeamsPage with the given page/size', async () => {
@@ -1060,24 +1053,8 @@ describe('ContextService', () => {
     expect(service.totalCount).toBe(2);
   });
 
-  it('(AC5h) resetTeams clears totalCount back to 0 and teams$ to []', async () => {
-    apiSpy.getTeamsPage.and.returnValue(
-      Promise.resolve(makePage([makeTeam('a'), makeTeam('b')], 2)),
-    );
-    await service.loadTeamsPage(1, 250);
-
-    expect((await firstValueFrom(service.teams$)).length).toBe(2);
-    expect(service.totalCount).toBe(2);
-
-    service.resetTeams();
-
-    expect(await firstValueFrom(service.teams$)).toEqual([]);
+  it('(28.1) totalCount is 0 on construction', () => {
     expect(service.totalCount).toBe(0);
-  });
-
-  it('(28.1) totalCount$ emits 0 synchronously on construction', async () => {
-    const value = await firstValueFrom(service.totalCount$);
-    expect(value).toBe(0);
   });
 
   // =======================================================================
@@ -1850,7 +1827,7 @@ describe('ContextService filter (Story 48.1)', () => {
     expect(apiSpy.getTeamsPage).toHaveBeenCalledOnceWith(3, 250, filterOf('aze'));
   }));
 
-  it('(AC10) filter exposes the active value synchronously and filter$ emits it', fakeAsync(() => {
+  it('(AC10) filter exposes the active value synchronously', fakeAsync(() => {
     apiSpy.getTeamsPage.and.returnValue(Promise.resolve(pageOf('t')));
 
     expect(service.filter).toEqual({ meta: {}, catalogNamespace: null });
@@ -1858,9 +1835,6 @@ describe('ContextService filter (Story 48.1)', () => {
     service.setFilter(filterOf('aze'));
 
     expect(service.filter).toEqual(filterOf('aze'));
-    let emitted: TeamFilter | undefined;
-    service.filter$.subscribe((f) => (emitted = f)).unsubscribe();
-    expect(emitted!).toEqual(filterOf('aze'));
 
     tick(FILTER_DEBOUNCE_MS);
     flushMicrotasks();

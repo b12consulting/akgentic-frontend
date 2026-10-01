@@ -29,7 +29,6 @@ import {
   buildRunTreeView,
   isYourMessage,
   MessageNotes,
-  positionTime,
   provenanceOf,
   replyTarget,
   RunTreeItem,
@@ -515,13 +514,6 @@ describe('run-tree helpers', () => {
     const log = [welcome('W', 0), compacted('C6', HUMAN, 1), cleared('C7', HUMAN, 2)];
     const { messages, graph } = fold(log);
     expect(messages.map((m) => isYourMessage(m, graph))).toEqual([false, false, false]);
-  });
-
-  it('positionTime: pick-up for yours (null before), send time for the rest', () => {
-    const { graph } = fold(CASE_7_PREFIX);
-    expect(positionTime(chat(CASE_7_PREFIX, 'U1'), graph)).toEqual(at(2));
-    expect(positionTime(chat(CASE_7_PREFIX, 'U2'), graph)).toBeNull();
-    expect(positionTime(chat(CASE_7_PREFIX, 'A1'), graph)).toEqual(at(13));
   });
 
   it('traceItemsFor: one item per run your message opened; none when absorbed', () => {

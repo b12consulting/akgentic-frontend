@@ -1,8 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { ApiService } from './api.service';
 import { FetchService, NetworkError } from './fetch.service';
-import { AuthService } from '../auth/auth.service';
-import { Router } from '@angular/router';
 import { NamespaceSummary } from '../../protocol/catalog.interface';
 
 describe('ApiService', () => {
@@ -17,8 +15,6 @@ describe('ApiService', () => {
       providers: [
         ApiService,
         { provide: FetchService, useValue: fetchServiceSpy },
-        { provide: AuthService, useValue: {} },
-        { provide: Router, useValue: {} },
       ],
     });
 
