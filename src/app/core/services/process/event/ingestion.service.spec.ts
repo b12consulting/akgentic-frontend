@@ -1,4 +1,10 @@
-import { TestBed } from '@angular/core/testing';
+import {
+  fakeAsync,
+  flush,
+  flushMicrotasks,
+  TestBed,
+  tick,
+} from '@angular/core/testing';
 import { MessageService } from 'primeng/api';
 import { Toast } from 'primeng/toast';
 import { BehaviorSubject, ReplaySubject, Subject, Subscription } from 'rxjs';
@@ -12,11 +18,16 @@ import { NotificationToastService } from '../../../../ui/console/notification-to
 import { NOTIFICATION_PORT } from '../../../platform/notification/notification.port';
 import { PrimeNgNotificationAdapter } from '../../../../ui/console/notification.adapter';
 import { ChatService } from '../selectors/chat.selector';
+import { parseTaskList } from '../selectors/task-board';
 import { ConnectionToast } from './connection-toast';
 import { LoadingIndicator } from './loading-indicator';
 import { MessageLogService } from './message-log.service';
 import { NotificationToasts } from './notification-toasts';
 import { PerAgentStore, PerAgentStoreRegistry } from './per-agent-store';
+import {
+  PLANNING_REFRESH_DEBOUNCE_MS,
+  PLANNING_UPDATE_TOOL,
+} from './planning-refresh';
 import { ProcessStores } from './process-stores';
 import { ReplaySeeder } from './replay-seeder';
 import { TeamStatusReactor } from './team-status-reactor';
@@ -3700,4 +3711,208 @@ describe('IngestionService — Story 52-1 (superseded cycles)', () => {
     expect(service.processId).toBe('team-B');
     socketB.complete();
   });
+});
+
+// =====================================================================
+// The live task board — a planning write refetches the agent states
+//
+// The stream subscribers suppress `StateChangedMessage`, so after the
+// open-time seed the planning actor's state never changes in `state` unless
+// something re-reads it. The trigger is the CALLING agent's
+// `ToolReturnEvent(update_planning)`.
+// =====================================================================
+
+describe('IngestionService — live task board refresh', () => {
+  const PLANNER_ID = 'planner-1';
+  const TOOL_RETURN_MODEL = 'akgentic.llm.event.ToolReturnEvent';
+
+  let service: IngestionService;
+  let api: any;
+  let fakeSocket: Subject<any>;
+  let seq = 0;
+
+  function plannerState(status: string): any {
+    return {
+      agent_id: PLANNER_ID,
+      name: '#PlanningTool',
+      state: {
+        task_list: [
+          {
+            id: 5,
+            status,
+            description: 'Draft the report',
+            owner: '@Manager',
+            creator: '@Manager',
+            dependencies: [],
+            output: '',
+            updated_at: '2026-10-01T10:00:00Z',
+          },
+        ],
+      },
+      updated_at: '2026-10-01T10:00:00Z',
+    };
+  }
+
+  function toolReturn(toolName: string): any {
+    seq++;
+    return {
+      id: 'ret-' + seq,
+      parent_id: null,
+      team_id: 'team-1',
+      timestamp: '2026-10-01T10:00:01Z',
+      sender: makeAddress({ name: '@Manager', agent_id: 'manager-1' }),
+      display_type: 'other',
+      content: null,
+      __model__: EVENT_MESSAGE_MODEL,
+      event: {
+        __model__: TOOL_RETURN_MODEL,
+        run_id: 'run-1',
+        tool_name: toolName,
+        tool_call_id: 'call-' + seq,
+        success: true,
+      },
+    };
+  }
+
+  function boardStatus(): string | undefined {
+    return parseTaskList(service.state.snapshot(PLANNER_ID)?.state)[0]?.status;
+  }
+
+  /** The feeder's 16ms frame window, then the refresh debounce, then the fetch. */
+  function settleLiveFrame(): void {
+    tick(16);
+    tick(PLANNING_REFRESH_DEBOUNCE_MS);
+    flushMicrotasks();
+  }
+
+  function teardown(): void {
+    service.ngOnDestroy();
+    flush();
+  }
+
+  beforeEach(() => {
+    fakeSocket = new Subject<any>();
+    api = {
+      getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+      getAgentStates: jasmine.createSpy('getAgentStates'),
+    };
+
+    TestBed.configureTestingModule({
+      providers: [
+        MessageLogService,
+        PerAgentStoreRegistry,
+        ProcessStores,
+        ReplaySeeder,
+        LoadingIndicator,
+        ConnectionToast,
+        NotificationToasts,
+        TeamSocket,
+        LogFeeder,
+        TeamStatusReactor,
+        IngestionService,
+        { provide: ContextService, useValue: contextServiceDouble() },
+        { provide: ApiService, useValue: api },
+        {
+          provide: NOTIFICATION_PORT,
+          useValue: {
+            notify: jasmine.createSpy('notify'),
+            dismiss: jasmine.createSpy('dismiss'),
+            clear: jasmine.createSpy('clear'),
+          },
+        },
+      ],
+    });
+    service = TestBed.inject(IngestionService);
+    (teamSocket() as any).createWebSocket = () => fakeSocket;
+  });
+
+  it('a live update_planning return refetches once and the board shows the new status', fakeAsync(() => {
+    api.getAgentStates.and.returnValues(
+      Promise.resolve([plannerState('pending')]),
+      Promise.resolve([plannerState('abort')]),
+    );
+    service.init('team-1', true);
+    flushMicrotasks();
+    expect(boardStatus()).toBe('pending');
+
+    fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
+    settleLiveFrame();
+
+    expect(api.getAgentStates).toHaveBeenCalledTimes(2);
+    expect(api.getAgentStates.calls.mostRecent().args).toEqual(['team-1']);
+    expect(boardStatus()).toBe('abort');
+    teardown();
+  }));
+
+  it('a burst of three returns refetches once', fakeAsync(() => {
+    api.getAgentStates.and.resolveTo([plannerState('pending')]);
+    service.init('team-1', true);
+    flushMicrotasks();
+
+    fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
+    fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
+    tick(16);
+    fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
+    settleLiveFrame();
+
+    // One seed at open, one refetch for the burst.
+    expect(api.getAgentStates).toHaveBeenCalledTimes(2);
+    teardown();
+  }));
+
+  it('other tool returns fetch nothing', fakeAsync(() => {
+    api.getAgentStates.and.resolveTo([plannerState('pending')]);
+    service.init('team-1', true);
+    flushMicrotasks();
+
+    fakeSocket.next(toolReturn('workspace_write'));
+    fakeSocket.next(toolReturn('get_planning_task'));
+    settleLiveFrame();
+
+    expect(api.getAgentStates).toHaveBeenCalledTimes(1);
+    teardown();
+  }));
+
+  it('replayed history at open fetches nothing beyond the seed', fakeAsync(() => {
+    api.getAgentStates.and.resolveTo([plannerState('abort')]);
+    api.getEvents.and.resolveTo([
+      { event: toolReturn(PLANNING_UPDATE_TOOL) },
+      { event: toolReturn(PLANNING_UPDATE_TOOL) },
+    ]);
+    service.init('team-1', false);
+    flushMicrotasks();
+    settleLiveFrame();
+
+    expect(api.getAgentStates).toHaveBeenCalledTimes(1);
+    expect(boardStatus()).toBe('abort');
+    teardown();
+  }));
+
+  it('a team switch mid-fetch drops the response', fakeAsync(() => {
+    let release: (states: any[]) => void = () => undefined;
+    api.getAgentStates.and.returnValues(
+      Promise.resolve([plannerState('pending')]),
+      new Promise<any[]>((r) => {
+        release = r;
+      }),
+      Promise.resolve([]),
+    );
+    service.init('team-1', true);
+    flushMicrotasks();
+
+    fakeSocket.next(toolReturn(PLANNING_UPDATE_TOOL));
+    tick(16);
+    tick(PLANNING_REFRESH_DEBOUNCE_MS);
+    expect(api.getAgentStates).toHaveBeenCalledTimes(2);
+
+    // Team 2 opens while team 1's refetch is in flight.
+    fakeSocket = new Subject<any>();
+    service.init('team-2', true);
+    flushMicrotasks();
+    release([plannerState('abort')]);
+    flushMicrotasks();
+
+    expect(service.state.snapshot(PLANNER_ID)).toBeUndefined();
+    teardown();
+  }));
 });
