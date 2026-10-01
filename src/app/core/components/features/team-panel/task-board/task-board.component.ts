@@ -30,6 +30,8 @@ export interface TaskBoardView {
   colours: AgentColours;
   /** Owner names that are people rather than agents. */
   humans: ReadonlySet<string>;
+  /** Owner names processing a message right now (the roster's `thinking`). */
+  busy: ReadonlySet<string>;
 }
 
 /** One glyph per status the tool declares; its label key names it. */
@@ -39,9 +41,12 @@ interface StatusGlyph {
 }
 
 const GLYPHS: Record<KnownTaskStatus, StatusGlyph> = {
-  pending: { icon: 'pi pi-circle', labelKey: 'inspector.tasks.status.pending' },
-  // Spinning: work in progress. Reduced motion stops it (the stylesheet).
-  started: { icon: 'pi pi-spinner pi-spin', labelKey: 'inspector.tasks.status.started' },
+  // Not started yet: a plain ring, set in the idle-dot grey by the stylesheet.
+  pending: { icon: 'pi pi-circle glyph-pending', labelKey: 'inspector.tasks.status.pending' },
+  // Work in progress. It SPINS only while its owner is processing a message
+  // (the template adds `pi-spin` from the roster's `thinking`); a started task
+  // whose owner is idle keeps the still spinner. Reduced motion stops the spin.
+  started: { icon: 'pi pi-spinner', labelKey: 'inspector.tasks.status.started' },
   completed: { icon: 'pi pi-check', labelKey: 'inspector.tasks.status.completed' },
   abort: { icon: 'pi pi-times', labelKey: 'inspector.tasks.status.abort' },
 };
@@ -89,6 +94,9 @@ export class TaskBoardComponent {
         rows: hideClosed ? tasks.filter((task) => !isClosedTask(task)) : tasks,
         colours: agentColours(nodes, this.categories.COLORS),
         humans: new Set(nodes.filter(isHumanNode).map((node) => node.actorName)),
+        // Members processing a message right now: the same `thinking` flag the
+        // member cards' active dot reads.
+        busy: new Set(nodes.filter((node) => node.thinking === true).map((node) => node.actorName)),
       };
     }),
   );
@@ -110,6 +118,11 @@ export class TaskBoardComponent {
 
   isClosed(task: PlanTask): boolean {
     return isClosedTask(task);
+  }
+
+  /** A started task spins only while its owner is processing a message. */
+  isSpinning(task: PlanTask, busy: ReadonlySet<string>): boolean {
+    return task.status === 'started' && task.owner !== '' && busy.has(task.owner);
   }
 
   initialOf(name: string): string {

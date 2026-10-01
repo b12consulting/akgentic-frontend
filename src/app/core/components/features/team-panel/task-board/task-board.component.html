@@ -38,7 +38,12 @@
               [attr.data-status]="task.status"
             >
               <span class="task-glyph" role="img" [attr.aria-label]="label" [attr.title]="label">
-                <i class="glyph" [class]="glyphOf(task.status)" aria-hidden="true"></i>
+                <i
+                  class="glyph"
+                  [class]="glyphOf(task.status)"
+                  [class.pi-spin]="isSpinning(task, view.busy)"
+                  aria-hidden="true"
+                ></i>
               </span>
               <span class="task-id">#{{ task.id }}</span>
               <span class="task-description" [attr.title]="task.description">{{

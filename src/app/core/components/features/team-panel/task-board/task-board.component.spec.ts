@@ -13,7 +13,7 @@ import {
 } from '../../../../../../testing/i18n-testing';
 import { TASK_BOARD_HIDE_CLOSED_KEY, TaskBoardComponent } from './task-board.component';
 
-type Node = { actorName: string; name: string; role: string };
+type Node = { actorName: string; name: string; role: string; thinking?: boolean };
 
 const ROSTER: Node[] = [
   { actorName: '@Human', name: 'human-id', role: 'Human' },
@@ -106,15 +106,38 @@ describe('TaskBoardComponent', () => {
       g.getAttribute('aria-label'),
     ]);
     expect(glyphs).toEqual([
-      ['pi pi-circle', 'pending'],
-      ['pi pi-circle', 'pending'],
+      // Pending: the plain ring, greyed by the stylesheet's glyph-pending.
+      ['glyph-pending pi pi-circle', 'pending'],
+      ['glyph-pending pi pi-circle', 'pending'],
       ['pi pi-check', 'done'],
       ['pi pi-times', 'aborted'],
-      // Started spins (reduced motion stops it in the stylesheet).
-      ['pi pi-spin pi-spinner', 'started'],
+      // Started: a still spinner while its owner is idle (see the spin spec).
+      ['pi pi-spinner', 'started'],
       // An unknown status: a neutral "?", named as sent.
       ['pi pi-question', 'blocked'],
     ]);
+  });
+
+  it('spins a started task only while its owner is processing a message', async () => {
+    await mount();
+    show([task(1, 'started', '@Manager'), task(2, 'started', '@Expert')]);
+    const spinning = (): (string | null)[] =>
+      Array.from(host().querySelectorAll('.task'))
+        .filter((row) => row.querySelector('.glyph')!.classList.contains('pi-spin'))
+        .map((row) => row.getAttribute('data-task-id'));
+
+    // Nobody is working: both started tasks keep a still spinner.
+    expect(spinning()).toEqual([]);
+
+    // @Expert picks up a message: only its task spins.
+    nodes$.next(ROSTER.map((n) => (n.actorName === '@Expert' ? { ...n, thinking: true } : n)));
+    fixture.detectChanges();
+    expect(spinning()).toEqual(['2']);
+
+    // Back to idle: the spin stops.
+    nodes$.next(ROSTER);
+    fixture.detectChanges();
+    expect(spinning()).toEqual([]);
   });
 
   it('is monochrome: no chip anywhere, closed rows muted', async () => {

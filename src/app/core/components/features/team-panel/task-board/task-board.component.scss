@@ -128,6 +128,12 @@
   font-size: 10px;
 }
 
+/* Pending: the plain ring in the palette's idle-dot grey, the same light grey
+   an idle member's dot uses, so a task not yet started reads as waiting. */
+.glyph-pending {
+  color: var(--akg-dot-idle);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .glyph.pi-spin {
     animation: none;
