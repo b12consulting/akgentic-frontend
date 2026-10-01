@@ -1050,6 +1050,45 @@ describe('ContextService', () => {
     });
   });
 
+  // --- reloadTeams (the rail's refresh control, issue #381) -----------------
+
+  it('reloadTeams replays the LAST page and size, not page 1', async () => {
+    apiSpy.getTeamsPage.and.returnValue(Promise.resolve(makePage([], 0)));
+    await service.loadTeamsPage(3, 250);
+    apiSpy.getTeamsPage.calls.reset();
+
+    await service.reloadTeams();
+
+    expect(apiSpy.getTeamsPage).toHaveBeenCalledOnceWith(3, 250, {
+      meta: {},
+      catalogNamespace: null,
+    });
+  });
+
+  it('reloadTeams before any fetch leaves page and size to the server', async () => {
+    apiSpy.getTeamsPage.and.returnValue(Promise.resolve(makePage([], 0)));
+
+    await service.reloadTeams();
+
+    expect(apiSpy.getTeamsPage).toHaveBeenCalledOnceWith(undefined, undefined, {
+      meta: {},
+      catalogNamespace: null,
+    });
+  });
+
+  it('reloadTeams REPLACES the rows with the fresh page and updates the total', async () => {
+    apiSpy.getTeamsPage.and.returnValue(Promise.resolve(makePage([makeTeam('a')], 1)));
+    await service.loadTeamsPage(1, 250);
+    apiSpy.getTeamsPage.and.returnValue(
+      Promise.resolve(makePage([makeTeam('a'), makeTeam('b')], 2)),
+    );
+
+    await service.reloadTeams();
+
+    expect((await firstValueFrom(service.teams$)).map((t) => t.team_id)).toEqual(['a', 'b']);
+    expect(service.totalCount).toBe(2);
+  });
+
   it('(AC5h) resetTeams clears totalCount back to 0 and teams$ to []', async () => {
     apiSpy.getTeamsPage.and.returnValue(
       Promise.resolve(makePage([makeTeam('a'), makeTeam('b')], 2)),

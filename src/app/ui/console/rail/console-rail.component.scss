@@ -72,6 +72,16 @@
   padding: 18px 16px 12px 20px;
 }
 
+// The refresh and collapse controls as ONE flex item, so the brand row's
+// `space-between` keeps pushing a single right-hand group to the edge instead
+// of spreading three children across the width.
+.rail__brand-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
 // `align-items: baseline`, not `center`: the two halves are set at 19px and
 // 9px, and centring them would leave the qualifier floating in the middle of
 // the wordmark's x-height instead of sitting on its baseline.

@@ -166,7 +166,8 @@
     "hideDetails": "Masquer les détails",
     "logout": "Déconnexion",
     "showSidebar": "Afficher la barre latérale",
-    "collapseSidebar": "Réduire la barre latérale"
+    "collapseSidebar": "Réduire la barre latérale",
+    "refreshTeams": "Actualiser les équipes"
   },
   "title": {
     "home": "Accueil",

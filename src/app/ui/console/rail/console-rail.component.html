@@ -34,24 +34,55 @@
         <span class="rail__wordmark-suffix">{{ 'rail.brandSuffix' | translate }}</span>
       </span>
     }
-    <app-icon-button
-      size="md"
-      [label]="'chrome.collapseSidebar' | translate"
-      (pressed)="viewService.toggleRail()"
-    >
-      <svg
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        stroke-width="1.7"
-        stroke-linecap="round"
-        stroke-linejoin="round"
-        aria-hidden="true"
+    <!--
+      THE ROW'S CONTROLS, grouped so the brand row stays two-ended: the mark on
+      the left, the actions on the right. Refresh sits INSIDE the row rather
+      than down by the search box because what it reloads is the whole list,
+      not the search's view of it — and because a control that survives a
+      collapse must be reachable from the same place that collapses.
+
+      Refresh comes FIRST and collapse stays on the outer edge: the toggle is
+      the one control whose position a user learns by muscle memory, and it
+      must not move because a second one arrived.
+    -->
+    <div class="rail__brand-actions">
+      <app-icon-button
+        size="md"
+        [label]="'chrome.refreshTeams' | translate"
+        (pressed)="onRefresh()"
       >
-        <rect x="3" y="4" width="18" height="16" rx="3" />
-        <path d="M9 4v16" />
-      </svg>
-    </app-icon-button>
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.7"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M20 12a8 8 0 1 1-2.34-5.66" />
+          <path d="M20 4v5h-5" />
+        </svg>
+      </app-icon-button>
+      <app-icon-button
+        size="md"
+        [label]="'chrome.collapseSidebar' | translate"
+        (pressed)="viewService.toggleRail()"
+      >
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.7"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="3" y="4" width="18" height="16" rx="3" />
+          <path d="M9 4v16" />
+        </svg>
+      </app-icon-button>
+    </div>
   </div>
 
   <!--

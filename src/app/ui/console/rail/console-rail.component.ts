@@ -294,6 +294,20 @@ export class ConsoleRailComponent implements OnInit {
   }
 
   /**
+   * Refetch the team list in place. It does NOT navigate and it does NOT
+   * reset the page: `reloadTeams` replays whatever page and size the last
+   * fetch recorded, so a refresh pressed here while the table sits on page 3
+   * reloads page 3 — the same promise the table's own Refresh button makes.
+   *
+   * Nothing is awaited or caught. `loading$` is what the list region watches,
+   * and `FetchService` has already raised the toast for a failed fetch; a
+   * second report here would say the same thing twice.
+   */
+  onRefresh(): void {
+    void this.contextService.reloadTeams();
+  }
+
+  /**
    * "New team" opens the creation wizard. It does NOT navigate.
    *
    * THE RAIL ASKS; IT DOES NOT OWN. Creating a team means choosing a type and
