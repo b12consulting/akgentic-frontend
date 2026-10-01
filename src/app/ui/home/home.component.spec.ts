@@ -197,6 +197,7 @@ describe('HomeComponent', () => {
       [
         'getTeams',
         'loadTeamsPage',
+        'reloadTeams',
         'resetTeams',
         'deleteTeam',
         'createTeam',
@@ -226,6 +227,7 @@ describe('HomeComponent', () => {
     // template's [totalRecords]="contextService.totalCount" has a value.
     contextSpy.totalCount = 0;
     contextSpy.getTeams.and.callFake(async () => teams$.value);
+    contextSpy.reloadTeams.and.returnValue(Promise.resolve());
     // loadTeamsPage REPLACES teams$ with the page (one page in the DOM) and
     // updates totalCount — mirrors the 28.1 data-layer behavior so REPLACE
     // semantics and the page swap are observable in tests. The fake returns a
@@ -370,10 +372,15 @@ describe('HomeComponent', () => {
     expect(apiSpy.deleteTeam).not.toHaveBeenCalled();
   });
 
-  it('(28.2 AC4) refreshContext() reloads the current page via loadTeamsPage (REPLACE), not getTeams', async () => {
-    component.currentPage = 2;
+  it('(28.2 AC4) refreshContext() reloads through the service\'s reloadTeams (REPLACE), not getTeams', async () => {
+    // CHANGED EXPECTATION (issue #381). This used to pin `loadTeamsPage(2, 250)`
+    // with the page passed from here. The service now records the page itself
+    // and `reloadTeams` replays it, so the page is NOT passed a second time —
+    // the rail's refresh control makes the identical call.
+    contextSpy.loadTeamsPage.calls.reset();
     await component.refreshContext();
-    expect(contextSpy.loadTeamsPage).toHaveBeenCalledOnceWith(2, 250);
+    expect(contextSpy.reloadTeams).toHaveBeenCalledTimes(1);
+    expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
     expect(contextSpy.getTeams).not.toHaveBeenCalled();
     expect(contextSpy.resetTeams).not.toHaveBeenCalled();
     expect((component as any).context).toBeUndefined();
@@ -1410,12 +1417,14 @@ describe('HomeComponent', () => {
   });
 
   it('(28.2 AC8e) refreshContext reloads the CURRENT page with no empty emission', async () => {
-    component.currentPage = 3;
     contextSpy.loadTeamsPage.calls.reset();
 
     await component.refreshContext();
 
-    expect(contextSpy.loadTeamsPage).toHaveBeenCalledOnceWith(3, 250);
+    // The page is the service's to remember (issue #381): no page argument,
+    // no direct page load, and nothing cleared on the way.
+    expect(contextSpy.reloadTeams).toHaveBeenCalledTimes(1);
+    expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
     expect(contextSpy.resetTeams).not.toHaveBeenCalled();
   });
 

@@ -389,12 +389,12 @@ export class ContextService {
    * Refetch the page the list is showing (the rail's refresh control).
    *
    * REPLAYS, never resets: the last page and size any fetch path recorded are
-   * what go back out, so the rail's control and the table's own Refresh button
-   * reload the same thing — `HomeComponent.refreshContext` passes its
-   * `currentPage` explicitly, and this is the same call for a caller that has
-   * no page state of its own. Before anything has been fetched both are
-   * `undefined` and the server applies its defaults, which is the same first
-   * page `ensureTeamsLoaded` would have asked for.
+   * what go back out. The rail's control and the table's own Refresh button
+   * (`HomeComponent.refreshContext`) BOTH make this call, so they reload the
+   * same page by construction rather than by each passing a page of its own.
+   * Before anything has been fetched both are `undefined` and the server
+   * applies its defaults, which is the same first page `ensureTeamsLoaded`
+   * would have asked for.
    *
    * Goes through `loadTeamsPage`, so the active filter, the in-flight count
    * and the REPLACE-not-append write all come for free — the rows dim while

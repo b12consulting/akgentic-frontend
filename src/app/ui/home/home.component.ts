@@ -745,7 +745,11 @@ export class HomeComponent {
     this.isRefreshing = true;
     try {
       // Reload the current page (REPLACE — no empty flash); no page jump.
-      await this.contextService.loadTeamsPage(this.currentPage, PAGE_SIZE);
+      // The SERVICE knows which page is on screen — every `loadPage` records
+      // it — so this does not pass `currentPage` a second time. The rail's
+      // refresh control makes the same call, which is what keeps the two
+      // buttons reloading the same page by construction.
+      await this.contextService.reloadTeams();
     } finally {
       this.isRefreshing = false;
     }
