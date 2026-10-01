@@ -62,11 +62,6 @@
       "stop": "Arrêter l'équipe",
       "restore": "Redémarrer l'équipe",
       "delete": "Supprimer l'équipe"
-    },
-    "deleteConfirm": {
-      "title": "Supprimer l'équipe ?",
-      "message": "Supprimer « {{name}} » ? L'équipe est arrêtée, et sa conversation et son historique sont effacés. Cette action est irréversible.",
-      "confirm": "Supprimer"
     }
   },
   "chat": {

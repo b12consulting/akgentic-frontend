@@ -19,7 +19,6 @@ import { ApiService, MIN_FILTER_TERM_LENGTH } from '../../core/platform/http/api
 import {
   NO_TEAM_FILTER,
   TeamFilter,
-  teamTitle,
   titleFieldKey,
 } from '../../core/platform/context/team.interface';
 import { NamespaceSummary } from '../../core/protocol/catalog.interface';
@@ -39,7 +38,6 @@ import { AuthService } from '../../core/platform/auth/auth.service';
 import { ConfigService } from '../../core/platform/config/config.service';
 import { ContextService } from '../../core/platform/context/context.service';
 import { ViewService } from '../console/view.service';
-import { TeamDeleteConfirmService } from '../console/team-delete-confirm.service';
 import { IconButtonComponent } from '../../core/components/primitives/icon-button/icon-button.component';
 
 // Listed in @Component.imports so Angular's @defer block can resolve
@@ -146,7 +144,6 @@ export class HomeComponent {
    */
   creation = inject(TeamCreationService);
   private readonly teamTypes = inject(TeamTypeCatalog);
-  private readonly deleteConfirm = inject(TeamDeleteConfirmService);
 
   // Catalog namespaces for the team creation dropdown. Held sorted by
   // `sortNamespaces` (teams first, then library, each alphabetical) — the list
@@ -668,13 +665,7 @@ export class HomeComponent {
   private restoreNamespace: string | null = null;
 
   /**
-   * `(deleteRequested)` handler. Asks, then deletes the team, and that is all
-   * it does.
-   *
-   * The question is `TeamDeleteConfirmService`'s — the same one the rail's row
-   * menu asks — and it names the team as the table's row does: the declared
-   * title when the namespace nominates one, the team's name otherwise. Cancel
-   * makes no call at all.
+   * `(deleteRequested)` handler. Deletes the team, and that is all it does.
    *
    * Under Epic 52 this ALSO had to close the pane beside the list first, or the
    * deleted team stayed mounted and went on polling a row the server was
@@ -683,13 +674,6 @@ export class HomeComponent {
    * user is working stays exactly where it is.
    */
   async deleteTeam(teamId: string) {
-    const teams = await firstValueFrom(this.contextService.teams$);
-    const team = teams.find((t) => t.team_id === teamId);
-    const titleKey = titleFieldKey(this.selectedNamespace$.value?.team_metadata);
-    const name = (team && (teamTitle(team.metadata, titleKey) ?? team.name)) || teamId;
-    if (!(await this.deleteConfirm.ask(name))) {
-      return;
-    }
     await this.contextService.deleteTeam(teamId);
   }
 

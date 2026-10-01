@@ -10,7 +10,6 @@ import {
   setTestTranslations,
 } from '../../../../testing/i18n-testing';
 import { RailTeamRowComponent } from './rail-team-row.component';
-import { TeamDeleteConfirmService } from '../team-delete-confirm.service';
 import { RailTeamRow } from '../../../core/services/console/rail/rail-teams.selector';
 
 function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
@@ -42,7 +41,6 @@ describe('RailTeamRowComponent', () => {
   let fixture: ComponentFixture<RailTeamRowComponent>;
   let component: RailTeamRowComponent;
   let contextSpy: jasmine.SpyObj<ContextService>;
-  let deleteConfirmSpy: jasmine.SpyObj<TeamDeleteConfirmService>;
 
   const rowButton = (): HTMLButtonElement =>
     fixture.debugElement.query(By.css('button.rail-row')).nativeElement;
@@ -96,16 +94,12 @@ describe('RailTeamRowComponent', () => {
     contextSpy.stopTeamAndAwait.and.returnValue(Promise.resolve());
     contextSpy.restoreTeamAndAwait.and.returnValue(Promise.resolve());
     contextSpy.deleteTeam.and.returnValue(Promise.resolve());
-    // Confirms by default; the Cancel path is asserted on its own.
-    deleteConfirmSpy = jasmine.createSpyObj('TeamDeleteConfirmService', ['ask']);
-    deleteConfirmSpy.ask.and.resolveTo(true);
 
     await TestBed.configureTestingModule({
       imports: [RailTeamRowComponent, NoopAnimationsModule],
       providers: [
         provideTranslateTesting(),
         { provide: ContextService, useValue: contextSpy },
-        { provide: TeamDeleteConfirmService, useValue: deleteConfirmSpy },
       ],
     }).compileComponents();
 
@@ -327,59 +321,12 @@ describe('RailTeamRowComponent', () => {
     const seen: string[] = [];
     component.deleteRequested.subscribe((id) => seen.push(id));
 
-    await component.onDelete();
+    component.onDelete();
 
-    expect(deleteConfirmSpy.ask).toHaveBeenCalledTimes(1);
     expect(seen).toEqual(['team-5']);
     expect(contextSpy.deleteTeam).toHaveBeenCalledOnceWith('team-5');
     expect(component.stopping).toBeFalse();
     expect(component.restoring).toBeFalse();
-  });
-
-  it('asks before deleting, naming the team, and Delete deletes it once', async () => {
-    await render(makeRow('stopped', { team_id: 'team-5', name: 'Research Crew' }));
-    let settle!: (confirmed: boolean) => void;
-    deleteConfirmSpy.ask.and.returnValue(new Promise((r) => (settle = r)));
-    const seen: string[] = [];
-    component.deleteRequested.subscribe((id) => seen.push(id));
-
-    const item = component.buildMenuItems().find((i) => i.id === 'delete')!;
-    item.command!({});
-    await macrotask();
-
-    expect(deleteConfirmSpy.ask).toHaveBeenCalledTimes(1);
-    expect(deleteConfirmSpy.ask.calls.mostRecent().args[0]).toBe('Research Crew');
-    expect(contextSpy.deleteTeam).not.toHaveBeenCalled();
-    expect(seen).toEqual([]);
-
-    settle(true);
-    await macrotask();
-    expect(contextSpy.deleteTeam).toHaveBeenCalledOnceWith('team-5');
-    expect(seen).toEqual(['team-5']);
-  });
-
-  it('Cancel on the delete confirm calls nothing and emits nothing', async () => {
-    deleteConfirmSpy.ask.and.resolveTo(false);
-    await render(makeRow('stopped', { team_id: 'team-5' }));
-    const seen: string[] = [];
-    component.deleteRequested.subscribe((id) => seen.push(id));
-
-    await component.onDelete();
-
-    expect(deleteConfirmSpy.ask).toHaveBeenCalledTimes(1);
-    expect(contextSpy.deleteTeam).not.toHaveBeenCalled();
-    expect(seen).toEqual([]);
-  });
-
-  it('hands focus back to the kebab that opened the menu, not the vanished item', async () => {
-    await render(makeRow('stopped', { team_id: 'team-5' }));
-    menuAnchor().click();
-
-    await component.onDelete();
-
-    const kebab = menuAnchor().querySelector('button');
-    expect(kebab).not.toBeNull();
-    expect(deleteConfirmSpy.ask.calls.mostRecent().args[1]).toBe(kebab);
   });
 
   it('swaps the dot for a progress mark while an action is in flight', async () => {

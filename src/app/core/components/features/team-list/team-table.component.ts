@@ -178,8 +178,7 @@ export class TeamTableComponent {
   /**
    * Delete carries a bare id, not a `TeamRowAction`: nothing marks a row busy
    * for a delete today, and handing out a `track` nobody calls would imply
-   * otherwise. A REQUEST, not a deletion: the host asks the user to confirm
-   * before it calls anything.
+   * otherwise.
    */
   @Output() deleteRequested = new EventEmitter<string>();
 

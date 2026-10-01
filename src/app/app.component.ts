@@ -8,7 +8,6 @@ import { distinctUntilChanged, filter, map, startWith } from 'rxjs/operators';
 
 import { ConsoleShellComponent } from './ui/console/console-shell.component';
 import { TeamCreationDialogComponent } from './ui/console/team-creation/team-creation-dialog.component';
-import { ConfirmDialogComponent } from './core/components/primitives/confirm-dialog/confirm-dialog.component';
 import { ApiService } from './core/platform/http/api.service';
 import { AuthService } from './core/platform/auth/auth.service';
 import { ConfigService } from './core/platform/config/config.service';
@@ -51,19 +50,17 @@ function isBareRoute(url: string): boolean {
  * header (team name, status, Details), each of which reads the state it
  * needs where it is rendered instead of having it pushed down from the root.
  *
- * What is left is the frame and three overlays, and the four are unrelated to
+ * What is left is the frame and two overlays, and the three are unrelated to
  * each other:
  *   - the shell, told only whether to draw the chrome;
  *   - the app's ONE `<p-toast>` mount, which stories 31-3/31-5 depend on being
  *     exactly one and being owned here;
- *   - the team-creation wizard, mounted only while it is open;
- *   - the ONE confirmation dialog, which renders nothing until
- *     `ConfirmDialogService.confirm` asks something.
+ *   - the team-creation wizard, mounted only while it is open.
  *
- * THE OVERLAYS ARE SIBLINGS OF THE SHELL, for the same reason and a second
+ * BOTH OVERLAYS ARE SIBLINGS OF THE SHELL, for the same reason and a second
  * one. The shared reason is clipping: they are positioned against the viewport,
- * and nesting any of them in the shell's `overflow: hidden` flex row would
- * simply hide it. The wizard and the confirm add their own — the control that opens it is in the rail,
+ * and nesting either in the shell's `overflow: hidden` flex row would simply
+ * hide it. The wizard adds its own — the control that opens it is in the rail,
  * and a collapsed rail is `inert` + `aria-hidden`, so a dialog mounted there
  * would become untypeable the moment the user collapsed the rail behind it.
  *
@@ -80,7 +77,6 @@ function isBareRoute(url: string): boolean {
     ToastModule,
     ConsoleShellComponent,
     TeamCreationDialogComponent,
-    ConfirmDialogComponent,
   ],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',

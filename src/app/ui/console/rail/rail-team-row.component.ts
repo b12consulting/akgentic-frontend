@@ -23,11 +23,9 @@ import {
   isRunning,
   metadataEntries,
   TeamActivity,
-  teamTitle,
 } from '../../../core/platform/context/team.interface';
 import { IconButtonComponent } from '../../../core/components/primitives/icon-button/icon-button.component';
 import { RailTeamRow } from '../../../core/services/console/rail/rail-teams.selector';
-import { TeamDeleteConfirmService } from '../team-delete-confirm.service';
 
 /** Which `team.status.*` key describes each activity, including its "as of the
  *  last refresh" hedge. Frozen because it is a lookup table, not state. */
@@ -73,7 +71,6 @@ export class RailTeamRowComponent implements OnChanges {
   private readonly translate = inject(TranslateService);
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly locale = inject(LOCALE_ID);
-  private readonly deleteConfirm = inject(TeamDeleteConfirmService);
 
   @Input({ required: true }) row!: RailTeamRow;
 
@@ -121,8 +118,6 @@ export class RailTeamRowComponent implements OnChanges {
   menuItems: MenuItem[] = [];
 
   private menuOpen = false;
-  /** The kebab that opened the menu — where focus returns after a confirm. */
-  private menuTrigger: HTMLElement | null = null;
   private pointerInside = false;
   private focusInside = false;
 
@@ -222,8 +217,6 @@ export class RailTeamRowComponent implements OnChanges {
    * honest.
    */
   openMenu(event: Event): void {
-    this.menuTrigger =
-      (event.currentTarget as HTMLElement | null)?.querySelector('button') ?? null;
     this.menuItems = this.buildMenuItems();
     this.menuOpen = true;
     this.menu?.toggle(event);
@@ -260,7 +253,7 @@ export class RailTeamRowComponent implements OnChanges {
       id: 'delete',
       label: this.translate.instant('team.action.delete'),
       icon: 'pi pi-trash',
-      command: () => void this.onDelete(),
+      command: () => this.onDelete(),
     });
 
     items.push({ separator: true });
@@ -300,22 +293,13 @@ export class RailTeamRowComponent implements OnChanges {
   /**
    * Delete carries no busy mark, and deliberately so: the row it would mark is
    * removed from the list by the same call, so the mark has nothing left to
-   * describe.
-   *
-   * It ASKS FIRST, through `TeamDeleteConfirmService` — the same question the
-   * management view asks, so the two cannot drift. Nothing is emitted and
-   * nothing is called until the user presses Delete; Cancel leaves no trace.
-   * Focus goes back to the kebab, because the menu item that was clicked is
-   * gone by the time the dialog closes.
+   * describe. No confirmation either — matching the management view, which has
+   * never had one. Adding one belongs in both places at once, not here alone.
    */
-  async onDelete(): Promise<void> {
-    const team = this.row.team;
-    const name = teamTitle(team.metadata, this.titleKey) ?? team.name;
-    if (!(await this.deleteConfirm.ask(name, this.menuTrigger))) {
-      return;
-    }
-    this.deleteRequested.emit(team.team_id);
-    void this.contextService.deleteTeam(team.team_id).catch(() => {
+  onDelete(): void {
+    const teamId = this.row.team.team_id;
+    this.deleteRequested.emit(teamId);
+    void this.contextService.deleteTeam(teamId).catch(() => {
       // Already surfaced by `FetchService`'s error toast. Consumed so a failed
       // delete is not also an unhandled rejection.
     });
