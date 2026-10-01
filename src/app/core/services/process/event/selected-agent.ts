@@ -25,11 +25,17 @@ export const SELECTED_AGENT_ID = new InjectionToken<Observable<string | null>>(
 );
 
 /**
- * The Member panel's source: fetch the selected member's state on every
- * selection. No cache — re-selecting re-fetches — and an unselect fetches
- * nothing. `switchMap` drops a response a newer selection has superseded; a
- * failed fetch is logged and swallowed INSIDE the switch, so the next selection
- * still fetches.
+ * The Member panel's source: fetch the selected member's state once per agent
+ * per team cycle. A selection for which `isKnown` holds — its state is already
+ * in the `state` store — fetches nothing, and an unselect fetches nothing. The
+ * store is the record: it is cleared on every team switch, and a fetch that
+ * returned no snapshot (or was cancelled) leaves it empty, so the next
+ * selection of that agent fetches again. The planning actor is kept fresh by
+ * `planningRefresh`, not here.
+ *
+ * `switchMap` drops a response a newer selection has superseded; a failed
+ * fetch is logged and swallowed INSIDE the switch, so the next selection still
+ * fetches.
  *
  * Emits the fetched messages; the caller appends them and holds the
  * subscription in its cycle bag, so a team switch drops an in-flight response.
@@ -37,9 +43,11 @@ export const SELECTED_AGENT_ID = new InjectionToken<Observable<string | null>>(
 export function selectionFetch(
   selected$: Observable<string | null>,
   fetchStates: (agentId: string) => Promise<AkgenticMessage[]>,
+  isKnown: (agentId: string) => boolean,
 ): Observable<AkgenticMessage[]> {
   return selected$.pipe(
     filter((id: string | null): id is string => !!id),
+    filter((id: string) => !isKnown(id)),
     switchMap((agentId: string) =>
       defer(() => fetchStates(agentId)).pipe(
         catchError((err: unknown) => {

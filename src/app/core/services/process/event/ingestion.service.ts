@@ -359,14 +359,19 @@ export class IngestionService {
         (agentId: string) => this.replay.seedMessages(processId, agentId),
       ).subscribe((states: AkgenticMessage[]) => this.log.appendAll(states)),
     );
-    // The Member panel: the selected member's state, fetched on each
-    // selection. The selection is root-scoped and outlives this cycle, which
-    // is exactly why the subscription lives HERE and not in a component.
-    // `TeamSessionService.close()` unselects before a team switch, so no stale
-    // selection crosses into this cycle.
+    // The Member panel: the selected member's state, fetched once per agent
+    // per team cycle — re-selecting an agent whose state is already in the
+    // store fetches nothing. The store is cleared in step (b), so "once" is per
+    // cycle by construction; the planning actor is refreshed by
+    // `planningRefresh` above. The selection is root-scoped and outlives this
+    // cycle, which is exactly why the subscription lives HERE and not in a
+    // component. `TeamSessionService.close()` unselects before a team switch,
+    // so no stale selection crosses into this cycle.
     cycle.add(
-      selectionFetch(this.selectedAgentId$, (agentId: string) =>
-        this.replay.seedMessages(processId, agentId),
+      selectionFetch(
+        this.selectedAgentId$,
+        (agentId: string) => this.replay.seedMessages(processId, agentId),
+        (agentId: string) => this.stores.state.snapshot(agentId) !== undefined,
       ).subscribe((states: AkgenticMessage[]) => this.log.appendAll(states)),
     );
     // The spinner's `take(1)` side-channel on the protocol stream. Owned and

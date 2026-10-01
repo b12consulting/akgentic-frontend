@@ -1767,11 +1767,16 @@ describe('IngestionService — a member\'s state is fetched on selection (Epic 5
     expect(service.state.snapshot(NAME)).toBeUndefined();
   });
 
-  it('AC8: each selection fetches once, re-selecting re-fetches, and unselect fetches nothing', async () => {
+  it('AC8: an agent is fetched once per team; re-selecting it and unselect fetch nothing', async () => {
+    apiService.getAgentStates.and.callFake((_team: string, agentId: string) =>
+      Promise.resolve([snapshot({ backstory: agentId }, agentId)]),
+    );
     await service.init('team-1', true);
 
     selected$.next(UUID);
+    await settle();
     selected$.next(UUID_B);
+    await settle();
     selected$.next(null);
     selected$.next(UUID);
     await settle();
@@ -1779,8 +1784,41 @@ describe('IngestionService — a member\'s state is fetched on selection (Epic 5
     expect(apiService.getAgentStates.calls.allArgs()).toEqual([
       ['team-1', UUID],
       ['team-1', UUID_B],
+    ]);
+  });
+
+  it('AC8: selecting an agent whose state is already in the store fetches nothing', async () => {
+    // An older server answers A's narrowed call with B's snapshot too, so B's
+    // state is in the store before B is ever selected.
+    apiService.getAgentStates.and.resolveTo([
+      snapshot({ backstory: 'A.' }),
+      snapshot({ backstory: 'B.' }, UUID_B),
+    ]);
+    await service.init('team-1', true);
+    selected$.next(UUID);
+    await settle();
+    apiService.getAgentStates.calls.reset();
+
+    selected$.next(UUID_B);
+    await settle();
+
+    expect(apiService.getAgentStates).not.toHaveBeenCalled();
+  });
+
+  it('AC8: an agent whose fetch returned no snapshot is fetched again on the next selection', async () => {
+    await service.init('team-1', true);
+
+    selected$.next(UUID);
+    await settle();
+    selected$.next(null);
+    selected$.next(UUID);
+    await settle();
+
+    expect(apiService.getAgentStates.calls.allArgs()).toEqual([
+      ['team-1', UUID],
       ['team-1', UUID],
     ]);
+    expect(service.state.snapshot(UUID)).toBeUndefined();
   });
 
   it('AC8: a failed selection fetch is logged and the next selection still fetches', async () => {
@@ -1884,7 +1922,7 @@ describe('IngestionService — a member\'s state is fetched on selection (Epic 5
     socketB.complete();
   });
 
-  it('a team switch clears the fetched state', async () => {
+  it('a team switch clears the fetched state, so the next team fetches it again', async () => {
     apiService.getAgentStates.and.resolveTo([snapshot({ backstory: 'Team A.' })]);
     await service.init('team-A', true);
     selected$.next(UUID);
@@ -1897,6 +1935,13 @@ describe('IngestionService — a member\'s state is fetched on selection (Epic 5
     await settle();
 
     expect(service.state.snapshot(UUID)).toBeUndefined();
+
+    selected$.next(UUID);
+    await settle();
+    expect(apiService.getAgentStates.calls.allArgs()).toEqual([
+      ['team-A', UUID],
+      ['team-B', UUID],
+    ]);
     socketB.complete();
   });
 });

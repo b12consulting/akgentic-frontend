@@ -9,17 +9,30 @@ describe('selectionFetch', () => {
   let fetchStates: jasmine.Spy<(agentId: string) => Promise<AkgenticMessage[]>>;
   let emitted: AkgenticMessage[][];
   let sub: Subscription;
+  // Stands in for the `state` store: the agents whose state it holds.
+  let known: Set<string>;
 
   beforeEach(() => {
     selected$ = new BehaviorSubject<string | null>(null);
     fetchStates = jasmine.createSpy('fetchStates').and.resolveTo([]);
     emitted = [];
+    known = new Set<string>();
   });
 
   afterEach(() => sub?.unsubscribe());
 
   function start(): void {
-    sub = selectionFetch(selected$, fetchStates).subscribe((m) => emitted.push(m));
+    sub = selectionFetch(selected$, fetchStates, (id: string) =>
+      known.has(id),
+    ).subscribe((m) => emitted.push(m));
+  }
+
+  /** A fetch that returns a snapshot, which the caller would store. */
+  function fetchStores(): void {
+    fetchStates.and.callFake((agentId: string) => {
+      known.add(agentId);
+      return Promise.resolve([{ id: agentId } as AkgenticMessage]);
+    });
   }
 
   it('fetches the selection current at subscribe time', fakeAsync(() => {
@@ -39,18 +52,38 @@ describe('selectionFetch', () => {
     expect(fetchStates).not.toHaveBeenCalled();
   }));
 
-  it('every selection fetches, re-selecting included (no cache)', fakeAsync(() => {
+  it('selecting an agent whose state is already known fetches nothing', fakeAsync(() => {
+    known.add('agent-A');
     start();
-    selected$.next('agent-A');
-    selected$.next('agent-B');
     selected$.next('agent-A');
     flushMicrotasks();
 
-    expect(fetchStates.calls.allArgs()).toEqual([
-      ['agent-A'],
-      ['agent-B'],
-      ['agent-A'],
-    ]);
+    expect(fetchStates).not.toHaveBeenCalled();
+    expect(emitted.length).toBe(0);
+  }));
+
+  it('A, then B, then A again fetches each agent once', fakeAsync(() => {
+    fetchStores();
+    start();
+    selected$.next('agent-A');
+    flushMicrotasks();
+    selected$.next('agent-B');
+    flushMicrotasks();
+    selected$.next('agent-A');
+    flushMicrotasks();
+
+    expect(fetchStates.calls.allArgs()).toEqual([['agent-A'], ['agent-B']]);
+  }));
+
+  it('an agent whose fetch returned no snapshot is fetched again on the next selection', fakeAsync(() => {
+    start();
+    selected$.next('agent-A');
+    flushMicrotasks();
+    selected$.next(null);
+    selected$.next('agent-A');
+    flushMicrotasks();
+
+    expect(fetchStates.calls.allArgs()).toEqual([['agent-A'], ['agent-A']]);
   }));
 
   it('a failed fetch is logged and the next selection still fetches', fakeAsync(() => {
