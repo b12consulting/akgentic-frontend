@@ -134,389 +134,16 @@ describe('ChatMessageComponent', () => {
       expect(el.querySelector('.message.left')).toBeTruthy();
     });
 
-    it('should enable label pill', () => {
+    it('renders the speaker\'s name as plain text, not a control', () => {
       const msg = makeChatMessage({ rule: 2, alignment: 'left' });
       fixture.componentRef.setInput('message', msg);
       fixture.detectChanges();
 
-      const btn = fixture.nativeElement.querySelector('.label-pill');
-      expect(btn.disabled).toBe(false);
-    });
-  });
-
-  describe('Rule 3 (notification + collapse + Reply button)', () => {
-    it('should show hand-raised icon (🙋) on expanded bubble when notification is true', () => {
-      const msg = makeChatMessage({
-        rule: 3,
-        alignment: 'left',
-        collapsed: false,
-        label: 'Agent ⇒ OtherHuman',
-      });
-      fixture.componentRef.setInput('message', msg);
-      fixture.componentRef.setInput('notification', true);
-      fixture.detectChanges();
-
-      const el = fixture.nativeElement;
-      const icon = el.querySelector('.notification-icon');
-      expect(icon).toBeTruthy();
-      expect(icon.textContent).toContain('🙋');
-      // Bell icon must NOT be present anywhere for Rule 3
-      expect(el.querySelector('.pi-bell')).toBeNull();
-    });
-
-    it('should NOT show hand-raised icon when notification input is false', () => {
-      const msg = makeChatMessage({
-        rule: 3,
-        alignment: 'left',
-        collapsed: false,
-        label: 'Agent ⇒ OtherHuman',
-      });
-      fixture.componentRef.setInput('message', msg);
-      fixture.componentRef.setInput('notification', false);
-      fixture.detectChanges();
-
-      const el = fixture.nativeElement;
-      expect(el.querySelector('.notification-icon')).toBeNull();
-      expect(el.querySelector('.pi-bell')).toBeNull();
-    });
-
-    it('renders the folded request as a CALLOUT, not as a metadata row', () => {
-      // W2a: the one message in the transcript that is blocked on the user used
-      // to be its least legible row. The callout is the assertion that it is
-      // now the loudest: the asking agent's avatar in the transcript's gutter,
-      // so it still belongs to the conversation rather than floating beside it.
-      const msg = makeChatMessage({
-        rule: 3,
-        collapsed: true,
-        label: 'Agent ⇒ OtherHuman',
-      });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      const el = fixture.nativeElement;
-      expect(el.querySelector('.collapsed-request')).toBeTruthy();
-      expect(el.querySelector('.collapsed-notice'))
-        .withContext('a request is not a notification')
-        .toBeNull();
-      expect(el.querySelector('.message-bubble')).toBeNull();
-      expect(el.querySelector('.collapsed-request .turn-avatar')).toBeTruthy();
-    });
-
-    it('names the seat being asked in words, outside any bracket', () => {
-      // The recipient used to be the second half of `[@Manager ⇒ @Support]`,
-      // which is where a reader stops looking. Synthetic template, so the
-      // assertion is about the parameter reaching the phrase, not about copy.
-      setTestTranslations({
-        chat: { request: { asks: '<<asks:{{agent}}>>' } },
-      });
-      const msg = makeChatMessage({
-        rule: 3,
-        collapsed: true,
-        sender: makeAddress({ name: '@Manager', role: 'Manager' }),
-        recipient: makeAddress({ name: '@Support', role: 'Human' }),
-      });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      const head = fixture.nativeElement.querySelector('.request-asks');
-      const text = head.textContent.replace(/\s+/g, ' ');
-      expect(text).toContain('@Manager');
-      expect(text).toContain('<<asks:@Support>>');
-      expect(text).withContext('bracket soup is gone').not.toContain('[');
-      expect(text).not.toContain('⇒');
-    });
-
-    it('shows the question as prose, not clipped to sixty characters', () => {
-      // The old row ran `buildPreview` at its 60-char default, which on a real
-      // request is reliably the polite preamble and none of the question.
-      const question =
-        'Could you double-check whether the payroll export for March already ' +
-        'includes the retroactive corrections we applied last week?';
-      const msg = makeChatMessage({ rule: 3, collapsed: true, content: question });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      const body = fixture.nativeElement.querySelector('.request-body');
-      expect(body.textContent.trim()).toBe(question);
-      expect(body.textContent).not.toContain('...');
-    });
-
-    it('says PENDING while it waits and ANSWERED once it is resolved', () => {
-      const msg = makeChatMessage({ rule: 3, collapsed: true });
-      fixture.componentRef.setInput('message', msg);
-      fixture.componentRef.setInput('notification', true);
-      fixture.detectChanges();
-
-      const state = () => fixture.nativeElement.querySelector('.request-state');
-      expect(state().textContent).toContain('chat.request.pending');
-
-      fixture.componentRef.setInput('notification', false);
-      fixture.detectChanges();
-      expect(state().textContent).toContain('chat.request.answered');
-    });
-
-    it('RECEDES once answered — the resolved request stops shouting', () => {
-      // The accent card is the "something is waiting on you" signal. A request
-      // that has been answered keeps its text and its fold but must give the
-      // signal back, or a day-old conversation is a wall of callouts.
-      const msg = makeChatMessage({ rule: 3, collapsed: true });
-      fixture.componentRef.setInput('message', msg);
-      fixture.componentRef.setInput('notification', true);
-      fixture.detectChanges();
-
-      const row = fixture.nativeElement.querySelector('.collapsed-request');
-      expect(row.classList.contains('answered')).toBe(false);
-
-      fixture.componentRef.setInput('notification', false);
-      fixture.detectChanges();
-      expect(row.classList.contains('answered')).toBe(true);
-      expect(fixture.nativeElement.querySelector('.request-body'))
-        .withContext('receding is not hiding')
-        .toBeTruthy();
-    });
-
-    it('drops the 🙋 — the state is stated in words, not encoded in an emoji', () => {
-      const msg = makeChatMessage({ rule: 3, collapsed: true });
-      fixture.componentRef.setInput('message', msg);
-      fixture.componentRef.setInput('notification', true);
-      fixture.detectChanges();
-
-      const row = fixture.nativeElement.querySelector('.collapsed-request');
-      expect(row.textContent).not.toContain('🙋');
-    });
-
-    it('should render Reply button on collapsed Rule 3 line', () => {
-      const msg = makeChatMessage({ rule: 3, collapsed: true });
-      fixture.componentRef.setInput('message', msg);
-      fixture.componentRef.setInput('notification', true);
-      fixture.detectChanges();
-
-      const btn = fixture.nativeElement.querySelector('.open-button');
-      expect(btn).toBeTruthy();
-      expect(btn.textContent).toContain('chat.reply');
-    });
-
-    it('should render Reply button on expanded Rule 3 bubble header', () => {
-      const msg = makeChatMessage({ rule: 3, collapsed: false });
-      fixture.componentRef.setInput('message', msg);
-      fixture.componentRef.setInput('notification', true);
-      fixture.detectChanges();
-
-      const header = fixture.nativeElement.querySelector('.bubble-header');
-      const btn = header.querySelector('.open-button');
-      expect(btn).toBeTruthy();
-      expect(btn.textContent).toContain('chat.reply');
-    });
-
-    it('bubble body click on expanded Rule 3 should emit toggleCollapse and NOT rule3Clicked', () => {
-      const msg = makeChatMessage({ rule: 3, collapsed: false });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      spyOn(component.toggleCollapse, 'emit');
-      spyOn(component.rule3Clicked, 'emit');
-
-      const messageEl = fixture.nativeElement.querySelector('.message');
-      messageEl.click();
-
-      expect(component.toggleCollapse.emit).toHaveBeenCalledWith(msg);
-      expect(component.rule3Clicked.emit).not.toHaveBeenCalled();
-    });
-
-    it('collapsed-line click on Rule 3 should emit toggleCollapse and NOT rule3Clicked', () => {
-      const msg = makeChatMessage({ rule: 3, collapsed: true });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      spyOn(component.toggleCollapse, 'emit');
-      spyOn(component.rule3Clicked, 'emit');
-
-      const line = fixture.nativeElement.querySelector('.collapsed-line');
-      line.click();
-
-      expect(component.toggleCollapse.emit).toHaveBeenCalledWith(msg);
-      expect(component.rule3Clicked.emit).not.toHaveBeenCalled();
-    });
-
-    it('Reply button click should emit rule3Clicked and NOT toggleCollapse', () => {
-      const msg = makeChatMessage({ rule: 3, collapsed: true });
-      fixture.componentRef.setInput('message', msg);
-      fixture.componentRef.setInput('notification', true);
-      fixture.detectChanges();
-
-      spyOn(component.toggleCollapse, 'emit');
-      spyOn(component.rule3Clicked, 'emit');
-
-      const btn = fixture.nativeElement.querySelector('.open-button button');
-      btn.click();
-
-      expect(component.rule3Clicked.emit).toHaveBeenCalledWith(msg);
-      expect(component.toggleCollapse.emit).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('Reply button visibility (Rule 3 only)', () => {
-    it('should NOT render Reply button for Rule 1', () => {
-      const msg = makeChatMessage({ rule: 1, alignment: 'right' });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-      expect(fixture.nativeElement.querySelector('.open-button')).toBeNull();
-    });
-
-    it('should NOT render Reply button for Rule 2', () => {
-      const msg = makeChatMessage({ rule: 2, alignment: 'left' });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-      expect(fixture.nativeElement.querySelector('.open-button')).toBeNull();
-    });
-
-    it('should NOT render Reply button for Rule 4 (collapsed or expanded)', () => {
-      const collapsed = makeChatMessage({ rule: 4, collapsed: true });
-      fixture.componentRef.setInput('message', collapsed);
-      fixture.detectChanges();
-      expect(fixture.nativeElement.querySelector('.open-button')).toBeNull();
-
-      const expanded = makeChatMessage({ rule: 4, collapsed: false });
-      fixture.componentRef.setInput('message', expanded);
-      fixture.detectChanges();
-      expect(fixture.nativeElement.querySelector('.open-button')).toBeNull();
-    });
-  });
-
-  describe('Reply button disabled state (Story 4.5)', () => {
-    it('should disable Reply button on collapsed Rule 3 when notification is false', () => {
-      const msg = makeChatMessage({ rule: 3, collapsed: true });
-      fixture.componentRef.setInput('message', msg);
-      fixture.componentRef.setInput('notification', false);
-      fixture.detectChanges();
-
-      const btn = fixture.nativeElement.querySelector('.open-button button');
-      expect(btn).toBeTruthy();
-      expect(btn.disabled).toBe(true);
-    });
-
-    it('should enable Reply button on collapsed Rule 3 when notification is true', () => {
-      const msg = makeChatMessage({ rule: 3, collapsed: true });
-      fixture.componentRef.setInput('message', msg);
-      fixture.componentRef.setInput('notification', true);
-      fixture.detectChanges();
-
-      const btn = fixture.nativeElement.querySelector('.open-button button');
-      expect(btn).toBeTruthy();
-      expect(btn.disabled).toBe(false);
-    });
-
-    it('should disable Reply button on expanded Rule 3 when notification is false', () => {
-      const msg = makeChatMessage({ rule: 3, collapsed: false });
-      fixture.componentRef.setInput('message', msg);
-      fixture.componentRef.setInput('notification', false);
-      fixture.detectChanges();
-
-      const btn = fixture.nativeElement.querySelector('.open-button button');
-      expect(btn).toBeTruthy();
-      expect(btn.disabled).toBe(true);
-    });
-
-    it('should enable Reply button on expanded Rule 3 when notification is true', () => {
-      const msg = makeChatMessage({ rule: 3, collapsed: false });
-      fixture.componentRef.setInput('message', msg);
-      fixture.componentRef.setInput('notification', true);
-      fixture.detectChanges();
-
-      const btn = fixture.nativeElement.querySelector('.open-button button');
-      expect(btn).toBeTruthy();
-      expect(btn.disabled).toBe(false);
-    });
-
-    it('should NOT emit rule3Clicked when Reply button is disabled and clicked', () => {
-      const msg = makeChatMessage({ rule: 3, collapsed: true });
-      fixture.componentRef.setInput('message', msg);
-      fixture.componentRef.setInput('notification', false);
-      fixture.detectChanges();
-
-      spyOn(component.rule3Clicked, 'emit');
-      const btn = fixture.nativeElement.querySelector('.open-button button');
-      btn.click();
-
-      expect(component.rule3Clicked.emit).not.toHaveBeenCalled();
-    });
-
-    it('should emit rule3Clicked when Reply button is enabled and clicked', () => {
-      const msg = makeChatMessage({ rule: 3, collapsed: true });
-      fixture.componentRef.setInput('message', msg);
-      fixture.componentRef.setInput('notification', true);
-      fixture.detectChanges();
-
-      spyOn(component.rule3Clicked, 'emit');
-      const btn = fixture.nativeElement.querySelector('.open-button button');
-      btn.click();
-
-      expect(component.rule3Clicked.emit).toHaveBeenCalledWith(msg);
-    });
-  });
-
-  describe('Rule 4 (AI-to-AI collapsed)', () => {
-    it('should render collapsed line by default', () => {
-      const msg = makeChatMessage({
-        rule: 4,
-        collapsed: true,
-        label: 'Worker ⇒ Manager',
-      });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      const el = fixture.nativeElement;
-      expect(el.querySelector('.collapsed-line')).toBeTruthy();
-      expect(el.querySelector('.message-bubble')).toBeNull();
-    });
-
-    it('should NOT render collapse-indicator when collapsed (caret removed)', () => {
-      const msg = makeChatMessage({ rule: 4, collapsed: true });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      const indicator = fixture.nativeElement.querySelector('.collapse-indicator');
-      expect(indicator).toBeNull();
-    });
-
-    it('should emit toggleCollapse on click', () => {
-      const msg = makeChatMessage({
-        rule: 4,
-        collapsed: true,
-        content: 'AI message',
-      });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      spyOn(component.toggleCollapse, 'emit');
-      const collapsedLine = fixture.nativeElement.querySelector('.collapsed-line');
-      collapsedLine.click();
-
-      expect(component.toggleCollapse.emit).toHaveBeenCalledWith(msg);
-    });
-
-    it('should NOT render collapse-indicator-bubble when expanded (caret removed)', () => {
-      const msg = makeChatMessage({ rule: 4, collapsed: false });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      const indicator = fixture.nativeElement.querySelector(
-        '.collapse-indicator-bubble',
-      );
-      expect(indicator).toBeNull();
-    });
-
-    it('should emit toggleCollapse on click when expanded', () => {
-      const msg = makeChatMessage({ rule: 4, collapsed: false });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      spyOn(component.toggleCollapse, 'emit');
-      // The ROW, open or shut — an expanded notification is the same row with
-      // more of its text, not a bubble that replaced it.
-      fixture.nativeElement.querySelector('.collapsed-notice').click();
-
-      expect(component.toggleCollapse.emit).toHaveBeenCalledWith(msg);
+      // The name opens nothing (Epic 55 removed the reader it used to open), so
+      // it must not be a button that promises otherwise.
+      const pill: HTMLElement = fixture.nativeElement.querySelector('.label-pill');
+      expect(pill.tagName).toBe('SPAN');
+      expect(fixture.nativeElement.querySelector('.bubble-header button')).toBeNull();
     });
   });
 
@@ -530,10 +157,8 @@ describe('ChatMessageComponent', () => {
    * appeared. Every ordinary turn in the conversation therefore carried a
    * pointer cursor promising a result no user could ever see.
    *
-   * The fold toggle on rules 3 and 4 is the real behaviour and stays. These
-   * two halves are tested together on purpose: "no handler anywhere" would
-   * have been the easy over-correction, and it would have taken the toggle
-   * with it.
+   * The one click this component still answers is the compaction marker's
+   * fold (rule 6), pinned with the markers below.
    */
   describe('clicking a turn', () => {
     function messageEl(): HTMLElement {
@@ -562,315 +187,20 @@ describe('ChatMessageComponent', () => {
       });
     }
 
-    it('still shuts an expanded rule-3 request', () => {
-      const msg = makeChatMessage({
-        rule: 3,
-        alignment: 'left',
-        collapsed: false,
-      });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      spyOn(component.toggleCollapse, 'emit');
-
-      expect(messageEl().classList.contains('clickable')).toBe(true);
-
-      messageEl().click();
-      expect(component.toggleCollapse.emit).toHaveBeenCalledWith(msg);
-    });
-
     /**
-     * RULE 4 HAS NO SECOND SHAPE to click. Opening a notification lets its own
-     * sentence finish rather than swapping the row for a bubble, so there is no
-     * `.message` on it in either state — the row itself is the toggle, open or
-     * shut. Asserted rather than left implied, because the previous version of
-     * this spec looped rules 3 and 4 together and would have been the thing
-     * that caught a bubble creeping back.
+     * RULES 3 AND 4 ARE NOT ROWS. A question to a human seat and traffic
+     * between agents live in the run tree (Epic 55), which never hands them to
+     * this component — and if one arrived anyway, it must not grow a bubble.
      */
-    it('gives a rule-4 notice no bubble to click, open or shut', () => {
-      const emit = spyOn(component.toggleCollapse, 'emit');
-
-      for (const collapsed of [true, false]) {
-        emit.calls.reset();
-        const msg = makeChatMessage({ rule: 4, alignment: 'left', collapsed });
-        fixture.componentRef.setInput('message', msg);
-        fixture.detectChanges();
-
-        expect(fixture.nativeElement.querySelector('.message'))
-          .withContext(`collapsed: ${collapsed}`)
-          .toBeNull();
-
-        fixture.nativeElement.querySelector('.collapsed-notice').click();
-        expect(emit)
-          .withContext(`collapsed: ${collapsed}`)
-          .toHaveBeenCalledWith(msg);
-      }
-    });
-  });
-
-  // --- W2b: the ambient notification row -----------------------------------
-  //
-  // Rule 4 is the classifier's fall-through: agent-to-agent traffic and tool
-  // announcements. Nothing is waiting on it, so it gets the new design language
-  // as a QUIET row — legible, tokenised, with the thing that spoke named as the
-  // subject of a sentence instead of parsed out of `[#NotificationTool ⇒
-  // @Manager]`. The specs that matter here are the ones that pin it BELOW an
-  // ordinary turn and below the request, because that ranking is the whole
-  // reason the two folds were split.
-  describe('folded notification (Rule 4)', () => {
-    it('renders the quiet system row, never the request callout', () => {
-      const msg = makeChatMessage({
-        rule: 4,
-        collapsed: true,
-        label: 'Worker ⇒ Manager',
-      });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      const el = fixture.nativeElement;
-      expect(el.querySelector('.collapsed-notice')).toBeTruthy();
-      expect(el.querySelector('.collapsed-request'))
-        .withContext('a notification must not compete with a request')
-        .toBeNull();
-      expect(el.querySelector('.message-bubble')).toBeNull();
-    });
-
-    it('names the tool as the subject, in words rather than brackets', () => {
-      setTestTranslations({
-        chat: { notice: { contacted: '<<contacted:{{agent}}>>' } },
-      });
-      const msg = makeChatMessage({
-        rule: 4,
-        collapsed: true,
-        label: '#NotificationTool ⇒ @Manager',
-        sender: makeAddress({ name: '#NotificationTool', role: 'Worker' }),
-        recipient: makeAddress({ name: '@Manager', role: 'Manager' }),
-        content: 'Follow up: collect jokes from teammates',
-      });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      const row = fixture.nativeElement.querySelector('.collapsed-notice');
-      const text = row.textContent.replace(/\s+/g, ' ');
-      expect(fixture.nativeElement.querySelector('.notice-subject').textContent)
-        .withContext('the tool is the subject, on its own')
-        .toContain('#NotificationTool');
-      expect(text).toContain('<<contacted:@Manager>>');
-      expect(text).withContext('bracket soup is gone').not.toContain('[');
-      expect(text).not.toContain('⇒');
-    });
-
-    it('marks a TOOL sender with the bell and an agent sender without it', () => {
-      const tool = makeChatMessage({
-        rule: 4,
-        collapsed: true,
-        sender: makeAddress({ name: '#NotificationTool' }),
-      });
-      fixture.componentRef.setInput('message', tool);
-      fixture.detectChanges();
-      expect(fixture.nativeElement.querySelector('.notice-icon.pi-bell')).toBeTruthy();
-
-      const agent = makeChatMessage({
-        rule: 4,
-        collapsed: true,
-        sender: makeAddress({ name: '@Expert' }),
-      });
-      fixture.componentRef.setInput('message', agent);
-      fixture.detectChanges();
-      expect(fixture.nativeElement.querySelector('.notice-icon.pi-bell')).toBeNull();
-      expect(fixture.nativeElement.querySelector('.notice-icon')).toBeTruthy();
-    });
-
-    it('carries no action and no state — it demands nothing', () => {
-      // The line between W2a and W2b. A notification that grew a Reply or a
-      // PENDING chip would be a second callout, and the user is back to
-      // scanning every folded row to find the one that wants them.
-      const msg = makeChatMessage({ rule: 4, collapsed: true });
-      fixture.componentRef.setInput('message', msg);
-      fixture.componentRef.setInput('notification', true);
-      fixture.detectChanges();
-
-      const row = fixture.nativeElement.querySelector('.collapsed-notice');
-      expect(row.querySelector('.open-button')).toBeNull();
-      expect(row.querySelector('.request-state')).toBeNull();
-      expect(row.querySelector('.turn-avatar'))
-        .withContext('no avatar: nobody is speaking, something is reporting')
-        .toBeNull();
-    });
-
-    it('keeps the preview, the caret and the clock on the one row', () => {
-      const msg = makeChatMessage({
-        rule: 4,
-        collapsed: true,
-        content: 'Start of the message',
-      });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      const row = fixture.nativeElement.querySelector('.collapsed-notice');
-      expect(row.querySelector('.collapsed-preview').textContent).toContain(
-        'Start of the message',
-      );
-      expect(row.querySelector('.collapsed-caret')).toBeTruthy();
-      expect(row.querySelector('.collapsed-timestamp').textContent.trim().length)
-        .toBeGreaterThan(0);
-    });
-
-    it('omits the preview entirely when there is no content', () => {
-      const msg = makeChatMessage({ rule: 4, collapsed: true, content: '' });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      expect(fixture.nativeElement.querySelector('.collapsed-preview')).toBeNull();
-    });
-
-    /**
-     * THE ROW STAYS A ROW, and says so with an ellipsis — but the ellipsis is
-     * PAINTED, not part of the text.
-     *
-     * It used to be characters in the string: `preview()` returned a shorter
-     * body while the row was shut. That is what stopped the row animating
-     * closed — the content finished shrinking in the frame the toggle fired, so
-     * the height transition had nothing left to cover. The whole message is in
-     * the DOM in both states now and the row clips it, so the mark has to come
-     * from CSS.
-     */
-    it('marks a clipped body with an ellipsis, without shortening it', () => {
-      const body = 'x'.repeat(80);
-      fixture.componentRef.setInput(
-        'message',
-        makeChatMessage({ rule: 4, collapsed: true, content: body }),
-      );
-      fixture.detectChanges();
-
-      const preview = fixture.nativeElement.querySelector('.collapsed-preview');
-      // The text is whole: shortening it is what broke the close animation.
-      expect(preview.textContent.trim()).toBe(body);
-
-      const clipped = fixture.nativeElement.querySelector('.notice-text');
-      expect(getComputedStyle(clipped, '::after').content).toContain('…');
-    });
-
-    /**
-     * AND ONLY WHEN THERE IS SOMETHING TO CUT.
-     *
-     * The painted mark started life unconditional, so it also appeared on the
-     * short rows that show their message in full — claiming a truncation that
-     * had not happened. CSS cannot ask whether a box overflows, so the test is
-     * the message's own length, matching what the row truncated at before it
-     * learned to open in place.
-     */
-    it('leaves a body that fits unmarked', () => {
-      const body = 'Verified: the applicant.';
-      fixture.componentRef.setInput(
-        'message',
-        makeChatMessage({ rule: 4, collapsed: true, content: body }),
-      );
-      fixture.detectChanges();
-
-      const row = fixture.nativeElement.querySelector('.notice-text');
-      expect(row.textContent).toContain(body);
-      expect(getComputedStyle(row, '::after').content).not.toContain('…');
-    });
-
-    it('drops the ellipsis once the row is opened', () => {
-      fixture.componentRef.setInput(
-        'message',
-        makeChatMessage({ rule: 4, collapsed: false, content: 'x'.repeat(80) }),
-      );
-      fixture.detectChanges();
-
-      const opened = fixture.nativeElement.querySelector('.notice-text');
-      expect(getComputedStyle(opened, '::after').content).not.toContain('…');
-    });
-  });
-
-  // --- The hierarchy the round is actually about ----------------------------
-  //
-  // REQUEST > TURN > NOTIFICATION. Both folds are collapsible and both are one
-  // component, which is exactly how they ended up identical in the first place.
-  // These are the assertions that make them diverge on purpose rather than by
-  // accident, and that stop a later change collapsing them back together.
-  describe('fold hierarchy (W2)', () => {
-    function render(rule: 3 | 4) {
-      fixture.componentRef.setInput(
-        'message',
-        makeChatMessage({ rule, collapsed: true, content: 'body text' }),
-      );
-      fixture.componentRef.setInput('notification', rule === 3);
-      fixture.detectChanges();
-      return fixture.nativeElement as HTMLElement;
-    }
-
-    it('gives the request a card and the notification none', () => {
-      expect(render(3).querySelector('.request-card')).toBeTruthy();
-      expect(render(4).querySelector('.request-card')).toBeNull();
-    });
-
-    it('gives the request the transcript gutter and the notification an indent', () => {
-      // The request is someone speaking, so it sits in the same avatar gutter a
-      // turn does. The notification is a consequence of the conversation, so it
-      // sits under that gutter with nothing in it.
-      expect(render(3).querySelector('.collapsed-request > .turn-avatar')).toBeTruthy();
-      expect(render(4).querySelector('.turn-avatar')).toBeNull();
-    });
-
-    it('keeps BOTH folded rows collapsible and expandable', () => {
-      // Whatever else changed, the fold is the contract: chat-panel re-applies
-      // its expanded set on every re-emission of the pure fold, and it does it
-      // through `toggleCollapse`.
-      const emit = spyOn(component.toggleCollapse, 'emit');
-
+    it('renders nothing for a rule-3 question or a rule-4 delegation', () => {
       for (const rule of [3, 4] as const) {
-        emit.calls.reset();
-        const msg = makeChatMessage({ rule, collapsed: true });
-        fixture.componentRef.setInput('message', msg);
+        fixture.componentRef.setInput('message', makeChatMessage({ rule, collapsed: false }));
         fixture.detectChanges();
 
-        fixture.nativeElement.querySelector('.collapsed-line').click();
-        expect(emit)
-          .withContext(`rule ${rule} must still fold`)
-          .toHaveBeenCalledWith(msg);
-
-        // …and each opens into ITS OWN shape. A request becomes the ordinary
-        // bubble; a notification stays the row it already was and simply lets
-        // its sentence finish, which is why the two are asserted apart rather
-        // than through one expectation that would have to be vague to cover
-        // both.
-        fixture.componentRef.setInput('message', { ...msg, collapsed: false });
-        fixture.detectChanges();
-
-        if (rule === 3) {
-          expect(fixture.nativeElement.querySelector('.message-bubble')).toBeTruthy();
-          expect(fixture.nativeElement.querySelector('.collapsed-line')).toBeNull();
-        } else {
-          expect(fixture.nativeElement.querySelector('.message-bubble')).toBeNull();
-          expect(fixture.nativeElement.querySelector('.notice-text.expanded')).toBeTruthy();
-        }
+        expect((fixture.nativeElement as HTMLElement).children.length)
+          .withContext(`rule ${rule}`)
+          .toBe(0);
       }
-    });
-  });
-
-  describe('messageSelected output', () => {
-    it('should emit on label click for non-Rule-1 messages', () => {
-      const msg = makeChatMessage({ rule: 2 });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      spyOn(component.messageSelected, 'emit');
-      const btn = fixture.nativeElement.querySelector('.label-pill');
-      btn.click();
-      expect(component.messageSelected.emit).toHaveBeenCalledWith(msg);
-    });
-
-    it('should NOT emit on label click for Rule 1', () => {
-      const msg = makeChatMessage({ rule: 1 });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      spyOn(component.messageSelected, 'emit');
-      component.onLabelClick();
-      expect(component.messageSelected.emit).not.toHaveBeenCalled();
     });
   });
 
@@ -908,15 +238,13 @@ describe('ChatMessageComponent', () => {
       expect(label.textContent.trim().length).toBeGreaterThan(0);
     });
 
-    it('shows no notification icon and no Reply button', () => {
+    it('shows no bubble header, so nothing to act on', () => {
       fixture.componentRef.setInput('message', makeRule5());
-      fixture.componentRef.setInput('notification', true);
       fixture.detectChanges();
 
       const el = fixture.nativeElement;
-      expect(el.querySelector('.notification-icon')).toBeNull();
-      expect(el.querySelector('.pi-bell')).toBeNull();
-      expect(el.querySelector('.open-button')).toBeNull();
+      expect(el.querySelector('.bubble-header')).toBeNull();
+      expect(el.querySelector('button')).toBeNull();
     });
 
     it('is inert — there is no turn there to click', () => {
@@ -925,26 +253,6 @@ describe('ChatMessageComponent', () => {
 
       spyOn(component.toggleCollapse, 'emit');
       fixture.nativeElement.querySelector('.system-rule').click();
-
-      expect(component.toggleCollapse.emit).not.toHaveBeenCalled();
-    });
-
-    it('onLabelClick is a no-op for Rule 5', () => {
-      fixture.componentRef.setInput('message', makeRule5());
-      fixture.detectChanges();
-
-      spyOn(component.messageSelected, 'emit');
-      component.onLabelClick();
-
-      expect(component.messageSelected.emit).not.toHaveBeenCalled();
-    });
-
-    it('onToggleCollapse is a no-op for Rule 5', () => {
-      fixture.componentRef.setInput('message', makeRule5());
-      fixture.detectChanges();
-
-      spyOn(component.toggleCollapse, 'emit');
-      component.onToggleCollapse();
 
       expect(component.toggleCollapse.emit).not.toHaveBeenCalled();
     });
@@ -1037,7 +345,6 @@ describe('ChatMessageComponent', () => {
       // turned it into a participant.
       const el = await renderRule5(WELCOME);
       spyOn(component.toggleCollapse, 'emit');
-      spyOn(component.messageSelected, 'emit');
 
       (el.querySelector('.system-announcement') as HTMLElement).click();
 
@@ -1045,7 +352,6 @@ describe('ChatMessageComponent', () => {
       expect(el.querySelector('.turn-avatar')).toBeNull();
       expect(el.querySelector('app-feedback')).toBeNull();
       expect(component.toggleCollapse.emit).not.toHaveBeenCalled();
-      expect(component.messageSelected.emit).not.toHaveBeenCalled();
     });
 
     // --- where the line is drawn -----------------------------------------
@@ -1109,35 +415,15 @@ describe('ChatMessageComponent', () => {
       expect(pill).toBeTruthy();
       expect(pill.textContent.trim().endsWith('⇒ You')).toBe(true);
     });
-
-    it('Rule 2 label pill is NOT disabled (clickable for selection)', () => {
-      const msg = makeChatMessage({
-        rule: 2,
-        alignment: 'left',
-        label: '@Manager ⇒ You',
-      });
-      fixture.componentRef.setInput('message', msg);
-      fixture.detectChanges();
-
-      const pill = fixture.nativeElement.querySelector('.label-pill');
-      expect(pill.disabled).toBe(false);
-    });
   });
 
   describe('Expanded bubble header layout (Story 4.3)', () => {
-    function makeExpanded(rule: 1 | 2 | 3 | 4): ChatMessage {
+    function makeExpanded(rule: 1 | 2): ChatMessage {
       return makeChatMessage({
         rule,
         alignment: rule === 1 ? 'right' : 'left',
         collapsed: false,
-        label:
-          rule === 1
-            ? 'You ⇒ @Manager'
-            : rule === 2
-              ? '@Manager ⇒ You'
-              : rule === 3
-                ? '@Manager ⇒ @Support'
-                : '@Worker ⇒ @Manager',
+        label: rule === 1 ? 'You ⇒ @Manager' : '@Manager ⇒ You',
         timestamp: new Date('2026-04-08T10:45:00Z'),
       });
     }
@@ -1146,11 +432,7 @@ describe('ChatMessageComponent', () => {
     // quietly skipping it. Every other child of the header is already gated to
     // "not the user's own turn", so on rule 1 the header rendered as a lone
     // clock above the user's own words — which the redesign drops.
-    //
-    // RULE 4 IS EXCLUDED TOO, and for a different reason: it has no bubble in
-    // either state. An opened notification is the same one-line row with more
-    // of its text, and its clock is the row's own `.collapsed-timestamp`.
-    for (const rule of [2, 3] as const) {
+    for (const rule of [2] as const) {
       it(`Rule ${rule}: .bubble-header .bubble-timestamp exists and matches HH:mm`, () => {
         fixture.componentRef.setInput('message', makeExpanded(rule));
         fixture.detectChanges();
@@ -1211,10 +493,9 @@ describe('ChatMessageComponent', () => {
       ).toBeTruthy();
     });
 
-    /** And it belongs to the user's own turn alone: every other rule states
-     *  the time in its header (rules 2 and 3) or on its folded row (rule 4),
-     *  and two clocks on one row is a defect. */
-    for (const rule of [2, 3, 4] as const) {
+    /** And it belongs to the user's own turn alone: an agent's turn states
+     *  the time in its header, and two clocks on one row is a defect. */
+    for (const rule of [2] as const) {
       it(`Rule ${rule} carries no trailing stamp — its header already has one`, () => {
         fixture.componentRef.setInput('message', makeExpanded(rule));
         fixture.detectChanges();
@@ -1256,33 +537,13 @@ describe('ChatMessageComponent', () => {
       expect(el.querySelector('.own-text')).toBeNull();
     });
 
-    it('Rule 3 expanded: .bubble-timestamp is the last element child of .bubble-header', () => {
-      fixture.componentRef.setInput('message', makeExpanded(3));
+    it('Rule 2: .bubble-timestamp is the last element child of .bubble-header', () => {
+      fixture.componentRef.setInput('message', makeExpanded(2));
       fixture.detectChanges();
 
       const header = fixture.nativeElement.querySelector('.bubble-header');
       expect(header).toBeTruthy();
       expect(header.lastElementChild.classList.contains('bubble-timestamp')).toBe(true);
-    });
-
-    /**
-     * RULE 4 HAS NO HEADER TO PUT A CLOCK IN — it has no bubble at all, open or
-     * shut. An opened notification is the same one-line row with more of its
-     * text, and its time sits on that row where it always did. Asserted rather
-     * than deleted, because "no header" is the claim, and a bubble creeping
-     * back onto rule 4 is exactly what would make the surface swap shapes
-     * again.
-     */
-    it('Rule 4 expanded: carries no bubble header, and keeps the row\'s own clock', () => {
-      fixture.componentRef.setInput('message', makeExpanded(4));
-      fixture.detectChanges();
-
-      const el: HTMLElement = fixture.nativeElement;
-      expect(el.querySelector('.bubble-header')).toBeNull();
-      expect(el.querySelector('.message-bubble')).toBeNull();
-      expect(
-        el.querySelector('.collapsed-notice .collapsed-timestamp')?.textContent?.trim(),
-      ).toMatch(/^\d{2}:\d{2}$/);
     });
   });
 
@@ -1321,7 +582,7 @@ describe('ChatMessageComponent', () => {
       expect(el.querySelector('.system-marker-label').textContent).toContain(
         'Summarized 8 messages',
       );
-      // A marker is NOT a chat bubble or a Rule 3/4 collapsed line.
+      // A marker is NOT a chat bubble.
       expect(el.querySelector('.message-bubble')).toBeNull();
       expect(el.querySelector('.collapsed-line')).toBeNull();
     });
@@ -1377,13 +638,11 @@ describe('ChatMessageComponent', () => {
       expect(component.toggleCollapse.emit).not.toHaveBeenCalled();
     });
 
-    it('markers render no label-pill and no Reply button', () => {
+    it('markers render no label-pill', () => {
       fixture.componentRef.setInput('message', makeCompactionMarker());
       fixture.detectChanges();
 
-      const el = fixture.nativeElement;
-      expect(el.querySelector('.label-pill')).toBeNull();
-      expect(el.querySelector('.open-button')).toBeNull();
+      expect(fixture.nativeElement.querySelector('.label-pill')).toBeNull();
     });
   });
   // --- hideAgentNames -------------------------------------------------------
@@ -1449,51 +708,6 @@ describe('ChatMessageComponent', () => {
       expect(rule).withContext('system line is not an agent name').not.toBeNull();
     });
 
-    it('substitutes a kind for the identity on a folded NOTIFICATION', async () => {
-      const collapsed = makeChatMessage({
-        rule: 4,
-        collapsed: true,
-        sender: makeAddress({ name: '@Manager', role: 'Manager' }),
-        recipient: makeAddress({ name: '@Worker', role: 'Worker' }),
-        content: 'some body',
-      });
-      const shown = await renderWith(false, collapsed);
-      expect(shown.nativeElement.querySelector('.notice-subject').textContent)
-        .withContext('the thing that spoke is named by default')
-        .toContain('@Manager');
-
-      const hidden = await renderWith(true, collapsed);
-      const text = hidden.nativeElement.textContent as string;
-      expect(text).not.toContain('@Manager');
-      expect(text).not.toContain('@Worker');
-      // A subject-less row reads as a rendering fault, so it still says what
-      // kind of thing it is — just not who.
-      expect(text).toContain('chat.teamMessage');
-      expect(text).toContain('some body');
-    });
-
-    it('substitutes a kind for the identity on a folded REQUEST', async () => {
-      // The callout states WHO IT IS FOR in words, which is a second place the
-      // recipient's name now appears. Hiding the pill and keeping the callout's
-      // phrase would leak exactly the identity the flag promises to hide.
-      const request = makeChatMessage({
-        rule: 3,
-        collapsed: true,
-        sender: makeAddress({ name: '@Manager', role: 'Manager' }),
-        recipient: makeAddress({ name: '@Support', role: 'Human' }),
-        content: 'please confirm',
-      });
-      const hidden = await renderWith(true, request);
-      const text = hidden.nativeElement.textContent as string;
-
-      expect(text).not.toContain('@Manager');
-      expect(text).not.toContain('@Support');
-      expect(text).toContain('chat.messageForYou');
-      expect(text)
-        .withContext('the question itself is not an identity')
-        .toContain('please confirm');
-    });
-
     it('does not leak the agent\'s initial through the turn avatar', async () => {
       // The avatar's monogram is taken from `label` — the same string the pill
       // renders. Hiding the pill and keeping the monogram hides the name from a
@@ -1549,10 +763,8 @@ describe('ChatMessageComponent', () => {
       expect(bubble.classList).withContext('own turn is marked').toContain('own-turn');
     });
 
-    /** Rules 2 and 3 only: rule 4 has no bubble in either state — an opened
-     *  notification is the same one-line row with more of its text. */
     it('leaves an AGENT turn unmarked, so it renders flat', () => {
-      for (const rule of [2, 3] as const) {
+      for (const rule of [2] as const) {
         fixture.componentRef.setInput(
           'message',
           makeChatMessage({ rule, collapsed: false, color: 'transparent' }),
@@ -1583,16 +795,16 @@ describe('ChatMessageComponent', () => {
       expect(el.querySelector('.bubble-timestamp')!.textContent!.trim()).toBe('');
     });
 
-    it('renders a collapsed row with an unparseable timestamp', () => {
+    it('renders a marker row with an unparseable timestamp', () => {
       fixture.componentRef.setInput(
         'message',
-        makeChatMessage({ rule: 4, collapsed: true, timestamp: new Date(NaN) }),
+        makeChatMessage({ rule: 6, collapsed: true, timestamp: new Date(NaN) }),
       );
       expect(() => fixture.detectChanges()).not.toThrow();
 
       const el: HTMLElement = fixture.nativeElement;
-      expect(el.querySelector('.collapsed-line')).not.toBeNull();
-      expect(el.querySelector('.collapsed-timestamp')!.textContent!.trim()).toBe('');
+      expect(el.querySelector('.system-marker')).not.toBeNull();
+      expect(el.querySelector('.system-marker-timestamp')!.textContent!.trim()).toBe('');
     });
 
     it('still shows the time for a parseable one', () => {
@@ -1623,7 +835,7 @@ describe('ChatMessageComponent', () => {
     }
 
     it('renders the control on an agent turn', () => {
-      for (const rule of [2, 3, 4] as const) {
+      for (const rule of [2] as const) {
         expect(renderRule(rule))
           .withContext(`rule ${rule} is an answer and must be rateable`)
           .not.toBeNull();
@@ -1638,10 +850,11 @@ describe('ChatMessageComponent', () => {
       }
     });
 
-    it('agrees with the predicate for every message rule', () => {
+    it('agrees with the predicate for every rule it renders', () => {
       // The point of FR1: one answer, not two that drift. If this ever fails,
-      // the template has started deciding for itself.
-      for (const rule of [1, 2, 3, 4, 5, 6, 7] as const) {
+      // the template has started deciding for itself. Rules 3 and 4 are left
+      // out: this component does not render them (the run tree does).
+      for (const rule of [1, 2, 5, 6, 7] as const) {
         const rendered = renderRule(rule) !== null;
         expect(rendered)
           .withContext(`rule ${rule}`)
@@ -1667,53 +880,8 @@ describe('ChatMessageComponent', () => {
       const bubble = fixture.nativeElement.querySelector('.message-bubble');
       expect(bubble.querySelector('app-feedback')).not.toBeNull();
     });
-
-    /**
-     * A folded notice offers no rating — but it offers it by being INERT rather
-     * than absent.
-     *
-     * Removing it from the DOM is what a reader expects, and it is what this
-     * spec used to require. It also dropped the row's content height in a
-     * single frame at the moment of the toggle, which left the closing
-     * transition nothing to animate. It stays and is clipped by the row's
-     * height; `inert` is what makes "cannot be seen" also mean "cannot be
-     * reached", which a clip on its own does not.
-     */
-    it('makes the control unreachable on a collapsed line, not absent', () => {
-      fixture.componentRef.setInput(
-        'message',
-        makeChatMessage({ rule: 4, collapsed: true }),
-      );
-      fixture.detectChanges();
-
-      const control = fixture.nativeElement.querySelector('app-feedback');
-      expect(fixture.nativeElement.querySelector('.collapsed-line')).not.toBeNull();
-      expect(control).not.toBeNull();
-      expect(control.hasAttribute('inert')).toBeTrue();
-    });
-
-    it('makes it reachable again once the line is opened', () => {
-      fixture.componentRef.setInput(
-        'message',
-        makeChatMessage({ rule: 4, collapsed: false }),
-      );
-      fixture.detectChanges();
-
-      const control = fixture.nativeElement.querySelector('app-feedback');
-      expect(control).not.toBeNull();
-      expect(control.hasAttribute('inert')).toBeFalse();
-    });
   });
 
-  /**
-   * WHAT THE LIST NEEDS IN ORDER TO SPACE THIS ROW.
-   *
-   * The transcript spaces turns like paragraphs and runs quiet one-liners
-   * together, and the rule that does it (`.quiet-line + .quiet-line`) lives in
-   * the LIST's stylesheet — so it can only match the element the list has as a
-   * child, which is this component's host. The class is on the host for that
-   * reason rather than as a styling convenience.
-   */
   /**
    * WHERE THE USER'S MESSAGE WENT — on the turns where that is not obvious.
    *
@@ -1769,7 +937,7 @@ describe('ChatMessageComponent', () => {
 
     /** An agent's turn already names its speaker in the header; a second
      *  address on it would be describing the wrong direction. */
-    for (const rule of [2, 3, 4] as const) {
+    for (const rule of [2] as const) {
       it(`says nothing on a rule-${rule} turn, which is not the user's`, () => {
         fixture.componentRef.setInput(
           'message',
@@ -1791,53 +959,6 @@ describe('ChatMessageComponent', () => {
       const el = fixture.nativeElement.querySelector('.own-recipient');
       expect(el.getAttribute('aria-label')).toBe('<<to:@Expert>>');
       expect(el.querySelector('[aria-hidden="true"]')).not.toBeNull();
-    });
-  });
-
-  describe('the quiet-line host class', () => {
-    function host(): HTMLElement {
-      return fixture.nativeElement as HTMLElement;
-    }
-
-    function setRule(rule: ChatMessage['rule'], collapsed: boolean): void {
-      fixture.componentRef.setInput('message', makeChatMessage({ rule, collapsed }));
-      fixture.detectChanges();
-    }
-
-    it('marks a folded notice, which is the row that runs together', () => {
-      setRule(4, true);
-      expect(host().classList.contains('quiet-line')).toBe(true);
-    });
-
-    it('does not mark a turn, which is a paragraph and keeps its air', () => {
-      setRule(2, false);
-      expect(host().classList.contains('quiet-line')).toBe(false);
-    });
-
-    /**
-     * AND KEEPS IT WHEN OPENED, which is the point of opening in place.
-     *
-     * An expanded notice is the same row with more of its text — not a bubble
-     * of a different shape — so it is still a quiet line and still runs
-     * together with the notices around it. When opening SWAPPED the row for a
-     * bubble, this class went with it, and the neighbour's margin jumped from
-     * nothing to a full turn's gap in one frame: the row grew smoothly while
-     * the space beside it arrived at once. Nothing to animate now, because
-     * nothing moves.
-     */
-    it('keeps the mark when the notice is expanded', () => {
-      setRule(4, false);
-      expect(host().classList.contains('quiet-line')).toBe(true);
-    });
-
-    /**
-     * A FOLDED RULE 3 is not one of these. It is the request card — filled,
-     * bordered, with a body and a button — and closing two of those up against
-     * each other would merge them into one shape.
-     */
-    it('does not mark a folded request, which is a card rather than a line', () => {
-      setRule(3, true);
-      expect(host().classList.contains('quiet-line')).toBe(false);
     });
   });
 });

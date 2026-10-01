@@ -1,0 +1,492 @@
+/*
+ * The Run tab. Tight type for a 240–310px pane, tokens only; the mini-tree
+ * borrows the transcript tree's indentation and the tab strip's selected-pill
+ * inversion for the displayed run.
+ */
+
+:host {
+  display: block;
+}
+
+.ri {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--akg-text);
+}
+
+%ri-button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  border-radius: 6px;
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+  }
+}
+
+/* --- header -------------------------------------------------------------- */
+
+.ri-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ri-avatar {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--akg-accent-fg);
+  color: var(--akg-accent-bright);
+
+  &.tinted {
+    color: var(--akg-agent-mark-fg);
+  }
+}
+
+.ri-agent {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.ri-pill {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 1px 8px;
+  border: 1px solid var(--akg-hairline);
+  border-radius: var(--akg-pill-radius);
+  font-size: 11px;
+  white-space: nowrap;
+  color: var(--akg-text-muted);
+
+  &[data-pill='waiting'] {
+    border-color: var(--akg-attention-border);
+    background: var(--akg-attention-bg);
+    color: var(--akg-attention-fg);
+  }
+}
+
+/* --- sections ------------------------------------------------------------ */
+
+.ri-section-title {
+  margin: 0 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--akg-text-muted);
+}
+
+.ri-note {
+  margin: 0;
+  color: var(--akg-text-muted);
+  font-style: italic;
+}
+
+.ri-mono {
+  font-family: var(--akg-font-mono);
+}
+
+/* --- where this run sits ------------------------------------------------- */
+
+/* The tree in a box of the Event log's family; a wide tree scrolls sideways
+   inside it rather than wrapping a row. */
+.mini-box {
+  padding: 10px 10px 10px 8px;
+  overflow-x: auto;
+  border: 1px solid var(--akg-surface-border);
+  border-radius: 12px;
+  background: var(--akg-surface-muted);
+}
+
+/* What the top run handles: "you → @Manager #1a2b3c4d". */
+.mini-root {
+  margin: 0 0 6px 2px;
+  font-size: 12px;
+  color: var(--akg-text-muted);
+  white-space: nowrap;
+}
+
+.mini-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+ * The flat list draws the nesting: each level indents 15px and carries a 1px
+ * guide 7px into its step — the `margin-left: 7px; padding-left: 8px;
+ * border-left` a nested list would draw, as a stripe of the indent.
+ */
+.mini-node,
+.mini-leaf {
+  --mini-step: 15px;
+  display: flex;
+  align-items: center;
+  width: max-content;
+  min-width: 100%;
+  box-sizing: border-box;
+  padding: 1px 0 1px calc(var(--depth, 0) * var(--mini-step));
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0 7px,
+    var(--akg-marker-border) 7px 8px,
+    transparent 8px var(--mini-step)
+  );
+  background-repeat: no-repeat;
+  background-size: calc(var(--depth, 0) * var(--mini-step)) 100%;
+  white-space: nowrap;
+}
+
+.mini-chevron {
+  @extend %ri-button;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 18px;
+  margin-right: 4px;
+  padding: 0;
+  font-size: 0.6rem;
+  color: var(--akg-text-muted);
+
+  .pi {
+    transition: transform 0.15s;
+  }
+}
+
+.mini-chevron--open .pi {
+  transform: rotate(90deg);
+}
+
+/* Same footprint as the chevron, its 4px breathing room included, so a row
+   without children keeps its name on the same column as one with a chevron. */
+.mini-chevron-gap {
+  flex: 0 0 auto;
+  width: 16px;
+  margin-right: 4px;
+}
+
+.mini-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 7px 2px 3px;
+  border-radius: 7px;
+  font-size: 12.5px;
+  color: var(--akg-text-muted);
+  white-space: nowrap;
+}
+
+button.mini-main {
+  @extend %ri-button;
+  border-radius: 7px;
+
+  &:hover {
+    background: var(--akg-user-bubble-bg);
+  }
+}
+
+.mini-node--path .mini-main {
+  font-weight: 600;
+  color: var(--akg-text);
+}
+
+/* The displayed run, inverted. */
+.mini-node--displayed button.mini-main {
+  background: var(--akg-text);
+  color: var(--akg-overlay-bg);
+  font-weight: 600;
+}
+
+.mini-avatar {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 600;
+  background: var(--akg-accent-fg);
+  color: var(--akg-accent-bright);
+
+  &.tinted {
+    color: var(--akg-agent-mark-fg);
+  }
+}
+
+/* Off the path, an agent's mark takes the palette's quiet pair rather than
+   its own colour (the template binds that only on the path): recessive by
+   tone, not by a fade. */
+.mini-avatar--quiet {
+  background: var(--akg-avatar-worker-bg);
+  color: var(--akg-avatar-worker-fg);
+}
+
+/* A person — a seat or you — is round. */
+.mini-avatar--human {
+  border-radius: 50%;
+  background: var(--akg-avatar-human-bg);
+  color: var(--akg-avatar-human-fg);
+}
+
+.mini-id {
+  font-family: var(--akg-font-mono);
+  font-size: 10.5px;
+  font-weight: 400;
+  color: var(--akg-text-muted);
+}
+
+/* On the inverted row, the id takes the row's own ink. */
+.mini-node--displayed .mini-id {
+  color: inherit;
+}
+
+.mini-hint {
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.mini-mark {
+  font-size: 10px;
+}
+
+.mini-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--akg-attention-fg);
+}
+
+.mini-silent {
+  font-size: 11px;
+  font-style: italic;
+  font-weight: 400;
+}
+
+/* A fold's summary, and the way to open it. */
+.mini-folded {
+  @extend %ri-button;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding: 0 8px;
+  border: 1px dashed var(--akg-marker-border);
+  border-radius: var(--akg-pill-radius);
+  font-size: 11.5px;
+  color: var(--akg-text-muted);
+  white-space: nowrap;
+
+  &:hover {
+    border-style: solid;
+    color: var(--akg-text);
+  }
+
+  .pi {
+    font-size: 10px;
+  }
+}
+
+/* Queued, absorbed, took in: small muted lines under their run. */
+.mini-leaf {
+  min-height: 22px;
+  padding-left: calc(var(--depth, 0) * var(--mini-step) + 16px + 3px);
+  font-size: 11.5px;
+  color: var(--akg-text-muted);
+}
+
+/* --- handling ------------------------------------------------------------ */
+
+/* Who sent the run its message, and the message. The ids and the send time
+   are in the Event log. */
+.ri-route {
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+/* The same box as the Event log below it, so the two read as one family. */
+.ri-text {
+  padding: 10px 12px;
+  border: 1px solid var(--akg-surface-border);
+  border-radius: 10px;
+  background: var(--akg-surface-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* --- steps --------------------------------------------------------------- */
+
+.ri-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* A timeline: the offset, right-aligned; a dot saying what kind of step it
+   was; then the step. */
+.ri-step {
+  display: grid;
+  grid-template-columns: 46px 14px minmax(0, 1fr);
+  column-gap: 6px;
+  align-items: start;
+  padding: 2px 0;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.ri-offset {
+  font-family: var(--akg-font-mono);
+  text-align: right;
+  color: var(--akg-text-muted);
+}
+
+.ri-dot {
+  justify-self: center;
+  width: 9px;
+  height: 9px;
+  margin-top: calc((18px - 9px) / 2);
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--akg-text);
+}
+
+.ri-step[data-step='tool'] .ri-dot {
+  background: var(--akg-tool-accent);
+}
+
+.ri-step[data-state='failed'] .ri-dot {
+  background: var(--akg-danger-fg);
+}
+
+.ri-step[data-step='sent'] .ri-dot {
+  background: var(--akg-status-live-fg);
+}
+
+.ri-step[data-step='absorbed'] .ri-dot {
+  border: 1.5px dashed var(--akg-text-muted);
+  background: transparent;
+}
+
+.ri-step--failed {
+  color: var(--akg-danger-fg);
+}
+
+/* A tool step: the name, then its arguments on the same line — muted, cut to
+   the pane with the whole preview on hover — then its state, which never
+   gets cut. */
+.ri-step-tool {
+  display: flex;
+  align-items: baseline;
+  gap: 3px;
+  min-width: 0;
+  overflow-wrap: normal;
+}
+
+.ri-tool-name,
+.ri-tool-state {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.ri-tool-args {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--akg-text-muted);
+}
+
+/* --- event log ----------------------------------------------------------- */
+
+.ri-log-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ri-scope {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.ri-scope-button {
+  @extend %ri-button;
+  padding: 2px 8px;
+  border-radius: var(--akg-pill-radius);
+  font-size: 11px;
+  color: var(--akg-text-muted);
+
+  &[aria-pressed='true'] {
+    background: var(--akg-text);
+    color: var(--akg-overlay-bg);
+  }
+}
+
+/* The raw ledger, in a box: one event per line, never wrapped. A long line
+   scrolls sideways inside the box rather than folding back to its left edge. */
+.ri-ledger {
+  list-style: none;
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--akg-surface-border);
+  border-radius: 10px;
+  background: var(--akg-surface-muted);
+  font-family: var(--akg-font-mono);
+  font-size: 11px;
+  line-height: 1.7;
+}
+
+/* As wide as its text, and at least the box: the own-line wash spans the
+   scrolled width, not just the visible part. */
+.ri-line {
+  width: max-content;
+  min-width: 100%;
+  box-sizing: border-box;
+  padding: 0 4px;
+  border-radius: 4px;
+  white-space: nowrap;
+
+  > span + span {
+    margin-left: 6px;
+  }
+}
+
+.ri-line-time,
+.ri-line-sender {
+  color: var(--akg-text-muted);
+}
+
+.ri-line--own {
+  background: var(--akg-row-hover);
+}
+
+/* Another run's line, in Whole team: the muted tone throughout. The run's own
+   lines keep the text tone and the wash, so the two read apart by palette
+   tone alone. */
+.ri-line--dimmed {
+  color: var(--akg-text-muted);
+}

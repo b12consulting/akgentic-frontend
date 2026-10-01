@@ -80,10 +80,8 @@ export class ContextService {
   public teams$: Observable<TeamContext[]> = this._context$.asObservable();
 
   // Total teams across all pages (classic offset+total pagination, Epic 28).
-  // Single write path, same discipline as `_context$`; reset with the team
-  // list so a stale total never bleeds across teams.
+  // Single write path, same discipline as `_context$`.
   private _totalCount$ = new BehaviorSubject<number>(0);
-  public totalCount$: Observable<number> = this._totalCount$.asObservable();
   public get totalCount(): number {
     return this._totalCount$.value;
   }
@@ -111,7 +109,6 @@ export class ContextService {
   // -----------------------------------------------------------------------
 
   private _filter$ = new BehaviorSubject<TeamFilter>(NO_TEAM_FILTER);
-  public filter$: Observable<TeamFilter> = this._filter$.asObservable();
   public get filter(): TeamFilter {
     return this._filter$.value;
   }
@@ -404,13 +401,6 @@ export class ContextService {
     await this.loadTeamsPage(this._page, this._pageSize);
   }
 
-  /** Clear team-list state on team-switch / context reset so a stale page or
-   *  total never bleeds across teams. */
-  resetTeams(): void {
-    this._context$.next([]);
-    this._totalCount$.next(0);
-  }
-
   async getCurrentTeam(
     teamId: string,
     useCache: boolean = true
@@ -437,22 +427,6 @@ export class ContextService {
     await this.apiService.deleteTeam(teamId);
     const prev = this._context$.value;
     this._context$.next(prev.filter((t: TeamContext) => t.team_id !== teamId));
-  }
-
-  async clear(teamId: string) {
-    await this.deleteTeam(teamId);
-    // Back to the list as it was: deleting a team you had filtered your way to
-    // should not also discard the filter that found it.
-    //
-    // EXCEPT the open team, which is the one thing that must not survive: since
-    // Epic 52 `homeQueryParams` carries `team=`, and the team just deleted is
-    // usually exactly the one it names. Replaying it would send the home page
-    // straight back into a pane for a team that no longer exists. The filter and
-    // the page are kept; only the selection is dropped.
-    if (this.homeQueryParams['team'] === teamId) {
-      this.homeQueryParams = { ...this.homeQueryParams, team: null };
-    }
-    await this.navigateHome();
   }
 
   /**

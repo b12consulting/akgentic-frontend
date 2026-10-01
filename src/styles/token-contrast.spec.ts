@@ -119,15 +119,9 @@ const AGENT_MARK_GROUNDS: readonly string[] = Array.from(
   (_, i) => `--akg-graph-category-${i + 1}`,
 );
 
-const NOT_MEASURED = new Map([
-  [
-    '--akg-notify-fg',
-    'an alias of --akg-accent-bright, which the palette reserves for SIGNALS ' +
-      '(a live dot, an avatar glyph) and forbids for text. Its adjacent-contrast ' +
-      'treatment under 1.4.11 is a separate open question about the signal hue ' +
-      'itself, not about this alias.',
-  ],
-]);
+/** Foreground tokens deliberately left unmeasured, each with its reason. Empty
+ *  today; an entry here is an excuse the next reader must be able to accept. */
+const NOT_MEASURED = new Map<string, string>();
 
 /**
  * Every ground the two "anywhere" lists may be drawn on.

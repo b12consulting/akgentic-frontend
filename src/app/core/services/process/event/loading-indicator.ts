@@ -46,10 +46,10 @@ const SPINNER_MIN_VISIBLE_MS = 500;
 export class LoadingIndicator {
   /**
    * Story 4-10 (AC7) / Epic 18 (ADR-015 §2): the loading-spinner state. Read by
-   * `ChatPanelComponent` through `IngestionService.loadingProcess$`, which
+   * `RunTreePanelComponent` through `IngestionService.loadingProcess$`, which
    * re-exports THIS instance.
    *
-   * Constructed once here and never reassigned. `ChatPanelComponent` captures
+   * Constructed once here and never reassigned. `RunTreePanelComponent` captures
    * the reference in a field initializer and binds it with `| async` for the
    * component's whole life, so a per-cycle replacement would leave the chat
    * panel bound to a dead subject — spinner frozen, and nothing failing

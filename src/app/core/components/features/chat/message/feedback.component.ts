@@ -194,7 +194,6 @@ export class FeedbackComponent implements OnInit, OnDestroy {
   feedbackComment$ = new BehaviorSubject<string>('');
   isPositiveFeedback$ = new BehaviorSubject<boolean>(false);
   hasFeedback$ = new BehaviorSubject<boolean>(false);
-  selectedThumb$ = new BehaviorSubject<'up' | 'down' | null>(null);
 
   /**
    * Marks the host as already-rated so the conversation can keep the control
@@ -258,7 +257,6 @@ export class FeedbackComponent implements OnInit, OnDestroy {
   openFeedbackModal(isPositive: boolean) {
     this.displayModal$.next(true);
     this.isPositiveFeedback$.next(isPositive);
-    this.selectedThumb$.next(isPositive ? 'up' : 'down');
   }
 
   submitFeedback() {

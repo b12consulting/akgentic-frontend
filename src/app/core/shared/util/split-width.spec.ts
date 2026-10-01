@@ -1,8 +1,6 @@
 import {
   clampSplitPercent,
   DEFAULT_SPLIT_BOUNDS,
-  formatSplitPercent,
-  parseSplitPercent,
   SPLIT_COARSE_STEP_PERCENT,
   SPLIT_DEFAULT_PERCENT,
   SPLIT_FINE_STEP_PERCENT,
@@ -14,7 +12,7 @@ import {
 } from './split-width';
 
 /**
- * Epic 52 NFR3: the clamping and persistence arithmetic, tested WITHOUT a
+ * Epic 52 NFR3: the clamping and stepping arithmetic, tested WITHOUT a
  * browser. No TestBed, no fixture, no pointer — these are functions over
  * numbers, and the failure they guard against (a width that shifts a little on
  * every reload) is invisible in a rendered test.
@@ -173,40 +171,6 @@ describe('split-width (Story 52-2)', () => {
     });
   });
 
-  describe('parseSplitPercent / formatSplitPercent', () => {
-    it('(FR5) a stored width round-trips unchanged', () => {
-      for (const percent of [SPLIT_MIN_PERCENT, 33.3, 50, SPLIT_MAX_PERCENT]) {
-        expect(parseSplitPercent(formatSplitPercent(percent))).toBe(percent);
-      }
-    });
-
-    it('reads nothing stored as nothing, so the caller can apply its own default', () => {
-      expect(parseSplitPercent(null)).toBeNull();
-      expect(parseSplitPercent('')).toBeNull();
-      expect(parseSplitPercent('   ')).toBeNull();
-    });
-
-    it('an empty string is NOT zero — it must not read as a collapsed list', () => {
-      expect(parseSplitPercent('')).not.toBe(SPLIT_MIN_PERCENT);
-    });
-
-    it('rejects a corrupt value rather than laying out from it', () => {
-      expect(parseSplitPercent('forty')).toBeNull();
-      expect(parseSplitPercent('40%')).toBeNull();
-    });
-
-    it('honours an out-of-range stored value at the nearest allowed width', () => {
-      expect(parseSplitPercent('5')).toBe(SPLIT_MIN_PERCENT);
-      expect(parseSplitPercent('99')).toBe(SPLIT_MAX_PERCENT);
-    });
-
-    it('never writes a width it would refuse to read back', () => {
-      expect(formatSplitPercent(0)).toBe(String(SPLIT_MIN_PERCENT));
-      expect(formatSplitPercent(1000)).toBe(String(SPLIT_MAX_PERCENT));
-      expect(parseSplitPercent(formatSplitPercent(1000))).toBe(SPLIT_MAX_PERCENT);
-    });
-  });
-
   /**
    * R3: the bounds became a parameter.
    *
@@ -266,21 +230,6 @@ describe('split-width (Story 52-2)', () => {
     it('walks an out-of-range value back INTO the handed range, as it always did', () => {
       // Clamped before the step is added: 95 clamps to 50, then -10.
       expect(stepSplitPercent(95, -SPLIT_COARSE_STEP_PERCENT, narrow)).toBe(40);
-    });
-
-    it('parses a stored width against the range it was handed', () => {
-      expect(parseSplitPercent('65', narrow)).toBe(50);
-      expect(parseSplitPercent('30', narrow)).toBe(30);
-      // Still structure first: a non-number is no preference at all, whatever
-      // the range.
-      expect(parseSplitPercent('forty', narrow)).toBeNull();
-      expect(parseSplitPercent('', narrow)).toBeNull();
-      expect(parseSplitPercent(null, narrow)).toBeNull();
-    });
-
-    it('formats against the range it was handed, so nothing unreadable is written', () => {
-      expect(formatSplitPercent(65, narrow)).toBe('50');
-      expect(parseSplitPercent(formatSplitPercent(65, narrow), narrow)).toBe(50);
     });
 
     it('measures a pointer against the range it was handed', () => {

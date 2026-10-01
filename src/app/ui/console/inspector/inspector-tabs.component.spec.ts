@@ -1,5 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
+import en from '../../../core/platform/i18n/locales/en.json';
+import fr from '../../../core/platform/i18n/locales/fr.json';
 import {
   provideTranslateTesting,
   setTestTranslations,
@@ -24,14 +26,14 @@ function option(value: string): VisualizationOption {
 }
 
 /**
- * The full six, with the REAL icons `ProcessComponent` ships.
+ * The full seven, with the REAL icons `ProcessComponent` ships.
  *
  * The width specs below have to use the production glyphs: the whole point of
  * the icon-only strip is a pixel budget, and a budget measured against a
- * stand-in icon measures nothing. Six is also the worst case — it is the set
+ * stand-in icon measures nothing. Seven is also the worst case — it is the set
  * the user sees when both conditional tools are present.
  */
-function allSixOptions(): VisualizationOption[] {
+function allSevenOptions(): VisualizationOption[] {
   return [
     { labelKey: 'visualization.team', value: 'team', icon: 'pi pi-users' },
     {
@@ -39,6 +41,7 @@ function allSixOptions(): VisualizationOption[] {
       value: 'hierarchy',
       icon: 'pi pi-share-alt',
     },
+    { labelKey: 'visualization.run', value: 'run', icon: 'pi pi-align-left' },
     { labelKey: 'visualization.member', value: 'member', icon: 'pi pi-id-card' },
     {
       labelKey: 'visualization.knowledgeGraph',
@@ -57,6 +60,10 @@ function allSixOptions(): VisualizationOption[] {
     },
   ];
 }
+
+/** The shipped captions, verbatim, per language: the width budget is a claim
+ *  about real English and real French, not about translation keys. */
+const CAPTIONS = { en: en.visualization, fr: fr.visualization } as const;
 
 describe('InspectorTabsComponent', () => {
   let fixture: ComponentFixture<InspectorTabsComponent>;
@@ -147,7 +154,7 @@ describe('InspectorTabsComponent', () => {
    * which is worse than the `p-selectbutton` this component replaced.
    */
   it('gives every tab a non-empty accessible name, drawn or not', () => {
-    render(allSixOptions(), 'team');
+    render(allSevenOptions(), 'team');
 
     for (const tab of tabs()) {
       expect(tab.getAttribute('aria-label')?.length).toBeGreaterThan(0);
@@ -164,7 +171,7 @@ describe('InspectorTabsComponent', () => {
    * be afforded, and it is also the one whose name is worth stating.
    */
   it('draws the caption on the SELECTED tab and on no other', () => {
-    render(allSixOptions(), 'member');
+    render(allSevenOptions(), 'member');
 
     const drawn = tabs()
       .filter((tab) => (tab.textContent ?? '').trim() !== '')
@@ -174,14 +181,14 @@ describe('InspectorTabsComponent', () => {
   });
 
   it('moves the caption with the selection', () => {
-    render(allSixOptions(), 'team');
+    render(allSevenOptions(), 'team');
     expect(tabs()[0].textContent?.trim()).toBe('visualization.team');
 
     fixture.componentRef.setInput('mode', 'messages');
     fixture.detectChanges();
 
     expect(tabs()[0].textContent?.trim()).toBe('');
-    expect(tabs()[5].textContent?.trim()).toBe('visualization.messages');
+    expect(tabs()[6].textContent?.trim()).toBe('visualization.messages');
   });
 
   /**
@@ -207,11 +214,11 @@ describe('InspectorTabsComponent', () => {
    * hidden for that same reason.
    */
   it('hides the icon AND the drawn caption from the accessibility tree', () => {
-    render(allSixOptions(), 'team');
+    render(allSevenOptions(), 'team');
 
     const host = fixture.nativeElement as HTMLElement;
     const icons = host.querySelectorAll('i');
-    expect(icons.length).toBe(6);
+    expect(icons.length).toBe(7);
     for (const icon of Array.from(icons)) {
       expect(icon.getAttribute('aria-hidden')).toBe('true');
     }
@@ -227,8 +234,8 @@ describe('InspectorTabsComponent', () => {
    * `pi-users` was one head against two at 13px — the exact pair this asserts
    * cannot come back.
    */
-  it('gives the six real tabs six distinct glyphs', () => {
-    const icons = allSixOptions().map((entry) => entry.icon);
+  it('gives the seven real tabs seven distinct glyphs', () => {
+    const icons = allSevenOptions().map((entry) => entry.icon);
 
     expect(new Set(icons).size).toBe(icons.length);
     expect(icons).not.toContain('pi pi-user');
@@ -428,21 +435,44 @@ describe('InspectorTabsComponent', () => {
    * has to hold at the narrow end too — a cap tuned for 310px that overflows at
    * 240px would be the same class of bug measured at one width.
    */
-  for (const width of [310, 240]) {
-    it('fits all six tabs in one row at ' + width + 'px, with no horizontal scrolling', () => {
-      render(allSixOptions(), 'team');
+  for (const lang of ['en', 'fr'] as const) {
+    for (const width of [310, 240]) {
+      it(`fits all seven tabs in one row at ${width}px in ${lang}, whichever is selected`, () => {
+        setTestTranslations({ visualization: CAPTIONS[lang] });
+        for (const selected of allSevenOptions().map((o) => o.value)) {
+          render(allSevenOptions(), selected);
 
-      const { scrollWidth, clientWidth, rows } = measureInLane(width, (strip) => ({
-        scrollWidth: strip.scrollWidth,
-        clientWidth: strip.clientWidth,
-        // Distinct vertical offsets = distinct rows. One row means `flex-wrap`
-        // never fired, which is the difference between the safety net being
-        // available and it being load-bearing.
-        rows: new Set(tabs().map((tab) => tab.offsetTop)).size,
-      }));
+          const { scrollWidth, clientWidth, rows } = measureInLane(width, (strip) => ({
+            scrollWidth: strip.scrollWidth,
+            clientWidth: strip.clientWidth,
+            // Distinct vertical offsets = distinct rows. One row means `flex-wrap`
+            // never fired, which is the difference between the safety net being
+            // available and it being load-bearing.
+            rows: new Set(tabs().map((tab) => tab.offsetTop)).size,
+          }));
 
-      expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
-      expect(rows).toBe(1);
+          expect(scrollWidth).withContext(selected).toBeLessThanOrEqual(clientWidth);
+          expect(rows).withContext(selected).toBe(1);
+        }
+      });
+    }
+
+    /**
+     * The seventh tab's own caption must be READ, not guessed at: "Run" and
+     * "Exécution" are short enough that an ellipsis there would mean the
+     * seven-tab chrome ate the room the budget promises the selected tab.
+     */
+    it(`draws the Run caption unclipped at 310px in ${lang}`, () => {
+      setTestTranslations({ visualization: CAPTIONS[lang] });
+      render(allSevenOptions(), 'run');
+
+      const { clipped, caption } = measureInLane(310, (strip) => {
+        const el = strip.querySelector<HTMLElement>('.inspector-tabs__caption')!;
+        return { clipped: el.scrollWidth > el.clientWidth, caption: el.textContent?.trim() };
+      });
+
+      expect(caption).toBe(CAPTIONS[lang].run);
+      expect(clipped).toBeFalse();
     });
   }
 
@@ -457,7 +487,7 @@ describe('InspectorTabsComponent', () => {
    * back on if the budget is ever wrong.
    */
   it('never offers a horizontal scrollbar — it wraps instead', () => {
-    render(allSixOptions(), 'team');
+    render(allSevenOptions(), 'team');
 
     // Snapshot INSIDE the lane: `getComputedStyle` returns a live declaration,
     // and once `measureInLane` detaches the element every property reads back
@@ -490,7 +520,7 @@ describe('InspectorTabsComponent', () => {
     setTestTranslations({
       visualization: { knowledgeGraph: 'A caption far longer than any pane' },
     });
-    render(allSixOptions(), 'knowledge-graph');
+    render(allSevenOptions(), 'knowledge-graph');
 
     const { rows, scrollWidth, clientWidth, clipped } = measureInLane(240, (strip) => {
       const caption = strip.querySelector<HTMLElement>('.inspector-tabs__caption')!;
@@ -509,7 +539,7 @@ describe('InspectorTabsComponent', () => {
   });
 
   it('wraps rather than clips when squeezed below the budget', () => {
-    render(allSixOptions(), 'team');
+    render(allSevenOptions(), 'team');
 
     const { scrollWidth, clientWidth, rows } = measureInLane(120, (strip) => ({
       scrollWidth: strip.scrollWidth,

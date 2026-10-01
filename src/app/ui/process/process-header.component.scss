@@ -20,7 +20,7 @@
  * The title cluster takes the slack, and gives it up first. `min-width: 0` on
  * both the cluster and the name is what actually lets the ellipsis happen: a
  * flex item's default `min-width: auto` refuses to shrink below its content, so
- * without it a long team name pushes Clear and Details off the right edge
+ * without it a long team name pushes Details off the right edge
  * instead of truncating.
  */
 .title-cluster {
@@ -57,7 +57,7 @@
  *
  * `flex: 0 1 auto` with `min-width: 0`: the chips give up space before the team
  * name does (a truncated `Case id C-12…` still identifies the case; a truncated
- * team name does not) and ellipsise rather than pushing Clear and Details off
+ * team name does not) and ellipsise rather than pushing Details off
  * the right edge. Several chips on a narrow pane shrink together.
  */
 .team-meta {
@@ -161,26 +161,6 @@
   &:focus-visible {
     outline: none;
     box-shadow: var(--akg-focus-ring);
-  }
-
-  &:disabled {
-    cursor: default;
-    opacity: 0.45;
-  }
-}
-
-/* Clear is the quiet one: no frame at rest, and it gains BOTH a ground and a
-   darker text colour on hover. The two-property hover is what makes a control
-   with no border read as reachable — a background alone leaves it looking
-   disabled-but-highlighted. */
-.header-action--quiet {
-  border: 0;
-  background: transparent;
-  color: var(--akg-text-muted);
-
-  &:hover:not(:disabled) {
-    background: var(--akg-panel-bg);
-    color: var(--akg-text);
   }
 }
 

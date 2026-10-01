@@ -62,6 +62,12 @@ describe('inspector tab registry', () => {
      * something the filter is free to rearrange. Two tabs that swap places
      * between one emission and the next move under the user's pointer.
      */
+    /** A product decision: the Run tab is third, whatever the team has. */
+    it('puts the Run tab third, after the team and its tree', () => {
+      expect(values(visibleInspectorTabs(all)).indexOf('run')).toBe(2);
+      expect(values(visibleInspectorTabs(none)).indexOf('run')).toBe(2);
+    });
+
     it('keeps the declared order when entries drop out', () => {
       expect(values(visibleInspectorTabs(all))).toEqual(values(INSPECTOR_TABS));
       expect(values(visibleInspectorTabs(none))).toEqual(

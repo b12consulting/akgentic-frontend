@@ -11,7 +11,6 @@ function member(overrides: Partial<InspectorMember> = {}): InspectorMember {
   return {
     id: 'agent-1',
     label: 'Researcher [Analyst]',
-    actorName: 'researcher-analyst-batch-1',
     initial: 'R',
     roleKey: 'inspector.role.worker',
     kind: 'worker',
@@ -31,10 +30,8 @@ function member(overrides: Partial<InspectorMember> = {}): InspectorMember {
  * avatar style in the mock), and that the indent tracks the derived depth
  * rather than a flat two-level guess.
  *
- * The block at the bottom covers the trailing "read the conversation" action
- * (W5a). Its assertions are mostly about SEPARATION — the two controls must not
- * become one — because that is the failure that would strand a user on a tab
- * they never chose.
+ * A card opens that agent in the Member tab, and nothing else: the trailing
+ * speech-bubble action and the reader it once opened are gone (Epic 55).
  */
 describe('MemberCardComponent', () => {
   let fixture: ComponentFixture<MemberCardComponent>;
@@ -72,37 +69,46 @@ describe('MemberCardComponent', () => {
     expect(card().getAttribute('type')).toBe('button');
   });
 
-  /**
-   * THE ROW OPENS THE READER. It used to select the member instead, and the two
-   * traded places once the list grew to a full roster: reading what a member
-   * said is the thing you want from a list of members, and it was the one
-   * behind a 14px target while the cheaper, reversible tab switch had the
-   * whole row.
-   */
-  it('asks to read the conversation when the row is activated', () => {
+  it('a click on the card emits selected with the agent_id', () => {
     render(member({ id: 'agent-42' }));
-    const read: string[] = [];
     const selected: string[] = [];
-    fixture.componentInstance.readRequested.subscribe((id) => read.push(id));
     fixture.componentInstance.selected.subscribe((id) => selected.push(id));
 
     card().click();
 
-    expect(read).toEqual(['agent-42']);
-    // Not both: the dialog would open over a tab the user never asked for.
-    expect(selected).toEqual([]);
+    expect(selected).toEqual(['agent-42']);
   });
 
-  /** A row that opens a dialog says so, or a screen reader announces a button
-   *  that appears to do nothing until the focus moves without warning. */
-  it('announces the row as opening a dialog, and names whose', () => {
+  /**
+   * THE KEYBOARD, through the native button. A focused `<button>` turns Enter
+   * and Space into a click dispatched AT THE BUTTON, which a handler on an inner
+   * element would never see — so the handler must sit on the card itself.
+   */
+  it('Enter or Space on the focused card does the same, as a native button', () => {
+    render(member({ id: 'agent-42' }));
+    const selected: string[] = [];
+    fixture.componentInstance.selected.subscribe((id) => selected.push(id));
+
+    document.body.appendChild(fixture.nativeElement);
+    card().focus();
+    expect(document.activeElement).toBe(card());
+    // The activation the browser performs for Enter / Space on a button.
+    card().dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    (fixture.nativeElement as HTMLElement).remove();
+
+    expect(selected).toEqual(['agent-42']);
+  });
+
+  /** A card names what pressing it does, and whose details it opens. */
+  it('labels the card with openMemberDetails and the agent', () => {
     setTestTranslations({
-      inspector: { readConversationOf: '<<read:{{agent}}>>' },
+      inspector: { openMemberDetails: '<<details:{{agent}}>>' },
     });
     render(member({ label: '@Expert' }));
 
-    expect(card().getAttribute('aria-haspopup')).toBe('dialog');
-    expect(card().getAttribute('aria-label')).toBe('<<read:@Expert>>');
+    expect(card().getAttribute('aria-label')).toBe('<<details:@Expert>>');
+    // It opens a tab, not a dialog.
+    expect(card().hasAttribute('aria-haspopup')).toBeFalse();
   });
 
   it('gives a supervisor and a worker different avatar treatments', () => {
@@ -186,84 +192,12 @@ describe('MemberCardComponent', () => {
     expect(idle?.classList).toContain('idle');
   });
 
-  // =========================================================================
-  // W5a — the trailing "read this member's conversation" action.
-  // =========================================================================
-
-  function readButton(): HTMLButtonElement {
-    const el = (fixture.nativeElement as HTMLElement).querySelector(
-      '.member-read button',
-    );
-    if (el === null) {
-      throw new Error('the read action did not render');
-    }
-    return el as HTMLButtonElement;
-  }
-
-  it('renders the read action at rest, not only on hover', () => {
-    // A control revealed on hover is invisible to the user hunting for it and
-    // unreachable by touch. Asserted through the rendered element rather than
-    // the stylesheet: whatever hides it, the consequence is the same.
+  it('has no trailing icon button: the card is the only control', () => {
     render(member());
 
-    expect(readButton()).not.toBeNull();
-    expect(readButton().tagName).toBe('BUTTON');
-  });
-
-  it('emits selected with the agent_id, on its OWN output', () => {
-    render(member({ id: 'agent-42' }));
-    const selected: string[] = [];
-    fixture.componentInstance.selected.subscribe((id) => selected.push(id));
-
-    readButton().click();
-
-    expect(selected).toEqual(['agent-42']);
-  });
-
-  it('does NOT also open the reader — two destinations, not one click', () => {
-    // Firing both would switch the Member tab and then cover it with the
-    // reader's dialog, so dismissing the dialog would leave the user on a tab
-    // they never asked for.
-    render(member({ id: 'agent-42' }));
-    const read: string[] = [];
-    fixture.componentInstance.readRequested.subscribe((id) => read.push(id));
-
-    readButton().click();
-
-    expect(read).toEqual([]);
-  });
-
-  /*
-   * DELETED: 'activating the ROW still selects and does not open the reader'.
-   *
-   * It pinned the row to the selection, which is the half that moved to the
-   * icon. The row's direction is covered above by 'asks to read the
-   * conversation when the row is activated', which asserts the same pair of
-   * facts the other way round — one destination fires, the other does not.
-   */
-
-  it('keeps the two controls as SIBLINGS, never one nested in the other', () => {
-    // A <button> inside a <button> is invalid, and the browsers that tolerate
-    // it disagree about which one a click reaches — for a control that opens a
-    // dialog, that is the difference between a reader and a tab switch.
-    render(member());
-
-    expect(card().contains(readButton())).toBeFalse();
-    expect(readButton().contains(card())).toBeFalse();
-  });
-
-  it('gives the icon action an accessible name from the translation layer', () => {
-    // An icon-only control with no name is unusable by a screen reader, and
-    // hardcoded copy here would never be translated.
-    //
-    // A control's name says what PRESSING IT DOES, which is why this key moved
-    // when the two controls traded places: the glyph is still a speech bubble,
-    // but the pane behind it is the Member tab now, not the reader's dialog.
-    setTestTranslations({ inspector: { openMemberTab: '<<tab>>' } });
-    render(member());
-
-    expect(readButton().getAttribute('aria-label')).toBe('<<tab>>');
-    expect(readButton().getAttribute('title')).toBe('<<tab>>');
+    const host = fixture.nativeElement as HTMLElement;
+    expect(host.querySelector('app-icon-button')).toBeNull();
+    expect(host.querySelectorAll('button').length).toBe(1);
   });
 });
 

@@ -809,17 +809,6 @@ export class NamespacePanelComponent
   }
 
   /**
-   * Public predicate — true iff ANY secondary panel (the Clone modal OR the
-   * confirmation modal) is open. The host (`HomeComponent` config dialog, and
-   * any route-shell that binds `closeOnEscape`) reads this synchronously to
-   * suppress its own `closeOnEscape` while a secondary panel is open, so Esc
-   * closes only the topmost secondary panel (ADR-018).
-   */
-  get hasSecondaryPanelOpen(): boolean {
-    return this.cloneDialogVisible || this.confirmDialogVisible;
-  }
-
-  /**
    * Coordinated Escape for the panel's secondary modals (ADR-018). Closes ONLY
    * the topmost open secondary panel and reports whether it consumed the
    * Escape, so EXACTLY ONE action happens per keystroke (no cascade):

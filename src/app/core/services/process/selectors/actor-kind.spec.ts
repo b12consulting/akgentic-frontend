@@ -38,9 +38,9 @@ describe('isToolActor', () => {
  *
  * MOVED HERE WITH THE CODE. These assertions used to live beside a second copy
  * of the predicates under `console/inspector/team-panel/tool-actors.ts`; they
- * are what keeps the inspector's member list, the Member dropdown, the reader's
- * left-hand column and the hierarchy graph filtering the SAME actors, so they
- * belong to the one module all four now ask.
+ * are what keeps the inspector's member list, the Member dropdown and the
+ * hierarchy graph filtering the SAME actors, so they belong to the one module
+ * all of them now ask.
  */
 describe('tool actors (moved from the inspector)', () => {
   describe('isToolNode', () => {
@@ -112,9 +112,9 @@ describe('tool actors (moved from the inspector)', () => {
 /**
  * The narrowing every "list of people" surface applies.
  *
- * This is the predicate that fixes the reader: its left-hand column dropped the
- * tools and kept the human, so the person reading it was offered their own
- * transcript beside the agents' — which is the main chat, one pane over.
+ * It was written to fix the sub-agent reader (since removed, Epic 55): its
+ * left-hand column dropped the tools and kept the human, so the person reading
+ * it was offered their own transcript beside the agents' — the main chat.
  */
 describe('isAddressableAgent', () => {
   it('offers an ordinary agent', () => {

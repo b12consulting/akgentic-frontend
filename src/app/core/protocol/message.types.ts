@@ -98,8 +98,8 @@ export interface ProcessedMessage extends BaseMessage {
  * `ProcessedMessage` — the inner message is NOT serialised into this envelope.
  * `message_id` is the **absorbed inner `BaseMessage.id`**, the same id space as
  * `ReceivedMessage.message_id` and `ChatMessage.message_id`, which is what lets
- * `chatFold` anchor the successor thinking bubble on the user message it
- * answers. See `akgentic.core.messages.orchestrator.HandledMessage`.
+ * the run graph (`runGraphFold`) record the absorbed message against the run
+ * that took it up. See `akgentic.core.messages.orchestrator.HandledMessage`.
  */
 export interface HandledMessage extends BaseMessage {
   __model__: 'akgentic.core.messages.orchestrator.HandledMessage';

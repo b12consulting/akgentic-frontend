@@ -106,7 +106,7 @@ body {
 //
 // Lists and p-fields
 //
-/* Kept, though the Epic-56 plan listed it for deletion with the legacy chat
+/* Kept, though the Epic-56 plan listed it for deletion with the old chat
    block below. It is not part of that block: `message-list.component.html`
    still wraps every row of the Messages tab in it and defines nothing of its
    own, so removing it here unboxes that whole tab. Retiring it belongs with
@@ -141,6 +141,26 @@ span.p-fieldset-legend-label {
 // Lists and p-fields | END
 //
 
+/* The card a graph canvas is drawn in — the knowledge graph and the hierarchy
+   share it, so the two inspector graphs read as one surface rather than one
+   carded and one loose on the pane. A flex column that fills and may shrink
+   (`min-height: 0`), so the echarts element inside takes `flex: 1` and its
+   ResizeObserver re-measures as the pane moves. `position: relative` is the
+   containing block for each graph's empty-state overlay. The canvas itself
+   paints nothing: the background here is the ground the graph is drawn on,
+   and `--akg-graph-ground` points at the same token. */
+.akg-graph-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--akg-surface-border);
+  border-radius: var(--akg-card-radius);
+  background: var(--akg-surface-muted);
+}
+
 .mb-8 {
   margin-bottom: 0.8rem;
 }
@@ -155,7 +175,7 @@ span.p-fieldset-legend-label {
 
    `.message-list` and `.message` are the reason this is a correctness change
    and not tidying. Both class names are ALSO used by the redesigned
-   conversation — `chat-panel.component.scss` scopes `.message-list` and
+   conversation — `run-tree-panel.component.scss` scopes `.message-list` and
    `chat-message.component.scss` scopes `.message` — and the scoped rules only
    won because component styles carry an extra attribute selector's worth of
    specificity. That is an accident, not a mechanism: a global here that ever
@@ -324,8 +344,12 @@ markdown {
   /* Conversation tokens, not PrimeNG's togglebutton variables. A code block in
      an answer took its ground and its rule from whatever the component library
      happened to theme a toggle button as, so re-pointing the palette moved
-     every surface in the app except this one. */
+     every surface in the app except this one.
+
+     `overflow-x: auto` keeps a long line inside the block: without it one wide
+     line of command output pushed the whole transcript into a sideways scroll. */
   pre {
+    overflow-x: auto;
     font-size: 0.9em;
     margin: 0.5rem;
     padding: 0.5rem;

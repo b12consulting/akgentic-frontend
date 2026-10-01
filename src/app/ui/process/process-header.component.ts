@@ -12,8 +12,8 @@ import { IconButtonComponent } from '../../core/components/primitives/icon-butto
 /**
  * The conversation's own title bar (Epic: console redesign, B3).
  *
- * It replaces the p-menubar's left half — the team name, its run state, Clear
- * and Details — and it lives INSIDE `ProcessComponent` rather than in the app
+ * It replaces the p-menubar's left half — the team name, its run state and
+ * Details — and it lives INSIDE `ProcessComponent` rather than in the app
  * shell. That placement is not cosmetic: the redesign's third pane, the
  * inspector, can only resolve `ProcessComponent`'s component-scoped providers
  * from inside that injector, so the header sits beside it rather than above it.
@@ -73,16 +73,4 @@ export class ProcessHeaderComponent {
    */
   readonly inspectorOpen$: Observable<boolean> =
     this.viewService.isRightColumnCollapsed$.pipe(map((collapsed) => !collapsed));
-
-  /**
-   * Discard the open team and go back to the list.
-   *
-   * The id is read at click time rather than bound, so the handler cannot act
-   * on a team that stopped being the open one between render and click. Not
-   * awaited: `clear()` ends in a navigation, and there is nothing left here to
-   * do with its completion — the same posture the menubar's Clear item had.
-   */
-  clear(): void {
-    void this.contextService.clear(this.contextService.currentProcessId$.value);
-  }
 }

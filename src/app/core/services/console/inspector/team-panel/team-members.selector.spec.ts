@@ -173,6 +173,22 @@ describe('buildInspectorTeam', () => {
       expect(view.members.map((m) => m.id)).toEqual(['a']);
     });
 
+    it('shows a workspace tool by its leaf, keeping two workspaces that share one', () => {
+      const view = buildInspectorTeam([
+        node({ name: 'w1', actorName: '#Workspace-anonymous/_meta/folder-Documents' }),
+        node({ name: 'p', actorName: '#PlanningTool' }),
+        // Another workspace with the same leaf: a different tool, so a second
+        // chip, not folded into the first by its display name.
+        node({ name: 'w2', actorName: '#Workspace-_shared/_id/folder-Documents' }),
+      ]);
+
+      expect(view.tools).toEqual([
+        'Workspace/folder-Documents',
+        'PlanningTool',
+        'Workspace/folder-Documents',
+      ]);
+    });
+
     it('does not let a tool actor become a parent of an agent', () => {
       // Tools are removed before the tree is built, so an agent pointing at one
       // is an orphan and stays visible at depth 0.
@@ -291,27 +307,6 @@ describe('inspectorTeamsEqual', () => {
       node({ name: 't2', actorName: '#VectorStore' }),
     ]);
 
-    expect(inspectorTeamsEqual(before, after)).toBe(false);
-  });
-
-  /**
-   * The reader routes a message on `actorName`, and the friendly label cannot
-   * be turned back into one: `makeAgentNameUserFriendly` takes only the first
-   * two dash-separated segments, so both names below render as "Worker [0]".
-   * Comparing labels alone therefore reports "unchanged" for a node whose
-   * routing address moved, and the cached view keeps handing out the old one.
-   */
-  it('fails when only the actorName changes, which the label cannot show', () => {
-    const before = buildInspectorTeam(nodes);
-    const after = buildInspectorTeam([
-      node({ name: 'boss', actorName: 'Manager-Supervisor-0' }),
-      node({ name: 'w', actorName: 'Worker-0-BATCH-2', parentId: 'boss' }),
-      node({ name: 't', actorName: '#Tool' }),
-    ]);
-
-    expect(after.members.map((m) => m.label)).toEqual(
-      before.members.map((m) => m.label),
-    );
     expect(inspectorTeamsEqual(before, after)).toBe(false);
   });
 

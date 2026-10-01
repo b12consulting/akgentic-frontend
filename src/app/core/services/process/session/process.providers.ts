@@ -1,4 +1,3 @@
-import { AsyncPipe } from '@angular/common';
 import { ConnectionToast } from '../event/connection-toast';
 import { IngestionService } from '../event/ingestion.service';
 import { TeamSessionService } from './team-session.service';
@@ -15,23 +14,24 @@ import { AgentsByIdService } from '../selectors/agents-by-id.selector';
 import { ChatService } from '../selectors/chat.selector';
 import { GraphDataService } from '../selectors/graph.selector';
 import { KGStateReducer } from '../selectors/knowledge-graph.selector';
+import { RunGraphService } from '../selectors/run-graph.selector';
+import { RunTreeService } from '../selectors/run-tree-items';
 import { SystemPromptSelector } from '../selectors/system-prompt.selector';
 import { TokenUsageSelector } from '../selectors/token-usage.selector';
 import { ToolPresenceService } from '../selectors/tool-presence.selector';
 import { WorkspaceInvalidationService } from '../selectors/workspace-invalidation.selector';
 import { WorkspaceRegistryService } from '../selectors/workspace-registry.selector';
 import { FeedbackService } from '../ui-state/feedback.service';
+import { RunSelectionState } from '../ui-state/run-selection';
 import { SelectionService } from '../ui-state/selection.service';
+import { TraceFoldState } from '../ui-state/trace-fold-state';
 
 /**
  * THE TEAM'S SERVICES, SCOPED TO THE ROUTE RATHER THAN TO A COMPONENT.
  *
- * TWO COUNTS RANGE OVER THIS ARRAY AND THEY ARE NOT THE SAME NUMBER. It holds
- * TWENTY-FOUR entries: TWENTY-THREE service classes — the team's stack — plus
- * Angular's `AsyncPipe`, which is a pipe and not one of the team's services.
- * Both numbers appear below; each says which set it counts.
+ * It holds TWENTY-SEVEN entries, every one a service class: the team's stack.
  *
- * All twenty-three service classes used to be the `process/:id` route's
+ * All twenty-seven service classes used to be the `process/:id` route's
  * providers, and every component that wanted one injected it bare — which meant
  * every one of them could only ever be mounted inside that component. That is
  * the coupling in the way of reusing a panel anywhere else, and of anybody
@@ -61,7 +61,7 @@ import { SelectionService } from '../ui-state/selection.service';
 /**
  * EXPORTED, and that is not incidental. A developer who clones this repo to
  * build a different console needs this array verbatim — it is the team's whole
- * service stack — and an unexported `const` left them copying twenty-four
+ * service stack — and an unexported `const` left them copying twenty-seven
  * entries by hand, in order, from the file they were about to replace.
  *
  * IT LIVES BESIDE `team-session.service.ts` RATHER THAN IN THE ROUTER, which is
@@ -73,7 +73,6 @@ import { SelectionService } from '../ui-state/selection.service';
  * unit in the data layer whose job is to assemble the others.
  */
 export const PROCESS_PROVIDERS = [
-  AsyncPipe,
   MessageLogService,
   // Epic 23 (ADR-019): route-scoped registry that folds the message log
   // into the set of WorkspaceDescriptors driving the workspace sub-tabs. Must
@@ -155,9 +154,6 @@ export const PROCESS_PROVIDERS = [
   // team's frames into the next team's log.
   LogFeeder,
   IngestionService,
-  // The open/close ritual itself. Provided AFTER IngestionService for the same
-  // reading-order reason as everything else here; it injects it.
-  TeamSessionService,
   // Epic 26 (ADR-022): route-scoped read surface over the `tokenUsage`
   // PerAgentStore. Provided AFTER IngestionService (which it injects); never
   // `providedIn: 'root'` — it shares the team-scoped log lifecycle, so a team
@@ -165,6 +161,28 @@ export const PROCESS_PROVIDERS = [
   TokenUsageSelector,
   GraphDataService,
   ChatService,
+  // Epic 55 (ADR-037 §D10): the run graph, a pure fold over `log$` beside
+  // `chat$`. Provided AFTER MessageLogService (which it injects); never
+  // `providedIn: 'root'` — it shares the team-scoped log lifecycle.
+  RunGraphService,
+  // Epic 55: the run-tree transcript's display list, `zip`ped from ONE log
+  // emission's `chat$` and `graph$`. Provided AFTER both (it injects them);
+  // never `providedIn: 'root'` — it shares the team-scoped log lifecycle.
+  RunTreeService,
+  // Epic 55: which trace cards are open, keyed by root run. Process-scoped
+  // because the inspector's mini-tree reveals runs in it too; reset by
+  // TeamSessionService on a team switch, so one team's open cards never carry
+  // into the next.
+  TraceFoldState,
+  // Epic 55: the selected run, shared by the transcript and the inspector's
+  // Run tab. Provided AFTER TraceFoldState (it injects it: a selection reveals
+  // its run in the transcript's folds). Process-scoped for the same reasons.
+  RunSelectionState,
+  // The open/close ritual itself. Provided AFTER IngestionService,
+  // TraceFoldState and RunSelectionState, for the same reading-order reason as
+  // everything else here: it injects all three, and resets the last two when
+  // it closes a team.
+  TeamSessionService,
   SelectionService,
   FeedbackService,
 ];

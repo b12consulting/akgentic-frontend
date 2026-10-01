@@ -25,7 +25,9 @@
 >
   <div class="conversation-pane">
     <app-process-header></app-process-header>
-    <app-chat-panel class="chat-app" [processId]="processId"></app-chat-panel>
+    <!-- Epic 55: the run-tree transcript is the chat. A direct child of the
+         pane, which sizes it through `.chat-app`. -->
+    <app-run-tree-panel class="chat-app" [processId]="processId"></app-run-tree-panel>
   </div>
 
   <!--
@@ -170,6 +172,18 @@
         [attr.inert]="isHidden('messages') ? '' : null"
         [class.moved-offscreen]="isHidden('messages')"
       ></app-message-list>
+
+      <!-- Epic 55: the selected run in detail. Always mounted like the others;
+           a run selection in the transcript switches here. -->
+      <div
+        id="inspector-panel-run"
+        role="tabpanel"
+        aria-labelledby="inspector-tab-run"
+        [attr.inert]="isHidden('run') ? '' : null"
+        [class.moved-offscreen]="isHidden('run')"
+      >
+        <app-run-inspector></app-run-inspector>
+      </div>
     </div>
   </app-inspector>
 </div>

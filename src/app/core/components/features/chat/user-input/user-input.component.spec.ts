@@ -2045,7 +2045,7 @@ describe('ProcessUserInputComponent', () => {
     });
 
     it('renders at all with NO team-scoped TokenUsageSelector in the injector', async () => {
-      // The composer is a child of ChatPanelComponent, which specs mount in a
+      // The composer is a child of RunTreePanelComponent, which specs mount in a
       // bare TestBed outside ProcessComponent's provider array. A required
       // injection would take that whole suite down; re-providing the selector
       // here would be worse, because it would build a second, permanently empty

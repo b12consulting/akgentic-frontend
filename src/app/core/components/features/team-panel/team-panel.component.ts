@@ -19,7 +19,7 @@ import { EmptyStateComponent } from '../../primitives/empty-state/empty-state.co
 import { MemberCardComponent } from './member-card/member-card.component';
 import { ToolChipsComponent } from './member-card/tool-chips.component';
 import { TokenUsagePanelComponent } from './token-usage/token-usage-panel.component';
-import { AgentReaderService } from '../chat/agent-reader.service';
+import { TaskBoardComponent } from './task-board/task-board.component';
 import { CategoryService } from '../../../services/category.service';
 import { agentColours } from '../../../services/process/selectors/agent-colour';
 
@@ -42,16 +42,6 @@ import { agentColours } from '../../../services/process/selectors/agent-colour';
  * agents SPLICED OUT (`applyStopMessage`), which is exactly the question this
  * panel answers. `agentsById$` deliberately keeps stopped agents resolvable so
  * old messages still render a name — that is a historical lookup, not a roster.
- *
- * ONE OF THE TWO MEMBER ACTIONS IS HANDLED HERE RATHER THAN EMITTED, which
- * contradicts the paragraph above and does so deliberately. "Open this member's
- * conversation" targets a dialog mounted inside the CHAT panel, on the far side
- * of the split; there is no host between the two that can see both, so an
- * output would have to be forwarded through the process view purely to be
- * forwarded on again. `AgentReaderService` — the SAME root-scoped stream the
- * chat panel subscribes to — is the seam instead, and the panel calls it.
- * `selected`, whose destination (the Member tab) IS the inspector's own, is
- * still emitted.
  */
 @Component({
   selector: 'app-team-panel',
@@ -62,6 +52,7 @@ import { agentColours } from '../../../services/process/selectors/agent-colour';
     EmptyStateComponent,
     MemberCardComponent,
     ToolChipsComponent,
+    TaskBoardComponent,
     TokenUsagePanelComponent,
   ],
   templateUrl: './team-panel.component.html',
@@ -70,10 +61,9 @@ import { agentColours } from '../../../services/process/selectors/agent-colour';
 })
 export class TeamPanelComponent {
   private readonly graph = inject(GraphDataService);
-  private readonly agentReader = inject(AgentReaderService);
 
   /**
-   * A member row was activated, by agent_id.
+   * A member card was activated, by agent_id.
    *
    * Emitted rather than acted on: what "select a member" means — open the
    * Member tab, focus the member's chat — belongs to whatever mounts the
@@ -81,33 +71,6 @@ export class TeamPanelComponent {
    * sitting in.
    */
   @Output() memberSelected = new EventEmitter<string>();
-
-  /**
-   * The row's trailing action: read this member's conversation.
-   *
-   * Forwarded straight to `AgentReaderService`. Nothing is re-emitted for a
-   * host to handle, because there is no host that could — the reader is inside
-   * the chat panel and the inspector's ancestors do not own it.
-   *
-   * Deliberately does NOT also select the member. Two affordances on one row
-   * that both move the view behind the dialog would leave the user somewhere
-   * they never asked to be as soon as they closed it.
-   *
-   * The card reports an agent_id; the reader also needs the RAW actor name to
-   * address a reply, so it is resolved here off the view the rows were built
-   * from. Resolving rather than widening the card's output keeps the card
-   * ignorant of what the reader does with it. An id with no matching row is
-   * dropped: it can only mean the roster re-emitted without this member (the
-   * agent stopped), and opening a reader on somebody who just left the team is
-   * worse than the click doing nothing.
-   */
-  onReadRequested(view: InspectorTeamView, agentId: string): void {
-    const member = view.members.find((m) => m.id === agentId);
-    if (!member) {
-      return;
-    }
-    this.agentReader.open({ agentId, actorName: member.actorName });
-  }
 
   /** The resolved categorical ramp, memoised in the service. `getComputedStyle`
    *  is a layout flush, so it is read per roster emission rather than per row. */

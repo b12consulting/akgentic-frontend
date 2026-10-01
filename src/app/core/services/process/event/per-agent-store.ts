@@ -81,21 +81,6 @@ export function replaceWith<V>(
   return (_prev, msg) => project(msg);
 }
 
-/** Accumulate: append the projected value to a FRESH array each time (never an
- *  in-place mutation), so OnPush consumers see a new reference. */
-export function appendWith<T>(
-  project: (msg: AkgenticMessage) => T,
-): (prev: T[] | undefined, msg: AkgenticMessage) => T[] {
-  return (prev, msg) => [...(prev ?? []), project(msg)];
-}
-
-/** First-wins: keep the first projected value; later matches do not overwrite. */
-export function firstWith<V>(
-  project: (msg: AkgenticMessage) => V,
-): (prev: V | undefined, msg: AkgenticMessage) => V {
-  return (prev, msg) => prev ?? project(msg);
-}
-
 // ---------------------------------------------------------------------------
 // Per-spec internal bucket: the map + a per-frame "changed" flag.
 // ---------------------------------------------------------------------------

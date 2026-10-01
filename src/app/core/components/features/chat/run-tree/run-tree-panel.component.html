@@ -1,0 +1,202 @@
+<div class="chat-container">
+  @if (hasContent) {
+    <div class="message-list" #scrollContainer (scroll)="scroll.onScroll()">
+      <!-- The timeline, sorted by position time (pick-up for yours). -->
+      @for (item of timeline; track trackItem($index, item)) {
+        @switch (item.kind) {
+          @case ('message') {
+            <!-- Notes are SIBLINGS of the bubble, never edits to it. The
+                 "replying to" / "as" label sits above your bubble. -->
+            @if (item.notes.replyingTo; as asker) {
+              <div class="run-note run-note--mine run-note--above">
+                {{ 'chat.runTree.replyingTo' | translate: { agent: (asker.name | displayActorName) } }}
+              </div>
+            }
+            @if (item.notes.sendAs; as seat) {
+              <div class="run-note run-note--mine run-note--above">
+                {{ 'chat.runTree.sendAs' | translate: { agent: (seat.name | displayActorName) } }}
+              </div>
+            }
+            @if (ownsRating(item.data) || item.notes.provenance) {
+              <!-- An answer: ONE turn element, the bubble and its action row
+                   [copy] [👍] [👎] [pill], revealed together on hover or focus
+                   of the whole turn. -->
+              <div
+                class="run-answer"
+                [class.run-answer--before-yours]="beforeYours.has(item.data.id)"
+              >
+                <ng-container
+                  *ngTemplateOutlet="bubble; context: { $implicit: item.data }"
+                ></ng-container>
+                <div class="run-actions">
+                  @if (ownsRating(item.data)) {
+                    <app-feedback [message]="item.data"></app-feedback>
+                  }
+                  @if (item.notes.provenance; as p) {
+                    <button
+                      type="button"
+                      class="run-link run-link--provenance"
+                      (click)="selectFromProvenance(p.run)"
+                    >
+                      <svg
+                        class="run-link-icon"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M6 3v12M6 9h6a3 3 0 0 1 3 3v0M6 15h6a3 3 0 0 1 3 3" />
+                        <circle cx="6" cy="3" r="1" />
+                        <circle cx="17" cy="12" r="2" />
+                        <circle cx="17" cy="18" r="2" />
+                      </svg>
+                      {{
+                        provenanceKey(p)
+                          | translate
+                            : {
+                                agent: (p.agent.name | displayActorName),
+                                from: (p.from.name | displayActorName),
+                                depth: p.depth,
+                                runs: (runsKey(p.runsInTrace) | translate: { count: p.runsInTrace }),
+                              }
+                      }}
+                    </button>
+                  }
+                </div>
+              </div>
+            } @else {
+              <ng-container
+                *ngTemplateOutlet="bubble; context: { $implicit: item.data }"
+              ></ng-container>
+              @if (item.notes.absorbedBy; as absorbed) {
+                <button
+                  type="button"
+                  class="run-note run-note--mine run-link"
+                  (click)="selectRun(absorbed.run, 'absorbed')"
+                >
+                  {{ 'chat.runTree.absorbedNote' | translate: { agent: (absorbed.agent.name | displayActorName) } }}
+                </button>
+              }
+            }
+          }
+          @case ('trace') {
+            @if (cards.get(item.rootKey); as summary) {
+              <app-trace-card
+                [summary]="summary"
+                [graph]="graph"
+                [bubbleIds]="bubbleIds"
+                [continuesFrom]="item.continuesFrom"
+                [open]="folds.isOpen(item.rootKey)"
+                [agentColours]="agentColours"
+                [flashingRun]="flashingRun()"
+                (toggle)="toggleTrace($event)"
+                (selectRun)="selectRun($event, 'tree')"
+                (answer)="onAnswer($event)"
+                (humanRowHover)="onHumanRowHover($event)"
+                (showInChat)="flashBubble($event)"
+              ></app-trace-card>
+            }
+          }
+          @case ('day') {
+            <div class="day-separator" role="separator">
+              <span class="day-separator-label">{{ item.data.label }}</span>
+            </div>
+          }
+        }
+      }
+
+      <!-- The not-yet-received tail: not sorted, no day separator. -->
+      @if (tail.length > 0) {
+        <div class="day-separator tail-divider" role="separator">
+          <span class="day-separator-label">{{
+            (tail.length === 1 ? 'chat.runTree.messageSent' : 'chat.runTree.messagesSent')
+              | translate
+          }}</span>
+        </div>
+        @for (m of tail; track m.id) {
+          <!-- A queued message keeps its "replying to" / "as" label. -->
+          @if (tailNotes.get(m.id)?.replyingTo; as asker) {
+            <div class="run-note run-note--mine run-note--above">
+              {{ 'chat.runTree.replyingTo' | translate: { agent: (asker.name | displayActorName) } }}
+            </div>
+          }
+          @if (tailNotes.get(m.id)?.sendAs; as seat) {
+            <div class="run-note run-note--mine run-note--above">
+              {{ 'chat.runTree.sendAs' | translate: { agent: (seat.name | displayActorName) } }}
+            </div>
+          }
+          <app-chat-message
+            [attr.data-message-id]="m.id"
+            [message]="m"
+            [defaultRecipient]="defaultRecipient"
+            [agentColours]="agentColours"
+          ></app-chat-message>
+          <div class="run-note run-note--mine run-note--tail">
+            {{ 'chat.runTree.notReceivedYet' | translate: { agent: (m.recipient.name | displayActorName) } }}
+          </div>
+        }
+      }
+
+      <!-- ADR-016: the trailing spacer is the LAST child; its min-height is
+           written imperatively by the scroll model. -->
+      <div class="message-spacer" #spacer></div>
+    </div>
+  } @else {
+    @if (loadingProcess$ | async) {
+      <div class="empty-section">
+        <div class="empty-section-box">
+          <i class="pi pi-spin pi-spinner chat-placeholder-icon"></i>
+          <div class="chat-placeholder-title">{{ 'chat.loadingTitle' | translate }}</div>
+          <div class="chat-placeholder-desc">{{ 'chat.loadingDesc' | translate }}</div>
+        </div>
+      </div>
+    } @else {
+      <div class="empty-section">
+        <div class="empty-section-box">
+          <i class="pi pi-comment chat-placeholder-icon"></i>
+          <div class="chat-placeholder-title">{{ 'chat.emptyTitle' | translate }}</div>
+          <div class="chat-placeholder-desc">{{ 'chat.emptyDesc' | translate }}</div>
+        </div>
+      </div>
+    }
+  }
+
+  <!-- Outside the scroll container: the pill and the composer stay put. -->
+  <div class="input-area">
+    @if (scroll.indicatorLabel) {
+      <button type="button" class="jump-to-latest" (click)="scroll.jumpToLatest()">
+        <i class="pi" [ngClass]="scroll.indicatorIcon"></i>
+        <span>{{ scroll.indicatorLabel | translate }}</span>
+      </button>
+    }
+    <app-user-input [processId]="processId"></app-user-input>
+  </div>
+
+  <app-seat-answer-dialog
+    [visible]="answerVisible"
+    [seat]="answerSeat"
+    [question]="answerQuestion"
+    [messageId]="answerMessageId"
+    (visibleChange)="onAnswerVisibleChange($event)"
+    (send)="onSeatAnswer($event)"
+  ></app-seat-answer-dialog>
+
+  <!-- A timeline bubble. The tree's @Human rows highlight and flash this HOST
+       element; the bubble component itself is never edited. An answer's
+       rating row is the panel's own (`ownsRating`), so the bubble's is off. -->
+  <ng-template #bubble let-m>
+    <app-chat-message
+      [attr.data-message-id]="m.id"
+      [class.run-bubble--highlight]="highlightedBubble === m.id"
+      [class.run-bubble--flash]="flashingBubble === m.id"
+      [message]="m"
+      [defaultRecipient]="defaultRecipient"
+      [agentColours]="agentColours"
+      [ratingEnabled]="!ownsRating(m)"
+      (toggleCollapse)="onToggleCollapse($event)"
+    ></app-chat-message>
+  </ng-template>
+</div>

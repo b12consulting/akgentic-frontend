@@ -1,5 +1,8 @@
 import { NodeInterface } from '../../../process/models/types';
-import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
+import {
+  displayActorName,
+  makeAgentNameUserFriendly,
+} from '../../../../shared/util/util';
 import {
   isHumanNode,
   isToolNode,
@@ -27,15 +30,6 @@ export interface InspectorMember {
    *  `track` key AND what a click reports upward. */
   readonly id: string;
   readonly label: string;
-  /**
-   * The RAW `node.actorName`, kept beside the friendly `label` because the two
-   * answer different questions. `label` is for the eye and is LOSSY
-   * (`makeAgentNameUserFriendly` rewrites it), so it cannot be turned back into
-   * something the API will route a message on — and opening a member's reader
-   * hands exactly that name to the send path. Deriving it here rather than at
-   * the click keeps the card from re-reading the graph it was built from.
-   */
-  readonly actorName: string;
   /** Monogram for the avatar tile. Derived, never a hardcoded letter. */
   readonly initial: string;
   /** An i18n KEY, not a word. Rendering the role means translating it. */
@@ -72,7 +66,9 @@ export interface InspectorTeamView {
    *  recursion — a recursive template in a 310px pane is a lot of machinery to
    *  render an indent. */
   readonly members: readonly InspectorMember[];
-  /** `toolLabel` of every tool actor, de-duped, first-seen order. */
+  /** Every tool actor's display label (`toolLabel`, then `displayActorName`, so a
+   *  workspace reads `Workspace/<leaf>`), de-duped on the real name, first-seen
+   *  order. */
   readonly tools: readonly string[];
 }
 
@@ -114,7 +110,6 @@ function toMember(
   return {
     id: node.name,
     label,
-    actorName,
     colour: colours.of(actorName),
     initial: label.charAt(0).toUpperCase(),
     roleKey,
@@ -186,10 +181,12 @@ export function buildInspectorTeam(
       continue;
     }
     if (isToolNode(node)) {
+      // De-dupe on the real name, display the friendly one: two workspaces
+      // sharing a leaf are still two tools, so they stay two chips.
       const label = toolLabel(node);
       if (!seenTools.has(label)) {
         seenTools.add(label);
-        tools.push(label);
+        tools.push(displayActorName(label));
       }
       continue;
     }
@@ -267,17 +264,7 @@ export function inspectorTeamsEqual(
   );
 }
 
-/**
- * `initial` is a pure function of `label`, so comparing the label covers it.
- *
- * `actorName` is NOT covered by `label` and must be compared on its own:
- * `makeAgentNameUserFriendly` is lossy (it collapses
- * `@Expert-Analyst-BATCH-1-TASK-2` to `@Expert [Analyst]`), so two different
- * actor names share one label. Omitting it here let a node whose routing
- * address changed while its id and friendly label did not be swallowed by
- * `distinctUntilChanged`, leaving the cached view handing a stale address to
- * the reader.
- */
+/** `initial` is a pure function of `label`, so comparing the label covers it. */
 function membersEqual(
   a: InspectorMember | null,
   b: InspectorMember | null,
@@ -288,7 +275,6 @@ function membersEqual(
   return (
     a.id === b.id &&
     a.label === b.label &&
-    a.actorName === b.actorName &&
     a.roleKey === b.roleKey &&
     a.kind === b.kind &&
     a.depth === b.depth &&

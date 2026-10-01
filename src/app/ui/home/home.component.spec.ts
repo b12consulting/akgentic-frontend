@@ -157,11 +157,9 @@ describe('HomeComponent', () => {
   let fixture: ComponentFixture<HomeComponent>;
   let component: HomeComponent;
   let teams$: BehaviorSubject<TeamContext[]>;
-  let totalCount$: BehaviorSubject<number>;
   let apiSpy: jasmine.SpyObj<ApiService>;
   let contextSpy: jasmine.SpyObj<ContextService> & {
     teams$: BehaviorSubject<TeamContext[]>;
-    totalCount$: BehaviorSubject<number>;
     totalCount: number;
   };
   let authSpy: jasmine.SpyObj<AuthService> & {
@@ -175,7 +173,6 @@ describe('HomeComponent', () => {
 
   beforeEach(async () => {
     teams$ = new BehaviorSubject<TeamContext[]>([]);
-    totalCount$ = new BehaviorSubject<number>(0);
 
     apiSpy = jasmine.createSpyObj('ApiService', [
       'getNamespaces',
@@ -198,7 +195,6 @@ describe('HomeComponent', () => {
         'getTeams',
         'loadTeamsPage',
         'reloadTeams',
-        'resetTeams',
         'deleteTeam',
         'createTeam',
         'stopTeamAndAwait',
@@ -218,11 +214,9 @@ describe('HomeComponent', () => {
       ],
     ) as jasmine.SpyObj<ContextService> & {
       teams$: BehaviorSubject<TeamContext[]>;
-      totalCount$: BehaviorSubject<number>;
       totalCount: number;
     };
     contextSpy.teams$ = teams$;
-    contextSpy.totalCount$ = totalCount$;
     // Plain settable property mirroring the 28.1 totalCount getter so the
     // template's [totalRecords]="contextService.totalCount" has a value.
     contextSpy.totalCount = 0;
@@ -240,11 +234,9 @@ describe('HomeComponent', () => {
         ];
         teams$.next(pageTeams);
         contextSpy.totalCount = 1000;
-        totalCount$.next(1000);
         return { teams: pageTeams, total_count: 1000 };
       },
     );
-    contextSpy.resetTeams.and.stub();
     contextSpy.deleteTeam.and.returnValue(Promise.resolve());
     contextSpy.createTeam.and.returnValue(Promise.resolve('team-created-1'));
     contextSpy.stopTeamAndAwait.and.returnValue(Promise.resolve());
@@ -382,7 +374,6 @@ describe('HomeComponent', () => {
     expect(contextSpy.reloadTeams).toHaveBeenCalledTimes(1);
     expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
     expect(contextSpy.getTeams).not.toHaveBeenCalled();
-    expect(contextSpy.resetTeams).not.toHaveBeenCalled();
     expect((component as any).context).toBeUndefined();
   });
 
@@ -1272,7 +1263,6 @@ describe('HomeComponent', () => {
       team: { table: { currentPageReport: '<<{first}|{last}|{totalRecords}>>' } },
     });
     contextSpy.totalCount = 1000;
-    totalCount$.next(1000);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -1387,7 +1377,6 @@ describe('HomeComponent', () => {
     ]);
     // No compensating reload of a list the user is no longer looking at.
     expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
-    expect(contextSpy.resetTeams).not.toHaveBeenCalled();
   });
 
   it('(28.2 AC8e / Epic 56) restoreTeam awaits RUNNING and needs no page reload', async () => {
@@ -1410,7 +1399,6 @@ describe('HomeComponent', () => {
     expect(contextSpy.restoreTeamAndAwait).toHaveBeenCalledOnceWith('team-X');
     expect(apiSpy.restoreTeam).not.toHaveBeenCalled();
     expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
-    expect(contextSpy.resetTeams).not.toHaveBeenCalled();
     // No empty [] emission slipped in — the 28.2 assertion, unchanged.
     expect(emissions.some((e) => e.length === 0 && e !== emissions[0])).toBeFalse();
     sub.unsubscribe();
@@ -1421,11 +1409,10 @@ describe('HomeComponent', () => {
 
     await component.refreshContext();
 
-    // The page is the service's to remember (issue #381): no page argument,
-    // no direct page load, and nothing cleared on the way.
+    // The page is the service's to remember (issue #381): no page argument
+    // and no direct page load.
     expect(contextSpy.reloadTeams).toHaveBeenCalledTimes(1);
     expect(contextSpy.loadTeamsPage).not.toHaveBeenCalled();
-    expect(contextSpy.resetTeams).not.toHaveBeenCalled();
   });
 
   // -------------------------------------------------------------------------

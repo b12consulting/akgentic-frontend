@@ -106,7 +106,7 @@ export class ProcessUserInputComponent implements OnInit {
    * (never `providedIn: 'root'`, because a root instance would carry one team's
    * totals into the next), and in the running app this composer is always
    * mounted inside that injector. It is NOT always mounted inside it in tests:
-   * `ChatPanelComponent`'s spec builds the panel — and therefore this child —
+   * `RunTreePanelComponent`'s spec builds the panel — and therefore this child —
    * in a bare TestBed, where a required injection would throw.
    *
    * Re-providing the selector here instead would compile and would be WRONG: it

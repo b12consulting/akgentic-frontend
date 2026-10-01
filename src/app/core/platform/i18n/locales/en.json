@@ -72,10 +72,7 @@
     "autoScrolling": "Auto scrolling",
     "newMessages": "New messages",
     "messages": "Messages",
-    "reply": "Reply",
     "sentTo": "Sent to {{agent}}",
-    "messageForYou": "Message for you",
-    "teamMessage": "Team message",
     "input": {
       "sendToPrefix": "Send to {{agents}}",
       "clearSendTo": "Clear Send-to selection",
@@ -91,40 +88,14 @@
       "send": "Send",
       "sendAsSelf": "You"
     },
-    "human": {
-      "header": "Human Input",
-      "noRequests": "No requests for this pair.",
-      "answered": "Answered",
-      "pending": "Pending",
-      "yourReply": "Your reply:",
-      "replyPlaceholder": "Type your reply...",
-      "send": "Send"
-    },
     "reader": {
-      "header": "Agent conversation",
-      "agentList": "Team agents",
-      "noAgents": "This team has no agents yet.",
-      "noTurns": "{{agent}} has not sent or received any messages yet.",
-      "selectAgent": "Select an agent to read its conversation.",
       "composer": {
-        "placeholder": "Message {{agent}}",
-        "send": "Send",
-        "stoppedHint": "Start the team to send a message."
+        "placeholder": "Message {{agent}}"
       }
     },
     "activity": {
-      "latest": "is using {{tool}}",
-      "latestDone": "used {{tool}}",
-      "step": "{{tool}}",
-      "steps": "{{count}} steps",
-      "expand": "What happened",
-      "collapse": "Hide",
-      "latestContact": "contacted {{tool}}",
-      "latestContactDone": "contacted {{tool}}",
       "stepContact": "contacted {{tool}}",
       "contactTitle": "Asked {{tool}}",
-      "showRaw": "Show raw",
-      "hideRaw": "Hide raw",
       "tool": {
         "hireMembers": "Brought in a team member",
         "readMessage": "Read a message from the inbox",
@@ -142,13 +113,63 @@
       "cancel": "Cancel",
       "submit": "Submit"
     },
-    "request": {
-      "asks": "Asked {{agent}}",
-      "pending": "Awaiting your reply",
-      "answered": "Answered"
-    },
-    "notice": {
-      "contacted": "contacted {{agent}}"
+    "runTree": {
+      "messageSent": "Message sent",
+      "messagesSent": "Messages sent",
+      "notReceivedYet": "→ {{agent}} · not received yet",
+      "replyingTo": "replying to {{agent}}",
+      "sendAs": "as {{agent}}",
+      "continuesTrace": "↳ continues the trace where {{agent}} asked you a question",
+      "absorbedNote": "{{agent}} was already running, so it took in this message in the run above",
+      "provenance": {
+        "yourMessage": "from {{agent}}'s run on your message · depth {{depth}} · {{runs}} in this trace",
+        "answer": "from {{agent}}'s run on {{from}}'s answer · depth {{depth}} · {{runs}} in this trace",
+        "reply": "from {{agent}}'s run on {{from}}'s reply · depth {{depth}} · {{runs}} in this trace"
+      },
+      "title": {
+        "waiting": "Waiting for {{agent}}",
+        "running": "{{agent}} used {{tool}}",
+        "working": "{{agent}} is working",
+        "doneMany": "{{agent}} worked with {{others}}",
+        "doneOne": "{{agent}} handled this in {{runs}} · {{tools}}"
+      },
+      "meta": "{{runs}} · {{tools}}",
+      "runsOne": "1 run",
+      "runsMany": "{{count}} runs",
+      "toolsOne": "1 tool",
+      "toolsMany": "{{count}} tools",
+      "running": "{{count}} running",
+      "expand": "Show the runs in this trace",
+      "collapse": "Hide the runs in this trace",
+      "node": {
+        "from": "from {{agent}}",
+        "humanSeat": "human seat",
+        "sentNothing": "sent nothing",
+        "tookInOne": "took in 1 message",
+        "tookInMany": "took in {{count}} messages",
+        "after": "after {{tool}}…",
+        "thinking": "thinking…",
+        "toolFailed": "{{tool}} failed",
+        "waiting": "waiting {{duration}}",
+        "answeredAfter": "answered after {{duration}}",
+        "queued": "→ {{agent}} · queued",
+        "absorbed": "→ {{agent}} · absorbed by {{by}} ⤴",
+        "joinYours": "⤵ took in your message",
+        "joinAnswer": "⤵ took in {{agent}}'s answer",
+        "joinReply": "⤵ took in {{agent}}'s reply",
+        "inChat": "in chat ↓",
+        "answer": "Answer",
+        "expand": "Show what this run did",
+        "collapse": "Hide what this run did"
+      },
+      "answerDialog": {
+        "header": "Answer as {{agent}}",
+        "asked": "{{agent}} asked at {{time}}",
+        "placeholder": "Type your answer…",
+        "send": "Send answer",
+        "cancel": "Cancel",
+        "unknownQuestion": "The question is not in the loaded log."
+      }
     }
   },
   "messageList": {
@@ -161,7 +182,6 @@
   "chrome": {
     "brandLogoAlt": "Logo",
     "home": "Home",
-    "clear": "Clear",
     "showDetails": "Show details",
     "hideDetails": "Hide details",
     "logout": "Logout",
@@ -180,7 +200,53 @@
     "member": "Member",
     "knowledgeGraph": "Knowledge graph",
     "workspaces": "Workspaces",
-    "messages": "Messages"
+    "messages": "Messages",
+    "run": "Run"
+  },
+  "runInspector": {
+    "empty": {
+      "title": "No run yet",
+      "blurb": "When an agent starts on a message, its run shows here."
+    },
+    "status": {
+      "running": "running",
+      "done": "done",
+      "doneSilent": "done · sent nothing",
+      "waiting": "waiting for a person",
+      "answered": "answered"
+    },
+    "section": {
+      "where": "Where this run sits",
+      "handling": "Handling",
+      "steps": "Steps",
+      "eventLog": "Event log"
+    },
+    "handling": {
+      "unknown": "The message that started this run is not in the loaded log."
+    },
+    "step": {
+      "received": "received",
+      "failed": "· failed",
+      "pending": "· running…",
+      "absorbed": "took in {{agent}}'s message",
+      "sent": "sent to {{agent}}",
+      "processed": "processed"
+    },
+    "miniTree": {
+      "folded": "{{runs}} · {{agents}}",
+      "expand": "Show the runs under this one",
+      "collapse": "Hide the runs under this one",
+      "youAnswered": "you answered",
+      "toYou": "to you",
+      "you": "you",
+      "silent": "silent"
+    },
+    "log": {
+      "scope": "Which events to list",
+      "thisRun": "This run",
+      "wholeTeam": "Whole team",
+      "empty": "No events for this run yet."
+    }
   },
   "panels": {
     "selectAgent": "Select agent",
@@ -282,9 +348,21 @@
     "tokensIn": "Tokens in",
     "cached": "Cached",
     "tokensOut": "Tokens out",
-    "readConversation": "Read the conversation",
-    "readConversationOf": "Read {{agent}}'s conversation",
-    "openMemberTab": "Open in the Member tab"
+    "usageSummary": "Tokens in {{sent}}, cached {{cached}}, tokens out {{received}}",
+    "tasks": {
+      "title": "Tasks",
+      "unassigned": "unassigned",
+      "owner": "Owner: {{agent}}",
+      "hideClosed": "Hide closed",
+      "allClosed": "All tasks closed",
+      "status": {
+        "started": "started",
+        "pending": "pending",
+        "completed": "done",
+        "abort": "aborted"
+      }
+    },
+    "openMemberDetails": "Open {{agent}}'s details"
   },
   "login": {
     "heading": "Sign in",

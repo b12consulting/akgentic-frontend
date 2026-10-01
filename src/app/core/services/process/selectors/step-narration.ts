@@ -1,5 +1,3 @@
-import { ThinkingToolEntry } from './chat.selector';
-
 /**
  * Turning a step into a sentence.
  *
@@ -29,6 +27,14 @@ export interface StepNarration {
   raw: string;
 }
 
+/** The part of a step `describeStep` reads: the tool called (or the agent
+ *  contacted), its arguments (or the message sent), and which of the two it is. */
+export interface NarratedStep {
+  tool_name: string;
+  arguments_preview: string;
+  kind: 'tool' | 'contact';
+}
+
 /**
  * Tools this frontend can speak for.
  *
@@ -51,7 +57,7 @@ const KNOWN_TOOLS: ReadonlyMap<string, string> = new Map([
   ['send_message', 'chat.activity.tool.sendMessage'],
 ]);
 
-export function describeStep(step: ThinkingToolEntry): StepNarration {
+export function describeStep(step: NarratedStep): StepNarration {
   const raw = step.arguments_preview
     ? `${step.tool_name} ${step.arguments_preview}`
     : step.tool_name;

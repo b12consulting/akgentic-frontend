@@ -42,8 +42,9 @@ export type { VisualizationOption } from '../../../core/services/console/inspect
  *
  * The tabs are ICONS PLUS THE SELECTED TAB'S CAPTION, with the name carried on
  * every tab as `aria-label` + `title`. That is a width decision, not a style
- * one: six captions need twice the pane, none at all leaves a touch user — who
- * has no hover, and therefore no `title` — with six unnamed glyphs. The
+ * one: seven captions need over twice the pane, none at all leaves a touch
+ * user — who has no hover, and therefore no `title` — with seven unnamed
+ * glyphs. The
  * arithmetic behind the one that fits is in `inspector-tabs.component.scss`.
  *
  * The mock's pills are bare `<button>`s with no role, no selected state, no

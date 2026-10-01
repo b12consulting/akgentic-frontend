@@ -1,6 +1,6 @@
 /**
- * The arithmetic of a two-pane split: clamping, stepping, and what a stored
- * width means.
+ * The arithmetic of a two-pane split: clamping, stepping, and pointer
+ * measurement.
  *
  * Pure and DOM-free on purpose (Epic 52 NFR3). The drag needs a real pointer;
  * the maths around it does not, and the maths is where an off-by-one shifts
@@ -38,9 +38,6 @@ export const SPLIT_DEFAULT_PERCENT = 40;
  */
 export const SPLIT_FINE_STEP_PERCENT = 1;
 export const SPLIT_COARSE_STEP_PERCENT = 10;
-
-/** Where the split width is remembered across reloads (FR5). */
-export const SPLIT_STORAGE_KEY = 'akgentic.home.split-percent';
 
 /**
  * The range a particular divider is allowed to move in.
@@ -155,39 +152,4 @@ export function stepSplitPercent(
   bounds: SplitBounds = DEFAULT_SPLIT_BOUNDS,
 ): number {
   return clampSplitPercent(clampSplitPercent(current, bounds) + delta, bounds);
-}
-
-/**
- * Read a width back out of storage.
- *
- * `null` for anything that is not a usable number, INCLUDING an empty string —
- * `Number('')` is 0, which would otherwise read as a deliberate "collapse the
- * list" and come back as the minimum. Anything that IS a number is clamped
- * rather than rejected: a stored value predating a change to the bounds is
- * still a statement of preference, and the nearest allowed width honours it.
- */
-export function parseSplitPercent(
-  raw: string | null,
-  bounds: SplitBounds = DEFAULT_SPLIT_BOUNDS,
-): number | null {
-  if (raw === null) {
-    return null;
-  }
-  const trimmed = raw.trim();
-  if (trimmed === '') {
-    return null;
-  }
-  const value = Number(trimmed);
-  if (!Number.isFinite(value)) {
-    return null;
-  }
-  return clampSplitPercent(value, bounds);
-}
-
-/** Render a width for storage. Clamped, so nothing out of range is ever stored. */
-export function formatSplitPercent(
-  percent: number,
-  bounds: SplitBounds = DEFAULT_SPLIT_BOUNDS,
-): string {
-  return String(clampSplitPercent(percent, bounds));
 }

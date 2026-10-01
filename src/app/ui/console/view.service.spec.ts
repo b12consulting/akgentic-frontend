@@ -81,6 +81,18 @@ describe('ViewService (Epic 56)', () => {
     expect(service.isRailCollapsed$.value).toBeFalse();
   });
 
+  it('showRightColumn opens a collapsed inspector and never closes an open one', () => {
+    const service = make({ initRightPanelCollapsed: true, initRailCollapsed: true });
+    const seen: boolean[] = [];
+    service.isRightColumnCollapsed$.subscribe((v) => seen.push(v));
+
+    service.showRightColumn();
+    service.showRightColumn();
+
+    expect(seen).toEqual([true, false]);
+    expect(service.isRailCollapsed$.value).toBeTrue();
+  });
+
   it('notifies every subscriber of a pane, so two controls stay in step', () => {
     // The reason the state is root-scoped: the rail's own toggle and the
     // header's must not each hold half of it.

@@ -12,6 +12,7 @@ import { LogFeeder } from './log-feeder';
 import { MessageLogService } from './message-log.service';
 import { NotificationToasts } from './notification-toasts';
 import { PerAgentStore } from './per-agent-store';
+import { planningRefresh } from './planning-refresh';
 import {
   AgentStateValue,
   AgentTokenUsage,
@@ -128,7 +129,7 @@ export class IngestionService {
 
   /**
    * Story 4-10 (AC7) / Epic 18 (ADR-015 §2): the loading-spinner state, read by
-   * `ChatPanelComponent` from here. An alias onto `LoadingIndicator`'s subject —
+   * `RunTreePanelComponent` from here. An alias onto `LoadingIndicator`'s subject —
    * the same object, not a copy, and never a `.pipe(...)` derivative: the type
    * stays `BehaviorSubject<boolean>` because `.value` is part of the surface,
    * and the reference must survive every cycle because the chat panel captures
@@ -338,6 +339,16 @@ export class IngestionService {
     // The log feed FIRST, so "the frame reaches the log, then the toast fires"
     // survives the decomposition.
     cycle.add(this.feeder.start(this.socket.inbound$));
+    // The live task board: a completed planning write re-reads the agent
+    // states and folds them in like the seed above. Wired HERE, below the
+    // replay block, on purpose — `appended$` replays nothing, so a stopped
+    // team's REST history (already covered by the seed) can never trigger it.
+    // In the cycle bag, so a team switch drops a pending or in-flight refetch.
+    cycle.add(
+      planningRefresh(this.log.appended$.pipe(concatAll()), () =>
+        this.replay.seedMessages(processId),
+      ).subscribe((states: AkgenticMessage[]) => this.log.appendAll(states)),
+    );
     // The spinner's `take(1)` side-channel on the protocol stream. Owned and
     // disposed by `LoadingIndicator` itself (a `clearTimeout` lives alongside
     // it), which is why it is not added to the bag.

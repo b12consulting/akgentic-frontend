@@ -1,5 +1,4 @@
-import { ThinkingToolEntry } from './chat.selector';
-import { describeStep } from './step-narration';
+import { describeStep, NarratedStep } from './step-narration';
 
 /**
  * `describeStep` is a pure function with four branches and no dependencies, and
@@ -15,12 +14,10 @@ import { describeStep } from './step-narration';
  * tool" branch assertable at all: its contract is precisely that there is no
  * key, and `titleKey === null` is the only way to say so.
  */
-function step(overrides: Partial<ThinkingToolEntry> = {}): ThinkingToolEntry {
+function step(overrides: Partial<NarratedStep> = {}): NarratedStep {
   return {
-    tool_call_id: 'call-1',
     tool_name: 'search_web',
     arguments_preview: '{"query":"payroll"}',
-    done: false,
     kind: 'tool',
     ...overrides,
   };

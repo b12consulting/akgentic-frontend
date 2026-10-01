@@ -1,0 +1,83 @@
+<!--
+  The planning tool's tasks, one line each: [glyph] #id description [owner].
+  Absent — not empty — when the team has no planning tool or nothing planned.
+-->
+@if (view$ | async; as view) {
+  @if (view.total > 0) {
+    <section class="board">
+      <header class="board-head">
+        <p class="board-label">
+          {{ "inspector.tasks.title" | translate }}
+          <span class="board-count">{{ view.total }}</span>
+        </p>
+        <button
+          type="button"
+          class="board-toggle"
+          [attr.aria-pressed]="hideClosed()"
+          (click)="toggleHideClosed()"
+        >
+          <i
+            class="pi"
+            [class.pi-eye-slash]="hideClosed()"
+            [class.pi-eye]="!hideClosed()"
+            aria-hidden="true"
+          ></i>
+          {{ "inspector.tasks.hideClosed" | translate }}
+        </button>
+      </header>
+
+      @if (view.rows.length > 0) {
+        <ol class="board-list">
+          @for (task of view.rows; track task.id) {
+            @let key = labelKeyOf(task.status);
+            @let label = key ? (key | translate) : task.status;
+            <li
+              class="task"
+              [class.task--closed]="isClosed(task)"
+              [attr.data-task-id]="task.id"
+              [attr.data-status]="task.status"
+            >
+              <span class="task-glyph" role="img" [attr.aria-label]="label" [attr.title]="label">
+                <i
+                  class="glyph"
+                  [class]="glyphOf(task.status)"
+                  [class.pi-spin]="isSpinning(task, view.busy)"
+                  aria-hidden="true"
+                ></i>
+              </span>
+              <span class="task-id">#{{ task.id }}</span>
+              <span class="task-description" [attr.title]="task.description">{{
+                task.description
+              }}</span>
+              @if (task.owner) {
+                @let owner = "inspector.tasks.owner" | translate: { agent: (task.owner | displayActorName) };
+                <span
+                  class="owner-avatar"
+                  role="img"
+                  [class.owner-avatar--human]="view.humans.has(task.owner)"
+                  [class.tinted]="!view.humans.has(task.owner) && view.colours.of(task.owner) !== null"
+                  [style.background-color]="
+                    view.humans.has(task.owner) ? null : view.colours.of(task.owner)
+                  "
+                  [attr.aria-label]="owner"
+                  [attr.title]="owner"
+                  ><span aria-hidden="true">{{ initialOf(task.owner) }}</span></span
+                >
+              } @else {
+                @let none = "inspector.tasks.unassigned" | translate;
+                <span
+                  class="owner-avatar owner-avatar--none"
+                  role="img"
+                  [attr.aria-label]="none"
+                  [attr.title]="none"
+                ></span>
+              }
+            </li>
+          }
+        </ol>
+      } @else {
+        <p class="board-closed">{{ "inspector.tasks.allClosed" | translate }}</p>
+      }
+    </section>
+  }
+}

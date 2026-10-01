@@ -11,7 +11,6 @@ import { CategoryService } from '../../../services/category.service';
 import { UtilService } from '../../../services/utils.service';
 
 import { combineLatest, Subscription } from 'rxjs';
-import { AkgentService } from '../../../services/akgent.service';
 import { MessageLogService } from '../../../services/process/event/message-log.service';
 import {
   ActorAddress,
@@ -80,8 +79,8 @@ function pad(value: number): string {
 /**
  * THE ALL-TRAFFIC LOG.
  *
- * Every other reader in the console is scoped to somebody: the chat panel is
- * the human's turns, the sub-agent reader is one participant's. This panel is
+ * Every other view in the console is scoped to somebody: the chat is the
+ * human's turns, the Member tab is one participant's. This panel is
  * the only place where every message the team exchanged appears in one
  * chronological stream, which is why it survived the round that considered
  * dropping it (W16) — and it is now built as what it is, rather than as a
@@ -117,15 +116,11 @@ export class MessageListComponent {
   @ViewChild('dataTable') dataTable!: Table;
 
   utilService: UtilService = inject(UtilService);
-  akgentService: AkgentService = inject(AkgentService);
   messageLogService: MessageLogService = inject(MessageLogService);
   categoryService: CategoryService = inject(CategoryService);
   toastService: MessageService = inject(MessageService);
 
-  selectedCategories: boolean[] | null = null;
-
   filteredMessages: any[] = [];
-  messages: any[] = [];
 
   subscribe: Subscription = new Subscription();
 
@@ -145,7 +140,6 @@ export class MessageListComponent {
       this.messageLogService.messageList$,
       this.categoryService.selectedSquad$,
     ]).subscribe(([messages, selectedCategories]) => {
-      this.messages = messages;
       this.filteredMessages = messages.filter(
         (message) =>
           // ADR-011 Decision 4: the welcome announcement is admitted by
@@ -311,10 +305,5 @@ export class MessageListComponent {
       detail: 'Relaunch is not available in V2',
       life: 3000,
     });
-  }
-
-  disableRelaunchBtn(_message: any) {
-    // V2: relaunch is not available; always disabled
-    return true;
   }
 }

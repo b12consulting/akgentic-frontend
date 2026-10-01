@@ -208,7 +208,6 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
   private readonly kgReducer: KGStateReducer = inject(KGStateReducer);
 
   graphData$ = new BehaviorSubject<KnowledgeGraphData | null>(null);
-  error$ = new BehaviorSubject<string | null>(null);
 
   echartsInstance: any;
   graphOptions: EChartsCoreOption = {};
@@ -269,7 +268,6 @@ export class KnowledgeGraphComponent implements OnInit, OnDestroy {
     this.subscriptions.push(
       this.kgReducer.knowledgeGraph$.subscribe((data) => {
         this.graphData$.next(data || { nodes: [], edges: [] });
-        this.error$.next(null);
       })
     );
 

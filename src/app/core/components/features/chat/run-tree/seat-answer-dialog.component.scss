@@ -1,0 +1,39 @@
+.seat-question {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem;
+  border-radius: 6px;
+  background: var(--akg-surface-muted);
+}
+
+.seat-asked {
+  font-size: 0.8rem;
+  color: var(--akg-text-muted);
+}
+
+.seat-question-content {
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+/* The question is not in the loaded log: say so, quietly. */
+.seat-unknown-question {
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--akg-text-muted);
+}
+
+.seat-draft {
+  width: 100%;
+  min-height: 80px;
+  max-height: 200px;
+}
+
+.seat-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}

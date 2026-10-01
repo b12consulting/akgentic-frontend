@@ -1,5 +1,5 @@
 import { inject, Injectable } from '@angular/core';
-import { BehaviorSubject, distinctUntilChanged, map, Observable, shareReplay } from 'rxjs';
+import { distinctUntilChanged, map, Observable, shareReplay } from 'rxjs';
 
 import { ENTRY_POINT_NAME } from './chat-message.model';
 import { HUMAN_ROLE } from './actor-kind';
@@ -47,21 +47,14 @@ export const ORCHESTRATOR_CLASS = 'akgentic.core.orchestrator.Orchestrator';
  * MEMOISED because this is called from the fold, which re-runs over the WHOLE
  * log on every websocket frame, and `getComputedStyle` flushes layout.
  *
- * FALLS BACK to the old keyword when the token is undeclared. `readToken`
- * returns `''` for a missing property, and `''` as a fill is not "no colour" —
- * it is a parse failure that would leave a failed agent indistinguishable from
- * a healthy one. A stylesheet that never loaded should degrade to the previous
- * behaviour, not to silence.
+ * NO LITERAL FALLBACK. Every colour on this canvas comes from the palette;
+ * the token file is part of the global stylesheet, so the token is always
+ * declared where this runs.
  */
 let dangerInkCache: string | null = null;
 export function dangerInk(): string {
-  dangerInkCache ??= readToken('--akg-danger-fg') || 'darkred';
+  dangerInkCache ??= readToken('--akg-danger-fg');
   return dangerInkCache;
-}
-
-/** Test seam: drop the memo so a spec can change the token and re-read it. */
-export function resetDangerInk(): void {
-  dangerInkCache = null;
 }
 
 /**
@@ -452,10 +445,7 @@ export function graphFold(
  *
  * Exposes `graph$` as a pure selector over `MessageLogService.log$`. The
  * three legacy observables `nodes$` / `edges$` / `categories$` are re-derived
- * as sliced projections for downstream compatibility. Imperative state
- * (`isLoading$`) is preserved — it reflects UX concerns, not message state
- * (AC10; NFR9 "two exceptions" invariant is unaffected because it lives on
- * `GraphDataService`, not `IngestionService`).
+ * as sliced projections for downstream compatibility.
  */
 @Injectable()
 export class GraphDataService {
@@ -479,15 +469,4 @@ export class GraphDataService {
     map((s) => s.squad),
     distinctUntilChanged(),
   );
-
-  /**
-   * AC10 — intentionally imperative UX state (external async loading
-   * indicator). NOT one of ADR-005's two exceptions — those live on
-   * `IngestionService`, so NFR9's invariant is unaffected.
-   */
-  isLoading$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
-
-  set isLoading(value: boolean) {
-    this.isLoading$.next(value);
-  }
 }

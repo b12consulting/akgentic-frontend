@@ -24,8 +24,6 @@ import { EChartsCoreOption } from 'echarts/core';
 import { CanvasRenderer } from 'echarts/renderers';
 import { NgxEchartsDirective, provideEchartsCore } from 'ngx-echarts';
 
-import { AkgentService } from '../../../services/akgent.service';
-import { ApiService } from '../../../platform/http/api.service';
 import {
   CategoryService,
   graphCategoryColors,
@@ -33,7 +31,7 @@ import {
 } from '../../../services/category.service';
 
 // Import the shared GraphDataService
-import { isToolNode } from '../../../services/process/selectors/actor-kind';
+import { isHumanNode, isToolNode } from '../../../services/process/selectors/actor-kind';
 import { agentColours } from '../../../services/process/selectors/agent-colour';
 import { makeAgentNameUserFriendly } from '../../../shared/util/util';
 import { GraphDataService } from '../../../services/process/selectors/graph.selector';
@@ -80,8 +78,18 @@ function escapeHtml(value: string): string {
  */
 let liveInkCache: string | null = null;
 function liveInk(): string {
-  liveInkCache ??= readToken('--akg-status-live-fg') || '#005d46';
+  liveInkCache ??= readToken('--akg-status-live-fg');
   return liveInkCache;
+}
+
+/**
+ * The person's fill: the Team tab's human avatar ground, resolved, so a person
+ * is the same colour in every view. Memoised like the inks above.
+ */
+let humanInkCache: string | null = null;
+function humanInk(): string {
+  humanInkCache ??= readToken('--akg-avatar-human-bg');
+  return humanInkCache;
 }
 
 @Component({
@@ -104,8 +112,6 @@ function liveInk(): string {
 export class TeamGraphComponent {
   zone: NgZone = inject(NgZone);
   private readonly cdr: ChangeDetectorRef = inject(ChangeDetectorRef);
-  apiService: ApiService = inject(ApiService);
-  akgentService: AkgentService = inject(AkgentService);
   categoryService: CategoryService = inject(CategoryService);
   graphDataService: GraphDataService = inject(GraphDataService);
   selectionService: SelectionService = inject(SelectionService);
@@ -177,8 +183,8 @@ export class TeamGraphComponent {
       // Angular zone. `onChartInit`'s legend handler already reaches for
       // `zone.run` for the same underlying reason.
       //
-      // The whole assignment goes inside, not just the flag: `edges` and
-      // `categories` feed `<app-pending-request [nodes]>` and the legend, and a
+      // The whole assignment goes inside, not just the flag: `nodes` and
+      // `categories` feed the empty-state overlay and the legend, and a
       // half-zoned update is the version that works until someone binds the
       // next field.
       this.zone.run(() => {
@@ -347,7 +353,7 @@ export class TeamGraphComponent {
         fontSize: 12.5,
         // Capped and ellipsised rather than allowed to run. `truncate` ends the
         // name with an ellipsis, which READS as shortened; the canvas edge
-        // cutting it mid-glyph reads as broken. Full name in the tooltip.
+        // cutting it mid-glyph reads as broken.
         width: 120,
         overflow: 'truncate',
         // A halo in the ground colour, so a name that crosses an edge or
@@ -375,7 +381,7 @@ export class TeamGraphComponent {
         curveness: 0.1,
         width: 1.5,
         type: 'solid',
-        opacity: 0.9,
+        // Full strength: the edge token IS the edge colour, not a base to fade.
       },
       emphasis: {
         focus: 'adjacency',
@@ -414,28 +420,15 @@ export class TeamGraphComponent {
           'max-width: 300px; white-space: normal; word-wrap: break-word;',
         formatter: (params: any) => {
           if (params.dataType !== 'node') return '';
-          // ESCAPED, BOTH OF THEM. echarts renders this tooltip as real DOM
-          // (which is why `var()` resolves in it), so everything interpolated
-          // below is an HTML sink. The name is no safer than the error message
-          // beside it: it comes off `NodeInterface.actorName`, i.e. from the
-          // backend's actor address, and `makeAgentNameUserFriendly` only
-          // reshapes it. While the formatter returned '' for every node without
-          // an error the sink needed an errored agent to reach; now that every
-          // node has a tooltip, hovering is enough.
-          const name = escapeHtml(
-            makeAgentNameUserFriendly(params.data.actorName),
-          );
-          // THE TOOLTIP IS WHERE THE FULL NAME LIVES NOW. Labels on the canvas
-          // are capped and ellipsised (`label.width`, above) because an
-          // uncapped one ran off the edge of a 310px pane and was CUT — the
-          // user's screenshot shows `#KnowledgeGraphToo` and `#VectorSt`. A
-          // truncation the user can un-truncate is a different thing from a
-          // clip; this is the un-truncating. It used to return `''` for every
-          // node without an error, so there was nowhere to read the rest.
+          // NO NAME CARD. Every node showed a tooltip repeating the name
+          // already drawn above it; an empty string shows none. The one thing
+          // a hover still has to say is what the canvas cannot: why an agent
+          // failed. ESCAPED — echarts renders this as real DOM (which is why
+          // `var()` resolves in it), and the message comes off the wire.
           const escaped = escapeHtml(params.data.errorMessage ?? '');
           return escaped
-            ? `<b>${name}</b><br/><span style="color:var(--akg-danger-fg); font-size:11px">${escaped}</span>`
-            : `<b>${name}</b>`;
+            ? `<span style="color:var(--akg-danger-fg); font-size:11px">${escaped}</span>`
+            : '';
         },
       },
       legend: [legend],
@@ -461,8 +454,7 @@ export class TeamGraphComponent {
     // to restate the '#'-prefix rule inline, which made three copies of it in
     // a codebase whose `actor-kind.ts` opens by warning that a rule written
     // twice is a rule that drifts. `this.nodes` keeps every actor, because it
-    // is also what `<app-pending-request [nodes]>` reads and what the empty-state
-    // overlay counts — a team of one agent and six tools is not an empty team,
+    // is also what the empty-state overlay counts — a team of one agent and six tools is not an empty team,
     // and a human request raised by an agent must still be findable.
     const nodes = (this.nodes || []).filter((n) => !isToolNode(n));
 
@@ -501,7 +493,10 @@ export class TeamGraphComponent {
     const live = liveInk();
     const painted = nodes.map((n) => {
       const signal = n.itemStyle?.color;
-      const own = colours.of(n.actorName);
+      // A PERSON IS NOT AN AGENT: the human node takes the human avatar
+      // ground the Team tab draws, by the same `isHumanNode` test, never a
+      // stop of the agents' ramp.
+      const own = isHumanNode(n) ? humanInk() : colours.of(n.actorName);
       /*
        * A RING WHILE IT IS WORKING, derived from `node.thinking` rather than
        * read back out of the style the fold used to write there. The fold now

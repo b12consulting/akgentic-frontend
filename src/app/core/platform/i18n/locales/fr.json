@@ -72,10 +72,7 @@
     "autoScrolling": "Défilement automatique",
     "newMessages": "Nouveaux messages",
     "messages": "Messages",
-    "reply": "Répondre",
     "sentTo": "Envoyé à {{agent}}",
-    "messageForYou": "Message pour vous",
-    "teamMessage": "Message d'équipe",
     "input": {
       "sendToPrefix": "Envoyer à {{agents}}",
       "clearSendTo": "Effacer la sélection des destinataires",
@@ -91,40 +88,14 @@
       "send": "Envoyer",
       "sendAsSelf": "Vous"
     },
-    "human": {
-      "header": "Intervention humaine",
-      "noRequests": "Aucune demande pour cette paire.",
-      "answered": "Traitées",
-      "pending": "En attente",
-      "yourReply": "Votre réponse :",
-      "replyPlaceholder": "Saisissez votre réponse...",
-      "send": "Envoyer"
-    },
     "reader": {
-      "header": "Conversation de l’agent",
-      "agentList": "Agents de l'équipe",
-      "noAgents": "Cette équipe n'a encore aucun agent.",
-      "noTurns": "{{agent}} n'a encore envoyé ni reçu aucun message.",
-      "selectAgent": "Sélectionnez un agent pour lire sa conversation.",
       "composer": {
-        "placeholder": "Message à {{agent}}",
-        "send": "Envoyer",
-        "stoppedHint": "Démarrez l’équipe pour envoyer un message."
+        "placeholder": "Message à {{agent}}"
       }
     },
     "activity": {
-      "latest": "utilise {{tool}}",
-      "latestDone": "a utilisé {{tool}}",
-      "step": "{{tool}}",
-      "steps": "{{count}} étapes",
-      "expand": "Ce qui s’est passé",
-      "collapse": "Masquer",
-      "latestContact": "contacte {{tool}}",
-      "latestContactDone": "a contacté {{tool}}",
       "stepContact": "a contacté {{tool}}",
       "contactTitle": "A demandé à {{tool}}",
-      "showRaw": "Afficher le détail",
-      "hideRaw": "Masquer le détail",
       "tool": {
         "hireMembers": "A recruté un membre de l'équipe",
         "readMessage": "A lu un message de la boîte de réception",
@@ -142,13 +113,63 @@
       "cancel": "Annuler",
       "submit": "Envoyer"
     },
-    "request": {
-      "asks": "A demandé à {{agent}}",
-      "pending": "En attente de votre réponse",
-      "answered": "Répondu"
-    },
-    "notice": {
-      "contacted": "a contacté {{agent}}"
+    "runTree": {
+      "messageSent": "Message envoyé",
+      "messagesSent": "Messages envoyés",
+      "notReceivedYet": "→ {{agent}} · pas encore reçu",
+      "replyingTo": "en réponse à {{agent}}",
+      "sendAs": "en tant que {{agent}}",
+      "continuesTrace": "↳ poursuit la trace où {{agent}} vous a posé une question",
+      "absorbedNote": "{{agent}} était déjà en cours et a pris ce message en compte dans l'exécution ci-dessus",
+      "provenance": {
+        "yourMessage": "depuis l'exécution de {{agent}} sur votre message · profondeur {{depth}} · {{runs}} dans cette trace",
+        "answer": "depuis l'exécution de {{agent}} sur la réponse de {{from}} · profondeur {{depth}} · {{runs}} dans cette trace",
+        "reply": "depuis l'exécution de {{agent}} sur le retour de {{from}} · profondeur {{depth}} · {{runs}} dans cette trace"
+      },
+      "title": {
+        "waiting": "En attente de {{agent}}",
+        "running": "{{agent}} a utilisé {{tool}}",
+        "working": "{{agent}} travaille",
+        "doneMany": "{{agent}} a travaillé avec {{others}}",
+        "doneOne": "{{agent}} s'en est chargé en {{runs}} · {{tools}}"
+      },
+      "meta": "{{runs}} · {{tools}}",
+      "runsOne": "1 exécution",
+      "runsMany": "{{count}} exécutions",
+      "toolsOne": "1 outil",
+      "toolsMany": "{{count}} outils",
+      "running": "{{count}} en cours",
+      "expand": "Afficher les exécutions de cette trace",
+      "collapse": "Masquer les exécutions de cette trace",
+      "node": {
+        "from": "de {{agent}}",
+        "humanSeat": "poste humain",
+        "sentNothing": "n'a rien envoyé",
+        "tookInOne": "a pris en compte 1 message",
+        "tookInMany": "a pris en compte {{count}} messages",
+        "after": "après {{tool}}…",
+        "thinking": "réflexion…",
+        "toolFailed": "{{tool}} a échoué",
+        "waiting": "en attente depuis {{duration}}",
+        "answeredAfter": "a répondu après {{duration}}",
+        "queued": "→ {{agent}} · en file d'attente",
+        "absorbed": "→ {{agent}} · pris en compte par {{by}} ⤴",
+        "joinYours": "⤵ a pris en compte votre message",
+        "joinAnswer": "⤵ a pris en compte la réponse de {{agent}}",
+        "joinReply": "⤵ a pris en compte le retour de {{agent}}",
+        "inChat": "dans le chat ↓",
+        "answer": "Répondre",
+        "expand": "Afficher ce que cette exécution a fait",
+        "collapse": "Masquer ce que cette exécution a fait"
+      },
+      "answerDialog": {
+        "header": "Répondre en tant que {{agent}}",
+        "asked": "{{agent}} a demandé à {{time}}",
+        "placeholder": "Saisissez votre réponse…",
+        "send": "Envoyer la réponse",
+        "cancel": "Annuler",
+        "unknownQuestion": "La question ne figure pas dans le journal chargé."
+      }
     }
   },
   "messageList": {
@@ -161,7 +182,6 @@
   "chrome": {
     "brandLogoAlt": "Logo",
     "home": "Accueil",
-    "clear": "Effacer",
     "showDetails": "Afficher les détails",
     "hideDetails": "Masquer les détails",
     "logout": "Déconnexion",
@@ -180,7 +200,53 @@
     "member": "Membre",
     "knowledgeGraph": "Graphe de connaissances",
     "workspaces": "Espaces de travail",
-    "messages": "Messages"
+    "messages": "Messages",
+    "run": "Exécution"
+  },
+  "runInspector": {
+    "empty": {
+      "title": "Aucune exécution pour l'instant",
+      "blurb": "Quand un agent commence à traiter un message, son exécution s'affiche ici."
+    },
+    "status": {
+      "running": "en cours",
+      "done": "terminée",
+      "doneSilent": "terminée · rien envoyé",
+      "waiting": "attend une personne",
+      "answered": "répondu"
+    },
+    "section": {
+      "where": "Place de cette exécution",
+      "handling": "Traitement",
+      "steps": "Étapes",
+      "eventLog": "Journal des événements"
+    },
+    "handling": {
+      "unknown": "Le message qui a lancé cette exécution n'est pas dans le journal chargé."
+    },
+    "step": {
+      "received": "reçu",
+      "failed": "· échec",
+      "pending": "· en cours…",
+      "absorbed": "a intégré le message de {{agent}}",
+      "sent": "envoyé à {{agent}}",
+      "processed": "traité"
+    },
+    "miniTree": {
+      "folded": "{{runs}} · {{agents}}",
+      "expand": "Afficher les exécutions sous celle-ci",
+      "collapse": "Masquer les exécutions sous celle-ci",
+      "youAnswered": "vous avez répondu",
+      "toYou": "pour vous",
+      "you": "vous",
+      "silent": "silencieux"
+    },
+    "log": {
+      "scope": "Événements à afficher",
+      "thisRun": "Cette exécution",
+      "wholeTeam": "Toute l'équipe",
+      "empty": "Aucun événement pour cette exécution."
+    }
   },
   "panels": {
     "selectAgent": "Sélectionner un agent",
@@ -282,9 +348,21 @@
     "tokensIn": "Jetons entrants",
     "cached": "En cache",
     "tokensOut": "Jetons sortants",
-    "readConversation": "Lire la conversation",
-    "readConversationOf": "Lire la conversation de {{agent}}",
-    "openMemberTab": "Ouvrir dans l'onglet Membre"
+    "usageSummary": "Jetons entrants {{sent}}, en cache {{cached}}, jetons sortants {{received}}",
+    "tasks": {
+      "title": "Tâches",
+      "unassigned": "non assignée",
+      "owner": "Responsable : {{agent}}",
+      "hideClosed": "Masquer les closes",
+      "allClosed": "Toutes les tâches sont closes",
+      "status": {
+        "started": "en cours",
+        "pending": "en attente",
+        "completed": "terminée",
+        "abort": "annulée"
+      }
+    },
+    "openMemberDetails": "Ouvrir la fiche de {{agent}}"
   },
   "login": {
     "heading": "Connexion",

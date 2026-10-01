@@ -34,20 +34,19 @@
       }
 
       <!--
-        Two destinations, two bindings. `selected` is re-emitted for the host to
-        route (it opens the Member tab); `readRequested` is HANDLED here,
-        because the reader it opens lives in the chat panel and no host in this
-        chain can reach it — see `onReadRequested`.
+        A member card opens that agent in the Member tab. `selected` is
+        re-emitted for the host to route; the human card above is not a
+        control, because the Member tab lists agents only.
       -->
       @for (member of view.members; track member.id) {
-        <app-member-card
-          [member]="member"
-          (selected)="memberSelected.emit($event)"
-          (readRequested)="onReadRequested(view, $event)"
-        />
+        <app-member-card [member]="member" (selected)="memberSelected.emit($event)" />
       }
 
       <app-tool-chips [tools]="view.tools" />
+
+      <!-- The planning tool's tasks, just above what the team has spent.
+           Draws nothing when there is no plan. -->
+      <app-task-board />
 
       <app-token-usage-panel />
     </div>

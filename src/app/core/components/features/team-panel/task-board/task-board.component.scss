@@ -1,0 +1,199 @@
+/*
+ * The task board: a card of the usage card's family, one line per task.
+ * MONOCHROME — text and muted tones from the palette, the accent spent once,
+ * on the started glyph. No chips.
+ */
+
+.board {
+  margin-top: 18px;
+  padding: 10px 12px;
+  border: 1px solid var(--akg-surface-border);
+  border-radius: var(--akg-card-radius);
+  background: var(--akg-overlay-bg);
+}
+
+/* THE HEADER: "TASKS 4", and "Hide closed" at the right. */
+.board-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+/* The section label every inspector card opens with. */
+.board-label {
+  margin: 0;
+  font-size: var(--akg-section-label-size);
+  font-weight: 500;
+  letter-spacing: var(--akg-section-label-tracking);
+  text-transform: uppercase;
+  color: var(--akg-text-muted);
+  white-space: nowrap;
+}
+
+.board-count {
+  margin-left: 4px;
+  color: var(--akg-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.board-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border: 0;
+  border-radius: var(--akg-control-radius);
+  background: transparent;
+  color: var(--akg-text-muted);
+  font: inherit;
+  font-size: var(--akg-font-size-meta);
+  white-space: nowrap;
+  cursor: pointer;
+
+  .pi {
+    font-size: 11px;
+  }
+
+  &:hover {
+    background: var(--akg-row-hover);
+    color: var(--akg-text);
+  }
+
+  &[aria-pressed='true'] {
+    color: var(--akg-text);
+  }
+
+  &:focus-visible {
+    outline: none;
+    box-shadow: var(--akg-focus-ring);
+  }
+}
+
+/*
+ * ONE ROW: [glyph] #id description [owner]. The list is one grid, its rows
+ * `subgrid`s, so the id column is as wide as the widest id on the board and
+ * every description still starts on the same line; the description takes
+ * what is left and ellipsises.
+ */
+.board-list {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-content: start;
+  column-gap: 6px;
+  /* A long plan scrolls inside its own card rather than pushing usage away. */
+  max-height: 220px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.task {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  align-items: center;
+  column-gap: 6px;
+  padding: 3px 0;
+  font-size: var(--akg-font-size-meta);
+  color: var(--akg-text);
+}
+
+/* Done or abandoned: the muted tone, so the open work stands out. */
+.task--closed {
+  color: var(--akg-text-muted);
+}
+
+/* An abandoned task is struck through as well. */
+.task[data-status='abort'] .task-description {
+  text-decoration: line-through;
+}
+
+/* Both marks only explain themselves on hover, and neither is a stop for the
+   keyboard. They are not clickable, so they show the arrow, not the hand; the
+   same cursor on each. */
+.task-glyph,
+.owner-avatar {
+  cursor: default;
+}
+
+.task-glyph {
+  display: grid;
+  place-items: center;
+}
+
+.glyph {
+  font-size: 10px;
+}
+
+/* Pending: the plain ring in the palette's idle-dot grey, the same light grey
+   an idle member's dot uses, so a task not yet started reads as waiting. */
+.glyph-pending {
+  color: var(--akg-dot-idle);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glyph.pi-spin {
+    animation: none;
+  }
+}
+
+/* The one accent on the board: work in progress. */
+[data-status='started'] .glyph {
+  color: var(--akg-accent-fg);
+}
+
+.task-id {
+  /* Centred in the widest id's width: equal space to the glyph and to the
+     description, and every description still starts on one line. */
+  justify-self: center;
+  font-family: var(--akg-font-mono);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--akg-text-muted);
+}
+
+.task-description {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The owner, as its mark alone; the name is in the mark's title. */
+.owner-avatar {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 600;
+  background: var(--akg-accent-fg);
+  color: var(--akg-accent-bright);
+
+  &.tinted {
+    color: var(--akg-agent-mark-fg);
+  }
+}
+
+/* A person, in the Team tab's human pair. */
+.owner-avatar--human {
+  border-radius: 50%;
+  background: var(--akg-avatar-human-bg);
+  color: var(--akg-avatar-human-fg);
+}
+
+/* Nobody yet: an empty mark. */
+.owner-avatar--none {
+  border: 1px dashed var(--akg-marker-border);
+  background: transparent;
+}
+
+.board-closed {
+  margin: 0;
+  font-size: var(--akg-font-size-meta);
+  color: var(--akg-text-muted);
+}

@@ -18,7 +18,6 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { TranslatePipe } from '@ngx-translate/core';
 
-import { AkgentService } from '../../core/services/akgent.service';
 import {
   inspectorPercentFromLeading,
   INSPECTOR_DEFAULT_PERCENT,
@@ -29,7 +28,6 @@ import { ViewService } from '../console/view.service';
 import { TeamSessionService } from '../../core/services/process/session/team-session.service';
 import { ConfigService } from '../../core/platform/config/config.service';
 import { ContextService } from '../../core/platform/context/context.service';
-import { IngestionService } from '../../core/services/process/event/ingestion.service';
 import { ToolPresenceService } from '../../core/services/process/selectors/tool-presence.selector';
 import { WorkspaceRegistryService } from '../../core/services/process/selectors/workspace-registry.selector';
 
@@ -41,9 +39,11 @@ import { WorkspaceTabsComponent } from '../../core/components/features/workspace
 
 import { BehaviorSubject, combineLatest, Observable, Subscription } from 'rxjs';
 import { distinctUntilChanged, map, take } from 'rxjs/operators';
-import { ChatPanelComponent } from '../../core/components/features/chat/chat-panel.component';
+import { RunTreePanelComponent } from '../../core/components/features/chat/run-tree/run-tree-panel.component';
 import { GraphDataService } from '../../core/services/process/selectors/graph.selector';
 import { SelectionService } from '../../core/services/process/ui-state/selection.service';
+import { RunSelectionState } from '../../core/services/process/ui-state/run-selection';
+import { RunInspectorComponent } from '../../core/components/features/run-inspector/run-inspector.component';
 
 import { ProcessHeaderComponent } from './process-header.component';
 import { InspectorComponent } from '../console/inspector/inspector.component';
@@ -61,7 +61,10 @@ import { SplitDividerComponent } from '../../core/components/primitives/split-di
     TeamTabsComponent,
     KnowledgeGraphComponent,
     WorkspaceTabsComponent,
-    ChatPanelComponent,
+    // Epic 55: the run-tree transcript, the conversation pane's chat.
+    RunTreePanelComponent,
+    // Epic 55: the inspector's Run tab, the selected run in detail.
+    RunInspectorComponent,
     // The conversation's title bar and the inspector frame. Both are pieces of
     // the console shell that have to be mounted from INSIDE this component:
     // they sit either side of, or read, the component-scoped providers below,
@@ -83,12 +86,10 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
   route: ActivatedRoute = inject(ActivatedRoute);
   router: Router = inject(Router);
 
-  akgentService: AkgentService = inject(AkgentService);
   /** The team's open/close ritual, owned by the data layer so a second
    *  frontend inherits it instead of having to rediscover it. */
   private readonly session = inject(TeamSessionService);
   contextService: ContextService = inject(ContextService);
-  ingestionService: IngestionService = inject(IngestionService);
   graphDataService: GraphDataService = inject(GraphDataService);
   private readonly selectionService = inject(SelectionService);
   toolPresenceService: ToolPresenceService = inject(ToolPresenceService);
@@ -174,17 +175,6 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
    * test cannot do while `processId` is still `''`.
    */
   private opened = false;
-
-  /**
-   * The generation of the current open.
-   *
-   * `openTeam()` awaits `getCurrentTeam` before it touches the ingestion
-   * layer. Two selections in quick succession therefore have two awaits in
-   * flight, and the SLOWER one must not be allowed to finish the job: it would
-   * initialise the pipeline for a team the user has already moved off, leaving
-   * the previous team's conversation under the current team's name.
-   */
-  private openEpoch = 0;
 
   /**
    * Reactive presence observable for the `#KnowledgeGraphTool` actor.
@@ -318,6 +308,10 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
 
 
   private presenceSub: Subscription | null = null;
+  private selectionSub: Subscription | null = null;
+  /** The strip as last offered, for "is the Run tab here to switch to". */
+  private visibleTabs: VisualizationOption[] = [];
+  private readonly runSelection = inject(RunSelectionState);
   private animationTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
@@ -352,6 +346,7 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
     // `resolveInspectorTab` falls back to the first VISIBLE tab instead, which
     // is still 'team' everywhere that has not hidden it.
     this.presenceSub = this.visualizationOptions$.subscribe((options) => {
+      this.visibleTabs = options;
       const resolved = resolveInspectorTab(
         this.currentVisualizationMode,
         options,
@@ -360,6 +355,23 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
         this.visualizationMode$.next(resolved);
       }
     });
+    this.selectionSub = this.runSelection.selections$.subscribe(() =>
+      this.showRunTab(),
+    );
+  }
+
+  /**
+   * A run was selected (Epic 55, ADR-037 §D9): open the inspector if it is
+   * shut, and show the Run tab. Only this host may touch the tab mode, which is
+   * why the selection reaches it as an event. A deployment that hides `run`
+   * keeps its inspector as it was: the transcript still reveals and highlights.
+   */
+  private showRunTab(): void {
+    if (!this.visibleTabs.some((option) => option.value === 'run')) {
+      return;
+    }
+    this.viewService.showRightColumn();
+    this.setVisualizationMode('run');
   }
 
   /**
@@ -498,11 +510,13 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
     this.paneLayout.setTrackWidth(null);
     this.presenceSub?.unsubscribe();
     this.presenceSub = null;
+    this.selectionSub?.unsubscribe();
+    this.selectionSub = null;
     this.routeSub?.unsubscribe();
     this.routeSub = null;
     // Story 52-1 (trap T3): the single writer retracts its own value. Nothing
-    // is open once this view is gone, and the header's team name, its Clear
-    // action and its details toggle all read that subject. Before the split it
+    // is open once this view is gone, and the header's team name, its status
+    // and its details toggle all read that subject. Before the split it
     // was `AppComponent`'s navigation handlers that cleared it, which worked
     // only because leaving the view was always a navigation.
     //

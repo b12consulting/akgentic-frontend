@@ -1,12 +1,11 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject, Input } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
 import { TextareaModule } from 'primeng/textarea';
 import { BehaviorSubject } from 'rxjs';
 
-import { GraphDataService } from '../../../../services/process/selectors/graph.selector';
 import { SelectionService } from '../../../../services/process/ui-state/selection.service';
 
 import { SentMessage } from '../../../../protocol/message.types';
@@ -59,9 +58,7 @@ import { LineBreakPipe } from '../../../../shared/pipes/line_break.pipe';
   `,
 })
 export class PendingRequestComponent {
-  @Input() nodes: any[] = [];
   selectionService: SelectionService = inject(SelectionService);
-  graphDataService: GraphDataService = inject(GraphDataService);
 
   userRequest$ = this.selectionService.userRequest$;
   modalVisible$ = this.selectionService.modalVisible$;

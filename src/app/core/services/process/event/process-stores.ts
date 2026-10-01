@@ -67,7 +67,7 @@ export class ProcessStores {
    * appending each `LlmMessageEvent` envelope's inner `message`. Replaces the
    * bespoke `contextDict$`. Default key `sender.agent_id`; the append is
    * O(Δ)/frame (the registry walks only `log.slice(processedCount)` and
-   * `appendWith` concats once per new message). Read via `context.forAgent(id)`.
+   * the reducer concats once per new message). Read via `context.forAgent(id)`.
    */
   readonly context: PerAgentStore<unknown[]> =
     this.registry.register<unknown[]>(contextSpec);

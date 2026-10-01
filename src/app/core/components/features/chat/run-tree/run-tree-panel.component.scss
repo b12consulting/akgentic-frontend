@@ -1,0 +1,415 @@
+/*
+ * The chat's layout and the run-tree notes. The scroll model
+ * (`transcript-scroll.ts`) measures this geometry: the list scrolls, the
+ * spacer is its last child, and the pill and composer sit outside it.
+ */
+.chat-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  /* One surface. The pane was tinted to separate it from the bubbles; with the
+     bubbles gone there is nothing left to separate it from. */
+  background-color: var(--akg-overlay-bg);
+  height: 100%;
+  position: relative;
+  padding: 1rem;
+
+  /*
+   * The reading column.
+   *
+   * Turns are centred in a bounded column rather than filling the pane. On a
+   * wide monitor a full-width conversation runs to 200+ characters a line,
+   * which is where the eye loses the start of the next one.
+   *
+   * The horizontal padding is SYMMETRIC on purpose. The messages and the input
+   * beneath them are both centred columns, so padding one side only — to clear
+   * a rail, say — slides the messages off the input's axis and the two stop
+   * looking related.
+   */
+  .message-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    padding: var(--akg-conversation-padding-top) var(--akg-conversation-padding-x)
+      var(--akg-conversation-padding-bottom);
+
+    > * {
+      width: 100%;
+      max-width: var(--akg-conversation-max-width);
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /*
+     * SPACING BELONGS TO THE PAIR, so it is written between rows rather than
+     * as a `gap` on the list: a row can then override the space before it
+     * (see `.run-note--above`, `.run-answer--before-yours`) with a plain
+     * declaration rather than a negative margin cancelling a gap.
+     */
+    > * + * {
+      margin-top: var(--akg-turn-gap);
+    }
+  }
+
+  /*
+   * Epic 54 — the day separator.
+   *
+   * A hairline with the date sitting in it. Deliberately QUIETER than a turn
+   * (NFR3): smaller than a turn's text, muted, and the
+   * marker border rather than the surface border — it is the page telling you
+   * where you are, not something anybody said. All colours come from the Epic 50
+   * conversation tokens; nothing new is introduced.
+   *
+   * Side margins are left to `.message-list > *` (which centres every row in the
+   * reading column) — setting `margin` shorthand here would win on source order
+   * and knock the separator off that axis.
+   */
+  .day-separator {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 10px;
+    margin-bottom: 2px;
+    color: var(--akg-text-muted);
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    /* Chrome, not content: it is not a selectable item of the transcript. */
+    user-select: none;
+    /* Never let the browser's scroll anchoring pin to it — the anchored-send
+       scroll model (ADR-016) measures against messages and the spacer. */
+    overflow-anchor: none;
+
+    &::before,
+    &::after {
+      content: '';
+      flex: 1 1 auto;
+      height: 1px;
+      background-color: var(--akg-marker-border);
+    }
+  }
+
+  .day-separator-label {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  /*
+   * Epic 55 — the run-tree notes. One quiet line under (or, for "replying
+   * to", above) a bubble. They sit close to the bubble they annotate rather
+   * than a turn's gap away, and never become scroll anchors of their own.
+   */
+  .message-list > .run-note {
+    margin-top: 4px;
+  }
+
+  .message-list > .run-note--above + app-chat-message {
+    margin-top: 2px;
+  }
+
+  .run-note {
+    display: block;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--akg-text-muted);
+    font: inherit;
+    font-size: 0.75rem;
+    text-align: left;
+    overflow-anchor: none;
+  }
+
+  /* Your notes line up with your bubble, on the right. */
+  .run-note--mine {
+    text-align: right;
+  }
+
+  /* A link into the tree: dashed, as ADR-037 §D8 draws the provenance link. */
+  .run-link {
+    cursor: pointer;
+    text-decoration: underline dashed;
+    text-underline-offset: 3px;
+
+    &:hover {
+      color: var(--akg-text);
+    }
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: var(--akg-focus-ring);
+    }
+  }
+
+  /*
+   * An answer is ONE turn element: its bubble and its action row.
+   *
+   * THE RESERVED ROW IS THE GAP, AND IT SITS HALFWAY. The hidden row keeps
+   * its space so the reveal moves nothing, and that band separates this
+   * answer from the next one — so the next row takes no turn gap, only the
+   * space that CENTRES the row: the same 12px below it as above it. Above is
+   * the last paragraph's 0.25em (≈3.6px), the bubble's 2px padding and 2px
+   * border, and the row's 4px margin.
+   *
+   * Only when the next row is a message of YOURS does the answer end a turn:
+   * then it takes the turn gap back, plus 24px, so your message reads as a
+   * new turn. Which answers those are is computed by the panel (`beforeYours`).
+   */
+  .message-list > .run-answer {
+    > app-chat-message {
+      display: block;
+    }
+
+    + * {
+      margin-top: 12px;
+    }
+  }
+
+  .message-list > .run-answer--before-yours {
+    margin-bottom: 24px;
+
+    + * {
+      margin-top: var(--akg-turn-gap);
+    }
+  }
+
+  /*
+   * The action row: [copy] [👍] [👎] [provenance pill], in normal flow on the
+   * agent's text column, about 12px under the text (see `.run-answer`).
+   *
+   * ONE REVEAL RULE FOR THE WHOLE ROW, keyed on the whole turn: hover or focus
+   * anywhere on the answer — text, row, or the gap between — shows it; so does
+   * a rating already given, as the bubble's own row does. Hidden by opacity
+   * alone: the row always holds its space and its box never moves, so reaching
+   * the pill changes nothing its position or hit box depends on.
+   */
+  .run-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    /* Full-width row with an inset: the inset must not add to the width. */
+    box-sizing: border-box;
+    margin-top: 4px;
+    padding-left: var(--akg-avatar-gutter);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 120ms ease-in-out;
+  }
+
+  .run-answer:hover > .run-actions,
+  .run-answer:focus-within > .run-actions,
+  .run-actions:has(app-feedback.rated) {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .run-link--provenance {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    border: 1px dashed var(--akg-marker-border);
+    border-radius: var(--akg-pill-radius);
+    background: transparent;
+    color: var(--akg-text-muted);
+    font: inherit;
+    font-size: 12.5px;
+    line-height: 18px;
+    text-align: left;
+    text-decoration: none;
+    /* A narrow pane wraps the pill's text rather than widening the stream. */
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow-wrap: anywhere;
+
+    &:hover {
+      border-style: solid;
+      color: var(--akg-text);
+    }
+  }
+
+  .run-link-icon {
+    flex: 0 0 auto;
+    width: 13px;
+    height: 13px;
+  }
+
+  /*
+   * A tree `@Human` row points at its bubble: a soft accent wash while
+   * hovered, and a short flash after "in chat ↓". Both sit on the bubble's
+   * HOST element. The spread of the shadow is the wash's padding: 8px of
+   * breathing room around the text and the avatar that moves no layout.
+   */
+  /* The accent ramp's 50 step: the palette's own pastel of the accent. */
+  --run-bubble-wash: var(--akg-accent-bg);
+
+  .message-list app-chat-message {
+    border-radius: 14px;
+    transition:
+      background-color 0.15s,
+      box-shadow 0.15s;
+  }
+
+  .run-bubble--highlight,
+  .run-bubble--flash {
+    background-color: var(--run-bubble-wash);
+    box-shadow: 0 0 0 8px var(--run-bubble-wash);
+  }
+
+  /* The flash adds a ring outside the wash, so reduced motion keeps a cue. */
+  .run-bubble--flash {
+    box-shadow:
+      0 0 0 8px var(--run-bubble-wash),
+      0 0 0 10px var(--akg-accent-border);
+    animation: run-bubble-flash 1.2s ease-out;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .run-bubble--flash {
+      animation: none;
+    }
+  }
+
+  // Story 19-1 (ADR-016 §Decision 2): trailing spacer — visually inert flex
+  // child that reserves scroll room below the anchored turn. No background /
+  // border; `overflow-anchor: none` so the browser's scroll-anchoring never
+  // pins to it; non-focusable (a <div> with no tabindex).
+  .message-spacer {
+    flex: 0 0 auto;
+    overflow-anchor: none;
+  }
+
+  // Wraps the input field; the positioning context for the "New messages" pill
+  // so the pill sits directly on top of the input regardless of its height.
+  /*
+   * The input shares the messages' reading column.
+   *
+   * It used to span the full pane while the turns above it were capped and
+   * centred, so the two read as unrelated furniture rather than one column you
+   * type into. Same padding token as `.message-list` and the same cap as
+   * `.message-list > *`, so they line up by construction and stay lined up if
+   * either token is re-pointed.
+   *
+   * The padding stays SYMMETRIC: `.jump-to-latest` centres itself here with
+   * `left: 50%`, and uneven padding would slide it off the input it floats over.
+   */
+  .input-area {
+    flex: 0 0 auto;
+    position: relative;
+    padding: 8px var(--akg-conversation-padding-x) 22px;
+    /*
+     * The transcript scrolls out UNDER the composer rather than stopping at a
+     * hard edge above it. The gradient is opaque for the first 55% — the band
+     * the composer card actually occupies — and fades to nothing at the top, so
+     * a turn scrolling past dissolves instead of being clipped by a line.
+     *
+     * This is why the padding is a shorthand and no longer `padding-inline`:
+     * the top and bottom values are what put the card inside the opaque band.
+     * The inline value stays SYMMETRIC — `.jump-to-latest` centres itself in
+     * this box with `left: 50%`, and uneven padding slides it off the composer
+     * it floats over.
+     */
+    background: linear-gradient(to top, var(--akg-overlay-bg) 55%, transparent);
+  }
+
+  /*
+   * The composer shares the messages' reading column — the same cap and the
+   * same centring as `.message-list > *`, so the two line up by construction
+   * and stay lined up if either token is re-pointed.
+   *
+   * It no longer carries a background, a shadow or a bottom radius of its own.
+   * Those belonged to the era when the composer was a flat strip that needed
+   * lifting off the pane; the card inside it now brings its own frame and
+   * shadow, and a second shadowed box around it read as two stacked panels.
+   */
+  app-user-input {
+    display: block;
+    max-width: var(--akg-conversation-max-width);
+    margin-inline: auto;
+  }
+
+  // "New messages" pill — anchored to the TOP edge of the input area
+  // (`bottom: 100%`), centered, floating just above the input field. Not a flex
+  // child of .message-list, so it never shifts the list or changes scrollHeight.
+  .jump-to-latest {
+    position: absolute;
+    left: 50%;
+    bottom: 100%;
+    //margin-bottom: 0.5rem;
+    transform: translateX(-50%);
+    z-index: 5;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.35rem 0.9rem;
+    border: none;
+    border-radius: 999px;
+    background-color: var(--akg-overlay-bg);
+    color: var(--akg-text);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: var(--akg-overlay-shadow-strong);
+
+    .pi {
+      font-size: 0.85rem;
+    }
+
+    &:hover {
+      background-color: var(--akg-surface);
+    }
+  }
+}
+
+.empty-section {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  flex: 1;
+}
+
+.empty-section-box {
+  text-align: center;
+  padding: 2rem;
+}
+
+.chat-placeholder-icon {
+  font-size: 4rem;
+  color: var(--akg-glyph-quiet);
+  margin-bottom: 1rem;
+}
+
+.chat-placeholder-title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--akg-text);
+  margin-bottom: 0.5rem;
+}
+
+.chat-placeholder-desc {
+  font-size: 0.95rem;
+  color: var(--akg-text-muted);
+}
+
+@keyframes run-bubble-flash {
+  from {
+    background-color: var(--akg-attention-bg);
+    box-shadow:
+      0 0 0 8px var(--akg-attention-bg),
+      0 0 0 10px var(--akg-accent-border);
+  }
+  to {
+    background-color: var(--run-bubble-wash);
+    box-shadow:
+      0 0 0 8px var(--run-bubble-wash),
+      0 0 0 10px var(--akg-accent-border);
+  }
+}
+
+/* The feedback row's own 10px top margin separates it from prose inside a
+   bubble; in this row the row itself carries the spacing. */
+:host ::ng-deep .run-actions .action-row {
+  margin-top: 0;
+}

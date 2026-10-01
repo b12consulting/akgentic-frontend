@@ -131,6 +131,26 @@ describe('the hierarchy canvas', () => {
     fixture.autoDetectChanges();
   });
 
+  it('draws the person in the Team tab\'s human avatar colour, not an agent\'s', async () => {
+    const zone = TestBed.inject(NgZone);
+    await quiesce();
+    zone.runOutsideAngular(() => {
+      categories$.next([squad('Team 0', '#005d46')]);
+      nodes$.next([
+        { ...node('@Human'), role: 'Human' },
+        { ...node('@Manager'), role: 'Manager' },
+      ]);
+    });
+    await quiesce();
+
+    const fill = (name: string): string =>
+      chart().getOption().series[0].data.find((d: any) => d.name === name).itemStyle.color;
+    const human = readToken('--akg-avatar-human-bg');
+    expect(human).not.toBe('');
+    expect(fill('@Human')).toBe(human);
+    expect(fill('@Manager')).not.toBe(human);
+  });
+
   it('never hands ngx-echarts a SECOND option object', async () => {
     // `[options]` is a second channel into the same chart, and it does not
     // merge. ngx-echarts skips only the FIRST change on that input; every
@@ -365,8 +385,7 @@ describe('the hierarchy canvas — how it is painted', () => {
     const series = (graph().graphOptions as any).series[0];
 
     // TRUNCATION IS THE CLIPPED-LABEL FIX, and it is the only one available.
-    // A name too long for its lane ends in an ellipsis rather than mid glyph;
-    // the full name is in the tooltip.
+    // A name too long for its lane ends in an ellipsis rather than mid glyph.
     expect(series.label.overflow).toBe('truncate');
     expect(series.label.width).toBeGreaterThan(0);
 
@@ -427,35 +446,24 @@ describe('the hierarchy canvas — how it is painted', () => {
     expect(force.gravity).toBeGreaterThan(0.1);
   });
 
-  it('names the full agent in the tooltip, since the label may be cut short', () => {
+  it('shows no hover label for a node: its name is already drawn above it', () => {
     const tooltip = (graph().graphOptions as any).tooltip;
-    const named = tooltip.formatter({
-      dataType: 'node',
-      data: { actorName: '@KnowledgeGraphToolCard' },
-    });
-    expect(named).toContain('KnowledgeGraphToolCard');
-    // An error still gets its own line underneath, and still escapes.
+    // An empty formatter result is echarts' "no tooltip".
+    expect(tooltip.formatter({ dataType: 'node', data: { actorName: '@Assistant' } })).toBe('');
+    // A name is never interpolated, so a hostile one reaches no DOM at all.
+    expect(
+      tooltip.formatter({ dataType: 'node', data: { actorName: '<img src=x onerror=alert(1)>' } }),
+    ).toBe('');
+  });
+
+  it('an errored agent still says why on hover — the error alone, escaped', () => {
+    const tooltip = (graph().graphOptions as any).tooltip;
     const failed = tooltip.formatter({
       dataType: 'node',
       data: { actorName: '@Quant', errorMessage: '<script>boom</script>' },
     });
     expect(failed).toContain('&lt;script&gt;');
     expect(failed).not.toContain('<script>');
-  });
-
-  it('escapes the agent NAME too, not just the error beside it', () => {
-    // echarts renders this tooltip as real DOM inside the document — that is
-    // why `var()` resolves in it — so every interpolated value is an HTML sink.
-    // `errorMessage` was escaped and `actorName` was not, which was survivable
-    // only while the formatter returned '' for any node that had not errored.
-    // Giving every node a tooltip made the unescaped one reachable by HOVER, on
-    // every node of every team, from a name the backend/catalog controls.
-    const tooltip = (graph().graphOptions as any).tooltip;
-    const hostile = tooltip.formatter({
-      dataType: 'node',
-      data: { actorName: '<img src=x onerror=alert(1)>' },
-    });
-    expect(hostile).not.toContain('<img');
-    expect(hostile).toContain('&lt;img');
+    expect(failed).not.toContain('Quant');
   });
 });
