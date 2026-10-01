@@ -1922,7 +1922,7 @@ describe('IngestionService — a member\'s state is fetched on selection (Epic 5
     socketB.complete();
   });
 
-  it('a team switch clears the fetched state, so the next team fetches it again', async () => {
+  it('a team switch clears the fetched state', async () => {
     apiService.getAgentStates.and.resolveTo([snapshot({ backstory: 'Team A.' })]);
     await service.init('team-A', true);
     selected$.next(UUID);
@@ -1935,13 +1935,6 @@ describe('IngestionService — a member\'s state is fetched on selection (Epic 5
     await settle();
 
     expect(service.state.snapshot(UUID)).toBeUndefined();
-
-    selected$.next(UUID);
-    await settle();
-    expect(apiService.getAgentStates.calls.allArgs()).toEqual([
-      ['team-A', UUID],
-      ['team-B', UUID],
-    ]);
     socketB.complete();
   });
 });

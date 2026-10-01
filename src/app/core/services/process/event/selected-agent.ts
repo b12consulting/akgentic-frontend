@@ -26,16 +26,10 @@ export const SELECTED_AGENT_ID = new InjectionToken<Observable<string | null>>(
 
 /**
  * The Member panel's source: fetch the selected member's state once per agent
- * per team cycle. A selection for which `isKnown` holds — its state is already
- * in the `state` store — fetches nothing, and an unselect fetches nothing. The
- * store is the record: it is cleared on every team switch, and a fetch that
- * returned no snapshot (or was cancelled) leaves it empty, so the next
- * selection of that agent fetches again. The planning actor is kept fresh by
- * `planningRefresh`, not here.
- *
- * `switchMap` drops a response a newer selection has superseded; a failed
- * fetch is logged and swallowed INSIDE the switch, so the next selection still
- * fetches.
+ * per team cycle — an agent whose state is already stored (`isKnown`) is not
+ * fetched again — and an unselect fetches nothing. `switchMap` drops a response
+ * a newer selection has superseded; a failed fetch is logged and swallowed
+ * INSIDE the switch, so the next selection still fetches.
  *
  * Emits the fetched messages; the caller appends them and holds the
  * subscription in its cycle bag, so a team switch drops an in-flight response.

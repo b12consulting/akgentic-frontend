@@ -27,14 +27,6 @@ describe('selectionFetch', () => {
     ).subscribe((m) => emitted.push(m));
   }
 
-  /** A fetch that returns a snapshot, which the caller would store. */
-  function fetchStores(): void {
-    fetchStates.and.callFake((agentId: string) => {
-      known.add(agentId);
-      return Promise.resolve([{ id: agentId } as AkgenticMessage]);
-    });
-  }
-
   it('fetches the selection current at subscribe time', fakeAsync(() => {
     selected$.next('agent-A');
     start();
@@ -63,7 +55,10 @@ describe('selectionFetch', () => {
   }));
 
   it('A, then B, then A again fetches each agent once', fakeAsync(() => {
-    fetchStores();
+    fetchStates.and.callFake((agentId: string) => {
+      known.add(agentId);
+      return Promise.resolve([]);
+    });
     start();
     selected$.next('agent-A');
     flushMicrotasks();

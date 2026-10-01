@@ -360,13 +360,10 @@ export class IngestionService {
       ).subscribe((states: AkgenticMessage[]) => this.log.appendAll(states)),
     );
     // The Member panel: the selected member's state, fetched once per agent
-    // per team cycle — re-selecting an agent whose state is already in the
-    // store fetches nothing. The store is cleared in step (b), so "once" is per
-    // cycle by construction; the planning actor is refreshed by
-    // `planningRefresh` above. The selection is root-scoped and outlives this
-    // cycle, which is exactly why the subscription lives HERE and not in a
-    // component. `TeamSessionService.close()` unselects before a team switch,
-    // so no stale selection crosses into this cycle.
+    // per team cycle. The selection is root-scoped and outlives this cycle,
+    // which is exactly why the subscription lives HERE and not in a component.
+    // `TeamSessionService.close()` unselects before a team switch, so no stale
+    // selection crosses into this cycle.
     cycle.add(
       selectionFetch(
         this.selectedAgentId$,
