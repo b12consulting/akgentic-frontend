@@ -63,7 +63,7 @@
  * `in` against `in` down the column, which is the same reason the three totals
  * above are a column rather than a sentence.
  *
- * Four columns shared by every row: the name takes what is left
+ * Five columns shared by every row: the name takes what is left
  * (`minmax(0, 1fr)` so it can shrink and ellipsise), and each figure column is
  * `auto` — as wide as the widest figure in it, across all rows. The rows
  * `display: contents` so their spans become items of THIS grid rather than of

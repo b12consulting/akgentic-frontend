@@ -12,7 +12,7 @@ import { TokenCountPipe } from '../../../../shared/pipes/token-count.pipe';
 import { UsdCostPipe } from '../../../../shared/pipes/usd-cost.pipe';
 
 /**
- * What this team has spent, in three numbers.
+ * What this team has spent.
  *
  * BARE `inject`, never a local `providers` entry: `TokenUsageSelector` is
  * scoped to the `process/:id` route and re-providing it here would create
