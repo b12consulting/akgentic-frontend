@@ -164,9 +164,9 @@ describe('TeamTableComponent', () => {
     expect(headerCells().map((th) => th.textContent?.trim())).toEqual([
       'team.table.name',
       'team.table.metadata',
+      'team.table.status',
       'team.table.createdAt',
       'team.table.updated',
-      'team.table.status',
       '',
     ]);
     const text = fixture.nativeElement.textContent as string;

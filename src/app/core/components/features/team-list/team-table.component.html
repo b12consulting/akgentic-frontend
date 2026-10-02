@@ -60,9 +60,9 @@
     <tr>
       <th>{{ "team.table.name" | translate }}</th>
       <th>{{ "team.table.metadata" | translate }}</th>
+      <th>{{ "team.table.status" | translate }}</th>
       <th>{{ "team.table.createdAt" | translate }}</th>
       <th>{{ "team.table.updated" | translate }}</th>
-      <th>{{ "team.table.status" | translate }}</th>
       <th></th>
     </tr>
   </ng-template>
@@ -204,25 +204,6 @@
           >{{ entry.value }}</span
         >
       </td>
-      <td class="team-created-cell">{{ ctx.created_at | date: "short" }}</td>
-      <!--
-        WHEN the team last changed (Story 58-3), beside when it began.
-
-        The SAME pipe and the SAME format as the Creation Date cell, on
-        purpose: two dates in adjacent columns written two ways would read as
-        two kinds of thing. `updated_at` is kept fresh by
-        `setTeamDescription(…, updatedAt)`, so a description saved in the Name
-        cell moves this cell without a refetch. The full ISO stamp is the
-        `title`, verbatim, which is also what makes the home page's own spec
-        assertable without a locale.
-      -->
-      <td
-        class="team-updated-cell"
-        data-test="row-updated-at"
-        [title]="ctx.updated_at"
-      >
-        {{ ctx.updated_at | date: "short" }}
-      </td>
       <!--
         The status column — four renderings from ONE derivation.
 
@@ -289,6 +270,25 @@
           >
           </p-tag>
         </ng-container>
+      </td>
+      <td class="team-created-cell">{{ ctx.created_at | date: "short" }}</td>
+      <!--
+        WHEN the team last changed (Story 58-3), beside when it began.
+
+        The SAME pipe and the SAME format as the Creation Date cell, on
+        purpose: two dates in adjacent columns written two ways would read as
+        two kinds of thing. `updated_at` is kept fresh by
+        `setTeamDescription(…, updatedAt)`, so a description saved in the Name
+        cell moves this cell without a refetch. The full ISO stamp is the
+        `title`, verbatim, which is also what makes the home page's own spec
+        assertable without a locale.
+      -->
+      <td
+        class="team-updated-cell"
+        data-test="row-updated-at"
+        [title]="ctx.updated_at"
+      >
+        {{ ctx.updated_at | date: "short" }}
       </td>
       <!--
         The row actions.
