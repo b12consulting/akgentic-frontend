@@ -349,6 +349,7 @@
     "cached": "Cached",
     "tokensOut": "Tokens out",
     "usageSummary": "Tokens in {{sent}}, cached {{cached}}, tokens out {{received}}",
+    "estimatedCost": "Estimated cost (USD)",
     "tasks": {
       "title": "Tasks",
       "unassigned": "unassigned",

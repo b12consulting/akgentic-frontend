@@ -15,6 +15,7 @@ function totals(overrides: Partial<TeamTokenTotals> = {}): TeamTokenTotals {
     totalReceived: 0,
     totalCacheRead: 0,
     totalCacheWrite: 0,
+    totalCostUsd: 0,
     ...overrides,
   };
 }
@@ -177,6 +178,7 @@ describe('TokenUsagePanelComponent', () => {
     totalReceived: 100,
     totalCacheRead: 10_000,
     totalCacheWrite: 0,
+    totalCostUsd: 0.25,
   };
   const LLAMA: ModelTokenTotals = {
     modelName: 'local-llama',
@@ -184,6 +186,7 @@ describe('TokenUsagePanelComponent', () => {
     totalReceived: 50,
     totalCacheRead: 0,
     totalCacheWrite: 0,
+    totalCostUsd: 0,
   };
 
   it('breaks the spend down by model, one row per model, in the order given', async () => {
@@ -193,7 +196,7 @@ describe('TokenUsagePanelComponent', () => {
     );
 
     expect(modelRows()).toEqual([
-      'gpt-5.4-2026-03-05 | ↑12.0k ⚡10.0k ↓100',
+      'gpt-5.4-2026-03-05 | ↑12.0k ⚡10.0k ↓100 $0.25',
       // A model that read no cache shows no ⚡ figure at all: a permanent zero
       // reads as a broken meter, exactly as the cache-WRITE row would.
       'local-llama | ↑1.0k ↓50',
@@ -228,7 +231,7 @@ describe('TokenUsagePanelComponent', () => {
         ).length,
     );
 
-    expect(cellsPerRow).toEqual([4, 4]);
+    expect(cellsPerRow).toEqual([5, 5]);
 
     // And the blank is on the row that earned it — the one with no cache read
     // — not on both, which would mean the ⚡ figure had stopped rendering.
@@ -299,5 +302,43 @@ describe('TokenUsagePanelComponent', () => {
       TokenUsagePanelComponent as unknown as { ɵcmp?: { providers?: unknown } }
     ).ɵcmp;
     expect(def?.providers ?? null).toBeNull();
+  });
+
+  // Epic 57 — the estimated cost, beside the tokens.
+
+  it('AC 9 follows the header totals with the team cost when > 0, titled as an estimate', async () => {
+    await setup(totals({ totalSent: 100, totalCostUsd: 0.25 }));
+
+    expect(headline()).toEqual(['↑100', '⚡0', '↓0', '$0.25']);
+    expect(totalsGroup().querySelectorAll('.usage-total')[3].getAttribute('title')).toBe(
+      'inspector.estimatedCost',
+    );
+  });
+
+  it('AC 9 gives a per-model cost cell the estimate title, and a blank cell at 0', async () => {
+    await setup(totals(), [GPT, LLAMA]);
+
+    const rows = Array.from(
+      (fixture.nativeElement as HTMLElement).querySelectorAll('.usage-model-row'),
+    );
+    const figures = rows[0].querySelectorAll('.usage-model-figure');
+    expect(figures[figures.length - 1].getAttribute('title')).toBe('inspector.estimatedCost');
+    // LLAMA: one blank for the cache column, one for the cost column.
+    expect(rows[1].querySelectorAll('.usage-model-blank').length).toBe(2);
+  });
+
+  it('AC 11 repaints a cost-only change, despite OnPush', async () => {
+    await setup(totals({ totalSent: 100, totalCostUsd: 0.25 }));
+
+    totals$.next(totals({ totalSent: 100, totalCostUsd: 1234.5 }));
+    fixture.detectChanges();
+
+    expect(headline()[3]).toBe('$1,234.50');
+  });
+
+  it('AC 12 shows a sub-cent cost as <$0.01', async () => {
+    await setup(totals({ totalSent: 100, totalCostUsd: 0.004 }));
+
+    expect(headline()[3]).toBe('<$0.01');
   });
 });

@@ -13,6 +13,7 @@ import { TranslatePipe } from '@ngx-translate/core';
 import { MentionModule } from 'angular-mentions';
 
 import { TokenCountPipe } from '../../../../shared/pipes/token-count.pipe';
+import { UsdCostPipe } from '../../../../shared/pipes/usd-cost.pipe';
 
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 import { ConfigService } from '../../../../platform/config/config.service';
@@ -81,6 +82,7 @@ type SubmitPhase = 'idle' | 'restarting' | 'sending';
     MentionModule,
     TranslatePipe,
     TokenCountPipe,
+    UsdCostPipe,
   ],
   templateUrl: './user-input.component.html',
   styleUrl: './user-input.component.scss',
@@ -119,7 +121,7 @@ export class ProcessUserInputComponent implements OnInit {
   private readonly tokenUsage = inject(TokenUsageSelector, { optional: true });
   readonly teamTotals$: Observable<TeamTokenTotals> =
     this.tokenUsage?.teamTotals$ ??
-    of({ totalSent: 0, totalReceived: 0, totalCacheRead: 0, totalCacheWrite: 0 });
+    of({ totalSent: 0, totalReceived: 0, totalCacheRead: 0, totalCacheWrite: 0, totalCostUsd: 0 });
 
   /**
    * Story 33-3 (revises 33-1): where this submit is. Written ONLY in

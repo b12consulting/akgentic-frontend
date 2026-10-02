@@ -493,6 +493,7 @@ export interface ModelUsage {
   totalReceived: number;
   totalCacheRead: number;
   totalCacheWrite: number;
+  totalCostUsd: number;
 }
 
 export interface AgentTokenUsage {
@@ -524,6 +525,8 @@ export interface AgentTokenUsage {
   lastCacheRead: number;
   /** cache_write_tokens of the most-recent event (overwritten each event). */
   lastCacheWrite: number;
+  /** running Σ of estimated_cost_usd (unrounded) across all this agent's events. */
+  totalCostUsd: number;
 }
 
 /** Read the inner `LlmUsageEvent` off an `EventMessage`, or `undefined`. */
@@ -548,6 +551,7 @@ const ZERO_TOKEN_USAGE: AgentTokenUsage = {
   totalCacheWrite: 0,
   lastCacheRead: 0,
   lastCacheWrite: 0,
+  totalCostUsd: 0,
 };
 
 /**
@@ -577,6 +581,7 @@ export function tokenUsageReduce(
     const output = ev.output_tokens ?? 0;
     const cacheRead = ev.cache_read_tokens ?? 0;
     const cacheWrite = ev.cache_write_tokens ?? 0;
+    const cost = ev.estimated_cost_usd ?? 0;
     // Fresh Map every time — `prev`'s is never mutated, so OnPush still sees a
     // changed reference and a replayed fold cannot corrupt an earlier value.
     const perModel = new Map<string, ModelUsage>(prev?.perModel ?? []);
@@ -586,6 +591,7 @@ export function tokenUsageReduce(
       totalReceived: (bucket?.totalReceived ?? 0) + output,
       totalCacheRead: (bucket?.totalCacheRead ?? 0) + cacheRead,
       totalCacheWrite: (bucket?.totalCacheWrite ?? 0) + cacheWrite,
+      totalCostUsd: (bucket?.totalCostUsd ?? 0) + cost,
     });
     return {
       lastContextWindow: input,
@@ -598,6 +604,7 @@ export function tokenUsageReduce(
       totalCacheWrite: (prev?.totalCacheWrite ?? 0) + cacheWrite,
       lastCacheRead: cacheRead,
       lastCacheWrite: cacheWrite,
+      totalCostUsd: (prev?.totalCostUsd ?? 0) + cost,
     };
   }
   if (!isEventMessage(msg)) return prev;

@@ -9,6 +9,7 @@ import {
   TokenUsageSelector,
 } from '../../../../services/process/selectors/token-usage.selector';
 import { TokenCountPipe } from '../../../../shared/pipes/token-count.pipe';
+import { UsdCostPipe } from '../../../../shared/pipes/usd-cost.pipe';
 
 /**
  * What this team has spent, in three numbers.
@@ -39,7 +40,7 @@ import { TokenCountPipe } from '../../../../shared/pipes/token-count.pipe';
 @Component({
   selector: 'app-token-usage-panel',
   standalone: true,
-  imports: [AsyncPipe, TranslatePipe, TokenCountPipe],
+  imports: [AsyncPipe, TranslatePipe, TokenCountPipe, UsdCostPipe],
   templateUrl: './token-usage-panel.component.html',
   styleUrl: './token-usage-panel.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

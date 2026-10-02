@@ -58,6 +58,7 @@ interface UsageFields {
   cache_read_tokens?: number;
   cache_write_tokens?: number;
   requests?: number;
+  estimated_cost_usd?: number;
 }
 
 /** EventMessage envelope carrying an LlmUsageEvent for `agentId`. */
@@ -81,6 +82,9 @@ function makeUsageEnvelope(agentId: string, ev: UsageFields): AkgenticMessage {
       cache_read_tokens: ev.cache_read_tokens ?? 0,
       cache_write_tokens: ev.cache_write_tokens ?? 0,
       requests: ev.requests ?? 1,
+      ...(ev.estimated_cost_usd !== undefined && {
+        estimated_cost_usd: ev.estimated_cost_usd,
+      }),
     },
   } as unknown as AkgenticMessage;
 }
@@ -301,6 +305,7 @@ describe('tokenUsageSpec reducer (Epic 26 / ADR-022 §Decision 2-4)', () => {
             totalReceived: 412,
             totalCacheRead: 0,
             totalCacheWrite: 0,
+            totalCostUsd: 0,
           },
         ],
       ]),
@@ -310,6 +315,7 @@ describe('tokenUsageSpec reducer (Epic 26 / ADR-022 §Decision 2-4)', () => {
       totalCacheWrite: 0,
       lastCacheRead: 0,
       lastCacheWrite: 0,
+      totalCostUsd: 0,
     });
   });
 
@@ -344,6 +350,7 @@ describe('tokenUsageSpec reducer (Epic 26 / ADR-022 §Decision 2-4)', () => {
             totalReceived: 100,
             totalCacheRead: 0,
             totalCacheWrite: 0,
+            totalCostUsd: 0,
           },
         ],
         [
@@ -353,6 +360,7 @@ describe('tokenUsageSpec reducer (Epic 26 / ADR-022 §Decision 2-4)', () => {
             totalReceived: 50,
             totalCacheRead: 0,
             totalCacheWrite: 0,
+            totalCostUsd: 0,
           },
         ],
       ]),
@@ -362,6 +370,7 @@ describe('tokenUsageSpec reducer (Epic 26 / ADR-022 §Decision 2-4)', () => {
       totalCacheWrite: 0,
       lastCacheRead: 0,
       lastCacheWrite: 0,
+      totalCostUsd: 0,
     });
   });
 
@@ -389,6 +398,7 @@ describe('tokenUsageSpec reducer (Epic 26 / ADR-022 §Decision 2-4)', () => {
             totalReceived: 60,
             totalCacheRead: 4_000,
             totalCacheWrite: 1_000,
+            totalCostUsd: 0,
           },
         ],
       ]),
@@ -398,6 +408,7 @@ describe('tokenUsageSpec reducer (Epic 26 / ADR-022 §Decision 2-4)', () => {
       totalCacheWrite: 1_000,
       lastCacheRead: 4_000,
       lastCacheWrite: 1_000,
+      totalCostUsd: 0,
     });
     // fresh/cached split stays recoverable and non-negative.
     expect(
@@ -436,6 +447,7 @@ describe('tokenUsageSpec reducer (Epic 26 / ADR-022 §Decision 2-4)', () => {
             totalReceived: 140,
             totalCacheRead: 1_100,
             totalCacheWrite: 50,
+            totalCostUsd: 0,
           },
         ],
       ]),
@@ -445,6 +457,7 @@ describe('tokenUsageSpec reducer (Epic 26 / ADR-022 §Decision 2-4)', () => {
       totalCacheWrite: 50, // 50 + 0
       lastCacheRead: 900, // overwritten with the newest event
       lastCacheWrite: 0, // overwritten with the newest event
+      totalCostUsd: 0,
     });
   });
 
@@ -545,6 +558,7 @@ describe('tokenUsageReduce (pure reducer)', () => {
             totalReceived: 40,
             totalCacheRead: 0,
             totalCacheWrite: 0,
+            totalCostUsd: 0,
           },
         ],
       ]),
@@ -554,6 +568,7 @@ describe('tokenUsageReduce (pure reducer)', () => {
       totalCacheWrite: 0,
       lastCacheRead: 0,
       lastCacheWrite: 0,
+      totalCostUsd: 0,
     });
   });
 
@@ -570,6 +585,7 @@ describe('tokenUsageReduce (pure reducer)', () => {
             totalReceived: 40,
             totalCacheRead: 0,
             totalCacheWrite: 0,
+            totalCostUsd: 0,
           },
         ],
       ]),
@@ -579,6 +595,7 @@ describe('tokenUsageReduce (pure reducer)', () => {
       totalCacheWrite: 0,
       lastCacheRead: 0,
       lastCacheWrite: 0,
+      totalCostUsd: 0,
     };
     const next = tokenUsageReduce(prev, envelope(7, 3));
     expect(next).toEqual(
@@ -603,6 +620,7 @@ describe('tokenUsageReduce (pure reducer)', () => {
             totalReceived: 1,
             totalCacheRead: 0,
             totalCacheWrite: 0,
+            totalCostUsd: 0,
           },
         ],
       ]),
@@ -612,6 +630,7 @@ describe('tokenUsageReduce (pure reducer)', () => {
       totalCacheWrite: 0,
       lastCacheRead: 0,
       lastCacheWrite: 0,
+      totalCostUsd: 0,
     };
     expect(tokenUsageReduce(prev, makeUnrelatedEnvelope('x'))).toBe(prev);
   });
@@ -638,8 +657,67 @@ describe('tokenUsageReduce (pure reducer)', () => {
         totalCacheWrite: 0,
         lastCacheRead: 0,
         lastCacheWrite: 0,
+        totalCostUsd: 0,
       }),
     );
+  });
+});
+
+// ---------------------------------------------------------------------
+// Epic 57 — estimated_cost_usd folds as a raw (unrounded) running Σ.
+// ---------------------------------------------------------------------
+
+describe('tokenUsageReduce — estimated cost (Epic 57)', () => {
+  function fold(...fields: UsageFields[]): AgentTokenUsage | undefined {
+    return fields.reduce<AgentTokenUsage | undefined>(
+      (prev, f) => tokenUsageReduce(prev, makeUsageEnvelope('A', f)),
+      undefined,
+    );
+  }
+
+  it('AC 2 sums sub-cent costs raw (three × 0.004 = 0.012), per agent and per model', () => {
+    const next = fold(
+      { model_name: 'm1', input_tokens: 1, output_tokens: 1, estimated_cost_usd: 0.004 },
+      { model_name: 'm1', input_tokens: 1, output_tokens: 1, estimated_cost_usd: 0.004 },
+      { model_name: 'm1', input_tokens: 1, output_tokens: 1, estimated_cost_usd: 0.004 },
+    );
+    expect(next!.totalCostUsd).toBeCloseTo(0.012, 10);
+    expect(next!.perModel.get('m1')!.totalCostUsd).toBeCloseTo(0.012, 10);
+  });
+
+  it('AC 2 splits cost per model by each event\'s own model_name', () => {
+    const next = fold(
+      { model_name: 'm1', input_tokens: 1, output_tokens: 1, estimated_cost_usd: 0.25 },
+      { model_name: 'm2', input_tokens: 1, output_tokens: 1, estimated_cost_usd: 1234.5 },
+      { model_name: 'm1', input_tokens: 1, output_tokens: 1, estimated_cost_usd: 0.004 },
+    );
+    expect(next!.totalCostUsd).toBeCloseTo(1234.754, 10);
+    expect(next!.perModel.get('m1')!.totalCostUsd).toBeCloseTo(0.254, 10);
+    expect(next!.perModel.get('m2')!.totalCostUsd).toBeCloseTo(1234.5, 10);
+  });
+
+  it('AC 3 events without the key fold to 0 — never NaN or undefined', () => {
+    const next = fold(
+      { model_name: 'm1', input_tokens: 1, output_tokens: 1 },
+      { model_name: 'm2', input_tokens: 1, output_tokens: 1 },
+    );
+    expect(next!.totalCostUsd).toBe(0);
+    expect(next!.perModel.get('m1')!.totalCostUsd).toBe(0);
+    expect(next!.perModel.get('m2')!.totalCostUsd).toBe(0);
+  });
+
+  it('AC 3 a mixed fold sums only the present values', () => {
+    const next = fold(
+      { model_name: 'm1', input_tokens: 1, output_tokens: 1, estimated_cost_usd: 0.25 },
+      { model_name: 'm1', input_tokens: 1, output_tokens: 1 },
+      { model_name: 'm1', input_tokens: 1, output_tokens: 1, estimated_cost_usd: 0.5 },
+    );
+    expect(next!.totalCostUsd).toBeCloseTo(0.75, 10);
+    expect(next!.perModel.get('m1')!.totalCostUsd).toBeCloseTo(0.75, 10);
+  });
+
+  it('AC 4 a clear before any usage seeds totalCostUsd 0', () => {
+    expect(tokenUsageReduce(undefined, makeClearEnvelope('A', 1))!.totalCostUsd).toBe(0);
   });
 });
 
@@ -874,6 +952,7 @@ describe('tokenUsageReduce — fold compaction/clear (Epic 29 / ADR-010 §4/§8)
           totalReceived: 12_000,
           totalCacheRead: 15_000,
           totalCacheWrite: 3_000,
+          totalCostUsd: 0.25,
         },
       ],
     ]),
@@ -883,6 +962,7 @@ describe('tokenUsageReduce — fold compaction/clear (Epic 29 / ADR-010 §4/§8)
     totalCacheWrite: 3_000,
     lastCacheRead: 4_000,
     lastCacheWrite: 1_000,
+    totalCostUsd: 0.25,
   };
 
   it('AC #7 compaction sets lastContextWindow = tokens_after, leaving totals + labels + cache counters untouched', () => {
@@ -906,6 +986,7 @@ describe('tokenUsageReduce — fold compaction/clear (Epic 29 / ADR-010 §4/§8)
             totalReceived: 12_000,
             totalCacheRead: 15_000,
             totalCacheWrite: 3_000,
+            totalCostUsd: 0.25,
           },
         ],
       ]),
@@ -915,6 +996,7 @@ describe('tokenUsageReduce — fold compaction/clear (Epic 29 / ADR-010 §4/§8)
       totalCacheWrite: 3_000,
       lastCacheRead: 4_000,
       lastCacheWrite: 1_000,
+      totalCostUsd: 0.25,
     });
   });
 
@@ -946,6 +1028,7 @@ describe('tokenUsageReduce — fold compaction/clear (Epic 29 / ADR-010 §4/§8)
       totalCacheWrite: 0,
       lastCacheRead: 0,
       lastCacheWrite: 0,
+      totalCostUsd: 0,
     });
   });
 
@@ -963,6 +1046,7 @@ describe('tokenUsageReduce — fold compaction/clear (Epic 29 / ADR-010 §4/§8)
             totalReceived: 12_000,
             totalCacheRead: 15_000,
             totalCacheWrite: 3_000,
+            totalCostUsd: 0.25,
           },
         ],
       ]),
@@ -972,6 +1056,7 @@ describe('tokenUsageReduce — fold compaction/clear (Epic 29 / ADR-010 §4/§8)
       totalCacheWrite: 3_000,
       lastCacheRead: 4_000,
       lastCacheWrite: 1_000,
+      totalCostUsd: 0.25,
     });
   });
 });
@@ -1004,6 +1089,7 @@ describe('tokenUsageSpec — context events via the real registry (Epic 29)', ()
             totalReceived: 9_000,
             totalCacheRead: 0,
             totalCacheWrite: 0,
+            totalCostUsd: 0,
           },
         ],
       ]),
@@ -1013,6 +1099,7 @@ describe('tokenUsageSpec — context events via the real registry (Epic 29)', ()
       totalCacheWrite: 0,
       lastCacheRead: 0,
       lastCacheWrite: 0,
+      totalCostUsd: 0,
     });
     // The next real usage overrides the window AND accumulates totals.
     log.append(
@@ -1034,6 +1121,7 @@ describe('tokenUsageSpec — context events via the real registry (Epic 29)', ()
             totalReceived: 9_800,
             totalCacheRead: 0,
             totalCacheWrite: 0,
+            totalCostUsd: 0,
           },
         ],
       ]),
@@ -1043,6 +1131,7 @@ describe('tokenUsageSpec — context events via the real registry (Epic 29)', ()
       totalCacheWrite: 0,
       lastCacheRead: 0,
       lastCacheWrite: 0,
+      totalCostUsd: 0,
     });
   });
 

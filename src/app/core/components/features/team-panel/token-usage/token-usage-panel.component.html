@@ -50,6 +50,13 @@
         <span class="usage-total" aria-hidden="true"
           >↓{{ totals.totalReceived | tokenCount }}</span
         >
+        @if (totals.totalCostUsd > 0) {
+          <span
+            class="usage-total"
+            [attr.title]="'inspector.estimatedCost' | translate"
+            >{{ totals.totalCostUsd | usdCost }}</span
+          >
+        }
       </span>
     </div>
 
@@ -107,6 +114,15 @@
                   ><span aria-hidden="true">↓</span
                   >{{ model.totalReceived | tokenCount }}</span
                 >
+                @if (model.totalCostUsd > 0) {
+                  <span
+                    class="usage-model-figure"
+                    [attr.title]="'inspector.estimatedCost' | translate"
+                    >{{ model.totalCostUsd | usdCost }}</span
+                  >
+                } @else {
+                  <span class="usage-model-blank" aria-hidden="true"></span>
+                }
               </span>
             </div>
           }

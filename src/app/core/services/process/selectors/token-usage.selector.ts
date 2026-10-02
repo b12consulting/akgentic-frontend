@@ -11,6 +11,7 @@ export interface TeamTokenTotals {
   totalReceived: number;
   totalCacheRead: number;
   totalCacheWrite: number;
+  totalCostUsd: number;
 }
 
 /** Structural equality of two totals (NFR / OnPush): the summed object is a
@@ -21,7 +22,8 @@ function totalsEqual(a: TeamTokenTotals, b: TeamTokenTotals): boolean {
     a.totalSent === b.totalSent &&
     a.totalReceived === b.totalReceived &&
     a.totalCacheRead === b.totalCacheRead &&
-    a.totalCacheWrite === b.totalCacheWrite
+    a.totalCacheWrite === b.totalCacheWrite &&
+    a.totalCostUsd === b.totalCostUsd
   );
 }
 
@@ -32,13 +34,15 @@ function sumTotals(all: ReadonlyMap<string, AgentTokenUsage>): TeamTokenTotals {
   let totalReceived = 0;
   let totalCacheRead = 0;
   let totalCacheWrite = 0;
+  let totalCostUsd = 0;
   for (const usage of all.values()) {
     totalSent += usage.totalSent;
     totalReceived += usage.totalReceived;
     totalCacheRead += usage.totalCacheRead;
     totalCacheWrite += usage.totalCacheWrite;
+    totalCostUsd += usage.totalCostUsd;
   }
-  return { totalSent, totalReceived, totalCacheRead, totalCacheWrite };
+  return { totalSent, totalReceived, totalCacheRead, totalCacheWrite, totalCostUsd };
 }
 
 /** Team totals for ONE model — the same figures as `TeamTokenTotals`, tagged
@@ -70,6 +74,7 @@ function groupByModel(
         g.totalReceived += share.totalReceived;
         g.totalCacheRead += share.totalCacheRead;
         g.totalCacheWrite += share.totalCacheWrite;
+        g.totalCostUsd += share.totalCostUsd;
       } else {
         byModel.set(modelName, {
           modelName,
@@ -77,6 +82,7 @@ function groupByModel(
           totalReceived: share.totalReceived,
           totalCacheRead: share.totalCacheRead,
           totalCacheWrite: share.totalCacheWrite,
+          totalCostUsd: share.totalCostUsd,
         });
       }
     }
@@ -99,7 +105,8 @@ function modelListEqual(a: ModelTokenTotals[], b: ModelTokenTotals[]): boolean {
       x.totalSent === y.totalSent &&
       x.totalReceived === y.totalReceived &&
       x.totalCacheRead === y.totalCacheRead &&
-      x.totalCacheWrite === y.totalCacheWrite
+      x.totalCacheWrite === y.totalCacheWrite &&
+      x.totalCostUsd === y.totalCostUsd
     );
   });
 }
