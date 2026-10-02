@@ -21,6 +21,7 @@ import { LogFeeder } from '../../../services/process/event/log-feeder';
 import { TeamSocket } from '../../../services/process/event/team-socket';
 import { LoadingIndicator } from '../../../services/process/event/loading-indicator';
 import { TeamStatusReactor } from '../../../services/process/event/team-status-reactor';
+import { TeamDescriptionReactor } from '../../../services/process/event/team-description-reactor';
 import { ContextService } from '../../../platform/context/context.service';
 import { ChatService } from '../../../services/process/selectors/chat.selector';
 import { ApiService } from '../../../platform/http/api.service';
@@ -115,6 +116,7 @@ describe('MemberContextComponent — store-backed state/context wiring (Story 17
         TeamSocket,
         LogFeeder,
         TeamStatusReactor,
+        TeamDescriptionReactor,
         IngestionService,
         // Epic 56: the selection stream IngestionService fetches on, bound to
         // THIS bed's `selectedAkgent$` exactly as `PROCESS_PROVIDERS` binds it

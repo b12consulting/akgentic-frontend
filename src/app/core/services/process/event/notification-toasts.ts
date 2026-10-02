@@ -6,9 +6,11 @@ import { NOTIFICATION_PORT } from '../../../platform/notification/notification.p
 import {
   AkgenticMessage,
   ErrorMessage,
+  isNotificationMessage,
   NotificationMessage,
   notificationSeverity,
   NotificationSeverity,
+  TEAM_DESCRIPTION_CONTENT_TYPE,
   WarningMessage,
 } from '../../../protocol/message.types';
 
@@ -188,6 +190,20 @@ export class NotificationToasts {
     );
     subs.add(
       messages$.subscribe((event: AkgenticMessage) => {
+        // Story 58-1: the generated-description notification is a CACHE PATCH
+        // consumed by `TeamDescriptionReactor`, not a condition to surface, so
+        // it raises no toast. An early return HERE and not in `appendAll`: the
+        // frame must still reach the log (and the Messages tab) — only the
+        // popup is suppressed. Keyed on the bare base deliberately: an
+        // `ErrorMessage` carrying the same `content_type` is still an error
+        // and still toasts. `notificationSeverity` is left untouched because
+        // it is shared with the Messages tab and the log's allowlist.
+        if (
+          isNotificationMessage(event) &&
+          event.content_type === TEAM_DESCRIPTION_CONTENT_TYPE
+        ) {
+          return;
+        }
         // Story 31-6 (FR17): all three severities take ONE dispatch, classified
         // once through the shared `notificationSeverity`. `null` means "not a
         // notification": no toast, and no early return either — most of what the

@@ -444,4 +444,135 @@ describe('RailTeamRowComponent', () => {
     expect(component.when).toBe('');
     expect(fixture.nativeElement.querySelector('.rail-row__name')).not.toBeNull();
   });
+
+  // --- The description on the row (Story 58-3) --------------------------
+
+  describe('the description on the row (Story 58-3)', () => {
+    // The description is a LINE OF ITS OWN between the name and the meta line
+    // — ruled at review from the running UI. It briefly took the meta line's
+    // summary slot, and `My description · 11:49 AM` beside `test · 11:46 AM`
+    // read as two rows of one kind: the metadata value is what tells two teams
+    // of one type apart, and the description had displaced it. The meta line
+    // is therefore EXACTLY what it was on master, in every spec below.
+    const meta = (): HTMLElement =>
+      fixture.nativeElement.querySelector('.rail-row__meta') as HTMLElement;
+    const descriptionLine = (): HTMLElement | null =>
+      fixture.nativeElement.querySelector('.rail-row__description');
+    /** The row's lines, in DOM order: name, [description], meta. */
+    const lines = (): HTMLElement[] =>
+      Array.from(
+        (fixture.nativeElement.querySelector('.rail-row__text') as HTMLElement).children,
+      ) as HTMLElement[];
+
+    beforeEach(() => {
+      setTestTranslations({
+        rail: {
+          teamMeta: '<<meta:{{summary}}|{{when}}>>',
+          teamMetaTimeOnly: '<<time:{{when}}>>',
+        },
+      });
+    });
+
+    it('renders the description as its OWN line between the name and the meta line', async () => {
+      await render(
+        makeRow('stopped', {
+          metadata: { case_id: 'CS-4471' },
+          description: 'Drafts the quarterly report',
+        }),
+      );
+
+      const [name, description, metaLine] = lines();
+      expect(lines().length).withContext('name, description, meta').toBe(3);
+      expect(name.classList).toContain('rail-row__name');
+      expect(description.classList).toContain('rail-row__description');
+      expect(description.textContent!.trim()).toBe('Drafts the quarterly report');
+      expect(metaLine.classList).toContain('rail-row__meta');
+    });
+
+    it('leaves the meta line EXACTLY as it was: the metadata summary, then the time', async () => {
+      // The whole point of the ruling. The description does not enter the
+      // `summary · when` sentence; the metadata value keeps its slot.
+      await render(
+        makeRow('stopped', {
+          metadata: { case_id: 'CS-4471' },
+          description: 'Drafts the quarterly report',
+        }),
+      );
+
+      expect(component.summary).toBe('CS-4471');
+      expect(component.metaKey).toBe('rail.teamMeta');
+      const text = meta().textContent as string;
+      expect(text.startsWith('<<meta:CS-4471|')).toBeTrue();
+      expect(text).not.toContain('Drafts the quarterly report');
+    });
+
+    it('keeps the time-only meta line for a described team with no metadata', async () => {
+      // A description does not promote the meta line to the two-parameter key:
+      // with no metadata value the sentence is still the time alone.
+      await render(
+        makeRow('stopped', { metadata: null, description: 'Drafts the quarterly report' }),
+      );
+
+      expect(component.summary).toBeNull();
+      expect(component.metaKey).toBe('rail.teamMetaTimeOnly');
+      expect((meta().textContent as string).startsWith('<<time:')).toBeTrue();
+      expect(descriptionLine()!.textContent!.trim()).toBe('Drafts the quarterly report');
+    });
+
+    it('renders the two-line row master shipped when the description is null or empty', async () => {
+      // `''` is "no description" on this surface, exactly as the table's own
+      // `*ngIf="ctx.description"` already treats it. No third line, no empty
+      // span, no tooltip anywhere on the row.
+      await render(
+        makeRow('stopped', { metadata: { case_id: 'CS-4471' }, description: null }),
+      );
+      expect(lines().length).toBe(2);
+      expect(descriptionLine()).toBeNull();
+      expect(component.summary).toBe('CS-4471');
+      expect(rowButton().hasAttribute('title')).toBeFalse();
+
+      await render(makeRow('stopped', { metadata: { case_id: 'CS-4471' }, description: '' }));
+      expect(lines().length).toBe(2);
+      expect(descriptionLine()).toBeNull();
+      expect(component.summary).toBe('CS-4471');
+      expect(component.metaKey).toBe('rail.teamMeta');
+      expect(rowButton().hasAttribute('title')).toBeFalse();
+    });
+
+    it('carries the full description as the description line\'s title', async () => {
+      await render(makeRow('stopped', { description: 'Drafts the quarterly report' }));
+
+      expect(descriptionLine()!.getAttribute('title')).toBe('Drafts the quarterly report');
+      // On the LINE, not on the row: the button has no tooltip of its own.
+      expect(rowButton().hasAttribute('title')).toBeFalse();
+    });
+
+    it('keeps the whole text in the DOM while the description line truncates to one line', async () => {
+      const long = 'Drafts the quarterly report '.repeat(11).trim();
+      expect(long.length).toBeGreaterThan(300);
+      await render(makeRow('stopped', { description: long }));
+
+      const line = descriptionLine()!;
+      expect(line.textContent).toContain(long);
+      expect(line.getAttribute('title')).toBe(long);
+      const style = getComputedStyle(line);
+      expect(style.whiteSpace).toBe('nowrap');
+      expect(style.overflow).toBe('hidden');
+      expect(style.textOverflow).toBe('ellipsis');
+      // And it stayed off the meta line.
+      expect(meta().textContent).not.toContain(long);
+    });
+
+    it('renders a description containing markup as TEXT, never as markup', async () => {
+      // The description may be generated, and is therefore untrusted. Same
+      // bar the table's title line already clears.
+      const injected = '<img src="x" onerror="alert(1)">';
+      await render(makeRow('stopped', { description: injected }));
+
+      const line = descriptionLine()!;
+      expect(line.children.length).toBe(0);
+      expect(line.querySelector('img')).toBeNull();
+      expect(line.textContent).toContain(injected);
+    });
+  });
 });

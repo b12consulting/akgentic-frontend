@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { ApiService } from './api.service';
-import { FetchService, NetworkError } from './fetch.service';
+import { FetchService, HttpError, NetworkError } from './fetch.service';
 import { NamespaceSummary } from '../../protocol/catalog.interface';
 
 describe('ApiService', () => {
@@ -750,6 +750,117 @@ describe('ApiService', () => {
       await expectAsync(
         service.emitClosedNotification('team-1', 'w-1'),
       ).toBeRejected();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Story 58-1 — the description PATCH.
+  //
+  // Developed against the contract, not a running server: the endpoint ships
+  // in a separate package. `FetchService` is the seam (this service never
+  // touches `HttpClient`), so every assertion reads the single `fetch` call's
+  // argument — URL, method, the EXACT body string, headers, and the absence of
+  // a success toast — and the resolved value is whatever the seam returned.
+  // -------------------------------------------------------------------------
+
+  describe('updateTeamDescription (Story 58-1)', () => {
+    const persisted = { description: 'Drafts the quarterly report', origin: 'user' };
+
+    beforeEach(() => {
+      fetchServiceSpy.fetch.and.returnValue(Promise.resolve(persisted));
+    });
+
+    it('(AC3) PATCHes /teams/{id}/description as JSON, with no success toast', async () => {
+      await service.updateTeamDescription('team-1', 'Drafts the quarterly report');
+
+      expect(fetchServiceSpy.fetch).toHaveBeenCalledTimes(1);
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.url).toMatch(/\/teams\/team-1\/description$/);
+      expect(callArgs.options?.method).toBe('PATCH');
+      expect(callArgs.options?.headers).toEqual({
+        'Content-Type': 'application/json',
+      });
+      expect(callArgs.successMessage).toBeUndefined();
+    });
+
+    it('(AC3) the body is exactly {"description":<string>}', async () => {
+      await service.updateTeamDescription('team-1', 'Drafts the quarterly report');
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      // The serialised string, not the parsed object: the contract is one key.
+      expect(callArgs.options?.body).toBe(
+        JSON.stringify({ description: 'Drafts the quarterly report' }),
+      );
+    });
+
+    it('(AC4) a null description is serialised as {"description":null} — the key travels', async () => {
+      // Clearing is an instruction, so the key must be present. A body that
+      // dropped it would read as "change nothing" to a server merging patches.
+      await service.updateTeamDescription('team-1', null);
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.options?.body).toBe('{"description":null}');
+    });
+
+    it('(AC3) the input travels VERBATIM — surrounding space is not trimmed here', async () => {
+      // The table trims the draft, the server trims again; this layer applying
+      // the rule a third time would be a third place it lives.
+      await service.updateTeamDescription('team-1', '  spaced out  ');
+
+      const callArgs = fetchServiceSpy.fetch.calls.first().args[0];
+      expect(callArgs.options?.body).toBe(
+        JSON.stringify({ description: '  spaced out  ' }),
+      );
+    });
+
+    it('(AC3) resolves with the parsed body the seam returned — the PERSISTED value', async () => {
+      const result = await service.updateTeamDescription('team-1', '  padded  ');
+
+      // Pass-through, so a caller sees what the server kept, not what it sent.
+      expect(result).toEqual(
+        { description: 'Drafts the quarterly report', origin: 'user' },
+      );
+    });
+
+    it('(AC3) a server that cleared the description resolves with null', async () => {
+      fetchServiceSpy.fetch.and.returnValue(
+        Promise.resolve({ description: null, origin: 'user' }),
+      );
+
+      const result = await service.updateTeamDescription('team-1', '   ');
+
+      expect(result.description).toBeNull();
+    });
+
+    it('(AC5) a FetchService rejection rejects unchanged — the 404 of an older server', async () => {
+      // No server tier released before the endpoint serves this route. The
+      // editor relies on this rejection to keep the draft on screen, and
+      // `FetchService` has already toasted, so nothing here may swallow it.
+      fetchServiceSpy.fetch.and.returnValue(
+        Promise.reject(
+          new HttpError('Request failed: Not Found', 404, { detail: 'Team not found' }),
+        ),
+      );
+
+      await expectAsync(
+        service.updateTeamDescription('team-1', 'anything'),
+      ).toBeRejectedWithError(HttpError, 'Request failed: Not Found');
+    });
+
+    it('(AC5) the rejection carries the status — a caller may branch on 409 / 422', async () => {
+      fetchServiceSpy.fetch.and.returnValue(
+        Promise.reject(new HttpError('Request failed: Conflict', 409, null)),
+      );
+
+      let caught: unknown = null;
+      try {
+        await service.updateTeamDescription('team-1', 'anything');
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).toBeInstanceOf(HttpError);
+      expect((caught as HttpError).status).toBe(409);
     });
   });
 

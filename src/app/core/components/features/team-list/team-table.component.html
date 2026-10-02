@@ -23,12 +23,14 @@
   (forbidden by ADR-032 §"What we will not do"; [scrollable] is explicitly
   allowed).
 
-  FIVE COLUMNS, NOT SIX (W11). The Team ID had a column of its own and spent it
-  on a 36-character uuid repeated down every row — the widest thing on screen
-  and the least often read. It is DEMOTED, not deleted: it now sits as the
-  quietest line of the Name cell, still rendered as selectable text, still the
-  complete value, so copying it is the same gesture it always was. See
-  `.team-id` in the stylesheet for why it is not truncated.
+  SIX COLUMNS, AND NONE OF THEM IS THE TEAM ID. W11 took the id's column away
+  — a 36-character uuid repeated down every row was the widest thing on screen
+  and the least often read — and demoted it to the quietest line of the Name
+  cell; Story 58-3 then took the printed value out of the row altogether. The
+  id is the row's identity as DATA, travelling through `rowSelected` and the
+  action outputs, and is printed nowhere. The sixth column is "Updated",
+  beside Creation Date: the same date, the same format, the other end of the
+  team's life. See the Updated cell below.
 
   Every cell that a spec addresses by POSITION now carries a `data-test`
   instead. Column indices are a contract between a template and a test helper
@@ -58,8 +60,9 @@
     <tr>
       <th>{{ "team.table.name" | translate }}</th>
       <th>{{ "team.table.metadata" | translate }}</th>
-      <th>{{ "team.table.createdAt" | translate }}</th>
       <th>{{ "team.table.status" | translate }}</th>
+      <th>{{ "team.table.createdAt" | translate }}</th>
+      <th>{{ "team.table.updated" | translate }}</th>
       <th></th>
     </tr>
   </ng-template>
@@ -156,35 +159,12 @@
               <i class="pi pi-times" aria-hidden="true"></i>
             </button>
           </div>
-
           <!--
-            THE TEAM ID, DEMOTED (W11) — the quietest line of the row, not a
-            column of its own.
-
-            Still the WHOLE uuid, still ordinary selectable text, and
-            deliberately NOT ellipsised: a truncated id looks copied until it
-            is pasted, and the one job this value has is being pasted
-            somewhere else. What changes is its weight — mono at the section
-            label's size in the muted tone — so the eye passes over it on the
-            way down the Name column instead of being dragged across the row
-            by it.
-
-            `title` carries the COLUMN HEADING that used to name this value.
-            With the column gone the string would otherwise be an unlabelled
-            uuid, and `team.table.id` is the label that already exists and is
-            already translated. It is a tooltip rather than visible text
-            because a repeated "Team ID" prefix down 250 rows costs more room
-            than the demotion buys back, and rather than a visually-hidden
-            span because that would join the id in a text selection and paste
-            the label along with the value.
+            Nothing below the editor (Story 58-3). The uuid line W11 left here
+            is gone, and the updated date that briefly took its place is a
+            COLUMN now, beside Creation Date — a date under the description
+            read as a second copy of the description's own date.
           -->
-          <div
-            class="team-id"
-            data-test="row-team-id"
-            [title]="'team.table.id' | translate"
-          >
-            {{ ctx.team_id }}
-          </div>
         </div>
       </td>
       <!--
@@ -224,7 +204,6 @@
           >{{ entry.value }}</span
         >
       </td>
-      <td class="team-created-cell">{{ ctx.created_at | date: "short" }}</td>
       <!--
         The status column — four renderings from ONE derivation.
 
@@ -291,6 +270,25 @@
           >
           </p-tag>
         </ng-container>
+      </td>
+      <td class="team-created-cell">{{ ctx.created_at | date: "short" }}</td>
+      <!--
+        WHEN the team last changed (Story 58-3), beside when it began.
+
+        The SAME pipe and the SAME format as the Creation Date cell, on
+        purpose: two dates in adjacent columns written two ways would read as
+        two kinds of thing. `updated_at` is kept fresh by
+        `setTeamDescription(…, updatedAt)`, so a description saved in the Name
+        cell moves this cell without a refetch. The full ISO stamp is the
+        `title`, verbatim, which is also what makes the home page's own spec
+        assertable without a locale.
+      -->
+      <td
+        class="team-updated-cell"
+        data-test="row-updated-at"
+        [title]="ctx.updated_at"
+      >
+        {{ ctx.updated_at | date: "short" }}
       </td>
       <!--
         The row actions.

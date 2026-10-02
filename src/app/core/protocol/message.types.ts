@@ -150,9 +150,14 @@ export interface WarningMessage extends BaseMessage {
 
 /**
  * The bare notification base (core Epic 24) — same field set as its
- * `ErrorMessage` / `WarningMessage` subclasses. Nothing upstream constructs one
- * today; the type and its render branch exist so the path lights up the moment a
- * producer appears. Flat sibling for the same reason as `WarningMessage`.
+ * `ErrorMessage` / `WarningMessage` subclasses. Its one producer today is the
+ * worker's team-description generator (akgentic-infra Epic 80): after the
+ * generated write it emits a bare `NotificationMessage` with
+ * `content_type === TEAM_DESCRIPTION_CONTENT_TYPE` and the new text as
+ * `content`, which `TeamDescriptionReactor` patches into the context cache and
+ * `notification-toasts` deliberately does not toast. Any other bare
+ * notification still takes the render branch below. Flat sibling for the same
+ * reason as `WarningMessage`.
  */
 export interface NotificationMessage extends BaseMessage {
   __model__: 'akgentic.core.messages.orchestrator.NotificationMessage';
@@ -350,6 +355,16 @@ export const EVENT_MESSAGE_MODEL =
  */
 export const CLOSED_NOTIFICATION_MODEL =
   'akgentic.core.messages.orchestrator.ClosedNotification';
+
+/**
+ * The `content_type` discriminator of the generated-description notification
+ * (Story 58-1): a bare `NotificationMessage` the worker emits after writing a
+ * team's description, carrying the new text as `content`. Consumed by TWO
+ * units — `TeamDescriptionReactor` (which patches the cache) and
+ * `NotificationToasts` (which suppresses the toast) — and this is the only
+ * spelling of the string in production code, so the two cannot drift apart.
+ */
+export const TEAM_DESCRIPTION_CONTENT_TYPE = 'team_description';
 
 /**
  * Inner event payload recording that a notification was dismissed by the user,

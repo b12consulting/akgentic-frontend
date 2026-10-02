@@ -23,6 +23,7 @@ import { ReplaySeeder } from './replay-seeder';
 import { SELECTED_AGENT_ID, selectionFetch } from './selected-agent';
 import { TeamSocket, TeamSocketStatus } from './team-socket';
 import { TeamStatusReactor } from './team-status-reactor';
+import { TeamDescriptionReactor } from './team-description-reactor';
 import { NOTIFICATION_PORT } from '../../../platform/notification/notification.port';
 
 /**
@@ -63,6 +64,13 @@ import { NOTIFICATION_PORT } from '../../../platform/notification/notification.p
  *     log-side reactor, and it shares the wiring position for the same reason:
  *     a stopped team's `TeamStoppingEvent` only ever arrives in step (c)'s REST
  *     replay.
+ *   - `TeamDescriptionReactor` (`team-description-reactor.ts`) — Story 58-1.
+ *     The third log-side reactor, same wiring position, same reason: it patches
+ *     a team's description into `ContextService` from the worker's
+ *     `team_description` notification, and that notification reaches a stopped
+ *     team's page only through the REST replay. Since Story 58-2 it drops a
+ *     frame older than the cached team's `updated_at`, so the replay this
+ *     wiring position exists for cannot overwrite a later edit.
  *
  * The notification port's `clear()` stays here rather than moving into either
  * toast unit: it empties the whole keyless `<p-toast>` container, both families
@@ -138,6 +146,15 @@ export class IngestionService {
    */
   private readonly teamStatusReactor: TeamStatusReactor =
     inject(TeamStatusReactor);
+
+  /**
+   * Story 58-1: the team-description reactor. Reads the same log delta as the
+   * two reactors above and patches `ContextService.setTeamDescription` from
+   * the worker's `team_description` notification, so a description generated
+   * while the page is open shows on the home list without a refresh.
+   */
+  private readonly teamDescriptionReactor: TeamDescriptionReactor =
+    inject(TeamDescriptionReactor);
 
   /**
    * Story 4-10 (AC7) / Epic 18 (ADR-015 §2): the loading-spinner state, read by
@@ -300,6 +317,11 @@ export class IngestionService {
     // live-path spec stays green.
     this.teamStatusReactor.start(this.log.appended$.pipe(concatAll()));
 
+    // Story 58-1: the team-description reactor — same wiring position, same
+    // reason. A description generated just before a team stopped arrives in
+    // step (c)'s REST replay and nowhere else.
+    this.teamDescriptionReactor.start(this.log.appended$.pipe(concatAll()));
+
     // --- (c) replay the history ---------------------------------------
     // Opening a team fetches NO agent state (Epic 56, ADR-038 D2). The stream
     // suppresses `StateChangedMessage` (a snapshot, not an event), so `state`
@@ -429,6 +451,7 @@ export class IngestionService {
     this.loading.stop();
     this.notificationToasts.stop();
     this.teamStatusReactor.stop();
+    this.teamDescriptionReactor.stop();
   }
 
   /**

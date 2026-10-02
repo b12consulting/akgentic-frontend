@@ -190,29 +190,8 @@ p-table {
     color: var(--akg-text-muted);
 }
 
-// THE DEMOTED TEAM ID (W11).
-//
-// Mono, because the shape of the characters is the information — the same
-// argument `--akg-font-mono` exists for. Set at the section label's size in
-// the muted tone: the quietest thing in the row, and still the only one a
-// person ever copies.
-//
-// NOT ELLIPSISED, deliberately, unlike `.team-title` above. A title is prose
-// and reads fine cut short; an identifier cut short is indistinguishable from
-// a complete one until it is pasted somewhere and rejected. `user-select: all`
-// makes the whole value one click to select, which is strictly more than the
-// old full-width column offered.
-.team-id {
-    font-family: var(--akg-font-mono);
-    font-size: var(--akg-section-label-size);
-    line-height: 1.4;
-    color: var(--akg-text-muted);
-    user-select: all;
-    overflow-wrap: anywhere;
-}
-
 .team-description {
-    font-size: 11.5px;
+    font-size: 12.5px;
     line-height: 1.35;
     color: var(--akg-text-muted);
     cursor: pointer;
@@ -233,6 +212,7 @@ p-table {
 
 .description-placeholder {
     color: var(--akg-text-muted);
+    opacity: 0.6;
     font-style: italic;
 }
 
@@ -361,9 +341,12 @@ p-table {
   }
 }
 
-// The creation date is reference data, not a headline: same quiet step as the
-// row's second line, and tabular figures so the column reads as a column.
-.team-created-cell {
+// The creation and updated dates are reference data, not a headline: same
+// quiet step as the row's second line, and tabular figures so each column
+// reads as a column. ONE rule for both (Story 58-3) — they are the same kind
+// of value, and two rules would be two places for one treatment to drift.
+.team-created-cell,
+.team-updated-cell {
     font-size: 11.5px;
     line-height: 1.35;
     color: var(--akg-text-muted);
