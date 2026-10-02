@@ -257,7 +257,7 @@
           <span
             *ngIf="usage.totalCostUsd > 0"
             [attr.title]="'inspector.estimatedCost' | translate"
-            >· {{ usage.totalCostUsd | usdCost }}</span
+            >({{ usage.totalCostUsd | usdCost }})</span
           >
         </button>
         <p-popover #usageOp>

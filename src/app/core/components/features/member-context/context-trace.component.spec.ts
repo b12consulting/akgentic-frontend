@@ -1344,11 +1344,11 @@ describe('ContextTraceComponent — token-usage pill (Story 26-2)', () => {
   describe('estimated cost (Epic 57)', () => {
     const SPENT = { lastContextWindow: 12_000, totalSent: 45_000, totalReceived: 12_100 };
 
-    it('AC 10 ends the pill with " · {cost}" when > 0, titled as an estimate', () => {
+    it('AC 10 ends the pill with "({cost})" when > 0, titled as an estimate', () => {
       const { fixture } = setup(usage({ ...SPENT, totalCostUsd: 1.234 }));
       fixture.detectChanges();
 
-      expect(pillText(fixture)).toBe('ctx 12.0k · ↑45.0k ↓12.1k · $1.23');
+      expect(pillText(fixture)).toBe('ctx 12.0k · ↑45.0k ↓12.1k ($1.23)');
       expect(pill(fixture)!.querySelector('span')!.getAttribute('title')).toBe(
         'inspector.estimatedCost',
       );
@@ -1368,14 +1368,14 @@ describe('ContextTraceComponent — token-usage pill (Story 26-2)', () => {
       usage$.next(usage({ ...SPENT, totalCostUsd: 1234.5 }));
       fixture.detectChanges();
 
-      expect(pillText(fixture)).toBe('ctx 12.0k · ↑45.0k ↓12.1k · $1,234.50');
+      expect(pillText(fixture)).toBe('ctx 12.0k · ↑45.0k ↓12.1k ($1,234.50)');
     });
 
     it('AC 12 a sub-cent cost shows <$0.01', () => {
       const { fixture } = setup(usage({ ...SPENT, totalCostUsd: 0.004 }));
       fixture.detectChanges();
 
-      expect(pillText(fixture)).toBe('ctx 12.0k · ↑45.0k ↓12.1k · <$0.01');
+      expect(pillText(fixture)).toBe('ctx 12.0k · ↑45.0k ↓12.1k (<$0.01)');
     });
   });
 });
