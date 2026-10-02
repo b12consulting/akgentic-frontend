@@ -444,4 +444,106 @@ describe('RailTeamRowComponent', () => {
     expect(component.when).toBe('');
     expect(fixture.nativeElement.querySelector('.rail-row__name')).not.toBeNull();
   });
+
+  // --- The description on the row (Story 58-3) --------------------------
+
+  describe('the description on the row (Story 58-3)', () => {
+    const meta = (): HTMLElement =>
+      fixture.nativeElement.querySelector('.rail-row__meta') as HTMLElement;
+
+    beforeEach(() => {
+      setTestTranslations({
+        rail: {
+          teamMeta: '<<meta:{{summary}}|{{when}}>>',
+          teamMetaTimeOnly: '<<time:{{when}}>>',
+        },
+      });
+    });
+
+    it('takes the summary slot when the team carries no metadata', async () => {
+      await render(
+        makeRow('stopped', { metadata: null, description: 'Drafts the quarterly report' }),
+      );
+
+      expect(component.summary).toBe('Drafts the quarterly report');
+      expect(component.metaKey).toBe('rail.teamMeta');
+      const text = meta().textContent as string;
+      expect(text).toContain('Drafts the quarterly report');
+      expect(text.startsWith('<<meta:')).toBeTrue();
+    });
+
+    it('REPLACES the metadata summary rather than joining it', async () => {
+      // "The description takes the secondary line's text slot, the time stays
+      // at the end." The key keeps its two parameters; the metadata value is
+      // the fallback, not a third segment.
+      await render(
+        makeRow('stopped', {
+          metadata: { case_id: 'CS-4471' },
+          description: 'Drafts the quarterly report',
+        }),
+      );
+
+      expect(component.summary).toBe('Drafts the quarterly report');
+      expect(meta().textContent).not.toContain('CS-4471');
+    });
+
+    it('falls back to the metadata value for an EMPTY description', async () => {
+      // `''` is "no description" on this surface, exactly as the table's own
+      // `*ngIf="ctx.description"` already treats it.
+      await render(makeRow('stopped', { metadata: { case_id: 'CS-4471' }, description: '' }));
+
+      expect(component.summary).toBe('CS-4471');
+      expect(component.metaKey).toBe('rail.teamMeta');
+    });
+
+    it('leaves a row with a null description exactly as it was', async () => {
+      await render(
+        makeRow('stopped', { metadata: { case_id: 'CS-4471' }, description: null }),
+      );
+      expect(component.summary).toBe('CS-4471');
+
+      await render(makeRow('stopped', { metadata: null, description: null }));
+      expect(component.summary).toBeNull();
+      expect(component.metaKey).toBe('rail.teamMetaTimeOnly');
+    });
+
+    it('carries the full description as the row button\'s title', async () => {
+      await render(makeRow('stopped', { description: 'Drafts the quarterly report' }));
+
+      expect(rowButton().getAttribute('title')).toBe('Drafts the quarterly report');
+    });
+
+    it('carries NO title attribute when there is no description', async () => {
+      // `[attr.title]` bound to `null` removes the attribute: a row without a
+      // description must not grow an empty tooltip.
+      await render(makeRow('stopped', { description: null }));
+      expect(rowButton().hasAttribute('title')).toBeFalse();
+
+      await render(makeRow('stopped', { description: '' }));
+      expect(rowButton().hasAttribute('title')).toBeFalse();
+    });
+
+    it('keeps the whole text in the DOM while the meta line truncates to one line', async () => {
+      const long = 'Drafts the quarterly report '.repeat(11).trim();
+      expect(long.length).toBeGreaterThan(300);
+      await render(makeRow('stopped', { description: long }));
+
+      expect(meta().textContent).toContain(long);
+      const style = getComputedStyle(meta());
+      expect(style.whiteSpace).toBe('nowrap');
+      expect(style.overflow).toBe('hidden');
+      expect(style.textOverflow).toBe('ellipsis');
+    });
+
+    it('renders a description containing markup as TEXT, never as markup', async () => {
+      // The description may be generated, and is therefore untrusted. Same
+      // bar the table's title line already clears.
+      const injected = '<img src="x" onerror="alert(1)">';
+      await render(makeRow('stopped', { description: injected }));
+
+      expect(meta().children.length).toBe(0);
+      expect(meta().querySelector('img')).toBeNull();
+      expect(meta().textContent).toContain(injected);
+    });
+  });
 });

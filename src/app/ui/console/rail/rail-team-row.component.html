@@ -4,12 +4,17 @@
   a button is invalid markup that browsers silently repair by dropping one of
   them. It is positioned over the row's trailing edge instead, and the row
   reserves the space for it in its padding.
+
+  `title` is the full description, because the meta line below is ellipsised;
+  bound as an attribute so a `null` removes it rather than leaving an empty
+  tooltip on a row that has none.
 -->
 <button
   type="button"
   class="rail-row"
   [class.active]="active"
   [attr.aria-current]="active ? 'true' : null"
+  [attr.title]="description"
   (click)="onSelect()"
 >
   @if (stopping || restoring) {

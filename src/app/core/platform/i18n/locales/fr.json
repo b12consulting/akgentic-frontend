@@ -45,7 +45,7 @@
       "metadata": "Métadonnées",
       "createdAt": "Date de création",
       "status": "Statut",
-      "id": "Identifiant d'équipe",
+      "updated": "Mis à jour {{when}}",
       "currentPageReport": "{first}–{last} sur {totalRecords}",
       "descriptionPrompt": "Cliquez pour ajouter une description...",
       "descriptionPlaceholder": "Saisissez une description d'équipe"

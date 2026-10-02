@@ -25,10 +25,11 @@
 
   FIVE COLUMNS, NOT SIX (W11). The Team ID had a column of its own and spent it
   on a 36-character uuid repeated down every row — the widest thing on screen
-  and the least often read. It is DEMOTED, not deleted: it now sits as the
-  quietest line of the Name cell, still rendered as selectable text, still the
-  complete value, so copying it is the same gesture it always was. See
-  `.team-id` in the stylesheet for why it is not truncated.
+  and the least often read. W11 demoted it to the quietest line of the Name
+  cell; Story 58-3 then took the printed value out of the row altogether. The
+  id is no longer printed anywhere here: it is the row's identity as DATA,
+  travelling through `rowSelected` and the action outputs, and the line it
+  occupied now says WHEN the team last changed. See `.team-updated` below.
 
   Every cell that a spec addresses by POSITION now carries a `data-test`
   instead. Column indices are a contract between a template and a test helper
@@ -158,32 +159,32 @@
           </div>
 
           <!--
-            THE TEAM ID, DEMOTED (W11) — the quietest line of the row, not a
-            column of its own.
+            WHEN the team last changed (Story 58-3) — the third line, where
+            the uuid used to be printed.
 
-            Still the WHOLE uuid, still ordinary selectable text, and
-            deliberately NOT ellipsised: a truncated id looks copied until it
-            is pasted, and the one job this value has is being pasted
-            somewhere else. What changes is its weight — mono at the section
-            label's size in the muted tone — so the eye passes over it on the
-            way down the Name column instead of being dragged across the row
-            by it.
+            `updated_at` is kept fresh by `setTeamDescription(…, updatedAt)`,
+            so a description saved in the editor above moves this line without
+            a refetch. Formatted by the SAME helper the rail's row uses, so the
+            two list surfaces agree on what "when" looks like: a clock time
+            today, a day-and-month otherwise.
 
-            `title` carries the COLUMN HEADING that used to name this value.
-            With the column gone the string would otherwise be an unlabelled
-            uuid, and `team.table.id` is the label that already exists and is
-            already translated. It is a tooltip rather than visible text
-            because a repeated "Team ID" prefix down 250 rows costs more room
-            than the demotion buys back, and rather than a visually-hidden
-            span because that would join the id in a text selection and paste
-            the label along with the value.
+            LABELLED, through one translated key with the date as its
+            parameter, because the Creation Date column sits two cells to the
+            right showing a different date: a bare "Apr 19" under the
+            description would read as a second copy of it. The full ISO stamp
+            is the `title`, verbatim — not a label and not a re-formatted date
+            — which is also what makes the home page's own spec assertable
+            without a locale.
           -->
           <div
-            class="team-id"
-            data-test="row-team-id"
-            [title]="'team.table.id' | translate"
+            class="team-updated"
+            data-test="row-updated-at"
+            [title]="ctx.updated_at"
           >
-            {{ ctx.team_id }}
+            {{
+              "team.table.updated"
+                | translate: { when: (ctx.updated_at | teamWhen) }
+            }}
           </div>
         </div>
       </td>

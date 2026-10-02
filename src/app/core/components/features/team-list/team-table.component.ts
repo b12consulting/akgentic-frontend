@@ -28,6 +28,7 @@ import {
   teamActivity,
   TeamContext,
 } from '../../../platform/context/team.interface';
+import { TeamWhenPipe } from '../../../platform/context/team-when';
 
 /** A row action the user asked for. The page performs it; the row shows it running. */
 export interface TeamRowAction {
@@ -77,6 +78,7 @@ export interface TeamDescriptionSave {
     InputTextModule,
     TeamMetadataPipe,
     TeamTitlePipe,
+    TeamWhenPipe,
     TranslatePipe,
   ],
   templateUrl: './team-table.component.html',

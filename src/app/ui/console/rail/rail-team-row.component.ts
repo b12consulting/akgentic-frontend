@@ -1,4 +1,3 @@
-import { formatDate } from '@angular/common';
 import {
   ChangeDetectionStrategy,
   ChangeDetectorRef,
@@ -19,6 +18,7 @@ import { Menu, MenuModule } from 'primeng/menu';
 
 import { ContextService } from '../../../core/platform/context/context.service';
 import { TeamTitlePipe } from '../../../core/platform/context/team-metadata.pipe';
+import { formatTeamWhen } from '../../../core/platform/context/team-when';
 import {
   isRunning,
   metadataEntries,
@@ -124,21 +124,43 @@ export class RailTeamRowComponent implements OnChanges {
   /**
    * The row's second line, resolved ONCE per input change.
    *
+   * The team's DESCRIPTION when it has one (Story 58-3); the first metadata
+   * value otherwise. The description REPLACES the metadata value in the slot
+   * rather than joining it — `rail.teamMeta` keeps its two parameters and the
+   * time stays at the end — because the slot is one ellipsised line and a
+   * third segment would push the time off it.
+   *
    * `metadataEntries` returns fresh objects on every call, so reading it from
    * a binding would rebuild this string every change-detection cycle. It is
    * not in a binding: `ngOnChanges` is the only thing that recomputes it.
    */
   summary: string | null = null;
 
+  /**
+   * The team's description, or `null` for every flavour of "none".
+   *
+   * Kept beside `summary` rather than read off `row` in the template so the
+   * button's `title` and the meta line agree on what "has a description"
+   * means — and so `''` resolves to `null` once, here, and the attribute is
+   * REMOVED rather than rendered empty.
+   */
+  description: string | null = null;
+
   /** The row's timestamp, already formatted. See `computeWhen`. */
   when = '';
 
   ngOnChanges(): void {
     const metadata = this.row?.team.metadata;
-    // The title field is EXCLUDED: the name line above already renders it, and
-    // a summary repeating it reads as duplicated data rather than as a layout
-    // slip.
-    this.summary = metadataEntries(metadata, this.titleKey)[0]?.value ?? null;
+    // `||`, not `??`, on purpose: `''` is "no description" on this surface,
+    // exactly as the table's `*ngIf="ctx.description"` already treats it. The
+    // two lists must agree on what an absent description is.
+    const description = this.row?.team.description || null;
+    this.description = description;
+    // The title field is EXCLUDED from the metadata fallback: the name line
+    // above already renders it, and a summary repeating it reads as duplicated
+    // data rather than as a layout slip.
+    this.summary =
+      description ?? metadataEntries(metadata, this.titleKey)[0]?.value ?? null;
     this.when = this.computeWhen();
   }
 
@@ -325,29 +347,13 @@ export class RailTeamRowComponent implements OnChanges {
   /**
    * The timestamp: a clock time for something created TODAY, a date otherwise.
    *
-   * A row is 268px wide and the meta line shares it with a summary, so the
-   * format has to earn its characters: "16:35" answers "when today?" and
-   * "Apr 19" answers "which day?", and neither needs the other's half.
-   *
-   * Formatted in TS rather than by `DatePipe` in the template because the
-   * result is a translation PARAMETER — the separator between it and the
-   * summary belongs to the sentence, not to a `+ ' · ' +` in the markup.
+   * The format and its reasons live in `formatTeamWhen`, which the home table
+   * shares so the two lists agree on "when". It is called as a FUNCTION here
+   * rather than as the pipe because the result is a translation PARAMETER —
+   * the separator between it and the summary belongs to the sentence, not to
+   * a `+ ' · ' +` in the markup.
    */
   private computeWhen(): string {
-    const raw = this.row?.team.created_at;
-    if (!raw) {
-      return '';
-    }
-    const created = new Date(raw);
-    if (Number.isNaN(created.getTime())) {
-      // A server that sent something unparseable should not blank the row.
-      return '';
-    }
-    const now = new Date();
-    const sameDay =
-      created.getFullYear() === now.getFullYear() &&
-      created.getMonth() === now.getMonth() &&
-      created.getDate() === now.getDate();
-    return formatDate(created, sameDay ? 'shortTime' : 'MMM d', this.locale);
+    return formatTeamWhen(this.row?.team.created_at, this.locale);
   }
 }
