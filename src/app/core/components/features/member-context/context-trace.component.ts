@@ -25,6 +25,7 @@ import { map } from 'rxjs/operators';
 
 import { CapitalizePipe } from '../../../shared/pipes/capitalise.pipe';
 import { TokenCountPipe } from '../../../shared/pipes/token-count.pipe';
+import { UsdCostPipe } from '../../../shared/pipes/usd-cost.pipe';
 import { ApiService } from '../../../platform/http/api.service';
 import { UtilService } from '../../../services/utils.service';
 import { ContextService } from '../../../platform/context/context.service';
@@ -62,6 +63,7 @@ import { IconButtonComponent } from '../../primitives/icon-button/icon-button.co
     MentionModule,
     CapitalizePipe,
     TokenCountPipe,
+    UsdCostPipe,
     IconButtonComponent,
     TranslatePipe,
   ],

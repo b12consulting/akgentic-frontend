@@ -37,6 +37,7 @@ const EMPTY_TOTALS: TeamTokenTotals = {
   totalReceived: 0,
   totalCacheRead: 0,
   totalCacheWrite: 0,
+  totalCostUsd: 0,
 };
 
 /**

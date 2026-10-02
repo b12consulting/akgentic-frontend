@@ -5,12 +5,13 @@ import { AgentTokenUsage } from '../event/per-agent-specs';
 import { IngestionService } from '../event/ingestion.service';
 
 /** Headline team-wide totals (ADR-022 §Decision 2/4, extended by ADR-024
- *  §Decision 1): Σ sent / Σ received / Σ cache read / Σ cache write. */
+ *  §Decision 1): Σ every counter. */
 export interface TeamTokenTotals {
   totalSent: number;
   totalReceived: number;
   totalCacheRead: number;
   totalCacheWrite: number;
+  totalCostUsd: number;
 }
 
 /** Structural equality of two totals (NFR / OnPush): the summed object is a
@@ -21,7 +22,8 @@ function totalsEqual(a: TeamTokenTotals, b: TeamTokenTotals): boolean {
     a.totalSent === b.totalSent &&
     a.totalReceived === b.totalReceived &&
     a.totalCacheRead === b.totalCacheRead &&
-    a.totalCacheWrite === b.totalCacheWrite
+    a.totalCacheWrite === b.totalCacheWrite &&
+    a.totalCostUsd === b.totalCostUsd
   );
 }
 
@@ -32,13 +34,15 @@ function sumTotals(all: ReadonlyMap<string, AgentTokenUsage>): TeamTokenTotals {
   let totalReceived = 0;
   let totalCacheRead = 0;
   let totalCacheWrite = 0;
+  let totalCostUsd = 0;
   for (const usage of all.values()) {
     totalSent += usage.totalSent;
     totalReceived += usage.totalReceived;
     totalCacheRead += usage.totalCacheRead;
     totalCacheWrite += usage.totalCacheWrite;
+    totalCostUsd += usage.totalCostUsd;
   }
-  return { totalSent, totalReceived, totalCacheRead, totalCacheWrite };
+  return { totalSent, totalReceived, totalCacheRead, totalCacheWrite, totalCostUsd };
 }
 
 /** Team totals for ONE model — the same figures as `TeamTokenTotals`, tagged
@@ -70,6 +74,7 @@ function groupByModel(
         g.totalReceived += share.totalReceived;
         g.totalCacheRead += share.totalCacheRead;
         g.totalCacheWrite += share.totalCacheWrite;
+        g.totalCostUsd += share.totalCostUsd;
       } else {
         byModel.set(modelName, {
           modelName,
@@ -77,6 +82,7 @@ function groupByModel(
           totalReceived: share.totalReceived,
           totalCacheRead: share.totalCacheRead,
           totalCacheWrite: share.totalCacheWrite,
+          totalCostUsd: share.totalCostUsd,
         });
       }
     }
@@ -99,7 +105,8 @@ function modelListEqual(a: ModelTokenTotals[], b: ModelTokenTotals[]): boolean {
       x.totalSent === y.totalSent &&
       x.totalReceived === y.totalReceived &&
       x.totalCacheRead === y.totalCacheRead &&
-      x.totalCacheWrite === y.totalCacheWrite
+      x.totalCacheWrite === y.totalCacheWrite &&
+      x.totalCostUsd === y.totalCostUsd
     );
   });
 }
@@ -118,8 +125,7 @@ function modelListEqual(a: ModelTokenTotals[], b: ModelTokenTotals[]): boolean {
  *   `forAgent` already applies a reference `distinctUntilChanged` +
  *   `shareReplay({ bufferSize: 1, refCount: true })` with lazy current-value
  *   replay, so no extra pipeline is needed here.
- * - `teamTotals$` is a PURE sum over `tokenUsage.all$` (Σ every agent's
- *   `totalSent` / `totalReceived` / `totalCacheRead` / `totalCacheWrite`) — NOT
+ * - `teamTotals$` is a PURE sum over `tokenUsage.all$` (Σ every counter) — NOT
  *   a separately stored aggregate. `all$` holds exactly the CURRENT team's
  *   agents — the pipeline empties its log on every team switch — so the total
  *   is correct by construction with no team-id bookkeeping. The sum is a fresh
@@ -140,7 +146,7 @@ export class TokenUsageSelector {
       shareReplay({ bufferSize: 1, refCount: true }),
     );
 
-  /** Per-model breakdown of the team's usage (feeds the team-footer popover):
+  /** Per-model breakdown of the team's usage:
    *  Σ per model, sorted sent-desc. Same scoping/derivation guarantees as
    *  `teamTotals$` — pure over the scoped `all$`, structural dedupe, shareReplay. */
   readonly teamByModel$: Observable<ModelTokenTotals[]> =

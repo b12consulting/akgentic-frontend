@@ -144,6 +144,9 @@
             'in': (totals.totalSent | tokenCount),
             'out': (totals.totalReceived | tokenCount)
           } }}
+          @if (totals.totalCostUsd > 0) {
+            · <span [title]="'inspector.estimatedCost' | translate">{{ totals.totalCostUsd | usdCost }}</span>
+          }
         </span>
       }
     }

@@ -278,7 +278,8 @@ export interface LlmSystemPromptEvent {
  * stringification). Terminology (ADR-022 §Decision 4): `input_tokens` is "sent",
  * `output_tokens` is "received". `cache_read_tokens` / `cache_write_tokens` fold
  * into the true context-window figure (ADR-024 §Decision 2); `requests` still
- * rides the wire unused.
+ * rides the wire unused. `estimated_cost_usd` is priced by the backend per model
+ * response, in USD; absent from a backend that predates it.
  */
 export interface LlmUsageEvent {
   __model__: string; // contains 'LlmUsageEvent'
@@ -290,6 +291,7 @@ export interface LlmUsageEvent {
   cache_read_tokens: number;
   cache_write_tokens: number;
   requests: number;
+  estimated_cost_usd?: number;
 }
 
 /**

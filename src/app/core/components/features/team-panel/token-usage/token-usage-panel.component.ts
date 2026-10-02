@@ -9,9 +9,10 @@ import {
   TokenUsageSelector,
 } from '../../../../services/process/selectors/token-usage.selector';
 import { TokenCountPipe } from '../../../../shared/pipes/token-count.pipe';
+import { UsdCostPipe } from '../../../../shared/pipes/usd-cost.pipe';
 
 /**
- * What this team has spent, in three numbers.
+ * What this team has spent.
  *
  * BARE `inject`, never a local `providers` entry: `TokenUsageSelector` is
  * scoped to the `process/:id` route and re-providing it here would create
@@ -29,7 +30,7 @@ import { TokenCountPipe } from '../../../../shared/pipes/token-count.pipe';
  * hang off the team tree's footer as a popover, and the tree is gone from the
  * hierarchy tab (W6: that tab is the graph and nothing else), so this card was
  * the only remaining surface that answers "where is the spend going". Moving it
- * rather than deleting it is the point: the three totals above say how much, and
+ * rather than deleting it is the point: the totals above say how much, and
  * only this says what it was spent on.
  *
  * There is no null guard. `teamTotals$` sums an empty map to zeros and is never
@@ -39,7 +40,7 @@ import { TokenCountPipe } from '../../../../shared/pipes/token-count.pipe';
 @Component({
   selector: 'app-token-usage-panel',
   standalone: true,
-  imports: [AsyncPipe, TranslatePipe, TokenCountPipe],
+  imports: [AsyncPipe, TranslatePipe, TokenCountPipe, UsdCostPipe],
   templateUrl: './token-usage-panel.component.html',
   styleUrl: './token-usage-panel.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -50,9 +51,8 @@ export class TokenUsagePanelComponent {
   readonly totals$: Observable<TeamTokenTotals> = this.tokenUsage.teamTotals$;
 
   /**
-   * One entry per model the team has actually run, sorted by spend. Empty for a
-   * team that has not run one yet — the template omits the whole block in that
-   * case rather than drawing a rule under nothing.
+   * One entry per model the team has actually run, sorted by spend. The template
+   * names a single model on the header line and draws rows only for several.
    */
   readonly byModel$: Observable<ModelTokenTotals[]> =
     this.tokenUsage.teamByModel$;

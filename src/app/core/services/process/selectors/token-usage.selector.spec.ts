@@ -49,6 +49,7 @@ function makeUsageEnvelope(
   cache_read_tokens = 0,
   cache_write_tokens = 0,
   model_name = 'claude-sonnet',
+  estimated_cost_usd?: number,
 ): AkgenticMessage {
   return {
     id: 'usage-' + agentId + '-' + envCounter++,
@@ -69,6 +70,7 @@ function makeUsageEnvelope(
       cache_read_tokens,
       cache_write_tokens,
       requests: 1,
+      ...(estimated_cost_usd !== undefined && { estimated_cost_usd }),
     },
   } as unknown as AkgenticMessage;
 }
@@ -181,7 +183,7 @@ describe('TokenUsageSelector.perAgent$ (AC #8)', () => {
 // ---------------------------------------------------------------------
 
 describe('TokenUsageSelector.teamTotals$ (AC #8)', () => {
-  it('empty team yields { totalSent: 0, totalReceived: 0, totalCacheRead: 0, totalCacheWrite: 0 }', () => {
+  it('empty team yields { totalSent: 0, totalReceived: 0, totalCacheRead: 0, totalCacheWrite: 0, totalCostUsd: 0 }', () => {
     const { selector } = configureBed();
     let received: TeamTokenTotals | undefined;
     const sub = selector.teamTotals$.subscribe((t) => (received = t));
@@ -190,6 +192,7 @@ describe('TokenUsageSelector.teamTotals$ (AC #8)', () => {
       totalReceived: 0,
       totalCacheRead: 0,
       totalCacheWrite: 0,
+      totalCostUsd: 0,
     });
     sub.unsubscribe();
   });
@@ -210,6 +213,7 @@ describe('TokenUsageSelector.teamTotals$ (AC #8)', () => {
       totalReceived: 35,
       totalCacheRead: 60, // 20 + 40 + 0
       totalCacheWrite: 15, // 5 + 0 + 10
+      totalCostUsd: 0,
     });
     sub.unsubscribe();
   });
@@ -229,12 +233,14 @@ describe('TokenUsageSelector.teamTotals$ (AC #8)', () => {
       totalReceived: 0,
       totalCacheRead: 0,
       totalCacheWrite: 0,
+      totalCostUsd: 0,
     });
     expect(emissions[1]).toEqual({
       totalSent: 100,
       totalReceived: 10,
       totalCacheRead: 0,
       totalCacheWrite: 0,
+      totalCostUsd: 0,
     });
     sub.unsubscribe();
   });
@@ -273,6 +279,7 @@ describe('TokenUsageSelector.teamByModel$', () => {
         totalReceived: 120,
         totalCacheRead: 11_000,
         totalCacheWrite: 0,
+        totalCostUsd: 0,
       },
       {
         modelName: 'claude-opus-4-8',
@@ -280,6 +287,7 @@ describe('TokenUsageSelector.teamByModel$', () => {
         totalReceived: 61,
         totalCacheRead: 2_800,
         totalCacheWrite: 0,
+        totalCostUsd: 0,
       },
     ]);
     sub.unsubscribe();
@@ -307,6 +315,7 @@ describe('TokenUsageSelector.teamByModel$', () => {
         totalReceived: 40,
         totalCacheRead: 0,
         totalCacheWrite: 0,
+        totalCostUsd: 0,
       },
       {
         modelName: 'gpt-5.2',
@@ -314,6 +323,7 @@ describe('TokenUsageSelector.teamByModel$', () => {
         totalReceived: 54,
         totalCacheRead: 0,
         totalCacheWrite: 0,
+        totalCostUsd: 0,
       },
     ]);
 
@@ -339,8 +349,58 @@ describe('TokenUsageSelector.teamByModel$', () => {
     expect(emissions.length).toBe(2);
     expect(emissions[0]).toEqual([]);
     expect(emissions[1]).toEqual([
-      { modelName: 'gpt-5.4', totalSent: 100, totalReceived: 10, totalCacheRead: 0, totalCacheWrite: 0 },
+      { modelName: 'gpt-5.4', totalSent: 100, totalReceived: 10, totalCacheRead: 0, totalCacheWrite: 0, totalCostUsd: 0 },
     ]);
     sub.unsubscribe();
+  });
+});
+
+// ---------------------------------------------------------------------
+// Epic 57 — estimated cost through teamTotals$ / teamByModel$
+// ---------------------------------------------------------------------
+
+describe('TokenUsageSelector — estimated cost (Epic 57)', () => {
+  it('AC 5 teamTotals$ sums every agent\'s cost; teamByModel$ splits it per model exactly', () => {
+    const { log, selector } = configureBed();
+    let totals: TeamTokenTotals | undefined;
+    let byModel: ModelTokenTotals[] | undefined;
+    const s1 = selector.teamTotals$.subscribe((t) => (totals = t));
+    const s2 = selector.teamByModel$.subscribe((v) => (byModel = v));
+
+    log.appendAll([
+      // A switches model mid-session: its cost splits across both models.
+      makeUsageEnvelope('A', 300, 10, 0, 0, 'm1', 0.25),
+      makeUsageEnvelope('A', 100, 10, 0, 0, 'm2', 0.004),
+      makeUsageEnvelope('B', 200, 10, 0, 0, 'm1', 1234.5),
+      makeUsageEnvelope('B', 50, 10, 0, 0, 'm2'), // no cost key
+    ]);
+
+    expect(totals!.totalCostUsd).toBeCloseTo(1234.754, 10);
+    // Sort unchanged: by sent desc (m1 500 > m2 150).
+    expect(byModel!.map((m) => m.modelName)).toEqual(['m1', 'm2']);
+    expect(byModel![0].totalCostUsd).toBeCloseTo(1234.75, 10);
+    expect(byModel![1].totalCostUsd).toBeCloseTo(0.004, 10);
+    s1.unsubscribe();
+    s2.unsubscribe();
+  });
+
+  it('AC 6 a cost-only change re-emits; an identical frame (cost included) does not', () => {
+    const { log, selector } = configureBed();
+    const totals: TeamTokenTotals[] = [];
+    const byModel: ModelTokenTotals[][] = [];
+    const s1 = selector.teamTotals$.subscribe((t) => totals.push(t));
+    const s2 = selector.teamByModel$.subscribe((v) => byModel.push(v));
+
+    log.append(makeUsageEnvelope('A', 100, 10, 0, 0, 'm1')); // tokens change → emit
+    log.append(makeUsageEnvelope('A', 0, 0, 0, 0, 'm1', 0.25)); // cost only → emit
+    log.append(makeUsageEnvelope('A', 0, 0, 0, 0, 'm1')); // nothing changes → NO emit
+
+    // initial + two real changes = 3 emissions on each stream.
+    expect(totals.length).toBe(3);
+    expect(totals[2]).toEqual({ ...totals[1], totalCostUsd: 0.25 });
+    expect(byModel.length).toBe(3);
+    expect(byModel[2]).toEqual([{ ...byModel[1][0], totalCostUsd: 0.25 }]);
+    s1.unsubscribe();
+    s2.unsubscribe();
   });
 });

@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { FormsModule } from '@angular/forms';
 import { MessageService } from 'primeng/api';
+import { TranslateService } from '@ngx-translate/core';
 import { BehaviorSubject } from 'rxjs';
 
 import { ProcessUserInputComponent } from './user-input.component';
@@ -114,6 +115,7 @@ describe('ProcessUserInputComponent', () => {
       totalReceived: 0,
       totalCacheRead: 0,
       totalCacheWrite: 0,
+      totalCostUsd: 0,
     });
 
     const graphDataService = {
@@ -2012,6 +2014,7 @@ describe('ProcessUserInputComponent', () => {
         totalReceived: 252,
         totalCacheRead: 0,
         totalCacheWrite: 0,
+        totalCostUsd: 0,
       });
       fixture.detectChanges();
 
@@ -2026,6 +2029,7 @@ describe('ProcessUserInputComponent', () => {
         totalReceived: 7,
         totalCacheRead: 0,
         totalCacheWrite: 0,
+        totalCostUsd: 0,
       });
       fixture.detectChanges();
 
@@ -2038,10 +2042,68 @@ describe('ProcessUserInputComponent', () => {
         totalReceived: 10,
         totalCacheRead: 0,
         totalCacheWrite: 0,
+        totalCostUsd: 0,
       });
       fixture.detectChanges();
 
       expect(tokenLine()!.getAttribute('title')).toBe('chat.input.tokenLineTitle');
+    });
+
+    describe('estimated cost (Epic 57)', () => {
+      function pushTotals(totalCostUsd: number): void {
+        teamTotals$.next({
+          totalSent: 1_200,
+          totalReceived: 300,
+          totalCacheRead: 0,
+          totalCacheWrite: 0,
+          totalCostUsd,
+        });
+        fixture.detectChanges();
+      }
+
+      function text(): string {
+        return tokenLine()!.textContent!.replace(/\s+/g, ' ').trim();
+      }
+
+      beforeEach(() => {
+        setTestTranslations({ chat: { input: { tokenLine: '<<{{in}}|{{out}}>>' } } });
+      });
+
+      it('AC 8 appends " · {cost}" when the team cost is > 0, titled as an estimate', () => {
+        pushTotals(0.25);
+
+        expect(text()).toBe('<<1.2k|300>> · $0.25');
+        expect(tokenLine()!.querySelector('span')!.getAttribute('title')).toBe(
+          'inspector.estimatedCost',
+        );
+      });
+
+      it('AC 8 reads exactly as before at 0 — no separator, no $', () => {
+        pushTotals(0);
+
+        expect(text()).toBe('<<1.2k|300>>');
+      });
+
+      it('AC 11 a cost-only change re-renders (OnPush)', () => {
+        pushTotals(0.25);
+        pushTotals(1234.5);
+
+        expect(text()).toBe('<<1.2k|300>> · $1,234.50');
+      });
+
+      it('AC 12 a sub-cent total shows <$0.01', () => {
+        pushTotals(0.004);
+
+        expect(text()).toBe('<<1.2k|300>> · <$0.01');
+      });
+
+      it('AC 7 the figure is written the same way in French', () => {
+        setTestTranslations({ chat: { input: { tokenLine: '<<{{in}}|{{out}}>>' } } }, 'fr');
+        TestBed.inject(TranslateService).use('fr');
+        pushTotals(1234.5);
+
+        expect(text()).toBe('<<1.2k|300>> · $1,234.50');
+      });
     });
 
     it('renders at all with NO team-scoped TokenUsageSelector in the injector', async () => {

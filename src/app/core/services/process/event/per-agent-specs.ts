@@ -493,6 +493,7 @@ export interface ModelUsage {
   totalReceived: number;
   totalCacheRead: number;
   totalCacheWrite: number;
+  totalCostUsd: number;
 }
 
 export interface AgentTokenUsage {
@@ -524,6 +525,8 @@ export interface AgentTokenUsage {
   lastCacheRead: number;
   /** cache_write_tokens of the most-recent event (overwritten each event). */
   lastCacheWrite: number;
+  /** running Σ of estimated_cost_usd (unrounded) across all this agent's events. */
+  totalCostUsd: number;
 }
 
 /** Read the inner `LlmUsageEvent` off an `EventMessage`, or `undefined`. */
@@ -548,12 +551,13 @@ const ZERO_TOKEN_USAGE: AgentTokenUsage = {
   totalCacheWrite: 0,
   lastCacheRead: 0,
   lastCacheWrite: 0,
+  totalCostUsd: 0,
 };
 
 /**
  * Incremental per-message reducer (the store's `(prev, msg) => next` contract,
  * ADR-022 §Decision 2, extended by ADR-024 §Decision 1-2). NOT a stock factory:
- *   - `LlmUsageEvent` → accumulate (sum sent/received/cache) AND overwrite
+ *   - `LlmUsageEvent` → accumulate (sum the counters) AND overwrite
  *     (TRUE context window + last-run cache split + labels); numeric reads
  *     coalesce a missing field to `0` (no NaN). `lastContextWindow` is
  *     `input_tokens` — already the full prompt (cache included), so the cache
@@ -562,7 +566,7 @@ const ZERO_TOKEN_USAGE: AgentTokenUsage = {
  *     `lastContextWindow` to `event.tokens_after` when it is a number; leave it
  *     unchanged when `tokens_after` is null/absent (defensive — no NaN, no reset).
  *   - `LlmContextClearedEvent` (§8) → reset `lastContextWindow` to `0`.
- * The two context events leave the cumulative I/O + cache totals, last-run cache
+ * The two context events leave the cumulative counters, last-run cache
  * split, and run labels untouched (neither is a model run) and seed from
  * `prev ?? ZERO_TOKEN_USAGE`. Every change returns a FRESH object (OnPush
  * safety); any other message passes `prev` through.
@@ -577,6 +581,7 @@ export function tokenUsageReduce(
     const output = ev.output_tokens ?? 0;
     const cacheRead = ev.cache_read_tokens ?? 0;
     const cacheWrite = ev.cache_write_tokens ?? 0;
+    const cost = ev.estimated_cost_usd ?? 0;
     // Fresh Map every time — `prev`'s is never mutated, so OnPush still sees a
     // changed reference and a replayed fold cannot corrupt an earlier value.
     const perModel = new Map<string, ModelUsage>(prev?.perModel ?? []);
@@ -586,6 +591,7 @@ export function tokenUsageReduce(
       totalReceived: (bucket?.totalReceived ?? 0) + output,
       totalCacheRead: (bucket?.totalCacheRead ?? 0) + cacheRead,
       totalCacheWrite: (bucket?.totalCacheWrite ?? 0) + cacheWrite,
+      totalCostUsd: (bucket?.totalCostUsd ?? 0) + cost,
     });
     return {
       lastContextWindow: input,
@@ -598,6 +604,7 @@ export function tokenUsageReduce(
       totalCacheWrite: (prev?.totalCacheWrite ?? 0) + cacheWrite,
       lastCacheRead: cacheRead,
       lastCacheWrite: cacheWrite,
+      totalCostUsd: (prev?.totalCostUsd ?? 0) + cost,
     };
   }
   if (!isEventMessage(msg)) return prev;

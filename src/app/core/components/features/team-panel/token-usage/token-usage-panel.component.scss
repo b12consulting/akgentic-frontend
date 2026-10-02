@@ -2,6 +2,14 @@
  * Separated from the sections above by margin rather than a rule. The card's
  * own border already closes the pane; a divider on top of it would be two
  * boundaries doing one job.
+ *
+ * ONE GRID OVER THE WHOLE CARD — header and model rows alike — and that is
+ * what puts the figures in line: `in` under `in`, down the card. The name
+ * column takes what is left (`minmax(0, 1fr)` so it can shrink and
+ * ellipsise); each figure column is `auto`, as wide as its widest figure
+ * across all rows. The rows are `display: contents`, so their cells are items
+ * of THIS grid; the vertical padding moves onto the cells, since an element
+ * with `display: contents` has no box to pad.
  */
 .usage {
   margin-top: 18px;
@@ -9,20 +17,31 @@
   border: 1px solid var(--akg-surface-border);
   border-radius: var(--akg-card-radius);
   background: var(--akg-overlay-bg);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto auto;
+  column-gap: 7px;
+  align-items: baseline;
 }
 
-/* The label and the three totals on one line. */
-.usage-head {
+.usage-head,
+.usage-totals,
+.usage-model-row {
+  display: contents;
+}
+
+/* The label, and on a single-model team that model's name beside it. */
+.usage-head-name {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
   gap: 8px;
+  min-width: 0;
 }
 
 /* The same uppercase treatment as the TOOLS header and the rail's group
    headers — one shape for "this is a section". */
 .usage-label {
   margin: 0;
+  flex-shrink: 0;
   font-size: var(--akg-section-label-size);
   font-weight: 500;
   letter-spacing: var(--akg-section-label-tracking);
@@ -30,63 +49,18 @@
   color: var(--akg-text-muted);
 }
 
-/* The figures are the darkest thing in the card: the numbers are what you
-   came for. */
-.usage-totals {
-  display: inline-flex;
-  gap: 7px;
-  font-size: 12.5px;
-  font-weight: 300;
-  color: var(--akg-text);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
 /*
- * The per-model breakdown, under a rule rather than in a second card. It
- * decomposes the three figures above, so it has to read as the same block
- * continued — a card of its own would read as a different subject.
- *
  * The hairline is the INSIDE-a-surface separator, not the surface border: the
  * card already has an outline and repeating that value here would draw the
- * heavier of the two lines in the lighter of the two roles.
+ * heavier of the two lines in the lighter of the two roles. A full-width cell
+ * rather than a border on the next row's cells, which would break at every
+ * column gap.
  */
-/*
- * ONE GRID OVER THE WHOLE BREAKDOWN, not a flex row per model — and that is
- * what puts the figures in line.
- *
- * Each row used to be its own flex container packing three figures against the
- * right edge. Only the LAST of the three therefore landed anywhere
- * predictable: `↑690.1k` and `⚡630.7k` sat wherever the widths before them
- * happened to leave them, in line with nothing, and with two models on a team
- * they did not even line up with each other. The eye is being asked to compare
- * `in` against `in` down the column, which is the same reason the three totals
- * above are a column rather than a sentence.
- *
- * Four columns shared by every row: the name takes what is left
- * (`minmax(0, 1fr)` so it can shrink and ellipsise), and each figure column is
- * `auto` — as wide as the widest figure in it, across all rows. The rows
- * `display: contents` so their spans become items of THIS grid rather than of
- * a box of their own; the vertical padding they used to carry moves onto the
- * cells, since an element with `display: contents` has no box to pad. Its
- * inherited type still reaches them, which is why the size and weight stay
- * here.
- */
-.usage-models {
+.usage-rule {
+  grid-column: 1 / -1;
   margin-top: 7px;
-  padding-top: 6px;
+  padding-top: 3px;
   border-top: 1px solid var(--akg-hairline);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
-  column-gap: 7px;
-  align-items: baseline;
-  font-size: 11.5px;
-  font-weight: 300;
-}
-
-.usage-model-row,
-.usage-model-figures {
-  display: contents;
 }
 
 /*
@@ -97,28 +71,42 @@
  */
 .usage-model-name {
   min-width: 0;
-  padding: 3px 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: 11.5px;
+  font-weight: 300;
   color: var(--akg-text-muted);
 }
 
+.usage-model-row > .usage-model-name {
+  padding: 3px 0;
+}
+
 /*
- * `justify-self: end` rather than a centred or stretched cell: these are
- * numbers of different lengths in a column, and a number column is read off
- * its LAST digit. `tabular-nums` is the other half — proportional digits make
- * `690.1k` and `630.7k` different widths and the column ragged even once the
- * cells line up.
- *
- * The blank placeholder is styled with them so it occupies its column at the
- * same height rather than collapsing the row.
+ * `justify-self: end`: a number column is read off its LAST digit, and
+ * `tabular-nums` keeps `690.1k` and `630.7k` the same width. The blank
+ * placeholder is styled with them so it holds its column.
  */
+.usage-total,
 .usage-model-figure,
 .usage-model-blank {
   justify-self: end;
-  padding: 3px 0;
   color: var(--akg-text);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* The totals are the darkest, largest thing in the card: the numbers are
+   what you came for. */
+.usage-total {
+  font-size: 12.5px;
+  font-weight: 300;
+}
+
+.usage-model-figure,
+.usage-model-row > .usage-model-blank {
+  padding: 3px 0;
+  font-size: 11.5px;
+  font-weight: 300;
 }

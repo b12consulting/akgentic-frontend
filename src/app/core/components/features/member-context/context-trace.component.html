@@ -254,6 +254,11 @@
           }}
           ↓{{ usage.totalReceived | tokenCount }}
           <span *ngIf="usage.totalCacheRead + usage.totalCacheWrite > 0">⚡</span>
+          <span
+            *ngIf="usage.totalCostUsd > 0"
+            [attr.title]="'inspector.estimatedCost' | translate"
+            >({{ usage.totalCostUsd | usdCost }})</span
+          >
         </button>
         <p-popover #usageOp>
           <div class="usage-popover">

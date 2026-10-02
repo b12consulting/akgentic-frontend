@@ -349,6 +349,7 @@
     "cached": "En cache",
     "tokensOut": "Jetons sortants",
     "usageSummary": "Jetons entrants {{sent}}, en cache {{cached}}, jetons sortants {{received}}",
+    "estimatedCost": "Coût estimé (USD)",
     "tasks": {
       "title": "Tâches",
       "unassigned": "non assignée",
