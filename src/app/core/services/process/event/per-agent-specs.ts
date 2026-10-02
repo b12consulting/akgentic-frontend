@@ -557,7 +557,7 @@ const ZERO_TOKEN_USAGE: AgentTokenUsage = {
 /**
  * Incremental per-message reducer (the store's `(prev, msg) => next` contract,
  * ADR-022 §Decision 2, extended by ADR-024 §Decision 1-2). NOT a stock factory:
- *   - `LlmUsageEvent` → accumulate (sum sent/received/cache) AND overwrite
+ *   - `LlmUsageEvent` → accumulate (sum the counters) AND overwrite
  *     (TRUE context window + last-run cache split + labels); numeric reads
  *     coalesce a missing field to `0` (no NaN). `lastContextWindow` is
  *     `input_tokens` — already the full prompt (cache included), so the cache
@@ -566,7 +566,7 @@ const ZERO_TOKEN_USAGE: AgentTokenUsage = {
  *     `lastContextWindow` to `event.tokens_after` when it is a number; leave it
  *     unchanged when `tokens_after` is null/absent (defensive — no NaN, no reset).
  *   - `LlmContextClearedEvent` (§8) → reset `lastContextWindow` to `0`.
- * The two context events leave the cumulative I/O + cache totals, last-run cache
+ * The two context events leave the cumulative counters, last-run cache
  * split, and run labels untouched (neither is a model run) and seed from
  * `prev ?? ZERO_TOKEN_USAGE`. Every change returns a FRESH object (OnPush
  * safety); any other message passes `prev` through.

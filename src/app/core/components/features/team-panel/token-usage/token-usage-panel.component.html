@@ -19,10 +19,10 @@
     <!--
       THE TOTALS, ON THE LABEL'S LINE: "USAGE ↑37.4k ⚡12.4k ↓483", in the
       per-model rows' own glyphs. Three labelled rows spent half the card
-      restating what the glyphs already say. The figures are hidden from
+      restating what the glyphs already say. The arrows are hidden from
       assistive tech and the group carries one sentence instead, so a screen
       reader hears "Tokens in 37.4k, cached 12.4k, tokens out 483" rather than
-      three arrows. The cached figure stays even at zero: these are the team's
+      the arrows. The cached figure stays even at zero: these are the team's
       totals, and the line keeps its shape.
     -->
     <div class="usage-head">
@@ -62,13 +62,14 @@
 
     <!--
       Absent entirely when the team has not run a model yet, rather than shown
-      empty: `teamByModel$` drops agents whose `lastModelName` is '', so an
-      untouched team yields [] and an empty list under a rule is a divider
-      introducing nothing.
+      empty: `teamByModel$` skips empty model keys, so an untouched team
+      yields [] and an empty list under a rule is a divider introducing
+      nothing.
 
       The model NAME is the row's label and is data, not copy — there is
-      nothing here to translate. The figures carry usage keys as tooltips so a glyph-only column still says what it is; that is
-      also why the arrows are `aria-hidden` and not read out one by one.
+      nothing here to translate. The figures carry usage keys as tooltips so a
+      glyph-only column still says what it is; that is also why the arrows are
+      `aria-hidden` and not read out one by one.
     -->
     @if (byModel$ | async; as byModel) {
       @if (byModel.length > 0) {

@@ -5,7 +5,7 @@ import { AgentTokenUsage } from '../event/per-agent-specs';
 import { IngestionService } from '../event/ingestion.service';
 
 /** Headline team-wide totals (ADR-022 §Decision 2/4, extended by ADR-024
- *  §Decision 1): Σ sent / Σ received / Σ cache read / Σ cache write. */
+ *  §Decision 1): Σ every counter. */
 export interface TeamTokenTotals {
   totalSent: number;
   totalReceived: number;
@@ -125,8 +125,7 @@ function modelListEqual(a: ModelTokenTotals[], b: ModelTokenTotals[]): boolean {
  *   `forAgent` already applies a reference `distinctUntilChanged` +
  *   `shareReplay({ bufferSize: 1, refCount: true })` with lazy current-value
  *   replay, so no extra pipeline is needed here.
- * - `teamTotals$` is a PURE sum over `tokenUsage.all$` (Σ every agent's
- *   `totalSent` / `totalReceived` / `totalCacheRead` / `totalCacheWrite`) — NOT
+ * - `teamTotals$` is a PURE sum over `tokenUsage.all$` (Σ every counter) — NOT
  *   a separately stored aggregate. `all$` holds exactly the CURRENT team's
  *   agents — the pipeline empties its log on every team switch — so the total
  *   is correct by construction with no team-id bookkeeping. The sum is a fresh
@@ -147,7 +146,7 @@ export class TokenUsageSelector {
       shareReplay({ bufferSize: 1, refCount: true }),
     );
 
-  /** Per-model breakdown of the team's usage (feeds the team-footer popover):
+  /** Per-model breakdown of the team's usage:
    *  Σ per model, sorted sent-desc. Same scoping/derivation guarantees as
    *  `teamTotals$` — pure over the scoped `all$`, structural dedupe, shareReplay. */
   readonly teamByModel$: Observable<ModelTokenTotals[]> =

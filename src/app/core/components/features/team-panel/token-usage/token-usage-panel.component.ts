@@ -30,7 +30,7 @@ import { UsdCostPipe } from '../../../../shared/pipes/usd-cost.pipe';
  * hang off the team tree's footer as a popover, and the tree is gone from the
  * hierarchy tab (W6: that tab is the graph and nothing else), so this card was
  * the only remaining surface that answers "where is the spend going". Moving it
- * rather than deleting it is the point: the three totals above say how much, and
+ * rather than deleting it is the point: the totals above say how much, and
  * only this says what it was spent on.
  *
  * There is no null guard. `teamTotals$` sums an empty map to zeros and is never

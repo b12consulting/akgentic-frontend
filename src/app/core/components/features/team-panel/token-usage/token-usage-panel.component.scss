@@ -11,7 +11,7 @@
   background: var(--akg-overlay-bg);
 }
 
-/* The label and the three totals on one line. */
+/* The label and the totals on one line. */
 .usage-head {
   display: flex;
   align-items: baseline;
@@ -44,7 +44,7 @@
 
 /*
  * The per-model breakdown, under a rule rather than in a second card. It
- * decomposes the three figures above, so it has to read as the same block
+ * decomposes the figures above, so it has to read as the same block
  * continued — a card of its own would read as a different subject.
  *
  * The hairline is the INSIDE-a-surface separator, not the surface border: the
@@ -60,10 +60,10 @@
  * predictable: `↑690.1k` and `⚡630.7k` sat wherever the widths before them
  * happened to leave them, in line with nothing, and with two models on a team
  * they did not even line up with each other. The eye is being asked to compare
- * `in` against `in` down the column, which is the same reason the three totals
+ * `in` against `in` down the column, which is the same reason the totals
  * above are a column rather than a sentence.
  *
- * Five columns shared by every row: the name takes what is left
+ * Columns shared by every row: the name takes what is left
  * (`minmax(0, 1fr)` so it can shrink and ellipsise), and each figure column is
  * `auto` — as wide as the widest figure in it, across all rows. The rows
  * `display: contents` so their spans become items of THIS grid rather than of
