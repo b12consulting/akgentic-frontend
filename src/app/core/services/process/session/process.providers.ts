@@ -15,6 +15,7 @@ import { ReplaySeeder } from '../event/replay-seeder';
 import { SELECTED_AGENT_ID } from '../event/selected-agent';
 import { TeamSocket } from '../event/team-socket';
 import { TeamStatusReactor } from '../event/team-status-reactor';
+import { TeamDescriptionReactor } from '../event/team-description-reactor';
 import { AgentsByIdService } from '../selectors/agents-by-id.selector';
 import { ChatService } from '../selectors/chat.selector';
 import { GraphDataService } from '../selectors/graph.selector';
@@ -34,11 +35,11 @@ import { TraceFoldState } from '../ui-state/trace-fold-state';
 /**
  * THE TEAM'S SERVICES, SCOPED TO THE ROUTE RATHER THAN TO A COMPONENT.
  *
- * It holds TWENTY-EIGHT entries: twenty-seven service classes — the team's
+ * It holds TWENTY-NINE entries: twenty-eight service classes — the team's
  * stack — and one factory provider, `SELECTED_AGENT_ID`, which hands the event
  * tier the root-scoped member selection it may not import directly.
  *
- * All twenty-seven service classes used to be the `process/:id` route's
+ * All twenty-eight service classes used to be the `process/:id` route's
  * providers, and every component that wanted one injected it bare — which meant
  * every one of them could only ever be mounted inside that component. That is
  * the coupling in the way of reusing a panel anywhere else, and of anybody
@@ -68,7 +69,7 @@ import { TraceFoldState } from '../ui-state/trace-fold-state';
 /**
  * EXPORTED, and that is not incidental. A developer who clones this repo to
  * build a different console needs this array verbatim — it is the team's whole
- * service stack — and an unexported `const` left them copying twenty-eight
+ * service stack — and an unexported `const` left them copying twenty-nine
  * entries by hand, in order, from the file they were about to replace.
  *
  * IT LIVES BESIDE `team-session.service.ts` RATHER THAN IN THE ROUTER, which is
@@ -149,6 +150,13 @@ export const PROCESS_PROVIDERS = [
   // log. It writes to the root-scoped `ContextService`, which is the point:
   // that service outlives this view and owns team status.
   TeamStatusReactor,
+  // Story 58-1: the team-description reactor, provided BEFORE IngestionService,
+  // which injects it and drives its start/stop. Never `providedIn: 'root'` —
+  // it belongs to the process view's log lifecycle like the reactor above it,
+  // and a root instance would keep reading a destroyed team's log. It writes
+  // to the root-scoped `ContextService`, which is the point: that service
+  // outlives this view and owns the team list the description renders in.
+  TeamDescriptionReactor,
   // Epic 34 (ADR-025 §1): the WS transport source, provided BEFORE
   // IngestionService (which injects it and opens it LAST in `init()`). Never
   // `providedIn: 'root'` — a root instance would share ONE socket across every

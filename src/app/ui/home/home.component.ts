@@ -805,26 +805,32 @@ export class HomeComponent {
   }
 
   /**
-   * Persist a description, already trimmed by the caller.
+   * Persist a description, already trimmed by the caller, and patch the cache
+   * FROM THE RESPONSE (Story 58-1).
+   *
+   * The API receives the input verbatim — the table has already applied the
+   * trim-and-null rule and this page must not apply it a second time. The
+   * cache, though, is written from what the server PERSISTED: it trims again
+   * and may clear, so `saved.description` is the truth and the input is not.
+   * Patching from the input would show the user text the server did not keep.
    *
    * RE-THROWS after logging rather than swallowing. The failure is not this
-   * page's alone to absorb any more: the table is holding an open editor with
-   * the user's text in it, and a resolved promise would tell it the save
-   * succeeded and take the text away.
+   * page's alone to absorb: the table is holding an open editor with the
+   * user's text in it, and a resolved promise would tell it the save succeeded
+   * and take the text away. `FetchService` has already raised the error toast,
+   * so nothing is toasted here.
    */
   async saveDescription(teamId: string, description: string | null) {
     try {
-      // Note: updateTeamDescription is a no-op in V2 (no equivalent endpoint).
-      // Description changes will not persist. This is a known limitation.
-      console.warn(
-        'Description editing is not available in V2 -- changes will not persist.'
+      const saved = await this.apiService.updateTeamDescription(
+        teamId,
+        description,
       );
-      await this.apiService.updateTeamDescription(teamId, description);
 
-      // Update local context optimistically. The service owns its cache and
-      // writes a NEW team object through its single write path — an in-place
-      // write here re-emitted nothing and left the screen stale (story 37-3).
-      this.contextService.setTeamDescription(teamId, description);
+      // The service owns its cache and writes a NEW team object through its
+      // single write path — an in-place write here re-emitted nothing and left
+      // the screen stale (story 37-3).
+      this.contextService.setTeamDescription(teamId, saved.description);
     } catch (error) {
       console.error('Failed to update description:', error);
       throw error;

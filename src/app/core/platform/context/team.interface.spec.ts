@@ -42,6 +42,31 @@ describe('toTeamContext — metadata carry-through', () => {
   });
 });
 
+describe('toTeamContext — description carry-through (58-1)', () => {
+  it('carries a present string through verbatim', () => {
+    expect(
+      toTeamContext(makeResponse({ description: 'Drafts the quarterly report' }))
+        .description,
+    ).toBe('Drafts the quarterly report');
+  });
+
+  it('maps BOTH wire spellings of "no description" to null', () => {
+    // An older server omits the key entirely; a current server sends an
+    // explicit null for a team whose description was never generated or was
+    // cleared. Consumers must not have to tell them apart.
+    expect(toTeamContext(makeResponse({ description: null })).description).toBeNull();
+    expect(toTeamContext(makeResponse()).description).toBeNull();
+  });
+
+  it('keeps an EMPTY string as itself — the mapping does not decide what "" means', () => {
+    // The mutation this pins out: `||` in the mapping would turn `''` into
+    // `null` while every other case in this block stayed green. The server
+    // never sends `''` (it sends `null`), but the rule lives server-side and
+    // the mapping must not re-apply it.
+    expect(toTeamContext(makeResponse({ description: '' })).description).toBe('');
+  });
+});
+
 describe('toTeamContext — activity carry-through (55.1 FR1)', () => {
   it('carries `true` and `false` through as themselves', () => {
     // `false` is a REAL answer (idle), not an absent one. A `||` in the

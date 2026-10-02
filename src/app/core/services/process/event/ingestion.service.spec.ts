@@ -33,6 +33,7 @@ import { ProcessStores } from './process-stores';
 import { ReplaySeeder } from './replay-seeder';
 import { SELECTED_AGENT_ID } from './selected-agent';
 import { TeamStatusReactor } from './team-status-reactor';
+import { TeamDescriptionReactor } from './team-description-reactor';
 import { ContextService } from '../../../platform/context/context.service';
 import {
   ActorAddress,
@@ -45,10 +46,15 @@ import {
  * the root-scoped `ContextService`. A real one would drag `Router` into every
  * bed in this file, so each provider list gets this double instead — one fresh
  * spy per `configureTestingModule`, exactly like the notification-port double
- * beside it. Only the team-status wiring block below reads it back.
+ * beside it. Only the team-status and team-description wiring blocks below
+ * read it back. Story 58-1 added `setTeamDescription`, the one method
+ * `TeamDescriptionReactor` calls.
  */
 function contextServiceDouble(): any {
-  return { markStopped: jasmine.createSpy('markStopped') };
+  return {
+    markStopped: jasmine.createSpy('markStopped'),
+    setTeamDescription: jasmine.createSpy('setTeamDescription'),
+  };
 }
 
 /**
@@ -127,6 +133,7 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
         TeamSocket,
         LogFeeder,
         TeamStatusReactor,
+        TeamDescriptionReactor,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -405,6 +412,7 @@ describe('IngestionService — Story 6.1 (frame-batched log ingestion)', () => {
         TeamSocket,
         LogFeeder,
         TeamStatusReactor,
+        TeamDescriptionReactor,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -768,6 +776,7 @@ describe('IngestionService — commands PerAgentStore (Story 17-3, ADR-014/ADR-0
         TeamSocket,
         LogFeeder,
         TeamStatusReactor,
+        TeamDescriptionReactor,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -1008,6 +1017,7 @@ describe('IngestionService — registry is the only per-agent owner (Epic 17, AD
         TeamSocket,
         LogFeeder,
         TeamStatusReactor,
+        TeamDescriptionReactor,
         IngestionService,
         // A plain Observable, as PROCESS_PROVIDERS delivers it (a piped stream,
         // never a subject): a bare BehaviorSubject — or an `asObservable()` view
@@ -1130,6 +1140,7 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
         TeamSocket,
         LogFeeder,
         TeamStatusReactor,
+        TeamDescriptionReactor,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -1419,6 +1430,7 @@ describe('IngestionService — state + context PerAgentStore (Story 17-2)', () =
         TeamSocket,
         LogFeeder,
         TeamStatusReactor,
+        TeamDescriptionReactor,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -1669,6 +1681,7 @@ describe('IngestionService — a member\'s state is fetched on selection (Epic 5
         TeamSocket,
         LogFeeder,
         TeamStatusReactor,
+        TeamDescriptionReactor,
         IngestionService,
         { provide: SELECTED_AGENT_ID, useValue: selected$ },
         { provide: ContextService, useValue: contextServiceDouble() },
@@ -2020,6 +2033,7 @@ describe('IngestionService — Story 31-3 (notification toast)', () => {
         TeamSocket,
         LogFeeder,
         TeamStatusReactor,
+        TeamDescriptionReactor,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -2133,6 +2147,7 @@ describe('IngestionService — Story 31-6 (error parity, severity, summary)', ()
         TeamSocket,
         LogFeeder,
         TeamStatusReactor,
+        TeamDescriptionReactor,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -2306,6 +2321,7 @@ describe('IngestionService — Story 31-4 (closed-notification suppression)', ()
         TeamSocket,
         LogFeeder,
         TeamStatusReactor,
+        TeamDescriptionReactor,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -2552,6 +2568,7 @@ describe('IngestionService — Story 31-5 (reactive toast removal)', () => {
         TeamSocket,
         LogFeeder,
         TeamStatusReactor,
+        TeamDescriptionReactor,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -2806,6 +2823,7 @@ describe('IngestionService — notification-toast reactor sequencing (Epic 34)',
         TeamSocket,
         LogFeeder,
         TeamStatusReactor,
+        TeamDescriptionReactor,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -2990,6 +3008,7 @@ describe('IngestionService — init() ordering + self-wiring (Story 34-6)', () =
         TeamSocket,
         LogFeeder,
         TeamStatusReactor,
+        TeamDescriptionReactor,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -3253,6 +3272,7 @@ describe('IngestionService — Story 35-1 (toasts dispatch from the log)', () =>
         TeamSocket,
         LogFeeder,
         TeamStatusReactor,
+        TeamDescriptionReactor,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -3475,6 +3495,7 @@ describe('IngestionService — Story 37-2 (team-stopping reactor wiring)', () =>
         TeamSocket,
         LogFeeder,
         TeamStatusReactor,
+        TeamDescriptionReactor,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -3624,6 +3645,196 @@ describe('IngestionService — Story 37-2 (team-stopping reactor wiring)', () =>
   });
 });
 
+// ---------------------------------------------------------------------------
+// Story 58-1 — the team-description reactor, as WIRING (AC15-AC18)
+//
+// `team-description-reactor.spec.ts` owns the unit's behaviour against a bare
+// `Subject`. What only THIS file can see is the wiring: that `init()` hands the
+// reactor a live stream before anything is written to the log, that
+// `disposePriorSubscriptions()` releases it so a team switch does not leave two
+// live subscriptions, that `ngOnDestroy()` ends it, and that the reactor reads
+// the LOG and not the socket (the inbound-observer bound is untouched).
+//
+// Both transports are exercised on purpose, for the same reason as the 37-2
+// block above: a description generated just before a team stopped arrives ONLY
+// through step (c)'s REST replay, so a `start()` sequenced below that block
+// would leave the cold-load spec red while every live-path spec stayed green.
+// ---------------------------------------------------------------------------
+
+describe('IngestionService — Story 58-1 (team-description reactor wiring)', () => {
+  let service: IngestionService;
+  let context: any;
+  let fakeSocket: Subject<any>;
+
+  const DESCRIPTION = 'Drafts the quarterly report';
+
+  /** The worker's generated-description notification, per the contract. */
+  function mkDescription(teamId: string, content = DESCRIPTION): any {
+    return {
+      id: 'desc-' + teamId + '-' + content,
+      parent_id: null,
+      team_id: teamId,
+      timestamp: '2026-10-02T10:00:00Z',
+      sender: makeAddress({
+        name: '@Orchestrator',
+        role: 'Orchestrator',
+        agent_id: 'orchestrator-1',
+        team_id: teamId,
+      }),
+      display_type: 'other',
+      content,
+      content_type: 'team_description',
+      __model__: 'akgentic.core.messages.orchestrator.NotificationMessage',
+    };
+  }
+
+  beforeEach(() => {
+    jasmine.clock().install();
+    jasmine.clock().mockDate(new Date(0));
+
+    fakeSocket = new Subject<any>();
+
+    TestBed.configureTestingModule({
+      providers: [
+        MessageLogService,
+        PerAgentStoreRegistry,
+        ProcessStores,
+        ReplaySeeder,
+        LoadingIndicator,
+        ConnectionToast,
+        NotificationToasts,
+        TeamSocket,
+        LogFeeder,
+        TeamStatusReactor,
+        TeamDescriptionReactor,
+        IngestionService,
+        {
+          provide: SELECTED_AGENT_ID,
+          useValue: new BehaviorSubject<string | null>(null),
+        },
+        { provide: ContextService, useValue: contextServiceDouble() },
+        ChatService,
+        {
+          provide: ApiService,
+          useValue: {
+            getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+            getAgentStates: jasmine
+              .createSpy('getAgentStates')
+              .and.resolveTo([]),
+          },
+        },
+        {
+          provide: NOTIFICATION_PORT,
+          useValue: {
+            notify: jasmine.createSpy('notify'),
+            dismiss: jasmine.createSpy('dismiss'),
+            clear: jasmine.createSpy('clear'),
+          },
+        },
+      ],
+    });
+    service = TestBed.inject(IngestionService);
+    context = TestBed.inject(ContextService) as any;
+
+    spyOn<any>(teamSocket(), 'createWebSocket').and.returnValue(
+      fakeSocket as unknown as WebSocketSubject<any>,
+    );
+  });
+
+  afterEach(() => {
+    try {
+      fakeSocket.complete();
+    } catch {
+      /* already closed */
+    }
+    jasmine.clock().uninstall();
+  });
+
+  it('AC17: a team_description notification on the live socket reaches setTeamDescription', async () => {
+    await service.init('team-A', true);
+
+    fakeSocket.next(mkDescription('team-A'));
+    jasmine.clock().tick(20);
+
+    expect(context.setTeamDescription).toHaveBeenCalledOnceWith(
+      'team-A',
+      DESCRIPTION,
+    );
+  });
+
+  // The cold load. This is the row the wiring position exists for: the
+  // notification arrives in the REST replay and nowhere else.
+  it('AC17: the same notification in a stopped team’s REST replay reaches it too', async () => {
+    const api = TestBed.inject(ApiService) as any;
+    api.getEvents.and.resolveTo([{ event: mkDescription('team-A') }]);
+
+    await service.init('team-A', false);
+    jasmine.clock().tick(600);
+
+    expect(context.setTeamDescription).toHaveBeenCalledOnceWith(
+      'team-A',
+      DESCRIPTION,
+    );
+  });
+
+  // The doubling guard, asserted HERE rather than by calling `start()` twice
+  // on the unit. `disposePriorSubscriptions()` calling `stop()` is the
+  // mechanism; delete that call and this spec goes to 2 while the unit's own
+  // suite stays green.
+  it('AC17: a re-init cycle produces exactly ONE setTeamDescription per event, not two', async () => {
+    await service.init('team-A', true);
+    jasmine.clock().tick(600);
+
+    const socketB = new Subject<any>();
+    (teamSocket() as any).createWebSocket = jasmine
+      .createSpy('createWebSocket')
+      .and.returnValue(socketB as unknown as WebSocketSubject<any>);
+    await service.init('team-B', true);
+    jasmine.clock().tick(600);
+    context.setTeamDescription.calls.reset();
+
+    socketB.next(mkDescription('team-B'));
+    jasmine.clock().tick(20);
+
+    expect(context.setTeamDescription).toHaveBeenCalledTimes(1);
+    socketB.complete();
+  });
+
+  it('AC17: after ngOnDestroy() the same frame reaches nothing', async () => {
+    await service.init('team-A', true);
+    jasmine.clock().tick(600);
+
+    service.ngOnDestroy();
+    context.setTeamDescription.calls.reset();
+
+    // The log is the reactor's feed, so write straight to it — the socket is
+    // already torn down by `ngOnDestroy` and cannot carry the frame.
+    TestBed.inject(MessageLogService).appendAll([mkDescription('team-A')]);
+
+    expect(context.setTeamDescription).not.toHaveBeenCalled();
+  });
+
+  // AC18 — the reactor reads `log.appended$`, not the socket. The two live
+  // inbound subscribers are still `LogFeeder` and `LoadingIndicator`; a reactor
+  // hung off the transport would make this 3 and, worse, miss the REST replay.
+  it('AC18: the inbound-observer bound is unchanged — the reactor is not on the socket', async () => {
+    await service.init('team-A', true);
+
+    expect((inboundSubject() as any).observers.length).toBe(2);
+  });
+
+  it('AC14: the notification issues no refetch — ApiService keeps its call pattern', async () => {
+    const api = TestBed.inject(ApiService) as any;
+    await service.init('team-A', true);
+
+    fakeSocket.next(mkDescription('team-A'));
+    jasmine.clock().tick(20);
+
+    expect(api.getEvents).not.toHaveBeenCalled();
+    expect(api.getAgentStates).not.toHaveBeenCalled();
+  });
+});
+
 // =====================================================================
 // Story 52-1 — a superseded cycle writes NOTHING
 //
@@ -3698,6 +3909,7 @@ describe('IngestionService — Story 52-1 (superseded cycles)', () => {
         TeamSocket,
         LogFeeder,
         TeamStatusReactor,
+        TeamDescriptionReactor,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -3954,6 +4166,7 @@ describe('IngestionService — live task board refresh', () => {
         TeamSocket,
         LogFeeder,
         TeamStatusReactor,
+        TeamDescriptionReactor,
         IngestionService,
         { provide: SELECTED_AGENT_ID, useValue: selected$ },
         { provide: ContextService, useValue: contextServiceDouble() },

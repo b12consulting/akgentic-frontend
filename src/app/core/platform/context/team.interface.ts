@@ -41,6 +41,29 @@ export interface TeamResponse {
    * rides the list response the page fetches anyway; nothing polls it.
    */
   working?: boolean | null;
+  /**
+   * The team's one-line description, or `null` when it has none.
+   *
+   * OPTIONAL *and* nullable, like `metadata`: a server predating the field
+   * does not send the key at all, and a current server sends `null` for a
+   * team whose description was never generated or was cleared by its owner.
+   * Both mean the same thing to every consumer — NO DESCRIPTION — so the
+   * mapping normalises both to `null` and the table renders its placeholder.
+   */
+  description?: string | null;
+}
+
+/**
+ * Maps to the Python response of `PATCH /teams/{team_id}/description`.
+ *
+ * `description` is what the server PERSISTED — trimmed, possibly cleared to
+ * `null` — never the input echoed back, which is why the page patches its
+ * cache from this body rather than from what the user typed. `origin` records
+ * who last wrote it: `'auto'` for the generator, `'user'` for the editor.
+ */
+export interface TeamDescriptionResponse {
+  description: string | null;
+  origin: 'auto' | 'user';
 }
 
 // Maps to Python TeamListResponse (classic offset+total pagination, Epic 28).
@@ -250,7 +273,10 @@ export function toTeamContext(response: TeamResponse): TeamContext {
     // config_name is not in TeamResponse -- V2 does not return it.
     // Use team name as placeholder; future story may populate from catalog metadata.
     config_name: response.name,
-    description: null,
+    // `??`, not `||`, for the same reason as `working` below: this mapping is
+    // not the place that decides whether `''` means "no description". Absent
+    // and `null` both normalise to `null`; anything else travels verbatim.
+    description: response.description ?? null,
     metadata: response.metadata ?? null,
     // `??`, not `||`: `false` is a REAL answer here (idle) and must survive
     // the mapping. Absent normalises to `null` because both spell UNKNOWN.

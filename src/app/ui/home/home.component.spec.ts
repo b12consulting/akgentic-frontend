@@ -187,7 +187,15 @@ describe('HomeComponent', () => {
     apiSpy.deleteTeam.and.returnValue(Promise.resolve());
     apiSpy.restoreTeam.and.returnValue(Promise.resolve({} as any));
     apiSpy.stopTeam.and.returnValue(Promise.resolve());
-    apiSpy.updateTeamDescription.and.returnValue(Promise.resolve());
+    // Story 58-1: the PATCH answers with what the server PERSISTED, and the
+    // page patches the cache from that body. Echoing the input keeps every
+    // spec that does not care about the distinction exactly as it was.
+    apiSpy.updateTeamDescription.and.callFake(
+      async (_teamId: string, description: string | null) => ({
+        description,
+        origin: 'user' as const,
+      }),
+    );
 
     contextSpy = jasmine.createSpyObj<ContextService>(
       'ContextService',
@@ -1612,25 +1620,48 @@ describe('HomeComponent', () => {
   // -------------------------------------------------------------------------
 
   describe('saveDescription delegation (Story 37-3 AC6)', () => {
-    it('forwards the description it is given, VERBATIM', async () => {
-      // The trim-and-null rule travels with the draft: the table applies it and
-      // emits the finished value. The page applying it a SECOND time would be a
-      // second place the rule lives, and the two would drift. Passed a value
-      // that is still padded, the page must forward the padding rather than
-      // quietly repair it.
+    // REWRITTEN by Story 58-1 (T1). This spec used to pin "the cache is
+    // patched from the INPUT, verbatim" — which was the right contract while
+    // the API was a no-op and the page was the only writer. The server now
+    // trims and may clear, so the cache must read the RESPONSE: patching from
+    // the input would show the user text the server did not keep. What
+    // survives unchanged is the half about the API call: the input still
+    // travels verbatim, because the trim-and-null rule lives in the table and
+    // on the server, and this page must not be a third place for it.
+    it('(58-1 T1) sends the input VERBATIM, and patches the cache from the RESPONSE', async () => {
       const team = makeTeam({ team_id: 'row-1', description: 'before' });
       teams$.next([team]);
+      apiSpy.updateTeamDescription.and.returnValue(
+        Promise.resolve({ description: 'spaced out', origin: 'user' as const }),
+      );
 
       await component.saveDescription('row-1', '  spaced out  ');
 
+      // The API still receives what it was given.
+      expect(apiSpy.updateTeamDescription).toHaveBeenCalledOnceWith(
+        'row-1',
+        '  spaced out  ',
+      );
+      // The cache reads what the server kept. Patch from the input again and
+      // this is the assertion that goes red.
       expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith(
         'row-1',
-        '  spaced out  ',
+        'spaced out',
       );
-      expect(apiSpy.updateTeamDescription).toHaveBeenCalledWith(
-        'row-1',
-        '  spaced out  ',
+    });
+
+    it('(58-1 AC7) a response whose description is null reaches the cache as null', async () => {
+      // The server cleared it (a whitespace-only draft the table let through,
+      // or a server-side rule). `null` is the answer, and it must not be
+      // replaced by the input on its way to the cache.
+      teams$.next([makeTeam({ team_id: 'row-1', description: 'before' })]);
+      apiSpy.updateTeamDescription.and.returnValue(
+        Promise.resolve({ description: null, origin: 'user' as const }),
       );
+
+      await component.saveDescription('row-1', '   ');
+
+      expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith('row-1', null);
     });
 
     it('does not write the cached team itself', async () => {

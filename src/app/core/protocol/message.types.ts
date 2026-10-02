@@ -352,6 +352,16 @@ export const CLOSED_NOTIFICATION_MODEL =
   'akgentic.core.messages.orchestrator.ClosedNotification';
 
 /**
+ * The `content_type` discriminator of the generated-description notification
+ * (Story 58-1): a bare `NotificationMessage` the worker emits after writing a
+ * team's description, carrying the new text as `content`. Consumed by TWO
+ * units — `TeamDescriptionReactor` (which patches the cache) and
+ * `NotificationToasts` (which suppresses the toast) — and this is the only
+ * spelling of the string in production code, so the two cannot drift apart.
+ */
+export const TEAM_DESCRIPTION_CONTENT_TYPE = 'team_description';
+
+/**
  * Inner event payload recording that a notification was dismissed by the user,
  * mirroring the akgentic-core `ClosedNotification` frozen dataclass (core Epic
  * 24). Carried by `EventMessage.event` like every other domain-event payload,

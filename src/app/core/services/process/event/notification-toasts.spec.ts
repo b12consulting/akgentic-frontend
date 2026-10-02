@@ -302,6 +302,121 @@ describe('NotificationToasts — Story 31-3 (notification toast)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Story 58-1 — the generated-description notification raises NO toast
+//
+// The worker's `team_description` notification is a cache patch, consumed by
+// `TeamDescriptionReactor`; a toast per generated description would surface a
+// background write as if it were a condition. The suppression is an early
+// return in the `messages$` subscriber keyed on the bare base AND the shared
+// `content_type` constant — never on `notificationSeverity`, which the Messages
+// tab shares.
+//
+// Two mutations, two specs. Remove the early return and the first spec goes
+// red. Widen the guard to every `NotificationMessage` and the second (the
+// control) goes red. Widen it to the whole notification FAMILY and the third
+// does — an error is still an error whatever `content_type` it carries.
+// ---------------------------------------------------------------------------
+
+describe('NotificationToasts — Story 58-1 (team-description suppression)', () => {
+  let toasts: NotificationToasts;
+  let msgService: any;
+  let inbound$: Subject<AkgenticMessage>;
+  let closedIds$: BehaviorSubject<Set<string>>;
+
+  function addArgs(): any[] {
+    return msgService.notify.calls.allArgs().map((a: any[]) => a[0]);
+  }
+
+  beforeEach(() => {
+    inbound$ = new Subject<AkgenticMessage>();
+    closedIds$ = new BehaviorSubject<Set<string>>(new Set<string>());
+
+    TestBed.configureTestingModule({
+      providers: [
+        NotificationToasts,
+        { provide: NOTIFICATION_PORT, useValue: notificationPortDouble() },
+      ],
+    });
+    toasts = TestBed.inject(NotificationToasts);
+    msgService = TestBed.inject(NOTIFICATION_PORT);
+  });
+
+  function start(): void {
+    toasts.start(inbound$.asObservable(), closedIds$.asObservable());
+  }
+
+  it('(AC19) a bare NotificationMessage with content_type team_description raises NO toast', () => {
+    start();
+
+    inbound$.next(
+      mkNotification(
+        'd-1',
+        NOTIFICATION_MODEL,
+        '@Orchestrator',
+        'Drafts the quarterly report',
+        'team_description',
+        'Orchestrator',
+      ),
+    );
+
+    expect(msgService.notify).not.toHaveBeenCalled();
+  });
+
+  it('(AC19) the control: a bare NotificationMessage with another content_type still raises one info toast', () => {
+    // Without this the suppression could be over-broad and nothing would say so.
+    start();
+
+    inbound$.next(
+      mkNotification('n-1', NOTIFICATION_MODEL, '@Orchestrator', 'fyi', 'Info', 'Orchestrator'),
+    );
+
+    expect(msgService.notify).toHaveBeenCalledTimes(1);
+    expect(addArgs()[0].severity).toBe('info');
+    expect(addArgs()[0].summary).toBe('Info');
+  });
+
+  it('(AC19) a bare NotificationMessage with a NULL content_type still toasts exactly as today', () => {
+    start();
+
+    inbound$.next(mkNotification('n-1', NOTIFICATION_MODEL, '@Planner', 'heads up'));
+
+    expect(msgService.notify).toHaveBeenCalledTimes(1);
+    expect(addArgs()[0].severity).toBe('info');
+    expect(addArgs()[0].summary).toBe('@Planner');
+  });
+
+  it('(AC19) an ErrorMessage carrying content_type team_description STILL toasts — the guard is the bare base only', () => {
+    start();
+
+    inbound$.next(
+      mkNotification('e-1', ERROR_MODEL, '@Researcher', 'boom', 'team_description'),
+    );
+
+    expect(msgService.notify).toHaveBeenCalledTimes(1);
+    expect(addArgs()[0].severity).toBe('error');
+  });
+
+  it('(AC19) a suppressed notification among toasting ones changes nothing about the others', () => {
+    start();
+
+    inbound$.next(mkNotification('w-1', WARNING_MODEL, '@Alpha', 'first'));
+    inbound$.next(
+      mkNotification(
+        'd-1',
+        NOTIFICATION_MODEL,
+        '@Orchestrator',
+        'Drafts the quarterly report',
+        'team_description',
+        'Orchestrator',
+      ),
+    );
+    inbound$.next(mkNotification('w-2', WARNING_MODEL, '@Beta', 'second'));
+
+    expect(addArgs().map((c) => c.data.messageId)).toEqual(['w-1', 'w-2']);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Story 31-6 — errors join the notification family; shared severity; summary
 //
 // Two separable contracts, both observed through the port's `notify`:
