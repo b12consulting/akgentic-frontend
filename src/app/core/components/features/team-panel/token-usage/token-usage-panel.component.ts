@@ -51,9 +51,8 @@ export class TokenUsagePanelComponent {
   readonly totals$: Observable<TeamTokenTotals> = this.tokenUsage.teamTotals$;
 
   /**
-   * One entry per model the team has actually run, sorted by spend. Empty for a
-   * team that has not run one yet — the template omits the whole block in that
-   * case rather than drawing a rule under nothing.
+   * One entry per model the team has actually run, sorted by spend. The template
+   * names a single model on the header line and draws rows only for several.
    */
   readonly byModel$: Observable<ModelTokenTotals[]> =
     this.tokenUsage.teamByModel$;
