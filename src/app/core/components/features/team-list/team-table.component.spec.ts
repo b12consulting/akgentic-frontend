@@ -143,14 +143,15 @@ describe('TeamTableComponent', () => {
 
   // --- What it renders -----------------------------------------------------
 
-  it('(AC1, W11) renders one row per team, with five columns — Team ID is not one', async () => {
+  it('(AC1, W11) renders one row per team, with six columns — Team ID is not one', async () => {
     // UPDATED FOR W11, deliberately. This used to assert six keys ending
     // `team.table.id`, and that assertion pinned the thing the round set out to
     // change: a full uuid given a column of its own, at full width, in every
     // row. Story 58-3 then took the printed id out of the row altogether — it
-    // travels as DATA through `rowSelected` now — so what this spec owns is
-    // that the heading row says what the columns are and that each team gets
-    // a row, told apart by NAME.
+    // travels as DATA through `rowSelected` now — and gave the team's updated
+    // date a column beside Creation Date. So what this spec owns is that the
+    // heading row says what the columns are and that each team gets a row,
+    // told apart by NAME.
     await render([
       makeTeam({ team_id: 't-1', name: 'Alpha' }),
       makeTeam({ team_id: 't-2', name: 'Beta' }),
@@ -164,6 +165,7 @@ describe('TeamTableComponent', () => {
       'team.table.name',
       'team.table.metadata',
       'team.table.createdAt',
+      'team.table.updated',
       'team.table.status',
       '',
     ]);
@@ -177,8 +179,8 @@ describe('TeamTableComponent', () => {
     await render([]);
 
     expect(rows().length).toBe(0);
-    // Five since W11 — see the column spec above for why the sixth went.
-    expect(headerCells().length).toBe(5);
+    // Six: five since W11 took the id's column, plus Updated (Story 58-3).
+    expect(headerCells().length).toBe(6);
     expect(
       fixture.nativeElement.querySelector('p-paginator, .p-paginator'),
     ).not.toBeNull();
@@ -580,55 +582,68 @@ describe('TeamTableComponent', () => {
     expect(title.children.length).toBe(0);
   });
 
-  // --- The updated date (Story 58-3) ---------------------------------------
+  // --- The Updated column (Story 58-3) -------------------------------------
   //
   // REPLACES the three W11 specs that pinned "keep the WHOLE id, as text, in
   // the Name cell". That contract was reversed on 2026-10-02: the printed uuid
-  // goes, and the line it occupied tells the user WHEN the team last changed.
-  // The id is still the row's identity as data (`rowSelected`, the action
-  // outputs) — none of that reads the DOM text, and none of it moved.
+  // goes, and the team's updated date gets a column of its own beside
+  // Creation Date. The id is still the row's identity as data (`rowSelected`,
+  // the action outputs) — none of that reads the DOM text, and none of it
+  // moved.
 
-  /** The updated-date line of one row's Name cell. */
-  function updatedAt(row: HTMLTableRowElement): HTMLElement | null {
-    const nameCell = row.querySelectorAll('td')[0];
-    return nameCell.querySelector('[data-test="row-updated-at"]');
+  /** The Updated cell of one row. */
+  function updatedCell(row: HTMLTableRowElement): HTMLElement | null {
+    return row.querySelector('[data-test="row-updated-at"]');
   }
 
-  /**
-   * A synthetic template for the label, so the assertions read a SUBSTITUTED
-   * date and not the echoed key. Deliberately not the shipped copy, and
-   * deliberately without a colon — the specs below use `:` to tell a clock
-   * time from a day-and-month.
-   */
-  function withUpdatedLabel(): void {
-    setTestTranslations({ team: { table: { updated: '<<updated|{{when}}>>' } } });
-  }
-
-  it('renders the formatted updated date as the Name cell\'s third line, with the ISO stamp as its title', async () => {
-    withUpdatedLabel();
+  it('renders the updated date as a CELL directly after Creation Date, with the ISO stamp as its title', async () => {
     await render([makeTeam({ team_id: 't-1', updated_at: '2020-04-19T10:00:00Z' })]);
 
-    const line = updatedAt(rows()[0]);
-    expect(line).withContext('the date lives in the name cell').not.toBeNull();
+    const cell = updatedCell(rows()[0]);
+    expect(cell).not.toBeNull();
+    expect(cell!.tagName).toBe('TD');
+    // Directly after the Creation Date cell, as its heading is after that
+    // heading: two dates side by side, beginning and latest change.
+    expect(cell!.previousElementSibling?.classList).toContain('team-created-cell');
     // VERBATIM, not re-formatted: the stamp is what the home page's own spec
     // reads back after a save, and it is assertable without a locale.
-    expect(line!.getAttribute('title')).toBe('2020-04-19T10:00:00Z');
-    // Through the LABEL — "Updated {{when}}" — not the bare date, so the line
-    // is not mistaken for the Creation Date column beside it.
-    const text = line!.textContent!.trim();
-    expect(text.startsWith('<<updated|')).toBeTrue();
-    // Another day: a day-and-month, which has digits and no colon.
-    expect(text).toMatch(/\d/);
-    expect(text).not.toContain(':');
+    expect(cell!.getAttribute('title')).toBe('2020-04-19T10:00:00Z');
+    expect(cell!.textContent!.trim()).toMatch(/\d/);
   });
 
-  it('renders a clock time for a team updated today', async () => {
-    withUpdatedLabel();
-    const today = new Date();
-    today.setHours(16, 35, 0, 0);
-    await render([makeTeam({ team_id: 't-1', updated_at: today.toISOString() })]);
+  it('writes the updated date EXACTLY as the Creation Date cell writes its own', async () => {
+    // Same pipe, same format: a stamp that is both the creation and the
+    // update renders identically in the two cells, and a different stamp
+    // renders differently — so the equality is not vacuous.
+    await render([
+      makeTeam({
+        team_id: 'same',
+        created_at: '2020-04-19T10:00:00Z',
+        updated_at: '2020-04-19T10:00:00Z',
+      }),
+      makeTeam({
+        team_id: 'moved',
+        created_at: '2020-04-19T10:00:00Z',
+        updated_at: '2026-10-02T12:34:56Z',
+      }),
+    ]);
 
-    expect(updatedAt(rows()[0])!.textContent).toContain(':');
+    const [same, moved] = rows();
+    const created = (row: HTMLTableRowElement): string =>
+      row.querySelector('.team-created-cell')!.textContent!.trim();
+    expect(updatedCell(same)!.textContent!.trim()).toBe(created(same));
+    expect(updatedCell(moved)!.textContent!.trim()).not.toBe(created(moved));
+  });
+
+  it('keeps the Name cell to the name and the description editor — no date line', async () => {
+    await render([makeTeam({ team_id: 't-1', updated_at: '2020-04-19T10:00:00Z' })]);
+
+    const nameCell = rows()[0].querySelectorAll('td')[0];
+    expect(nameCell.querySelector('[data-test="row-updated-at"]')).toBeNull();
+    expect(nameCell.querySelector('.team-name')).not.toBeNull();
+    expect(nameCell.querySelector('.team-description')).not.toBeNull();
+    // Nothing after the description block.
+    expect(nameCell.querySelector('.team-description')!.nextElementSibling).toBeNull();
   });
 
   it('does not print the team id anywhere in the row', async () => {
@@ -647,7 +662,7 @@ describe('TeamTableComponent', () => {
     );
   });
 
-  it('renders the date ONCE per row', async () => {
+  it('renders the updated date ONCE per row', async () => {
     await render([makeTeam({ team_id: 't-1' }), makeTeam({ team_id: 't-2' })]);
 
     for (const row of rows()) {

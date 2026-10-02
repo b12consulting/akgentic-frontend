@@ -1,20 +1,20 @@
 import { formatDate } from '@angular/common';
-import { inject, LOCALE_ID, Pipe, PipeTransform } from '@angular/core';
 
 /**
- * A team's timestamp as the two list surfaces print it: a clock time for a
- * stamp from TODAY, a day-and-month otherwise.
+ * A team's timestamp as the rail prints it: a clock time for a stamp from
+ * TODAY, a day-and-month otherwise.
  *
- * ONE helper, because two surfaces must agree on "when". The rail's row and
- * the home table's row both answer the same question beside a team's name, and
- * two private formatters would drift the first time one of them was touched —
- * silently, since nothing compares them. This is the rail's own formatter
- * lifted out so the table can literally call the same code.
+ * Lifted out of the rail's row (Story 58-3) so the rule is a pure function
+ * with a pinned clock. It lives in `platform` rather than in `ui` because it
+ * is a display rule over a team field, like `team-metadata.pipe.ts` beside it,
+ * and nothing in it belongs to one component. The home table does NOT use it:
+ * its Updated column sits beside Creation Date and renders through the same
+ * `date: "short"` pipe as that cell, so two adjacent dates are written one way.
  *
- * WHY THE TWO FORMATS (carried over from the rail, which chose them). A rail
- * row is 268px wide and the meta line shares it with a summary, so the format
- * has to earn its characters: "16:35" answers "when today?" and "Apr 19"
- * answers "which day?", and neither needs the other's half.
+ * WHY THE TWO FORMATS. A rail row is 268px wide and the meta line shares it
+ * with a summary, so the format has to earn its characters: "16:35" answers
+ * "when today?" and "Apr 19" answers "which day?", and neither needs the
+ * other's half.
  *
  * `now` IS A PARAMETER, defaulting to the clock, so a spec can pin the
  * same-day branch without racing midnight. Production callers pass nothing.
@@ -40,27 +40,4 @@ export function formatTeamWhen(
     stamp.getMonth() === now.getMonth() &&
     stamp.getDate() === now.getDate();
   return formatDate(stamp, sameDay ? 'shortTime' : 'MMM d', locale);
-}
-
-/**
- * `formatTeamWhen` as a pipe, for the surfaces that bind it in a template.
- *
- * PURE (the default), and correctly so: the input is a string, so the result
- * can only change when the stamp does. The one thing purity gives up is the
- * clock — a same-day row seen past midnight keeps its clock time until its
- * stamp next changes. That is the staleness the rail has always accepted
- * (its `computeWhen` runs only in `ngOnChanges`), and the table inherits it
- * rather than paying an impure pipe's per-cycle re-run to avoid it.
- *
- * The rail does NOT use this pipe. Its result there is a translation
- * PARAMETER, built in TypeScript so the separator between it and the summary
- * belongs to the sentence; it calls the function directly.
- */
-@Pipe({ name: 'teamWhen' })
-export class TeamWhenPipe implements PipeTransform {
-  private readonly locale = inject(LOCALE_ID);
-
-  transform(iso: string | null | undefined): string {
-    return formatTeamWhen(iso, this.locale);
-  }
 }

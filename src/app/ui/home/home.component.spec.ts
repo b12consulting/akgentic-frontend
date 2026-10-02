@@ -1811,7 +1811,7 @@ describe('HomeComponent', () => {
     it('(58-3) a saved description moves the row\'s updated date, without a refetch', async () => {
       // THE CHAIN THE EPIC NAMES, end to end through the real rendered child:
       // the editor's save → the PATCH → `setTeamDescription(…, updatedAt)` →
-      // a new team object in `teams$` → the row's date line re-renders from
+      // a new team object in `teams$` → the row's Updated cell re-renders from
       // `updated_at`. No page reload and no per-team GET anywhere in it.
       //
       // `setTeamDescription` is faked here to do what context.service.spec.ts

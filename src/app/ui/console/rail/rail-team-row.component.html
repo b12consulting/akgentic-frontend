@@ -4,17 +4,12 @@
   a button is invalid markup that browsers silently repair by dropping one of
   them. It is positioned over the row's trailing edge instead, and the row
   reserves the space for it in its padding.
-
-  `title` is the full description, because the meta line below is ellipsised;
-  bound as an attribute so a `null` removes it rather than leaving an empty
-  tooltip on a row that has none.
 -->
 <button
   type="button"
   class="rail-row"
   [class.active]="active"
   [attr.aria-current]="active ? 'true' : null"
-  [attr.title]="description"
   (click)="onSelect()"
 >
   @if (stopping || restoring) {
@@ -46,6 +41,21 @@
     <span class="rail-row__name">{{
       (row.team.metadata | teamTitle: titleKey) ?? row.team.name
     }}</span>
+    <!--
+      The description, on a line of its OWN between the name and the meta line
+      (Story 58-3) — the same order the home table's Name cell uses. It does
+      not take the meta line's summary slot: that slot holds the metadata value
+      that tells two teams of one type apart, and a description there made
+      `My description · 11:49 AM` and `test · 11:46 AM` the same kind of line.
+      Interpolated, never bound as markup — the text may be generated. One
+      ellipsised line; the full text is this line's `title`. Absent entirely
+      when there is no description, so that row is the two-line row it was.
+    -->
+    @if (description) {
+      <span class="rail-row__description" [title]="description">{{
+        description
+      }}</span>
+    }
     <!--
       ONE key with parameters. The mock concatenates a middle dot between the
       two halves; that separator is punctuation a translator has to be able to

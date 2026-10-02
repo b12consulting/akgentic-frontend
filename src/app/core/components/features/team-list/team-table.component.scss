@@ -190,16 +190,6 @@ p-table {
     color: var(--akg-text-muted);
 }
 
-// WHEN the team last changed (Story 58-3): quiet, the rail's meta step, the
-// same four declarations as `.team-type` above. Not mono and not `user-select:
-// all` — nothing on this line is copied; the uuid that was is gone.
-.team-updated {
-    font-size: 11.5px;
-    font-weight: 300;
-    line-height: 1.35;
-    color: var(--akg-text-muted);
-}
-
 .team-description {
     font-size: 11.5px;
     line-height: 1.35;
@@ -350,9 +340,12 @@ p-table {
   }
 }
 
-// The creation date is reference data, not a headline: same quiet step as the
-// row's second line, and tabular figures so the column reads as a column.
-.team-created-cell {
+// The creation and updated dates are reference data, not a headline: same
+// quiet step as the row's second line, and tabular figures so each column
+// reads as a column. ONE rule for both (Story 58-3) — they are the same kind
+// of value, and two rules would be two places for one treatment to drift.
+.team-created-cell,
+.team-updated-cell {
     font-size: 11.5px;
     line-height: 1.35;
     color: var(--akg-text-muted);

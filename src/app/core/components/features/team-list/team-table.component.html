@@ -23,13 +23,14 @@
   (forbidden by ADR-032 §"What we will not do"; [scrollable] is explicitly
   allowed).
 
-  FIVE COLUMNS, NOT SIX (W11). The Team ID had a column of its own and spent it
-  on a 36-character uuid repeated down every row — the widest thing on screen
-  and the least often read. W11 demoted it to the quietest line of the Name
+  SIX COLUMNS, AND NONE OF THEM IS THE TEAM ID. W11 took the id's column away
+  — a 36-character uuid repeated down every row was the widest thing on screen
+  and the least often read — and demoted it to the quietest line of the Name
   cell; Story 58-3 then took the printed value out of the row altogether. The
-  id is no longer printed anywhere here: it is the row's identity as DATA,
-  travelling through `rowSelected` and the action outputs, and the line it
-  occupied now says WHEN the team last changed. See `.team-updated` below.
+  id is the row's identity as DATA, travelling through `rowSelected` and the
+  action outputs, and is printed nowhere. The sixth column is "Updated",
+  beside Creation Date: the same date, the same format, the other end of the
+  team's life. See the Updated cell below.
 
   Every cell that a spec addresses by POSITION now carries a `data-test`
   instead. Column indices are a contract between a template and a test helper
@@ -60,6 +61,7 @@
       <th>{{ "team.table.name" | translate }}</th>
       <th>{{ "team.table.metadata" | translate }}</th>
       <th>{{ "team.table.createdAt" | translate }}</th>
+      <th>{{ "team.table.updated" | translate }}</th>
       <th>{{ "team.table.status" | translate }}</th>
       <th></th>
     </tr>
@@ -157,35 +159,12 @@
               <i class="pi pi-times" aria-hidden="true"></i>
             </button>
           </div>
-
           <!--
-            WHEN the team last changed (Story 58-3) — the third line, where
-            the uuid used to be printed.
-
-            `updated_at` is kept fresh by `setTeamDescription(…, updatedAt)`,
-            so a description saved in the editor above moves this line without
-            a refetch. Formatted by the SAME helper the rail's row uses, so the
-            two list surfaces agree on what "when" looks like: a clock time
-            today, a day-and-month otherwise.
-
-            LABELLED, through one translated key with the date as its
-            parameter, because the Creation Date column sits two cells to the
-            right showing a different date: a bare "Apr 19" under the
-            description would read as a second copy of it. The full ISO stamp
-            is the `title`, verbatim — not a label and not a re-formatted date
-            — which is also what makes the home page's own spec assertable
-            without a locale.
+            Nothing below the editor (Story 58-3). The uuid line W11 left here
+            is gone, and the updated date that briefly took its place is a
+            COLUMN now, beside Creation Date — a date under the description
+            read as a second copy of the description's own date.
           -->
-          <div
-            class="team-updated"
-            data-test="row-updated-at"
-            [title]="ctx.updated_at"
-          >
-            {{
-              "team.table.updated"
-                | translate: { when: (ctx.updated_at | teamWhen) }
-            }}
-          </div>
         </div>
       </td>
       <!--
@@ -226,6 +205,24 @@
         >
       </td>
       <td class="team-created-cell">{{ ctx.created_at | date: "short" }}</td>
+      <!--
+        WHEN the team last changed (Story 58-3), beside when it began.
+
+        The SAME pipe and the SAME format as the Creation Date cell, on
+        purpose: two dates in adjacent columns written two ways would read as
+        two kinds of thing. `updated_at` is kept fresh by
+        `setTeamDescription(…, updatedAt)`, so a description saved in the Name
+        cell moves this cell without a refetch. The full ISO stamp is the
+        `title`, verbatim, which is also what makes the home page's own spec
+        assertable without a locale.
+      -->
+      <td
+        class="team-updated-cell"
+        data-test="row-updated-at"
+        [title]="ctx.updated_at"
+      >
+        {{ ctx.updated_at | date: "short" }}
+      </td>
       <!--
         The status column — four renderings from ONE derivation.
 

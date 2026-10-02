@@ -1,7 +1,4 @@
-import { LOCALE_ID } from '@angular/core';
-import { TestBed } from '@angular/core/testing';
-
-import { formatTeamWhen, TeamWhenPipe } from './team-when';
+import { formatTeamWhen } from './team-when';
 
 /**
  * `now` is PASSED, never read from the clock: the same-day branch is the one
@@ -61,29 +58,5 @@ describe('formatTeamWhen', () => {
 
     expect(formatTeamWhen(today.toISOString(), 'en-US')).toContain(':');
     expect(formatTeamWhen('2020-04-19T10:00:00Z', 'en-US')).not.toContain(':');
-  });
-});
-
-describe('TeamWhenPipe', () => {
-  let pipe: TeamWhenPipe;
-
-  beforeEach(() => {
-    TestBed.configureTestingModule({
-      providers: [TeamWhenPipe, { provide: LOCALE_ID, useValue: 'en-US' }],
-    });
-    pipe = TestBed.inject(TeamWhenPipe);
-  });
-
-  it('is the function, with the injected locale', () => {
-    const iso = '2020-04-19T10:00:00Z';
-
-    expect(pipe.transform(iso)).toBe(formatTeamWhen(iso, 'en-US'));
-    expect(pipe.transform(iso)).not.toBe('');
-  });
-
-  it('passes the empty cases straight through', () => {
-    expect(pipe.transform(null)).toBe('');
-    expect(pipe.transform(undefined)).toBe('');
-    expect(pipe.transform('')).toBe('');
   });
 });
