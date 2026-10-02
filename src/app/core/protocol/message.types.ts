@@ -150,9 +150,14 @@ export interface WarningMessage extends BaseMessage {
 
 /**
  * The bare notification base (core Epic 24) — same field set as its
- * `ErrorMessage` / `WarningMessage` subclasses. Nothing upstream constructs one
- * today; the type and its render branch exist so the path lights up the moment a
- * producer appears. Flat sibling for the same reason as `WarningMessage`.
+ * `ErrorMessage` / `WarningMessage` subclasses. Its one producer today is the
+ * worker's team-description generator (akgentic-infra Epic 80): after the
+ * generated write it emits a bare `NotificationMessage` with
+ * `content_type === TEAM_DESCRIPTION_CONTENT_TYPE` and the new text as
+ * `content`, which `TeamDescriptionReactor` patches into the context cache and
+ * `notification-toasts` deliberately does not toast. Any other bare
+ * notification still takes the render branch below. Flat sibling for the same
+ * reason as `WarningMessage`.
  */
 export interface NotificationMessage extends BaseMessage {
   __model__: 'akgentic.core.messages.orchestrator.NotificationMessage';

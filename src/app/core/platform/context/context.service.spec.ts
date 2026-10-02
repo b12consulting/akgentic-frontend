@@ -1637,6 +1637,177 @@ describe('ContextService.setTeamDescription (Story 37-3)', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Story 58-2 — getCachedTeam: the synchronous, fetch-free read the
+// team-description reactor's staleness guard needs; and the optional
+// `updatedAt` on setTeamDescription, so a local save refreshes the stamp that
+// guard compares against.
+//
+// Same harness as the 37-3 block: seeded through `getTeams()`, driven through
+// the public surface, `apiSpy` asserted untouched.
+// ---------------------------------------------------------------------------
+
+describe('ContextService.getCachedTeam (Story 58-2)', () => {
+  let service: ContextService;
+  let apiSpy: jasmine.SpyObj<ApiService>;
+  let routerSpy: jasmine.SpyObj<Router>;
+
+  beforeEach(() => {
+    apiSpy = jasmine.createSpyObj('ApiService', [
+      'getTeams',
+      'getTeamsPage',
+      'getTeam',
+      'createTeam',
+      'deleteTeam',
+      'stopTeam',
+      'restoreTeam',
+    ]);
+    routerSpy = jasmine.createSpyObj('Router', ['navigate']);
+    routerSpy.navigate.and.returnValue(Promise.resolve(true));
+
+    TestBed.configureTestingModule({
+      providers: [
+        ContextService,
+        { provide: ApiService, useValue: apiSpy },
+        { provide: Router, useValue: routerSpy },
+      ],
+    });
+
+    service = TestBed.inject(ContextService);
+  });
+
+  async function seed(teams: TeamContext[]): Promise<void> {
+    apiSpy.getTeams.and.returnValue(Promise.resolve(teams));
+    await service.getTeams();
+  }
+
+  it('(AC3) returns the cached object BY REFERENCE', async () => {
+    const team = makeTeam('team-A', 'running');
+    await seed([makeTeam('team-Z', 'stopped'), team]);
+
+    expect(service.getCachedTeam('team-A')).toBe(team);
+  });
+
+  it('(AC3) returns null for an unknown id', async () => {
+    await seed([makeTeam('team-A', 'running')]);
+
+    expect(service.getCachedTeam('team-does-not-exist')).toBeNull();
+  });
+
+  it('(AC3) returns null on an empty cache', () => {
+    expect(service.getCachedTeam('team-A')).toBeNull();
+  });
+
+  it('(AC3) issues no HTTP call — a miss is a null, never a fetch', async () => {
+    // The whole reason this read exists beside `getCurrentTeam`: that one
+    // GETs the team on a miss, which is the refetch-on-event the reactor must
+    // not perform and would materialise the phantom row the unknown-id guard
+    // prevents.
+    await seed([makeTeam('team-A', 'running')]);
+    apiSpy.getTeam.calls.reset();
+
+    service.getCachedTeam('team-A');
+    service.getCachedTeam('team-does-not-exist');
+
+    expect(apiSpy.getTeam).not.toHaveBeenCalled();
+    expect(apiSpy.getTeams).toHaveBeenCalledTimes(1); // the seed only
+  });
+
+  it('(AC3) is a read — it writes nothing and emits nothing', async () => {
+    await seed([makeTeam('team-A', 'running')]);
+    const emissions: TeamContext[][] = [];
+    const sub = service.teams$.subscribe((v) => emissions.push(v));
+
+    service.getCachedTeam('team-A');
+    service.getCachedTeam('team-does-not-exist');
+
+    expect(emissions.length).toBe(1);
+    sub.unsubscribe();
+  });
+
+  it('(AC3) after setTeamDescription it returns the NEW object that replaced the old one', async () => {
+    const seeded = makeTeam('team-A', 'running');
+    await seed([seeded]);
+
+    service.setTeamDescription('team-A', 'x');
+
+    const after = service.getCachedTeam('team-A');
+    expect(after).not.toBe(seeded);
+    expect(after!.description).toBe('x');
+  });
+});
+
+describe('ContextService.setTeamDescription — the optional updatedAt (Story 58-2)', () => {
+  let service: ContextService;
+  let apiSpy: jasmine.SpyObj<ApiService>;
+  let routerSpy: jasmine.SpyObj<Router>;
+
+  beforeEach(() => {
+    apiSpy = jasmine.createSpyObj('ApiService', [
+      'getTeams',
+      'getTeamsPage',
+      'getTeam',
+      'createTeam',
+      'deleteTeam',
+      'stopTeam',
+      'restoreTeam',
+    ]);
+    routerSpy = jasmine.createSpyObj('Router', ['navigate']);
+    routerSpy.navigate.and.returnValue(Promise.resolve(true));
+
+    TestBed.configureTestingModule({
+      providers: [
+        ContextService,
+        { provide: ApiService, useValue: apiSpy },
+        { provide: Router, useValue: routerSpy },
+      ],
+    });
+
+    service = TestBed.inject(ContextService);
+  });
+
+  async function seed(teams: TeamContext[]): Promise<void> {
+    apiSpy.getTeams.and.returnValue(Promise.resolve(teams));
+    await service.getTeams();
+  }
+
+  it('copies a given updatedAt onto the team beside the description', async () => {
+    const seeded = makeTeam('team-A', 'running');
+    await seed([seeded]);
+
+    service.setTeamDescription('team-A', 'edited', '2026-10-02T12:00:00Z');
+
+    const after = service.getCachedTeam('team-A')!;
+    expect(after).not.toBe(seeded);
+    expect(after.description).toBe('edited');
+    expect(after.updated_at).toBe('2026-10-02T12:00:00Z');
+    // The source object is untouched — a copy, not a mutation.
+    expect(seeded.updated_at).toBe('2026-04-19T10:00:00Z');
+  });
+
+  it('leaves the cached stamp AS IT WAS when updatedAt is omitted or undefined — an older server', async () => {
+    // Absent is not "clear": a server predating the field sends no stamp, and
+    // the cached one must survive rather than become undefined.
+    await seed([makeTeam('team-A', 'running')]);
+
+    service.setTeamDescription('team-A', 'two-arg');
+    expect(service.getCachedTeam('team-A')!.updated_at).toBe('2026-04-19T10:00:00Z');
+
+    service.setTeamDescription('team-A', 'explicit-undefined', undefined);
+    expect(service.getCachedTeam('team-A')!.description).toBe('explicit-undefined');
+    expect(service.getCachedTeam('team-A')!.updated_at).toBe('2026-04-19T10:00:00Z');
+  });
+
+  it('still issues no HTTP call with the third argument', async () => {
+    await seed([makeTeam('team-A', 'running')]);
+    apiSpy.getTeam.calls.reset();
+
+    service.setTeamDescription('team-A', 'edited', '2026-10-02T12:00:00Z');
+
+    expect(apiSpy.getTeam).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Story 48.1 — the filter state and the debounced pipeline.
 //
 // Every spec here drives time with `fakeAsync` / `tick` / `flushMicrotasks`.

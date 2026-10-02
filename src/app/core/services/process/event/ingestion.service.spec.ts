@@ -48,12 +48,15 @@ import {
  * spy per `configureTestingModule`, exactly like the notification-port double
  * beside it. Only the team-status and team-description wiring blocks below
  * read it back. Story 58-1 added `setTeamDescription`, the one method
- * `TeamDescriptionReactor` calls.
+ * `TeamDescriptionReactor` writes through; Story 58-2 added `getCachedTeam`,
+ * the one it reads through — answering `null` ("this tab holds no team") so
+ * every bed that does not care sees the frame forwarded exactly as before.
  */
 function contextServiceDouble(): any {
   return {
     markStopped: jasmine.createSpy('markStopped'),
     setTeamDescription: jasmine.createSpy('setTeamDescription'),
+    getCachedTeam: jasmine.createSpy('getCachedTeam').and.returnValue(null),
   };
 }
 
@@ -3659,6 +3662,10 @@ describe('IngestionService — Story 37-2 (team-stopping reactor wiring)', () =>
 // block above: a description generated just before a team stopped arrives ONLY
 // through step (c)'s REST replay, so a `start()` sequenced below that block
 // would leave the cold-load spec red while every live-path spec stayed green.
+//
+// Story 58-2 inverted the cold-load spec: the replayed frame now applies ONLY
+// when it is not older than the cached team's `updated_at`, so the two specs
+// that replaced it read a team back out of the `ContextService` double.
 // ---------------------------------------------------------------------------
 
 describe('IngestionService — Story 58-1 (team-description reactor wiring)', () => {
@@ -3667,14 +3674,32 @@ describe('IngestionService — Story 58-1 (team-description reactor wiring)', ()
   let fakeSocket: Subject<any>;
 
   const DESCRIPTION = 'Drafts the quarterly report';
+  const FRAME_AT = '2026-10-02T10:00:00Z';
+
+  /** A cached team carrying only what the staleness guard reads. */
+  function cachedTeam(teamId: string, updatedAt: string): any {
+    return {
+      team_id: teamId,
+      name: `team-${teamId}`,
+      status: 'stopped',
+      created_at: '2026-10-01T10:00:00Z',
+      updated_at: updatedAt,
+      config_name: `team-${teamId}`,
+      description: 'Edited by the owner',
+    };
+  }
 
   /** The worker's generated-description notification, per the contract. */
-  function mkDescription(teamId: string, content = DESCRIPTION): any {
+  function mkDescription(
+    teamId: string,
+    content = DESCRIPTION,
+    timestamp = FRAME_AT,
+  ): any {
     return {
       id: 'desc-' + teamId + '-' + content,
       parent_id: null,
       team_id: teamId,
-      timestamp: '2026-10-02T10:00:00Z',
+      timestamp,
       sender: makeAddress({
         name: '@Orchestrator',
         role: 'Orchestrator',
@@ -3751,6 +3776,10 @@ describe('IngestionService — Story 58-1 (team-description reactor wiring)', ()
   });
 
   it('AC17: a team_description notification on the live socket reaches setTeamDescription', async () => {
+    // Realistic since 58-2: the page holds the team, and its stamp predates
+    // the live frame — the generated write bumped `updated_at` and the
+    // notification was stamped after it.
+    context.getCachedTeam.and.returnValue(cachedTeam('team-A', '2026-10-02T09:00:00Z'));
     await service.init('team-A', true);
 
     fakeSocket.next(mkDescription('team-A'));
@@ -3763,9 +3792,28 @@ describe('IngestionService — Story 58-1 (team-description reactor wiring)', ()
   });
 
   // The cold load. This is the row the wiring position exists for: the
-  // notification arrives in the REST replay and nowhere else.
-  it('AC17: the same notification in a stopped team’s REST replay reaches it too', async () => {
+  // notification arrives in the REST replay and nowhere else — and since
+  // Story 58-2 it applies ONLY when it is not older than the cached team.
+  it('58-2: a replayed frame OLDER than the cached team’s updated_at is dropped — no write, no refetch', async () => {
+    // The owner edited after the generator wrote. The cache, refreshed by
+    // `TeamSessionService.open` before this replay, carries the edit and its
+    // stamp; the replayed generated frame is older and must not undo it.
     const api = TestBed.inject(ApiService) as any;
+    context.getCachedTeam.and.returnValue(cachedTeam('team-A', '2026-10-02T10:00:01Z'));
+    api.getEvents.and.resolveTo([{ event: mkDescription('team-A') }]);
+
+    await service.init('team-A', false);
+    jasmine.clock().tick(600);
+
+    expect(context.setTeamDescription).not.toHaveBeenCalled();
+    expect(api.getAgentStates).not.toHaveBeenCalled();
+  });
+
+  it('58-2: a replayed frame NOT older than updated_at (never edited since generation) applies', async () => {
+    // `updated_at` equal to the frame's timestamp: the generated write is the
+    // team's last write, so the replayed line is the current truth.
+    const api = TestBed.inject(ApiService) as any;
+    context.getCachedTeam.and.returnValue(cachedTeam('team-A', FRAME_AT));
     api.getEvents.and.resolveTo([{ event: mkDescription('team-A') }]);
 
     await service.init('team-A', false);

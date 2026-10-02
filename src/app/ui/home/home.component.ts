@@ -814,6 +814,13 @@ export class HomeComponent {
    * and may clear, so `saved.description` is the truth and the input is not.
    * Patching from the input would show the user text the server did not keep.
    *
+   * The response's `updated_at` travels with it (Story 58-2). The
+   * team-description reactor drops a replayed frame older than the cached
+   * stamp, so a save that left the stamp at its list-read value would let a
+   * later replayed generated frame pass that guard and undo this edit. A
+   * server predating the field sends none, and the cached stamp is left as it
+   * was.
+   *
    * RE-THROWS after logging rather than swallowing. The failure is not this
    * page's alone to absorb: the table is holding an open editor with the
    * user's text in it, and a resolved promise would tell it the save succeeded
@@ -830,7 +837,11 @@ export class HomeComponent {
       // The service owns its cache and writes a NEW team object through its
       // single write path — an in-place write here re-emitted nothing and left
       // the screen stale (story 37-3).
-      this.contextService.setTeamDescription(teamId, saved.description);
+      this.contextService.setTeamDescription(
+        teamId,
+        saved.description,
+        saved.updated_at,
+      );
     } catch (error) {
       console.error('Failed to update description:', error);
       throw error;

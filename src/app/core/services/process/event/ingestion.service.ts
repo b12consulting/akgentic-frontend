@@ -68,7 +68,9 @@ import { NOTIFICATION_PORT } from '../../../platform/notification/notification.p
  *     The third log-side reactor, same wiring position, same reason: it patches
  *     a team's description into `ContextService` from the worker's
  *     `team_description` notification, and that notification reaches a stopped
- *     team's page only through the REST replay.
+ *     team's page only through the REST replay. Since Story 58-2 it drops a
+ *     frame older than the cached team's `updated_at`, so the replay this
+ *     wiring position exists for cannot overwrite a later edit.
  *
  * The notification port's `clear()` stays here rather than moving into either
  * toast unit: it empties the whole keyless `<p-toast>` container, both families

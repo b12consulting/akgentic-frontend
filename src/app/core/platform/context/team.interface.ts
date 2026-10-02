@@ -60,10 +60,20 @@ export interface TeamResponse {
  * `null` — never the input echoed back, which is why the page patches its
  * cache from this body rather than from what the user typed. `origin` records
  * who last wrote it: `'auto'` for the generator, `'user'` for the editor.
+ *
+ * `updated_at` is the stamp the write set (Story 58-2). The page copies it
+ * onto the cached team beside `description`, because the replay-staleness
+ * guard in `TeamDescriptionReactor` compares a frame's timestamp against that
+ * cached stamp: a local save that left it at the list-read value would let a
+ * later replayed generated frame pass the guard and overwrite the edit.
+ * OPTIONAL for the same reason `TeamResponse.description` is: a server
+ * predating the field omits the key, and then the cached stamp is left as it
+ * was rather than cleared.
  */
 export interface TeamDescriptionResponse {
   description: string | null;
   origin: 'auto' | 'user';
+  updated_at?: string;
 }
 
 // Maps to Python TeamListResponse (classic offset+total pagination, Epic 28).
@@ -208,6 +218,87 @@ export function teamFilterEquals(a: TeamFilter, b: TeamFilter): boolean {
 /** Check if a team is currently running. */
 export function isRunning(team: Pick<TeamContext, 'status'>): boolean {
   return team.status === 'running';
+}
+
+/**
+ * A trailing offset designator: `Z`, or `±hh:mm` / `±hhmm`. A string that has
+ * a time part and lacks one is a NAIVE timestamp.
+ */
+const OFFSET_DESIGNATOR = /(Z|[+-]\d{2}:?\d{2})$/i;
+
+/** A fractional second longer than the three digits `Date.parse` is specified for. */
+const LONG_FRACTION = /(\.\d{3})\d+/;
+
+/**
+ * Parse a server timestamp to epoch milliseconds, or `NaN` when it cannot be
+ * parsed (Story 58-2).
+ *
+ * Both stamps the staleness guard compares are ISO-8601 from the server, but
+ * not necessarily in the same SPELLING, and the two traps below are why this
+ * function exists rather than a bare `Date.parse`:
+ *
+ * - **A string with a time part and NO offset designator is read as UTC.**
+ *   ECMAScript reads a date-time form without a designator as LOCAL time, so a
+ *   Mongo-backed `updated_at` serialised naive (it is stored UTC) would parse
+ *   two hours early in a UTC+2 browser while the event timestamp beside it
+ *   carries its `+00:00` — enough to flip the comparison. `Z` is appended
+ *   before parsing. On a server that always sends designators this is a no-op.
+ * - **A six-digit fraction (Python `isoformat()`) is truncated to three.**
+ *   The specified `Date.parse` format carries exactly three; what an engine
+ *   does with more is its own business, so the fraction is cut to the
+ *   millisecond this function returns anyway.
+ *
+ * The caller compares the two NUMBERS this returns, never the strings — see
+ * `isStaleFrame` for why lexical order is not time order.
+ */
+export function parseServerTimestamp(iso: string): number {
+  if (typeof iso !== 'string' || iso === '') {
+    return NaN;
+  }
+  let text = iso.trim().replace(LONG_FRACTION, '$1');
+  if (text.includes('T') && !OFFSET_DESIGNATOR.test(text)) {
+    text += 'Z';
+  }
+  return Date.parse(text);
+}
+
+/**
+ * Whether a `team_description` frame is STALE against the cached team — older
+ * than the team's last write — and must not be applied (Story 58-2).
+ *
+ * `true` iff the frame's timestamp parses to STRICTLY less than the team's
+ * `updated_at`. Every description write, generated or user, bumps
+ * `updated_at`, so a frame older than that stamp is superseded by definition;
+ * a live frame emitted right after the generated write is newer than any
+ * stamp the page has seen. Equal is NOT stale: the server truncates stored
+ * datetimes to milliseconds, and a frame sharing a millisecond with its own
+ * write must still apply or a live update is silently dropped.
+ *
+ * FAIL-OPEN, in every doubtful case: a falsy `updated_at` (`''`, or
+ * `undefined` at runtime from an older cached shape) and an unparseable stamp
+ * on either side both answer `false`, which applies the frame — the behaviour
+ * before this guard existed. Dropping a frame on a parse failure would make a
+ * spelling the server changed look like an edit nobody made.
+ *
+ * NUMERIC, never lexical. Both inputs are ISO-8601 but may differ in spelling
+ * (`Z` vs `+00:00`, three vs six fractional digits, a non-zero offset), and
+ * lexical order is not time order: `'…T11:00:00+02:00'` reads LATER than
+ * `'…T10:00:00Z'` as text and is an hour EARLIER as an instant. The two are
+ * parsed through `parseServerTimestamp` first.
+ */
+export function isStaleFrame(
+  frameTimestamp: string,
+  team: Pick<TeamContext, 'updated_at'>,
+): boolean {
+  if (!team.updated_at) {
+    return false;
+  }
+  const frame = parseServerTimestamp(frameTimestamp);
+  const written = parseServerTimestamp(team.updated_at);
+  if (!Number.isFinite(frame) || !Number.isFinite(written)) {
+    return false;
+  }
+  return frame < written;
 }
 
 /**

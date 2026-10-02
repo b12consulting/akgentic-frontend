@@ -121,6 +121,9 @@ function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
   };
 }
 
+/** The stamp the PATCH response carries in the default `updateTeamDescription` fake (58-2). */
+const SAVED_AT = '2026-10-02T12:00:00Z';
+
 /**
  * Minimal `ActivatedRoute` for the query string.
  *
@@ -190,10 +193,12 @@ describe('HomeComponent', () => {
     // Story 58-1: the PATCH answers with what the server PERSISTED, and the
     // page patches the cache from that body. Echoing the input keeps every
     // spec that does not care about the distinction exactly as it was.
+    // Story 58-2: the body also carries the stamp the write set.
     apiSpy.updateTeamDescription.and.callFake(
       async (_teamId: string, description: string | null) => ({
         description,
         origin: 'user' as const,
+        updated_at: SAVED_AT,
       }),
     );
 
@@ -1632,7 +1637,11 @@ describe('HomeComponent', () => {
       const team = makeTeam({ team_id: 'row-1', description: 'before' });
       teams$.next([team]);
       apiSpy.updateTeamDescription.and.returnValue(
-        Promise.resolve({ description: 'spaced out', origin: 'user' as const }),
+        Promise.resolve({
+          description: 'spaced out',
+          origin: 'user' as const,
+          updated_at: SAVED_AT,
+        }),
       );
 
       await component.saveDescription('row-1', '  spaced out  ');
@@ -1647,6 +1656,48 @@ describe('HomeComponent', () => {
       expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith(
         'row-1',
         'spaced out',
+        SAVED_AT,
+      );
+    });
+
+    it('(58-2) patches the cached stamp from the response’s updated_at, beside the description', async () => {
+      // The reactor's staleness guard compares a replayed frame against the
+      // cached `updated_at`. Leave it at the list-read value and a replayed
+      // generated frame — older than this edit, newer than the list read —
+      // would pass the guard and undo the edit.
+      teams$.next([makeTeam({ team_id: 'row-1', updated_at: '2026-04-19T10:00:00Z' })]);
+      apiSpy.updateTeamDescription.and.returnValue(
+        Promise.resolve({
+          description: 'fresh',
+          origin: 'user' as const,
+          updated_at: '2026-10-02T12:34:56Z',
+        }),
+      );
+
+      await component.saveDescription('row-1', 'fresh');
+
+      expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith(
+        'row-1',
+        'fresh',
+        '2026-10-02T12:34:56Z',
+      );
+    });
+
+    it('(58-2) an older server’s response without updated_at leaves the stamp alone', async () => {
+      // A server predating the field omits the key: the third argument is
+      // `undefined`, which `setTeamDescription` reads as "keep what you hold",
+      // never as "clear".
+      teams$.next([makeTeam({ team_id: 'row-1' })]);
+      apiSpy.updateTeamDescription.and.returnValue(
+        Promise.resolve({ description: 'fresh', origin: 'user' as const }),
+      );
+
+      await component.saveDescription('row-1', 'fresh');
+
+      expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith(
+        'row-1',
+        'fresh',
+        undefined,
       );
     });
 
@@ -1656,12 +1707,20 @@ describe('HomeComponent', () => {
       // replaced by the input on its way to the cache.
       teams$.next([makeTeam({ team_id: 'row-1', description: 'before' })]);
       apiSpy.updateTeamDescription.and.returnValue(
-        Promise.resolve({ description: null, origin: 'user' as const }),
+        Promise.resolve({
+          description: null,
+          origin: 'user' as const,
+          updated_at: SAVED_AT,
+        }),
       );
 
       await component.saveDescription('row-1', '   ');
 
-      expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith('row-1', null);
+      expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith(
+        'row-1',
+        null,
+        SAVED_AT,
+      );
     });
 
     it('does not write the cached team itself', async () => {
@@ -1682,7 +1741,11 @@ describe('HomeComponent', () => {
 
       await component.saveDescription('row-1', null);
 
-      expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith('row-1', null);
+      expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith(
+        'row-1',
+        null,
+        SAVED_AT,
+      );
     });
 
     it('calls the API BEFORE the cache, and resolves on success', async () => {
@@ -1693,7 +1756,11 @@ describe('HomeComponent', () => {
       ).toBeResolved();
 
       expect(apiSpy.updateTeamDescription).toHaveBeenCalledWith('row-1', 'fresh');
-      expect(contextSpy.setTeamDescription).toHaveBeenCalledWith('row-1', 'fresh');
+      expect(contextSpy.setTeamDescription).toHaveBeenCalledWith(
+        'row-1',
+        'fresh',
+        SAVED_AT,
+      );
     });
 
     it('LOGS AND RE-THROWS an API failure, leaving the cache alone', async () => {

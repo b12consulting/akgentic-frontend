@@ -3,6 +3,7 @@ import { inject, Injectable } from '@angular/core';
 import { Observable, Subscription } from 'rxjs';
 
 import { ContextService } from '../../../platform/context/context.service';
+import { isStaleFrame } from '../../../platform/context/team.interface';
 import {
   AkgenticMessage,
   isNotificationMessage,
@@ -36,13 +37,29 @@ import {
  * stray `content_type` overwrite a team's description. `isNotificationMessage`
  * is an `endsWith('.NotificationMessage')` and admits only the bare base.
  *
- * It REMEMBERS NOTHING. There is no "already applied" set here and no
- * "unchanged" guard: `ContextService.setTeamDescription` owns the unknown-id
- * guard (an event for a team this tab never listed materialises no row), and
- * two identical notifications producing two identical upserts is acceptable —
- * a second copy of a guard in this class would be the tier smear the folder's
- * rules exist to prevent. The only fields are the injected service and the
- * subscription bag, and a spec pins that.
+ * It REMEMBERS NOTHING, but it READS the cache once per matching frame
+ * (Story 58-2). Reading the log means seeing the persisted frame on BOTH
+ * replay paths — a stopped team's REST history and a restored team's cursor-0
+ * replay — and that frame always carries the GENERATED text. Once the owner
+ * has edited the description, that text is stale, and applying it would
+ * replace a correct cached value with a wrong one until the next list read.
+ * So after the two guards above, the reactor reads the cached team through
+ * `ContextService.getCachedTeam` (synchronous, never a fetch) and drops the
+ * frame when `isStaleFrame` says its `timestamp` is OLDER than the team's
+ * `updated_at`. Every description write bumps `updated_at`, so an older frame
+ * is superseded by definition, and a live frame emitted right after the
+ * generated write is newer than any stamp this page holds. EQUAL APPLIES: the
+ * server truncates to milliseconds, and a frame sharing one with its own write
+ * must not be dropped. An unknown team (`null`) is forwarded unchanged, so the
+ * unknown-id guard stays where it was.
+ *
+ * There is still no "already applied" set here and no "unchanged" guard:
+ * `ContextService.setTeamDescription` owns the unknown-id guard (an event for a
+ * team this tab never listed materialises no row), and two identical not-stale
+ * notifications producing two identical upserts is acceptable — a second copy
+ * of a guard in this class would be the tier smear the folder's rules exist to
+ * prevent. A cache read per frame is not memory. The only fields are the
+ * injected service and the subscription bag, and a spec pins that.
  *
  * Nothing is self-wired: the constructor subscribes to nothing (ADR-025 §2),
  * and `start()` deliberately does NOT dispose a previous bag of its own — the
@@ -79,6 +96,12 @@ export class TeamDescriptionReactor {
       messages$.subscribe((msg: AkgenticMessage) => {
         if (!isNotificationMessage(msg)) return;
         if (msg.content_type !== TEAM_DESCRIPTION_CONTENT_TYPE) return;
+        // The staleness guard (Story 58-2), and ONLY after the two guards
+        // above so an ignored frame never reads the cache. A replayed frame
+        // older than the team's last write is superseded; an unknown team is
+        // forwarded, since `setTeamDescription` owns that guard.
+        const team = this.context.getCachedTeam(msg.team_id);
+        if (team && isStaleFrame(msg.timestamp, team)) return;
         // The envelope's `team_id`, never navigation state: the notification
         // names the team it belongs to, and `setTeamDescription` ignores an id
         // it does not hold. `content` is forwarded verbatim — this layer does

@@ -423,6 +423,21 @@ export class ContextService {
     return team;
   }
 
+  /**
+   * The cached team with this id, BY REFERENCE, or `null` when this tab does
+   * not hold it (Story 58-2). Synchronous, and it never fetches.
+   *
+   * Exists for ONE caller: `TeamDescriptionReactor`'s staleness check, which
+   * must compare a frame's timestamp against the cached `updated_at` without
+   * issuing the refetch-on-event the architecture forbids — `getCurrentTeam`
+   * would `GET /teams/{id}` on a miss and materialise the very row
+   * `setTeamDescription`'s unknown-id guard exists to prevent. A caller that
+   * needs a team it does not hold uses `getCurrentTeam`.
+   */
+  getCachedTeam(teamId: string): TeamContext | null {
+    return this._context$.value.find((t) => t.team_id === teamId) ?? null;
+  }
+
   async deleteTeam(teamId: string): Promise<void> {
     await this.apiService.deleteTeam(teamId);
     const prev = this._context$.value;
@@ -542,18 +557,41 @@ export class ContextService {
    * One guard only, and deliberately not `markStopped`'s pair: that method also
    * short-circuits an already-stopped team because a replayed stop event
    * arrives repeatedly and idempotence is what makes a cold load a no-op. A
-   * description save is an explicit one-shot user action with no re-entry to
-   * suppress, so a "description unchanged" guard would be behaviour nobody
-   * asked for. Revisit if a future caller ever drives this from a stream.
+   * stream DOES drive this method now — `TeamDescriptionReactor` (Story 58-1)
+   * calls it from every `team_description` notification in the log, replayed
+   * ones included — and the guard that makes that safe is a STALENESS check
+   * that lives in the reactor, not here: it compares the frame's `timestamp`
+   * with the cached team's `updated_at` (read through `getCachedTeam`, decided
+   * by `isStaleFrame`) and never calls this method for a frame older than the
+   * team's last write. Two identical not-stale frames therefore produce two
+   * identical upserts, which is acceptable; a "description unchanged" guard
+   * here would be a second copy of a decision already taken upstream.
+   *
+   * `updatedAt`, when given, is copied onto the team beside the description
+   * (Story 58-2). The PATCH response carries the stamp the write set, and the
+   * staleness check above reads the cached stamp — so a local save that left
+   * it at the list-read value would let a later replayed generated frame pass
+   * the guard and undo the edit. It is OPTIONAL because a server predating the
+   * field omits it, and then the cached stamp is left as it was: an absent
+   * stamp is not an instruction to clear one.
    *
    * A sibling of `markStopped`, NOT a widening of it. Resist generalising the
    * two into a `patchTeam(id, partial)`: a general patch invites callers to
-   * write fields they have not actually observed.
+   * write fields they have not actually observed. `updatedAt` is not that —
+   * it is a field the caller observed in the same response as the description.
    */
-  setTeamDescription(teamId: string, description: string | null): void {
+  setTeamDescription(
+    teamId: string,
+    description: string | null,
+    updatedAt?: string,
+  ): void {
     const team = this._context$.value.find((t) => t.team_id === teamId);
     if (!team) return;
-    this._upsertTeam({ ...team, description });
+    this._upsertTeam(
+      updatedAt === undefined
+        ? { ...team, description }
+        : { ...team, description, updated_at: updatedAt },
+    );
   }
 
   async stopTeamAndAwait(
