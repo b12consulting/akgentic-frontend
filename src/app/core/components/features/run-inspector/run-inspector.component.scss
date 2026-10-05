@@ -109,16 +109,17 @@
 /* The tree in a box of the Event log's family; a wide tree scrolls sideways
    inside it rather than wrapping a row. */
 .mini-box {
-  padding: 10px 10px 10px 8px;
+  padding: 12px 14px;
   overflow-x: auto;
   border: 1px solid var(--akg-surface-border);
   border-radius: 12px;
   background: var(--akg-surface-muted);
 }
 
-/* What the top run handles: "you → @Manager #1a2b3c4d". */
+/* What the top run handles: "you → @Manager #1a2b3c4d". Muted, as the mockup
+   draws it, whichever run is displayed. */
 .mini-root {
-  margin: 0 0 6px 2px;
+  margin: 0 0 8px 2px;
   font-size: 12px;
   color: var(--akg-text-muted);
   white-space: nowrap;
@@ -143,7 +144,7 @@
   width: max-content;
   min-width: 100%;
   box-sizing: border-box;
-  padding: 1px 0 1px calc(var(--depth, 0) * var(--mini-step));
+  padding: 3px 0 3px calc(var(--depth, 0) * var(--mini-step));
   background-image: repeating-linear-gradient(
     to right,
     transparent 0 7px,
@@ -164,7 +165,6 @@
   height: 18px;
   margin-right: 4px;
   padding: 0;
-  font-size: 0.6rem;
   color: var(--akg-text-muted);
 
   .pi {
@@ -188,16 +188,22 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 2px 7px 2px 3px;
+  padding: 4px 8px 4px 4px;
   border-radius: 7px;
   font-size: 12.5px;
   color: var(--akg-text-muted);
   white-space: nowrap;
 }
 
+/* Off the path, muted. Restated after the extend: the button reset's
+   `color: inherit; font: inherit` is emitted as `button.mini-main`, which
+   outranks `.mini-main` above, so without this every node button read at
+   the pane's full tone. */
 button.mini-main {
   @extend %ri-button;
   border-radius: 7px;
+  font-size: 12.5px;
+  color: var(--akg-text-muted);
 
   &:hover {
     background: var(--akg-user-bubble-bg);
@@ -255,7 +261,14 @@ button.mini-main {
   color: var(--akg-text-muted);
 }
 
-/* On the inverted row, the id takes the row's own ink. */
+/* On the path, the id takes the name's tone; on the inverted row, the row's
+   own ink. Keep this order: the displayed row is on the path too, and the two
+   rules tie on specificity. */
+.mini-node--path .mini-id {
+  color: var(--akg-text);
+  font-weight: 600;
+}
+
 .mini-node--displayed .mini-id {
   color: inherit;
 }
@@ -316,19 +329,25 @@ button.mini-main {
 
 /* --- handling ------------------------------------------------------------ */
 
-/* Who sent the run its message, and the message. The ids and the send time
-   are in the Event log. */
-.ri-route {
-  margin-bottom: 6px;
-  font-weight: 600;
-}
-
-/* The same box as the Event log below it, so the two read as one family. */
-.ri-text {
+/* One card: who sent the run its message, then the message. The same box as
+   the Event log below it, so the two read as one family. */
+.ri-handling {
   padding: 10px 12px;
   border: 1px solid var(--akg-surface-border);
   border-radius: 10px;
   background: var(--akg-surface-muted);
+}
+
+/* The card's first line, quiet like the mockup's: the message is what the
+   card is for. The ids and the send time are in the Event log. */
+.ri-route {
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--akg-text-muted);
+}
+
+.ri-text {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }

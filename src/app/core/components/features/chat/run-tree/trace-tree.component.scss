@@ -5,7 +5,7 @@
 
 .tree {
   list-style: none;
-  margin: 8px 0 0;
+  margin: 12px 0 4px;
   padding: 0;
 }
 
@@ -54,12 +54,14 @@
 .rn-body {
   position: relative;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 8px 10px;
   border: 1px solid transparent;
   border-radius: 10px;
 }
 
-.tree-node > .rn > .rn-body:hover,
+/* The selected run keeps its white ground under the pointer, as in the
+   mockup: hover is for the rows you have not picked. */
+.tree-node:not(.tree-node--selected) > .rn > .rn-body:hover,
 .tree-human > .rn > .rn-body:hover {
   background-color: var(--akg-user-bubble-bg);
 
@@ -69,10 +71,11 @@
   }
 }
 
-/* The chevron, centred on line 1 inside the box's padding and border. */
+/* The chevron, centred on line 1 inside the box's padding and border
+   (1px + 8px). */
 .node-chevron,
 .node-chevron-gap {
-  margin-top: 7px;
+  margin-top: 9px;
 }
 
 /* A run that sent nothing (ADR-037 §D7): its name steps down to the muted
@@ -82,11 +85,12 @@
   color: var(--akg-text-muted);
 }
 
-/* The selected run (ADR-037 §D9): its own box, outlined and lifted onto the
-   page ground — "this one", without a bar or a fill running to the edge. */
+/* The selected run (ADR-037 §D9): its own box, outlined and lifted to white,
+   a step LIGHTER than the card it sits on, as the mockup draws it — "this
+   one", without a bar or a fill running to the edge. */
 .tree-node--selected > .rn > .rn-body {
   border-color: var(--akg-marker-border);
-  background-color: var(--akg-page-bg);
+  background-color: var(--akg-overlay-bg);
 }
 
 /* A provenance click's flash on the node it scrolled to. The ring is static,
@@ -140,7 +144,6 @@
   width: 18px;
   height: 20px;
   padding: 0;
-  font-size: 0.65rem;
 }
 
 .node-chevron-gap {
@@ -227,14 +230,9 @@
 }
 
 /*
- * A soft pill on the accent ramp. The shared button reset zeroes the border,
- * so it is restated here, after the extend.
- *
- * Palette role tokens only (`_conversation-tokens.scss`), the pair the
- * request card already uses: the ramp's 50 step for the ground, its 100 step
- * for the border and for the ground on hover, and the 700 step for the text —
- * the one accent step that is a TEXT role, 7.3:1 on the ground and 6.4:1 on
- * hover.
+ * An outlined pill in the accent's text step, as the mockup draws it: no
+ * fill at rest, the soft accent ground on hover. The shared button reset
+ * zeroes the border, so it is restated here, after the extend.
  */
 .node-in-chat {
   @extend %tree-button;
@@ -242,15 +240,15 @@
   /* At the row's right edge, whatever the excerpt's length. */
   margin-left: auto;
   padding: 0 8px;
-  border: 1px solid var(--akg-accent-border);
+  border: 1px solid currentColor;
   border-radius: var(--akg-pill-radius);
-  background: var(--akg-accent-bg);
+  background: transparent;
   color: var(--akg-accent-fg);
   font-size: 11.5px;
   white-space: nowrap;
 
   &:hover {
-    background: var(--akg-accent-border);
+    background: var(--akg-accent-bg);
   }
 }
 

@@ -142,16 +142,28 @@ describe('RunInspectorComponent', () => {
       'Steps',
       'Event log',
     ]);
-    // Handling: the route and the message, nothing else — the ids and the
-    // send time live in the Event log.
+    // Handling: one card, the route its first line, then the message —
+    // nothing else; the ids and the send time live in the Event log.
     const handling = host().querySelectorAll('.ri-section')[1];
-    expect(text(handling.querySelector('.ri-route'))).toBe('@Expert → @Assistant');
-    expect(text(handling.querySelector('.ri-text'))).toBe('content of D2');
     expect([...handling.children].map((c) => c.className)).toEqual([
       'ri-section-title',
-      'ri-route',
-      'ri-text',
+      'ri-handling',
     ]);
+    const card = handling.querySelector('.ri-handling')!;
+    expect([...card.children].map((c) => c.className)).toEqual(['ri-route', 'ri-text']);
+    expect(text(card.querySelector('.ri-route'))).toBe('@Expert → @Assistant');
+    expect(text(card.querySelector('.ri-text'))).toBe('content of D2');
+    // The card is the box; the body inside it keeps the Steps' type size.
+    expect(getComputedStyle(card).borderTopWidth).toBe('1px');
+    // The route line is the quiet header, the message the content.
+    const route = getComputedStyle(card.querySelector('.ri-route')!);
+    const body = getComputedStyle(card.querySelector('.ri-text')!);
+    expect(route.fontWeight).toBe('400');
+    expect(route.color).not.toBe(body.color);
+    expect(getComputedStyle(card.querySelector('.ri-text')!).borderTopWidth).toBe('0px');
+    expect(getComputedStyle(card.querySelector('.ri-text')!).fontSize).toBe(
+      getComputedStyle(host().querySelector('.ri-step-label')!).fontSize,
+    );
     expect(handling.querySelector('dl, dt, dd')).toBeNull();
     expect(texts('.ri-offset')).toEqual(['+0s', '+1s', '+3s', '+5s', '+7s', '+8s']);
     expect(texts('.ri-step-label')).toEqual([
@@ -364,6 +376,210 @@ describe('RunInspectorComponent', () => {
     const answer = miniNode(runKey('A', 'human-id'));
     expect(answer.querySelector('button')).toBeNull();
     expect(text(answer.querySelector('.mini-hint'))).toBe('to you');
+  });
+
+  /*
+   * Emphasis follows the displayed run's path, and only it: the run and its
+   * ancestors at full strength, every other node muted. Read from computed
+   * styles, with the two text tones pinned to literals on the host so the
+   * comparison does not depend on the palette.
+   */
+  describe('path-only emphasis', () => {
+    const FULL = 'rgb(1, 2, 3)';
+    const MUTED = 'rgb(4, 5, 6)';
+
+    function mountTinted(): void {
+      mount();
+      host().style.setProperty('--akg-text', FULL);
+      host().style.setProperty('--akg-text-muted', MUTED);
+    }
+
+    /** Opens every folded mini-tree node, so every node is on screen. */
+    function unfoldAll(): void {
+      for (;;) {
+        const folded = host().querySelector<HTMLButtonElement>(
+          '.mini-chevron[aria-expanded="false"]',
+        );
+        if (folded === null) return;
+        folded.click();
+        fixture.detectChanges();
+      }
+    }
+
+    /** 'full' or 'muted' when name, id, weight and avatar all agree; the
+     *  disagreement spelled out otherwise. */
+    function emphasis(key: string): string {
+      const row = miniNode(key);
+      const main = row.querySelector('.mini-main')!;
+      const label = row.querySelector('.mini-name') ?? row.querySelector('.mini-hint')!;
+      const id = row.querySelector('.mini-id');
+      const avatar = row.querySelector('.mini-avatar')!;
+      const colour = getComputedStyle(label).color;
+      const weight = getComputedStyle(main).fontWeight;
+      const idColour = id === null ? colour : getComputedStyle(id).color;
+      const agent = !avatar.classList.contains('mini-avatar--human');
+      const quiet = avatar.classList.contains('mini-avatar--quiet');
+      if (colour === FULL && idColour === FULL && weight === '600' && !(agent && quiet)) {
+        return 'full';
+      }
+      if (colour === MUTED && idColour === MUTED && weight === '400' && !(agent && !quiet)) {
+        return 'muted';
+      }
+      return `mixed(${colour} ${idColour} ${weight} ${agent ? (quiet ? 'quiet' : 'own') : 'human'})`;
+    }
+
+    /** Every node on screen but the displayed one, split by emphasis. */
+    function partition(): { full: string[]; muted: string[]; other: string[] } {
+      const out = { full: [] as string[], muted: [] as string[], other: [] as string[] };
+      for (const node of host().querySelectorAll('.mini-node:not(.mini-node--displayed)')) {
+        const key = node.getAttribute('data-mini-run-key')!;
+        const e = emphasis(key);
+        if (e === 'full') out.full.push(key);
+        else if (e === 'muted') out.muted.push(key);
+        else out.other.push(`${key}: ${e}`);
+      }
+      return out;
+    }
+
+    function displayedKeys(): (string | null)[] {
+      return [...host().querySelectorAll('.mini-node--displayed')].map((n) =>
+        n.getAttribute('data-mini-run-key'),
+      );
+    }
+
+    it('case 5, a deep run displayed: its ancestors full, every other node muted', () => {
+      log.appendAll(CASE_5);
+      mountTinted();
+      select(runKey('D2', A));
+      unfoldAll();
+
+      expect(miniKeys()).toEqual([
+        runKey('U1', M),
+        runKey('S', S),
+        runKey('Sa', M),
+        runKey('D1', E),
+        runKey('D2', A),
+        runKey('C', E),
+        runKey('B', M),
+      ]);
+      expect(partition()).toEqual({
+        full: [runKey('U1', M), runKey('D1', E)],
+        muted: [runKey('S', S), runKey('Sa', M), runKey('C', E), runKey('B', M)],
+        other: [],
+      });
+      // The displayed run itself: inverted, on the full tone.
+      expect(displayedKeys()).toEqual([runKey('D2', A)]);
+      const shown = miniNode(runKey('D2', A)).querySelector('.mini-main')!;
+      expect(getComputedStyle(shown).backgroundColor).toBe(FULL);
+      expect(getComputedStyle(shown).fontWeight).toBe('600');
+      // Its id takes the inverted ink, not the path's tone on the full ground.
+      expect(getComputedStyle(shown.querySelector('.mini-id')!).color).toBe(
+        getComputedStyle(shown).color,
+      );
+      expect(getComputedStyle(shown.querySelector('.mini-id')!).color).not.toBe(FULL);
+    });
+
+    it('case 5, the root displayed: every other node muted', () => {
+      log.appendAll(CASE_5);
+      mountTinted();
+      select(runKey('U1', M));
+      unfoldAll();
+
+      expect(displayedKeys()).toEqual([runKey('U1', M)]);
+      expect(partition()).toEqual({
+        full: [],
+        muted: [
+          runKey('S', S),
+          runKey('Sa', M),
+          runKey('D1', E),
+          runKey('D2', A),
+          runKey('C', E),
+          runKey('B', M),
+        ],
+        other: [],
+      });
+    });
+
+    it('case 4: the entry rows are muted off the path, and "you answered" is full on it', () => {
+      log.appendAll(CASE_4);
+      mountTinted();
+      select(runKey('U1', M));
+      unfoldAll();
+      expect(partition()).toEqual({
+        full: [],
+        muted: [runKey('Q', 'human-id'), runKey('U2', M), runKey('A', 'human-id')],
+        other: [],
+      });
+
+      select(runKey('U2', M));
+      unfoldAll();
+      expect(partition()).toEqual({
+        full: [runKey('U1', M), runKey('Q', 'human-id')],
+        muted: [runKey('A', 'human-id')],
+        other: [],
+      });
+    });
+
+    it('folding a node, on the path or off it, moves no node\'s emphasis', () => {
+      log.appendAll(CASE_5);
+      mountTinted();
+      select(runKey('C', E));
+      unfoldAll();
+      const before = new Map(miniKeys().map((key) => [key, emphasis(key!)]));
+
+      // Off the path, then on it.
+      for (const key of [runKey('S', S), runKey('D1', E)]) {
+        miniNode(key).querySelector<HTMLButtonElement>('.mini-chevron')!.click();
+        fixture.detectChanges();
+        for (const shown of miniKeys()) {
+          expect(`${shown}: ${emphasis(shown!)}`).toBe(`${shown}: ${before.get(shown)}`);
+        }
+      }
+      expect(before.get(runKey('S', S))).toBe('muted');
+      expect(before.get(runKey('D1', E))).toBe('full');
+    });
+
+    it('the root line stays muted, as the mockup draws it', () => {
+      log.appendAll(CASE_5);
+      mountTinted();
+      select(runKey('D2', A));
+      const root = host().querySelector('.mini-root')!;
+      expect(getComputedStyle(root).color).toBe(MUTED);
+      expect(getComputedStyle(root).fontWeight).toBe('400');
+      expect(getComputedStyle(root.querySelector('.mini-id')!).color).toBe(MUTED);
+    });
+  });
+
+  describe('the mini-tree\'s caret and spacing', () => {
+    beforeEach(() => {
+      log.appendAll(CASE_5);
+      mount();
+      select(runKey('B', M));
+    });
+
+    afterEach(() => document.getElementById('primeng-sim')?.remove());
+
+    it('the caret is the shared 8px glyph, even under PrimeNG\'s icon size', () => {
+      // The rule PrimeNG's base style injects into <head> at runtime.
+      const style = document.createElement('style');
+      style.id = 'primeng-sim';
+      style.textContent = '.pi { font-size: 13px; }';
+      document.head.appendChild(style);
+
+      const glyph = miniNode(runKey('S', S)).querySelector('.mini-chevron .pi')!;
+      expect(glyph.classList).toContain('akg-caret');
+      expect(getComputedStyle(glyph).fontSize).toBe('8px');
+    });
+
+    it('the box, the root line and every row breathe', () => {
+      const box = getComputedStyle(host().querySelector('.mini-box')!);
+      expect(box.paddingTop).toBe('12px');
+      expect(box.paddingLeft).toBe('14px');
+      expect(getComputedStyle(host().querySelector('.mini-root')!).marginBottom).toBe('8px');
+      const row = miniNode(runKey('D1', E));
+      expect(getComputedStyle(row).paddingTop).toBe('3px');
+      expect(getComputedStyle(row.querySelector('.mini-main')!).paddingTop).toBe('4px');
+    });
   });
 
   describe('the event log', () => {

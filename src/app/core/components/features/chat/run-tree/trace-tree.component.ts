@@ -200,6 +200,13 @@ export class TraceTreeComponent {
     return this.bubbleIds().get(messageId) ?? null;
   }
 
+  /** A click on the run selects it and, when it has children, folds or
+   *  unfolds them as its caret does. The caret itself only folds. */
+  onNode(key: RunKey, expandable: boolean): void {
+    if (expandable) this.onChevron(key);
+    this.selectRun.emit(key);
+  }
+
   /** A fold that hides the hovered `@Human` row clears its bubble's highlight:
    *  a row that is gone fires no `mouseleave`. */
   onChevron(key: RunKey): void {

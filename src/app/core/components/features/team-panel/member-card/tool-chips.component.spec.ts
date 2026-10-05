@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
-import { ToolChipsComponent } from './tool-chips.component';
+import { shortToolName, ToolChipsComponent } from './tool-chips.component';
 import {
   provideTranslateTesting,
   setTestTranslations,
@@ -61,6 +61,31 @@ describe('ToolChipsComponent', () => {
     const host = fixture.nativeElement as HTMLElement;
     expect(host.querySelector('.tools-label')).toBeNull();
     expect(host.querySelector('.tool-chips')).toBeNull();
+  });
+
+  describe('a workspace named by a UUID', () => {
+    const FULL = 'Workspace/fb7f2dda-68a6-4e1f-b2c7-f96c258b19b8';
+
+    it('shortToolName keeps the first UUID segment', () => {
+      expect(shortToolName(FULL)).toBe('Workspace/fb7f2dda');
+    });
+
+    it('shortToolName leaves a suffix that is not a UUID alone', () => {
+      expect(shortToolName('Workspace/folder-Documents')).toBe('Workspace/folder-Documents');
+      expect(shortToolName('Workspace/fb7f2dda-68a6')).toBe('Workspace/fb7f2dda-68a6');
+    });
+
+    it('shortToolName leaves a name without a slash alone', () => {
+      expect(shortToolName('KnowledgeGraphTool')).toBe('KnowledgeGraphTool');
+    });
+
+    it('the chip shows the short name and carries the full one as its title', () => {
+      render([FULL, 'VectorStore']);
+      expect(chipTexts()).toEqual(['Workspace/fb7f2dda', 'VectorStore']);
+      const chips = (fixture.nativeElement as HTMLElement).querySelectorAll('.tool-chip');
+      expect(chips[0].getAttribute('title')).toBe(FULL);
+      expect(chips[1].getAttribute('title')).toBeNull();
+    });
   });
 
   it('gives every chip its tool mark', () => {

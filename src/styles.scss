@@ -53,6 +53,14 @@
 
 @import "primeicons/primeicons.css";
 
+/* A tree's expand/collapse glyph, one size on every tree. `.pi.akg-caret`,
+   not `.akg-caret`: PrimeNG's base style injects `.pi { font-size: … }` into
+   <head> at runtime, after this sheet, and a single class would lose to it
+   on source order. Two classes win whatever the order. */
+.pi.akg-caret {
+  font-size: 8px;
+}
+
 html {
   font-size: 13px;
 }

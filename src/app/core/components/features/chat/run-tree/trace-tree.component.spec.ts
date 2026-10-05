@@ -272,8 +272,14 @@ describe('TraceTreeComponent', () => {
     fixture.componentInstance.selectRun.subscribe((key) => selected.push(key));
     node(k('De', EXPERT)).querySelector<HTMLButtonElement>('button.node-main')!.click();
     expect(selected).toEqual([k('De', EXPERT)]);
-    // A node click selects; it never folds (only the chevron does).
+    // A node click selects AND folds, as its caret does.
+    expect(folds.isNodeExpanded(k('De', EXPERT), ROOT)).toBeFalse();
+
+    // The caret only folds: it never selects.
+    fixture.detectChanges();
+    node(k('De', EXPERT)).querySelector<HTMLButtonElement>('.node-chevron')!.click();
     expect(folds.isNodeExpanded(k('De', EXPERT), ROOT)).toBeTrue();
+    expect(selected).toEqual([k('De', EXPERT)]);
   });
 
   it('draws the selected run, and only it, with aria-current — nothing before a selection', () => {
@@ -299,6 +305,43 @@ describe('TraceTreeComponent', () => {
     // and the flash must still show. On the row's own box, not the indented li.
     const box = node(k('Da', ASSISTANT)).querySelector('.rn-body')!;
     expect(getComputedStyle(box).boxShadow).not.toBe('none');
+  });
+
+  describe('the caret and the spacing', () => {
+    afterEach(() => document.getElementById('primeng-sim')?.remove());
+
+    it('the caret is the shared 8px glyph, even under PrimeNG\'s icon size', () => {
+      // The rule PrimeNG's base style injects into <head> at runtime.
+      const style = document.createElement('style');
+      style.id = 'primeng-sim';
+      style.textContent = '.pi { font-size: 13px; }';
+      document.head.appendChild(style);
+      render(CASE_2);
+
+      for (const glyph of [
+        node(ROOT).querySelector('.node-chevron .pi')!,
+        node(k('De', EXPERT)).querySelector('.node-chevron .pi')!,
+      ]) {
+        expect(glyph.classList).toContain('akg-caret');
+        expect(getComputedStyle(glyph).fontSize).toBe('8px');
+      }
+    });
+
+    it('a row\'s box and the tree around the rows breathe', () => {
+      render(CASE_2);
+      expect(getComputedStyle(node(ROOT).querySelector('.rn-body')!).paddingTop).toBe('8px');
+      const tree = getComputedStyle(host().querySelector('.tree')!);
+      expect(tree.marginTop).toBe('12px');
+      expect(tree.marginBottom).toBe('4px');
+    });
+
+    it('the chevron stays level with line 1 inside the row\'s box', () => {
+      render(CASE_2);
+      const row = node(ROOT);
+      const chevron = row.querySelector('.node-chevron')!.getBoundingClientRect();
+      const line = row.querySelector('.rn-body .node-line')!.getBoundingClientRect();
+      expect(chevron.top).toBe(line.top);
+    });
   });
 
   describe('the @Human row', () => {
@@ -352,13 +395,14 @@ describe('TraceTreeComponent', () => {
       expect(events).toEqual([`hover:${Q_ENVELOPE}`, 'hover:null', `show:${Q_ENVELOPE}`]);
     });
 
-    it('"in chat" is a bordered pill on a soft ground', () => {
+    it('"in chat" is an outlined pill in its own ink, with no fill', () => {
       fixture.componentRef.setInput('bubbleIds', new Map([['Q', Q_ENVELOPE]]));
       render(CASE_4);
       const style = getComputedStyle(host().querySelector('.node-in-chat')!);
       expect(style.borderTopStyle).toBe('solid');
       expect(style.borderTopWidth).toBe('1px');
-      expect(style.backgroundColor).not.toBe('rgba(0, 0, 0, 0)');
+      expect(style.borderTopColor).toBe(style.color);
+      expect(style.backgroundColor).toBe('rgba(0, 0, 0, 0)');
     });
 
     it('fails open when its bubble is not rendered', () => {
