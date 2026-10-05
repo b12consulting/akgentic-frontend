@@ -83,11 +83,12 @@
   color: var(--akg-text-muted);
 }
 
-/* The selected run (ADR-037 §D9): its own box, outlined and lifted onto the
-   page ground — "this one", without a bar or a fill running to the edge. */
+/* The selected run (ADR-037 §D9): its own box, outlined and lifted to white,
+   a step LIGHTER than the card it sits on, as the mockup draws it — "this
+   one", without a bar or a fill running to the edge. */
 .tree-node--selected > .rn > .rn-body {
   border-color: var(--akg-marker-border);
-  background-color: var(--akg-page-bg);
+  background-color: var(--akg-overlay-bg);
 }
 
 /* A provenance click's flash on the node it scrolled to. The ring is static,
