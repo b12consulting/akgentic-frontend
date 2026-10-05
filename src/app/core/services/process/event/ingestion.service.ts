@@ -442,10 +442,9 @@ export class IngestionService {
    * because after it there is no team, and every selector and per-agent store
    * is a fold over that log.
    *
-   * Called by `ProcessComponent` at the MOMENT the id changes, not left to the
-   * next `init()`'s step (a). `init()` awaits `getCurrentTeam` before it runs,
-   * and the previous team's socket must not still be feeding the log across
-   * that await.
+   * Called by `TeamSessionService.close()` — on a switch, before its awaited
+   * fetch, and on `dispose()` — not left to the next `init()`'s step (a): the
+   * previous team's socket must not feed the log across that await.
    */
   close(): void {
     // Supersede any `init()` still waiting on a REST replay: it must not write.
@@ -460,11 +459,8 @@ export class IngestionService {
     // Story 52-1: no in-flight cycle may write after this point either.
     this.cycleToken++;
 
-    // FIRST, as defence in depth. `TeamSocket.stop()` detaches its observer
-    // before closing, so the close below reaches neither `status$` nor
-    // `connectionToast.show()` (#405); entering the destroying state first keeps
-    // this teardown silent even if that detach is ever lost. Runs only if the
-    // route injector is destroyed (app teardown) — leaving a team is `close()`.
+    // FIRST, as defence in depth behind TeamSocket's detach (#405). Runs only
+    // at app teardown — leaving a team is `close()`.
     this.connectionToast.stop();
 
     // Story 8-2 (AC4): clear all toasts so a destroyed view leaves no warnings

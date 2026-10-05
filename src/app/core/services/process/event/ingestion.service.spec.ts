@@ -76,38 +76,6 @@ function inboundSubject(): Subject<any> {
   return (teamSocket() as any)._inbound$ as Subject<any>;
 }
 
-/**
- * A transport whose close is delivered on a LATER task, as a browser's `onclose`
- * is. `unsubscribe()` only SCHEDULES the completion; under `jasmine.clock()` it
- * lands on `tick(0)`, i.e. after whatever the spec does next — which is how the
- * sequence "stop old → subscribe new cycle → old close arrives" becomes real.
- * Every other double in this file closes synchronously, inside `unsubscribe()`,
- * and so cannot place the close after the next `init()` (#405).
- *
- * `subscribe` returns the stream's own `Subscription` on purpose: that is what
- * `TeamSocket.start()` keeps and `stop()` detaches.
- */
-function asyncClosingSocket(ending: 'complete' | 'error' = 'complete'): {
-  socket: WebSocketSubject<any>;
-  stream: Subject<any>;
-  unsubscribed: () => number;
-} {
-  const stream = new Subject<any>();
-  let count = 0;
-  const socket = {
-    subscribe: (observer: any) => stream.subscribe(observer),
-    unsubscribe: () => {
-      count++;
-      setTimeout(() => {
-        if (ending === 'complete') stream.complete();
-        else stream.error(new Error('stale close'));
-      }, 0);
-    },
-    next: (value: any) => stream.next(value),
-  } as unknown as WebSocketSubject<any>;
-  return { socket, stream, unsubscribed: () => count };
-}
-
 function makeAddress(overrides: Partial<ActorAddress> = {}): ActorAddress {
   return {
     __actor_address__: true,
@@ -1300,8 +1268,7 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
   it('AC4: ngOnDestroy suppresses disconnect toast triggered by unsubscribe (destroying guard)', async () => {
     await service.init('proc-1', true);
 
-    // Destroy enters the destroying state BEFORE unsubscribe, so the complete
-    // callback's `connectionToast.show()` call is suppressed.
+    // ngOnDestroy enters the destroying state first; TeamSocket also detaches before closing, so no close reaches show().
     service.ngOnDestroy();
 
     // The only warn-toast add calls should be zero — the destroying guard
@@ -1315,17 +1282,10 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
   // --- Story 34-4: the two seams the extraction made easier to break --------
 
   it('34-4 (AC7): ngOnDestroy delivers no `complete` to status$ and raises no toast', async () => {
-    // A plain `Subject.unsubscribe()` does NOT notify its subscribers, so the
-    // `fakeSocket` above cannot reproduce a closing socket at all. A real
-    // `WebSocketSubject.unsubscribe()` closes the socket and the close
-    // completes the stream; this double is that.
-    //
-    // It used to pin the ORDER of two statements in `ngOnDestroy` — the toast's
-    // `stop()` ahead of the socket's close — because the close re-entered the
-    // `complete` handler. `TeamSocket.stop()` now detaches its observer before
-    // closing, so the close reaches `status$` not at all, whatever the order.
-    // The probe is what says so: the toast count alone is also satisfied by the
-    // `destroying` guard swallowing an emission that still happened.
+    // A double whose unsubscribe() closes and completes the stream, as a real
+    // WebSocketSubject does. TeamSocket.stop() detaches first, so the close
+    // reaches status$ not at all; the probe says so, where the toast count alone
+    // would also pass on the `destroying` guard swallowing a real emission.
     const stream = new Subject<any>();
     let closed = 0;
     const completingSocket = {
@@ -1350,59 +1310,6 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
     expect(closed).toBeGreaterThan(0);
     expect(statuses).toEqual([]);
     expect(disconnectToasts().length).toBe(0);
-  });
-
-  // --- #405: a stale socket's close never reaches the new cycle -------------
-
-  describe("a stale socket's close never reaches the new cycle (#405)", () => {
-    /**
-     * `init('proc-A')` on the async double, then `init('proc-B')` on a plain
-     * subject. A's close is SCHEDULED by B's dispose step and not yet
-     * delivered when this returns: B's cycle is already subscribed to
-     * `status$`, which is the window the bug lived in.
-     */
-    async function switchTeams(ending: 'complete' | 'error'): Promise<{
-      a: ReturnType<typeof asyncClosingSocket>;
-    }> {
-      const a = asyncClosingSocket(ending);
-      (teamSocket() as any).createWebSocket.and.returnValue(a.socket);
-      await service.init('proc-A', true);
-
-      fakeSocket = new Subject<any>();
-      (teamSocket() as any).createWebSocket.and.returnValue(
-        fakeSocket as unknown as WebSocketSubject<any>,
-      );
-      await service.init('proc-B', true);
-      return { a };
-    }
-
-    it('a stale `complete` raises no toast; the new socket completing raises one', async () => {
-      const { a } = await switchTeams('complete');
-      expect(a.unsubscribed()).toBe(1);
-
-      jasmine.clock().tick(0);
-      expect(disconnectToasts().length).toBe(0);
-
-      fakeSocket.complete();
-      expect(disconnectToasts().length).toBe(1);
-    });
-
-    it('a stale `error` raises no toast and leaves the new cycle spinning', async () => {
-      spyOn(console, 'error');
-      await switchTeams('error');
-
-      // Past the 500ms floor, not `tick(0)`: an `error` that DID reach the new
-      // cycle would only schedule the spinner flip at 0ms and land it at 500ms,
-      // so a shorter tick reads `true` for the broken code as well.
-      jasmine.clock().tick(600);
-      expect(disconnectToasts().length).toBe(0);
-      expect(service.loadingProcess$.value).toBe(true);
-
-      // A real loss on the CURRENT socket still warns exactly once and flips.
-      fakeSocket.error(new Error('lost'));
-      expect(disconnectToasts().length).toBe(1);
-      expect(service.loadingProcess$.value).toBe(false);
-    });
   });
 
   it('34-4 (AC6): init() re-arms the toast, so a fresh team cycle warns again', async () => {

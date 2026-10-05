@@ -118,15 +118,13 @@ describe('ConnectionToast — one toast, not two (AC3)', () => {
 });
 
 describe('ConnectionToast — teardown suppression (AC4)', () => {
-  it('AC4: after stop(), show() is a no-op — navigation is not a connection loss', () => {
+  it('AC4: after stop(), show() is a no-op — a destroyed injector raises no toast', () => {
     const { unit, notify } = setup();
 
     unit.stop();
     unit.show();
 
-    // `ngOnDestroy` unsubscribes the socket, which completes it, which calls
-    // `show()`. Without this suppression every deliberate navigation away from
-    // a process view leaves a "Connection Lost" warning behind it.
+    // stop() runs only in IngestionService.ngOnDestroy(), at injector teardown; nothing closed after it may warn.
     expect(notify).not.toHaveBeenCalled();
   });
 

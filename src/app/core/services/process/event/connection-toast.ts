@@ -69,18 +69,9 @@ export class ConnectionToast {
   private wsDisconnectToastShown = false;
 
   /**
-   * True from `stop()` onward — suppresses the toast while the injector itself
-   * is being destroyed.
-   *
-   * That is NOT a navigation. The router caches the route's injector and never
-   * destroys it when the user leaves, so `IngestionService.ngOnDestroy()` — the
-   * only caller of `stop()` — runs at app teardown, if at all. Leaving a team
-   * runs `IngestionService.close()`, which never calls `stop()`; no toast is
-   * raised there because `TeamSocket` detaches its observer before closing, so
-   * a stopped socket's close cannot reach `show()` in the first place.
-   *
-   * One-way by design: nothing sets it back to `false`. A destroyed injector is
-   * never initialised again, so there is no path that would need it cleared.
+   * True from `stop()` onward. Set only at injector teardown (never on
+   * navigation — the router keeps the route's injector), and one-way: a
+   * destroyed injector is never initialised again.
    */
   private destroying = false;
 
@@ -120,12 +111,8 @@ export class ConnectionToast {
   }
 
   /**
-   * Enter the destroying state and re-arm the dedup flag.
-   *
-   * Called FIRST in `IngestionService.ngOnDestroy()`, ahead of the socket's
-   * close. Defence in depth, not the mechanism: `TeamSocket.stop()` detaches its
-   * observer before closing, so the close never reaches `show()`. The order is
-   * kept so a teardown stays silent even if that detach is ever lost.
+   * Enter the destroying state and re-arm the dedup flag. Defence in depth:
+   * the mechanism that keeps a teardown silent is `TeamSocket.stop()`'s detach.
    */
   stop(): void {
     this.destroying = true;

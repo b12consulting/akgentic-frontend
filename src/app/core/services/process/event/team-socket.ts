@@ -37,34 +37,22 @@ export type TeamSocketStatus = 'error' | 'complete';
  * invisible in single-team testing — every order works when there is only ever
  * one `init()`.
  *
- * Component-scoped (`@Injectable()` with no `providedIn`), provided on
- * the `process/:id` route before `IngestionService`, which injects it. Root scope
- * would share ONE socket across every team switch.
+ * Route-scoped (`@Injectable()` with no `providedIn`), provided on the
+ * `process/:id` route with `IngestionService`, which injects it; never
+ * `providedIn: 'root'`.
  */
 @Injectable()
 export class TeamSocket {
   private config: ConfigService = inject(ConfigService);
 
   /**
-   * The live socket. Starts as an unopened placeholder so `stop()` is safe
-   * before the first `start()`; a never-opened `WebSocketSubject` throws on
-   * `unsubscribe()`, which is why that half of the teardown is wrapped rather
-   * than guarded.
-   *
-   * Not part of `IngestionService`'s per-cycle `Subscription` bag
-   * (ADR-025 §3): the subscription to it is kept HERE, in `socketSub`, and
-   * `stop()` releases it.
+   * The live socket. Starts as an unopened placeholder; a never-opened
+   * `WebSocketSubject` throws on `unsubscribe()`, hence `stop()`'s try/catch.
    */
   private webSocket: WebSocketSubject<any> = new WebSocketSubject({ url: '' });
 
-  /**
-   * This unit's own subscription to the live socket, kept so `stop()` can
-   * DETACH the observer before closing. Closing alone is not enough: a
-   * `WebSocketSubject` delivers its close on a later task, to the observer it
-   * captured at connect time, so a socket that was stopped would still report
-   * `complete` / `error` on `status$` — to whichever team cycle is subscribed by
-   * then (#405). Detached, a stopped socket can reach none of the three streams.
-   */
+  /** Kept so `stop()` detaches before closing: a closed socket delivers its
+   *  close on a later task, to whichever cycle is subscribed by then (#405). */
   private socketSub: Subscription | null = null;
 
   /**
@@ -186,24 +174,12 @@ export class TeamSocket {
   }
 
   /**
-   * Close the socket for this cycle, and stop listening to it.
-   *
-   * The detach comes FIRST and is the mechanism: once `socketSub` is
-   * unsubscribed, nothing the stopped socket does later — a frame, an error,
-   * the close itself — can reach `inbound$`, `frames$` or `status$`. So
-   * `status$` only ever carries the CURRENT socket's transitions, and a team
-   * that was left cannot raise a "Connection Lost" toast on the next one.
-   *
-   * The subject-level `unsubscribe()` stays as the second step. It marks a real
-   * `WebSocketSubject` closed, and its try/catch is what keeps this safe before
-   * any `start()` (a never-opened `WebSocketSubject` throws) and safe twice —
-   * it is called from `init()`'s dispose step, from `close()`, and again if the
-   * injector is ever destroyed.
+   * Close the socket for this cycle. The detach comes FIRST: a stopped socket
+   * reaches none of the three streams. The try/catch keeps this safe before
+   * any `start()` and safe twice.
    *
    * The three subjects are deliberately NOT completed here: they outlive a
-   * cycle and carry the next one's frames. Completing them per cycle would
-   * leave every consumer attached to a dead stream after the first team switch,
-   * with no error anywhere.
+   * cycle and carry the next one's frames.
    */
   stop(): void {
     this.socketSub?.unsubscribe();
@@ -216,12 +192,8 @@ export class TeamSocket {
   }
 
   /**
-   * Teardown for good: close the socket, then complete the three streams.
-   *
-   * `stop()` detaches the observer, so the close it causes emits NOTHING on
-   * `status$`: a deliberate teardown is not a lost connection. The order is
-   * kept — `stop()` first — so a real `WebSocketSubject` is closed before the
-   * streams its frames would land on are completed.
+   * Teardown for good: stop (silently — the observer is detached), then
+   * complete the three streams.
    */
   destroy(): void {
     this.stop();

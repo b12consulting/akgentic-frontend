@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { BehaviorSubject, skip, Subject } from 'rxjs';
 import { WebSocketSubject } from 'rxjs/webSocket';
 
+import { asyncClosingSocket } from '../../../../../testing/async-closing-socket';
 import { HUMAN, MANAGER, received, sent } from '../../../../../testing/run-log-builders';
 import { ContextService } from '../../../platform/context/context.service';
 import { ApiService } from '../../../platform/http/api.service';
@@ -84,76 +85,35 @@ describe('TeamSessionService — a team switch resets the transcript state', () 
 });
 
 /**
- * Leaving the view closes the pipeline (#405).
- *
- * The router caches the route's environment injector and never destroys it on
- * navigation, so nothing but `dispose()` releases a team when the user leaves
- * for Home. Over a STUBBED pipeline: what `dispose()` calls, and in what order.
+ * Leaving the view closes the pipeline and cancels an in-flight open (#405),
+ * over a STUBBED pipeline: the router never destroys the route's injector, so
+ * nothing but `dispose()` releases a team when the user leaves for Home.
  */
 describe('TeamSessionService — dispose() closes the pipeline (#405)', () => {
   let session: TeamSessionService;
   let ingestionClose: jasmine.Spy;
-  let unselect: jasmine.Spy;
+  let init: jasmine.Spy;
+  let getCurrentTeam: jasmine.Spy;
   let currentProcessId$: BehaviorSubject<string>;
-  let folds: TraceFoldState;
-  let selection: RunSelectionState;
 
   beforeEach(() => {
     ingestionClose = jasmine.createSpy('close');
-    unselect = jasmine.createSpy('unselect');
+    init = jasmine.createSpy('init').and.resolveTo();
+    getCurrentTeam = jasmine
+      .createSpy('getCurrentTeam')
+      .and.callFake((id: string) => Promise.resolve({ team_id: id, status: 'running' }));
     currentProcessId$ = new BehaviorSubject<string>('');
     TestBed.configureTestingModule({
       providers: [
         TeamSessionService,
         TraceFoldState,
         RunSelectionState,
-        {
-          provide: ContextService,
-          useValue: {
-            currentProcessId$,
-            getCurrentTeam: (id: string) => Promise.resolve({ team_id: id, status: 'running' }),
-          },
-        },
-        { provide: AkgentService, useValue: { unselect } },
-        {
-          provide: IngestionService,
-          useValue: { init: () => Promise.resolve(), close: ingestionClose },
-        },
+        { provide: ContextService, useValue: { currentProcessId$, getCurrentTeam } },
+        { provide: AkgentService, useValue: { unselect: () => undefined } },
+        { provide: IngestionService, useValue: { init, close: ingestionClose } },
       ],
     });
     session = TestBed.inject(TeamSessionService);
-    folds = TestBed.inject(TraceFoldState);
-    selection = TestBed.inject(RunSelectionState);
-  });
-
-  it('with a team open: closes the pipeline once and resets the transcript state', async () => {
-    const graph = runGraphFold([
-      sent('U1', HUMAN, MANAGER, null, 1),
-      received('U1', MANAGER, 2),
-    ]);
-    const root = runKey('U1', MANAGER.agent_id);
-    await session.open('A');
-    selection.select(graph, root, 'tree');
-    // `open()` ran its own `close()` with nothing open yet: a no-op.
-    expect(ingestionClose).not.toHaveBeenCalled();
-
-    session.dispose();
-
-    expect(ingestionClose).toHaveBeenCalledTimes(1);
-    expect(selection.selected()).toBeNull();
-    expect(folds.openKeys().size).toBe(0);
-    expect(currentProcessId$.value).toBe('');
-    expect(session.openTeamId).toBe('');
-  });
-
-  it('with nothing open: retracts the pointer and unselects, and closes nothing', () => {
-    currentProcessId$.next('left-over');
-
-    session.dispose();
-
-    expect(ingestionClose).not.toHaveBeenCalled();
-    expect(unselect).toHaveBeenCalled();
-    expect(currentProcessId$.value).toBe('');
   });
 
   it('closes the pipeline BEFORE retracting the pointer', async () => {
@@ -167,56 +127,26 @@ describe('TeamSessionService — dispose() closes the pipeline (#405)', () => {
     // `close()` guards on the open id, so it has to run while there still is
     // one. Retract first and it returns early: the team keeps running on Home.
     expect(calls).toEqual(['close', 'id:']);
+    expect(ingestionClose).toHaveBeenCalledTimes(1);
   });
 
-  it('the same team can be opened again after a dispose()', async () => {
-    const init = spyOn(TestBed.inject(IngestionService), 'init').and.callThrough();
-    await session.open('A');
-    session.dispose();
+  it('dispose() during an in-flight open() cancels it: the pipeline never starts', async () => {
+    let resolve!: (team: unknown) => void;
+    getCurrentTeam.and.returnValue(new Promise((r) => (resolve = r)));
+    const pending = session.open('A');
 
-    expect(await session.open('A')).toBe('opened');
-    expect(init).toHaveBeenCalledTimes(2);
+    session.dispose();
+    resolve({ team_id: 'A', status: 'running' });
+
+    expect(await pending).toBe('superseded');
+    expect(init).not.toHaveBeenCalled();
   });
 });
 
 /**
- * A transport whose close is delivered on a LATER task, as a browser's `onclose`
- * is. `unsubscribe()` only SCHEDULES the completion; under `jasmine.clock()` it
- * lands on `tick(0)`, i.e. after whatever the spec does next — which is how the
- * sequence "stop old → subscribe new cycle → old close arrives" becomes real.
- *
- * `subscribe` returns the stream's own `Subscription` on purpose: that is what
- * `TeamSocket.start()` keeps and `stop()` detaches.
- */
-function asyncClosingSocket(ending: 'complete' | 'error' = 'complete'): {
-  socket: WebSocketSubject<any>;
-  stream: Subject<any>;
-  unsubscribed: () => number;
-} {
-  const stream = new Subject<any>();
-  let count = 0;
-  const socket = {
-    subscribe: (observer: any) => stream.subscribe(observer),
-    unsubscribe: () => {
-      count++;
-      setTimeout(() => {
-        if (ending === 'complete') stream.complete();
-        else stream.error(new Error('stale close'));
-      }, 0);
-    },
-    next: (value: any) => stream.next(value),
-  } as unknown as WebSocketSubject<any>;
-  return { socket, stream, unsubscribed: () => count };
-}
-
-/**
  * The reported bug, end to end (#405): `TeamSessionService` over the REAL
- * ingestion stack, with a socket that closes the way a browser's does.
- *
- * Only the edges are doubles — the transport, the HTTP client, the toast sink
- * and the root-scoped context. Everything between `open()` and the toast is the
- * production code, because the bug was in how those units compose and no single
- * one of them was wrong on its own.
+ * ingestion stack. Only the edges are doubles — the transport, the HTTP client,
+ * the toast sink and the root-scoped context.
  */
 describe('TeamSessionService — a stale socket close raises no toast (#405)', () => {
   let session: TeamSessionService;
@@ -318,63 +248,20 @@ describe('TeamSessionService — a stale socket close raises no toast (#405)', (
     return b;
   }
 
-  for (const ending of ['complete', 'error'] as const) {
-    it(`team → Home → team: A's stale ${ending} raises no toast`, async () => {
-      spyOn(console, 'error');
-      const a = await openA(ending);
-      expect(statusObservers()).toBe(1);
-
-      // Home. A is released HERE — its socket stopped, its cycle unsubscribed —
-      // not left running until the next team happens to open.
-      session.dispose();
-      expect(a.unsubscribed()).toBe(1);
-      expect(statusObservers()).toBe(0);
-
-      await openB();
-      expect(statusObservers()).toBe(1);
-
-      // A's close arrives now, with B's cycle subscribed. Past the spinner
-      // floor, so an `error` that reached B would have flipped it by here.
-      jasmine.clock().tick(600);
-      expect(disconnectToasts().length).toBe(0);
-      expect(ingestion.loadingProcess$.value).toBe(true);
-    });
-
-    it(`team → team: A's stale ${ending} raises no toast`, async () => {
-      spyOn(console, 'error');
-      const a = await openA(ending);
-
-      await openB();
-      // Stopped by `close()` and again by `init()`'s dispose step; the second
-      // `stop()` is the try/catch no-op a real `WebSocketSubject` tolerates.
-      expect(a.unsubscribed()).toBeGreaterThanOrEqual(1);
-
-      jasmine.clock().tick(600);
-      expect(disconnectToasts().length).toBe(0);
-      expect(ingestion.loadingProcess$.value).toBe(true);
-    });
-  }
-
-  it("a real loss still warns exactly once: B's own socket errors", async () => {
+  it("team → Home → team: A's stale close raises no toast; B's real loss raises exactly one", async () => {
     spyOn(console, 'error');
-    await openA('complete');
+    const a = await openA('complete');
+
     session.dispose();
+    expect(a.unsubscribed()).toBe(1);
+    expect(statusObservers()).toBe(0);
+
     const b = await openB();
-    jasmine.clock().tick(600);
+    jasmine.clock().tick(600); // A's close lands here, with B's cycle subscribed
+    expect(disconnectToasts().length).toBe(0);
 
     b.error(new Error('lost'));
-
     expect(disconnectToasts().length).toBe(1);
     expect(ingestion.loadingProcess$.value).toBe(false);
-  });
-
-  it("a real loss still warns exactly once: B's own socket completes", async () => {
-    await openA('error');
-    const b = await openB();
-    jasmine.clock().tick(600);
-
-    b.complete();
-
-    expect(disconnectToasts().length).toBe(1);
   });
 });

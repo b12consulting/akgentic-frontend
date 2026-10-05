@@ -45,19 +45,16 @@ import { TraceFoldState } from '../ui-state/trace-fold-state';
  * assembling a second UI out of the same parts: a component that silently
  * requires a particular ancestor is not a component you can place.
  *
- * `Route.providers` gives them an ENVIRONMENT injector owned by the route.
- * Nothing has to be mounted under a specific component to reach them. Their
- * LIFETIME is not the component's, though: the router creates that injector
- * when the route first activates, caches it, and never destroys it — not on a
- * team switch, and not on navigation to Home. `ngOnDestroy` on these services
- * therefore does not run on navigation; it runs only if the injector itself is
- * ever destroyed, at app teardown. A team is released by hand, by
+ * `Route.providers` gives them an ENVIRONMENT injector owned by the route, so
+ * nothing has to be mounted under a specific component to reach them. The
+ * router caches that injector and never destroys it on navigation, so their
+ * `ngOnDestroy` runs only at app teardown; a team is released by hand, by
  * `TeamSessionService.close()` (switch) and `dispose()` (leave).
  *
  * WHAT IT DOES NOT CHANGE, and what the old comments here claimed it did. The
  * router REUSES this route when only `:id` changes, so neither the component
- * nor this injector is recreated on a team switch; `ProcessComponent.openTeam`
- * tears the previous team down by hand, and that is what actually isolates one
+ * nor this injector is recreated on a team switch; `TeamSessionService.open()`
+ * tears the previous team down by hand, through its `close()`, and that is what actually isolates one
  * team from the next. The repeated "a team switch destroys this" reasoning is
  * not true even of navigating away and back: the injector outlives that too
  * (see above). Left in place, retargeted, because the conclusion it defends —
