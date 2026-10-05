@@ -5,7 +5,7 @@
 
 .tree {
   list-style: none;
-  margin: 8px 0 0;
+  margin: 12px 0 4px;
   padding: 0;
 }
 
@@ -54,7 +54,7 @@
 .rn-body {
   position: relative;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 8px 10px;
   border: 1px solid transparent;
   border-radius: 10px;
 }
@@ -69,10 +69,11 @@
   }
 }
 
-/* The chevron, centred on line 1 inside the box's padding and border. */
+/* The chevron, centred on line 1 inside the box's padding and border
+   (1px + 8px). */
 .node-chevron,
 .node-chevron-gap {
-  margin-top: 7px;
+  margin-top: 9px;
 }
 
 /* A run that sent nothing (ADR-037 §D7): its name steps down to the muted
@@ -140,7 +141,6 @@
   width: 18px;
   height: 20px;
   padding: 0;
-  font-size: 0.65rem;
 }
 
 .node-chevron-gap {

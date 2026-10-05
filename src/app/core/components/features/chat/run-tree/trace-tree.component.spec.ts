@@ -301,6 +301,35 @@ describe('TraceTreeComponent', () => {
     expect(getComputedStyle(box).boxShadow).not.toBe('none');
   });
 
+  describe('the caret and the spacing', () => {
+    afterEach(() => document.getElementById('primeng-sim')?.remove());
+
+    it('the caret is the shared 8px glyph, even under PrimeNG\'s icon size', () => {
+      // The rule PrimeNG's base style injects into <head> at runtime.
+      const style = document.createElement('style');
+      style.id = 'primeng-sim';
+      style.textContent = '.pi { font-size: 13px; }';
+      document.head.appendChild(style);
+      render(CASE_2);
+
+      for (const glyph of [
+        node(ROOT).querySelector('.node-chevron .pi')!,
+        node(k('De', EXPERT)).querySelector('.node-chevron .pi')!,
+      ]) {
+        expect(glyph.classList).toContain('akg-caret');
+        expect(getComputedStyle(glyph).fontSize).toBe('8px');
+      }
+    });
+
+    it('a row\'s box and the tree around the rows breathe', () => {
+      render(CASE_2);
+      expect(getComputedStyle(node(ROOT).querySelector('.rn-body')!).paddingTop).toBe('8px');
+      const tree = getComputedStyle(host().querySelector('.tree')!);
+      expect(tree.marginTop).toBe('12px');
+      expect(tree.marginBottom).toBe('4px');
+    });
+  });
+
   describe('the @Human row', () => {
     const Q_ENVELOPE = envId('Q', HUMAN);
 

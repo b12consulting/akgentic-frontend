@@ -9,11 +9,13 @@
 
   <div class="tool-chips">
     @for (tool of tools; track tool) {
-      <span class="tool-chip">
+      <!-- A shortened name keeps the whole one on hover. -->
+      @let label = shortToolName(tool);
+      <span class="tool-chip" [attr.title]="label !== tool ? tool : null">
         <!-- The tool hue, not the accent: the same mark the transcript's tool
              fold carries, so a chip here and a step there read as one thing. -->
         <span class="tool-chip-dot" aria-hidden="true"></span>
-        {{ tool }}
+        {{ label }}
       </span>
     }
   </div>

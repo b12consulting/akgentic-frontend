@@ -49,7 +49,7 @@
                   "
                   (click)="toggleMini(row)"
                 >
-                  <i class="pi pi-chevron-right" aria-hidden="true"></i>
+                  <i class="pi pi-chevron-right akg-caret" aria-hidden="true"></i>
                 </button>
               } @else {
                 <span class="mini-chevron-gap" aria-hidden="true"></span>
@@ -151,8 +151,10 @@
     <section class="ri-section">
       <h3 class="ri-section-title">{{ 'runInspector.section.handling' | translate }}</h3>
       @if (trigger(); as t) {
-        <div class="ri-route">{{ t.sender.name | displayActorName }} → {{ t.recipient.name | displayActorName }}</div>
-        <div class="ri-text">{{ t.content }}</div>
+        <div class="ri-handling">
+          <div class="ri-route">{{ t.sender.name | displayActorName }} → {{ t.recipient.name | displayActorName }}</div>
+          <div class="ri-text">{{ t.content }}</div>
+        </div>
       } @else {
         <p class="ri-note">{{ 'runInspector.handling.unknown' | translate }}</p>
       }
