@@ -297,7 +297,7 @@
   .input-area {
     flex: 0 0 auto;
     position: relative;
-    padding: 8px var(--akg-conversation-padding-x) 22px;
+    padding: 8px var(--akg-conversation-padding-x) 0px;
     /*
      * The transcript scrolls out UNDER the composer rather than stopping at a
      * hard edge above it. The gradient is opaque for the first 55% — the band
