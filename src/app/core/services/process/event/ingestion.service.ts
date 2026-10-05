@@ -465,10 +465,9 @@ export class IngestionService {
    * because after it there is no team, and every selector and per-agent store
    * is a fold over that log.
    *
-   * Called by `ProcessComponent` at the MOMENT the id changes, not left to the
-   * next `init()`'s step (a). `init()` awaits `getCurrentTeam` before it runs,
-   * and the previous team's socket must not still be feeding the log across
-   * that await.
+   * Called by `TeamSessionService.close()` — on a switch, before its awaited
+   * fetch, and on `dispose()` — not left to the next `init()`'s step (a): the
+   * previous team's socket must not feed the log across that await.
    */
   close(): void {
     // Supersede any `init()` still waiting on a REST replay: it must not write.
@@ -483,15 +482,12 @@ export class IngestionService {
     // Story 52-1: no in-flight cycle may write after this point either.
     this.cycleToken++;
 
-    // FIRST, and load-bearing: closing the socket below completes its stream,
-    // whose `complete` reaches `connectionToast.show()`. Moving this line after
-    // it raises a "Connection Lost" toast on every intentional navigation. The
-    // two statements now live in different files, which makes the ordering
-    // easier to break and is why a spec pins it.
+    // FIRST, as defence in depth behind TeamSocket's detach (#405). Runs only
+    // at app teardown — leaving a team is `close()`.
     this.connectionToast.stop();
 
-    // Story 8-2 (AC4): clear all toasts so navigating away removes warnings and
-    // a fresh process view starts clean.
+    // Story 8-2 (AC4): clear all toasts so a destroyed view leaves no warnings
+    // behind.
     this.notifications.clear();
 
     this.disposePriorSubscriptions();

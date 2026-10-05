@@ -46,19 +46,21 @@ import { TraceFoldState } from '../ui-state/trace-fold-state';
  * assembling a second UI out of the same parts: a component that silently
  * requires a particular ancestor is not a component you can place.
  *
- * `Route.providers` gives them an ENVIRONMENT injector owned by the route.
- * Nothing about their lifetime changes — it is created when the route activates
- * and destroyed when it deactivates, which is the same window the component
- * had — but nothing has to be mounted under a specific component to reach them.
+ * `Route.providers` gives them an ENVIRONMENT injector owned by the route, so
+ * nothing has to be mounted under a specific component to reach them. The
+ * router caches that injector and never destroys it on navigation, so their
+ * `ngOnDestroy` runs only at app teardown; a team is released by hand, by
+ * `TeamSessionService.close()` (switch) and `dispose()` (leave).
  *
  * WHAT IT DOES NOT CHANGE, and what the old comments here claimed it did. The
  * router REUSES this route when only `:id` changes, so neither the component
- * nor this injector is recreated on a team switch; `ProcessComponent.openTeam`
- * tears the previous team down by hand, and that is what actually isolates one
- * team from the next. The repeated "a team switch destroys this" reasoning was
- * true only of navigating away and back. Left in place, retargeted, because the
- * conclusion it defends — never `providedIn: 'root'` — is still right: root
- * scope would survive even that.
+ * nor this injector is recreated on a team switch; `TeamSessionService.open()`
+ * tears the previous team down by hand, through its `close()`, and that is
+ * what actually isolates one team from the next. The repeated "a team switch destroys this" reasoning is
+ * not true even of navigating away and back: the injector outlives that too
+ * (see above). Left in place, retargeted, because the conclusion it defends —
+ * never `providedIn: 'root'` — is still right: a root instance would be shared
+ * with every view in the app rather than owned by this route.
  *
  * ORDER IS NOT SIGNIFICANT. Several entries below say they must be provided
  * AFTER or BEFORE another. Angular resolves providers by token, not by

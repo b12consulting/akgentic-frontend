@@ -69,15 +69,9 @@ export class ConnectionToast {
   private wsDisconnectToastShown = false;
 
   /**
-   * True from `stop()` onward — suppresses the toast on intentional navigation,
-   * where `IngestionService.ngOnDestroy()`'s `webSocket.unsubscribe()` closes
-   * the socket and the resulting `complete` re-enters `show()`.
-   *
-   * One-way by design: nothing sets it back to `false`, matching the flag it
-   * replaces. A route-scoped service is never re-initialised after its
-   * component is destroyed, so there is no path that would need it cleared. If a
-   * future story ever re-inits after destroy this becomes a live bug — it is not
-   * one today.
+   * True from `stop()` onward. Set only at injector teardown (never on
+   * navigation — the router keeps the route's injector), and one-way: a
+   * destroyed injector is never initialised again.
    */
   private destroying = false;
 
@@ -117,12 +111,8 @@ export class ConnectionToast {
   }
 
   /**
-   * Enter the destroying state and re-arm the dedup flag.
-   *
-   * Called FIRST in `IngestionService.ngOnDestroy()`, ahead of the
-   * `webSocket.unsubscribe()` — the unsubscribe closes the socket, whose
-   * `complete` reaches `show()`, so reordering the two raises a "Connection
-   * Lost" toast on every intentional navigation.
+   * Enter the destroying state and re-arm the dedup flag. Defence in depth:
+   * the mechanism that keeps a teardown silent is `TeamSocket.stop()`'s detach.
    */
   stop(): void {
     this.destroying = true;

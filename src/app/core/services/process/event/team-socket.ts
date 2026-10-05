@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 
-import { Observable, Subject } from 'rxjs';
+import { Observable, Subject, Subscription } from 'rxjs';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 
 import { ConfigService } from '../../../platform/config/config.service';
@@ -27,30 +27,33 @@ export type TeamSocketStatus = 'error' | 'complete';
  * Nothing is self-wired: the constructor opens no socket and subscribes to
  * nothing (ADR-025 §2, restating ADR-005 §Decision 6). `start()` / `stop()` /
  * `destroy()` are the explicit invocation points, all driven by
- * `IngestionService.init()` / `ngOnDestroy()`. This is the unit where
- * self-wiring would be most tempting and most damaging: a constructor that
- * opened the socket would put the transport ahead of `log.reset()` and the REST
- * replay, and the resulting team-switch race is invisible in single-team
- * testing — every order works when there is only ever one `init()`.
+ * `IngestionService`: `start()` / `stop()` by `init()` and `close()`, and
+ * `destroy()` by `ngOnDestroy()` — which runs only at app teardown, never on
+ * navigation, because the router never destroys the route's injector.
  *
- * Component-scoped (`@Injectable()` with no `providedIn`), provided on
- * the `process/:id` route before `IngestionService`, which injects it. Root scope
- * would share ONE socket across every team switch.
+ * This is the unit where self-wiring would be most tempting and most damaging:
+ * a constructor that opened the socket would put the transport ahead of
+ * `log.reset()` and the REST replay, and the resulting team-switch race is
+ * invisible in single-team testing — every order works when there is only ever
+ * one `init()`.
+ *
+ * Route-scoped (`@Injectable()` with no `providedIn`), provided on the
+ * `process/:id` route with `IngestionService`, which injects it; never
+ * `providedIn: 'root'`.
  */
 @Injectable()
 export class TeamSocket {
   private config: ConfigService = inject(ConfigService);
 
   /**
-   * The live socket. Starts as an unopened placeholder so `stop()` is safe
-   * before the first `start()`; a never-opened `WebSocketSubject` throws on
-   * `unsubscribe()`, which is why the teardown below is wrapped rather than
-   * guarded.
-   *
-   * NOT a subscription and therefore NOT part of `IngestionService`'s per-cycle
-   * `Subscription` bag (ADR-025 §3) — the try/catch is the mechanism here.
+   * The live socket. Starts as an unopened placeholder; a never-opened
+   * `WebSocketSubject` throws on `unsubscribe()`, hence `stop()`'s try/catch.
    */
   private webSocket: WebSocketSubject<any> = new WebSocketSubject({ url: '' });
+
+  /** Kept so `stop()` detaches before closing: a closed socket delivers its
+   *  close on a later task, to whichever cycle is subscribed by then (#405). */
+  private socketSub: Subscription | null = null;
 
   /**
    * Story 6.1 (ADR-005 §Decision 3): the raw protocol-frame stream — every WS
@@ -115,7 +118,7 @@ export class TeamSocket {
       `${wsProtocol}${api}/ws/${processId}`,
     );
 
-    this.webSocket.subscribe({
+    this.socketSub = this.webSocket.subscribe({
       next: (data: any) => {
         // Story 4-10 (AC1): announce the frame BEFORE the `__model__` guard.
         // Runs for EVERY event shape, including the ones dropped below —
@@ -171,16 +174,16 @@ export class TeamSocket {
   }
 
   /**
-   * Close the socket for this cycle. Called from `init()`'s dispose step and
-   * again from `ngOnDestroy`, so it must be safe before any `start()` and safe
-   * twice — hence the try/catch, which a never-opened `WebSocketSubject` needs.
+   * Close the socket for this cycle. The detach comes FIRST: a stopped socket
+   * reaches none of the three streams. The try/catch keeps this safe before
+   * any `start()` and safe twice.
    *
    * The three subjects are deliberately NOT completed here: they outlive a
-   * cycle and carry the next one's frames. Completing them per cycle would
-   * leave every consumer attached to a dead stream after the first team switch,
-   * with no error anywhere.
+   * cycle and carry the next one's frames.
    */
   stop(): void {
+    this.socketSub?.unsubscribe();
+    this.socketSub = null;
     try {
       this.webSocket.unsubscribe();
     } catch {
@@ -189,12 +192,8 @@ export class TeamSocket {
   }
 
   /**
-   * Teardown for good: close the socket, then complete the three streams.
-   *
-   * In that order — `stop()` first, because a real `WebSocketSubject`'s
-   * unsubscribe closes the socket and the close completes the stream, which
-   * re-enters the `complete` callback above. Completing `_status$` first would
-   * swallow that last emission.
+   * Teardown for good: stop (silently — the observer is detached), then
+   * complete the three streams.
    */
   destroy(): void {
     this.stop();

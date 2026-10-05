@@ -431,9 +431,8 @@ export class ProcessComponent implements OnChanges, AfterViewInit, OnDestroy {
     const outcome = await this.session.open(teamId);
     this.processId = this.session.openTeamId;
 
-    // 'superseded' — a newer selection won the race and has already published
-    // its own id and torn this one down. Doing anything here would act on a
-    // team nobody is looking at.
+    // 'superseded' — a newer selection or a dispose() won the race; doing
+    // anything here would act on a team nobody is looking at.
     if (outcome === 'superseded' || outcome === 'cleared') {
       return;
     }

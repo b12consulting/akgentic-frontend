@@ -3,6 +3,7 @@ import { TestBed } from '@angular/core/testing';
 import { Subject } from 'rxjs';
 import { WebSocketSubject } from 'rxjs/webSocket';
 
+import { asyncClosingSocket } from '../../../../../testing/async-closing-socket';
 import { ConfigService } from '../../../platform/config/config.service';
 import { AkgenticMessage } from '../../../protocol/message.types';
 import { TeamSocket, TeamSocketStatus } from './team-socket';
@@ -277,12 +278,16 @@ describe('TeamSocket — lifecycle (Story 34-6, AC4, AC12)', () => {
   it('destroy() closes the socket FIRST, then completes the three streams', () => {
     const { socket } = setup();
     const stream = new Subject<any>();
+    let closed = 0;
     // A double that behaves like a real WebSocketSubject: unsubscribe closes the
     // socket, and the close completes the stream.
     (socket as any).createWebSocket = () =>
       ({
         subscribe: (observer: any) => stream.subscribe(observer),
-        unsubscribe: () => stream.complete(),
+        unsubscribe: () => {
+          closed++;
+          stream.complete();
+        },
       }) as unknown as WebSocketSubject<any>;
     const seen: TeamSocketStatus[] = [];
     socket.status$.subscribe((s) => seen.push(s));
@@ -290,10 +295,10 @@ describe('TeamSocket — lifecycle (Story 34-6, AC4, AC12)', () => {
     socket.start('proc-1');
     socket.destroy();
 
-    // Completing `_status$` before the unsubscribe would swallow this last
-    // emission — which is the one the disconnect toast's teardown guard exists
-    // to suppress.
-    expect(seen).toEqual(['complete']);
+    // Closed, but `stop()` detached first: a deliberate teardown reports no
+    // `complete`. Drop the detach and this reads `['complete']`.
+    expect(closed).toBe(1);
+    expect(seen).toEqual([]);
 
     // All three streams are finished: a subscriber attaching afterwards is
     // completed immediately rather than left waiting on a dead socket.
@@ -305,7 +310,54 @@ describe('TeamSocket — lifecycle (Story 34-6, AC4, AC12)', () => {
   });
 });
 
-describe('TeamSocket — component-scoped, never root-provided (Story 34-6)', () => {
+describe("TeamSocket — a stale socket's close never reaches status$ (#405)", () => {
+  beforeEach(() => {
+    jasmine.clock().install();
+  });
+
+  afterEach(() => {
+    jasmine.clock().uninstall();
+  });
+
+  /** Start A on the async double, stop it, start B on a plain subject. */
+  function switchSockets(ending: 'complete' | 'error'): {
+    a: ReturnType<typeof asyncClosingSocket>;
+    b: Subject<any>;
+    seen: TeamSocketStatus[];
+  } {
+    const { socket } = setup();
+    const a = asyncClosingSocket(ending);
+    (socket as any).createWebSocket = () => a.socket;
+    const seen: TeamSocketStatus[] = [];
+    socket.status$.subscribe((s) => seen.push(s));
+
+    socket.start('proc-A');
+    socket.stop();
+
+    const b = new Subject<any>();
+    (socket as any).createWebSocket = () =>
+      b as unknown as WebSocketSubject<any>;
+    socket.start('proc-B');
+    return { a, b, seen };
+  }
+
+  for (const ending of ['complete', 'error'] as const) {
+    it(`drops a stopped socket's stale ${ending} delivered after the next start()`, () => {
+      spyOn(console, 'error');
+      const { a, b, seen } = switchSockets(ending);
+      expect(a.unsubscribed()).toBe(1); // the old socket WAS closed
+
+      jasmine.clock().tick(0);
+      expect(seen).toEqual([]);
+
+      if (ending === 'complete') b.complete();
+      else b.error(new Error('lost'));
+      expect(seen).toEqual([ending]);
+    });
+  }
+});
+
+describe('TeamSocket — route-scoped, never root-provided (Story 34-6)', () => {
   it('is NOT reachable from an injector that does not provide it', () => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({

@@ -39,10 +39,9 @@ import { TraceFoldState } from '../ui-state/trace-fold-state';
  * What `open()` did, as a value rather than as a side effect the caller has to
  * infer from three observables.
  *
- * `'superseded'` is not a failure. It means a newer `open()` started while this
- * one was awaiting the backend, and that newer call has already published its
- * own id and torn this one down — so the correct behaviour is to do nothing at
- * all. A caller that treats it as an error will navigate away from the team the
+ * `'superseded'` is not a failure: a newer `open()` or a `dispose()` ran while
+ * this one awaited the backend, so the correct behaviour is to do nothing. A
+ * caller that treats it as an error will navigate away from the team the
  * user actually asked for.
  */
 export type TeamOpenOutcome = 'opened' | 'missing' | 'superseded' | 'cleared';
@@ -72,11 +71,9 @@ export class TeamSessionService {
   private opened = false;
 
   /**
-   * Monotonic ticket for in-flight opens.
-   *
-   * Two rapid switches race on one awaited fetch. Without this the loser
-   * finishes last and initialises the pipeline for a team nobody is looking at,
-   * over a log the winner already owns.
+   * Monotonic ticket for in-flight opens, bumped by `open()` and `dispose()`:
+   * an `open()` whose fetch resolves after a newer `open()` or a `dispose()`
+   * must not start the pipeline.
    */
   private epoch = 0;
 
@@ -152,22 +149,18 @@ export class TeamSessionService {
   }
 
   /**
-   * Give up the session: drop the selection and retract the pointer.
-   *
-   * Separate from `close()` because the two are wanted at different moments,
-   * and they do DIFFERENT things. A team switch closes the pipeline and
-   * immediately republishes an id. Leaving the view retracts the id and does
-   * NOT close the pipeline — the route injector is going away with it, and
-   * `IngestionService` releases itself.
-   *
-   * `unselect()` is unconditional here, where `close()` guards on an open team:
-   * the selected agent is root-scoped and outlives this session whether or not
-   * a team was ever opened.
+   * Give up the session: close the pipeline (the router never destroys the
+   * route's injector on navigation, so nothing else would — #405), retract the
+   * pointer, and cancel an in-flight `open()` so it never starts the pipeline
+   * behind Home. `close()` is FIRST because it guards on `teamId`; `unselect()`
+   * is unconditional because the selected agent is root-scoped.
    */
   dispose(): void {
+    this.close();
     this.akgentService.unselect();
     this.teamId = '';
     this.opened = false;
+    ++this.epoch;
     this.contextService.currentProcessId$.next('');
   }
 }

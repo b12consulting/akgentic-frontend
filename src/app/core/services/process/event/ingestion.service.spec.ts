@@ -1282,12 +1282,12 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
   it('AC4: ngOnDestroy suppresses disconnect toast triggered by unsubscribe (destroying guard)', async () => {
     await service.init('proc-1', true);
 
-    // Destroy enters the destroying state BEFORE unsubscribe, so the complete
-    // callback's `connectionToast.show()` call is suppressed.
+    // ngOnDestroy enters the destroying state first; TeamSocket also detaches
+    // before closing, so no close reaches show().
     service.ngOnDestroy();
 
     // The only warn-toast add calls should be zero — the destroying guard
-    // prevents the toast from being shown during intentional navigation.
+    // prevents the toast from being shown during the injector's teardown.
     const warnCalls = msgService.notify.calls.allArgs()
       .map((a: any[]) => a[0])
       .filter((c: any) => c.severity === 'warn' && c.summary === 'Connection Lost');
@@ -1296,19 +1296,19 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
 
   // --- Story 34-4: the two seams the extraction made easier to break --------
 
-  it('34-4 (AC7): stop() runs BEFORE the unsubscribe that completes the socket', async () => {
-    // A plain `Subject.unsubscribe()` does NOT notify its subscribers, so the
-    // `fakeSocket` above cannot reproduce this hazard at all — the test that
-    // uses it passes whichever order `ngOnDestroy` writes. A real
-    // `WebSocketSubject.unsubscribe()` closes the socket and the close
-    // completes the stream, which re-enters the `complete` handler and raises
-    // the toast. This double is that, and it is the only thing here that makes
-    // the ordering falsifiable: swap the two statements in `ngOnDestroy` and a
-    // "Connection Lost" warning appears on every deliberate navigation.
+  it('34-4 (AC7): ngOnDestroy delivers no `complete` to status$ and raises no toast', async () => {
+    // A double whose unsubscribe() closes and completes the stream, as a real
+    // WebSocketSubject does. TeamSocket.stop() detaches first, so the close
+    // reaches status$ not at all; the probe says so, where the toast count alone
+    // would also pass on the `destroying` guard swallowing a real emission.
     const stream = new Subject<any>();
+    let closed = 0;
     const completingSocket = {
       subscribe: (observer: any) => stream.subscribe(observer),
-      unsubscribe: () => stream.complete(),
+      unsubscribe: () => {
+        closed++;
+        stream.complete();
+      },
       next: (value: any) => stream.next(value),
     };
     (teamSocket() as any).createWebSocket.and.returnValue(
@@ -1316,9 +1316,14 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
     );
     await service.init('proc-1', true);
     jasmine.clock().tick(600);
+    const statuses: string[] = [];
+    teamSocket().status$.subscribe((s) => statuses.push(s));
 
     service.ngOnDestroy();
 
+    // The socket really was closed — otherwise the two zeros below are vacuous.
+    expect(closed).toBeGreaterThan(0);
+    expect(statuses).toEqual([]);
     expect(disconnectToasts().length).toBe(0);
   });
 
