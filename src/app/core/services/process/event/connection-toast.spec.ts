@@ -124,7 +124,8 @@ describe('ConnectionToast — teardown suppression (AC4)', () => {
     unit.stop();
     unit.show();
 
-    // stop() runs only in IngestionService.ngOnDestroy(), at injector teardown; nothing closed after it may warn.
+    // stop() runs only in IngestionService.ngOnDestroy(), at injector teardown;
+    // nothing closed after it may warn.
     expect(notify).not.toHaveBeenCalled();
   });
 

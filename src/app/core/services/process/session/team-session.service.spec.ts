@@ -231,10 +231,8 @@ describe('TeamSessionService — a stale socket close raises no toast (#405)', (
   }
 
   /** Open team A on a socket that will close asynchronously once stopped. */
-  async function openA(
-    ending: 'complete' | 'error',
-  ): Promise<ReturnType<typeof asyncClosingSocket>> {
-    const a = asyncClosingSocket(ending);
+  async function openA(): Promise<ReturnType<typeof asyncClosingSocket>> {
+    const a = asyncClosingSocket();
     createWebSocket.and.returnValue(a.socket);
     expect(await session.open('A')).toBe('opened');
     return a;
@@ -250,7 +248,7 @@ describe('TeamSessionService — a stale socket close raises no toast (#405)', (
 
   it("team → Home → team: A's stale close raises no toast; B's real loss raises exactly one", async () => {
     spyOn(console, 'error');
-    const a = await openA('complete');
+    const a = await openA();
 
     session.dispose();
     expect(a.unsubscribed()).toBe(1);
@@ -259,6 +257,7 @@ describe('TeamSessionService — a stale socket close raises no toast (#405)', (
     const b = await openB();
     jasmine.clock().tick(600); // A's close lands here, with B's cycle subscribed
     expect(disconnectToasts().length).toBe(0);
+    expect(ingestion.loadingProcess$.value).toBe(true);
 
     b.error(new Error('lost'));
     expect(disconnectToasts().length).toBe(1);

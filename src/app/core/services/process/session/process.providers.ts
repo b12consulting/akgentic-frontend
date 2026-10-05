@@ -54,8 +54,8 @@ import { TraceFoldState } from '../ui-state/trace-fold-state';
  * WHAT IT DOES NOT CHANGE, and what the old comments here claimed it did. The
  * router REUSES this route when only `:id` changes, so neither the component
  * nor this injector is recreated on a team switch; `TeamSessionService.open()`
- * tears the previous team down by hand, through its `close()`, and that is what actually isolates one
- * team from the next. The repeated "a team switch destroys this" reasoning is
+ * tears the previous team down by hand, through its `close()`, and that is
+ * what actually isolates one team from the next. The repeated "a team switch destroys this" reasoning is
  * not true even of navigating away and back: the injector outlives that too
  * (see above). Left in place, retargeted, because the conclusion it defends —
  * never `providedIn: 'root'` — is still right: a root instance would be shared

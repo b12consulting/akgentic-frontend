@@ -1268,7 +1268,8 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
   it('AC4: ngOnDestroy suppresses disconnect toast triggered by unsubscribe (destroying guard)', async () => {
     await service.init('proc-1', true);
 
-    // ngOnDestroy enters the destroying state first; TeamSocket also detaches before closing, so no close reaches show().
+    // ngOnDestroy enters the destroying state first; TeamSocket also detaches
+    // before closing, so no close reaches show().
     service.ngOnDestroy();
 
     // The only warn-toast add calls should be zero — the destroying guard
