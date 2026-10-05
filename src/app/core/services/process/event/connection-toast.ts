@@ -122,10 +122,10 @@ export class ConnectionToast {
   /**
    * Enter the destroying state and re-arm the dedup flag.
    *
-   * Called FIRST in `IngestionService.ngOnDestroy()`, ahead of the
-   * `webSocket.unsubscribe()` — the unsubscribe closes the socket, whose
-   * `complete` reaches `show()`, so reordering the two raises a "Connection
-   * Lost" toast on every intentional navigation.
+   * Called FIRST in `IngestionService.ngOnDestroy()`, ahead of the socket's
+   * close. Defence in depth, not the mechanism: `TeamSocket.stop()` detaches its
+   * observer before closing, so the close never reaches `show()`. The order is
+   * kept so a teardown stays silent even if that detach is ever lost.
    */
   stop(): void {
     this.destroying = true;

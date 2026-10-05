@@ -1305,7 +1305,7 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
     service.ngOnDestroy();
 
     // The only warn-toast add calls should be zero — the destroying guard
-    // prevents the toast from being shown during intentional navigation.
+    // prevents the toast from being shown during the injector's teardown.
     const warnCalls = msgService.notify.calls.allArgs()
       .map((a: any[]) => a[0])
       .filter((c: any) => c.severity === 'warn' && c.summary === 'Connection Lost');

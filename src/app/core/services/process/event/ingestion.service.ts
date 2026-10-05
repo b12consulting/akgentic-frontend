@@ -460,15 +460,15 @@ export class IngestionService {
     // Story 52-1: no in-flight cycle may write after this point either.
     this.cycleToken++;
 
-    // FIRST, and load-bearing: closing the socket below completes its stream,
-    // whose `complete` reaches `connectionToast.show()`. Moving this line after
-    // it raises a "Connection Lost" toast on every intentional navigation. The
-    // two statements now live in different files, which makes the ordering
-    // easier to break and is why a spec pins it.
+    // FIRST, as defence in depth. `TeamSocket.stop()` detaches its observer
+    // before closing, so the close below reaches neither `status$` nor
+    // `connectionToast.show()` (#405); entering the destroying state first keeps
+    // this teardown silent even if that detach is ever lost. Runs only if the
+    // route injector is destroyed (app teardown) — leaving a team is `close()`.
     this.connectionToast.stop();
 
-    // Story 8-2 (AC4): clear all toasts so navigating away removes warnings and
-    // a fresh process view starts clean.
+    // Story 8-2 (AC4): clear all toasts so a destroyed view leaves no warnings
+    // behind.
     this.notifications.clear();
 
     this.disposePriorSubscriptions();

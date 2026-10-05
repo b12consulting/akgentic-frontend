@@ -27,11 +27,15 @@ export type TeamSocketStatus = 'error' | 'complete';
  * Nothing is self-wired: the constructor opens no socket and subscribes to
  * nothing (ADR-025 §2, restating ADR-005 §Decision 6). `start()` / `stop()` /
  * `destroy()` are the explicit invocation points, all driven by
- * `IngestionService.init()` / `ngOnDestroy()`. This is the unit where
- * self-wiring would be most tempting and most damaging: a constructor that
- * opened the socket would put the transport ahead of `log.reset()` and the REST
- * replay, and the resulting team-switch race is invisible in single-team
- * testing — every order works when there is only ever one `init()`.
+ * `IngestionService`: `start()` / `stop()` by `init()` and `close()`, and
+ * `destroy()` by `ngOnDestroy()` — which runs only at app teardown, never on
+ * navigation, because the router never destroys the route's injector.
+ *
+ * This is the unit where self-wiring would be most tempting and most damaging:
+ * a constructor that opened the socket would put the transport ahead of
+ * `log.reset()` and the REST replay, and the resulting team-switch race is
+ * invisible in single-team testing — every order works when there is only ever
+ * one `init()`.
  *
  * Component-scoped (`@Injectable()` with no `providedIn`), provided on
  * the `process/:id` route before `IngestionService`, which injects it. Root scope
