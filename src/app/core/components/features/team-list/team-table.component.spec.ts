@@ -143,14 +143,15 @@ describe('TeamTableComponent', () => {
 
   // --- What it renders -----------------------------------------------------
 
-  it('(AC1, W11) renders one row per team, with five columns — Team ID is not one', async () => {
+  it('(AC1, W11) renders one row per team, with six columns — Team ID is not one', async () => {
     // UPDATED FOR W11, deliberately. This used to assert six keys ending
     // `team.table.id`, and that assertion pinned the thing the round set out to
     // change: a full uuid given a column of its own, at full width, in every
-    // row. The id is DEMOTED rather than dropped — it is the quietest line of
-    // the Name cell now — so what this spec still owns is that the heading row
-    // says what the columns are, and the spec below owns that the id is still
-    // there and still complete.
+    // row. Story 58-3 then took the printed id out of the row altogether — it
+    // travels as DATA through `rowSelected` now — and gave the team's updated
+    // date a column beside Creation Date. So what this spec owns is that the
+    // heading row says what the columns are and that each team gets a row,
+    // told apart by NAME.
     await render([
       makeTeam({ team_id: 't-1', name: 'Alpha' }),
       makeTeam({ team_id: 't-2', name: 'Beta' }),
@@ -163,15 +164,14 @@ describe('TeamTableComponent', () => {
     expect(headerCells().map((th) => th.textContent?.trim())).toEqual([
       'team.table.name',
       'team.table.metadata',
-      'team.table.createdAt',
       'team.table.status',
+      'team.table.createdAt',
+      'team.table.updated',
       '',
     ]);
-    // Demoted, not deleted: both ids are still rendered TEXT on the page. The
-    // home page's own spec asserts the same thing from outside this component.
     const text = fixture.nativeElement.textContent as string;
-    expect(text).toContain('t-1');
-    expect(text).toContain('t-2');
+    expect(text).toContain('Alpha');
+    expect(text).toContain('Beta');
   });
 
   it('(AC1) renders an EMPTY table without throwing', async () => {
@@ -179,21 +179,24 @@ describe('TeamTableComponent', () => {
     await render([]);
 
     expect(rows().length).toBe(0);
-    // Five since W11 — see the column spec above for why the sixth went.
-    expect(headerCells().length).toBe(5);
+    // Six: five since W11 took the id's column, plus Updated (Story 58-3).
+    expect(headerCells().length).toBe(6);
     expect(
       fixture.nativeElement.querySelector('p-paginator, .p-paginator'),
     ).not.toBeNull();
   });
 
   it('(AC1) a NEW list pushed into [teams] re-renders the rows', async () => {
-    await render([makeTeam({ team_id: 't-1' })]);
-    expect(fixture.nativeElement.textContent as string).toContain('t-1');
+    await render([makeTeam({ team_id: 't-1', name: 'Alpha' })]);
+    expect(fixture.nativeElement.textContent as string).toContain('Alpha');
 
-    await render([makeTeam({ team_id: 't-1' }), makeTeam({ team_id: 't-2' })]);
+    await render([
+      makeTeam({ team_id: 't-1', name: 'Alpha' }),
+      makeTeam({ team_id: 't-2', name: 'Beta' }),
+    ]);
 
     expect(rows().length).toBe(2);
-    expect(fixture.nativeElement.textContent as string).toContain('t-2');
+    expect(fixture.nativeElement.textContent as string).toContain('Beta');
   });
 
   it('(AC2) mounts against a TestBed declaring NO providers', () => {
@@ -579,7 +582,95 @@ describe('TeamTableComponent', () => {
     expect(title.children.length).toBe(0);
   });
 
-  // --- The demoted Team ID (W11) -------------------------------------------
+  // --- The Updated column (Story 58-3) -------------------------------------
+  //
+  // REPLACES the three W11 specs that pinned "keep the WHOLE id, as text, in
+  // the Name cell". That contract was reversed on 2026-10-02: the printed uuid
+  // goes, and the team's updated date gets a column of its own beside
+  // Creation Date. The id is still the row's identity as data (`rowSelected`,
+  // the action outputs) — none of that reads the DOM text, and none of it
+  // moved.
+
+  /** The Updated cell of one row. */
+  function updatedCell(row: HTMLTableRowElement): HTMLElement | null {
+    return row.querySelector('[data-test="row-updated-at"]');
+  }
+
+  it('renders the updated date as a CELL directly after Creation Date, with the ISO stamp as its title', async () => {
+    await render([makeTeam({ team_id: 't-1', updated_at: '2020-04-19T10:00:00Z' })]);
+
+    const cell = updatedCell(rows()[0]);
+    expect(cell).not.toBeNull();
+    expect(cell!.tagName).toBe('TD');
+    // Directly after the Creation Date cell, as its heading is after that
+    // heading: two dates side by side, beginning and latest change.
+    expect(cell!.previousElementSibling?.classList).toContain('team-created-cell');
+    // VERBATIM, not re-formatted: the stamp is what the home page's own spec
+    // reads back after a save, and it is assertable without a locale.
+    expect(cell!.getAttribute('title')).toBe('2020-04-19T10:00:00Z');
+    expect(cell!.textContent!.trim()).toMatch(/\d/);
+  });
+
+  it('writes the updated date EXACTLY as the Creation Date cell writes its own', async () => {
+    // Same pipe, same format: a stamp that is both the creation and the
+    // update renders identically in the two cells, and a different stamp
+    // renders differently — so the equality is not vacuous.
+    await render([
+      makeTeam({
+        team_id: 'same',
+        created_at: '2020-04-19T10:00:00Z',
+        updated_at: '2020-04-19T10:00:00Z',
+      }),
+      makeTeam({
+        team_id: 'moved',
+        created_at: '2020-04-19T10:00:00Z',
+        updated_at: '2026-10-02T12:34:56Z',
+      }),
+    ]);
+
+    const [same, moved] = rows();
+    const created = (row: HTMLTableRowElement): string =>
+      row.querySelector('.team-created-cell')!.textContent!.trim();
+    expect(updatedCell(same)!.textContent!.trim()).toBe(created(same));
+    expect(updatedCell(moved)!.textContent!.trim()).not.toBe(created(moved));
+  });
+
+  it('keeps the Name cell to the name and the description editor — no date line', async () => {
+    await render([makeTeam({ team_id: 't-1', updated_at: '2020-04-19T10:00:00Z' })]);
+
+    const nameCell = rows()[0].querySelectorAll('td')[0];
+    expect(nameCell.querySelector('[data-test="row-updated-at"]')).toBeNull();
+    expect(nameCell.querySelector('.team-name')).not.toBeNull();
+    expect(nameCell.querySelector('.team-description')).not.toBeNull();
+    // Nothing after the description block.
+    expect(nameCell.querySelector('.team-description')!.nextElementSibling).toBeNull();
+  });
+
+  it('does not print the team id anywhere in the row', async () => {
+    // The uuid is the row's identity as DATA, and only as data. It is a
+    // 36-character string nobody reads, and it was the widest thing on screen.
+    const uuid = '505835a6-f63e-4b5a-842f-e294c4ffa0d5';
+    await render([makeTeam({ team_id: uuid, name: 'Alpha' })]);
+
+    const row = rows()[0];
+    expect(row.querySelector('[data-test="row-team-id"]')).toBeNull();
+    expect(row.textContent).not.toContain(uuid);
+    // The heading row is as it was: the id's column went in W11 and its label
+    // is gone with the printed value.
+    expect(headerCells().map((th) => th.textContent?.trim())).not.toContain(
+      'team.table.id',
+    );
+  });
+
+  it('renders the updated date ONCE per row', async () => {
+    await render([makeTeam({ team_id: 't-1' }), makeTeam({ team_id: 't-2' })]);
+
+    for (const row of rows()) {
+      expect(row.querySelectorAll('[data-test="row-updated-at"]').length).toBe(1);
+    }
+  });
+
+  // --- Shared probes -------------------------------------------------------
 
   /**
    * A token's value as the BROWSER resolves it, round-tripped through a real
@@ -597,56 +688,6 @@ describe('TeamTableComponent', () => {
     probe.remove();
     return value;
   }
-
-  it('(W11) keeps the WHOLE team id, as text, in the name cell', async () => {
-    // THE DEMOTION'S WHOLE CONTRACT. A uuid is only useful pasted somewhere
-    // else, so an id that is truncated for display, hidden behind a tooltip or
-    // moved into a modal is an id the user can no longer do what they did
-    // yesterday with. What moved is its WEIGHT and its COLUMN, not its
-    // presence: it is a line of the Name cell now, and it is the complete
-    // value.
-    const uuid = '505835a6-f63e-4b5a-842f-e294c4ffa0d5';
-    await render([makeTeam({ team_id: uuid, name: 'Alpha' })]);
-
-    const nameCell = rows()[0].querySelectorAll('td')[0];
-    const id = nameCell.querySelector('[data-test="row-team-id"]') as HTMLElement;
-
-    expect(id).withContext('the id lives in the name cell now').not.toBeNull();
-    // EQUALS, not contains: a "505835a6…" that reads as complete is worse than
-    // one that is plainly cut, because it is only found out on paste.
-    expect(id.textContent!.trim()).toBe(uuid);
-  });
-
-  it('(W11) names the demoted id with the heading its column used to carry', async () => {
-    // With the column gone the value would otherwise be an unlabelled 36-char
-    // string. `team.table.id` is the label that already exists and is already
-    // translated; keeping it referenced is also what stops the i18n usage audit
-    // reporting it as a key naming a surface nobody can reach.
-    await render([makeTeam({ team_id: 't-1' })]);
-
-    const id = rows()[0].querySelector('[data-test="row-team-id"]');
-
-    expect(id?.getAttribute('title')).toBe('team.table.id');
-    // And the heading is genuinely gone from the header row, rather than
-    // rendered blank — a blank <th> would still cost the column its width.
-    expect(
-      headerCells().map((th) => th.textContent?.trim()),
-    ).not.toContain('team.table.id');
-  });
-
-  it('(W11) renders the id ONCE per row — it is demoted, not duplicated', async () => {
-    // The failure mode of a "move it under the name" change is leaving the old
-    // cell behind: the row then reads as two ids, which is how a demotion turns
-    // into extra noise.
-    await render([
-      makeTeam({ team_id: 't-1' }),
-      makeTeam({ team_id: 't-2' }),
-    ]);
-
-    for (const row of rows()) {
-      expect(row.querySelectorAll('[data-test="row-team-id"]').length).toBe(1);
-    }
-  });
 
   // --- The restyle (W10) ---------------------------------------------------
 

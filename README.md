@@ -173,7 +173,7 @@ data layer is enforced rather than flattened by the one folder name above it.
 | Element type | Directory | Holds |
 |---|---|---|
 | `svc-models` | `process/models/` | the shapes the rest of the tier folds into |
-| `svc-event` | `process/event/` | ingestion — the socket, the append-only log, replay, the per-agent stores, and the reactors that turn log entries into toasts and status changes |
+| `svc-event` | `process/event/` | ingestion — the socket, the append-only log, replay, the per-agent stores, and the reactors that turn log entries into toasts, status changes and description patches |
 | `svc-selectors` | `process/selectors/` | pure folds of the log: chat, graphs, token usage, workspace registry |
 | `svc-ui-state` | `process/ui-state/` | selection and feedback — state a view reads, but not a view |
 | `svc-workspace` | `process/workspace/` | REST file contents and directory listings |

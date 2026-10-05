@@ -19,6 +19,7 @@ import { LogFeeder } from './log-feeder';
 import { TeamSocket } from './team-socket';
 import { LoadingIndicator } from './loading-indicator';
 import { TeamStatusReactor } from './team-status-reactor';
+import { TeamDescriptionReactor } from './team-description-reactor';
 import { ContextService } from '../../../platform/context/context.service';
 import {
   AgentTokenUsage,
@@ -237,6 +238,7 @@ function configureBed(): {
       TeamSocket,
       LogFeeder,
       TeamStatusReactor,
+      TeamDescriptionReactor,
       IngestionService,
       {
         provide: SELECTED_AGENT_ID,

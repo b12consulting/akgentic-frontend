@@ -3,8 +3,10 @@ import {
   TeamMetadataContract,
 } from '../../protocol/catalog.interface';
 import {
+  isStaleFrame,
   metadataEntries,
   NO_TEAM_FILTER,
+  parseServerTimestamp,
   teamActivity,
   TeamActivity,
   teamFilterEquals,
@@ -39,6 +41,106 @@ describe('toTeamContext — metadata carry-through', () => {
     // declares no contract. Consumers must not have to tell them apart.
     expect(toTeamContext(makeResponse({ metadata: null })).metadata).toBeNull();
     expect(toTeamContext(makeResponse()).metadata).toBeNull();
+  });
+});
+
+describe('toTeamContext — description carry-through (58-1)', () => {
+  it('carries a present string through verbatim', () => {
+    expect(
+      toTeamContext(makeResponse({ description: 'Drafts the quarterly report' }))
+        .description,
+    ).toBe('Drafts the quarterly report');
+  });
+
+  it('maps BOTH wire spellings of "no description" to null', () => {
+    // An older server omits the key entirely; a current server sends an
+    // explicit null for a team whose description was never generated or was
+    // cleared. Consumers must not have to tell them apart.
+    expect(toTeamContext(makeResponse({ description: null })).description).toBeNull();
+    expect(toTeamContext(makeResponse()).description).toBeNull();
+  });
+
+  it('keeps an EMPTY string as itself — the mapping does not decide what "" means', () => {
+    // The mutation this pins out: `||` in the mapping would turn `''` into
+    // `null` while every other case in this block stayed green. The server
+    // never sends `''` (it sends `null`), but the rule lives server-side and
+    // the mapping must not re-apply it.
+    expect(toTeamContext(makeResponse({ description: '' })).description).toBe('');
+  });
+});
+
+describe('isStaleFrame / parseServerTimestamp (58-2)', () => {
+  const FRAME = '2026-10-02T10:00:00Z';
+
+  it('is stale when the frame is OLDER than the cached updated_at', () => {
+    expect(isStaleFrame(FRAME, { updated_at: '2026-10-02T10:00:01Z' })).toBeTrue();
+  });
+
+  it('is NOT stale when the frame EQUALS updated_at — equal applies (idempotent)', () => {
+    // The server truncates stored datetimes to milliseconds, so a frame and
+    // the write it announces can share a millisecond. `<=` here would drop a
+    // live update that happens to share one with its own write.
+    expect(isStaleFrame(FRAME, { updated_at: FRAME })).toBeFalse();
+    expect(
+      isStaleFrame(FRAME, { updated_at: '2026-10-02T10:00:00+00:00' }),
+    ).toBeFalse();
+  });
+
+  it('is NOT stale when the frame is NEWER than updated_at', () => {
+    expect(isStaleFrame(FRAME, { updated_at: '2026-10-02T09:00:00Z' })).toBeFalse();
+  });
+
+  it('is NOT stale against an EMPTY updated_at — the frame applies', () => {
+    expect(isStaleFrame(FRAME, { updated_at: '' })).toBeFalse();
+    // `undefined` at runtime from an older cached shape; the type says string.
+    expect(isStaleFrame(FRAME, { updated_at: undefined as unknown as string })).toBeFalse();
+  });
+
+  it('is NOT stale when updated_at cannot be parsed — fail-open', () => {
+    expect(isStaleFrame(FRAME, { updated_at: 'not a date' })).toBeFalse();
+  });
+
+  it('is NOT stale when the FRAME timestamp cannot be parsed — fail-open', () => {
+    expect(isStaleFrame('garbage', { updated_at: '2026-10-02T10:00:01Z' })).toBeFalse();
+    expect(
+      isStaleFrame(undefined as unknown as string, { updated_at: '2026-10-02T10:00:01Z' }),
+    ).toBeFalse();
+  });
+
+  it('compares INSTANTS, not strings — the lexical trap', () => {
+    // '…T11:00:00+02:00' is 09:00Z: an hour OLDER than the cache, yet as text
+    // it sorts LATER than '…T10:00:00Z'. A string comparison answers false
+    // here; the numeric one answers true.
+    expect(
+      isStaleFrame('2026-10-02T11:00:00+02:00', { updated_at: '2026-10-02T10:00:00Z' }),
+    ).toBeTrue();
+  });
+
+  it('parses the Z and +00:00 spellings of one instant to the same number', () => {
+    expect(parseServerTimestamp('2026-10-02T10:00:00Z')).toBe(
+      parseServerTimestamp('2026-10-02T10:00:00+00:00'),
+    );
+  });
+
+  it('parses a six-digit fraction (Python isoformat) to the same millisecond as a three-digit one', () => {
+    const six = parseServerTimestamp('2026-10-02T10:00:00.123456+00:00');
+
+    expect(Number.isFinite(six)).toBeTrue();
+    expect(six).toBe(parseServerTimestamp('2026-10-02T10:00:00.123Z'));
+  });
+
+  it('reads a NAIVE timestamp (no designator) as UTC, never as local time', () => {
+    // `Date.parse` reads a designator-less date-time form as LOCAL time, so
+    // without the appended `Z` this equality only holds on a UTC machine —
+    // which is also why this spec is only falsifiable off-UTC.
+    expect(parseServerTimestamp('2026-10-02T10:00:00')).toBe(
+      parseServerTimestamp('2026-10-02T10:00:00Z'),
+    );
+  });
+
+  it('returns NaN for an unparseable or empty string', () => {
+    expect(parseServerTimestamp('not a date')).toBeNaN();
+    expect(parseServerTimestamp('')).toBeNaN();
   });
 });
 

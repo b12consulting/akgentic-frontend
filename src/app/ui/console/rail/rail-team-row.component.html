@@ -42,6 +42,21 @@
       (row.team.metadata | teamTitle: titleKey) ?? row.team.name
     }}</span>
     <!--
+      The description, on a line of its OWN between the name and the meta line
+      (Story 58-3) — the same order the home table's Name cell uses. It does
+      not take the meta line's summary slot: that slot holds the metadata value
+      that tells two teams of one type apart, and a description there made
+      `My description · 11:49 AM` and `test · 11:46 AM` the same kind of line.
+      Interpolated, never bound as markup — the text may be generated. One
+      ellipsised line; the full text is this line's `title`. Absent entirely
+      when there is no description, so that row is the two-line row it was.
+    -->
+    @if (description) {
+      <span class="rail-row__description" [title]="description">{{
+        description
+      }}</span>
+    }
+    <!--
       ONE key with parameters. The mock concatenates a middle dot between the
       two halves; that separator is punctuation a translator has to be able to
       move, and a splice in the template gives them nowhere to move it.

@@ -45,7 +45,7 @@
       "metadata": "Metadata",
       "createdAt": "Creation Date",
       "status": "Status",
-      "id": "Team ID",
+      "updated": "Updated",
       "currentPageReport": "{first}–{last} of {totalRecords}",
       "descriptionPrompt": "Click to add description...",
       "descriptionPlaceholder": "Enter team description"

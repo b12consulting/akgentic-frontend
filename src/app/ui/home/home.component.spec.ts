@@ -121,6 +121,9 @@ function makeTeam(overrides: Partial<TeamContext> = {}): TeamContext {
   };
 }
 
+/** The stamp the PATCH response carries in the default `updateTeamDescription` fake (58-2). */
+const SAVED_AT = '2026-10-02T12:00:00Z';
+
 /**
  * Minimal `ActivatedRoute` for the query string.
  *
@@ -181,13 +184,26 @@ describe('HomeComponent', () => {
       'restoreTeam',
       'stopTeam',
       'updateTeamDescription',
+      // Story 58-3: never called by this page. On the spy list so "no refetch
+      // after a save" can be asserted rather than assumed.
+      'getTeam',
     ]);
     apiSpy.getNamespaces.and.returnValue(Promise.resolve([]));
     apiSpy.createTeam.and.returnValue(Promise.resolve({} as any));
     apiSpy.deleteTeam.and.returnValue(Promise.resolve());
     apiSpy.restoreTeam.and.returnValue(Promise.resolve({} as any));
     apiSpy.stopTeam.and.returnValue(Promise.resolve());
-    apiSpy.updateTeamDescription.and.returnValue(Promise.resolve());
+    // Story 58-1: the PATCH answers with what the server PERSISTED, and the
+    // page patches the cache from that body. Echoing the input keeps every
+    // spec that does not care about the distinction exactly as it was.
+    // Story 58-2: the body also carries the stamp the write set.
+    apiSpy.updateTeamDescription.and.callFake(
+      async (_teamId: string, description: string | null) => ({
+        description,
+        origin: 'user' as const,
+        updated_at: SAVED_AT,
+      }),
+    );
 
     contextSpy = jasmine.createSpyObj<ContextService>(
       'ContextService',
@@ -328,9 +344,10 @@ describe('HomeComponent', () => {
       fixture.nativeElement.querySelectorAll('tbody tr');
     expect(allRows.length).toBeGreaterThanOrEqual(2);
 
+    // By NAME: the row prints the team's name, not its id (Story 58-3).
     const text = fixture.nativeElement.textContent as string;
-    expect(text).toContain('t-1');
-    expect(text).toContain('t-2');
+    expect(text).toContain('Alpha');
+    expect(text).toContain('Beta');
     // Silence unused local warning from dual querySelectorAll above.
     void rows;
   });
@@ -342,20 +359,20 @@ describe('HomeComponent', () => {
   it('(AC6, AC9) pushing a new list into teams$ triggers a re-render', async () => {
     fixture.detectChanges();
     await fixture.whenStable();
-    teams$.next([makeTeam({ team_id: 't-1' })]);
+    teams$.next([makeTeam({ team_id: 't-1', name: 'Alpha' })]);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
-    expect((fixture.nativeElement.textContent as string)).toContain('t-1');
+    expect((fixture.nativeElement.textContent as string)).toContain('Alpha');
 
     teams$.next([
-      makeTeam({ team_id: 't-1' }),
-      makeTeam({ team_id: 't-2' }),
+      makeTeam({ team_id: 't-1', name: 'Alpha' }),
+      makeTeam({ team_id: 't-2', name: 'Beta' }),
     ]);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
-    expect((fixture.nativeElement.textContent as string)).toContain('t-2');
+    expect((fixture.nativeElement.textContent as string)).toContain('Beta');
   });
 
   it('(AC7) deleteTeam(id) delegates to contextService.deleteTeam and does NOT call apiService.deleteTeam directly', async () => {
@@ -1325,8 +1342,13 @@ describe('HomeComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
-    // Initial seed rendered page 1.
-    expect((fixture.nativeElement.textContent as string)).toContain('team-page-1');
+    // Initial seed rendered page 1. Read by the row's NAME (`Page ${page}` in
+    // the loadTeamsPage fake): the id is no longer printed (Story 58-3).
+    const rowNames = (): string[] =>
+      Array.from(
+        fixture.nativeElement.querySelectorAll('tbody tr .team-name') as NodeListOf<HTMLElement>,
+      ).map((el) => el.textContent!.trim());
+    expect(rowNames()).toEqual(['Page 1']);
 
     // Jump to page 3 (first = 500, rows = 250).
     await component.loadPage({ first: 500, rows: 250 });
@@ -1335,10 +1357,8 @@ describe('HomeComponent', () => {
     fixture.detectChanges();
 
     expect(contextSpy.loadTeamsPage).toHaveBeenCalledWith(3, 250);
-    const text = fixture.nativeElement.textContent as string;
     // New page rendered; prior page REPLACED (not accumulated).
-    expect(text).toContain('team-page-3');
-    expect(text).not.toContain('team-page-1');
+    expect(rowNames()).toEqual(['Page 3']);
   });
 
   it('(R1) a created team is SHOWN: the page navigates to it, whatever asked for it', async () => {
@@ -1437,7 +1457,8 @@ describe('HomeComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    expect(fixture.nativeElement.textContent as string).toContain('row-1');
+    // By NAME: the row prints the team's name, not its id (Story 58-3).
+    expect(fixture.nativeElement.textContent as string).toContain('Row One');
 
     // The child emits the team_id; what that MEANS is this page's decision,
     // and R1 changed the answer back. Epic 52 opened the team BESIDE the list;
@@ -1612,24 +1633,101 @@ describe('HomeComponent', () => {
   // -------------------------------------------------------------------------
 
   describe('saveDescription delegation (Story 37-3 AC6)', () => {
-    it('forwards the description it is given, VERBATIM', async () => {
-      // The trim-and-null rule travels with the draft: the table applies it and
-      // emits the finished value. The page applying it a SECOND time would be a
-      // second place the rule lives, and the two would drift. Passed a value
-      // that is still padded, the page must forward the padding rather than
-      // quietly repair it.
+    // REWRITTEN by Story 58-1 (T1). This spec used to pin "the cache is
+    // patched from the INPUT, verbatim" — which was the right contract while
+    // the API was a no-op and the page was the only writer. The server now
+    // trims and may clear, so the cache must read the RESPONSE: patching from
+    // the input would show the user text the server did not keep. What
+    // survives unchanged is the half about the API call: the input still
+    // travels verbatim, because the trim-and-null rule lives in the table and
+    // on the server, and this page must not be a third place for it.
+    it('(58-1 T1) sends the input VERBATIM, and patches the cache from the RESPONSE', async () => {
       const team = makeTeam({ team_id: 'row-1', description: 'before' });
       teams$.next([team]);
+      apiSpy.updateTeamDescription.and.returnValue(
+        Promise.resolve({
+          description: 'spaced out',
+          origin: 'user' as const,
+          updated_at: SAVED_AT,
+        }),
+      );
 
       await component.saveDescription('row-1', '  spaced out  ');
 
-      expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith(
+      // The API still receives what it was given.
+      expect(apiSpy.updateTeamDescription).toHaveBeenCalledOnceWith(
         'row-1',
         '  spaced out  ',
       );
-      expect(apiSpy.updateTeamDescription).toHaveBeenCalledWith(
+      // The cache reads what the server kept. Patch from the input again and
+      // this is the assertion that goes red.
+      expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith(
         'row-1',
-        '  spaced out  ',
+        'spaced out',
+        SAVED_AT,
+      );
+    });
+
+    it('(58-2) patches the cached stamp from the response’s updated_at, beside the description', async () => {
+      // The reactor's staleness guard compares a replayed frame against the
+      // cached `updated_at`. Leave it at the list-read value and a replayed
+      // generated frame — older than this edit, newer than the list read —
+      // would pass the guard and undo the edit.
+      teams$.next([makeTeam({ team_id: 'row-1', updated_at: '2026-04-19T10:00:00Z' })]);
+      apiSpy.updateTeamDescription.and.returnValue(
+        Promise.resolve({
+          description: 'fresh',
+          origin: 'user' as const,
+          updated_at: '2026-10-02T12:34:56Z',
+        }),
+      );
+
+      await component.saveDescription('row-1', 'fresh');
+
+      expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith(
+        'row-1',
+        'fresh',
+        '2026-10-02T12:34:56Z',
+      );
+    });
+
+    it('(58-2) an older server’s response without updated_at leaves the stamp alone', async () => {
+      // A server predating the field omits the key: the third argument is
+      // `undefined`, which `setTeamDescription` reads as "keep what you hold",
+      // never as "clear".
+      teams$.next([makeTeam({ team_id: 'row-1' })]);
+      apiSpy.updateTeamDescription.and.returnValue(
+        Promise.resolve({ description: 'fresh', origin: 'user' as const }),
+      );
+
+      await component.saveDescription('row-1', 'fresh');
+
+      expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith(
+        'row-1',
+        'fresh',
+        undefined,
+      );
+    });
+
+    it('(58-1 AC7) a response whose description is null reaches the cache as null', async () => {
+      // The server cleared it (a whitespace-only draft the table let through,
+      // or a server-side rule). `null` is the answer, and it must not be
+      // replaced by the input on its way to the cache.
+      teams$.next([makeTeam({ team_id: 'row-1', description: 'before' })]);
+      apiSpy.updateTeamDescription.and.returnValue(
+        Promise.resolve({
+          description: null,
+          origin: 'user' as const,
+          updated_at: SAVED_AT,
+        }),
+      );
+
+      await component.saveDescription('row-1', '   ');
+
+      expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith(
+        'row-1',
+        null,
+        SAVED_AT,
       );
     });
 
@@ -1651,7 +1749,11 @@ describe('HomeComponent', () => {
 
       await component.saveDescription('row-1', null);
 
-      expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith('row-1', null);
+      expect(contextSpy.setTeamDescription).toHaveBeenCalledOnceWith(
+        'row-1',
+        null,
+        SAVED_AT,
+      );
     });
 
     it('calls the API BEFORE the cache, and resolves on success', async () => {
@@ -1662,7 +1764,11 @@ describe('HomeComponent', () => {
       ).toBeResolved();
 
       expect(apiSpy.updateTeamDescription).toHaveBeenCalledWith('row-1', 'fresh');
-      expect(contextSpy.setTeamDescription).toHaveBeenCalledWith('row-1', 'fresh');
+      expect(contextSpy.setTeamDescription).toHaveBeenCalledWith(
+        'row-1',
+        'fresh',
+        SAVED_AT,
+      );
     });
 
     it('LOGS AND RE-THROWS an API failure, leaving the cache alone', async () => {
@@ -1700,6 +1806,59 @@ describe('HomeComponent', () => {
       expect(tracked.length).toBe(1);
       await tracked[0];
       expect(apiSpy.updateTeamDescription).toHaveBeenCalledWith('row-1', 'fresh');
+    });
+
+    it('(58-3) a saved description moves the row\'s updated date, without a refetch', async () => {
+      // THE CHAIN THE EPIC NAMES, end to end through the real rendered child:
+      // the editor's save → the PATCH → `setTeamDescription(…, updatedAt)` →
+      // a new team object in `teams$` → the row's Updated cell re-renders from
+      // `updated_at`. No page reload and no per-team GET anywhere in it.
+      //
+      // `setTeamDescription` is faked here to do what context.service.spec.ts
+      // already pins the real method does — push a copy carrying the new
+      // description AND stamp. Every other spec keeps the `and.stub()` default.
+      fixture.detectChanges();
+      await fixture.whenStable();
+      teams$.next([makeTeam({ team_id: 'row-1', updated_at: '2026-04-19T10:00:00Z' })]);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      const table = teamTable();
+
+      apiSpy.updateTeamDescription.and.resolveTo({
+        description: 'fresh',
+        origin: 'user' as const,
+        updated_at: '2026-10-02T12:34:56Z',
+      });
+      contextSpy.setTeamDescription.and.callFake(
+        (id: string, description: string | null, updatedAt?: string) => {
+          const current = teams$.value.find((t) => t.team_id === id)!;
+          teams$.next([
+            { ...current, description, updated_at: updatedAt ?? current.updated_at },
+          ]);
+        },
+      );
+      const loads = contextSpy.loadTeamsPage.calls.count();
+      contextSpy.reloadTeams.calls.reset();
+      const tracked: Promise<unknown>[] = [];
+
+      table.descriptionSaved.emit({
+        teamId: 'row-1',
+        description: 'fresh',
+        track: (work) => tracked.push(work),
+      });
+      await tracked[0];
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const line = fixture.nativeElement.querySelector(
+        '[data-test="row-updated-at"]',
+      ) as HTMLElement;
+      expect(line.getAttribute('title')).toBe('2026-10-02T12:34:56Z');
+      // No refetch of any kind: the cache patch is the whole update.
+      expect(contextSpy.loadTeamsPage.calls.count()).toBe(loads);
+      expect(contextSpy.reloadTeams).not.toHaveBeenCalled();
+      expect(apiSpy.getTeam).not.toHaveBeenCalled();
     });
   });
 

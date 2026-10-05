@@ -3,6 +3,7 @@ import { ConfigService } from '../config/config.service';
 import { FetchService } from './fetch.service';
 import {
   TeamContext,
+  TeamDescriptionResponse,
   TeamFilter,
   TeamPage,
   TeamResponse,
@@ -473,11 +474,35 @@ export class ApiService {
     });
   }
 
-  /** No-op stub: description editing is not available in V2. */
+  /**
+   * Persist a team's one-line description (Story 58-1).
+   *
+   * Issues `PATCH /teams/{teamId}/description` with `{ "description": ... }`.
+   * The body ALWAYS carries the key: `null` is a real instruction — clear the
+   * description — and `JSON.stringify` keeps it as `"description":null`
+   * rather than dropping it, which is what the spec pins.
+   *
+   * Resolves with what the server PERSISTED, which is not necessarily the
+   * input: the server trims and may clear. The caller patches its cache from
+   * this body, never from what it sent.
+   *
+   * No `successMessage`: the row's editor closing is the success signal, and a
+   * toast per keystroke-and-save would be noise. A non-2xx response rejects
+   * with `HttpError` (404 unknown team, 409 deleted team, 422 over length) and
+   * `FetchService` has already raised the error toast — the caller stays
+   * silent and re-throws so the editor keeps the draft.
+   */
   async updateTeamDescription(
-    _teamId: string,
-    _description: string | null
-  ): Promise<void> {
-    console.warn('updateTeamDescription is not available in V2');
+    teamId: string,
+    description: string | null,
+  ): Promise<TeamDescriptionResponse> {
+    return await this.fetchService.fetch({
+      url: `${this.apiUrl}/teams/${teamId}/description`,
+      options: {
+        method: 'PATCH',
+        body: JSON.stringify({ description }),
+        headers: { 'Content-Type': 'application/json' },
+      },
+    });
   }
 }
