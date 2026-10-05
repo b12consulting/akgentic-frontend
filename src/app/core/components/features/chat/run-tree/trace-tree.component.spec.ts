@@ -272,8 +272,14 @@ describe('TraceTreeComponent', () => {
     fixture.componentInstance.selectRun.subscribe((key) => selected.push(key));
     node(k('De', EXPERT)).querySelector<HTMLButtonElement>('button.node-main')!.click();
     expect(selected).toEqual([k('De', EXPERT)]);
-    // A node click selects; it never folds (only the chevron does).
+    // A node click selects AND folds, as its caret does.
+    expect(folds.isNodeExpanded(k('De', EXPERT), ROOT)).toBeFalse();
+
+    // The caret only folds: it never selects.
+    fixture.detectChanges();
+    node(k('De', EXPERT)).querySelector<HTMLButtonElement>('.node-chevron')!.click();
     expect(folds.isNodeExpanded(k('De', EXPERT), ROOT)).toBeTrue();
+    expect(selected).toEqual([k('De', EXPERT)]);
   });
 
   it('draws the selected run, and only it, with aria-current — nothing before a selection', () => {

@@ -45,7 +45,7 @@
                 type="button"
                 class="node-main"
                 [attr.aria-current]="selection.selected() === row.node.key ? 'true' : null"
-                (click)="selectRun.emit(row.node.key)"
+                (click)="onNode(row.node.key, row.expandable)"
               >
                 <span
                   class="node-avatar"
