@@ -227,14 +227,9 @@
 }
 
 /*
- * A soft pill on the accent ramp. The shared button reset zeroes the border,
- * so it is restated here, after the extend.
- *
- * Palette role tokens only (`_conversation-tokens.scss`), the pair the
- * request card already uses: the ramp's 50 step for the ground, its 100 step
- * for the border and for the ground on hover, and the 700 step for the text —
- * the one accent step that is a TEXT role, 7.3:1 on the ground and 6.4:1 on
- * hover.
+ * An outlined pill in the accent's text step, as the mockup draws it: no
+ * fill at rest, the soft accent ground on hover. The shared button reset
+ * zeroes the border, so it is restated here, after the extend.
  */
 .node-in-chat {
   @extend %tree-button;
@@ -242,15 +237,15 @@
   /* At the row's right edge, whatever the excerpt's length. */
   margin-left: auto;
   padding: 0 8px;
-  border: 1px solid var(--akg-accent-border);
+  border: 1px solid currentColor;
   border-radius: var(--akg-pill-radius);
-  background: var(--akg-accent-bg);
+  background: transparent;
   color: var(--akg-accent-fg);
   font-size: 11.5px;
   white-space: nowrap;
 
   &:hover {
-    background: var(--akg-accent-border);
+    background: var(--akg-accent-bg);
   }
 }
 

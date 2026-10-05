@@ -266,6 +266,7 @@ button.mini-main {
    rules tie on specificity. */
 .mini-node--path .mini-id {
   color: var(--akg-text);
+  font-weight: 600;
 }
 
 .mini-node--displayed .mini-id {
@@ -337,10 +338,13 @@ button.mini-main {
   background: var(--akg-surface-muted);
 }
 
-/* The card's first line. The ids and the send time are in the Event log. */
+/* The card's first line, quiet like the mockup's: the message is what the
+   card is for. The ids and the send time are in the Event log. */
 .ri-route {
-  margin-bottom: 6px;
-  font-weight: 600;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--akg-text-muted);
 }
 
 .ri-text {

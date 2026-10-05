@@ -155,6 +155,11 @@ describe('RunInspectorComponent', () => {
     expect(text(card.querySelector('.ri-text'))).toBe('content of D2');
     // The card is the box; the body inside it keeps the Steps' type size.
     expect(getComputedStyle(card).borderTopWidth).toBe('1px');
+    // The route line is the quiet header, the message the content.
+    const route = getComputedStyle(card.querySelector('.ri-route')!);
+    const body = getComputedStyle(card.querySelector('.ri-text')!);
+    expect(route.fontWeight).toBe('400');
+    expect(route.color).not.toBe(body.color);
     expect(getComputedStyle(card.querySelector('.ri-text')!).borderTopWidth).toBe('0px');
     expect(getComputedStyle(card.querySelector('.ri-text')!).fontSize).toBe(
       getComputedStyle(host().querySelector('.ri-step-label')!).fontSize,
