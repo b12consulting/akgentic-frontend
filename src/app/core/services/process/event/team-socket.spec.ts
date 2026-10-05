@@ -57,6 +57,37 @@ function setup(api = 'http://api.example.com'): {
   return { socket, fake, created };
 }
 
+/**
+ * A transport whose close is delivered on a LATER task, as a browser's `onclose`
+ * is. `unsubscribe()` only SCHEDULES the completion; under `jasmine.clock()` it
+ * lands on `tick(0)`, i.e. after whatever the spec does next — which is how the
+ * sequence "stop old → subscribe new cycle → old close arrives" becomes real.
+ *
+ * `subscribe` returns the stream's own `Subscription` on purpose: that is what
+ * `TeamSocket.start()` keeps and `stop()` detaches. A double whose `subscribe`
+ * returned nothing could not tell a detaching `stop()` from one that only closes.
+ */
+function asyncClosingSocket(ending: 'complete' | 'error' = 'complete'): {
+  socket: WebSocketSubject<any>;
+  stream: Subject<any>;
+  unsubscribed: () => number;
+} {
+  const stream = new Subject<any>();
+  let count = 0;
+  const socket = {
+    subscribe: (observer: any) => stream.subscribe(observer),
+    unsubscribe: () => {
+      count++;
+      setTimeout(() => {
+        if (ending === 'complete') stream.complete();
+        else stream.error(new Error('stale close'));
+      }, 0);
+    },
+    next: (value: any) => stream.next(value),
+  } as unknown as WebSocketSubject<any>;
+  return { socket, stream, unsubscribed: () => count };
+}
+
 describe('TeamSocket — URL building (Story 34-6, AC2)', () => {
   it('builds ws:// from a plain page and strips the scheme off the api host', () => {
     const { socket, created } = setup('http://api.example.com');
@@ -277,12 +308,16 @@ describe('TeamSocket — lifecycle (Story 34-6, AC4, AC12)', () => {
   it('destroy() closes the socket FIRST, then completes the three streams', () => {
     const { socket } = setup();
     const stream = new Subject<any>();
+    let closed = 0;
     // A double that behaves like a real WebSocketSubject: unsubscribe closes the
     // socket, and the close completes the stream.
     (socket as any).createWebSocket = () =>
       ({
         subscribe: (observer: any) => stream.subscribe(observer),
-        unsubscribe: () => stream.complete(),
+        unsubscribe: () => {
+          closed++;
+          stream.complete();
+        },
       }) as unknown as WebSocketSubject<any>;
     const seen: TeamSocketStatus[] = [];
     socket.status$.subscribe((s) => seen.push(s));
@@ -290,10 +325,12 @@ describe('TeamSocket — lifecycle (Story 34-6, AC4, AC12)', () => {
     socket.start('proc-1');
     socket.destroy();
 
-    // Completing `_status$` before the unsubscribe would swallow this last
-    // emission — which is the one the disconnect toast's teardown guard exists
-    // to suppress.
-    expect(seen).toEqual(['complete']);
+    // The socket WAS closed, and its close completed the transport stream — but
+    // `stop()` detached this unit's observer first, so that completion reaches
+    // nobody. A deliberate teardown is not a lost connection: no `complete` is
+    // reported on `status$`. Drop the detach and this reads `['complete']`.
+    expect(closed).toBe(1);
+    expect(seen).toEqual([]);
 
     // All three streams are finished: a subscriber attaching afterwards is
     // completed immediately rather than left waiting on a dead socket.
@@ -302,6 +339,94 @@ describe('TeamSocket — lifecycle (Story 34-6, AC4, AC12)', () => {
     socket.frames$.subscribe({ complete: () => completed++ });
     socket.status$.subscribe({ complete: () => completed++ });
     expect(completed).toBe(3);
+  });
+});
+
+describe("TeamSocket — a stale socket's close never reaches status$ (#405)", () => {
+  beforeEach(() => {
+    jasmine.clock().install();
+  });
+
+  afterEach(() => {
+    jasmine.clock().uninstall();
+  });
+
+  /** Start A on the async double, stop it, start B on a plain subject. */
+  function switchSockets(ending: 'complete' | 'error'): {
+    socket: TeamSocket;
+    a: ReturnType<typeof asyncClosingSocket>;
+    b: Subject<any>;
+    seen: TeamSocketStatus[];
+  } {
+    const { socket } = setup();
+    const a = asyncClosingSocket(ending);
+    (socket as any).createWebSocket = () => a.socket;
+    const seen: TeamSocketStatus[] = [];
+    socket.status$.subscribe((s) => seen.push(s));
+
+    socket.start('proc-A');
+    socket.stop();
+
+    const b = new Subject<any>();
+    (socket as any).createWebSocket = () =>
+      b as unknown as WebSocketSubject<any>;
+    socket.start('proc-B');
+    return { socket, a, b, seen };
+  }
+
+  it('drops a stale `complete` delivered after the next start()', () => {
+    const { a, b, seen } = switchSockets('complete');
+    expect(a.unsubscribed()).toBe(1);
+
+    // A's close lands NOW, with B already started and `status$` subscribed —
+    // the sequence a browser produces and no synchronous double can.
+    jasmine.clock().tick(0);
+    expect(seen).toEqual([]);
+
+    // The stream is not deaf: the CURRENT socket's own ending is reported.
+    b.complete();
+    expect(seen).toEqual(['complete']);
+  });
+
+  it('drops a stale `error` delivered after the next start()', () => {
+    spyOn(console, 'error');
+    const { b, seen } = switchSockets('error');
+
+    jasmine.clock().tick(0);
+    expect(seen).toEqual([]);
+
+    b.error(new Error('lost'));
+    expect(seen).toEqual(['error']);
+  });
+
+  it('drops the stale close when no new start() has run in between', () => {
+    for (const ending of ['complete', 'error'] as const) {
+      const { socket } = setup();
+      const a = asyncClosingSocket(ending);
+      (socket as any).createWebSocket = () => a.socket;
+      const seen: TeamSocketStatus[] = [];
+      socket.status$.subscribe((s) => seen.push(s));
+
+      socket.start('proc-A');
+      socket.stop();
+      jasmine.clock().tick(0);
+
+      expect(seen).withContext(ending).toEqual([]);
+    }
+  });
+
+  it('drops a stale FRAME too: a stopped socket reaches none of the streams', () => {
+    const { a, b, socket } = switchSockets('complete');
+    const inbound: string[] = [];
+    let frames = 0;
+    socket.inbound$.subscribe((m: any) => inbound.push(m.id));
+    socket.frames$.subscribe(() => frames++);
+
+    a.stream.next(mkFrame('stale'));
+    b.next(mkFrame('live'));
+
+    expect(inbound).toEqual(['live']);
+    expect(frames).toBe(1);
   });
 });
 

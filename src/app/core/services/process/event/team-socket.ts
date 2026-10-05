@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 
-import { Observable, Subject } from 'rxjs';
+import { Observable, Subject, Subscription } from 'rxjs';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 
 import { ConfigService } from '../../../platform/config/config.service';
@@ -44,13 +44,24 @@ export class TeamSocket {
   /**
    * The live socket. Starts as an unopened placeholder so `stop()` is safe
    * before the first `start()`; a never-opened `WebSocketSubject` throws on
-   * `unsubscribe()`, which is why the teardown below is wrapped rather than
-   * guarded.
+   * `unsubscribe()`, which is why that half of the teardown is wrapped rather
+   * than guarded.
    *
-   * NOT a subscription and therefore NOT part of `IngestionService`'s per-cycle
-   * `Subscription` bag (ADR-025 §3) — the try/catch is the mechanism here.
+   * Not part of `IngestionService`'s per-cycle `Subscription` bag
+   * (ADR-025 §3): the subscription to it is kept HERE, in `socketSub`, and
+   * `stop()` releases it.
    */
   private webSocket: WebSocketSubject<any> = new WebSocketSubject({ url: '' });
+
+  /**
+   * This unit's own subscription to the live socket, kept so `stop()` can
+   * DETACH the observer before closing. Closing alone is not enough: a
+   * `WebSocketSubject` delivers its close on a later task, to the observer it
+   * captured at connect time, so a socket that was stopped would still report
+   * `complete` / `error` on `status$` — to whichever team cycle is subscribed by
+   * then (#405). Detached, a stopped socket can reach none of the three streams.
+   */
+  private socketSub: Subscription | null = null;
 
   /**
    * Story 6.1 (ADR-005 §Decision 3): the raw protocol-frame stream — every WS
@@ -115,7 +126,7 @@ export class TeamSocket {
       `${wsProtocol}${api}/ws/${processId}`,
     );
 
-    this.webSocket.subscribe({
+    this.socketSub = this.webSocket.subscribe({
       next: (data: any) => {
         // Story 4-10 (AC1): announce the frame BEFORE the `__model__` guard.
         // Runs for EVERY event shape, including the ones dropped below —
@@ -171,9 +182,19 @@ export class TeamSocket {
   }
 
   /**
-   * Close the socket for this cycle. Called from `init()`'s dispose step and
-   * again from `ngOnDestroy`, so it must be safe before any `start()` and safe
-   * twice — hence the try/catch, which a never-opened `WebSocketSubject` needs.
+   * Close the socket for this cycle, and stop listening to it.
+   *
+   * The detach comes FIRST and is the mechanism: once `socketSub` is
+   * unsubscribed, nothing the stopped socket does later — a frame, an error,
+   * the close itself — can reach `inbound$`, `frames$` or `status$`. So
+   * `status$` only ever carries the CURRENT socket's transitions, and a team
+   * that was left cannot raise a "Connection Lost" toast on the next one.
+   *
+   * The subject-level `unsubscribe()` stays as the second step. It marks a real
+   * `WebSocketSubject` closed, and its try/catch is what keeps this safe before
+   * any `start()` (a never-opened `WebSocketSubject` throws) and safe twice —
+   * it is called from `init()`'s dispose step, from `close()`, and again if the
+   * injector is ever destroyed.
    *
    * The three subjects are deliberately NOT completed here: they outlive a
    * cycle and carry the next one's frames. Completing them per cycle would
@@ -181,6 +202,8 @@ export class TeamSocket {
    * with no error anywhere.
    */
   stop(): void {
+    this.socketSub?.unsubscribe();
+    this.socketSub = null;
     try {
       this.webSocket.unsubscribe();
     } catch {
@@ -191,10 +214,10 @@ export class TeamSocket {
   /**
    * Teardown for good: close the socket, then complete the three streams.
    *
-   * In that order — `stop()` first, because a real `WebSocketSubject`'s
-   * unsubscribe closes the socket and the close completes the stream, which
-   * re-enters the `complete` callback above. Completing `_status$` first would
-   * swallow that last emission.
+   * `stop()` detaches the observer, so the close it causes emits NOTHING on
+   * `status$`: a deliberate teardown is not a lost connection. The order is
+   * kept — `stop()` first — so a real `WebSocketSubject` is closed before the
+   * streams its frames would land on are completed.
    */
   destroy(): void {
     this.stop();

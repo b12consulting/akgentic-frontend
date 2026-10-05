@@ -152,19 +152,29 @@ export class TeamSessionService {
   }
 
   /**
-   * Give up the session: drop the selection and retract the pointer.
+   * Give up the session: close the pipeline, drop the selection and retract
+   * the pointer.
    *
-   * Separate from `close()` because the two are wanted at different moments,
-   * and they do DIFFERENT things. A team switch closes the pipeline and
-   * immediately republishes an id. Leaving the view retracts the id and does
-   * NOT close the pipeline — the route injector is going away with it, and
-   * `IngestionService` releases itself.
+   * Leaving the view closes the pipeline too, and nothing else would. The
+   * router caches the route's environment injector and never destroys it on
+   * navigation, so `IngestionService.ngOnDestroy()` does not run when the user
+   * leaves for Home: without the `close()` below the team's socket, log feed
+   * and reactors keep running behind the Home page, and the next team to open
+   * inherits a socket that is still closing (#405).
+   *
+   * What it adds to `close()` is the retraction: a team switch closes and
+   * immediately republishes an id, while leaving retracts the id and resets
+   * `opened`, so the same team can be opened again afterwards.
+   *
+   * `close()` is FIRST because it guards on `teamId`: after the id is cleared
+   * it returns early and releases nothing.
    *
    * `unselect()` is unconditional here, where `close()` guards on an open team:
    * the selected agent is root-scoped and outlives this session whether or not
    * a team was ever opened.
    */
   dispose(): void {
+    this.close();
     this.akgentService.unselect();
     this.teamId = '';
     this.opened = false;

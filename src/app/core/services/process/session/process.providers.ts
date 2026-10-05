@@ -46,9 +46,13 @@ import { TraceFoldState } from '../ui-state/trace-fold-state';
  * requires a particular ancestor is not a component you can place.
  *
  * `Route.providers` gives them an ENVIRONMENT injector owned by the route.
- * Nothing about their lifetime changes — it is created when the route activates
- * and destroyed when it deactivates, which is the same window the component
- * had — but nothing has to be mounted under a specific component to reach them.
+ * Nothing has to be mounted under a specific component to reach them. Their
+ * LIFETIME is not the component's, though: the router creates that injector
+ * when the route first activates, caches it, and never destroys it — not on a
+ * team switch, and not on navigation to Home. `ngOnDestroy` on these services
+ * therefore does not run on navigation; it runs only if the injector itself is
+ * ever destroyed, at app teardown. A team is released by hand, by
+ * `TeamSessionService.close()` (switch) and `dispose()` (leave).
  *
  * WHAT IT DOES NOT CHANGE, and what the old comments here claimed it did. The
  * router REUSES this route when only `:id` changes, so neither the component

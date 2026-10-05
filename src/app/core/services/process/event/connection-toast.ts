@@ -69,15 +69,18 @@ export class ConnectionToast {
   private wsDisconnectToastShown = false;
 
   /**
-   * True from `stop()` onward — suppresses the toast on intentional navigation,
-   * where `IngestionService.ngOnDestroy()`'s `webSocket.unsubscribe()` closes
-   * the socket and the resulting `complete` re-enters `show()`.
+   * True from `stop()` onward — suppresses the toast while the injector itself
+   * is being destroyed.
    *
-   * One-way by design: nothing sets it back to `false`, matching the flag it
-   * replaces. A route-scoped service is never re-initialised after its
-   * component is destroyed, so there is no path that would need it cleared. If a
-   * future story ever re-inits after destroy this becomes a live bug — it is not
-   * one today.
+   * That is NOT a navigation. The router caches the route's injector and never
+   * destroys it when the user leaves, so `IngestionService.ngOnDestroy()` — the
+   * only caller of `stop()` — runs at app teardown, if at all. Leaving a team
+   * runs `IngestionService.close()`, which never calls `stop()`; no toast is
+   * raised there because `TeamSocket` detaches its observer before closing, so
+   * a stopped socket's close cannot reach `show()` in the first place.
+   *
+   * One-way by design: nothing sets it back to `false`. A destroyed injector is
+   * never initialised again, so there is no path that would need it cleared.
    */
   private destroying = false;
 
