@@ -328,6 +328,14 @@ describe('TraceTreeComponent', () => {
       expect(tree.marginTop).toBe('12px');
       expect(tree.marginBottom).toBe('4px');
     });
+
+    it('the chevron stays level with line 1 inside the row\'s box', () => {
+      render(CASE_2);
+      const row = node(ROOT);
+      const chevron = row.querySelector('.node-chevron')!.getBoundingClientRect();
+      const line = row.querySelector('.rn-body .node-line')!.getBoundingClientRect();
+      expect(chevron.top).toBe(line.top);
+    });
   });
 
   describe('the @Human row', () => {

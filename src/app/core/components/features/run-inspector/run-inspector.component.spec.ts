@@ -467,6 +467,11 @@ describe('RunInspectorComponent', () => {
       const shown = miniNode(runKey('D2', A)).querySelector('.mini-main')!;
       expect(getComputedStyle(shown).backgroundColor).toBe(FULL);
       expect(getComputedStyle(shown).fontWeight).toBe('600');
+      // Its id takes the inverted ink, not the path's tone on the full ground.
+      expect(getComputedStyle(shown.querySelector('.mini-id')!).color).toBe(
+        getComputedStyle(shown).color,
+      );
+      expect(getComputedStyle(shown.querySelector('.mini-id')!).color).not.toBe(FULL);
     });
 
     it('case 5, the root displayed: every other node muted', () => {

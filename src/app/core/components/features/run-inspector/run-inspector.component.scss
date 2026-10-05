@@ -262,7 +262,8 @@ button.mini-main {
 }
 
 /* On the path, the id takes the name's tone; on the inverted row, the row's
-   own ink. */
+   own ink. Keep this order: the displayed row is on the path too, and the two
+   rules tie on specificity. */
 .mini-node--path .mini-id {
   color: var(--akg-text);
 }
