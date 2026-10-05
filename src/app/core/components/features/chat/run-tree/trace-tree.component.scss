@@ -59,7 +59,9 @@
   border-radius: 10px;
 }
 
-.tree-node > .rn > .rn-body:hover,
+/* The selected run keeps its white ground under the pointer, as in the
+   mockup: hover is for the rows you have not picked. */
+.tree-node:not(.tree-node--selected) > .rn > .rn-body:hover,
 .tree-human > .rn > .rn-body:hover {
   background-color: var(--akg-user-bubble-bg);
 
