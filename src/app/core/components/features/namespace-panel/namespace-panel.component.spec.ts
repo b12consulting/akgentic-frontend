@@ -1258,6 +1258,13 @@ describe('NamespacePanelComponent', () => {
     expect(component.validationFlashBuffer).toBeTrue();
     tick(1600);
     expect(component.validationFlashBuffer).toBeFalse();
+
+    // The class must leave with the flag, or the button stays green.
+    fixture.detectChanges();
+    const validateBtn = fixture.nativeElement.querySelector(
+      'button[data-test="validate-btn"]',
+    ) as HTMLButtonElement;
+    expect(validateBtn.classList.contains('p-button-success')).toBeFalse();
   }));
 
   it('(22.1 AC18) editing the buffer after a clean Validate clears the flash immediately', async () => {

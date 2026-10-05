@@ -162,10 +162,7 @@ export class MessageListComponent {
   isMouseOverTable: boolean = false; // Track mouse hover state
   scroll(behavior: string = 'smooth') {
     if (!this.isMouseOverTable && this.dataTable && !this.initialLoad) {
-      const body =
-        this.dataTable.containerViewChild?.nativeElement.getElementsByClassName(
-          'p-datatable-table-container'
-        )[0];
+      const body = this.dataTable.wrapperViewChild?.nativeElement;
       body.scrollTo({
         top: body.scrollHeight,
         behavior: behavior,

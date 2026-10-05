@@ -159,9 +159,9 @@ describe('WorkspaceTabsComponent', () => {
   }
 
   /**
-   * Activate the tab at `index`. PrimeNG 19's `<p-tabpanel>` renders ONLY the
-   * active panel's content (`@if (active())`), so each tab's explorer is
-   * mounted only while its panel is selected. Switching the `Tabs` value lets
+   * Activate the tab at `index`. Each panel's explorer is mounted only while
+   * its panel is selected (the component gates on `activeTab`; PrimeNG 21's
+   * `<p-tabpanel>` alone would render every panel and hide the rest). Switching the `Tabs` value lets
    * us inspect the explorer bound inside each panel in turn.
    */
   function activateTab(index: number): void {

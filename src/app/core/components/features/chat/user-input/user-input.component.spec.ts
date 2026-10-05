@@ -566,7 +566,7 @@ describe('ProcessUserInputComponent', () => {
 
       expect(component.canChooseSender).toBeTrue();
       expect(sendAsPill().classList).not.toContain('composer-pill--disabled');
-      expect(fixture.nativeElement.querySelector('p-dropdown')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('p-select')).not.toBeNull();
       expect(component.humanAgentOptions.length).toBe(2);
       expect(component.humanAgentOptions.map((o) => o.value)).toContain('@Human');
       expect(component.humanAgentOptions.map((o) => o.value)).toContain('@Support');
@@ -861,7 +861,7 @@ describe('ProcessUserInputComponent', () => {
      * other one.
      */
     it('keeps the Send-as overlay in place so it can be positioned above (AC #14, revised)', () => {
-      const dropdown = fixture.nativeElement.querySelector('p-dropdown');
+      const dropdown = fixture.nativeElement.querySelector('p-select');
       expect(dropdown).not.toBeNull();
       expect(dropdown.getAttribute('appendTo')).toBeNull();
     });
@@ -876,7 +876,7 @@ describe('ProcessUserInputComponent', () => {
     // open off the bottom of the screen) is unchanged; the mechanism is now
     // PrimeNG's, so what is asserted is that we no longer override it.
     it('leaves the Send-as overlay to PrimeNG rather than lifting it by hand', () => {
-      const dropdown = fixture.nativeElement.querySelector('p-dropdown');
+      const dropdown = fixture.nativeElement.querySelector('p-select');
       expect(dropdown).not.toBeNull();
 
       const panelClass =
@@ -904,7 +904,7 @@ describe('ProcessUserInputComponent', () => {
       expect(pill).not.toBeNull();
       expect(pill.querySelector('.composer-pill__glyph')).not.toBeNull();
       expect(pill.querySelector('.composer-pill__label')).not.toBeNull();
-      expect(pill.querySelector('p-dropdown')).not.toBeNull();
+      expect(pill.querySelector('p-select')).not.toBeNull();
       expect(window.getComputedStyle(pill).display).toBe('flex');
     });
 

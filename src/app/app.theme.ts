@@ -1,6 +1,6 @@
 //mypreset.ts
-import { definePreset } from '@primeng/themes';
-import Aura from '@primeng/themes/aura';
+import { definePreset } from '@primeuix/themes';
+import Aura from '@primeuix/themes/aura';
 
 const MyPreset = definePreset(Aura, {
   components: {
@@ -15,18 +15,22 @@ const MyPreset = definePreset(Aura, {
     progressspinner: {
       colorScheme: {
         light: {
-          'color.1': '{slate.400}',
-          'color.2': '{slate.400}',
-          'color.3': '{slate.400}',
-          'color.4': '{slate.400}',
+          root: {
+            colorOne: '{slate.400}',
+            colorTwo: '{slate.400}',
+            colorThree: '{slate.400}',
+            colorFour: '{slate.400}',
+          },
         },
       },
     },
     datatable: {
-      headerCellBackground: 'transparent',
-      headerCellColor: '{text.color}',
-      headerCellSelectedBackground: 'transparent',
-      headerCellSelectedColor: '{text.color}',
+      headerCell: {
+        background: 'transparent',
+        color: '{text.color}',
+        selectedBackground: 'transparent',
+        selectedColor: '{text.color}',
+      },
     },
   },
   semantic: {

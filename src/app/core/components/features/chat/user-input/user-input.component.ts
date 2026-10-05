@@ -6,7 +6,7 @@ import { FormsModule } from '@angular/forms';
 import { Observable, of } from 'rxjs';
 
 import { MessageService } from 'primeng/api';
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 import { MultiSelectModule } from 'primeng/multiselect';
 import { TextareaModule } from 'primeng/textarea';
 import { TranslatePipe } from '@ngx-translate/core';
@@ -77,7 +77,7 @@ type SubmitPhase = 'idle' | 'restarting' | 'sending';
     CommonModule,
     FormsModule,
     TextareaModule,
-    DropdownModule,
+    SelectModule,
     MultiSelectModule,
     MentionModule,
     TranslatePipe,

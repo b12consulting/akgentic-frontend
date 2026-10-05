@@ -2,7 +2,7 @@ import { Component, NgZone } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { BehaviorSubject } from 'rxjs';
-import { Dropdown } from 'primeng/dropdown';
+import { Select } from 'primeng/select';
 
 import { MemberContextComponent } from './member-context.component';
 import { Akgent, AkgentService } from '../../../services/akgent.service';
@@ -21,7 +21,7 @@ import { provideTranslateTesting } from '../../../../../testing/i18n-testing';
  * `group` is true and otherwise returns it verbatim. Hand it the grouped shape
  * with `group="false"` and the WRAPPER objects become the options.
  *
- * So these read `Dropdown.visibleOptions()` and `Dropdown.label()` — the two
+ * So these read `Select.visibleOptions()` and `Select.label()` — the two
  * computed signals that decide what is in the list and what the closed control
  * says — rather than the fields that feed them.
  */
@@ -77,9 +77,9 @@ describe('MemberContextComponent — what the agent picker actually lists', () =
   });
 
   /** The live PrimeNG control, not a stand-in. */
-  function dropdown(): Dropdown {
-    return fixture.debugElement.query(By.directive(Dropdown))
-      .componentInstance as Dropdown;
+  function dropdown(): Select {
+    return fixture.debugElement.query(By.directive(Select))
+      .componentInstance as Select;
   }
 
   function listedLabels(): unknown[] {

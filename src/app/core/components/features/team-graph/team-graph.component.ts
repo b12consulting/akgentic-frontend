@@ -8,7 +8,6 @@ import {
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
 import { DialogModule } from 'primeng/dialog';
-import { TabViewModule } from 'primeng/tabview';
 import { TextareaModule } from 'primeng/textarea';
 
 import { Subscription, combineLatest } from 'rxjs';
@@ -99,7 +98,6 @@ function humanInk(): string {
     FormsModule,
     DialogModule,
     ButtonModule,
-    TabViewModule,
     TextareaModule,
     NgxEchartsDirective,
     PendingRequestComponent,

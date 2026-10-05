@@ -13,7 +13,7 @@ import { FormsModule } from '@angular/forms';
 import { BehaviorSubject, combineLatest, Subject } from 'rxjs';
 import { map, takeUntil } from 'rxjs/operators';
 
-import { DropdownModule } from 'primeng/dropdown';
+import { SelectModule } from 'primeng/select';
 
 import { AkgentService } from '../../../services/akgent.service';
 import {
@@ -75,7 +75,7 @@ interface GraphSquad {
   imports: [
     CommonModule,
     FormsModule,
-    DropdownModule,
+    SelectModule,
     ContextTraceComponent,
     EmptyStateComponent,
     TranslatePipe,
