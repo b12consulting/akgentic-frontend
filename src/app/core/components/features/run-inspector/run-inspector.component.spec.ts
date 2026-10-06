@@ -302,7 +302,7 @@ describe('RunInspectorComponent', () => {
     expect(text(leaf.querySelector('.mini-name'))).toBe('@Manager');
     expect(text(leaf.querySelector('.mini-hint'))).toBe('· absorbed by @Manager ⤴');
     expect(leaf.getAttribute('title')).toBe(
-      "Read inside @Manager's run above — select it to see the whole message",
+      "Read inside @Manager's run — select it to see the whole message",
     );
 
     leaf.click();

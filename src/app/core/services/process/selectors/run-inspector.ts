@@ -156,11 +156,17 @@ export function runPill(graph: RunGraph, key: RunKey): RunPill | null {
   }
 }
 
+/** A step's offset from its run's start, as the Steps timeline prints it —
+ *  the one format, so an absorbed input's offset reads as its step's does. */
+function stepOffset(run: Run, step: { at: Date }): string {
+  return `+${traceDuration(run.start, step.at) ?? ''}`;
+}
+
 /** The run's steps in step order, each offset from the run's start. A tool
  *  with no verdict yet is `pending`; a verdict of `null` is not a failure. */
 export function runSteps(graph: RunGraph, run: Run): RunStepRow[] {
   return run.steps.map((step): RunStepRow => {
-    const offset = `+${traceDuration(run.start, step.at) ?? ''}`;
+    const offset = stepOffset(run, step);
     switch (step.kind) {
       case 'received':
       case 'processed':
@@ -195,15 +201,16 @@ export function runSteps(graph: RunGraph, run: Run): RunStepRow[] {
 }
 
 /** The messages the run took in, in step order, each at the offset the run
- *  read it. A `HandledMessage` whose message never reached the log (a replay
- *  that starts mid-run) has nothing to show and is left out. */
+ *  read it. The fold records an `absorbed` step only for a message it holds
+ *  (a `HandledMessage` for one it never saw is dropped there), so the lookup
+ *  cannot miss; the guard narrows the type, it is not a case of its own. */
 export function absorbedInputs(graph: RunGraph, run: Run): AbsorbedInput[] {
   const out: AbsorbedInput[] = [];
   for (const step of run.steps) {
     if (step.kind !== 'absorbed') continue;
     const message = graph.messages.get(step.message_id);
     if (message === undefined) continue;
-    out.push({ message, offset: `+${traceDuration(run.start, step.at) ?? ''}` });
+    out.push({ message, offset: stepOffset(run, step) });
   }
   return out;
 }

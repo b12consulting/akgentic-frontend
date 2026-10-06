@@ -154,7 +154,7 @@
         "answeredAfter": "a répondu après {{duration}}",
         "queued": "→ {{agent}} · en file d'attente",
         "absorbedBy": "· pris en compte par {{by}} ⤴",
-        "absorbedHint": "Lu dans l'exécution de {{by}} ci-dessus — sélectionnez-la pour voir le message entier",
+        "absorbedHint": "Lu dans l'exécution de {{by}} — sélectionnez-la pour voir le message entier",
         "joinYours": "⤵ a pris en compte votre message",
         "joinAnswer": "⤵ a pris en compte la réponse de {{agent}}",
         "joinReply": "⤵ a pris en compte le retour de {{agent}}",

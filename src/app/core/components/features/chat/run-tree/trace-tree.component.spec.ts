@@ -78,6 +78,11 @@ describe('TraceTreeComponent', () => {
     return [...node(key).querySelectorAll('.chip')].map((c) => text(c));
   }
 
+  /** The computed `font-style` of each selector's first match under `row`. */
+  function fontStyles(row: Element, selectors: string[]): string[] {
+    return selectors.map((s) => getComputedStyle(row.querySelector(s)!).fontStyle);
+  }
+
   function expand(key: RunKey): void {
     node(key).querySelector<HTMLButtonElement>('.node-chevron')!.click();
     fixture.detectChanges();
@@ -128,11 +133,15 @@ describe('TraceTreeComponent', () => {
     expect(text(leaf.querySelector('.node-agent'))).toBe('@Manager');
     expect(text(leaf.querySelector('.node-leaf-label'))).toBe('· absorbed by @Manager ⤴');
     expect(text(leaf.querySelector('.node-excerpt'))).toBe('“content of Re”');
+    // As a run row: avatar, name and excerpt upright; only the note is italic.
+    expect(fontStyles(leaf, ['.node-avatar', '.node-agent', '.node-leaf-label', '.node-excerpt']))
+      .toEqual(['normal', 'normal', 'italic', 'normal']);
     expand(k('Da', ASSISTANT));
     expand(k('Ra', MANAGER));
     const join = host().querySelector('.tree-join')!;
     expect(text(join.querySelector('.node-leaf-label'))).toBe("⤵ took in @Expert's reply");
     expect(text(join.querySelector('.node-excerpt'))).toBe('“content of Re”');
+    expect(fontStyles(join, ['.node-leaf-label', '.node-excerpt'])).toEqual(['italic', 'normal']);
     expect(chips(k('Ra', MANAGER))).toContain('took in 1 message');
   });
 
@@ -147,8 +156,10 @@ describe('TraceTreeComponent', () => {
     fixture.componentInstance.selectRun.subscribe((key) => plain.push(key));
 
     const leaf = host().querySelector<HTMLButtonElement>('.tree-leaf--absorbed button.node-main')!;
+    // No "above": the absorbing run can sit on either side of the leaf — here
+    // it is below, under @Assistant's branch.
     expect(leaf.getAttribute('title')).toBe(
-      "Read inside @Manager's run above — select it to see the whole message",
+      "Read inside @Manager's run — select it to see the whole message",
     );
     leaf.click();
     expect(selected).toEqual([k('Ra', MANAGER)]);

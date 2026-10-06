@@ -334,7 +334,11 @@
 }
 
 /* The absorbed leaf opens with the recipient's avatar and name, as a run row
-   does: both upright, so only the note between name and excerpt is italic. */
+   does: upright, like the excerpt after the note, so only the note between
+   name and excerpt is italic. The avatar is listed too: `.tree-leaf`'s italic
+   reaches the monogram through the button's `font: inherit`, and an italic
+   initial reads as a different mark from every other avatar in the tree. */
+.tree-leaf--absorbed .node-avatar,
 .tree-leaf--absorbed .node-agent,
 .tree-leaf--absorbed .node-excerpt,
 .tree-join .node-excerpt {

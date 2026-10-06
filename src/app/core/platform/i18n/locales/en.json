@@ -154,7 +154,7 @@
         "answeredAfter": "answered after {{duration}}",
         "queued": "→ {{agent}} · queued",
         "absorbedBy": "· absorbed by {{by}} ⤴",
-        "absorbedHint": "Read inside {{by}}'s run above — select it to see the whole message",
+        "absorbedHint": "Read inside {{by}}'s run — select it to see the whole message",
         "joinYours": "⤵ took in your message",
         "joinAnswer": "⤵ took in {{agent}}'s answer",
         "joinReply": "⤵ took in {{agent}}'s reply",
