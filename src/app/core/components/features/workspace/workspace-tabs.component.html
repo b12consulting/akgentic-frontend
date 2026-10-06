@@ -15,7 +15,7 @@
   </div>
 
   <!-- ≥1 named workspace → PrimeNG sub-tabs, one panel per descriptor -->
-  <p-tabs *ngIf="vm.workspaces.length > 1" value="0">
+  <p-tabs *ngIf="vm.workspaces.length > 1" [(value)]="activeTab">
     <p-tablist>
       <p-tab *ngFor="let d of vm.workspaces; let i = index" [value]="i.toString()">
         {{ d.label }}
@@ -23,7 +23,7 @@
     </p-tablist>
     <p-tabpanels>
       <p-tabpanel *ngFor="let d of vm.workspaces; let i = index" [value]="i.toString()">
-        <div class="workspace-pane">
+        <div *ngIf="activeTab() === i.toString()" class="workspace-pane">
           <ng-container
             *ngTemplateOutlet="memberStrip; context: { d: d, agents: vm.agentsById }"
           ></ng-container>

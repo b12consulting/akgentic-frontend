@@ -388,7 +388,7 @@ describe('MemberContextComponent — store-backed state/context wiring (Story 17
     fixture.detectChanges();
 
     const dropdown = (fixture.nativeElement as HTMLElement).querySelector<HTMLElement>(
-      'p-dropdown',
+      'p-select',
     );
     expect(dropdown).withContext('the picker rendered').not.toBeNull();
 
@@ -433,7 +433,7 @@ describe('MemberContextComponent — store-backed state/context wiring (Story 17
     expect(host.querySelector('p-tablist')).toBeNull();
     expect(host.querySelector('p-tab')).toBeNull();
     // …and the picker, which the strip used to carry, survived the removal.
-    expect(host.querySelector('p-dropdown')).not.toBeNull();
+    expect(host.querySelector('p-select')).not.toBeNull();
   });
 
   it('shows the empty state for a team with no agents, which it never could before', () => {
@@ -445,7 +445,7 @@ describe('MemberContextComponent — store-backed state/context wiring (Story 17
     const host = renderPanel();
 
     expect(host.querySelector('app-empty-state')).not.toBeNull();
-    expect(host.querySelector('p-dropdown')).toBeNull();
+    expect(host.querySelector('p-select')).toBeNull();
   });
 
   it('says so when the picked agent has nothing to show, rather than going blank', () => {
@@ -459,7 +459,7 @@ describe('MemberContextComponent — store-backed state/context wiring (Story 17
     expect(host.querySelector('app-empty-state')).not.toBeNull();
     // The picker stays: the state is "this one has nothing", not "there is
     // nothing to pick".
-    expect(host.querySelector('p-dropdown')).not.toBeNull();
+    expect(host.querySelector('p-select')).not.toBeNull();
   });
 
   it('shows the trace, and drops the empty state, once the agent has context', () => {

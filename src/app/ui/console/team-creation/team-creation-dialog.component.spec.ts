@@ -14,6 +14,7 @@ import {
   TeamMetadataContract,
 } from '../../../core/protocol/catalog.interface';
 import { provideTranslateTesting, setTestTranslations } from '../../../../testing/i18n-testing';
+import { providePrimeNGTesting } from '../../../../testing/primeng-testing';
 import { TeamCreationDialogComponent } from './team-creation-dialog.component';
 
 function contract(keys: string[]): TeamMetadataContract {
@@ -90,6 +91,7 @@ describe('TeamCreationDialogComponent', () => {
       imports: [TeamCreationDialogComponent, NoopAnimationsModule],
       providers: [
         provideTranslateTesting(),
+        providePrimeNGTesting(),
         { provide: ApiService, useValue: apiSpy },
         { provide: ContextService, useValue: contextSpy },
         { provide: Router, useValue: routerStub },

@@ -22,6 +22,7 @@ import { TeamCreationLauncher } from './ui/console/team-creation-launcher.servic
 import { ViewService } from './ui/console/view.service';
 
 import { provideTranslateTesting } from '../testing/i18n-testing';
+import { providePrimeNGTesting } from '../testing/primeng-testing';
 
 interface ContextStub {
   currentProcessId$: BehaviorSubject<string>;
@@ -669,6 +670,7 @@ describe('AppComponent — notification toast rendering (Story 31-3)', () => {
       imports: [AppComponent, NoopAnimationsModule, RouterTestingModule],
       providers: [
         provideTranslateTesting(),
+        providePrimeNGTesting(),
         MessageService,
         { provide: ContextService, useValue: contextStub },
         {
@@ -1002,6 +1004,7 @@ describe('AppComponent — single-toast removal (Story 31-5)', () => {
       imports: [AppComponent, NoopAnimationsModule, RouterTestingModule],
       providers: [
         provideTranslateTesting(),
+        providePrimeNGTesting(),
         MessageService,
         { provide: ContextService, useValue: contextStub },
         {

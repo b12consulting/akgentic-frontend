@@ -82,7 +82,7 @@
         answers the question the absent one left open ("can I send as someone
         else here?") and keeps the geometry still.
       -->
-      <p-dropdown
+      <p-select
         [options]="humanAgentOptions"
         [(ngModel)]="selectedSender"
         optionLabel="label"
@@ -91,7 +91,7 @@
         [ariaLabel]="'chat.input.sendAs' | translate"
         [placeholder]="'chat.input.sendAsSelf' | translate"
         size="small"
-      ></p-dropdown>
+      ></p-select>
     </div>
 
     <div class="composer-pill composer-pill--grow">

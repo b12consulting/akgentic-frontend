@@ -1,5 +1,10 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import {
+  ChangeDetectionStrategy,
+  Component,
+  inject,
+  signal,
+} from '@angular/core';
 import { AvatarModule } from 'primeng/avatar';
 import { ChipModule } from 'primeng/chip';
 import { TabsModule } from 'primeng/tabs';
@@ -82,6 +87,15 @@ export class WorkspaceTabsComponent {
     inject(WorkspaceRegistryService).workspaces$,
     inject(AgentsByIdService).agentsById$,
   ]).pipe(map(([workspaces, agentsById]) => ({ workspaces, agentsById })));
+
+  /**
+   * The selected sub-tab, two-way bound to `<p-tabs>`. Each panel mounts its
+   * explorer only while it is the selected one: PrimeNG 21's `<p-tabpanel>`
+   * renders every panel and merely hides the inactive ones, which would mount
+   * — and load — every workspace's explorer at once. Gating on this keeps the
+   * one-explorer-at-a-time behaviour the panels had under PrimeNG 19.
+   */
+  readonly activeTab = signal<string | number | undefined>('0');
 
   /**
    * Resolve a descriptor's `agentIds` to displayable member rows in the

@@ -16,8 +16,8 @@ import {
 import { FormsModule } from '@angular/forms';
 
 import {
+  NuMonacoEditorComponent,
   NuMonacoEditorEvent,
-  NuMonacoEditorModule,
 } from '@ng-util/monaco-editor';
 import { MessageService } from 'primeng/api';
 import { ButtonModule } from 'primeng/button';
@@ -111,7 +111,7 @@ interface ConfirmRequest {
     ButtonModule,
     DialogModule,
     InputTextModule,
-    NuMonacoEditorModule,
+    NuMonacoEditorComponent,
     ToggleSwitchModule,
     TooltipModule,
     ValidationReportComponent,

@@ -10,6 +10,7 @@ import {
   ParamMap,
   Router,
 } from '@angular/router';
+import { MessageService } from 'primeng/api';
 import { BehaviorSubject, firstValueFrom, of } from 'rxjs';
 
 import { ApiService } from '../../core/platform/http/api.service';
@@ -306,6 +307,9 @@ describe('HomeComponent', () => {
         { provide: ConfigService, useValue: { hideHome: false } },
         { provide: Router, useValue: routerSpy },
         { provide: ActivatedRoute, useValue: routeStub },
+        // Root-provided in the app. The namespace dialog's `@defer` mounts the
+        // real panel once the dialog is open, and the panel injects it.
+        MessageService,
       ],
       schemas: [CUSTOM_ELEMENTS_SCHEMA],
     }).compileComponents();

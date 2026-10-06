@@ -30,7 +30,7 @@
       also what lets them be tokens rather than literals.
     -->
     <div class="agent-picker">
-      <p-dropdown
+      <p-select
         optionLabel="label"
         [group]="grouped"
         [placeholder]="'panels.selectAgent' | translate"
@@ -41,7 +41,7 @@
         [disabled]="agentsByCategory.length === 0"
         [(ngModel)]="selectedAgent"
         (onChange)="onAgentSelect($event)"
-      ></p-dropdown>
+      ></p-select>
     </div>
 
     @if (traceVisible$ | async) {

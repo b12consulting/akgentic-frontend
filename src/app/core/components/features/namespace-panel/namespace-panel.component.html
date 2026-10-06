@@ -42,14 +42,16 @@
     -->
     <div class="namespace-panel__actions">
       <!-- Validate over the buffer (single handler). Flash-to-green on a clean
-           report via `[class.p-button-success]` — PrimeNG's own `[severity]`
-           binding does not strip the prior class on revert, so we toggle the
-           class explicitly. Never gated by the validation gate. -->
+           report via `[severity]`. Not `[class.p-button-success]`: since
+           PrimeNG 21 every icon/label/severity change re-applies the button's
+           classes and strips any `p-button-<severity>` first, so a class bound
+           from outside is removed the moment `[icon]` flips with it. Never
+           gated by the validation gate. -->
       <button
         pButton
         type="button"
         size="small"
-        [class.p-button-success]="validationFlashBuffer"
+        [severity]="validationFlashBuffer ? 'success' : undefined"
         label="Validate"
         [icon]="validationFlashBuffer ? 'pi pi-check' : 'pi pi-check-circle'"
         [disabled]="!canValidate"

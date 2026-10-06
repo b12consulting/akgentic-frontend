@@ -1,6 +1,6 @@
 # akgentic-frontend
 
-Angular 19 web client for the
+Angular 21 web client for the
 [Akgentic](https://github.com/b12consulting/akgentic-framework) multi-agent framework
 (open-source bundle).
 
@@ -52,7 +52,7 @@ Architecture documentation lives in the parent
 
 ## Prerequisites
 
-- Node 20+ and npm
+- Node 20.19+ (or 22.12+) and npm — the floor Angular 21 requires
 - A running `akgentic-infra` backend — by default on `http://localhost:8000`
 
 ## Running against a local backend
