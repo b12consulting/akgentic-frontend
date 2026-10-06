@@ -62,7 +62,9 @@
 /* The selected run keeps its white ground under the pointer, as in the
    mockup: hover is for the rows you have not picked. */
 .tree-node:not(.tree-node--selected) > .rn > .rn-body:hover,
-.tree-human > .rn > .rn-body:hover {
+.tree-human > .rn > .rn-body:hover,
+.tree-leaf--absorbed > .rn > .rn-body:hover,
+.tree-join > .rn > .rn-body:hover {
   background-color: var(--akg-user-bubble-bg);
 
   /* The chips share the hover ground's tone; lift them off it. */
@@ -321,6 +323,26 @@
 
 .tree-join > .rn > .rn-body {
   border: 1px dashed var(--akg-marker-border);
+}
+
+/* An absorbed leaf and a join row: the note stays italic, the quoted message
+   after it reads as every other row's excerpt does — upright and muted. The
+   whole row is the button, as a run node's is. */
+.node-leaf-label {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* The absorbed leaf opens with the recipient's avatar and name, as a run row
+   does: both upright, so only the note between name and excerpt is italic. */
+.tree-leaf--absorbed .node-agent,
+.tree-leaf--absorbed .node-excerpt,
+.tree-join .node-excerpt {
+  font-style: normal;
+}
+
+.tree-join .node-leaf-label {
+  font-style: italic;
 }
 
 .tree-human .node-avatar {

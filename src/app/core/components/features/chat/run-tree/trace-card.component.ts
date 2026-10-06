@@ -65,6 +65,8 @@ export class TraceCardComponent {
   toggle = output<RunKey>();
   answer = output<RunKey>();
   selectRun = output<RunKey>();
+  /** An absorbed leaf or join row: the absorbing run, to select AND flash. */
+  selectAbsorbed = output<RunKey>();
   humanRowHover = output<string | null>();
   showInChat = output<string>();
 

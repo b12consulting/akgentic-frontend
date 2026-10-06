@@ -78,11 +78,17 @@ export interface TraceQueuedLeaf {
   recipient: ActorAddress;
 }
 
+/** A message a running run took in instead of opening one (§D2). The row
+ *  quotes the message and selects the absorbing run, since that run is the
+ *  only place the message was read. */
 export interface TraceAbsorbedLeaf {
   kind: 'absorbed';
   messageId: string;
   recipient: ActorAddress;
   by: ActorAddress;
+  /** The absorbing run: what a click on the leaf selects. */
+  byKey: RunKey;
+  excerpt: string;
 }
 
 export interface TraceJoinRow {
@@ -92,6 +98,7 @@ export interface TraceJoinRow {
   into: RunKey;
   from: ActorAddress;
   phrase: JoinPhrase;
+  excerpt: string;
 }
 
 export type TraceTreeChild =
@@ -244,6 +251,8 @@ function sentChild(
       messageId: step.message_id,
       recipient: step.recipient,
       by: absorber.agent,
+      byKey: absorber.key,
+      excerpt: excerpt(message?.content),
     };
   }
   return { kind: 'queued', messageId: step.message_id, recipient: step.recipient };
@@ -258,6 +267,7 @@ function joinChild(walk: Walk, run: Run, messageId: string): TraceJoinRow | null
     into: run.key,
     from: message.sender,
     phrase: joinPhrase(walk.graph, message),
+    excerpt: excerpt(message.content),
   };
 }
 

@@ -222,6 +222,13 @@ describe('buildInspectorTeam', () => {
       expect(view.members[0].initial).toBe('R');
     });
 
+    it('takes the initial from the name, never from the @ an addressable agent leads with', () => {
+      const view = buildInspectorTeam([node({ name: 'n', actorName: '@Manager' })]);
+
+      expect(view.members[0].label).toBe('@Manager');
+      expect(view.members[0].initial).toBe('M');
+    });
+
     /**
      * ACTIVE MEANS WORKING, which is what the dot's two titles always said.
      *

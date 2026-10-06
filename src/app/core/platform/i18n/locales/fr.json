@@ -153,10 +153,12 @@
         "waiting": "en attente depuis {{duration}}",
         "answeredAfter": "a répondu après {{duration}}",
         "queued": "→ {{agent}} · en file d'attente",
-        "absorbed": "→ {{agent}} · pris en compte par {{by}} ⤴",
+        "absorbedBy": "· pris en compte par {{by}} ⤴",
+        "absorbedHint": "Lu dans l'exécution de {{by}} ci-dessus — sélectionnez-la pour voir le message entier",
         "joinYours": "⤵ a pris en compte votre message",
         "joinAnswer": "⤵ a pris en compte la réponse de {{agent}}",
         "joinReply": "⤵ a pris en compte le retour de {{agent}}",
+        "joinHint": "Sélectionnez cette exécution pour voir le message entier qu'elle a pris en compte",
         "inChat": "dans le chat ↓",
         "answer": "Répondre",
         "expand": "Afficher ce que cette exécution a fait",
@@ -222,7 +224,8 @@
       "eventLog": "Journal des événements"
     },
     "handling": {
-      "unknown": "Le message qui a lancé cette exécution n'est pas dans le journal chargé."
+      "unknown": "Le message qui a lancé cette exécution n'est pas dans le journal chargé.",
+      "tookIn": "⤵ pris en compte à {{offset}}"
     },
     "step": {
       "received": "reçu",

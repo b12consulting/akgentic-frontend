@@ -352,6 +352,25 @@ button.mini-main {
   overflow-wrap: anywhere;
 }
 
+/* A message the run took in: the same card as the trigger's, dashed as the
+   absorbed step's dot is, stacked under it. */
+.ri-handling--absorbed {
+  margin-top: 6px;
+  border-style: dashed;
+}
+
+/* The mini-tree's absorbed leaf: a node-shaped button, the recipient's quiet
+   avatar and name, then the note in italics. It selects the absorbing run. */
+.mini-main--absorbed .mini-hint {
+  font-style: italic;
+}
+
+/* The absorbed step's excerpt: the quiet tone of a tool's arguments, in the
+   body face rather than mono — it is prose, not a call. */
+.ri-step-excerpt {
+  font-family: inherit;
+}
+
 /* --- steps --------------------------------------------------------------- */
 
 .ri-steps {

@@ -17,6 +17,7 @@ import {
   RunGraph,
   RunKey,
   runKey,
+  RunMessage,
   runStatus,
   silent,
   traceRootOf,
@@ -46,15 +47,23 @@ export type RunStepRow =
        *  arguments. */
       summary: string;
     }
-  | { kind: 'absorbed'; offset: string; from: ActorAddress | null }
+  | { kind: 'absorbed'; offset: string; from: ActorAddress | null; excerpt: string }
   | { kind: 'sent'; offset: string; to: ActorAddress }
   | { kind: 'processed'; offset: string };
+
+/** A message the run took in while it was going (ADR-037 §D2): an input of
+ *  the run beside its trigger, shown whole in the Handling section. */
+export interface AbsorbedInput {
+  message: RunMessage;
+  /** When the run read it, offset from the run's start as a step is. */
+  offset: string;
+}
 
 /** What a run did that is not a run of its own: a message still waiting for
  *  its recipient, one another run took in, or messages it took in itself. */
 export type MiniLeaf =
   | { kind: 'queued'; recipient: ActorAddress }
-  | { kind: 'absorbed'; recipient: ActorAddress; by: ActorAddress }
+  | { kind: 'absorbed'; recipient: ActorAddress; by: ActorAddress; byKey: RunKey }
   | { kind: 'tookIn'; count: number };
 
 /** One run of the mini-tree, in pre-order, with its indentation. */
@@ -170,16 +179,33 @@ export function runSteps(graph: RunGraph, run: Run): RunStepRow[] {
             kind: 'tool',
           }).detail,
         };
-      case 'absorbed':
+      case 'absorbed': {
+        const message = graph.messages.get(step.message_id);
         return {
           kind: 'absorbed',
           offset,
-          from: graph.messages.get(step.message_id)?.sender ?? null,
+          from: message?.sender ?? null,
+          excerpt: excerpt(message?.content),
         };
+      }
       case 'sent':
         return { kind: 'sent', offset, to: step.recipient };
     }
   });
+}
+
+/** The messages the run took in, in step order, each at the offset the run
+ *  read it. A `HandledMessage` whose message never reached the log (a replay
+ *  that starts mid-run) has nothing to show and is left out. */
+export function absorbedInputs(graph: RunGraph, run: Run): AbsorbedInput[] {
+  const out: AbsorbedInput[] = [];
+  for (const step of run.steps) {
+    if (step.kind !== 'absorbed') continue;
+    const message = graph.messages.get(step.message_id);
+    if (message === undefined) continue;
+    out.push({ message, offset: `+${traceDuration(run.start, step.at) ?? ''}` });
+  }
+  return out;
 }
 
 /** The ancestors of `key` within its trace, root included, plus `key`: what a
@@ -285,7 +311,7 @@ function leavesOf(graph: RunGraph, run: Run): MiniLeaf[] {
     leaves.push(
       by === undefined
         ? { kind: 'queued', recipient: step.recipient }
-        : { kind: 'absorbed', recipient: step.recipient, by: by.agent },
+        : { kind: 'absorbed', recipient: step.recipient, by: by.agent, byKey: by.key },
     );
   }
   const count = tookInCount(run);

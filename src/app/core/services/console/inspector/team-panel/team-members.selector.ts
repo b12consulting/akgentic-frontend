@@ -1,5 +1,6 @@
 import { NodeInterface } from '../../../process/models/types';
 import {
+  actorInitial,
   displayActorName,
   makeAgentNameUserFriendly,
 } from '../../../../shared/util/util';
@@ -111,7 +112,9 @@ function toMember(
     id: node.name,
     label,
     colour: colours.of(actorName),
-    initial: label.charAt(0).toUpperCase(),
+    // The same monogram the transcript and the run tree draw: the first
+    // letter of the NAME, never the `@` the label leads with.
+    initial: actorInitial(label),
     roleKey,
     kind,
     depth,

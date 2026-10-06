@@ -29,6 +29,8 @@ import {
   RunKey,
 } from '../../../services/process/selectors/run-graph.selector';
 import {
+  AbsorbedInput,
+  absorbedInputs,
   buildMiniTree,
   displayedRun,
   LedgerScope,
@@ -135,6 +137,12 @@ export class RunInspectorComponent {
   readonly trigger = computed(() => {
     const run = this.run();
     return run === null ? null : (this.state().graph.messages.get(run.message_id) ?? null);
+  });
+
+  /** The run's other inputs: what it took in from its mailbox while it ran. */
+  readonly absorbed = computed<AbsorbedInput[]>(() => {
+    const run = this.run();
+    return run === null ? [] : absorbedInputs(this.state().graph, run);
   });
 
   readonly steps = computed<RunStepRow[]>(() => {

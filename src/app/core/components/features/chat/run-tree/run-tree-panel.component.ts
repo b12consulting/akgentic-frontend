@@ -340,6 +340,16 @@ export class RunTreePanelComponent implements OnInit, OnDestroy, AfterViewChecke
     this.flashNode(key);
   }
 
+  /** An absorbed leaf or a join row in the tree: the absorbing run is
+   *  elsewhere in the tree, so it is selected AND brought into view with a
+   *  flash, as a provenance click is. The absorbed-message note under your
+   *  own bubble does NOT come through here: it calls `selectRun(…, 'absorbed')`
+   *  directly, select only, because the run it names is directly above it. */
+  selectFromAbsorbed(key: RunKey): void {
+    this.selectRun(key, 'absorbed');
+    this.flashNode(key);
+  }
+
   flashNode(key: RunKey): void {
     afterNextRender(() => this.revealNode(key), { injector: this.injector });
   }

@@ -115,6 +115,24 @@ describe('buildTraceTree', () => {
       { name: 'search', count: 1, failed: false, summary: '' },
       { name: 'read_mailbox', count: 1, failed: false, summary: '' },
     ]);
+    // Both sides quote the message; the leaf names the run that read it.
+    const expert = find(t, k('De', EXPERT));
+    expect(expert.children[0]).toEqual({
+      kind: 'absorbed',
+      messageId: 'Re',
+      recipient: MANAGER,
+      by: MANAGER,
+      byKey: k('Ra', MANAGER),
+      excerpt: 'content of Re',
+    });
+    expect(ra.children[0]).toEqual({
+      kind: 'join',
+      messageId: 'Re',
+      into: k('Ra', MANAGER),
+      from: EXPERT,
+      phrase: 'reply',
+      excerpt: 'content of Re',
+    });
   });
 
   it('case 4: the @Human row is drawn, the entry-point run is never descended', () => {
