@@ -153,10 +153,12 @@
         "waiting": "waiting {{duration}}",
         "answeredAfter": "answered after {{duration}}",
         "queued": "→ {{agent}} · queued",
-        "absorbed": "→ {{agent}} · absorbed by {{by}} ⤴",
+        "absorbedBy": "· absorbed by {{by}} ⤴",
+        "absorbedHint": "Read inside {{by}}'s run — select it to see the whole message",
         "joinYours": "⤵ took in your message",
         "joinAnswer": "⤵ took in {{agent}}'s answer",
         "joinReply": "⤵ took in {{agent}}'s reply",
+        "joinHint": "Select this run to see the whole message it took in",
         "inChat": "in chat ↓",
         "answer": "Answer",
         "expand": "Show what this run did",
@@ -222,7 +224,8 @@
       "eventLog": "Event log"
     },
     "handling": {
-      "unknown": "The message that started this run is not in the loaded log."
+      "unknown": "The message that started this run is not in the loaded log.",
+      "tookIn": "⤵ took in at {{offset}}"
     },
     "step": {
       "received": "received",

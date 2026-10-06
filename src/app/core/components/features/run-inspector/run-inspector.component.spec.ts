@@ -21,6 +21,7 @@ import {
 } from '../../../../../testing/run-log-builders';
 import {
   CASE_2,
+  CASE_3,
   CASE_4,
   CASE_5,
   CASE_5_ANSWER,
@@ -255,6 +256,60 @@ describe('RunInspectorComponent', () => {
     expect(texts('.ri-note')).toContain(
       'The message that started this run is not in the loaded log.',
     );
+  });
+
+  it('case 3: Handling lists the reply the run took in, whole, after its trigger', () => {
+    log.appendAll(CASE_3);
+    mount();
+    select(runKey('Ra', M));
+
+    const handling = host().querySelectorAll('.ri-section')[1];
+    expect([...handling.children].map((c) => c.className)).toEqual([
+      'ri-section-title',
+      'ri-handling',
+      'ri-handling ri-handling--absorbed',
+    ]);
+    const [trigger, absorbed] = [...handling.querySelectorAll('.ri-handling')];
+    expect(text(trigger.querySelector('.ri-route'))).toBe('@Assistant → @Manager');
+    expect(text(trigger.querySelector('.ri-text'))).toBe('content of Ra');
+    // The same card as the trigger's: the route, when the run read it, the
+    // message whole. The tree only ever shows its excerpt.
+    expect(absorbed.getAttribute('data-inner-id')).toBe('Re');
+    expect(text(absorbed.querySelector('.ri-route'))).toBe('@Expert → @Manager · ⤵ took in at +6s');
+    expect(text(absorbed.querySelector('.ri-text'))).toBe('content of Re');
+    expect(getComputedStyle(absorbed).borderTopStyle).toBe('dashed');
+    // The step quotes it too, in the arguments' quiet tone.
+    const step = host().querySelector('.ri-step[data-step="absorbed"]')!;
+    expect(text(step.querySelector('.ri-tool-name'))).toBe("took in @Expert's message");
+    expect(text(step.querySelector('.ri-step-excerpt'))).toBe('“content of Re”');
+
+    // A run that took nothing in shows its trigger alone.
+    select(runKey('De', E));
+    expect(host().querySelectorAll('.ri-handling').length).toBe(1);
+    expect(host().querySelector('.ri-handling--absorbed')).toBeNull();
+  });
+
+  it('case 3: the mini-tree\'s absorbed leaf is a node-shaped button that selects the absorbing run', () => {
+    log.appendAll(CASE_3);
+    mount();
+    select(runKey('De', E));
+    const events: RunSelection[] = [];
+    selection.selections$.subscribe((e) => events.push(e));
+
+    const leaf = host().querySelector<HTMLButtonElement>('.mini-leaf .mini-main--absorbed')!;
+    expect(text(leaf.querySelector('.mini-avatar'))).toBe('M');
+    expect(leaf.querySelector('.mini-avatar')!.classList).toContain('mini-avatar--quiet');
+    expect(text(leaf.querySelector('.mini-name'))).toBe('@Manager');
+    expect(text(leaf.querySelector('.mini-hint'))).toBe('· absorbed by @Manager ⤴');
+    expect(leaf.getAttribute('title')).toBe(
+      "Read inside @Manager's run — select it to see the whole message",
+    );
+
+    leaf.click();
+    fixture.detectChanges();
+    expect(events).toEqual([{ key: runKey('Ra', M), origin: 'mini-tree' }]);
+    expect(text(host().querySelector('.ri-agent'))).toBe('@Manager');
+    expect(host().querySelector('.ri-handling--absorbed')).not.toBeNull();
   });
 
   describe('where this run sits', () => {

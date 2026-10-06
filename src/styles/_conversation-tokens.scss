@@ -573,7 +573,11 @@
   //     a meaningful non-text mark under WCAG 1.4.11. They all in fact clear
   //     4.5:1 (worst case 4.86), so a stop is also safe to set type in;
   //   - every PAIR is at least 25 apart in CIE76 ΔE, so no two squads read as
-  //     the same colour. The measured minimum is 25.1, between 6 and 8.
+  //     the same colour. The measured minimum is 25.1, between 3 and 9.
+  //
+  // THE ORDER IS THE ASSIGNMENT ORDER, since agents take stops in discovery
+  // order: stop 1 is the first agent's colour, stop 2 the second's. The same
+  // ten values, so both measured constraints above are order-independent.
   //
   // DELIBERATELY NOT ALIASED to `--akg-accent-fg` / `--akg-tool-accent` /
   // `--akg-danger-fg`, even where a value coincides. An alias would let a
@@ -587,14 +591,14 @@
   // and "this agent is broken" is the one thing on this canvas that must never
   // be ambiguous.
   --akg-graph-category-1: #005d46;
-  --akg-graph-category-2: #6434da;
-  --akg-graph-category-3: #1f4fa8;
-  --akg-graph-category-4: #8a5b00;
-  --akg-graph-category-5: #a32a7a;
-  --akg-graph-category-6: #00707e;
-  --akg-graph-category-7: #55701a;
-  --akg-graph-category-8: #42506b;
-  --akg-graph-category-9: #c2185b;
+  --akg-graph-category-2: #1f4fa8;
+  --akg-graph-category-3: #00707e;
+  --akg-graph-category-4: #a32a7a;
+  --akg-graph-category-5: #8a5b00;
+  --akg-graph-category-6: #55701a;
+  --akg-graph-category-7: #6434da;
+  --akg-graph-category-8: #c2185b;
+  --akg-graph-category-9: #42506b;
   --akg-graph-category-10: #8a5f4a;
 
   // The ground the canvas is drawn ON. It is `--akg-surface-muted` because that

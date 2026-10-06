@@ -23,6 +23,7 @@ import {
 } from '../../../../../testing/run-log-cases';
 import { emptyRunGraph, RunGraph, runGraphFold, runKey } from './run-graph.selector';
 import {
+  absorbedInputs,
   belongsToRun,
   buildMiniTree,
   displayedRun,
@@ -121,7 +122,27 @@ describe('runSteps', () => {
       'sent',
       'processed',
     ]);
-    expect(steps[3]).toEqual({ kind: 'absorbed', offset: '+6s', from: EXPERT });
+    expect(steps[3]).toEqual({
+      kind: 'absorbed',
+      offset: '+6s',
+      from: EXPERT,
+      excerpt: 'content of Re',
+    });
+  });
+
+  it('case 3: the reply @Manager took in is an input of its run, at the offset it read it', () => {
+    const graph = graphOf(CASE_3);
+    const inputs = absorbedInputs(graph, graph.runs.get(runKey('Ra', M))!);
+    expect(inputs.map((i) => [i.message.id, i.message.content, i.offset])).toEqual([
+      ['Re', 'content of Re', '+6s'],
+    ]);
+    // A run that took nothing in has none; in the mini-tree its send is the
+    // absorbed leaf, naming the run that read it.
+    expect(absorbedInputs(graph, graph.runs.get(runKey('De', E))!)).toEqual([]);
+    const expert = buildMiniTree(graph, runKey('De', E)).find((r) => r.key === runKey('De', E))!;
+    expect(expert.leaves).toEqual([
+      { kind: 'absorbed', recipient: MANAGER, by: MANAGER, byKey: runKey('Ra', M) },
+    ]);
   });
 
   it('a tool still waiting for its return is pending; a missing verdict is ok', () => {

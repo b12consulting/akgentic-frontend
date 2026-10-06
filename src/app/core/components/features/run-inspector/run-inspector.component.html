@@ -128,10 +128,22 @@
                   @if (leaf.kind === 'queued') {
                     {{ 'chat.runTree.node.queued' | translate: { agent: (leaf.recipient.name | displayActorName) } }}
                   } @else if (leaf.kind === 'absorbed') {
-                    {{
-                      'chat.runTree.node.absorbed'
-                        | translate: { agent: (leaf.recipient.name | displayActorName), by: (leaf.by.name | displayActorName) }
-                    }}
+                    <!-- The recipient's avatar and name, as a node's; the
+                         click goes to the run that read the message. -->
+                    <button
+                      type="button"
+                      class="mini-main mini-main--absorbed"
+                      [attr.title]="'chat.runTree.node.absorbedHint' | translate: { by: (leaf.by.name | displayActorName) }"
+                      (click)="selectFromTree(leaf.byKey)"
+                    >
+                      <span class="mini-avatar mini-avatar--quiet" aria-hidden="true">{{
+                        initialOf(leaf.recipient)
+                      }}</span>
+                      <span class="mini-name">{{ leaf.recipient.name | displayActorName }}</span>
+                      <span class="mini-hint">{{
+                        'chat.runTree.node.absorbedBy' | translate: { by: (leaf.by.name | displayActorName) }
+                      }}</span>
+                    </button>
                   } @else {
                     ⤵
                     {{
@@ -147,7 +159,9 @@
       </div>
     </section>
 
-    <!-- 2. Handling: the message that started the run. -->
+    <!-- 2. Handling: the message that started the run, then each message the
+         run took in while it was going (ADR-037 §D2) — an input like the
+         trigger, in the same card, with when the run read it. -->
     <section class="ri-section">
       <h3 class="ri-section-title">{{ 'runInspector.section.handling' | translate }}</h3>
       @if (trigger(); as t) {
@@ -157,6 +171,16 @@
         </div>
       } @else {
         <p class="ri-note">{{ 'runInspector.handling.unknown' | translate }}</p>
+      }
+      @for (input of absorbed(); track input.message.id) {
+        <div class="ri-handling ri-handling--absorbed" [attr.data-inner-id]="input.message.id">
+          <div class="ri-route">
+            {{ input.message.sender.name | displayActorName }} →
+            {{ input.message.recipient.name | displayActorName }} ·
+            {{ 'runInspector.handling.tookIn' | translate: { offset: input.offset } }}
+          </div>
+          <div class="ri-text">{{ input.message.content }}</div>
+        </div>
       }
     </section>
 
@@ -198,9 +222,16 @@
                 </span>
               }
               @case ('absorbed') {
-                <span class="ri-step-label">{{
-                  'runInspector.step.absorbed' | translate: { agent: (step.from?.name | displayActorName) || '—' }
-                }}</span>
+                <!-- The message's excerpt rides along as a tool's arguments
+                     do; the whole text is in Handling above. -->
+                <span class="ri-step-label ri-step-tool">
+                  <span class="ri-tool-name">{{
+                    'runInspector.step.absorbed' | translate: { agent: (step.from?.name | displayActorName) || '—' }
+                  }}</span>
+                  @if (step.excerpt) {
+                    <span class="ri-tool-args ri-step-excerpt"> “{{ step.excerpt }}”</span>
+                  }
+                </span>
               }
               @case ('sent') {
                 <span class="ri-step-label">{{

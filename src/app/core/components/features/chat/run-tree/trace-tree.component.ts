@@ -98,6 +98,9 @@ export class TraceTreeComponent {
   answer = output<RunKey>();
   /** A run node was clicked: the panel selects it. */
   selectRun = output<RunKey>();
+  /** An absorbed leaf or join row was clicked: the absorbing run, for the
+   *  panel to select and flash. */
+  selectAbsorbed = output<RunKey>();
   /** The `@Human` row under the pointer, as its bubble's envelope id. */
   humanRowHover = output<string | null>();
   /** The `@Human` row's "in chat" button, as its bubble's envelope id. */
@@ -205,6 +208,13 @@ export class TraceTreeComponent {
   onNode(key: RunKey, expandable: boolean): void {
     if (expandable) this.onChevron(key);
     this.selectRun.emit(key);
+  }
+
+  /** An absorbed leaf or a join row names the run that took the message in:
+   *  the only run that read it, and where the inspector shows it whole. The
+   *  panel selects it and flashes its node, as a provenance link does. */
+  onAbsorbed(key: RunKey): void {
+    this.selectAbsorbed.emit(key);
   }
 
   /** A fold that hides the hovered `@Human` row clears its bubble's highlight:

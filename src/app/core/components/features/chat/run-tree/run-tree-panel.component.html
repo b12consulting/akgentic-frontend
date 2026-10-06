@@ -94,6 +94,7 @@
                 [flashingRun]="flashingRun()"
                 (toggle)="toggleTrace($event)"
                 (selectRun)="selectRun($event, 'tree')"
+                (selectAbsorbed)="selectFromAbsorbed($event)"
                 (answer)="onAnswer($event)"
                 (humanRowHover)="onHumanRowHover($event)"
                 (showInChat)="flashBubble($event)"

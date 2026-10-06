@@ -40,6 +40,7 @@ import {
   welcome,
 } from '../../../../../../testing/run-log-builders';
 import {
+  CASE_3,
   CASE_5,
   CASE_5_ANSWER,
   CASE_5_PREFIX,
@@ -499,6 +500,36 @@ describe('RunTreePanelComponent', () => {
     expect(TestBed.inject(TraceFoldState).isOpen(runKey('U1', M))).toBeTrue();
     expect(events).toEqual([{ key: runKey('U1', M), origin: 'absorbed' }]);
     expect(scroll).not.toHaveBeenCalled();
+  });
+
+  it('case 3: the absorbed leaf selects the absorbing run, reveals it, scrolls to it and flashes it', () => {
+    const scroll = spyOn(HTMLElement.prototype, 'scrollIntoView');
+    log.appendAll(CASE_3);
+    const fixture = mount();
+    const events: RunSelection[] = [];
+    TestBed.inject(RunSelectionState).selections$.subscribe((e) => events.push(e));
+    const root = runKey('U1', M);
+    const absorber = runKey('Ra', M);
+    openCard(fixture, root);
+    // The leaf sits under @Expert's node, folded by default; the absorbing
+    // run sits under @Assistant's, folded too.
+    el(fixture)
+      .querySelector<HTMLButtonElement>(
+        `.tree-node[data-run-key="${runKey('De', EXPERT.agent_id)}"] .node-chevron`,
+      )!
+      .click();
+    fixture.detectChanges();
+    expect(el(fixture).querySelector(`.tree-node[data-run-key="${absorber}"]`)).toBeNull();
+
+    el(fixture).querySelector<HTMLButtonElement>('.tree-leaf--absorbed button.node-main')!.click();
+    settleRender(fixture);
+
+    expect(events).toEqual([{ key: absorber, origin: 'absorbed' }]);
+    const node = el(fixture).querySelector(`.tree-node[data-run-key="${absorber}"]`)!;
+    expect(node.querySelector('.node-main')!.getAttribute('aria-current')).toBe('true');
+    expect(node.classList).toContain('tree-node--flash');
+    expect(scroll).toHaveBeenCalledTimes(1);
+    expect(scroll.calls.mostRecent().object).toBe(node);
   });
 
   it('a card starts collapsed and stays open as its trace grows (Trap 7)', () => {

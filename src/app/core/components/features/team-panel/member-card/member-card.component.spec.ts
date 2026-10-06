@@ -252,4 +252,24 @@ describe('MemberCardComponent — agent colour', () => {
     expect(el.style.backgroundColor).toBe('');
     expect(el.classList).not.toContain('tinted');
   });
+
+  it('a tinted supervisor gets the same ink as a tinted worker, not its accent ink', () => {
+    // The supervisor's resting ink is accent-bright, chosen for the accent
+    // fill; on its own ramp stop it must step to the ramp's ink like a worker
+    // does, or @Manager's monogram reads green on green.
+    const plainSupervisor = getComputedStyle(
+      avatar(member({ kind: 'supervisor', colour: null })),
+    ).color;
+    const tintedWorker = getComputedStyle(
+      avatar(member({ kind: 'worker', colour: 'rgb(0, 93, 70)' })),
+    ).color;
+    const tintedSupervisor = getComputedStyle(
+      avatar(member({ kind: 'supervisor', colour: 'rgb(0, 93, 70)' })),
+    ).color;
+
+    // `--akg-agent-mark-fg`: the white every other agent monogram wears.
+    expect(tintedSupervisor).toBe('rgb(255, 255, 255)');
+    expect(tintedSupervisor).toBe(tintedWorker);
+    expect(tintedSupervisor).not.toBe(plainSupervisor);
+  });
 });
