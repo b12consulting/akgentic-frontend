@@ -85,7 +85,8 @@ the runtime layer and silently ignores whatever the deployment set.
 
 Recognised keys: `api`, `logo`, `favicon`, `welcomeMessage`, `autoRedirectContext`, `hideHome`,
 `hideLogin`, `initRightPanelCollapsed`, `userInputEnterKeySubmit`, `loginProviders`, `production`,
-`languages`, `defaultLanguage`.
+`languages`, `defaultLanguage`, `wsReconnectIntervalSeconds` (seconds between attempts to reopen a
+lost team socket; default 5).
 
 ### Using config.json
 

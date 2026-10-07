@@ -216,10 +216,11 @@ export class IngestionService {
    * lifetime (team switch), so destroy-scoped teardown alone leaks a cycle's
    * subscriptions into the next — a leak the mount/unmount probe cannot see.
    *
-   * Two teardown handles deliberately stay OUT of this bag because neither is a
+   * Three teardown handles deliberately stay OUT of this bag because none is a
    * subscription: the socket (`TeamSocket.stop()`, a try/catch unsubscribe — a
-   * never-opened WS throws) and the pending spinner flip
-   * (`LoadingIndicator.stop()`, a `clearTimeout`).
+   * never-opened WS throws), the pending spinner flip
+   * (`LoadingIndicator.stop()`, a `clearTimeout`) and the pending reconnect
+   * attempt (`reconnectTimer`, a `clearTimeout`).
    */
   private cycle: Subscription | null = null;
 

@@ -20,7 +20,7 @@ export type TeamSocketStatus = 'error' | 'complete';
  * `TeamSocket` — the WebSocket transport SOURCE (Epic 34 / ADR-025 §1). It owns
  * the URL build, the `createWebSocket` seam, the socket subject and its
  * subscribe/teardown, and NOTHING else: it imports no log, no store, no spinner
- * and neither toast unit. Everything it learns leaves through the three streams
+ * and neither toast unit. Everything it learns leaves through the four streams
  * below, so the frame handler carries no policy — only the `__model__` split
  * that decides which of two streams a frame belongs to.
  *
@@ -200,10 +200,11 @@ export class TeamSocket {
 
   /**
    * Close the socket for this cycle. The detach comes FIRST: a stopped socket
-   * reaches none of the three streams. The try/catch keeps this safe before
-   * any `start()` and safe twice.
+   * reaches none of the four streams (`opened$` checks `socketSub` for the
+   * same reason). The try/catch keeps this safe before any `start()` and safe
+   * twice.
    *
-   * The three subjects are deliberately NOT completed here: they outlive a
+   * The four subjects are deliberately NOT completed here: they outlive a
    * cycle and carry the next one's frames.
    */
   stop(): void {

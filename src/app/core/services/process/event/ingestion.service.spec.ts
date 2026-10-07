@@ -1386,6 +1386,66 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
     expect(sockets.length).toBe(1);
   });
 
+  it('reconnect: an attempt reopens the socket only — the log is not reset, no toast is cleared', async () => {
+    // Trap T2: re-running `init()` would also open a socket, so the attempt
+    // count alone cannot tell the two apart.
+    const sockets = socketPerAttempt();
+    const log = TestBed.inject(MessageLogService);
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+    const reset = spyOn(log, 'reset').and.callThrough();
+    msgService.clear.calls.reset();
+
+    sockets[0].error(new Error('connection lost'));
+    jasmine.clock().tick(5000);
+
+    expect(sockets.length).toBe(2);
+    expect(reset).not.toHaveBeenCalled();
+    expect(msgService.clear).not.toHaveBeenCalled();
+  });
+
+  it('reconnect: an attempt whose socket cannot be built schedules the next one', async () => {
+    const sockets = socketPerAttempt();
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+    spyOn(console, 'error');
+    const create = (teamSocket() as any).createWebSocket;
+    create.and.throwError('construction failed');
+
+    sockets[0].error(new Error('connection lost'));
+    jasmine.clock().tick(5000);
+    expect(create.calls.count()).toBe(2);
+
+    // A throw never reaches `status$`, so only the catch keeps the loop alive.
+    const next = socketPerAttempt();
+    jasmine.clock().tick(5000);
+
+    expect(create.calls.count()).toBe(3);
+    expect(next.length).toBe(1);
+  });
+
+  it('reconnect: a team switch cancels the prior team\'s pending attempt', async () => {
+    const sockets = socketPerAttempt();
+    const create = (teamSocket() as any).createWebSocket;
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+    sockets[0].error(new Error('connection lost')); // proc-1's attempt due in 5s
+    jasmine.clock().tick(1000);
+
+    await service.init('proc-2', true);
+    jasmine.clock().tick(1000);
+    sockets[1].error(new Error('connection lost')); // proc-2's attempt due in 5s
+    jasmine.clock().tick(3000); // proc-1's attempt would fire here
+    // While proc-2's attempt is pending a second ending must schedule nothing.
+    (teamSocket() as any)._status$.next('complete');
+    jasmine.clock().tick(2000); // proc-2's attempt fires and holds
+    jasmine.clock().tick(10000);
+
+    expect(sockets.length).toBe(3);
+    const urls: string[] = create.calls.allArgs().map((a: any[]) => a[0]);
+    expect(urls.slice(1).every((url: string) => url.endsWith('/ws/proc-2'))).toBe(true);
+  });
+
   // --- Story 34-4: the two seams the extraction made easier to break --------
 
   it('34-4 (AC7): ngOnDestroy delivers no `complete` to status$ and raises no toast', async () => {

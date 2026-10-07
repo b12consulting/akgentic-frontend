@@ -44,7 +44,7 @@ export const CONNECTION_LOST_TOAST_ID = 'connection-lost';
  *
  * Nothing is self-wired: the constructor subscribes to nothing and raises
  * nothing (ADR-025 §2, restating ADR-005 §Decision 6). `start()` / `show()` /
- * `stop()` are the explicit invocation points, all three driven by
+ * `hide()` / `stop()` are the explicit invocation points, all four driven by
  * `IngestionService`. Wiring this unit to a `TeamSocket` status stream instead
  * of the two push call sites is story 34-6, not this one.
  *

@@ -55,7 +55,8 @@ export interface Environment {
   hiddenInspectorTabs?: string[];
   /**
    * Seconds between two attempts to reopen a lost team WebSocket. The loop
-   * runs while the "Connection Lost" toast is up and stops at the first frame.
+   * runs while the "Connection Lost" toast is up and stops once a handshake is
+   * accepted — not at the first frame, which a stopped team never sends.
    *
    * OPTIONAL, like `initRailCollapsed` and for the same reason: it post-dates
    * every `config.json` in the field. `ConfigService` supplies the default (5).
