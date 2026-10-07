@@ -184,4 +184,27 @@ describe('ConfigService', () => {
       expect(config.hiddenInspectorTabs).toEqual([]);
     });
   });
+
+  describe('wsReconnectIntervalSeconds — how often a lost socket is retried', () => {
+    it('defaults to 5 for a config.json that predates the key', async () => {
+      const config = await loadConfig({ api: 'http://backend.test' });
+
+      expect(config.wsReconnectIntervalSeconds).toBe(5);
+    });
+
+    it('reports the interval a deployment set', async () => {
+      const config = await loadConfig({ wsReconnectIntervalSeconds: 12 });
+
+      expect(config.wsReconnectIntervalSeconds).toBe(12);
+    });
+
+    it('falls back to 5 for a value that would spin the loop', async () => {
+      for (const bad of [0, -3, '10', null]) {
+        const config = new ConfigService();
+        (config as any).config = { ...environment, wsReconnectIntervalSeconds: bad };
+
+        expect(config.wsReconnectIntervalSeconds).withContext(String(bad)).toBe(5);
+      }
+    });
+  });
 });

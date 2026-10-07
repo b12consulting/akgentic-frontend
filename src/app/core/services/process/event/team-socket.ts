@@ -1,6 +1,6 @@
 import { inject, Injectable } from '@angular/core';
 
-import { Observable, Subject, Subscription } from 'rxjs';
+import { NextObserver, Observable, Subject, Subscription } from 'rxjs';
 import { webSocket, WebSocketSubject } from 'rxjs/webSocket';
 
 import { ConfigService } from '../../../platform/config/config.service';
@@ -96,6 +96,17 @@ export class TeamSocket {
   readonly status$: Observable<TeamSocketStatus> = this._status$.asObservable();
 
   /**
+   * The handshake was accepted — the server is reachable again. This and NOT
+   * the first frame is what ends a reconnect: a STOPPED team's socket is
+   * accepted and then parked in the server's idle loop, sending nothing until
+   * the team is restored, so a frame-based signal never fires for it.
+   *
+   * Kept apart from `status$`, whose two members are the ways a socket ENDS.
+   */
+  private readonly _opened$ = new Subject<void>();
+  readonly opened$: Observable<void> = this._opened$.asObservable();
+
+  /**
    * Open the socket for one team cycle and start delivering frames.
    *
    * A synchronous construction failure PROPAGATES — this method has no
@@ -114,9 +125,20 @@ export class TeamSocket {
       this.pageProtocol() === 'https:' ? 'wss://' : 'ws://';
     const api = this.config.api.replace(/(^\w+:|^)\/\//, '');
 
-    this.webSocket = this.createWebSocket(
+    // Only the CURRENT, still-attached socket may announce itself: a socket
+    // replaced by a later `start()` or detached by `stop()` stays silent, like
+    // its other three streams.
+    const socket: WebSocketSubject<any> = this.createWebSocket(
       `${wsProtocol}${api}/ws/${processId}`,
+      {
+        next: () => {
+          if (this.webSocket === socket && this.socketSub !== null) {
+            this._opened$.next();
+          }
+        },
+      },
     );
+    this.webSocket = socket;
 
     this.socketSub = this.webSocket.subscribe({
       next: (data: any) => {
@@ -155,8 +177,11 @@ export class TeamSocket {
    * `(socket as any).createWebSocket = ...` are used across the suite, and both
    * must keep working.
    */
-  protected createWebSocket(url: string): WebSocketSubject<any> {
-    return webSocket(url);
+  protected createWebSocket(
+    url: string,
+    openObserver: NextObserver<Event>,
+  ): WebSocketSubject<any> {
+    return webSocket({ url, openObserver });
   }
 
   /**
@@ -193,12 +218,13 @@ export class TeamSocket {
 
   /**
    * Teardown for good: stop (silently — the observer is detached), then
-   * complete the three streams.
+   * complete the four streams.
    */
   destroy(): void {
     this.stop();
     this._inbound$.complete();
     this._frames$.complete();
     this._status$.complete();
+    this._opened$.complete();
   }
 }

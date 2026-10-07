@@ -4,7 +4,7 @@ import {
   NotificationRequest,
 } from '../../../platform/notification/notification.port';
 
-import { ConnectionToast } from './connection-toast';
+import { CONNECTION_LOST_TOAST_ID, ConnectionToast } from './connection-toast';
 
 /**
  * The MINIMAL provider set is itself an assertion (Epic 34 / ADR-025 §1, AC9):
@@ -22,7 +22,12 @@ import { ConnectionToast } from './connection-toast';
  * the class it was carved out of: nothing here can resolve through
  * `IngestionService`, because `IngestionService` is not in the injector.
  */
-function setup(): { unit: ConnectionToast; notify: jasmine.Spy; clear: jasmine.Spy } {
+function setup(): {
+  unit: ConnectionToast;
+  notify: jasmine.Spy;
+  clear: jasmine.Spy;
+  dismiss: jasmine.Spy;
+} {
   const notify = jasmine.createSpy('notify');
   const clear = jasmine.createSpy('clear');
   const dismiss = jasmine.createSpy('dismiss');
@@ -32,7 +37,7 @@ function setup(): { unit: ConnectionToast; notify: jasmine.Spy; clear: jasmine.S
       { provide: NOTIFICATION_PORT, useValue: { notify, clear, dismiss } },
     ],
   });
-  return { unit: TestBed.inject(ConnectionToast), notify, clear };
+  return { unit: TestBed.inject(ConnectionToast), notify, clear, dismiss };
 }
 
 /** Every request handed to `NotificationPort.notify`. */
@@ -43,7 +48,7 @@ function payloads(notify: jasmine.Spy): NotificationRequest[] {
 }
 
 describe('ConnectionToast — the payload (AC2)', () => {
-  it('passes exactly the five load-bearing properties', () => {
+  it('passes exactly the six load-bearing properties', () => {
     const { unit, notify } = setup();
 
     unit.show();
@@ -57,9 +62,10 @@ describe('ConnectionToast — the payload (AC2)', () => {
         severity: 'warn',
         summary: 'Connection Lost',
         detail:
-          'Real-time connection to the server has been lost. Updates are paused.',
+          'Real-time connection to the server has been lost. Trying to reconnect…',
         sticky: true,
         closable: false,
+        data: { messageId: CONNECTION_LOST_TOAST_ID },
       },
     ]);
   });
@@ -232,12 +238,12 @@ describe('ConnectionToast — separate from the notification toast (AC9)', () =>
     expect(unit).toBeInstanceOf(ConnectionToast);
   });
 
-  it('AC9: the unit exposes start/show/stop and nothing that shapes another toast', () => {
+  it('AC9: the unit exposes start/show/hide/stop and nothing that shapes another toast', () => {
     const { unit } = setup();
 
     // A guard against the reunification this story exists to prevent: the two
     // toast systems must not grow a shared payload builder, base class or
-    // constant. This unit's whole surface is its three lifecycle calls.
+    // constant. This unit's whole surface is its four lifecycle calls.
     //
     // Walks the WHOLE prototype chain, not one level. `getOwnPropertyNames` on
     // `getPrototypeOf(unit)` alone reads only `ConnectionToast.prototype`, so a
@@ -253,7 +259,7 @@ describe('ConnectionToast — separate from the notification toast (AC9)', () =>
     }
 
     expect(new Set(surface.filter((name) => name !== 'constructor'))).toEqual(
-      new Set(['start', 'show', 'stop']),
+      new Set(['start', 'show', 'hide', 'stop']),
     );
   });
 
@@ -298,5 +304,35 @@ describe('ConnectionToast — component-scoped, never root-provided (AC1)', () =
     });
 
     expect(() => TestBed.inject(ConnectionToast)).toThrowError(/No provider/);
+  });
+});
+
+describe('ConnectionToast — hide() on reconnect', () => {
+  it('dismisses this toast alone — never the whole container', () => {
+    const { unit, clear, dismiss } = setup();
+    unit.show();
+
+    unit.hide();
+
+    expect(dismiss).toHaveBeenCalledOnceWith(CONNECTION_LOST_TOAST_ID);
+    expect(clear).not.toHaveBeenCalled();
+  });
+
+  it('is a no-op while no toast is showing', () => {
+    const { unit, dismiss } = setup();
+
+    unit.hide();
+
+    expect(dismiss).not.toHaveBeenCalled();
+  });
+
+  it('re-arms the dedup flag, so the next drop warns again', () => {
+    const { unit, notify } = setup();
+    unit.show();
+    unit.hide();
+
+    unit.show();
+
+    expect(payloads(notify).length).toBe(2);
   });
 });

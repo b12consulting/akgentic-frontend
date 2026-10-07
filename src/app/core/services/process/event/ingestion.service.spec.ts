@@ -19,7 +19,8 @@ import { NOTIFICATION_PORT } from '../../../platform/notification/notification.p
 import { PrimeNgNotificationAdapter } from '../../../../ui/console/notification.adapter';
 import { ChatService } from '../selectors/chat.selector';
 import { planningTasks } from '../selectors/task-board';
-import { ConnectionToast } from './connection-toast';
+import { CONNECTION_LOST_TOAST_ID, ConnectionToast } from './connection-toast';
+import { ConfigService } from '../../../platform/config/config.service';
 import { LoadingIndicator } from './loading-indicator';
 import { MessageLogService } from './message-log.service';
 import { NotificationToasts } from './notification-toasts';
@@ -1208,7 +1209,7 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
       jasmine.objectContaining({
         severity: 'warn',
         summary: 'Connection Lost',
-        detail: 'Real-time connection to the server has been lost. Updates are paused.',
+        detail: 'Real-time connection to the server has been lost. Trying to reconnect…',
         sticky: true,
         closable: false,
       }),
@@ -1292,6 +1293,97 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
       .map((a: any[]) => a[0])
       .filter((c: any) => c.severity === 'warn' && c.summary === 'Connection Lost');
     expect(warnCalls.length).toBe(0);
+  });
+
+  // --- reconnect loop ---------------------------------------------------------
+
+  /**
+   * A fresh socket per `createWebSocket` call, so each attempt is observable.
+   * `opens[i]` is the open observer attempt `i` was handed — calling it is the
+   * server accepting that handshake.
+   */
+  let opens: { next: (e: Event) => void }[];
+  function socketPerAttempt(): Subject<any>[] {
+    const sockets: Subject<any>[] = [];
+    opens = [];
+    (teamSocket() as any).createWebSocket.and.callFake((_url: string, open: any) => {
+      const socket = new Subject<any>();
+      sockets.push(socket);
+      opens.push(open);
+      return socket as unknown as WebSocketSubject<any>;
+    });
+    return sockets;
+  }
+
+  it('reconnect: a dropped socket is reopened every interval until one holds', async () => {
+    const sockets = socketPerAttempt();
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+
+    sockets[0].error(new Error('connection lost'));
+    jasmine.clock().tick(4999);
+    expect(sockets.length).toBe(1);
+    jasmine.clock().tick(1);
+    expect(sockets.length).toBe(2);
+
+    // A refused attempt ends in `error` too, and that keeps the loop going.
+    sockets[1].error(new Error('still down'));
+    jasmine.clock().tick(5000);
+    expect(sockets.length).toBe(3);
+    expect(disconnectToasts().length).toBe(1);
+  });
+
+  it('reconnect: the interval comes from ConfigService', async () => {
+    spyOnProperty(TestBed.inject(ConfigService), 'wsReconnectIntervalSeconds').and.returnValue(2);
+    const sockets = socketPerAttempt();
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+
+    sockets[0].complete();
+    jasmine.clock().tick(2000);
+
+    expect(sockets.length).toBe(2);
+  });
+
+  it('reconnect: an accepted handshake dismisses the toast, and the next drop warns again', async () => {
+    const sockets = socketPerAttempt();
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+    sockets[0].complete();
+    jasmine.clock().tick(5000);
+    // The connection is back but, as for a stopped team parked in the server's
+    // idle loop, no frame follows. That must still end the warning.
+    expect(msgService.dismiss).not.toHaveBeenCalled();
+
+    opens[1].next(new Event('open'));
+
+    expect(msgService.dismiss).toHaveBeenCalledOnceWith(CONNECTION_LOST_TOAST_ID);
+    sockets[1].complete();
+    expect(disconnectToasts().length).toBe(2);
+  });
+
+  it('reconnect: an error then a complete schedules ONE attempt', async () => {
+    const sockets = socketPerAttempt();
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+
+    (teamSocket() as any)._status$.next('error');
+    (teamSocket() as any)._status$.next('complete');
+    jasmine.clock().tick(5000);
+
+    expect(sockets.length).toBe(2);
+  });
+
+  it('reconnect: close() cancels a pending attempt', async () => {
+    const sockets = socketPerAttempt();
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+    sockets[0].error(new Error('connection lost'));
+
+    service.close();
+    jasmine.clock().tick(20000);
+
+    expect(sockets.length).toBe(1);
   });
 
   // --- Story 34-4: the two seams the extraction made easier to break --------
@@ -3215,6 +3307,7 @@ describe('IngestionService — init() ordering + self-wiring (Story 34-6)', () =
     boot();
     const frames = (teamSocket() as any)._frames$;
     const status = (teamSocket() as any)._status$;
+    const opened = (teamSocket() as any)._opened$;
 
     for (let i = 0; i < 4; i++) {
       const cycleStream = new Subject<any>();
@@ -3225,6 +3318,7 @@ describe('IngestionService — init() ordering + self-wiring (Story 34-6)', () =
 
       expect(frames.observers.length).toBe(1);
       expect(status.observers.length).toBe(1);
+      expect(opened.observers.length).toBe(1);
       // And the inbound stream stays at its own post-init bound throughout.
       // Story 35-1 lowered that bound from 3 to 2: the notification reactor
       // reads `log.appended$` now, not this subject.

@@ -3,6 +3,13 @@ import { inject, Injectable } from '@angular/core';
 import { NOTIFICATION_PORT } from '../../../platform/notification/notification.port';
 
 /**
+ * The `data.messageId` stamped on the disconnect toast, so `hide()` can remove
+ * it alone through the port's `dismiss`. Not a wire id: no server message ever
+ * carries it, so a `ClosedNotification` can never address this toast.
+ */
+export const CONNECTION_LOST_TOAST_ID = 'connection-lost';
+
+/**
  * `ConnectionToast` — the disconnect-warning REACTOR (Epic 34 / ADR-025 §0-§1).
  * It owns the whole of the WebSocket-disconnect toast: its payload, its
  * one-per-cycle deduplication, and its suppression during teardown.
@@ -64,7 +71,8 @@ export class ConnectionToast {
    * fire in sequence, which is the ordinary shape of a dropped socket rather
    * than an edge case.
    *
-   * Reset by `start()` (per team cycle) and by `stop()`, never anywhere else.
+   * Reset by `start()` (per team cycle), by `hide()` (the socket is back) and
+   * by `stop()`, never anywhere else.
    */
   private wsDisconnectToastShown = false;
 
@@ -104,10 +112,25 @@ export class ConnectionToast {
     this.notifications.notify({
       severity: 'warn',
       summary: 'Connection Lost',
-      detail: 'Real-time connection to the server has been lost. Updates are paused.',
+      detail: 'Real-time connection to the server has been lost. Trying to reconnect…',
       sticky: true,
       closable: false,
+      data: { messageId: CONNECTION_LOST_TOAST_ID },
     });
+  }
+
+  /**
+   * The socket is back: remove THIS toast only — never the port's `clear()`,
+   * which would take the notification toasts with it — and re-arm the dedup
+   * flag so the next drop warns again.
+   *
+   * Called on every accepted handshake, including the first one of a cycle,
+   * so it is a no-op unless the toast is actually showing.
+   */
+  hide(): void {
+    if (!this.wsDisconnectToastShown) return;
+    this.wsDisconnectToastShown = false;
+    this.notifications.dismiss(CONNECTION_LOST_TOAST_ID);
   }
 
   /**
