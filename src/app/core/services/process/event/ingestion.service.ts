@@ -25,6 +25,7 @@ import { TeamSocket, TeamSocketStatus } from './team-socket';
 import { TeamStatusReactor } from './team-status-reactor';
 import { TeamDescriptionReactor } from './team-description-reactor';
 import { NOTIFICATION_PORT } from '../../../platform/notification/notification.port';
+import { ConfigService } from '../../../platform/config/config.service';
 
 /**
  * `IngestionService` — the ORCHESTRATOR of the ingestion layer (Epic 34 /
@@ -133,6 +134,16 @@ export class IngestionService {
   /** Epic 34 (ADR-025 §0-§1): the disconnect-toast reactor, driven by `status$`. */
   private readonly connectionToast: ConnectionToast = inject(ConnectionToast);
 
+  /** Source of the reconnect interval (`wsReconnectIntervalSeconds`). */
+  private readonly config: ConfigService = inject(ConfigService);
+
+  /**
+   * The pending reconnect attempt, if any. Not a subscription, so it stays out
+   * of the cycle bag like the spinner's timeout, and is cleared in
+   * `disposePriorSubscriptions()` alongside it.
+   */
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
   /** Epic 34 (ADR-025 §0-§1): the notification-toast reactor. */
   private readonly notificationToasts: NotificationToasts =
     inject(NotificationToasts);
@@ -205,10 +216,11 @@ export class IngestionService {
    * lifetime (team switch), so destroy-scoped teardown alone leaks a cycle's
    * subscriptions into the next — a leak the mount/unmount probe cannot see.
    *
-   * Two teardown handles deliberately stay OUT of this bag because neither is a
+   * Three teardown handles deliberately stay OUT of this bag because none is a
    * subscription: the socket (`TeamSocket.stop()`, a try/catch unsubscribe — a
-   * never-opened WS throws) and the pending spinner flip
-   * (`LoadingIndicator.stop()`, a `clearTimeout`).
+   * never-opened WS throws), the pending spinner flip
+   * (`LoadingIndicator.stop()`, a `clearTimeout`) and the pending reconnect
+   * attempt (`reconnectTimer`, a `clearTimeout`).
    */
   private cycle: Subscription | null = null;
 
@@ -402,6 +414,9 @@ export class IngestionService {
     // is the direct `flipOnFirstEvent()` call the WS `next` handler used to make
     // inline, now that the handler lives in another file.
     cycle.add(this.socket.frames$.subscribe(() => this.loading.flipOnFirstEvent()));
+    // An accepted handshake ends the disconnect warning — not a frame, which a
+    // stopped team's socket never sends (see `TeamSocket.opened$`).
+    cycle.add(this.socket.opened$.subscribe(() => this.connectionToast.hide()));
     cycle.add(
       this.socket.status$.subscribe((status: TeamSocketStatus) =>
         this.onSocketStatus(status),
@@ -431,6 +446,38 @@ export class IngestionService {
   private onSocketStatus(status: TeamSocketStatus): void {
     if (status === 'error') this.loading.flipOnFirstEvent();
     this.connectionToast.show();
+    this.scheduleReconnect();
+  }
+
+  /**
+   * Reopen the socket after `wsReconnectIntervalSeconds`, and again after each
+   * failed attempt — a refused connection ends in `error`, which lands back
+   * here. The loop ends once a handshake is accepted — `opened$` drops the
+   * toast — or when the cycle is disposed.
+   *
+   * Only the SOCKET is reopened, not the cycle: the server replays from cursor
+   * 0 and `appendAll` dedups by id, so the log keeps its contents and gains
+   * exactly what was missed while disconnected. A full `init()` would reset the
+   * log and flash the empty state at every attempt.
+   *
+   * At most one attempt is pending, so an `error` followed by a `complete`
+   * schedules once. The token check stops an attempt that outlived its team.
+   */
+  private scheduleReconnect(): void {
+    if (this.reconnectTimer !== null) return;
+    const token = this.cycleToken;
+    const processId = this.processId;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (token !== this.cycleToken) return;
+      this.socket.stop();
+      try {
+        this.socket.start(processId);
+      } catch (err) {
+        console.error('WebSocket reconnect failed:', err);
+        this.scheduleReconnect();
+      }
+    }, this.config.wsReconnectIntervalSeconds * 1000);
   }
 
   /**
@@ -445,6 +492,8 @@ export class IngestionService {
    * replaced.
    */
   private disposePriorSubscriptions(): void {
+    if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
     this.socket.stop();
     this.cycle?.unsubscribe();
     this.cycle = null;

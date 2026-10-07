@@ -202,8 +202,10 @@ export class AppComponent implements OnInit, AfterViewInit {
    * ids survive to here.
    *
    * Every other toast in the app (disconnect, errors, save confirmations)
-   * carries no `data.messageId` and must issue no POST at all — hence the early
-   * return rather than a best-effort fallback to the current route's team.
+   * carries no `data.teamId` (the disconnect toast does carry a local
+   * `data.messageId`, for `ConnectionToast.hide()`) and must issue no POST at
+   * all — hence the early return rather than a best-effort fallback to the
+   * current route's team.
    *
    * The POST is fire-and-forget with a terminal `.catch`: the handler is a
    * `void` DOM callback so it cannot `await`, and a failure here is already

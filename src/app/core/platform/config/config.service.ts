@@ -210,6 +210,22 @@ export class ConfigService {
     return this.config.hiddenInspectorTabs ?? [];
   }
 
+  /**
+   * Seconds between two WebSocket reconnect attempts. See
+   * `Environment.wsReconnectIntervalSeconds`.
+   *
+   * Anything that is not a positive finite number falls back to the default:
+   * `0` would hammer the server in a tight loop, and a string from a
+   * hand-edited `config.json` would reach `setTimeout` as `NaN` — which fires
+   * immediately, so the same loop.
+   */
+  get wsReconnectIntervalSeconds(): number {
+    const configured = this.config.wsReconnectIntervalSeconds;
+    return typeof configured === 'number' && Number.isFinite(configured) && configured > 0
+      ? configured
+      : 5;
+  }
+
   get userInputEnterKeySubmit(): boolean {
     return this.config.userInputEnterKeySubmit;
   }

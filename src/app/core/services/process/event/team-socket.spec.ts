@@ -105,7 +105,10 @@ describe('TeamSocket — the createWebSocket seam (Story 34-6, AC11)', () => {
 
     socket.start('proc-1');
 
-    expect(spy).toHaveBeenCalledWith('ws://api.example.com/ws/proc-1');
+    expect(spy).toHaveBeenCalledWith(
+      'ws://api.example.com/ws/proc-1',
+      jasmine.objectContaining({ next: jasmine.any(Function) }),
+    );
   });
 
   it('is overridable via direct assignment (the other form in use)', () => {
@@ -275,7 +278,7 @@ describe('TeamSocket — lifecycle (Story 34-6, AC4, AC12)', () => {
     expect(seen.map((m: any) => m.id)).toEqual(['b-1']);
   });
 
-  it('destroy() closes the socket FIRST, then completes the three streams', () => {
+  it('destroy() closes the socket FIRST, then completes the four streams', () => {
     const { socket } = setup();
     const stream = new Subject<any>();
     let closed = 0;
@@ -300,13 +303,55 @@ describe('TeamSocket — lifecycle (Story 34-6, AC4, AC12)', () => {
     expect(closed).toBe(1);
     expect(seen).toEqual([]);
 
-    // All three streams are finished: a subscriber attaching afterwards is
+    // All four streams are finished: a subscriber attaching afterwards is
     // completed immediately rather than left waiting on a dead socket.
     let completed = 0;
     socket.inbound$.subscribe({ complete: () => completed++ });
     socket.frames$.subscribe({ complete: () => completed++ });
     socket.status$.subscribe({ complete: () => completed++ });
-    expect(completed).toBe(3);
+    socket.opened$.subscribe({ complete: () => completed++ });
+    expect(completed).toBe(4);
+  });
+});
+
+describe('TeamSocket — opened$ (the reconnect signal)', () => {
+  /** A fresh fake per `start()`, with the open observer it was handed. */
+  function setupWithOpen(): {
+    socket: TeamSocket;
+    opens: { next: (e: Event) => void }[];
+  } {
+    const { socket } = setup();
+    const opens: { next: (e: Event) => void }[] = [];
+    (socket as any).createWebSocket = (_url: string, open: any) => {
+      opens.push(open);
+      return new Subject<any>() as unknown as WebSocketSubject<any>;
+    };
+    return { socket, opens };
+  }
+
+  it('announces an accepted handshake, with no frame needed', () => {
+    const { socket, opens } = setupWithOpen();
+    let opened = 0;
+    socket.opened$.subscribe(() => opened++);
+
+    socket.start('proc-1');
+    opens[0].next(new Event('open'));
+
+    expect(opened).toBe(1);
+  });
+
+  it('stays silent for a socket that was stopped or replaced', () => {
+    const { socket, opens } = setupWithOpen();
+    let opened = 0;
+    socket.opened$.subscribe(() => opened++);
+
+    socket.start('proc-1');
+    socket.start('proc-2');
+    opens[0].next(new Event('open'));
+    socket.stop();
+    opens[1].next(new Event('open'));
+
+    expect(opened).toBe(0);
   });
 });
 
