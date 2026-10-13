@@ -39,6 +39,22 @@ export interface WorkspaceTreeResponse {
 // surface the limit in its UI without duplicating the magic number.
 export const MAX_UPLOAD_SIZE_BYTES = 10_485_760;
 
+/**
+ * A non-OK response from `getFileContent`, carrying its HTTP status so a caller
+ * can tell "gone" (404) from "failed" without parsing the message. `message` is
+ * `response.statusText`, exactly as the plain `Error` it replaces, so every
+ * banner built from it reads the same (ADR-031 §D3).
+ */
+export class WorkspaceHttpError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'WorkspaceHttpError';
+    this.status = status;
+  }
+}
+
 @Injectable({
   providedIn: 'root',
 })
@@ -121,7 +137,7 @@ export class WorkspaceService {
     const response = await fetch(url, options);
 
     if (!response.ok) {
-      throw new Error(response.statusText);
+      throw new WorkspaceHttpError(response.statusText, response.status);
     }
 
     const buffer = await response.arrayBuffer();

@@ -4,20 +4,23 @@ import { ConfigService } from '../../../platform/config/config.service';
 import { FetchService } from '../../../platform/http/fetch.service';
 import {
   MAX_UPLOAD_SIZE_BYTES,
+  WorkspaceHttpError,
   WorkspaceService,
   WorkspaceTreeResponse,
 } from './workspace.service';
 
 // Helper: build a stub `Response`-shaped object returned by `spyOn(window, 'fetch')`.
 // We only stub the subset of `Response` that `getFileContent` actually reads:
-// `ok`, `statusText`, `arrayBuffer()`.
+// `ok`, `status`, `statusText`, `arrayBuffer()`.
 function mockFetchResponse(opts: {
   ok: boolean;
+  status?: number;
   statusText?: string;
   arrayBuffer?: () => Promise<ArrayBuffer>;
 }): Response {
   return {
     ok: opts.ok,
+    status: opts.status ?? (opts.ok ? 200 : 500),
     statusText: opts.statusText ?? '',
     arrayBuffer: opts.arrayBuffer ?? (() => Promise.resolve(new ArrayBuffer(0))),
   } as unknown as Response;
@@ -305,6 +308,39 @@ describe('WorkspaceService', () => {
       await expectAsync(
         service.getFileContent('p1', 'missing')
       ).toBeRejectedWithError('Not Found');
+    });
+
+    it('throws a WorkspaceHttpError carrying the HTTP status and the unchanged statusText message', async () => {
+      spyOn(window, 'fetch').and.returnValue(
+        Promise.resolve(
+          mockFetchResponse({ ok: false, status: 404, statusText: 'Not Found' })
+        )
+      );
+
+      const error = await service.getFileContent('p1', 'missing').then(
+        () => null,
+        (e: unknown) => e
+      );
+
+      expect(error).toBeInstanceOf(WorkspaceHttpError);
+      expect(error).toBeInstanceOf(Error);
+      expect((error as WorkspaceHttpError).status).toBe(404);
+      expect((error as WorkspaceHttpError).message).toBe('Not Found');
+    });
+
+    it('carries a non-404 status as-is', async () => {
+      spyOn(window, 'fetch').and.returnValue(
+        Promise.resolve(
+          mockFetchResponse({ ok: false, status: 500, statusText: 'Internal Server Error' })
+        )
+      );
+
+      await expectAsync(
+        service.getFileContent('p1', 'boom')
+      ).toBeRejectedWith(jasmine.objectContaining({
+        status: 500,
+        message: 'Internal Server Error',
+      }));
     });
 
     it('uses the correct URL with encoded path', async () => {

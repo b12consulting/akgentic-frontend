@@ -345,6 +345,35 @@ function forgetAgentCommands(
 }
 
 /**
+ * The slash-command rule's per-message dispatch: remember a `SentMessage`,
+ * resolve a `ProcessedMessage`, forget a `HandledMessage`. Returns the
+ * instructions the message completed (often none), or `null` when it is none
+ * of the three kinds, so `absorb` falls through to its own branches.
+ *
+ * Interim, like the rest of this section: to be deleted once the backend emits
+ * a workspace-changed signal on the forgettable event class
+ * (`_bmad-output/akgentic-infra/research/ephemeral-signals-and-event-stream-growth.md`).
+ */
+function absorbCommand(
+  state: InvalidationState,
+  m: AkgenticMessage,
+): WorkspaceInvalidation[] | null {
+  if (isSentMessage(m)) {
+    rememberCommand(state.pendingCommands, m, state.attribution);
+    return [];
+  }
+  if (isProcessedMessage(m)) {
+    return resolveCommand(state.pendingCommands, m.message_id);
+  }
+  if (isHandledMessage(m)) {
+    // Absorbed mid-run, so never executed as a command: forget, no refresh.
+    state.pendingCommands.delete(m.message_id);
+    return [];
+  }
+  return null;
+}
+
+/**
  * Everything ONE subscription holds between messages, and the whole of this
  * unit's memory: no workspace cache, no "last invalidated at" stamp, no dirty
  * flag, no cursor and no announced-so-far count.
@@ -411,17 +440,9 @@ function absorb(
       forgetAgentCommands(state.pendingCommands, agentId);
       continue;
     }
-    if (isSentMessage(m)) {
-      rememberCommand(state.pendingCommands, m, state.attribution);
-      continue;
-    }
-    if (isProcessedMessage(m)) {
-      instructions.push(...resolveCommand(state.pendingCommands, m.message_id));
-      continue;
-    }
-    if (isHandledMessage(m)) {
-      // Absorbed mid-run, so never executed as a command: forget, no refresh.
-      state.pendingCommands.delete(m.message_id);
+    const commanded = absorbCommand(state, m);
+    if (commanded !== null) {
+      instructions.push(...commanded);
       continue;
     }
     if (!isEventMessage(m)) continue;
