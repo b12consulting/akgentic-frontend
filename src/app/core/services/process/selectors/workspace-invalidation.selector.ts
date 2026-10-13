@@ -13,6 +13,7 @@ import {
   AkgenticMessage,
   BaseMessage,
   isEventMessage,
+  isHandledMessage,
   isProcessedMessage,
   isSentMessage,
   isStopMessage,
@@ -242,6 +243,12 @@ function resolveReturn(
 // shell-quoting parser in TypeScript (ADR-031 §D3 reasoning), and whether the
 // command succeeded is not checked — a refused command refreshing is harmless.
 //
+// A command queued while its agent is busy can instead be absorbed into the
+// running turn through the mailbox. akgentic-agent dispatches commands only from
+// its `AgentMessage` handler, so an absorbed command is handed to the model as
+// text and never executed: core closes it with `HandledMessage`, not
+// `ProcessedMessage`, and the entry is dropped there without a refresh.
+//
 // Interim, inferred from a human message's text. To be deleted, not extended,
 // once the backend emits a workspace-changed signal on the forgettable event
 // class (`_bmad-output/akgentic-infra/research/ephemeral-signals-and-event-stream-growth.md`).
@@ -357,8 +364,9 @@ function forgetAgentCommands(
  *   `tool_call_id`. The return frame names no path, so everything an
  *   instruction needs is captured here from the call frame.
  * - `pendingCommands` — the mutating slash commands still awaiting their
- *   `ProcessedMessage`, keyed by the command's message id (Story 61-2). Bounded
- *   by `MAX_PENDING_COMMANDS` and emptied per agent on its `StopMessage`.
+ *   `ProcessedMessage`, keyed by the command's message id (Story 61-2). An entry
+ *   is dropped by its `HandledMessage`, bounded by `MAX_PENDING_COMMANDS`, and
+ *   emptied per agent on its `StopMessage`.
  */
 interface InvalidationState {
   attribution: Map<string, Set<string>>;
@@ -409,6 +417,11 @@ function absorb(
     }
     if (isProcessedMessage(m)) {
       instructions.push(...resolveCommand(state.pendingCommands, m.message_id));
+      continue;
+    }
+    if (isHandledMessage(m)) {
+      // Absorbed mid-run, so never executed as a command: forget, no refresh.
+      state.pendingCommands.delete(m.message_id);
       continue;
     }
     if (!isEventMessage(m)) continue;

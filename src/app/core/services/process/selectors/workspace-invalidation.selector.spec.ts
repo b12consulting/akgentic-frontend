@@ -4,6 +4,7 @@ import {
   AkgenticMessage,
   BaseConfig,
   EventMessage,
+  HandledMessage,
   ProcessedMessage,
   SentMessage,
   StartMessage,
@@ -1331,6 +1332,23 @@ function makeProcessed(agentName: string, innerId: string): ProcessedMessage {
   };
 }
 
+/** The agent's `HandledMessage` for inner message `innerId`: it was absorbed
+ *  into a run in progress through the mailbox, never given a turn of its own. */
+function makeHandled(agentName: string, innerId: string): HandledMessage {
+  envelopeSeq += 1;
+  return {
+    id: 'handled-' + envelopeSeq,
+    parent_id: null,
+    team_id: TEAM_ID,
+    timestamp: new Date().toISOString(),
+    sender: baseSender(agentName),
+    display_type: 'other',
+    content: null,
+    __model__: 'akgentic.core.messages.orchestrator.HandledMessage',
+    message_id: innerId,
+  };
+}
+
 /** One command to agent A bound to `ws-1`, then its `ProcessedMessage`. */
 function commandLog(content: string): AkgenticMessage[] {
   return [
@@ -1518,15 +1536,48 @@ describe('WorkspaceInvalidationService — the slash-command rule (Story 61-2, A
     for (let i = 0; i <= MAX_PENDING_COMMANDS; i += 1) {
       sent.push(makeSentCommand('A', '/workspace_mkdir d' + i, 'cmd-' + i));
     }
+    const attached = workspaceAttached('A', 'users/u1/ws-1');
+    // Each id is resolved on its own, so the count names WHICH entry survived:
+    // a cap that dropped the newest instead would keep cmd-0 and lose the last.
+    // cmd-0, the oldest, was evicted; cmd-1 and the newest survived.
+    expect(collectFromLog([attached, ...sent, makeProcessed('A', 'cmd-0')]))
+      .withContext('cmd-0')
+      .toEqual([]);
+    expect(collectFromLog([attached, ...sent, makeProcessed('A', 'cmd-1')]))
+      .withContext('cmd-1')
+      .toEqual([{ workspaceId: 'ws-1', ...WHOLE_TREE }]);
+    expect(
+      collectFromLog([
+        attached,
+        ...sent,
+        makeProcessed('A', 'cmd-' + MAX_PENDING_COMMANDS),
+      ]),
+    )
+      .withContext('newest')
+      .toEqual([{ workspaceId: 'ws-1', ...WHOLE_TREE }]);
+  });
+
+  it('(AC4) a command absorbed mid-run is forgotten on its HandledMessage, without a refresh', () => {
+    // Absorbed through the mailbox, the command reaches the model as text and
+    // is never executed; core closes it with HandledMessage. A ProcessedMessage
+    // for the same id afterwards must find nothing left to resolve.
     const result = collectFromLog([
       workspaceAttached('A', 'users/u1/ws-1'),
-      ...sent,
-      makeProcessed('A', 'cmd-0'),
+      makeSentCommand('A', '/workspace_write a.md hi', 'cmd-1'),
+      makeHandled('A', 'cmd-1'),
       makeProcessed('A', 'cmd-1'),
-      makeProcessed('A', 'cmd-' + MAX_PENDING_COMMANDS),
     ]);
-    // cmd-0 was evicted; cmd-1 and the newest survived.
-    expect(result.length).toBe(2);
+    expect(result).toEqual([]);
+  });
+
+  it('(AC4) a HandledMessage for another id leaves the entry in place', () => {
+    const result = collectFromLog([
+      workspaceAttached('A', 'users/u1/ws-1'),
+      makeSentCommand('A', '/workspace_write a.md hi', 'cmd-1'),
+      makeHandled('A', 'some-other-message'),
+      makeProcessed('A', 'cmd-1'),
+    ]);
+    expect(result).toEqual([{ workspaceId: 'ws-1', ...WHOLE_TREE }]);
   });
 
   it('(AC6) a malformed SentMessage neither throws nor fires', () => {
