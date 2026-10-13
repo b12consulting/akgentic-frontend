@@ -2880,6 +2880,17 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
     expect(listedPaths()).toEqual(['']);
   });
 
+  it('61-1 — a recursive rmdir discards an open file several levels down', async () => {
+    await openPathInPane('docs/deep/b.txt');
+
+    await deliver(invalidation({ directories: [''], deletions: ['docs'] }));
+
+    expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+    expect(component.openFile()).toBeNull();
+    expect(component.deletedNotice()).toBe('docs/deep/b.txt');
+    expect(listedPaths()).toEqual(['']);
+  });
+
   it('61-1 — a removed directory carrying a trailing slash still matches', async () => {
     await openInPane();
 
@@ -2896,6 +2907,7 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
 
     expect(component.openFile()?.path).toBe('docsx/a.txt');
     expect(component.deletedNotice()).toBeNull();
+    expect(listedPaths()).toEqual(['']);
   });
 
   it('61-1 — workspace_delete is unchanged: a deleted sibling leaves the open file alone', async () => {

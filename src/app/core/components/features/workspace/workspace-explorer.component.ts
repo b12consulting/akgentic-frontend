@@ -783,13 +783,16 @@ export class WorkspaceExplorerComponent {
    * rendering a file that no longer exists is the other half of the same
    * refusal.
    *
-   * `currentDirectory` is deliberately NOT written: the file is gone, the
-   * directory the user was in is not, and moving them somewhere else on a
-   * deletion they did not perform is the same "an agent navigated me" surprise
-   * `applyRootLoad` refuses.
+   * `currentDirectory` is deliberately NOT written: moving the user somewhere
+   * else on a deletion they did not perform is the same "an agent navigated
+   * me" surprise `applyRootLoad` refuses. That holds even when a
+   * `workspace_rmdir` removed the directory the user is in: the pane keeps its
+   * last listing until they navigate.
    *
-   * The tree entry goes with it: the instruction carries the file's parent in
-   * `directories`, and the directory pass re-lists it in this same batch.
+   * The tree entry goes with it: the instruction carries the parent of the
+   * deleted path in `directories` — the file's own parent for
+   * `workspace_delete`, the removed directory's parent for `workspace_rmdir` —
+   * and the directory pass re-lists it in this same batch.
    */
   private discardDeletedFile(file: FileNode): void {
     this.openFile.set(null);
