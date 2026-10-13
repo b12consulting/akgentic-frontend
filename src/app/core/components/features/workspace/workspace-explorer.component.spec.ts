@@ -3044,6 +3044,27 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
     expect(component.fileError()).toBeNull();
   });
 
+  it('61-3 (f) — a 404 overtaken by a newer read of the SAME path discards nothing', async () => {
+    await openInPane();
+    const stale = deferred<FileContent>();
+    workspaceServiceSpy.getFileContent.and.returnValues(
+      stale.promise,
+      Promise.resolve({ content: 'recreated', type: 'text' }),
+    );
+
+    // The background re-read is in flight; the user re-opens the same file and
+    // that newer read lands first. The path rule alone cannot tell them apart.
+    await deliver(invalidation({ wholeTree: true }));
+    await openInPane();
+    stale.reject(new WorkspaceHttpError('Not Found', 404));
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(component.openFile()?.path).toBe(OPEN_PATH);
+    expect(component.content()).toEqual({ kind: 'text', body: 'recreated' });
+    expect(component.deletedNotice()).toBeNull();
+  });
+
   it('61-3 (g) — after a background-404 discard, the metadata half does not restore openFile', async () => {
     await openInPane();
     // The parent listing still carries the entry, so only the metadata half's

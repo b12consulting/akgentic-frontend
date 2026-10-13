@@ -1274,7 +1274,9 @@ export class WorkspaceExplorerComponent {
       if (!background && token === this.readToken) {
         this.fileError.set(error?.message || 'Failed to load file content');
       }
-      if (background) {
+      // A superseded 404 must not discard either: a newer read of the same
+      // path may already have rendered the file, recreated since.
+      if (background && token === this.readToken) {
         this.discardIfGone(error, path);
       }
     } finally {
@@ -1299,7 +1301,10 @@ export class WorkspaceExplorerComponent {
    * a gesture read's 404 banners, because the user asked and should see why.
    * The pane rule is `applyFileContent`'s — compare paths, never `FileNode`
    * identity — so a 404 for a file the user has since navigated away from
-   * discards nothing.
+   * discards nothing. The caller adds supersession on top: a 404 that a newer
+   * read of the SAME path has overtaken (the user re-opened the file) is stale
+   * evidence and discards nothing either, since the path rule alone cannot
+   * tell it apart.
    */
   private discardIfGone(error: unknown, requestedPath: string): void {
     if (!(error instanceof WorkspaceHttpError) || error.status !== 404) return;
