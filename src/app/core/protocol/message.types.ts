@@ -500,7 +500,7 @@ export interface ToolReturnEvent {
 }
 
 // ---------------------------------------------------------------------------
-// Per-tool argument shapes for the six mutating workspace tools (ADR-031 §D6).
+// Per-tool argument shapes for the seven mutating workspace tools (ADR-031 §D6).
 //
 // These model `parseToolCallArguments`'s OUTPUT, not the wire payload. The
 // output is the payload PLUS a `tool_name` discriminant lifted from the event
@@ -545,6 +545,15 @@ export interface WorkspaceMkdirArguments {
   path: string;
 }
 
+/**
+ * `workspace_rmdir`'s optional `recursive` / `force` flags are not modelled:
+ * every variant removes `path` or fails, so the invalidation is the same.
+ */
+export interface WorkspaceRmdirArguments {
+  tool_name: 'workspace_rmdir';
+  path: string;
+}
+
 /** One element of `workspace_multi_edit`'s `edits` — N paths in one call. */
 export interface WorkspaceEditOperation {
   path: string;
@@ -569,12 +578,13 @@ export interface WorkspacePatchArguments {
   patch_text?: string;
 }
 
-/** The six mutating-tool argument shapes, discriminated by `tool_name`. */
+/** The seven mutating-tool argument shapes, discriminated by `tool_name`. */
 export type WorkspaceToolArguments =
   | WorkspaceWriteArguments
   | WorkspaceDeleteArguments
   | WorkspaceEditArguments
   | WorkspaceMkdirArguments
+  | WorkspaceRmdirArguments
   | WorkspaceMultiEditArguments
   | WorkspacePatchArguments;
 
@@ -1001,13 +1011,14 @@ function readEdits(
   return edits;
 }
 
-/** The four tools whose whole path argument is a single top-level `path`. */
+/** The five tools whose whole path argument is a single top-level `path`. */
 function parseSinglePathArguments(
   toolName:
     | 'workspace_write'
     | 'workspace_delete'
     | 'workspace_edit'
-    | 'workspace_mkdir',
+    | 'workspace_mkdir'
+    | 'workspace_rmdir',
   body: Record<string, unknown>,
 ): WorkspaceToolArguments | null {
   const path = readPath(body);
@@ -1026,6 +1037,8 @@ function parseSinglePathArguments(
       return { tool_name: 'workspace_delete', path };
     case 'workspace_mkdir':
       return { tool_name: 'workspace_mkdir', path };
+    case 'workspace_rmdir':
+      return { tool_name: 'workspace_rmdir', path };
     case 'workspace_edit':
       return { tool_name: 'workspace_edit', path, ...readEditContentFields(body) };
   }
@@ -1071,6 +1084,7 @@ export function parseToolCallArguments(
     case 'workspace_delete':
     case 'workspace_edit':
     case 'workspace_mkdir':
+    case 'workspace_rmdir':
       return parseSinglePathArguments(event.tool_name, parsed);
     case 'workspace_multi_edit': {
       const edits = readEdits(parsed);

@@ -786,6 +786,7 @@ describe('parseToolCallArguments — malformed input never throws (AC #7, #8)', 
       'workspace_delete',
       'workspace_edit',
       'workspace_mkdir',
+      'workspace_rmdir',
       'workspace_multi_edit',
       'workspace_patch',
       'workspace_read',
@@ -942,6 +943,53 @@ describe('parseToolCallArguments — the other single-path tools (AC #6, #9)', (
       parseToolCallArguments(
         makeToolCall('workspace_edit', '{"old_string":"x","new_string":"y"}'),
       ),
+    ).toBeNull();
+  });
+});
+
+describe('parseToolCallArguments — workspace_rmdir (Story 61-1, AC #2)', () => {
+  // Every backend variant — the empty-only `rmdir(path)` and the recursive
+  // `rmdir(path, recursive, force)` — reaches the wire under the same name.
+  it('parses {path}, {path, recursive} and {path, recursive, force}', () => {
+    for (const body of [
+      '{"path":"docs"}',
+      '{"path":"docs","recursive":true}',
+      '{"path":"docs","recursive":true,"force":false}',
+    ]) {
+      expect(parseToolCallArguments(makeToolCall('workspace_rmdir', body)))
+        .withContext(body)
+        .toEqual({ tool_name: 'workspace_rmdir', path: 'docs' });
+    }
+  });
+
+  it('ignores extra keys', () => {
+    expect(
+      parseToolCallArguments(
+        makeToolCall('workspace_rmdir', '{"path":"docs","future_field":42}'),
+      ),
+    ).toEqual({ tool_name: 'workspace_rmdir', path: 'docs' });
+  });
+
+  it('keeps a trailing slash exactly as the wire carried it', () => {
+    expect(
+      parseToolCallArguments(makeToolCall('workspace_rmdir', '{"path":"docs/"}')),
+    ).toEqual({ tool_name: 'workspace_rmdir', path: 'docs/' });
+  });
+
+  it('returns null for a missing or non-string path', () => {
+    for (const body of ['{}', '{"recursive":true}', '{"path":7}', '{"path":null}']) {
+      expect(parseToolCallArguments(makeToolCall('workspace_rmdir', body)))
+        .withContext(body)
+        .toBeNull();
+    }
+  });
+
+  it('returns null, without throwing, for malformed JSON', () => {
+    expect(() =>
+      parseToolCallArguments(makeToolCall('workspace_rmdir', '{"path":')),
+    ).not.toThrow();
+    expect(
+      parseToolCallArguments(makeToolCall('workspace_rmdir', '{"path":')),
     ).toBeNull();
   });
 });

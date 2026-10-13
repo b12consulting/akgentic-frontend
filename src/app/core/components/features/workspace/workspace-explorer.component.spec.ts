@@ -2846,6 +2846,70 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
     expect(component.deletedNotice()).toBe(OPEN_PATH);
   });
 
+  // --- a removed directory takes the open file with it (Story 61-1, AC4) ---
+
+  /** Open an arbitrary path in the pane through the real selection path. */
+  async function openPathInPane(path: string): Promise<void> {
+    const name = path.slice(path.lastIndexOf('/') + 1);
+    await component.onNodeSelect({
+      node: { data: fileNode({ name, path, type: 'file', extension: '.txt' }) },
+    });
+    fixture.detectChanges();
+    workspaceServiceSpy.getWorkspaceTree.calls.reset();
+    workspaceServiceSpy.getFileContent.calls.reset();
+  }
+
+  it('61-1 — a deleted path EQUAL to the open file discards it', async () => {
+    await openInPane();
+
+    await deliver(invalidation({ directories: ['docs'], deletions: [OPEN_PATH] }));
+
+    expect(component.openFile()).toBeNull();
+    expect(component.deletedNotice()).toBe(OPEN_PATH);
+  });
+
+  it('61-1 — an open file UNDER a removed directory is discarded, never re-read', async () => {
+    await openInPane();
+
+    await deliver(invalidation({ directories: [''], deletions: ['docs'] }));
+
+    expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+    expect(component.openFile()).toBeNull();
+    expect(component.content()).toBeNull();
+    expect(component.deletedNotice()).toBe(OPEN_PATH);
+    expect(listedPaths()).toEqual(['']);
+  });
+
+  it('61-1 — a removed directory carrying a trailing slash still matches', async () => {
+    await openInPane();
+
+    await deliver(invalidation({ directories: [''], deletions: ['docs/'] }));
+
+    expect(component.openFile()).toBeNull();
+    expect(component.deletedNotice()).toBe(OPEN_PATH);
+  });
+
+  it('61-1 — a removed `docs` does not match an open `docsx/a.txt`', async () => {
+    await openPathInPane('docsx/a.txt');
+
+    await deliver(invalidation({ directories: [''], deletions: ['docs'] }));
+
+    expect(component.openFile()?.path).toBe('docsx/a.txt');
+    expect(component.deletedNotice()).toBeNull();
+  });
+
+  it('61-1 — workspace_delete is unchanged: a deleted sibling leaves the open file alone', async () => {
+    await openInPane();
+
+    await deliver(
+      invalidation({ directories: ['docs'], deletions: ['docs/b.txt'] }),
+    );
+
+    expect(component.openFile()?.path).toBe(OPEN_PATH);
+    expect(component.deletedNotice()).toBeNull();
+    expect(listedPaths()).toEqual(['docs']);
+  });
+
   // --- whole-tree invalidation (AC15) --------------------------------
 
   it('scenario 85 — wholeTree re-runs the root load and re-reads the open file, reconciling no named target', async () => {

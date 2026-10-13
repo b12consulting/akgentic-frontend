@@ -27,7 +27,7 @@ import {
 } from './workspace-registry.selector';
 
 /**
- * The six workspace tools that CHANGE the tree (Epic 39 / ADR-031 §D2), written
+ * The seven workspace tools that CHANGE the tree (Epic 39 / ADR-031 §D2), written
  * out as literals.
  *
  * It is deliberately NOT derived — not from a `workspace_*` prefix, not from
@@ -38,7 +38,7 @@ import {
  *   the tree on every file an agent reads — which is most of what agents do — and
  *   it would pass every other behaviour in this projection while failing only
  *   that one.
- * - A seventh mutating tool added upstream must fail LOUDLY (nothing invalidates
+ * - A new mutating tool added upstream must fail LOUDLY (nothing invalidates
  *   until this list grows) rather than be silently covered by a pattern that
  *   nobody re-reads.
  */
@@ -47,11 +47,12 @@ export const MUTATING_WORKSPACE_TOOLS = [
   'workspace_delete',
   'workspace_edit',
   'workspace_mkdir',
+  'workspace_rmdir',
   'workspace_multi_edit',
   'workspace_patch',
 ] as const;
 
-/** One of the six names in `MUTATING_WORKSPACE_TOOLS`. */
+/** One of the seven names in `MUTATING_WORKSPACE_TOOLS`. */
 export type MutatingWorkspaceTool = (typeof MUTATING_WORKSPACE_TOOLS)[number];
 
 /** Membership predicate for `MUTATING_WORKSPACE_TOOLS`. Every other tool name —
@@ -135,6 +136,7 @@ function targetsFor(args: WorkspaceToolArguments): InvalidationTargets {
     case 'workspace_mkdir':
       return { ...none, directories: [parentDirectory(args.path)] };
     case 'workspace_delete':
+    case 'workspace_rmdir':
       return {
         ...none,
         directories: [parentDirectory(args.path)],

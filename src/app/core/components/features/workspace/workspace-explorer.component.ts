@@ -718,7 +718,7 @@ export class WorkspaceExplorerComponent {
 
     const directories = new Set(batch.directories);
     const open = this.openFile();
-    if (open !== null && batch.deletions.includes(open.path)) {
+    if (open !== null && this.isDeletedBy(open.path, batch.deletions)) {
       // Deletion wins over a change to the same path within one batch: a
       // delete-then-recreate inside a single 16 ms batch settles as "deleted",
       // and the next batch — or either Refresh control — recovers it.
@@ -739,6 +739,21 @@ export class WorkspaceExplorerComponent {
         console.error('Error refreshing directory', error);
       });
     }
+  }
+
+  /**
+   * Whether `path` is gone after `deletions`: it IS a deleted path, or lies
+   * under one — a `workspace_rmdir` of `docs` takes `docs/a.md` with it.
+   *
+   * The `/` boundary keeps a deleted `docs` from matching `docsx/a.md`. A
+   * trailing slash on the wire (`docs/`) is trimmed here, at the comparison
+   * only: the instruction keeps the path exactly as the wire carried it.
+   */
+  private isDeletedBy(path: string, deletions: string[]): boolean {
+    return deletions.some((deleted) => {
+      const dir = deleted.endsWith('/') ? deleted.slice(0, -1) : deleted;
+      return path === dir || path.startsWith(dir + '/');
+    });
   }
 
   /**

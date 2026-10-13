@@ -276,16 +276,17 @@ function mutationLog(
 // ---------------------------------------------------------------------
 
 describe('MUTATING_WORKSPACE_TOOLS', () => {
-  it('(AC1) names exactly the six mutating tools', () => {
+  it('(AC1) names exactly the seven mutating tools', () => {
     expect([...MUTATING_WORKSPACE_TOOLS]).toEqual([
       'workspace_write',
       'workspace_delete',
       'workspace_edit',
       'workspace_mkdir',
+      'workspace_rmdir',
       'workspace_multi_edit',
       'workspace_patch',
     ]);
-    expect(MUTATING_WORKSPACE_TOOLS.length).toBe(6);
+    expect(MUTATING_WORKSPACE_TOOLS.length).toBe(7);
     for (const name of MUTATING_WORKSPACE_TOOLS) {
       expect(isMutatingWorkspaceTool(name)).toBe(true);
     }
@@ -307,11 +308,11 @@ describe('WorkspaceInvalidationService — the mutating set (FR4)', () => {
   // Asserted individually rather than in one loop-with-a-single-expect, so a
   // per-tool failure names the tool that broke it.
   //
-  // Verified by mutation: replacing the six-name constant with a
+  // Verified by mutation: replacing the explicit-name constant with a
   // `workspace_*` prefix match turns the two `MUTATING_WORKSPACE_TOOLS` specs
   // above red and leaves THESE five green. That is not a gap in them — it is
   // `parseToolCallArguments` acting as a second gate, since it too returns
-  // `null` for a tool name outside the six. The read tools therefore cannot
+  // `null` for a tool name outside the list. The read tools therefore cannot
   // produce an instruction under either implementation, and the specs above are
   // where the "explicit list, never a prefix" rule actually bites. These five
   // pin the end-to-end behaviour, which is what a future refactor of either
@@ -613,6 +614,40 @@ describe('WorkspaceInvalidationService — granularity (FR5)', () => {
     expect(instruction.deletions).toEqual(['a/b/c.md']);
     expect(instruction.files).toEqual([]);
     expect(instruction.directories).toEqual(['a/b']);
+  });
+
+  it('(61-1 AC3) rmdir has the delete shape: parent listed, path deleted', () => {
+    const instruction = onlyInstruction('workspace_rmdir', {
+      path: 'a/b/docs',
+      recursive: true,
+    });
+    expect(instruction).toEqual({
+      workspaceId: 'ws-1',
+      wholeTree: false,
+      directories: ['a/b'],
+      files: [],
+      deletions: ['a/b/docs'],
+    });
+  });
+
+  it('(61-1 AC3) rmdir keeps a trailing slash in `deletions` as the wire carried it', () => {
+    const instruction = onlyInstruction('workspace_rmdir', { path: 'a/docs/' });
+    expect(instruction.directories).toEqual(['a']);
+    expect(instruction.deletions).toEqual(['a/docs/']);
+  });
+
+  it('(61-1 AC5) a failed rmdir return produces no instruction', () => {
+    const result = collectFromLog([
+      workspaceAttached('A', 'users/u1/ws-1'),
+      makeToolCall(
+        'A',
+        'workspace_rmdir',
+        JSON.stringify({ path: 'a/docs' }),
+        'call-1',
+      ),
+      makeToolReturn('A', 'workspace_rmdir', 'call-1', false),
+    ]);
+    expect(result).toEqual([]);
   });
 });
 
