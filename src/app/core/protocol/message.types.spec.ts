@@ -789,6 +789,8 @@ describe('parseToolCallArguments — malformed input never throws (AC #7, #8)', 
       'workspace_rmdir',
       'workspace_multi_edit',
       'workspace_patch',
+      'workspace_exec',
+      'workspace_exec_result',
       'workspace_read',
       'totally_unknown_tool',
     ];
@@ -1084,6 +1086,30 @@ describe('parseToolCallArguments — workspace_patch (AC #11)', () => {
       parseToolCallArguments(makeToolCall('workspace_patch', 'not json')),
     ).toBeNull();
   });
+});
+
+describe('parseToolCallArguments — workspace_exec / workspace_exec_result (Story 61-2, AC #1)', () => {
+  for (const toolName of ['workspace_exec', 'workspace_exec_result'] as const) {
+    it(toolName + ' accepts any object body and keeps nothing from it', () => {
+      for (const body of [
+        '{}',
+        '{"cmd":"make build","timeout":30}',
+        '{"run_id":"r-1","future_field":[1,2]}',
+      ]) {
+        expect(parseToolCallArguments(makeToolCall(toolName, body)))
+          .withContext(body)
+          .toEqual({ tool_name: toolName });
+      }
+    });
+
+    it(toolName + ' still returns null for a malformed or non-object body', () => {
+      for (const body of ['not json', '[1]', 'null', '"ls"']) {
+        expect(parseToolCallArguments(makeToolCall(toolName, body)))
+          .withContext(body)
+          .toBeNull();
+      }
+    });
+  }
 });
 
 describe('parseToolCallArguments — unrecognised tool names (AC #10)', () => {

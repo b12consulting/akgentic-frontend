@@ -11,12 +11,16 @@ import {
 
 import {
   AkgenticMessage,
+  BaseMessage,
   isEventMessage,
+  isProcessedMessage,
+  isSentMessage,
   isStopMessage,
   isToolCallEvent,
   isToolReturnEvent,
   isWorkspaceAttached,
   parseToolCallArguments,
+  SentMessage,
   ToolCallEvent,
   WorkspaceToolArguments,
 } from '../../../protocol/message.types';
@@ -27,7 +31,7 @@ import {
 } from './workspace-registry.selector';
 
 /**
- * The seven workspace tools that CHANGE the tree (Epic 39 / ADR-031 §D2), written
+ * The nine workspace tools that CHANGE the tree (Epic 39 / ADR-031 §D2), written
  * out as literals.
  *
  * It is deliberately NOT derived — not from a `workspace_*` prefix, not from
@@ -41,6 +45,14 @@ import {
  * - A new mutating tool added upstream must fail LOUDLY (nothing invalidates
  *   until this list grows) rather than be silently covered by a pattern that
  *   nobody re-reads.
+ *
+ * `workspace_exec` / `workspace_exec_result` (Story 61-2) are the exec rule:
+ * the paths a run changed are known only to the backend, so a successful return
+ * refreshes the whole tree. A "still running" return refreshes too; telling it
+ * apart would mean parsing the result text. Interim: the exec rule, and the
+ * slash-command rule below, are to be deleted in favour of one backend
+ * workspace-changed signal on the forgettable event class
+ * (`_bmad-output/akgentic-infra/research/ephemeral-signals-and-event-stream-growth.md`).
  */
 export const MUTATING_WORKSPACE_TOOLS = [
   'workspace_write',
@@ -50,9 +62,11 @@ export const MUTATING_WORKSPACE_TOOLS = [
   'workspace_rmdir',
   'workspace_multi_edit',
   'workspace_patch',
+  'workspace_exec',
+  'workspace_exec_result',
 ] as const;
 
-/** One of the seven names in `MUTATING_WORKSPACE_TOOLS`. */
+/** One of the nine names in `MUTATING_WORKSPACE_TOOLS`. */
 export type MutatingWorkspaceTool = (typeof MUTATING_WORKSPACE_TOOLS)[number];
 
 /** Membership predicate for `MUTATING_WORKSPACE_TOOLS`. Every other tool name —
@@ -132,6 +146,8 @@ function targetsFor(args: WorkspaceToolArguments): InvalidationTargets {
   const none = { wholeTree: false, directories: [], files: [], deletions: [] };
   switch (args.tool_name) {
     case 'workspace_patch':
+    case 'workspace_exec':
+    case 'workspace_exec_result':
       return { ...none, wholeTree: true };
     case 'workspace_mkdir':
       return { ...none, directories: [parentDirectory(args.path)] };
@@ -214,6 +230,113 @@ function resolveReturn(
   }));
 }
 
+// ---------------------------------------------------------------------------
+// The slash-command rule (Story 61-2).
+//
+// A human `/workspace_…` command is an ordinary message: the stream carries it
+// as a `SentMessage` to the agent, the agent dispatches it inside its handler,
+// and core then emits `ProcessedMessage{message_id}` from that agent on EVERY
+// outcome — success, refusal, a command that returns nothing, an exception. So
+// the command is remembered by its message id, and that `ProcessedMessage`
+// refreshes the agent's whole tree. No argument is parsed: there is no
+// shell-quoting parser in TypeScript (ADR-031 §D3 reasoning), and whether the
+// command succeeded is not checked — a refused command refreshing is harmless.
+//
+// Interim, inferred from a human message's text. To be deleted, not extended,
+// once the backend emits a workspace-changed signal on the forgettable event
+// class (`_bmad-output/akgentic-infra/research/ephemeral-signals-and-event-stream-growth.md`).
+// ---------------------------------------------------------------------------
+
+/** The six slash commands that change the tree, written out as literals. The
+ *  read-side ones (`/workspace_read`, `list`, `glob`, `grep`, `rag_search`)
+ *  change nothing and are deliberately absent. */
+export const MUTATING_SLASH_COMMANDS = [
+  '/workspace_write',
+  '/workspace_delete',
+  '/workspace_mkdir',
+  '/workspace_rmdir',
+  '/workspace_exec',
+  '/workspace_exec_result',
+] as const;
+
+/**
+ * Upper bound on remembered commands per subscription. A command whose
+ * `ProcessedMessage` never arrives (an agent that dies mid-handler without a
+ * `StopMessage`) must not grow the map forever; past the cap the oldest entry
+ * is dropped, which at worst costs one missed refresh.
+ */
+export const MAX_PENDING_COMMANDS = 64;
+
+/** True when `content`, leading whitespace trimmed, starts with a mutating
+ *  command name followed by whitespace or the end of the string — so
+ *  `/workspace_writer` does not match. Never throws on a non-string. */
+export function isMutatingSlashCommand(content: unknown): boolean {
+  if (typeof content !== 'string') return false;
+  const text = content.trimStart();
+  return MUTATING_SLASH_COMMANDS.some(
+    (name) =>
+      text.startsWith(name) &&
+      (text.length === name.length || /\s/.test(text.charAt(name.length))),
+  );
+}
+
+/** A mutating command awaiting its `ProcessedMessage`. The workspaces are read
+ *  at send time, as a tool call's are read at call time. */
+interface PendingCommand {
+  agentId: string;
+  workspaceIds: string[];
+}
+
+/** Remember a mutating command sent to an agent bound to a workspace, or
+ *  ignore the frame. Every field is reached defensively: it arrives off the
+ *  wire inside a live subscription. */
+function rememberCommand(
+  pending: Map<string, PendingCommand>,
+  sent: SentMessage,
+  attribution: Map<string, Set<string>>,
+): void {
+  const inner: Partial<BaseMessage> | null | undefined = sent.message;
+  const messageId = inner?.id;
+  const agentId = sent.recipient?.agent_id;
+  if (typeof messageId !== 'string' || typeof agentId !== 'string') return;
+  if (!isMutatingSlashCommand(inner?.content)) return;
+  const workspaceIds = attribution.get(agentId);
+  if (workspaceIds === undefined || workspaceIds.size === 0) return;
+  pending.set(messageId, { agentId, workspaceIds: [...workspaceIds] });
+  if (pending.size > MAX_PENDING_COMMANDS) {
+    const oldest = pending.keys().next().value;
+    if (oldest !== undefined) pending.delete(oldest);
+  }
+}
+
+/** Resolve a `ProcessedMessage` into one whole-tree instruction per workspace
+ *  of the command's agent, and consume the entry. An unknown id emits nothing. */
+function resolveCommand(
+  pending: Map<string, PendingCommand>,
+  messageId: string,
+): WorkspaceInvalidation[] {
+  const entry = pending.get(messageId);
+  if (entry === undefined) return [];
+  pending.delete(messageId);
+  return entry.workspaceIds.map((workspaceId) => ({
+    workspaceId,
+    wholeTree: true,
+    directories: [],
+    files: [],
+    deletions: [],
+  }));
+}
+
+/** Drop every command remembered for an agent that stopped. */
+function forgetAgentCommands(
+  pending: Map<string, PendingCommand>,
+  agentId: string,
+): void {
+  for (const [messageId, entry] of pending) {
+    if (entry.agentId === agentId) pending.delete(messageId);
+  }
+}
+
 /**
  * Everything ONE subscription holds between messages, and the whole of this
  * unit's memory: no workspace cache, no "last invalidated at" stamp, no dirty
@@ -233,10 +356,14 @@ function resolveReturn(
  * - `inFlight` — the mutating calls still awaiting a return, keyed by
  *   `tool_call_id`. The return frame names no path, so everything an
  *   instruction needs is captured here from the call frame.
+ * - `pendingCommands` — the mutating slash commands still awaiting their
+ *   `ProcessedMessage`, keyed by the command's message id (Story 61-2). Bounded
+ *   by `MAX_PENDING_COMMANDS` and emptied per agent on its `StopMessage`.
  */
 interface InvalidationState {
   attribution: Map<string, Set<string>>;
   inFlight: Map<string, InFlightCall>;
+  pendingCommands: Map<string, PendingCommand>;
 }
 
 /**
@@ -273,6 +400,15 @@ function absorb(
     const agentId = m.sender?.agent_id ?? '';
     if (isStopMessage(m)) {
       state.attribution.delete(agentId);
+      forgetAgentCommands(state.pendingCommands, agentId);
+      continue;
+    }
+    if (isSentMessage(m)) {
+      rememberCommand(state.pendingCommands, m, state.attribution);
+      continue;
+    }
+    if (isProcessedMessage(m)) {
+      instructions.push(...resolveCommand(state.pendingCommands, m.message_id));
       continue;
     }
     if (!isEventMessage(m)) continue;
@@ -347,7 +483,8 @@ function seedFrom(
  *
  * Publishes `invalidations$`: one `WorkspaceInvalidation` at a time, in log
  * order, for every mutating workspace tool call that has since completed
- * successfully. `WorkspaceExplorerComponent` consumes it, one explorer per
+ * successfully, and for every mutating slash command its agent has since
+ * processed (Story 61-2). `WorkspaceExplorerComponent` consumes it, one explorer per
  * workspace tab (Story 39-4).
  *
  * It READS `MessageLogService.appended$` — the messages that just entered the
@@ -395,6 +532,7 @@ export class WorkspaceInvalidationService {
     const state: InvalidationState = {
       attribution: new Map<string, Set<string>>(),
       inFlight: new Map<string, InFlightCall>(),
+      pendingCommands: new Map<string, PendingCommand>(),
     };
     seedFrom(state, this.log.snapshot());
 
@@ -405,6 +543,7 @@ export class WorkspaceInvalidationService {
       tap(() => {
         state.attribution.clear();
         state.inFlight.clear();
+        state.pendingCommands.clear();
       }),
       ignoreElements(),
     );

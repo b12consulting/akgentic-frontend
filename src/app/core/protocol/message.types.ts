@@ -500,7 +500,7 @@ export interface ToolReturnEvent {
 }
 
 // ---------------------------------------------------------------------------
-// Per-tool argument shapes for the seven mutating workspace tools (ADR-031 §D6).
+// Per-tool argument shapes for the nine mutating workspace tools (ADR-031 §D6).
 //
 // These model `parseToolCallArguments`'s OUTPUT, not the wire payload. The
 // output is the payload PLUS a `tool_name` discriminant lifted from the event
@@ -578,7 +578,19 @@ export interface WorkspacePatchArguments {
   patch_text?: string;
 }
 
-/** The seven mutating-tool argument shapes, discriminated by `tool_name`. */
+/**
+ * `workspace_exec` and `workspace_exec_result` (Story 61-2). Nothing is read
+ * from the body: the paths a run changed are known only to the backend, so the
+ * invalidation is the whole tree and the arguments are kept as nothing but the
+ * name. Interim: to be replaced by a backend workspace-changed signal on the
+ * forgettable event class
+ * (`_bmad-output/akgentic-infra/research/ephemeral-signals-and-event-stream-growth.md`).
+ */
+export interface WorkspaceExecArguments {
+  tool_name: 'workspace_exec' | 'workspace_exec_result';
+}
+
+/** The nine mutating-tool argument shapes, discriminated by `tool_name`. */
 export type WorkspaceToolArguments =
   | WorkspaceWriteArguments
   | WorkspaceDeleteArguments
@@ -586,7 +598,8 @@ export type WorkspaceToolArguments =
   | WorkspaceMkdirArguments
   | WorkspaceRmdirArguments
   | WorkspaceMultiEditArguments
-  | WorkspacePatchArguments;
+  | WorkspacePatchArguments
+  | WorkspaceExecArguments;
 
 // Union type for all possible messages
 export type AkgenticMessage =
@@ -1099,6 +1112,10 @@ export function parseToolCallArguments(
         ...(patchText !== undefined ? { patch_text: patchText } : {}),
       };
     }
+    case 'workspace_exec':
+    case 'workspace_exec_result':
+      // Any object body; nothing in it is kept (Story 61-2).
+      return { tool_name: event.tool_name };
     default:
       return null;
   }
