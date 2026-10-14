@@ -786,8 +786,11 @@ describe('parseToolCallArguments — malformed input never throws (AC #7, #8)', 
       'workspace_delete',
       'workspace_edit',
       'workspace_mkdir',
+      'workspace_rmdir',
       'workspace_multi_edit',
       'workspace_patch',
+      'workspace_exec',
+      'workspace_exec_result',
       'workspace_read',
       'totally_unknown_tool',
     ];
@@ -946,6 +949,53 @@ describe('parseToolCallArguments — the other single-path tools (AC #6, #9)', (
   });
 });
 
+describe('parseToolCallArguments — workspace_rmdir (Story 61-1, AC #2)', () => {
+  // Every backend variant — the empty-only `rmdir(path)` and the recursive
+  // `rmdir(path, recursive, force)` — reaches the wire under the same name.
+  it('parses {path}, {path, recursive} and {path, recursive, force}', () => {
+    for (const body of [
+      '{"path":"docs"}',
+      '{"path":"docs","recursive":true}',
+      '{"path":"docs","recursive":true,"force":false}',
+    ]) {
+      expect(parseToolCallArguments(makeToolCall('workspace_rmdir', body)))
+        .withContext(body)
+        .toEqual({ tool_name: 'workspace_rmdir', path: 'docs' });
+    }
+  });
+
+  it('ignores extra keys', () => {
+    expect(
+      parseToolCallArguments(
+        makeToolCall('workspace_rmdir', '{"path":"docs","future_field":42}'),
+      ),
+    ).toEqual({ tool_name: 'workspace_rmdir', path: 'docs' });
+  });
+
+  it('keeps a trailing slash exactly as the wire carried it', () => {
+    expect(
+      parseToolCallArguments(makeToolCall('workspace_rmdir', '{"path":"docs/"}')),
+    ).toEqual({ tool_name: 'workspace_rmdir', path: 'docs/' });
+  });
+
+  it('returns null for a missing or non-string path', () => {
+    for (const body of ['{}', '{"recursive":true}', '{"path":7}', '{"path":null}']) {
+      expect(parseToolCallArguments(makeToolCall('workspace_rmdir', body)))
+        .withContext(body)
+        .toBeNull();
+    }
+  });
+
+  it('returns null, without throwing, for malformed JSON', () => {
+    expect(() =>
+      parseToolCallArguments(makeToolCall('workspace_rmdir', '{"path":')),
+    ).not.toThrow();
+    expect(
+      parseToolCallArguments(makeToolCall('workspace_rmdir', '{"path":')),
+    ).toBeNull();
+  });
+});
+
 describe('parseToolCallArguments — workspace_multi_edit (AC #6, #9)', () => {
   it('parses N edits and keeps every path', () => {
     const parsed = parseToolCallArguments(
@@ -1036,6 +1086,30 @@ describe('parseToolCallArguments — workspace_patch (AC #11)', () => {
       parseToolCallArguments(makeToolCall('workspace_patch', 'not json')),
     ).toBeNull();
   });
+});
+
+describe('parseToolCallArguments — workspace_exec / workspace_exec_result (Story 61-2, AC #1)', () => {
+  for (const toolName of ['workspace_exec', 'workspace_exec_result'] as const) {
+    it(toolName + ' accepts any object body and keeps nothing from it', () => {
+      for (const body of [
+        '{}',
+        '{"cmd":"make build","timeout":30}',
+        '{"run_id":"r-1","future_field":[1,2]}',
+      ]) {
+        expect(parseToolCallArguments(makeToolCall(toolName, body)))
+          .withContext(body)
+          .toEqual({ tool_name: toolName });
+      }
+    });
+
+    it(toolName + ' still returns null for a malformed or non-object body', () => {
+      for (const body of ['not json', '[1]', 'null', '"ls"']) {
+        expect(parseToolCallArguments(makeToolCall(toolName, body)))
+          .withContext(body)
+          .toBeNull();
+      }
+    });
+  }
 });
 
 describe('parseToolCallArguments — unrecognised tool names (AC #10)', () => {

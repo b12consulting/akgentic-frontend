@@ -21,6 +21,7 @@ import {
 import {
   FileContent,
   FileNode,
+  WorkspaceHttpError,
   WorkspaceService,
 } from '../../../services/process/workspace/workspace.service';
 import { UploadModalComponent } from './upload/upload-modal.component';
@@ -2842,6 +2843,247 @@ describe('WorkspaceExplorerComponent — workspace invalidation routing (Epic 39
     );
 
     expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+    expect(component.openFile()).toBeNull();
+    expect(component.deletedNotice()).toBe(OPEN_PATH);
+  });
+
+  // --- a removed directory takes the open file with it (Story 61-1, AC4) ---
+
+  /** Open an arbitrary path in the pane through the real selection path. */
+  async function openPathInPane(path: string): Promise<void> {
+    const name = path.slice(path.lastIndexOf('/') + 1);
+    await component.onNodeSelect({
+      node: { data: fileNode({ name, path, type: 'file', extension: '.txt' }) },
+    });
+    fixture.detectChanges();
+    workspaceServiceSpy.getWorkspaceTree.calls.reset();
+    workspaceServiceSpy.getFileContent.calls.reset();
+  }
+
+  it('61-1 — a deleted path EQUAL to the open file discards it', async () => {
+    await openInPane();
+
+    await deliver(invalidation({ directories: ['docs'], deletions: [OPEN_PATH] }));
+
+    expect(component.openFile()).toBeNull();
+    expect(component.deletedNotice()).toBe(OPEN_PATH);
+  });
+
+  it('61-1 — an open file UNDER a removed directory is discarded, never re-read', async () => {
+    await openInPane();
+
+    await deliver(invalidation({ directories: [''], deletions: ['docs'] }));
+
+    expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+    expect(component.openFile()).toBeNull();
+    expect(component.content()).toBeNull();
+    expect(component.deletedNotice()).toBe(OPEN_PATH);
+    expect(listedPaths()).toEqual(['']);
+  });
+
+  it('61-1 — a recursive rmdir discards an open file several levels down', async () => {
+    await openPathInPane('docs/deep/b.txt');
+
+    await deliver(invalidation({ directories: [''], deletions: ['docs'] }));
+
+    expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+    expect(component.openFile()).toBeNull();
+    expect(component.deletedNotice()).toBe('docs/deep/b.txt');
+    expect(listedPaths()).toEqual(['']);
+  });
+
+  it('61-1 — a removed directory carrying a trailing slash still matches', async () => {
+    await openInPane();
+
+    await deliver(invalidation({ directories: [''], deletions: ['docs/'] }));
+
+    expect(component.openFile()).toBeNull();
+    expect(component.deletedNotice()).toBe(OPEN_PATH);
+  });
+
+  it('61-1 — a removed `docs` does not match an open `docsx/a.txt`', async () => {
+    await openPathInPane('docsx/a.txt');
+
+    await deliver(invalidation({ directories: [''], deletions: ['docs'] }));
+
+    expect(component.openFile()?.path).toBe('docsx/a.txt');
+    expect(component.deletedNotice()).toBeNull();
+    expect(listedPaths()).toEqual(['']);
+  });
+
+  it('61-1 — workspace_delete is unchanged: a deleted sibling leaves the open file alone', async () => {
+    await openInPane();
+
+    await deliver(
+      invalidation({ directories: ['docs'], deletions: ['docs/b.txt'] }),
+    );
+
+    expect(component.openFile()?.path).toBe(OPEN_PATH);
+    expect(component.deletedNotice()).toBeNull();
+    expect(listedPaths()).toEqual(['docs']);
+  });
+
+  // --- a deletion survives a whole-tree refresh (Story 61-3) ----------
+  //
+  // A slash command or an exec reaches the explorer only as `{wholeTree}`, and
+  // the merge ORs `wholeTree` over a coalesced `workspace_rmdir`'s `deletions`.
+  // The deletion check must run before the whole-tree branch, and the
+  // whole-tree route's background re-read must treat a 404 as "gone".
+
+  it('61-3 (a) — a whole-tree batch whose deletions name the open file discards it AND reloads the tree', async () => {
+    await openInPane();
+    component.content.set({ kind: 'text', body: 'stale' });
+
+    await deliver(invalidation({ wholeTree: true, deletions: [OPEN_PATH] }));
+
+    expect(component.openFile()).toBeNull();
+    expect(component.content()).toBeNull();
+    expect(component.deletedNotice()).toBe(OPEN_PATH);
+    expect(listedPaths()).withContext('root tree reload').toContain('');
+    // No open file is left, so the reload issues no body read for it.
+    expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+  });
+
+  it('61-3 (b) — a whole-tree batch whose deletions name a PARENT directory discards the open file', async () => {
+    await openInPane();
+
+    await deliver(invalidation({ wholeTree: true, deletions: ['docs'] }));
+
+    expect(component.openFile()).toBeNull();
+    expect(component.deletedNotice()).toBe(OPEN_PATH);
+    expect(listedPaths()).withContext('root tree reload').toContain('');
+    expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+  });
+
+  it('61-3 (b) — an rmdir coalesced with a whole-tree instruction in one batch still discards', async () => {
+    await openInPane();
+
+    // The merge ORs `wholeTree` and unions `deletions`, so the batch the router
+    // sees is `{wholeTree, deletions: ['docs']}` — the case an early return on
+    // `wholeTree` threw away.
+    await deliver(
+      invalidation({ directories: [''], deletions: ['docs'] }),
+      invalidation({ wholeTree: true }),
+    );
+
+    expect(component.openFile()).toBeNull();
+    expect(component.deletedNotice()).toBe(OPEN_PATH);
+    expect(listedPaths()).withContext('root tree reload').toContain('');
+    expect(workspaceServiceSpy.getFileContent).not.toHaveBeenCalled();
+  });
+
+  it('61-3 (c) — a whole-tree reload whose background re-read answers 404 discards the file, with no banner', async () => {
+    await openInPane();
+    workspaceServiceSpy.getFileContent.and.rejectWith(
+      new WorkspaceHttpError('Not Found', 404),
+    );
+
+    await deliver(invalidation({ wholeTree: true }));
+    await flushMicrotasks();
+
+    expect(workspaceServiceSpy.getFileContent).toHaveBeenCalledOnceWith(
+      'proc',
+      OPEN_PATH,
+      undefined,
+    );
+    expect(component.openFile()).toBeNull();
+    expect(component.content()).toBeNull();
+    expect(component.deletedNotice()).toBe(OPEN_PATH);
+    expect(component.fileError()).toBeNull();
+    expect(component.treeError()).toBeNull();
+  });
+
+  it('61-3 (d) — a background re-read answering 500 changes nothing and banners nothing', async () => {
+    await openInPane();
+    const before = component.content();
+    workspaceServiceSpy.getFileContent.and.rejectWith(
+      new WorkspaceHttpError('Internal Server Error', 500),
+    );
+
+    await deliver(invalidation({ wholeTree: true }));
+    await flushMicrotasks();
+
+    expect(workspaceServiceSpy.getFileContent).toHaveBeenCalledTimes(1);
+    expect(component.openFile()?.path).toBe(OPEN_PATH);
+    expect(component.content()).toEqual(before);
+    expect(component.deletedNotice()).toBeNull();
+    expect(component.fileError()).toBeNull();
+  });
+
+  it('61-3 (e) — a GESTURE refresh answering 404 still banners and does not discard', async () => {
+    await openInPane();
+    workspaceServiceSpy.getFileContent.and.rejectWith(
+      new WorkspaceHttpError('Not Found', 404),
+    );
+
+    await component.refreshOpenFile();
+    await flushMicrotasks();
+
+    expect(component.fileError()).toBe('Not Found');
+    expect(component.openFile()?.path).toBe(OPEN_PATH);
+    expect(component.deletedNotice()).toBeNull();
+  });
+
+  it('61-3 (f) — a 404 for a read superseded by opening another file discards nothing', async () => {
+    await openInPane();
+    const stale = deferred<FileContent>();
+    workspaceServiceSpy.getFileContent.and.returnValues(
+      stale.promise,
+      Promise.resolve({ content: 'b body', type: 'text' }),
+    );
+
+    await deliver(invalidation({ wholeTree: true }));
+    await openPathInPane('docs/b.txt');
+    stale.reject(new WorkspaceHttpError('Not Found', 404));
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(component.openFile()?.path).toBe('docs/b.txt');
+    expect(component.content()).toEqual({ kind: 'text', body: 'b body' });
+    expect(component.deletedNotice()).toBeNull();
+    expect(component.fileError()).toBeNull();
+  });
+
+  it('61-3 (f) — a 404 overtaken by a newer read of the SAME path discards nothing', async () => {
+    await openInPane();
+    const stale = deferred<FileContent>();
+    workspaceServiceSpy.getFileContent.and.returnValues(
+      stale.promise,
+      Promise.resolve({ content: 'recreated', type: 'text' }),
+    );
+
+    // The background re-read is in flight; the user re-opens the same file and
+    // that newer read lands first. The path rule alone cannot tell them apart.
+    await deliver(invalidation({ wholeTree: true }));
+    await openInPane();
+    stale.reject(new WorkspaceHttpError('Not Found', 404));
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(component.openFile()?.path).toBe(OPEN_PATH);
+    expect(component.content()).toEqual({ kind: 'text', body: 'recreated' });
+    expect(component.deletedNotice()).toBeNull();
+  });
+
+  it('61-3 (g) — after a background-404 discard, the metadata half does not restore openFile', async () => {
+    await openInPane();
+    // The parent listing still carries the entry, so only the metadata half's
+    // path guard stands between it and writing the file back into the pane.
+    workspaceServiceSpy.getWorkspaceTree.and.callFake(
+      async (_processId: string, path?: string) =>
+        path === 'docs' ? [openFile(2048)] : [],
+    );
+    workspaceServiceSpy.getFileContent.and.rejectWith(
+      new WorkspaceHttpError('Not Found', 404),
+    );
+
+    await deliver(invalidation({ wholeTree: true }));
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(listedPaths())
+      .withContext("the metadata half's parent listing ran")
+      .toContain('docs');
     expect(component.openFile()).toBeNull();
     expect(component.deletedNotice()).toBe(OPEN_PATH);
   });

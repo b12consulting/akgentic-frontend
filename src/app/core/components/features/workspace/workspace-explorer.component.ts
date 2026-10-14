@@ -31,6 +31,7 @@ import {
   WorkspaceService,
   FileNode,
   FileContent,
+  WorkspaceHttpError,
 } from '../../../services/process/workspace/workspace.service';
 import { ContextService } from '../../../platform/context/context.service';
 import {
@@ -693,9 +694,15 @@ export class WorkspaceExplorerComponent {
    * exist — `refresh()`, `refreshSelectedFile()`, `refreshDirectory()`. No new
    * fetch path, no cache, no second splice.
    *
-   * A whole-tree instruction subsumes every named target and carries all three
-   * lists empty by construction, so it returns early rather than reconciling
-   * anything.
+   * The deletion check runs FIRST, before the whole-tree branch (ADR-031 §D3).
+   * A whole-tree instruction is built with all three lists empty, but the merge
+   * ORs `wholeTree` and unions `deletions`, so a `workspace_rmdir` coalesced
+   * with a slash command or an exec reaches here as `{wholeTree, deletions}`.
+   * Returning early on `wholeTree` threw those deletions away and left the
+   * deleted file's body in the pane. Once the open file is discarded, the
+   * whole-tree reload has no open file left and so issues no body read for it.
+   * Otherwise a whole-tree instruction subsumes every named target and returns
+   * early rather than reconciling anything.
    *
    * The open file's parent is dropped from the directory pass whenever the
    * open-file refresh runs: `refreshSelectedFile` → `refreshFileMetadata` →
@@ -711,19 +718,22 @@ export class WorkspaceExplorerComponent {
     // failure instead of bannering it, because nobody asked for these reads
     // (ADR-031 §D9). The error split narrows the blast radius of getting that
     // wrong; it does not remove the rule.
+    let open = this.openFile();
+    if (open !== null && this.isDeletedBy(open.path, batch.deletions)) {
+      // Deletion wins over a change to the same path within one batch: a
+      // delete-then-recreate inside a single 16 ms batch settles as "deleted",
+      // and the next batch — or either Refresh control — recovers it.
+      this.discardDeletedFile(open);
+      open = null;
+    }
+
     if (batch.wholeTree) {
       this.refresh(true);
       return;
     }
 
     const directories = new Set(batch.directories);
-    const open = this.openFile();
-    if (open !== null && batch.deletions.includes(open.path)) {
-      // Deletion wins over a change to the same path within one batch: a
-      // delete-then-recreate inside a single 16 ms batch settles as "deleted",
-      // and the next batch — or either Refresh control — recovers it.
-      this.discardDeletedFile(open);
-    } else if (
+    if (
       open !== null &&
       batch.files.includes(open.path) &&
       this.canRefreshSelectedFile()
@@ -739,6 +749,21 @@ export class WorkspaceExplorerComponent {
         console.error('Error refreshing directory', error);
       });
     }
+  }
+
+  /**
+   * Whether `path` is gone after `deletions`: it IS a deleted path, or lies
+   * under one — a `workspace_rmdir` of `docs` takes `docs/a.md` with it.
+   *
+   * The `/` boundary keeps a deleted `docs` from matching `docsx/a.md`. A
+   * trailing slash on the wire (`docs/`) is trimmed here, at the comparison
+   * only: the instruction keeps the path exactly as the wire carried it.
+   */
+  private isDeletedBy(path: string, deletions: string[]): boolean {
+    return deletions.some((deleted) => {
+      const dir = deleted.endsWith('/') ? deleted.slice(0, -1) : deleted;
+      return path === dir || path.startsWith(dir + '/');
+    });
   }
 
   /**
@@ -768,13 +793,24 @@ export class WorkspaceExplorerComponent {
    * rendering a file that no longer exists is the other half of the same
    * refusal.
    *
-   * `currentDirectory` is deliberately NOT written: the file is gone, the
-   * directory the user was in is not, and moving them somewhere else on a
-   * deletion they did not perform is the same "an agent navigated me" surprise
-   * `applyRootLoad` refuses.
+   * `currentDirectory` is deliberately NOT written: moving the user somewhere
+   * else on a deletion they did not perform is the same "an agent navigated
+   * me" surprise `applyRootLoad` refuses. That holds even when a
+   * `workspace_rmdir` removed the directory the user is in: the pane keeps its
+   * last listing until they navigate.
    *
-   * The tree entry goes with it: the instruction carries the file's parent in
-   * `directories`, and the directory pass re-lists it in this same batch.
+   * The tree entry goes with it: the instruction carries the parent of the
+   * deleted path in `directories` — the file's own parent for
+   * `workspace_delete`, the removed directory's parent for `workspace_rmdir` —
+   * and the directory pass re-lists it in this same batch.
+   *
+   * Two routes reach it (ADR-031 §D3): a batch whose `deletions` cover the open
+   * file, and a gesture-less re-read of the open file that answers 404. The
+   * second is how a deletion arriving only as a whole-tree refresh — a slash
+   * command or an exec, whose arguments are never parsed — still clears the
+   * pane. On that route the tree entry goes with it through the re-read's own
+   * metadata half, which re-lists the parent and — `openFile` being null by
+   * then — writes nothing back into the pane.
    */
   private discardDeletedFile(file: FileNode): void {
     this.openFile.set(null);
@@ -1238,6 +1274,11 @@ export class WorkspaceExplorerComponent {
       if (!background && token === this.readToken) {
         this.fileError.set(error?.message || 'Failed to load file content');
       }
+      // A superseded 404 must not discard either: a newer read of the same
+      // path may already have rendered the file, recreated since.
+      if (background && token === this.readToken) {
+        this.discardIfGone(error, path);
+      }
     } finally {
       // Only the read that raised the spinner may lower it: a superseded read
       // clearing it strands a blank pane with no spinner while the newer read
@@ -1247,6 +1288,29 @@ export class WorkspaceExplorerComponent {
       if (this.loadingOwner === token) {
         this.loadingContent.set(false);
       }
+    }
+  }
+
+  /**
+   * A gesture-less re-read answered 404: the file is gone, so discard it
+   * exactly as a `deletions` entry would — selection and body cleared, the
+   * deleted notice raised, no banner (ADR-031 §D3, §D9).
+   *
+   * Only a 404 means "gone". Any other failure — a 500, a network error — says
+   * nothing about the file and stays log-only. Only a background read asks:
+   * a gesture read's 404 banners, because the user asked and should see why.
+   * The pane rule is `applyFileContent`'s — compare paths, never `FileNode`
+   * identity — so a 404 for a file the user has since navigated away from
+   * discards nothing. The caller adds supersession on top: a 404 that a newer
+   * read of the SAME path has overtaken (the user re-opened the file) is stale
+   * evidence and discards nothing either, since the path rule alone cannot
+   * tell it apart.
+   */
+  private discardIfGone(error: unknown, requestedPath: string): void {
+    if (!(error instanceof WorkspaceHttpError) || error.status !== 404) return;
+    const open = this.openFile();
+    if (open !== null && open.path === requestedPath) {
+      this.discardDeletedFile(open);
     }
   }
 
@@ -1373,8 +1437,10 @@ export class WorkspaceExplorerComponent {
    * materialized tree and tolerates a target that was never expanded), then
    * re-resolve the open file's own entry by path. A path absent from the fresh
    * listing leaves `openFile` as it is — the failed body read is what tells the
-   * user the file has gone. A rejection here is reported and swallowed so it
-   * cannot cancel the other half.
+   * user the file has gone: a gesture read banners its 404, and a background
+   * read's 404 has already discarded the file (ADR-031 §D3), so the path guard
+   * below finds no open file and writes nothing back. A rejection here is
+   * reported and swallowed so it cannot cancel the other half.
    *
    * The write is gated on the pane still showing the file this refresh was
    * issued for: the listing can land after the user has moved on, and writing

@@ -4,13 +4,19 @@ import {
   AkgenticMessage,
   BaseConfig,
   EventMessage,
+  HandledMessage,
+  ProcessedMessage,
+  SentMessage,
   StartMessage,
   StopMessage,
   ToolCardLite,
 } from '../../../protocol/message.types';
 import { MessageLogService } from '../event/message-log.service';
 import {
+  isMutatingSlashCommand,
   isMutatingWorkspaceTool,
+  MAX_PENDING_COMMANDS,
+  MUTATING_SLASH_COMMANDS,
   MUTATING_WORKSPACE_TOOLS,
   WorkspaceInvalidation,
   WorkspaceInvalidationService,
@@ -276,16 +282,19 @@ function mutationLog(
 // ---------------------------------------------------------------------
 
 describe('MUTATING_WORKSPACE_TOOLS', () => {
-  it('(AC1) names exactly the six mutating tools', () => {
+  it('(AC1) names exactly the nine mutating tools', () => {
     expect([...MUTATING_WORKSPACE_TOOLS]).toEqual([
       'workspace_write',
       'workspace_delete',
       'workspace_edit',
       'workspace_mkdir',
+      'workspace_rmdir',
       'workspace_multi_edit',
       'workspace_patch',
+      'workspace_exec',
+      'workspace_exec_result',
     ]);
-    expect(MUTATING_WORKSPACE_TOOLS.length).toBe(6);
+    expect(MUTATING_WORKSPACE_TOOLS.length).toBe(9);
     for (const name of MUTATING_WORKSPACE_TOOLS) {
       expect(isMutatingWorkspaceTool(name)).toBe(true);
     }
@@ -307,11 +316,11 @@ describe('WorkspaceInvalidationService — the mutating set (FR4)', () => {
   // Asserted individually rather than in one loop-with-a-single-expect, so a
   // per-tool failure names the tool that broke it.
   //
-  // Verified by mutation: replacing the six-name constant with a
+  // Verified by mutation: replacing the explicit-name constant with a
   // `workspace_*` prefix match turns the two `MUTATING_WORKSPACE_TOOLS` specs
   // above red and leaves THESE five green. That is not a gap in them — it is
   // `parseToolCallArguments` acting as a second gate, since it too returns
-  // `null` for a tool name outside the six. The read tools therefore cannot
+  // `null` for a tool name outside the list. The read tools therefore cannot
   // produce an instruction under either implementation, and the specs above are
   // where the "explicit list, never a prefix" rule actually bites. These five
   // pin the end-to-end behaviour, which is what a future refactor of either
@@ -613,6 +622,40 @@ describe('WorkspaceInvalidationService — granularity (FR5)', () => {
     expect(instruction.deletions).toEqual(['a/b/c.md']);
     expect(instruction.files).toEqual([]);
     expect(instruction.directories).toEqual(['a/b']);
+  });
+
+  it('(61-1 AC3) rmdir has the delete shape: parent listed, path deleted', () => {
+    const instruction = onlyInstruction('workspace_rmdir', {
+      path: 'a/b/docs',
+      recursive: true,
+    });
+    expect(instruction).toEqual({
+      workspaceId: 'ws-1',
+      wholeTree: false,
+      directories: ['a/b'],
+      files: [],
+      deletions: ['a/b/docs'],
+    });
+  });
+
+  it('(61-1 AC3) rmdir keeps a trailing slash in `deletions` as the wire carried it', () => {
+    const instruction = onlyInstruction('workspace_rmdir', { path: 'a/docs/' });
+    expect(instruction.directories).toEqual(['a']);
+    expect(instruction.deletions).toEqual(['a/docs/']);
+  });
+
+  it('(61-1 AC5) a failed rmdir return produces no instruction', () => {
+    const result = collectFromLog([
+      workspaceAttached('A', 'users/u1/ws-1'),
+      makeToolCall(
+        'A',
+        'workspace_rmdir',
+        JSON.stringify({ path: 'a/docs' }),
+        'call-1',
+      ),
+      makeToolReturn('A', 'workspace_rmdir', 'call-1', false),
+    ]);
+    expect(result).toEqual([]);
   });
 });
 
@@ -1221,5 +1264,395 @@ describe('WorkspaceInvalidationService — incremental reading (Epic 42)', () =>
     expect(seen.length).toBe(1);
     expect(seen[0].workspaceId).toBe('ws-1');
     expect(seen[0].files).toEqual(['live.md']);
+  });
+});
+
+// ---------------------------------------------------------------------
+// Story 61-2 — the exec rule and the slash-command rule.
+// ---------------------------------------------------------------------
+
+const SENT_MODEL = 'akgentic.core.messages.orchestrator.SentMessage';
+const PROCESSED_MODEL = 'akgentic.core.messages.orchestrator.ProcessedMessage';
+
+/** The read-side slash commands: they change nothing and must not refresh. */
+const READ_SLASH_COMMANDS = [
+  '/workspace_read a.md',
+  '/workspace_list docs',
+  '/workspace_glob **/*.md',
+  '/workspace_grep TODO',
+  '/workspace_rag_search what changed',
+] as const;
+
+const WHOLE_TREE = { wholeTree: true, directories: [], files: [], deletions: [] };
+
+/** A human's `SentMessage` carrying `content` to agent `agentName`. The INNER
+ *  message id is what the agent's `ProcessedMessage` names. */
+function makeSentCommand(
+  agentName: string,
+  content: string,
+  innerId: string,
+): SentMessage {
+  envelopeSeq += 1;
+  return {
+    id: 'sent-' + envelopeSeq,
+    parent_id: null,
+    team_id: TEAM_ID,
+    timestamp: new Date().toISOString(),
+    sender: { ...baseSender('human'), role: 'Human', user_message: true },
+    display_type: 'other',
+    content: null,
+    __model__: SENT_MODEL,
+    message: {
+      id: innerId,
+      parent_id: null,
+      team_id: TEAM_ID,
+      timestamp: new Date().toISOString(),
+      sender: { ...baseSender('human'), role: 'Human', user_message: true },
+      display_type: 'human',
+      content,
+      __model__: 'akgentic.core.agent.UserMessage',
+    },
+    recipient: baseSender(agentName),
+  };
+}
+
+/** The agent's `ProcessedMessage` for inner message `innerId`. */
+function makeProcessed(agentName: string, innerId: string): ProcessedMessage {
+  envelopeSeq += 1;
+  return {
+    id: 'processed-' + envelopeSeq,
+    parent_id: null,
+    team_id: TEAM_ID,
+    timestamp: new Date().toISOString(),
+    sender: baseSender(agentName),
+    display_type: 'other',
+    content: null,
+    __model__: PROCESSED_MODEL,
+    message_id: innerId,
+  };
+}
+
+/** The agent's `HandledMessage` for inner message `innerId`: it was absorbed
+ *  into a run in progress through the mailbox, never given a turn of its own. */
+function makeHandled(agentName: string, innerId: string): HandledMessage {
+  envelopeSeq += 1;
+  return {
+    id: 'handled-' + envelopeSeq,
+    parent_id: null,
+    team_id: TEAM_ID,
+    timestamp: new Date().toISOString(),
+    sender: baseSender(agentName),
+    display_type: 'other',
+    content: null,
+    __model__: 'akgentic.core.messages.orchestrator.HandledMessage',
+    message_id: innerId,
+  };
+}
+
+/** One command to agent A bound to `ws-1`, then its `ProcessedMessage`. */
+function commandLog(content: string): AkgenticMessage[] {
+  return [
+    workspaceAttached('A', 'users/u1/ws-1'),
+    makeSentCommand('A', content, 'cmd-1'),
+    makeProcessed('A', 'cmd-1'),
+  ];
+}
+
+describe('WorkspaceInvalidationService — the exec rule (Story 61-2, AC1)', () => {
+  for (const toolName of ['workspace_exec', 'workspace_exec_result']) {
+    it(`(AC1) a successful ${toolName} return refreshes the whole tree`, () => {
+      const result = collectFromLog(
+        mutationLog(toolName, JSON.stringify({ cmd: 'make build' })),
+      );
+      expect(result).toEqual([{ workspaceId: 'ws-1', ...WHOLE_TREE }]);
+    });
+
+    it(`(AC1) a failed ${toolName} return refreshes nothing`, () => {
+      const result = collectFromLog([
+        workspaceAttached('A', 'users/u1/ws-1'),
+        makeToolCall('A', toolName, '{}', 'call-1'),
+        makeToolReturn('A', toolName, 'call-1', false),
+      ]);
+      expect(result).toEqual([]);
+    });
+  }
+
+  it('(AC1) emits one whole-tree instruction per workspace of the agent', () => {
+    const result = collectFromLog(
+      mutationLog('workspace_exec', '{}', ['users/u1/ws-1', 'users/u1/ws-2']),
+    );
+    expect(result).toEqual([
+      { workspaceId: 'ws-1', ...WHOLE_TREE },
+      { workspaceId: 'ws-2', ...WHOLE_TREE },
+    ]);
+  });
+
+  it('(AC1) the arguments are not read: any object body refreshes', () => {
+    const result = collectFromLog(
+      mutationLog(
+        'workspace_exec_result',
+        JSON.stringify({ run_id: 'r-1', unexpected: { nested: [1] } }),
+      ),
+    );
+    expect(result).toEqual([{ workspaceId: 'ws-1', ...WHOLE_TREE }]);
+  });
+
+  it('(AC1) an exec from an agent with no workspace refreshes nothing', () => {
+    expect(collectFromLog(mutationLog('workspace_exec', '{}', []))).toEqual([]);
+  });
+});
+
+describe('isMutatingSlashCommand (Story 61-2, AC2)', () => {
+  it('(AC2) names exactly the six mutating commands', () => {
+    expect([...MUTATING_SLASH_COMMANDS]).toEqual([
+      '/workspace_write',
+      '/workspace_delete',
+      '/workspace_mkdir',
+      '/workspace_rmdir',
+      '/workspace_exec',
+      '/workspace_exec_result',
+    ]);
+  });
+
+  it('(AC2) matches each command followed by whitespace or the end of the string', () => {
+    for (const name of MUTATING_SLASH_COMMANDS) {
+      expect(isMutatingSlashCommand(name)).withContext(name).toBe(true);
+      expect(isMutatingSlashCommand(name + ' a.md')).withContext(name).toBe(true);
+      expect(isMutatingSlashCommand(name + '\tx')).withContext(name).toBe(true);
+      expect(isMutatingSlashCommand('  \n' + name + ' x')).withContext(name).toBe(true);
+    }
+  });
+
+  it('(AC2) does not match a read-side command, a longer name, or plain text', () => {
+    for (const content of [
+      ...READ_SLASH_COMMANDS,
+      '/workspace_writer a.md',
+      '/workspace_exec_results',
+      'please /workspace_write a.md',
+      'workspace_write a.md',
+      '',
+    ]) {
+      expect(isMutatingSlashCommand(content)).withContext(content).toBe(false);
+    }
+  });
+
+  it('(AC6) is false, and does not throw, for a non-string', () => {
+    for (const content of [null, undefined, 42, {}, ['/workspace_write']]) {
+      expect(isMutatingSlashCommand(content)).toBe(false);
+    }
+  });
+});
+
+describe('WorkspaceInvalidationService — the slash-command rule (Story 61-2, AC2-AC6)', () => {
+  for (const name of MUTATING_SLASH_COMMANDS) {
+    it(`(AC3) ${name} refreshes the whole tree on its ProcessedMessage`, () => {
+      expect(collectFromLog(commandLog(name + ' some args'))).toEqual([
+        { workspaceId: 'ws-1', ...WHOLE_TREE },
+      ]);
+    });
+  }
+
+  it('(AC3) nothing fires on the SentMessage alone', () => {
+    const result = collectFromLog([
+      workspaceAttached('A', 'users/u1/ws-1'),
+      makeSentCommand('A', '/workspace_write a.md hi', 'cmd-1'),
+    ]);
+    expect(result).toEqual([]);
+  });
+
+  it('(AC2) a read-side command does not refresh', () => {
+    for (const content of READ_SLASH_COMMANDS) {
+      expect(collectFromLog(commandLog(content))).withContext(content).toEqual([]);
+    }
+  });
+
+  it('(AC2) /workspace_writer does not refresh', () => {
+    expect(collectFromLog(commandLog('/workspace_writer a.md'))).toEqual([]);
+  });
+
+  it('(AC3) a ProcessedMessage for an unknown id does nothing', () => {
+    const result = collectFromLog([
+      workspaceAttached('A', 'users/u1/ws-1'),
+      makeSentCommand('A', '/workspace_mkdir docs', 'cmd-1'),
+      makeProcessed('A', 'some-other-message'),
+    ]);
+    expect(result).toEqual([]);
+  });
+
+  it('(AC3) the entry is consumed: a second ProcessedMessage for the same id does nothing', () => {
+    const result = collectFromLog([
+      ...commandLog('/workspace_delete a.md'),
+      makeProcessed('A', 'cmd-1'),
+    ]);
+    expect(result.length).toBe(1);
+  });
+
+  it('(AC2) a command to an agent with no workspace does nothing', () => {
+    const result = collectFromLog([
+      workspaceAttached('B', 'users/u1/ws-1'),
+      makeSentCommand('A', '/workspace_write a.md hi', 'cmd-1'),
+      makeProcessed('A', 'cmd-1'),
+    ]);
+    expect(result).toEqual([]);
+  });
+
+  it('(AC3) emits one whole-tree instruction per workspace of the agent', () => {
+    const result = collectFromLog([
+      workspaceAttached('A', 'users/u1/ws-1'),
+      workspaceAttached('A', 'users/u1/ws-2'),
+      makeSentCommand('A', '/workspace_rmdir docs', 'cmd-1'),
+      makeProcessed('A', 'cmd-1'),
+    ]);
+    expect(result).toEqual([
+      { workspaceId: 'ws-1', ...WHOLE_TREE },
+      { workspaceId: 'ws-2', ...WHOLE_TREE },
+    ]);
+  });
+
+  it('(AC4) the agent\'s StopMessage drops its remembered commands', () => {
+    const result = collectFromLog([
+      workspaceAttached('A', 'users/u1/ws-1'),
+      makeSentCommand('A', '/workspace_write a.md hi', 'cmd-1'),
+      makeStopMessage('A'),
+      // Re-attached, so a surviving entry WOULD resolve to a workspace.
+      workspaceAttached('A', 'users/u1/ws-1'),
+      makeProcessed('A', 'cmd-1'),
+    ]);
+    expect(result).toEqual([]);
+  });
+
+  it('(AC4) another agent\'s StopMessage leaves the entry in place', () => {
+    const result = collectFromLog([
+      workspaceAttached('A', 'users/u1/ws-1'),
+      makeSentCommand('A', '/workspace_write a.md hi', 'cmd-1'),
+      makeStopMessage('B'),
+      makeProcessed('A', 'cmd-1'),
+    ]);
+    expect(result).toEqual([{ workspaceId: 'ws-1', ...WHOLE_TREE }]);
+  });
+
+  it('(AC4) the map is capped: past the cap the oldest command is forgotten', () => {
+    const sent: AkgenticMessage[] = [];
+    for (let i = 0; i <= MAX_PENDING_COMMANDS; i += 1) {
+      sent.push(makeSentCommand('A', '/workspace_mkdir d' + i, 'cmd-' + i));
+    }
+    const attached = workspaceAttached('A', 'users/u1/ws-1');
+    // Each id is resolved on its own, so the count names WHICH entry survived:
+    // a cap that dropped the newest instead would keep cmd-0 and lose the last.
+    // cmd-0, the oldest, was evicted; cmd-1 and the newest survived.
+    expect(collectFromLog([attached, ...sent, makeProcessed('A', 'cmd-0')]))
+      .withContext('cmd-0')
+      .toEqual([]);
+    expect(collectFromLog([attached, ...sent, makeProcessed('A', 'cmd-1')]))
+      .withContext('cmd-1')
+      .toEqual([{ workspaceId: 'ws-1', ...WHOLE_TREE }]);
+    expect(
+      collectFromLog([
+        attached,
+        ...sent,
+        makeProcessed('A', 'cmd-' + MAX_PENDING_COMMANDS),
+      ]),
+    )
+      .withContext('newest')
+      .toEqual([{ workspaceId: 'ws-1', ...WHOLE_TREE }]);
+  });
+
+  it('(AC4) a command absorbed mid-run is forgotten on its HandledMessage, without a refresh', () => {
+    // Absorbed through the mailbox, the command reaches the model as text and
+    // is never executed; core closes it with HandledMessage. A ProcessedMessage
+    // for the same id afterwards must find nothing left to resolve.
+    const result = collectFromLog([
+      workspaceAttached('A', 'users/u1/ws-1'),
+      makeSentCommand('A', '/workspace_write a.md hi', 'cmd-1'),
+      makeHandled('A', 'cmd-1'),
+      makeProcessed('A', 'cmd-1'),
+    ]);
+    expect(result).toEqual([]);
+  });
+
+  it('(AC4) a HandledMessage for another id leaves the entry in place', () => {
+    const result = collectFromLog([
+      workspaceAttached('A', 'users/u1/ws-1'),
+      makeSentCommand('A', '/workspace_write a.md hi', 'cmd-1'),
+      makeHandled('A', 'some-other-message'),
+      makeProcessed('A', 'cmd-1'),
+    ]);
+    expect(result).toEqual([{ workspaceId: 'ws-1', ...WHOLE_TREE }]);
+  });
+
+  it('(AC6) a malformed SentMessage neither throws nor fires', () => {
+    const broken = [
+      { ...makeSentCommand('A', '/workspace_write a.md', 'x-1'), message: undefined },
+      { ...makeSentCommand('A', '/workspace_write a.md', 'x-2'), recipient: undefined },
+      {
+        ...makeSentCommand('A', '/workspace_write a.md', 'x-3'),
+        message: { id: 'x-3', content: 42 },
+      },
+    ] as unknown as AkgenticMessage[];
+    let result: WorkspaceInvalidation[] = [];
+    expect(() => {
+      result = collectFromLog([
+        workspaceAttached('A', 'users/u1/ws-1'),
+        ...broken,
+        makeProcessed('A', 'x-1'),
+        makeProcessed('A', 'x-2'),
+        makeProcessed('A', 'x-3'),
+      ]);
+    }).not.toThrow();
+    expect(result).toEqual([]);
+  });
+});
+
+describe('WorkspaceInvalidationService — slash commands and the seed (Story 61-2, AC5)', () => {
+  let log: MessageLogService;
+  let service: WorkspaceInvalidationService;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [MessageLogService, WorkspaceInvalidationService],
+    });
+    log = TestBed.inject(MessageLogService);
+    service = TestBed.inject(WorkspaceInvalidationService);
+  });
+
+  function collect(): WorkspaceInvalidation[] {
+    const seen: WorkspaceInvalidation[] = [];
+    service.invalidations$.subscribe((i) => seen.push(i));
+    return seen;
+  }
+
+  it('(AC5) a command already processed in the seeded history fires nothing', () => {
+    log.appendAll(commandLog('/workspace_write a.md hi'));
+    expect(collect()).toEqual([]);
+  });
+
+  it('(AC5) a command pending in the seed fires when its ProcessedMessage arrives live, as a tool call does', () => {
+    log.appendAll([
+      workspaceAttached('A', 'users/u1/ws-1'),
+      makeSentCommand('A', '/workspace_exec make', 'cmd-1'),
+    ]);
+    const seen = collect();
+    expect(seen).toEqual([]);
+
+    log.append(makeProcessed('A', 'cmd-1'));
+    expect(seen).toEqual([{ workspaceId: 'ws-1', ...WHOLE_TREE }]);
+  });
+
+  it('(AC5) a live command after the seed fires exactly once', () => {
+    log.appendAll(commandLog('/workspace_write a.md hi'));
+    const seen = collect();
+    log.append(makeSentCommand('A', '/workspace_delete a.md', 'cmd-2'));
+    log.append(makeProcessed('A', 'cmd-2'));
+    expect(seen).toEqual([{ workspaceId: 'ws-1', ...WHOLE_TREE }]);
+  });
+
+  it('(AC5) reset() between a command and its ProcessedMessage forgets it', () => {
+    log.append(workspaceAttached('A', 'users/u1/ws-1'));
+    const seen = collect();
+    log.append(makeSentCommand('A', '/workspace_write a.md hi', 'cmd-1'));
+    log.reset();
+    log.append(workspaceAttached('A', 'users/u1/ws-1'));
+    log.append(makeProcessed('A', 'cmd-1'));
+    expect(seen).toEqual([]);
   });
 });
