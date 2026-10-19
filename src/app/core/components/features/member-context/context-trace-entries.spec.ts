@@ -313,4 +313,106 @@ describe('ContextTraceComponent — the trace, in the console\'s language', () =
     expect(component.indicatorLabel).toBe('chat.messages');
     expect(component.indicatorIcon).toBe('pi-arrow-down');
   });
+
+  /**
+   * AN OUTPUT RETRY WAS INVISIBLE. A `retry-prompt` with no `tool_name` answers
+   * no tool call, so the tool-result merge never placed it and the row filter
+   * dropped it: the trace showed two replies with nothing between them to say
+   * the first was sent back. It is not a `Human` row: the framework wrote it,
+   * and a human row would tell the operator someone intervened.
+   */
+  function outputRetry(content: unknown): unknown {
+    return {
+      kind: 'request',
+      parts: [
+        {
+          part_kind: 'retry-prompt',
+          tool_name: null,
+          tool_call_id: 'pyd_ai_1',
+          content,
+        },
+      ],
+    };
+  }
+
+  function cards(fixture: ComponentFixture<ContextTraceComponent>): Element[] {
+    return Array.from(
+      html(fixture).querySelectorAll('.collapsible-container .card-container'),
+    );
+  }
+
+  function flatText(card: Element): string {
+    return (card.textContent ?? '').replace(/\s+/g, ' ').trim();
+  }
+
+  it('shows an output retry as its own row, between the replies it separates', () => {
+    const { fixture, component } = setup();
+    const copy = spyOn(TestBed.inject(UtilService), 'copyToClipboard');
+    const said = 'Nothing was sent: your reply could not be read.';
+    component.context$.next([
+      aiTurn('first reply'),
+      outputRetry(said),
+      aiTurn('second reply'),
+    ] as any[]);
+    fixture.detectChanges();
+
+    const rows = cards(fixture);
+    expect(rows.map(flatText)).toEqual([
+      jasmine.stringContaining('first reply'),
+      jasmine.stringContaining(said),
+      jasmine.stringContaining('second reply'),
+    ]);
+    const retry = rows[1];
+    expect(retry.querySelector('.entry-kind')?.textContent?.trim()).toBe('Retry');
+    expect(retry.querySelector('.entry-name')?.textContent?.trim()).toBe(
+      'Output rejected',
+    );
+    expect(retry.querySelector('.card-header')?.textContent).not.toContain('Human');
+    expect(retry.querySelector('.text-container')?.textContent).toBe(said);
+
+    retry.querySelector<HTMLButtonElement>('.card-header .entry-copy button')!.click();
+    expect(copy).toHaveBeenCalledOnceWith(said);
+  });
+
+  it('renders a raw validation failure one error per line', () => {
+    const { fixture, component } = setup();
+    component.context$.next([
+      outputRetry([
+        { type: 'json_invalid', loc: [], msg: 'Invalid JSON: trailing characters' },
+        { type: 'missing', loc: ['messages', 0, 'recipient'], msg: 'Field required' },
+      ]),
+    ] as any[]);
+    fixture.detectChanges();
+
+    const body = html(fixture).querySelector('.collapsible-container .text-container');
+    expect(body!.textContent).toBe(
+      '- Invalid JSON: trailing characters\n- messages.0.recipient: Field required',
+    );
+  });
+
+  it('still folds a tool retry into its tool call\'s result', () => {
+    const { fixture, component } = setup();
+    const [call] = toolCallExchange(null);
+    component.context$.next([
+      call,
+      {
+        kind: 'request',
+        parts: [
+          {
+            part_kind: 'retry-prompt',
+            tool_name: 'search_knowledge',
+            tool_call_id: 'tc-1',
+            content: 'bad query',
+          },
+        ],
+      },
+    ] as any[]);
+    fixture.detectChanges();
+
+    const rows = cards(fixture);
+    expect(rows.length).toBe(1);
+    expect(rows[0].querySelector('.entry-kind')?.textContent?.trim()).toBe('Tool call');
+    expect(flatText(rows[0])).toContain('bad query');
+    expect(flatText(rows[0])).not.toContain('Output rejected');
+  });
 });

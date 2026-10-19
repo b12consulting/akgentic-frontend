@@ -97,7 +97,7 @@
               {{ message.provider_name }}/{{ message.model_name }}
             </span>
           </span>
-          @if (['system', 'ai', 'tool', 'human', 'tool_result'].includes(message.type)) {
+          @if (['system', 'ai', 'tool', 'human', 'retry', 'tool_result'].includes(message.type)) {
             <ng-container
               *ngTemplateOutlet="copyControl; context: { $implicit: message.content }"
             ></ng-container>
@@ -106,7 +106,7 @@
 
         <ng-container
           *ngIf="
-            ['system', 'ai', 'tool', 'human', 'tool_result'].includes(
+            ['system', 'ai', 'tool', 'human', 'retry', 'tool_result'].includes(
               message.type
             )
           "

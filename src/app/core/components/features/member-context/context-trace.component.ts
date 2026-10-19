@@ -46,6 +46,21 @@ import { CommandDescriptor } from '../../../protocol/message.types';
 import { IconButtonComponent } from '../../primitives/icon-button/icon-button.component';
 
 /**
+ * The text of a pydantic-ai `RetryPromptPart`: a string as-is (a `ModelRetry`
+ * message), or one `- loc: msg` line per error for a raw validation failure.
+ */
+export function retryPromptText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return JSON.stringify(content);
+  return content
+    .map((error: { loc?: unknown[]; msg?: string }) => {
+      const where = (error.loc ?? []).join('.');
+      return where ? `- ${where}: ${error.msg}` : `- ${error.msg}`;
+    })
+    .join('\n');
+}
+
+/**
  * ContextTraceComponent - Displays chat messages with JSON-formatted arguments using Monaco Editor
  */
 
@@ -373,6 +388,18 @@ export class ContextTraceComponent implements OnInit, OnChanges {
               tool_call_id: part.tool_call_id,
               timestamp: part.timestamp,
               result: null, // Will be filled later
+            });
+          } else if (part.part_kind === 'retry-prompt' && !part.tool_name) {
+            // An OUTPUT retry (the reply failed validation, or a capability sent
+            // it back) answers no tool call, so the tool-result merge below never
+            // places it and it was silently dropped. It rides in a request, the
+            // slot a user prompt occupies, but the framework wrote it, not a
+            // person: a `human` row would tell the operator someone intervened.
+            msg.push({
+              type: 'retry',
+              name: 'Output rejected',
+              content: retryPromptText(part.content),
+              timestamp: part.timestamp,
             });
           } else if (
             part.part_kind === 'tool-return' ||
