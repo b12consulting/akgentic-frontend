@@ -301,6 +301,88 @@ describe('ContextTraceComponent — the trace, in the console\'s language', () =
    * rather than new copy — and `indicatorIcon` still has to agree with whichever
    * one is set, which is the half a rename would break silently.
    */
+  /**
+   * AN OUTPUT RETRY WAS INVISIBLE. A `retry-prompt` with no `tool_name` answers
+   * no tool call, so the tool-result merge never placed it and the row filter
+   * dropped it: the trace showed two replies with nothing between them to say
+   * the first was sent back.
+   */
+  function outputRetry(content: unknown): unknown {
+    return {
+      kind: 'request',
+      parts: [
+        {
+          part_kind: 'retry-prompt',
+          tool_name: null,
+          tool_call_id: 'pyd_ai_1',
+          content,
+        },
+      ],
+    };
+  }
+
+  function cards(fixture: ComponentFixture<ContextTraceComponent>): string[] {
+    return Array.from(
+      html(fixture).querySelectorAll('.collapsible-container .card-container'),
+    ).map((n) => (n.textContent ?? '').replace(/\s+/g, ' ').trim());
+  }
+
+  it('shows an output retry as its own row, between the replies it separates', () => {
+    const { fixture, component } = setup();
+    component.context$.next([
+      aiTurn('first reply'),
+      outputRetry('Nothing was sent: your reply could not be read.'),
+      aiTurn('second reply'),
+    ] as any[]);
+    fixture.detectChanges();
+
+    const rows = cards(fixture);
+    expect(rows.length).toBe(3);
+    expect(rows[1]).toContain('Retry');
+    expect(rows[1]).toContain('Nothing was sent: your reply could not be read.');
+  });
+
+  it('renders a raw validation failure one error per line', () => {
+    const { fixture, component } = setup();
+    component.context$.next([
+      outputRetry([
+        { type: 'json_invalid', loc: [], msg: 'Invalid JSON: trailing characters' },
+        { type: 'missing', loc: ['messages', 0, 'recipient'], msg: 'Field required' },
+      ]),
+    ] as any[]);
+    fixture.detectChanges();
+
+    const body = html(fixture).querySelector('.collapsible-container .text-container');
+    expect(body!.textContent).toBe(
+      '- Invalid JSON: trailing characters\n- messages.0.recipient: Field required',
+    );
+  });
+
+  it('still folds a tool retry into its tool call\'s result', () => {
+    const { fixture, component } = setup();
+    const [call] = toolCallExchange(null);
+    component.context$.next([
+      call,
+      {
+        kind: 'request',
+        parts: [
+          {
+            part_kind: 'retry-prompt',
+            tool_name: 'search_knowledge',
+            tool_call_id: 'tc-1',
+            content: 'bad query',
+          },
+        ],
+      },
+    ] as any[]);
+    fixture.detectChanges();
+
+    const rows = cards(fixture);
+    expect(rows.length).toBe(1);
+    expect(rows[0]).toContain('bad query');
+    expect(rows[0]).not.toContain('Retry');
+  });
+
   it('carries the follow-mode state as a key, and keeps the glyph in step with it', () => {
     const { fixture, component } = setup();
     fixture.detectChanges();
