@@ -392,11 +392,12 @@ export class ContextTraceComponent implements OnInit, OnChanges {
           } else if (part.part_kind === 'retry-prompt' && !part.tool_name) {
             // An OUTPUT retry (the reply failed validation, or a capability sent
             // it back) answers no tool call, so the tool-result merge below never
-            // places it and it was silently dropped. It is a request part — the
-            // model reads it as a user turn — so it gets a "Retry" row of its own.
+            // places it and it was silently dropped. It rides in a request, the
+            // slot a user prompt occupies, but the framework wrote it, not a
+            // person: a `human` row would tell the operator someone intervened.
             msg.push({
-              type: 'human',
-              name: 'Retry',
+              type: 'retry',
+              name: 'Output rejected',
               content: retryPromptText(part.content),
               timestamp: part.timestamp,
             });

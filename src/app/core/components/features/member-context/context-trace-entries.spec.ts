@@ -301,11 +301,25 @@ describe('ContextTraceComponent — the trace, in the console\'s language', () =
    * rather than new copy — and `indicatorIcon` still has to agree with whichever
    * one is set, which is the half a rename would break silently.
    */
+  it('carries the follow-mode state as a key, and keeps the glyph in step with it', () => {
+    const { fixture, component } = setup();
+    fixture.detectChanges();
+
+    component.indicatorLabel = ContextTraceComponent.FOLLOWING_KEY;
+    expect(component.indicatorLabel).toBe('chat.autoScrolling');
+    expect(component.indicatorIcon).toBe('pi-sync');
+
+    component.indicatorLabel = ContextTraceComponent.BEHIND_KEY;
+    expect(component.indicatorLabel).toBe('chat.messages');
+    expect(component.indicatorIcon).toBe('pi-arrow-down');
+  });
+
   /**
    * AN OUTPUT RETRY WAS INVISIBLE. A `retry-prompt` with no `tool_name` answers
    * no tool call, so the tool-result merge never placed it and the row filter
    * dropped it: the trace showed two replies with nothing between them to say
-   * the first was sent back.
+   * the first was sent back. It is not a `Human` row: the framework wrote it,
+   * and a human row would tell the operator someone intervened.
    */
   function outputRetry(content: unknown): unknown {
     return {
@@ -321,25 +335,43 @@ describe('ContextTraceComponent — the trace, in the console\'s language', () =
     };
   }
 
-  function cards(fixture: ComponentFixture<ContextTraceComponent>): string[] {
+  function cards(fixture: ComponentFixture<ContextTraceComponent>): Element[] {
     return Array.from(
       html(fixture).querySelectorAll('.collapsible-container .card-container'),
-    ).map((n) => (n.textContent ?? '').replace(/\s+/g, ' ').trim());
+    );
+  }
+
+  function flatText(card: Element): string {
+    return (card.textContent ?? '').replace(/\s+/g, ' ').trim();
   }
 
   it('shows an output retry as its own row, between the replies it separates', () => {
     const { fixture, component } = setup();
+    const copy = spyOn(TestBed.inject(UtilService), 'copyToClipboard');
+    const said = 'Nothing was sent: your reply could not be read.';
     component.context$.next([
       aiTurn('first reply'),
-      outputRetry('Nothing was sent: your reply could not be read.'),
+      outputRetry(said),
       aiTurn('second reply'),
     ] as any[]);
     fixture.detectChanges();
 
     const rows = cards(fixture);
-    expect(rows.length).toBe(3);
-    expect(rows[1]).toContain('Retry');
-    expect(rows[1]).toContain('Nothing was sent: your reply could not be read.');
+    expect(rows.map(flatText)).toEqual([
+      jasmine.stringContaining('first reply'),
+      jasmine.stringContaining(said),
+      jasmine.stringContaining('second reply'),
+    ]);
+    const retry = rows[1];
+    expect(retry.querySelector('.entry-kind')?.textContent?.trim()).toBe('Retry');
+    expect(retry.querySelector('.entry-name')?.textContent?.trim()).toBe(
+      'Output rejected',
+    );
+    expect(retry.querySelector('.card-header')?.textContent).not.toContain('Human');
+    expect(retry.querySelector('.text-container')?.textContent).toBe(said);
+
+    retry.querySelector<HTMLButtonElement>('.card-header .entry-copy button')!.click();
+    expect(copy).toHaveBeenCalledOnceWith(said);
   });
 
   it('renders a raw validation failure one error per line', () => {
@@ -379,20 +411,8 @@ describe('ContextTraceComponent — the trace, in the console\'s language', () =
 
     const rows = cards(fixture);
     expect(rows.length).toBe(1);
-    expect(rows[0]).toContain('bad query');
-    expect(rows[0]).not.toContain('Retry');
-  });
-
-  it('carries the follow-mode state as a key, and keeps the glyph in step with it', () => {
-    const { fixture, component } = setup();
-    fixture.detectChanges();
-
-    component.indicatorLabel = ContextTraceComponent.FOLLOWING_KEY;
-    expect(component.indicatorLabel).toBe('chat.autoScrolling');
-    expect(component.indicatorIcon).toBe('pi-sync');
-
-    component.indicatorLabel = ContextTraceComponent.BEHIND_KEY;
-    expect(component.indicatorLabel).toBe('chat.messages');
-    expect(component.indicatorIcon).toBe('pi-arrow-down');
+    expect(rows[0].querySelector('.entry-kind')?.textContent?.trim()).toBe('Tool call');
+    expect(flatText(rows[0])).toContain('bad query');
+    expect(flatText(rows[0])).not.toContain('Output rejected');
   });
 });
