@@ -30,7 +30,10 @@ import {
  *     NOT carry the stop event — core's `restore_message` skips it — and must
  *     stay running;
  *   - a COLD LOAD of an already-stopped team replays over REST `getEvents`,
- *     which DOES carry it, and must be marked stopped.
+ *     which DOES carry it, and must be marked stopped. Since Story 63-1 the
+ *     same REST replay also follows a reconnect onto a team that stopped while
+ *     the socket was down (`IngestionService.resync()`); the subscription is
+ *     live for the whole cycle, so it needs no wiring of its own.
  *
  * A socket-side reactor would miss the second case entirely. `markStopped`'s own
  * idempotence is what makes it a no-op rather than a redundant write when the

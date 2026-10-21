@@ -18,6 +18,7 @@ import { TeamSocket } from '../event/team-socket';
 import { LoadingIndicator } from '../event/loading-indicator';
 import { TeamStatusReactor } from '../event/team-status-reactor';
 import { TeamDescriptionReactor } from '../event/team-description-reactor';
+import { WakeUpSource } from '../event/wake-up-source';
 import { ContextService } from '../../../platform/context/context.service';
 import {
   SystemPromptRow,
@@ -156,6 +157,7 @@ function configureBed(): {
       LogFeeder,
       TeamStatusReactor,
       TeamDescriptionReactor,
+      WakeUpSource,
       IngestionService,
       {
         provide: SELECTED_AGENT_ID,

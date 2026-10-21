@@ -24,8 +24,11 @@ import { SELECTED_AGENT_ID, selectionFetch } from './selected-agent';
 import { TeamSocket, TeamSocketStatus } from './team-socket';
 import { TeamStatusReactor } from './team-status-reactor';
 import { TeamDescriptionReactor } from './team-description-reactor';
+import { WakeUpSource } from './wake-up-source';
 import { NOTIFICATION_PORT } from '../../../platform/notification/notification.port';
 import { ConfigService } from '../../../platform/config/config.service';
+import { ContextService } from '../../../platform/context/context.service';
+import { isRunning } from '../../../platform/context/team.interface';
 
 /**
  * `IngestionService` — the ORCHESTRATOR of the ingestion layer (Epic 34 /
@@ -50,9 +53,12 @@ import { ConfigService } from '../../../platform/config/config.service';
  *     returns stays HERE — the replay because it is a sequenced step, the
  *     per-agent fetches because their subscriptions live in the cycle bag.
  *   - `ProcessStores` (`process-stores.ts`) — declares the five per-agent stores.
- *   - `LoadingIndicator` (`loading-indicator.ts`) — the spinner floor; the only
- *     `Date.now()` and `setTimeout` in the layer.
+ *   - `LoadingIndicator` (`loading-indicator.ts`) — the spinner floor and its
+ *     `Date.now()` / `setTimeout`. Not the layer's only timer: the reconnect
+ *     attempt below has its own, and `WakeUpSource` reads the clock.
  *   - `ConnectionToast` (`connection-toast.ts`) — the disconnect warning.
+ *   - `WakeUpSource` (`wake-up-source.ts`) — Story 63-1 (ADR-040 §2). The page
+ *     shown after a long hide, or the network back; each forces a reconnect.
  *   - `NotificationToasts` (`notification-toasts.ts`) — the notification family.
  *     Story 35-1 (ADR-027) took it off the transport: it is handed
  *     `log.appended$`, the post-dedup delta, so every delivery path toasts and
@@ -63,8 +69,9 @@ import { ConfigService } from '../../../platform/config/config.service';
  *     streams. Do not "unify" the two.
  *   - `TeamStatusReactor` (`team-status-reactor.ts`) — Story 37-2. The second
  *     log-side reactor, and it shares the wiring position for the same reason:
- *     a stopped team's `TeamStoppingEvent` only ever arrives in step (c)'s REST
- *     replay.
+ *     a stopped team's `TeamStoppingEvent` arrives only over REST — in step
+ *     (c)'s replay, or (Story 63-1) in the replay of a reconnect's `resync()`,
+ *     which the reactor sees because it is live for the whole cycle.
  *   - `TeamDescriptionReactor` (`team-description-reactor.ts`) — Story 58-1.
  *     The third log-side reactor, same wiring position, same reason: it patches
  *     a team's description into `ContextService` from the worker's
@@ -137,12 +144,30 @@ export class IngestionService {
   /** Source of the reconnect interval (`wsReconnectIntervalSeconds`). */
   private readonly config: ConfigService = inject(ConfigService);
 
+  /** Story 63-1 (ADR-040 §2): the wake-up signals, subscribed in the cycle bag. */
+  private readonly wakeUp: WakeUpSource = inject(WakeUpSource);
+
+  /**
+   * Story 63-1 (ADR-040 §1): the root team cache, re-read by `resync()`. Only
+   * through its public refresh — `currentTeamRunning$` is never written here.
+   */
+  private readonly teams: ContextService = inject(ContextService);
+
   /**
    * The pending reconnect attempt, if any. Not a subscription, so it stays out
    * of the cycle bag like the spinner's timeout, and is cleared in
    * `disposePriorSubscriptions()` alongside it.
    */
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /**
+   * Story 63-1: the next accepted handshake answers a reconnect attempt, so it
+   * resyncs. Set only by `attemptReconnect()`, never by `init()` — the first
+   * handshake of a cycle follows a fresh record and replay, and resyncing it
+   * would REST-replay a running team (epic trap T2 into T1). Cleared with the
+   * timer in `disposePriorSubscriptions()`.
+   */
+  private reconnecting = false;
 
   /** Epic 34 (ADR-025 §0-§1): the notification-toast reactor. */
   private readonly notificationToasts: NotificationToasts =
@@ -415,13 +440,18 @@ export class IngestionService {
     // inline, now that the handler lives in another file.
     cycle.add(this.socket.frames$.subscribe(() => this.loading.flipOnFirstEvent()));
     // An accepted handshake ends the disconnect warning — not a frame, which a
-    // stopped team's socket never sends (see `TeamSocket.opened$`).
-    cycle.add(this.socket.opened$.subscribe(() => this.connectionToast.hide()));
+    // stopped team's socket never sends (see `TeamSocket.opened$`). Story 63-1:
+    // one that answers a reconnect attempt also resyncs, for THIS cycle's
+    // token and team.
+    cycle.add(this.socket.opened$.subscribe(() => this.onOpened(token, processId)));
     cycle.add(
       this.socket.status$.subscribe((status: TeamSocketStatus) =>
         this.onSocketStatus(status),
       ),
     );
+    // Story 63-1 (ADR-040 §2): a wake-up forces a reconnect. In the cycle bag,
+    // so it is heard only while a cycle is open.
+    cycle.add(this.wakeUp.wake$.subscribe(() => this.forceReconnect()));
 
     try {
       this.socket.start(processId);
@@ -460,6 +490,10 @@ export class IngestionService {
    * exactly what was missed while disconnected. A full `init()` would reset the
    * log and flash the empty state at every attempt.
    *
+   * Story 63-1 (ADR-040 §1): the accepted handshake is followed by a resync —
+   * the team record is re-read, and the REST history is replayed only for a
+   * team that is no longer running, whose parked socket replays nothing.
+   *
    * At most one attempt is pending, so an `error` followed by a `complete`
    * schedules once. The token check stops an attempt that outlived its team.
    */
@@ -470,14 +504,81 @@ export class IngestionService {
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = null;
       if (token !== this.cycleToken) return;
-      this.socket.stop();
-      try {
-        this.socket.start(processId);
-      } catch (err) {
-        console.error('WebSocket reconnect failed:', err);
-        this.scheduleReconnect();
-      }
+      this.attemptReconnect(processId);
     }, this.config.wsReconnectIntervalSeconds * 1000);
+  }
+
+  /**
+   * One reconnect attempt, scheduled or forced: mark the next accepted
+   * handshake as answering it, then reopen the socket. A construction throw
+   * never reaches `status$`, so the catch is what warns and keeps the loop
+   * going. The warning is a no-op on a scheduled attempt — the loss that
+   * scheduled it is still showing — and the one a failed FORCED attempt owes.
+   */
+  private attemptReconnect(processId: string): void {
+    this.reconnecting = true;
+    this.socket.stop();
+    try {
+      this.socket.start(processId);
+    } catch (err) {
+      console.error('WebSocket reconnect failed:', err);
+      this.connectionToast.show();
+      this.scheduleReconnect();
+    }
+  }
+
+  /**
+   * Story 63-1 (ADR-040 §2): reconnect NOW, on a wake-up. Cancels a pending
+   * attempt so the two cannot both run.
+   *
+   * No toast: a forced reconnect has observed no failure (epic trap T3). If the
+   * attempt itself fails, its socket ends in `status$` like any other and
+   * `onSocketStatus` warns and starts the loop — or, for a construction throw,
+   * `attemptReconnect`'s catch does the same. `TeamSocket.stop()` detaches
+   * before closing, so the old socket closed here reports nothing.
+   */
+  private forceReconnect(): void {
+    if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.attemptReconnect(this.processId);
+  }
+
+  /**
+   * An accepted handshake: end the warning on EVERY one, and resync on the one
+   * that answers a reconnect attempt. `token` and `processId` are the cycle's
+   * own, so a handshake can never resync on another cycle's behalf.
+   */
+  private onOpened(token: number, processId: string): void {
+    this.connectionToast.hide();
+    if (!this.reconnecting) return;
+    this.reconnecting = false;
+    void this.resync(token, processId);
+  }
+
+  /**
+   * Story 63-1 (ADR-040 §1): catch up on what a lost socket missed. The record
+   * upsert restates the team's status through `ContextService`; a team that is
+   * no longer running gets its REST history, appended with the log's id-dedup.
+   *
+   * Never the history of a RUNNING team (epic trap T1): persisted history keeps
+   * every earlier `TeamStoppingEvent`, and `TeamStatusReactor` would mark the
+   * team stopped. Its cursor-0 socket replay already carries what it missed.
+   *
+   * Not `init()`: no log reset, no toast clear, no spinner. Each failed read is
+   * logged and ends the resync — `FetchService` has already toasted — and the
+   * next reconnect resyncs again. The token is checked after each `await`.
+   */
+  private async resync(token: number, processId: string): Promise<void> {
+    try {
+      const team = await this.teams.refreshOneTeam(processId);
+      if (token !== this.cycleToken) return;
+      if (!team || isRunning(team)) return;
+      const messages = await this.replay.replayMessages(processId);
+      if (token !== this.cycleToken) return;
+      this.log.appendAll(messages);
+    } catch (err) {
+      console.error('Resync after reconnect failed:', err);
+    }
   }
 
   /**
@@ -494,6 +595,7 @@ export class IngestionService {
   private disposePriorSubscriptions(): void {
     if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
+    this.reconnecting = false;
     this.socket.stop();
     this.cycle?.unsubscribe();
     this.cycle = null;

@@ -468,6 +468,41 @@ describe('ContextService', () => {
     sub2.unsubscribe();
   });
 
+  // --- Story 63-1: the public single-team refresh -------------------------
+
+  it('(63-1) refreshOneTeam() upserts the fresh record, so currentTeamRunning$ follows it', async () => {
+    const teamA = makeTeam('a', 'running');
+    const teamB = makeTeam('b', 'running');
+    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA, teamB]));
+    await service.getTeams();
+    service.currentProcessId$.next('a');
+    await Promise.resolve();
+    expect(service.currentTeamRunning$.value).toBe(true);
+
+    const stoppedA = makeTeam('a', 'stopped');
+    apiSpy.getTeam.and.returnValue(Promise.resolve(stoppedA));
+    const returned = await service.refreshOneTeam('a');
+
+    expect(apiSpy.getTeam).toHaveBeenCalledOnceWith('a');
+    expect(returned).toBe(stoppedA);
+    expect(service.currentTeamRunning$.value).toBe(false);
+    // Replaced in place: the other slot keeps its reference.
+    const teams = await firstValueFrom(service.teams$);
+    expect(teams).toEqual([stoppedA, teamB]);
+    expect(teams[1]).toBe(teamB);
+  });
+
+  it('(63-1) refreshOneTeam() lets a failed read reject and writes nothing', async () => {
+    const teamA = makeTeam('a', 'running');
+    apiSpy.getTeams.and.returnValue(Promise.resolve([teamA]));
+    await service.getTeams();
+    const failure = new Error('fetch failed');
+    apiSpy.getTeam.and.returnValue(Promise.reject(failure));
+
+    await expectAsync(service.refreshOneTeam('a')).toBeRejectedWith(failure);
+    expect(await firstValueFrom(service.teams$)).toEqual([teamA]);
+  });
+
   // --- AC9 (10.2) --------------------------------------------------------
 
   it('(AC9 10.2) unknown currentProcessId$ emits null from currentTeam$ and false from currentTeamRunning$', async () => {

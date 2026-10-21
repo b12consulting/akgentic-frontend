@@ -20,6 +20,7 @@ import { TeamSocket } from './team-socket';
 import { LoadingIndicator } from './loading-indicator';
 import { TeamStatusReactor } from './team-status-reactor';
 import { TeamDescriptionReactor } from './team-description-reactor';
+import { WakeUpSource } from './wake-up-source';
 import { ContextService } from '../../../platform/context/context.service';
 import {
   AgentTokenUsage,
@@ -239,6 +240,7 @@ function configureBed(): {
       LogFeeder,
       TeamStatusReactor,
       TeamDescriptionReactor,
+      WakeUpSource,
       IngestionService,
       {
         provide: SELECTED_AGENT_ID,

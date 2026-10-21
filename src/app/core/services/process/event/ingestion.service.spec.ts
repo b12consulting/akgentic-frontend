@@ -35,7 +35,10 @@ import { ReplaySeeder } from './replay-seeder';
 import { SELECTED_AGENT_ID } from './selected-agent';
 import { TeamStatusReactor } from './team-status-reactor';
 import { TeamDescriptionReactor } from './team-description-reactor';
+import { WakeUpSource } from './wake-up-source';
 import { ContextService } from '../../../platform/context/context.service';
+import { TeamContext } from '../../../platform/context/team.interface';
+import { Router } from '@angular/router';
 import {
   ActorAddress,
   CLOSED_NOTIFICATION_MODEL,
@@ -52,12 +55,16 @@ import {
  * `TeamDescriptionReactor` writes through; Story 58-2 added `getCachedTeam`,
  * the one it reads through — answering `null` ("this tab holds no team") so
  * every bed that does not care sees the frame forwarded exactly as before.
+ * Story 63-1 added `refreshOneTeam`, which a reconnect's resync reads through,
+ * answering `null` ("no team") so a reconnect in a bed that does not care
+ * resyncs nothing.
  */
 function contextServiceDouble(): any {
   return {
     markStopped: jasmine.createSpy('markStopped'),
     setTeamDescription: jasmine.createSpy('setTeamDescription'),
     getCachedTeam: jasmine.createSpy('getCachedTeam').and.returnValue(null),
+    refreshOneTeam: jasmine.createSpy('refreshOneTeam').and.resolveTo(null),
   };
 }
 
@@ -138,6 +145,7 @@ describe('IngestionService.init — loadingProcess$ spinner window (Story 4-10)'
         LogFeeder,
         TeamStatusReactor,
         TeamDescriptionReactor,
+        WakeUpSource,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -417,6 +425,7 @@ describe('IngestionService — Story 6.1 (frame-batched log ingestion)', () => {
         LogFeeder,
         TeamStatusReactor,
         TeamDescriptionReactor,
+        WakeUpSource,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -781,6 +790,7 @@ describe('IngestionService — commands PerAgentStore (Story 17-3, ADR-014/ADR-0
         LogFeeder,
         TeamStatusReactor,
         TeamDescriptionReactor,
+        WakeUpSource,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -1022,6 +1032,7 @@ describe('IngestionService — registry is the only per-agent owner (Epic 17, AD
         LogFeeder,
         TeamStatusReactor,
         TeamDescriptionReactor,
+        WakeUpSource,
         IngestionService,
         // A plain Observable, as PROCESS_PROVIDERS delivers it (a piped stream,
         // never a subject): a bare BehaviorSubject — or an `asObservable()` view
@@ -1145,6 +1156,7 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
         LogFeeder,
         TeamStatusReactor,
         TeamDescriptionReactor,
+        WakeUpSource,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -1446,6 +1458,24 @@ describe('IngestionService — Story 8-2 (persistent disconnect toast)', () => {
     expect(urls.slice(1).every((url: string) => url.endsWith('/ws/proc-2'))).toBe(true);
   });
 
+  it('reconnect: the network coming back reconnects at once, with no toast (Story 63-1)', async () => {
+    // The real `WakeUpSource` on this bed: a window `online` event, end to end.
+    const sockets = socketPerAttempt();
+    await service.init('proc-1', true);
+    jasmine.clock().tick(600);
+
+    window.dispatchEvent(new Event('online'));
+
+    expect(sockets.length).toBe(2);
+    expect(disconnectToasts().length).toBe(0);
+
+    // After close() the cycle bag no longer hears it.
+    service.close();
+    jasmine.clock().tick(1000);
+    window.dispatchEvent(new Event('online'));
+    expect(sockets.length).toBe(2);
+  });
+
   // --- Story 34-4: the two seams the extraction made easier to break --------
 
   it('34-4 (AC7): ngOnDestroy delivers no `complete` to status$ and raises no toast', async () => {
@@ -1591,6 +1621,7 @@ describe('IngestionService — state + context PerAgentStore (Story 17-2)', () =
         LogFeeder,
         TeamStatusReactor,
         TeamDescriptionReactor,
+        WakeUpSource,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -1842,6 +1873,7 @@ describe('IngestionService — a member\'s state is fetched on selection (Epic 5
         LogFeeder,
         TeamStatusReactor,
         TeamDescriptionReactor,
+        WakeUpSource,
         IngestionService,
         { provide: SELECTED_AGENT_ID, useValue: selected$ },
         { provide: ContextService, useValue: contextServiceDouble() },
@@ -2194,6 +2226,7 @@ describe('IngestionService — Story 31-3 (notification toast)', () => {
         LogFeeder,
         TeamStatusReactor,
         TeamDescriptionReactor,
+        WakeUpSource,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -2308,6 +2341,7 @@ describe('IngestionService — Story 31-6 (error parity, severity, summary)', ()
         LogFeeder,
         TeamStatusReactor,
         TeamDescriptionReactor,
+        WakeUpSource,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -2482,6 +2516,7 @@ describe('IngestionService — Story 31-4 (closed-notification suppression)', ()
         LogFeeder,
         TeamStatusReactor,
         TeamDescriptionReactor,
+        WakeUpSource,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -2729,6 +2764,7 @@ describe('IngestionService — Story 31-5 (reactive toast removal)', () => {
         LogFeeder,
         TeamStatusReactor,
         TeamDescriptionReactor,
+        WakeUpSource,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -2984,6 +3020,7 @@ describe('IngestionService — notification-toast reactor sequencing (Epic 34)',
         LogFeeder,
         TeamStatusReactor,
         TeamDescriptionReactor,
+        WakeUpSource,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -3169,6 +3206,7 @@ describe('IngestionService — init() ordering + self-wiring (Story 34-6)', () =
         LogFeeder,
         TeamStatusReactor,
         TeamDescriptionReactor,
+        WakeUpSource,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -3435,6 +3473,7 @@ describe('IngestionService — Story 35-1 (toasts dispatch from the log)', () =>
         LogFeeder,
         TeamStatusReactor,
         TeamDescriptionReactor,
+        WakeUpSource,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -3658,6 +3697,7 @@ describe('IngestionService — Story 37-2 (team-stopping reactor wiring)', () =>
         LogFeeder,
         TeamStatusReactor,
         TeamDescriptionReactor,
+        WakeUpSource,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -3891,6 +3931,7 @@ describe('IngestionService — Story 58-1 (team-description reactor wiring)', ()
         LogFeeder,
         TeamStatusReactor,
         TeamDescriptionReactor,
+        WakeUpSource,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -4117,6 +4158,7 @@ describe('IngestionService — Story 52-1 (superseded cycles)', () => {
         LogFeeder,
         TeamStatusReactor,
         TeamDescriptionReactor,
+        WakeUpSource,
         IngestionService,
         {
           provide: SELECTED_AGENT_ID,
@@ -4374,6 +4416,7 @@ describe('IngestionService — live task board refresh', () => {
         LogFeeder,
         TeamStatusReactor,
         TeamDescriptionReactor,
+        WakeUpSource,
         IngestionService,
         { provide: SELECTED_AGENT_ID, useValue: selected$ },
         { provide: ContextService, useValue: contextServiceDouble() },
@@ -4698,3 +4741,437 @@ describe('IngestionService — live task board refresh', () => {
   }));
 });
 
+
+// =====================================================================
+// Story 63-1 — a reconnect re-reads the team, and a wake-up reconnects
+//
+// The status assertions run against the REAL root `ContextService` over a
+// fake `ApiService`: a spy on `refreshOneTeam` alone cannot fail the
+// running-team guard, because what a REST replay of a running team breaks is
+// `TeamStatusReactor` → `markStopped` → `currentTeamRunning$`. The team is
+// seeded in the cache as the CURRENT team first — `currentTeamRunning$` tracks
+// only that one.
+// =====================================================================
+
+describe('IngestionService — a reconnect resyncs, and a wake-up reconnects (Story 63-1)', () => {
+  const TEAM = 'team-A';
+  const TEAM_STOPPING_MODEL =
+    'akgentic.core.messages.orchestrator.TeamStoppingEvent';
+
+  let service: IngestionService;
+  let context: ContextService;
+  let log: MessageLogService;
+  let replay: ReplaySeeder;
+  let api: any;
+  let port: any;
+  let wake$: Subject<void>;
+  let sockets: Subject<any>[];
+  let opens: { next: (e: Event) => void }[];
+  let create: jasmine.Spy;
+  let refresh: jasmine.Spy;
+  let replayMessages: jasmine.Spy;
+
+  function team(status: string, teamId: string = TEAM): TeamContext {
+    return {
+      team_id: teamId,
+      name: teamId,
+      status,
+      created_at: '2026-10-22T10:00:00Z',
+      updated_at: '2026-10-22T10:00:00Z',
+      config_name: teamId,
+      description: null,
+    };
+  }
+
+  function envelope(id: string, innerModel: string = 'x', teamId: string = TEAM): any {
+    return {
+      id,
+      parent_id: null,
+      team_id: teamId,
+      timestamp: '2026-10-22T10:00:00Z',
+      sender: makeAddress({
+        name: '@Orchestrator',
+        role: 'Orchestrator',
+        agent_id: 'orchestrator-1',
+      }),
+      display_type: 'other',
+      content: null,
+      __model__: EVENT_MESSAGE_MODEL,
+      event: { __model__: innerModel },
+    };
+  }
+
+  /** What `ApiService.getEvents` answers: one `{ event }` row per envelope. */
+  function history(...events: any[]): any[] {
+    return events.map((event: any) => ({ event }));
+  }
+
+  /** A promise the spec resolves or rejects by hand. */
+  function deferred<T>(): {
+    promise: Promise<T>;
+    resolve: (v: T) => void;
+    reject: (e: unknown) => void;
+  } {
+    let resolve: (v: T) => void = () => undefined;
+    let reject: (e: unknown) => void = () => undefined;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  /** Drain the record → token → replay → append promise chain. */
+  async function settle(): Promise<void> {
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  }
+
+  /** Seed `teamId` in the root cache, in `status`, as the current team. */
+  async function seed(status: string, teamId: string = TEAM): Promise<void> {
+    api.getTeam.and.resolveTo(team(status, teamId));
+    await context.getCurrentTeam(teamId, false);
+    context.currentProcessId$.next(teamId);
+    api.getTeam.calls.reset();
+  }
+
+  /** Open a cycle on `teamId` and accept its first handshake. */
+  async function openCycle(running: boolean, teamId: string = TEAM): Promise<void> {
+    await service.init(teamId, running);
+    opens[opens.length - 1].next(new Event('open'));
+    await settle();
+  }
+
+  /** Lose the current socket and let the scheduled attempt run. */
+  function loseAndRetry(): void {
+    sockets[sockets.length - 1].error(new Error('connection lost'));
+    jasmine.clock().tick(5000);
+  }
+
+  /** The server accepts the latest attempt's handshake. */
+  function acceptLatest(): void {
+    opens[opens.length - 1].next(new Event('open'));
+  }
+
+  /** Every 'Connection Lost' payload raised so far. */
+  function connectionLost(): any[] {
+    return port.notify.calls
+      .allArgs()
+      .map((a: any[]) => a[0])
+      .filter((c: any) => c.severity === 'warn' && c.summary === 'Connection Lost');
+  }
+
+  beforeEach(() => {
+    jasmine.clock().install();
+    jasmine.clock().mockDate(new Date(0));
+    wake$ = new Subject<void>();
+    api = {
+      getTeam: jasmine.createSpy('getTeam'),
+      getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+      getAgentStates: jasmine.createSpy('getAgentStates').and.resolveTo([]),
+    };
+    port = {
+      notify: jasmine.createSpy('notify'),
+      dismiss: jasmine.createSpy('dismiss'),
+      clear: jasmine.createSpy('clear'),
+    };
+
+    TestBed.configureTestingModule({
+      providers: [
+        MessageLogService,
+        PerAgentStoreRegistry,
+        ProcessStores,
+        ReplaySeeder,
+        LoadingIndicator,
+        ConnectionToast,
+        NotificationToasts,
+        TeamSocket,
+        LogFeeder,
+        TeamStatusReactor,
+        TeamDescriptionReactor,
+        { provide: WakeUpSource, useValue: { wake$: wake$.asObservable() } },
+        IngestionService,
+        {
+          provide: SELECTED_AGENT_ID,
+          useValue: new BehaviorSubject<string | null>(null),
+        },
+        ContextService,
+        { provide: Router, useValue: jasmine.createSpyObj('Router', ['navigate']) },
+        { provide: ApiService, useValue: api },
+        { provide: NOTIFICATION_PORT, useValue: port },
+      ],
+    });
+    service = TestBed.inject(IngestionService);
+    context = TestBed.inject(ContextService);
+    log = TestBed.inject(MessageLogService);
+    replay = TestBed.inject(ReplaySeeder);
+    refresh = spyOn(context, 'refreshOneTeam').and.callThrough();
+    replayMessages = spyOn(replay, 'replayMessages').and.callThrough();
+
+    sockets = [];
+    opens = [];
+    create = spyOn<any>(teamSocket(), 'createWebSocket').and.callFake(
+      (_url: string, open: any) => {
+        const socket = new Subject<any>();
+        sockets.push(socket);
+        opens.push(open);
+        return socket as unknown as WebSocketSubject<any>;
+      },
+    );
+  });
+
+  afterEach(() => {
+    service.close();
+    jasmine.clock().uninstall();
+  });
+
+  // --- the resync -------------------------------------------------------------
+
+  it('a reconnect onto a team that stopped meanwhile marks it stopped and appends what the log lacked', async () => {
+    await seed('running');
+    await openCycle(true);
+    // Delivered live before the loss; the history repeats it.
+    sockets[0].next(envelope('evt-1'));
+    jasmine.clock().tick(20);
+    expect(context.currentTeamRunning$.value).toBe(true);
+
+    api.getTeam.and.resolveTo(team('stopped'));
+    api.getEvents.and.resolveTo(
+      history(envelope('evt-1'), envelope('evt-2'), envelope('evt-stop', TEAM_STOPPING_MODEL)),
+    );
+    loseAndRetry();
+    acceptLatest();
+    await settle();
+
+    expect(refresh).toHaveBeenCalledOnceWith(TEAM);
+    expect(context.currentTeamRunning$.value).toBe(false);
+    expect(replayMessages).toHaveBeenCalledOnceWith(TEAM);
+    expect(log.snapshot().map((m: any) => m.id)).toEqual(['evt-1', 'evt-2', 'evt-stop']);
+  });
+
+  it('a reconnect onto a running team reads no REST history, even one holding an old stop event', async () => {
+    await seed('running');
+    await openCycle(true);
+
+    // The trap: persisted history keeps every earlier stop event. Without one
+    // here, this spec stays green with the running gate deleted.
+    api.getTeam.and.resolveTo(team('running'));
+    api.getEvents.and.resolveTo(history(envelope('evt-stop', TEAM_STOPPING_MODEL)));
+    loseAndRetry();
+    acceptLatest();
+    await settle();
+
+    expect(refresh).toHaveBeenCalledOnceWith(TEAM);
+    expect(replayMessages).not.toHaveBeenCalled();
+    expect(context.currentTeamRunning$.value).toBe(true);
+  });
+
+  it('the first handshake of a running cycle resyncs nothing', async () => {
+    await seed('running');
+    await openCycle(true);
+
+    expect(refresh).not.toHaveBeenCalled();
+    expect(replayMessages).not.toHaveBeenCalled();
+  });
+
+  it("the first handshake of a stopped cycle adds no read to init()'s own replay", async () => {
+    await seed('stopped');
+    await service.init(TEAM, false);
+    expect(replayMessages).toHaveBeenCalledTimes(1);
+
+    acceptLatest();
+    await settle();
+
+    expect(refresh).not.toHaveBeenCalled();
+    expect(replayMessages).toHaveBeenCalledTimes(1);
+  });
+
+  it('a handshake after the resynced one resyncs nothing more', async () => {
+    await seed('running');
+    await openCycle(true);
+    api.getTeam.and.resolveTo(team('running'));
+    loseAndRetry();
+    acceptLatest();
+    await settle();
+
+    // The same socket announcing itself again is not another reconnect.
+    acceptLatest();
+    await settle();
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  // --- the forced reconnect ---------------------------------------------------
+
+  it('a wake-up reconnects at once, raises no toast, and resyncs on the handshake', async () => {
+    await seed('running');
+    await openCycle(true);
+    const stop = spyOn(teamSocket(), 'stop').and.callThrough();
+    const start = spyOn(teamSocket(), 'start').and.callThrough();
+
+    api.getTeam.and.resolveTo(team('running'));
+    wake$.next();
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(start).toHaveBeenCalledOnceWith(TEAM);
+    expect(stop).toHaveBeenCalledBefore(start);
+    expect(connectionLost().length).toBe(0);
+
+    acceptLatest();
+    await settle();
+    expect(refresh).toHaveBeenCalledOnceWith(TEAM);
+  });
+
+  it('a wake-up cancels a pending scheduled attempt', async () => {
+    await seed('running');
+    await openCycle(true);
+    sockets[0].error(new Error('connection lost')); // attempt due in 5 s
+    expect(sockets.length).toBe(1);
+
+    wake$.next();
+    expect(sockets.length).toBe(2);
+    acceptLatest();
+    jasmine.clock().tick(15000);
+
+    // The cancelled attempt opened no third socket.
+    expect(sockets.length).toBe(2);
+  });
+
+  it('a forced attempt whose socket fails warns and hands over to the loop', async () => {
+    await seed('running');
+    await openCycle(true);
+
+    wake$.next();
+    expect(connectionLost().length).toBe(0);
+    sockets[1].error(new Error('still down'));
+
+    expect(connectionLost().length).toBe(1);
+    jasmine.clock().tick(5000);
+    expect(sockets.length).toBe(3);
+  });
+
+  it('a forced attempt whose socket cannot be built warns and hands over to the loop', async () => {
+    await seed('running');
+    await openCycle(true);
+    spyOn(console, 'error');
+    create.and.throwError('construction failed');
+
+    wake$.next();
+
+    expect(connectionLost().length).toBe(1);
+    expect(create.calls.count()).toBe(2);
+    jasmine.clock().tick(5000);
+    expect(create.calls.count()).toBe(3);
+  });
+
+  // --- the cycle token --------------------------------------------------------
+
+  it('a team switch while the record read is pending writes nothing', async () => {
+    await seed('running');
+    await openCycle(true);
+    const record = deferred<TeamContext>();
+    api.getTeam.and.returnValue(record.promise);
+    loseAndRetry();
+    acceptLatest();
+    await settle();
+
+    await service.init('team-B', true);
+    replayMessages.calls.reset();
+    record.resolve(team('stopped'));
+    await settle();
+
+    expect(replayMessages).not.toHaveBeenCalled();
+    expect(log.snapshot()).toEqual([]);
+  });
+
+  it('a close() while the record read is pending writes nothing', async () => {
+    await seed('running');
+    await openCycle(true);
+    const record = deferred<TeamContext>();
+    api.getTeam.and.returnValue(record.promise);
+    loseAndRetry();
+    acceptLatest();
+    await settle();
+
+    service.close();
+    record.resolve(team('stopped'));
+    await settle();
+
+    expect(replayMessages).not.toHaveBeenCalled();
+  });
+
+  it('a team switch while the history read is pending appends nothing to the new log', async () => {
+    await seed('running');
+    await openCycle(true);
+    const events = deferred<any[]>();
+    api.getTeam.and.resolveTo(team('stopped'));
+    api.getEvents.and.returnValue(events.promise);
+    loseAndRetry();
+    acceptLatest();
+    await settle();
+    expect(replayMessages).toHaveBeenCalledTimes(1);
+
+    await service.init('team-B', true);
+    events.resolve(history(envelope('evt-A-1'), envelope('evt-A-2')));
+    await settle();
+
+    expect(log.snapshot()).toEqual([]);
+  });
+
+  // --- the wake-up dies with the cycle ----------------------------------------
+
+  it('a wake-up after close() reconnects nothing', async () => {
+    await seed('running');
+    await openCycle(true);
+    service.close();
+    const start = spyOn(teamSocket(), 'start').and.callThrough();
+
+    wake$.next();
+
+    expect(start).not.toHaveBeenCalled();
+  });
+
+  it('a re-init reacts to one wake-up once, never once per cycle', async () => {
+    await service.init(TEAM, true);
+    await service.init('team-B', true);
+    const start = spyOn(teamSocket(), 'start').and.callThrough();
+
+    wake$.next();
+
+    expect(start).toHaveBeenCalledOnceWith('team-B');
+  });
+
+  // --- a failed read is contained ---------------------------------------------
+
+  it('a failed record read ends the resync quietly and leaves the socket alone', async () => {
+    await seed('running');
+    await openCycle(true);
+    const err = spyOn(console, 'error');
+    api.getTeam.and.rejectWith(new Error('fetch failed'));
+    loseAndRetry();
+    acceptLatest();
+    const notifiesBefore = port.notify.calls.count();
+    await settle();
+
+    expect(replayMessages).not.toHaveBeenCalled();
+    expect(err).toHaveBeenCalledWith('Resync after reconnect failed:', jasmine.any(Error));
+    expect(port.notify.calls.count()).toBe(notifiesBefore);
+    // The accepted socket is still the live one: no new attempt was scheduled.
+    jasmine.clock().tick(15000);
+    expect(sockets.length).toBe(2);
+  });
+
+  it('a failed history read ends the resync quietly', async () => {
+    await seed('running');
+    await openCycle(true);
+    const err = spyOn(console, 'error');
+    api.getTeam.and.resolveTo(team('stopped'));
+    api.getEvents.and.rejectWith(new Error('fetch failed'));
+    loseAndRetry();
+    acceptLatest();
+    await settle();
+
+    expect(replayMessages).toHaveBeenCalledTimes(1);
+    expect(err).toHaveBeenCalledWith('Resync after reconnect failed:', jasmine.any(Error));
+    expect(log.snapshot()).toEqual([]);
+  });
+});
