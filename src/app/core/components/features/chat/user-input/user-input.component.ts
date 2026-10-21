@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
 import {
+  AfterViewInit,
   ChangeDetectorRef,
   Component,
   DestroyRef,
@@ -125,6 +126,12 @@ interface ValueItem {
   kind: 'value';
 }
 
+/** The part of `MentionDirective` its typings keep private: the open list. */
+interface SearchListHost {
+  updateSearchList(): void;
+  searchList?: { items: unknown[]; activeIndex: number; readonly activeItem: unknown };
+}
+
 /**
  * What the space and `=` triggers may offer for the current text, or null for
  * each one that must stay unregistered. See `command-completion.ts`.
@@ -159,7 +166,7 @@ type SubmitPhase = 'idle' | 'restarting' | 'sending';
   templateUrl: './user-input.component.html',
   styleUrl: './user-input.component.scss',
 })
-export class ProcessUserInputComponent implements OnInit {
+export class ProcessUserInputComponent implements OnInit, AfterViewInit {
   @Input() processId!: string;
 
   apiService: ApiService = inject(ApiService);
@@ -267,6 +274,34 @@ export class ProcessUserInputComponent implements OnInit {
   /** The directive behind `[mentionConfig]`, for `startSearch('=')`. */
   @ViewChild(MentionDirective) private mention?: MentionDirective;
   @ViewChild('composer') private composer?: ElementRef<HTMLTextAreaElement>;
+
+  ngAfterViewInit(): void {
+    this.keepSelectionWhileFiltering();
+  }
+
+  /**
+   * KEEP A ROW SELECTED WHILE TYPING FILTERS THE LIST.
+   *
+   * `angular-mentions` swaps in the filtered rows without touching
+   * `activeIndex`, so arrowing down to the fifth command and then typing `/sw`
+   * left an index past the one remaining row: nothing highlighted, and Enter
+   * handed `undefined` to the select callback. Wrapping `updateSearchList`
+   * re-points the index after every filter — at the row that was selected when
+   * it survived the filter, else at the first.
+   *
+   * `searchList` is private in the library's typings, hence the narrow cast.
+   */
+  private keepSelectionWhileFiltering(): void {
+    const directive = this.mention as unknown as SearchListHost | undefined;
+    if (!directive) return;
+    const update = directive.updateSearchList.bind(directive);
+    directive.updateSearchList = () => {
+      const selected = directive.searchList?.activeItem;
+      update();
+      const list = directive.searchList;
+      if (list) list.activeIndex = Math.max(0, list.items.indexOf(selected));
+    };
+  }
 
   ngOnInit() {
     // Subscribe to nodes to populate mention items and dropdown agents

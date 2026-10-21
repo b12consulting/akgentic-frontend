@@ -1773,6 +1773,48 @@ describe('ProcessUserInputComponent', () => {
         flush();
       }));
 
+      it('a row arrowed to and then filtered away leaves the first row selected', fakeAsync(() => {
+        setText('');
+        type('/');
+        const down = (): void => {
+          textarea().dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true, cancelable: true }),
+          );
+          fixture.detectChanges();
+        };
+        down();
+        down();
+        down();
+
+        type('swi');
+        expect(openRows()).toEqual(['switch_model']);
+        const active: HTMLElement | null = fixture.nativeElement.querySelector('mention-list li.active');
+        expect(active?.textContent).toContain('switch_model');
+
+        pressEnter();
+        expect(textarea().value).toBe('/switch_model');
+        flush();
+      }));
+
+      it('a selected row that survives the filter stays selected', fakeAsync(() => {
+        setText('');
+        type('/s');
+        const rows = openRows() ?? [];
+        const target = rows.indexOf('switch_model');
+        expect(target).toBeGreaterThan(0);
+        for (let i = 0; i < target; i++) {
+          textarea().dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true, cancelable: true }),
+          );
+          fixture.detectChanges();
+        }
+
+        type('w');
+        const active: HTMLElement | null = fixture.nativeElement.querySelector('mention-list li.active');
+        expect(active?.textContent).toContain('switch_model');
+        flush();
+      }));
+
       it('selecting a command whose argument has choices opens them, and a pick types its space', fakeAsync(() => {
         setText('');
         type('/swi');
