@@ -21,11 +21,16 @@ import {
 import { ProcessStores } from './process-stores';
 import { ReplaySeeder } from './replay-seeder';
 import { SELECTED_AGENT_ID, selectionFetch } from './selected-agent';
-import { TeamSocket, TeamSocketStatus } from './team-socket';
+import {
+  SESSION_EXPIRED_CLOSE_CODE,
+  TeamSocket,
+  TeamSocketStatus,
+} from './team-socket';
 import { TeamStatusReactor } from './team-status-reactor';
 import { TeamDescriptionReactor } from './team-description-reactor';
 import { WakeUpSource } from './wake-up-source';
 import { NOTIFICATION_PORT } from '../../../platform/notification/notification.port';
+import { AuthService } from '../../../platform/auth/auth.service';
 import { ConfigService } from '../../../platform/config/config.service';
 import { ContextService } from '../../../platform/context/context.service';
 import { isRunning } from '../../../platform/context/team.interface';
@@ -45,7 +50,7 @@ import { isRunning } from '../../../platform/context/team.interface';
  *
  * The units, all route-scoped and provided on `process/:id`:
  *   - `TeamSocket` (`team-socket.ts`) — WS transport, the `createWebSocket`
- *     seam, `inbound$` / `frames$` / `status$`.
+ *     seam, `inbound$` / `frames$` / `status$` / `opened$` / `closed$`.
  *   - `LogFeeder` (`log-feeder.ts`) — `bufferTime(16)` → `log.appendAll`, the
  *     only live-path writer of the log.
  *   - `ReplaySeeder` (`replay-seeder.ts`) — the REST reads: the stopped-team
@@ -79,6 +84,11 @@ import { isRunning } from '../../../platform/context/team.interface';
  *     team's page only through the REST replay. Since Story 58-2 it drops a
  *     frame older than the cached team's `updated_at`, so the replay this
  *     wiring position exists for cannot overwrite a later edit.
+ *
+ * Consulted, not driven: the root `AuthService` (Story 63-2, ADR-040 §3). A
+ * failed reconnect attempt asks it whether the session still holds, and an
+ * expired one — found by that probe or announced by a `4401` close — ends the
+ * loop and hands over to `sessionExpired()`. With `hideLogin` it is never asked.
  *
  * The notification port's `clear()` stays here rather than moving into either
  * toast unit: it empties the whole keyless `<p-toast>` container, both families
@@ -141,8 +151,11 @@ export class IngestionService {
   /** Epic 34 (ADR-025 §0-§1): the disconnect-toast reactor, driven by `status$`. */
   private readonly connectionToast: ConnectionToast = inject(ConnectionToast);
 
-  /** Source of the reconnect interval (`wsReconnectIntervalSeconds`). */
+  /** Source of the reconnect interval (`wsReconnectIntervalSeconds`) and `hideLogin`. */
   private readonly config: ConfigService = inject(ConfigService);
+
+  /** Story 63-2 (ADR-040 §3): the session probe and the one expiry reaction. */
+  private readonly auth: AuthService = inject(AuthService);
 
   /** Story 63-1 (ADR-040 §2): the wake-up signals, subscribed in the cycle bag. */
   private readonly wakeUp: WakeUpSource = inject(WakeUpSource);
@@ -449,6 +462,7 @@ export class IngestionService {
         this.onSocketStatus(status),
       ),
     );
+    cycle.add(this.socket.closed$.subscribe((code: number) => this.onSocketClosed(code)));
     // Story 63-1 (ADR-040 §2): a wake-up forces a reconnect. In the cycle bag,
     // so it is heard only while a cycle is open, and for THIS cycle's team.
     cycle.add(this.wakeUp.wake$.subscribe(() => this.forceReconnect(processId)));
@@ -472,18 +486,64 @@ export class IngestionService {
    * symmetric. `error` flips the spinner as well as warning — a failure before
    * any frame landed must not leave the UI spinning — while `complete` warns
    * only, having already had its first frame.
+   *
+   * Story 63-2 (ADR-040 §3): a socket that answered a reconnect attempt and
+   * ended before its handshake is a FAILED ATTEMPT, and with login enabled it
+   * asks the session probe whether an expired session is why. `reconnecting`
+   * is exactly that test — `attemptReconnect` sets it, `onOpened` clears it —
+   * so a cycle's first socket and a reconnected socket that drops later are
+   * losses, not failed attempts, and are not probed. The attempt queued above
+   * stands unless the probe answers `expired`.
    */
   private onSocketStatus(status: TeamSocketStatus): void {
     if (status === 'error') this.loading.flipOnFirstEvent();
     this.connectionToast.show();
     this.scheduleReconnect();
+    if (this.reconnecting && !this.config.hideLogin) {
+      void this.probeAfterFailedAttempt(this.cycleToken);
+    }
+  }
+
+  /**
+   * A `4401` close: the server ended an accepted socket because the session
+   * expired (akgentic-infra#514). Every other code is left to `status$`.
+   */
+  private onSocketClosed(code: number): void {
+    if (code !== SESSION_EXPIRED_CLOSE_CODE || this.config.hideLogin) return;
+    this.endForExpiredSession();
+  }
+
+  /**
+   * Story 63-2: the probe after a failed attempt. `valid` and `unknown` leave
+   * the queued attempt alone — an outage must never sign anyone out. No
+   * try/catch: `probeSession()` never rejects.
+   */
+  private async probeAfterFailedAttempt(token: number): Promise<void> {
+    const verdict = await this.auth.probeSession();
+    if (token !== this.cycleToken) return;
+    if (verdict === 'expired') this.endForExpiredSession();
+  }
+
+  /**
+   * Stop the loop and hand over to `sessionExpired()`. The `stop()` is
+   * load-bearing on a `4401`: called inside the close observer, it detaches the
+   * subscriber before rxjs delivers the ending, so `status$` never fires and
+   * neither the toast nor another attempt follows.
+   */
+  private endForExpiredSession(): void {
+    if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
+    this.reconnecting = false;
+    this.socket.stop();
+    this.auth.sessionExpired();
   }
 
   /**
    * Reopen the socket after `wsReconnectIntervalSeconds`, and again after each
    * failed attempt — a refused connection ends in `error`, which lands back
    * here. The loop ends once a handshake is accepted — `opened$` drops the
-   * toast — or when the cycle is disposed.
+   * toast — when the cycle is disposed, or (Story 63-2) when the session is
+   * found expired.
    *
    * Only the SOCKET is reopened, not the cycle: the server replays from cursor
    * 0 and `appendAll` dedups by id, so the log keeps its contents and gains
@@ -619,12 +679,18 @@ export class IngestionService {
    * Called by `TeamSessionService.close()` — on a switch, before its awaited
    * fetch, and on `dispose()` — not left to the next `init()`'s step (a): the
    * previous team's socket must not feed the log across that await.
+   *
+   * Story 63-2 (ADR-040 §3): it dismisses the Connection Lost toast through its
+   * own unit before the port's `clear()` — the warning belongs to the socket
+   * this closes, and `hide()` re-arms the unit with it. The redirect to login
+   * reaches here through `ProcessComponent`'s teardown.
    */
   close(): void {
     // Supersede any `init()` still waiting on a REST replay: it must not write.
     this.cycleToken++;
     this.disposePriorSubscriptions();
     this.log.reset();
+    this.connectionToast.hide();
     this.notifications.clear();
     this.processId = '';
   }

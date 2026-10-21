@@ -17,10 +17,17 @@ import { AkgenticMessage } from '../../../protocol/message.types';
 export type TeamSocketStatus = 'error' | 'complete';
 
 /**
+ * The close code a server sends when it closes an accepted socket because the
+ * session behind it expired (akgentic-infra#514). Wire vocabulary only: this
+ * unit names it so the orchestrator need not hard-code it, and never acts on it.
+ */
+export const SESSION_EXPIRED_CLOSE_CODE = 4401;
+
+/**
  * `TeamSocket` — the WebSocket transport SOURCE (Epic 34 / ADR-025 §1). It owns
  * the URL build, the `createWebSocket` seam, the socket subject and its
  * subscribe/teardown, and NOTHING else: it imports no log, no store, no spinner
- * and neither toast unit. Everything it learns leaves through the four streams
+ * and neither toast unit. Everything it learns leaves through the five streams
  * below, so the frame handler carries no policy — only the `__model__` split
  * that decides which of two streams a frame belongs to.
  *
@@ -107,6 +114,19 @@ export class TeamSocket {
   readonly opened$: Observable<void> = this._opened$.asObservable();
 
   /**
+   * The close code of the current, attached socket, for the orchestrator to
+   * interpret — this unit decides nothing on it. Guarded like `opened$`: a
+   * socket stopped or replaced stays silent.
+   *
+   * Kept apart from `status$` because the code does not travel with the
+   * ending: rxjs hands it to the close observer BEFORE the subscriber's
+   * `complete` / `error`, and on a refused handshake after an `error` that
+   * carried no code at all.
+   */
+  private readonly _closed$ = new Subject<number>();
+  readonly closed$: Observable<number> = this._closed$.asObservable();
+
+  /**
    * Open the socket for one team cycle and start delivering frames.
    *
    * A synchronous construction failure PROPAGATES — this method has no
@@ -125,15 +145,22 @@ export class TeamSocket {
       this.pageProtocol() === 'https:' ? 'wss://' : 'ws://';
     const api = this.config.api.replace(/(^\w+:|^)\/\//, '');
 
-    // Only the CURRENT, still-attached socket may announce itself: a socket
-    // replaced by a later `start()` or detached by `stop()` stays silent, like
-    // its other three streams.
+    // Only the CURRENT, still-attached socket may announce itself or its close:
+    // a socket replaced by a later `start()` or detached by `stop()` stays
+    // silent, like its other three streams.
     const socket: WebSocketSubject<any> = this.createWebSocket(
       `${wsProtocol}${api}/ws/${processId}`,
       {
         next: () => {
           if (this.webSocket === socket && this.socketSub !== null) {
             this._opened$.next();
+          }
+        },
+      },
+      {
+        next: (event: CloseEvent) => {
+          if (this.webSocket === socket && this.socketSub !== null) {
+            this._closed$.next(event.code);
           }
         },
       },
@@ -180,8 +207,9 @@ export class TeamSocket {
   protected createWebSocket(
     url: string,
     openObserver: NextObserver<Event>,
+    closeObserver: NextObserver<CloseEvent>,
   ): WebSocketSubject<any> {
-    return webSocket({ url, openObserver });
+    return webSocket({ url, openObserver, closeObserver });
   }
 
   /**
@@ -200,11 +228,11 @@ export class TeamSocket {
 
   /**
    * Close the socket for this cycle. The detach comes FIRST: a stopped socket
-   * reaches none of the four streams (`opened$` checks `socketSub` for the
-   * same reason). The try/catch keeps this safe before any `start()` and safe
-   * twice.
+   * reaches none of the five streams (`opened$` and `closed$` check `socketSub`
+   * for the same reason). The try/catch keeps this safe before any `start()`
+   * and safe twice.
    *
-   * The four subjects are deliberately NOT completed here: they outlive a
+   * The five subjects are deliberately NOT completed here: they outlive a
    * cycle and carry the next one's frames.
    */
   stop(): void {
@@ -219,7 +247,7 @@ export class TeamSocket {
 
   /**
    * Teardown for good: stop (silently — the observer is detached), then
-   * complete the four streams.
+   * complete the five streams.
    */
   destroy(): void {
     this.stop();
@@ -227,5 +255,6 @@ export class TeamSocket {
     this._frames$.complete();
     this._status$.complete();
     this._opened$.complete();
+    this._closed$.complete();
   }
 }

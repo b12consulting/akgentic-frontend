@@ -15,6 +15,7 @@ import { IngestionService } from './ingestion.service';
 import { LogFeeder } from './log-feeder';
 import { TeamSocket } from './team-socket';
 import { ApiService } from '../../../platform/http/api.service';
+import { AuthService, SessionProbe } from '../../../platform/auth/auth.service';
 import { NotificationToastService } from '../../../../ui/console/notification-toast.service';
 import { NOTIFICATION_PORT } from '../../../platform/notification/notification.port';
 import { PrimeNgNotificationAdapter } from '../../../../ui/console/notification.adapter';
@@ -5187,5 +5188,307 @@ describe('IngestionService — a reconnect resyncs, and a wake-up reconnects (St
     expect(replayMessages).toHaveBeenCalledTimes(1);
     expect(err).toHaveBeenCalledWith('Resync after reconnect failed:', jasmine.any(Error));
     expect(log.snapshot()).toEqual([]);
+  });
+});
+
+// =====================================================================
+// Story 63-2 — an expired session ends the reconnect loop and goes to login
+//
+// Karma runs with `hideLogin: true`, so every spec here sets it EXPLICITLY:
+// without that, "no redirect" passes with no probe code at all. Each negative
+// assertion sits beside a positive one proving the path ran.
+//
+// The fake sockets' `unsubscribe()` leaves their stream open (the shape of
+// `asyncClosingSocket`): `TeamSocket.stop()` would otherwise CLOSE a plain
+// `Subject`, and the trailing `complete()` a `4401` spec delivers after the
+// close observer would throw instead of reaching no subscriber.
+// =====================================================================
+
+describe('IngestionService — an expired session ends the reconnect loop (Story 63-2)', () => {
+  const TEAM = 'team-A';
+
+  let service: IngestionService;
+  let port: any;
+  let auth: { probeSession: jasmine.Spy; sessionExpired: jasmine.Spy };
+  let hideLogin: jasmine.Spy;
+  let streams: Subject<any>[];
+  let opens: { next: (e: Event) => void }[];
+  let closes: { next: (e: CloseEvent) => void }[];
+  let create: jasmine.Spy;
+
+  /** A promise the spec resolves by hand. */
+  function deferred<T>(): { promise: Promise<T>; resolve: (v: T) => void } {
+    let resolve: (v: T) => void = () => undefined;
+    const promise = new Promise<T>((res) => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  }
+
+  /** Drain the probe's promise chain. */
+  async function settle(): Promise<void> {
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  }
+
+  /** Open a running cycle and accept its first handshake. */
+  async function openCycle(teamId: string = TEAM): Promise<void> {
+    await service.init(teamId, true);
+    opens[opens.length - 1].next(new Event('open'));
+    await settle();
+  }
+
+  /** The latest socket ends in `error` — before its handshake or after. */
+  function endLatest(): void {
+    streams[streams.length - 1].error(new Error('socket ended'));
+  }
+
+  /** The server closes the latest socket with `code`, as rxjs delivers it. */
+  function closeLatest(code: number): void {
+    closes[closes.length - 1].next({ code } as CloseEvent);
+    if (code === 1006) streams[streams.length - 1].error(new Error('abnormal close'));
+    else streams[streams.length - 1].complete();
+  }
+
+  /** Every 'Connection Lost' payload raised so far. */
+  function connectionLost(): any[] {
+    return port.notify.calls
+      .allArgs()
+      .map((a: any[]) => a[0])
+      .filter((c: any) => c.severity === 'warn' && c.summary === 'Connection Lost');
+  }
+
+  beforeEach(() => {
+    jasmine.clock().install();
+    jasmine.clock().mockDate(new Date(0));
+    port = {
+      notify: jasmine.createSpy('notify'),
+      dismiss: jasmine.createSpy('dismiss'),
+      clear: jasmine.createSpy('clear'),
+    };
+    auth = {
+      probeSession: jasmine.createSpy('probeSession').and.resolveTo('unknown'),
+      sessionExpired: jasmine.createSpy('sessionExpired'),
+    };
+
+    TestBed.configureTestingModule({
+      providers: [
+        MessageLogService,
+        PerAgentStoreRegistry,
+        ProcessStores,
+        ReplaySeeder,
+        LoadingIndicator,
+        ConnectionToast,
+        NotificationToasts,
+        TeamSocket,
+        LogFeeder,
+        TeamStatusReactor,
+        TeamDescriptionReactor,
+        { provide: WakeUpSource, useValue: { wake$: new Subject<void>() } },
+        IngestionService,
+        {
+          provide: SELECTED_AGENT_ID,
+          useValue: new BehaviorSubject<string | null>(null),
+        },
+        { provide: ContextService, useValue: contextServiceDouble() },
+        {
+          provide: ApiService,
+          useValue: {
+            getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+            getAgentStates: jasmine.createSpy('getAgentStates').and.resolveTo([]),
+          },
+        },
+        { provide: NOTIFICATION_PORT, useValue: port },
+        { provide: AuthService, useValue: auth },
+      ],
+    });
+    hideLogin = spyOnProperty(TestBed.inject(ConfigService), 'hideLogin').and.returnValue(false);
+    service = TestBed.inject(IngestionService);
+
+    streams = [];
+    opens = [];
+    closes = [];
+    create = spyOn<any>(teamSocket(), 'createWebSocket').and.callFake(
+      (_url: string, open: any, close: any) => {
+        const stream = new Subject<any>();
+        streams.push(stream);
+        opens.push(open);
+        closes.push(close);
+        return {
+          subscribe: (observer: any) => stream.subscribe(observer),
+          unsubscribe: () => undefined,
+        } as unknown as WebSocketSubject<any>;
+      },
+    );
+  });
+
+  afterEach(() => {
+    service.close();
+    jasmine.clock().uninstall();
+  });
+
+  // --- a failed attempt is probed ---------------------------------------------
+
+  it('a failed attempt on an expired session goes to login once and stops the loop', async () => {
+    const probe = deferred<SessionProbe>();
+    auth.probeSession.and.returnValue(probe.promise);
+    await openCycle();
+    endLatest(); // the cycle's own socket is lost
+    jasmine.clock().tick(5000);
+    expect(create.calls.count()).toBe(2);
+
+    endLatest(); // the attempt fails before its handshake
+    expect(auth.probeSession).toHaveBeenCalledTimes(1);
+    probe.resolve('expired');
+    await settle();
+
+    expect(auth.sessionExpired).toHaveBeenCalledTimes(1);
+    jasmine.clock().tick(15000);
+    expect(create.calls.count()).toBe(2);
+
+    // The redirect's teardown closes the pipeline, and the warning with it.
+    service.close();
+    expect(port.dismiss).toHaveBeenCalledOnceWith(CONNECTION_LOST_TOAST_ID);
+  });
+
+  it("losing the cycle's own socket is not a failed attempt and asks nothing of the session", async () => {
+    await openCycle();
+    endLatest();
+    await settle();
+
+    expect(connectionLost().length).toBe(1);
+    expect(auth.probeSession).not.toHaveBeenCalled();
+
+    // The probe path is live in this bed: the attempt that follows, failing, asks.
+    jasmine.clock().tick(5000);
+    endLatest();
+    expect(auth.probeSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('a reconnected socket that drops later is a loss, not a failed attempt', async () => {
+    await openCycle();
+    endLatest();
+    jasmine.clock().tick(5000);
+    opens[1].next(new Event('open')); // the attempt's handshake is accepted
+    await settle();
+
+    endLatest();
+    await settle();
+    expect(auth.probeSession).not.toHaveBeenCalled();
+
+    jasmine.clock().tick(5000);
+    endLatest();
+    expect(auth.probeSession).toHaveBeenCalledTimes(1);
+  });
+
+  // --- an outage never signs anyone out ---------------------------------------
+
+  for (const verdict of ['unknown', 'valid'] as SessionProbe[]) {
+    it(`a failed attempt the probe answers '${verdict}' keeps retrying`, async () => {
+      auth.probeSession.and.resolveTo(verdict);
+      await openCycle();
+      endLatest();
+      jasmine.clock().tick(5000);
+
+      endLatest();
+      await settle();
+
+      expect(auth.probeSession).toHaveBeenCalledTimes(1);
+      expect(auth.sessionExpired).not.toHaveBeenCalled();
+      jasmine.clock().tick(5000);
+      expect(create.calls.count()).toBe(3);
+    });
+  }
+
+  // --- the probe dies with its cycle ------------------------------------------
+
+  it('a probe that answers after close() sends nobody to login', async () => {
+    const probe = deferred<SessionProbe>();
+    auth.probeSession.and.returnValue(probe.promise);
+    await openCycle();
+    endLatest();
+    jasmine.clock().tick(5000);
+    endLatest();
+    expect(auth.probeSession).toHaveBeenCalledTimes(1);
+
+    service.close();
+    probe.resolve('expired');
+    await settle();
+
+    expect(auth.sessionExpired).not.toHaveBeenCalled();
+  });
+
+  it('a probe that answers after a team switch leaves the new cycle alone', async () => {
+    const probe = deferred<SessionProbe>();
+    auth.probeSession.and.returnValue(probe.promise);
+    await openCycle();
+    endLatest();
+    jasmine.clock().tick(5000);
+    endLatest();
+    expect(auth.probeSession).toHaveBeenCalledTimes(1);
+
+    await openCycle('team-B');
+    const stop = spyOn(teamSocket(), 'stop').and.callThrough();
+    probe.resolve('expired');
+    await settle();
+
+    expect(auth.sessionExpired).not.toHaveBeenCalled();
+    expect(stop).not.toHaveBeenCalled();
+  });
+
+  // --- a 4401 close -----------------------------------------------------------
+
+  it('a 4401 close goes to login with no toast and no reconnect', async () => {
+    await openCycle();
+
+    closeLatest(4401);
+
+    expect(auth.sessionExpired).toHaveBeenCalledTimes(1);
+    expect(connectionLost()).toEqual([]);
+    jasmine.clock().tick(15000);
+    expect(create.calls.count()).toBe(1);
+  });
+
+  for (const code of [1006, 1000, 4004]) {
+    it(`a ${code} close warns and reconnects as before`, async () => {
+      await openCycle();
+
+      closeLatest(code);
+
+      expect(connectionLost().length).toBe(1);
+      jasmine.clock().tick(5000);
+      expect(create.calls.count()).toBe(2);
+      expect(auth.sessionExpired).not.toHaveBeenCalled();
+    });
+  }
+
+  // --- hideLogin runs none of it ----------------------------------------------
+
+  it('with the login page hidden a failed attempt asks nothing of the session', async () => {
+    hideLogin.and.returnValue(true);
+    await openCycle();
+    endLatest();
+    jasmine.clock().tick(5000);
+
+    endLatest();
+    await settle();
+
+    expect(create.calls.count()).toBe(2);
+    expect(connectionLost().length).toBe(1);
+    expect(auth.probeSession).not.toHaveBeenCalled();
+    expect(auth.sessionExpired).not.toHaveBeenCalled();
+    jasmine.clock().tick(5000);
+    expect(create.calls.count()).toBe(3);
+  });
+
+  it('with the login page hidden a 4401 close is an ordinary close', async () => {
+    hideLogin.and.returnValue(true);
+    await openCycle();
+
+    closeLatest(4401);
+
+    expect(connectionLost().length).toBe(1);
+    jasmine.clock().tick(5000);
+    expect(create.calls.count()).toBe(2);
+    expect(auth.sessionExpired).not.toHaveBeenCalled();
   });
 });

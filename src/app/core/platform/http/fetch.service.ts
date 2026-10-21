@@ -1,5 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { NOTIFICATION_PORT } from '../notification/notification.port';
+import { AuthService } from '../auth/auth.service';
 import { ConfigService } from '../config/config.service';
 
 /**
@@ -20,11 +21,13 @@ export type FetchResponseType = 'json' | 'text';
 /**
  * Any failure `FetchService` has ALREADY notified the user about (ADR-026 §1).
  *
- * That property — "the toast has been raised" — and NOT HTTP-ness is what
+ * That property — "the user has been told" — and NOT HTTP-ness is what
  * callers branch on when deciding whether to raise their own error toast. A
  * caller catching a `FetchFailure` must stay silent or it double-toasts;
  * anything else (an rxjs `TimeoutError`, a programming error) has never been
- * reported and is the caller's to surface.
+ * reported and is the caller's to surface. Usually the telling is a toast; for
+ * a 401 confirmed as an expired session it is the redirect to login
+ * (ADR-040 §3), and a caller's own toast there would be just as wrong.
  *
  * The base type exists so that check keeps working when a fourth failure mode
  * is added, instead of being an enumeration that silently starts double-toasting.
@@ -107,6 +110,7 @@ function tryParseJson(text: string): unknown {
 export class FetchService {
   private notifications = inject(NOTIFICATION_PORT);
   private config = inject(ConfigService);
+  private auth = inject(AuthService);
 
   /**
    * Issue a fetch, handle notifications, and parse the body.
@@ -125,17 +129,25 @@ export class FetchService {
    *   handler: 422 vs 401 vs other) narrow via `instanceof HttpError` or read
    *   `err.status`. Its `.message` still matches the prior (non-throwing)
    *   notification text, so callers catching on `Error` see the same string.
+   * - a 401, with login enabled, is first checked against `/auth/me`
+   *   (`AuthService.probeSession()`): an expired session goes to login through
+   *   `AuthService.sessionExpired()` and raises no toast; a session the probe
+   *   finds valid, or cannot judge, is an ordinary failure and toasts. A route
+   *   that answers 401 to a valid session must not sign the user out. Either
+   *   way the throw is the same `HttpError`.
    * - the request never reached the server → `NetworkError`, with the original
    *   rejection reason in `cause` and deliberately no `status`.
    *
    * Both derive from `FetchFailure`, which is the type a caller checks to ask
-   * "has the user already been told?" — the toast is raised here, once, before
-   * either throw.
+   * "has the user already been told?" — the toast (or, for an expired session,
+   * the redirect) happens here, once, before either throw.
    *
    * @param responseType `'json'` (default) returns `response.json()`;
    *   `'text'` returns `response.text()` as a string.
    *
-   * @param silent Suppress the failure toast. THE THROW IS UNCHANGED.
+   * @param silent Suppress the failure toast. THE THROW IS UNCHANGED. An
+   *   expired session never toasts whatever this says, and is sent to login
+   *   whatever this says too.
    *
    *   For a request whose failure is an EXPECTED ANSWER rather than a fault —
    *   a capability probe against a backend that may not implement the route.
@@ -205,7 +217,9 @@ export class FetchService {
         errorMessage ||
         `Request failed: ${response.statusText}\n\n${errorDetail}`;
 
-      if (!silent) {
+      if (await this.isExpiredSession(response.status)) {
+        this.auth.sessionExpired();
+      } else if (!silent) {
         this.showNotification(resolvedErrorMessage, 'error');
       }
 
@@ -229,6 +243,12 @@ export class FetchService {
     }
 
     return responseType === 'text' ? response.text() : response.json();
+  }
+
+  /** A 401 the session probe confirms. Other statuses and `hideLogin` never probe. */
+  private async isExpiredSession(status: number): Promise<boolean> {
+    if (status !== 401 || this.config.hideLogin) return false;
+    return (await this.auth.probeSession()) === 'expired';
   }
 
   showNotification(
