@@ -14,6 +14,7 @@
     float label, which collided with the text once the field was one row tall.
   -->
   <textarea
+    #composer
     pTextarea
     rows="1"
     [autoResize]="true"
@@ -22,6 +23,9 @@
     (keydown.enter)="userInputEnterKeySubmit ? sendMessage() : null"
     (keydown.meta.enter)="sendMessage()"
     (keydown.control.enter)="sendMessage()"
+    (input)="trackCaret(composer)"
+    (keyup)="trackCaret(composer)"
+    (click)="trackCaret(composer)"
     [mentionConfig]="mentionConfig"
     [mentionListTemplate]="mentionItemTemplate"
   ></textarea>
@@ -31,12 +35,17 @@
     (description/args absent → those rows simply do not render); `/` command
     items render `name` prominently plus `description` and an optional args
     hint (e.g. `<role> [name]`).
+
+    Story 15-4: an option row (`kind: 'option'`) renders as `name=` with its
+    choices in the args span; a value row carries only `name`. Inline spans
+    only — the library's arrow-key scrolling assumes one-line rows.
   -->
   <ng-template #mentionItemTemplate let-item="item">
-    <span class="mention-item-name">{{ item.name }}</span>
+    <span class="mention-item-name">{{ item.name }}{{ item.kind === 'option' ? '=' : '' }}</span>
     <span *ngIf="item.args?.length" class="mention-item-args">
       {{ commandArgsHint(item.args) }}
     </span>
+    <span *ngIf="item.choices?.length" class="mention-item-args">{{ item.choices.join(' | ') }}</span>
     <span *ngIf="item.description" class="mention-item-desc">{{ item.description }}</span>
   </ng-template>
 

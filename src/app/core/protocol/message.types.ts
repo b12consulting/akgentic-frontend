@@ -202,7 +202,17 @@ export interface WelcomeMessage extends BaseMessage {
 /**
  * One argument of a slash-command, mirroring akgentic-tool `CommandArg`
  * (ADR-028 §Decision 3). Ordered position in `CommandDescriptor.args` drives
- * both the backend positional parsing and the frontend args hint.
+ * both the backend parsing and the frontend args hint.
+ *
+ * A command that ends in free text takes OPTIONS, THEN TEXT:
+ * `/cmd [name=value …] <text…>`. Its leading defaulted parameters are
+ * `keyword_only` options, written `name=value` and never positionally; the
+ * text starts at the first token that is not a known option and runs verbatim
+ * to the end of the line (`rest_of_line`). A command without free text keeps
+ * the plain positional grammar and carries no `keyword_only` arg.
+ *
+ * Every field below `required` is optional on the wire: an older backend sends
+ * none of them, and an absent field means `false` / `null`.
  */
 export interface CommandArg {
   name: string;
@@ -210,6 +220,12 @@ export interface CommandArg {
   type: string;
   required: boolean;
   description?: string | null;
+  /** An option: written `name=value`, never positionally. */
+  keyword_only?: boolean;
+  /** The trailing free text: everything after the options, verbatim. */
+  rest_of_line?: boolean;
+  /** The allowed values, in declared order, when the set is closed. */
+  choices?: string[] | null;
 }
 
 /**

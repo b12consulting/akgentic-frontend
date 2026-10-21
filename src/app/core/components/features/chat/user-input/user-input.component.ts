@@ -1,5 +1,13 @@
 import { CommonModule } from '@angular/common';
-import { Component, inject, Input, OnInit, DestroyRef } from '@angular/core';
+import {
+  Component,
+  DestroyRef,
+  ElementRef,
+  inject,
+  Input,
+  OnInit,
+  ViewChild,
+} from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormsModule } from '@angular/forms';
 
@@ -10,12 +18,18 @@ import { SelectModule } from 'primeng/select';
 import { MultiSelectModule } from 'primeng/multiselect';
 import { TextareaModule } from 'primeng/textarea';
 import { TranslatePipe } from '@ngx-translate/core';
-import { MentionModule } from 'angular-mentions';
+import { MentionDirective, MentionModule } from 'angular-mentions';
 
 import { TokenCountPipe } from '../../../../shared/pipes/token-count.pipe';
 import { UsdCostPipe } from '../../../../shared/pipes/usd-cost.pipe';
 
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
+import {
+  commandArgsHint,
+  optionCompletion,
+  resolveCommand,
+  valueCompletion,
+} from '../../../../shared/util/command-completion';
 import { ConfigService } from '../../../../platform/config/config.service';
 
 import { ApiService } from '../../../../platform/http/api.service';
@@ -32,7 +46,7 @@ import {
 
 import { ENTRY_POINT_NAME } from '../../../../services/process/selectors/chat-message.model';
 import { defaultRecipientName } from '../../../../services/process/selectors/actor-kind';
-import { CommandDescriptor } from '../../../../protocol/message.types';
+import { CommandArg, CommandDescriptor } from '../../../../protocol/message.types';
 import { NodeInterface } from '../../../../services/process/models/types';
 
 /**
@@ -62,6 +76,59 @@ function matchesAnywhere(
   return items.filter((item) =>
     (item.name ?? '').toLowerCase().includes(needle),
   );
+}
+
+/**
+ * MATCH AT THE FRONT ONLY — for the option and value lists, unlike the two
+ * above.
+ *
+ * The option list opens on a typed SPACE, and Enter with an open, non-empty
+ * list selects instead of sending. A substring match would keep the list open
+ * — and Enter captured — for any first word of the free text that merely
+ * contains an option's letters (`de` matches `mode`); a prefix match narrows
+ * that to words that begin like an option, which is the edge the specs pin.
+ * These lists are short and their names are the words the user is typing, so
+ * the substring rationale above does not apply.
+ */
+function matchesPrefix(
+  searchString: string,
+  items: readonly { name?: string }[] = [],
+): unknown[] {
+  const needle = (searchString ?? '').toLowerCase();
+  return items.filter((item) => (item.name ?? '').toLowerCase().startsWith(needle));
+}
+
+/**
+ * The commands the `/` list may offer: `_`-prefixed commands (e.g.
+ * `_expand_media_refs`) are internal, not user-invocable. Shared by the list
+ * and by option completion, so a command that cannot be picked cannot be
+ * completed either.
+ */
+function userCommands(descriptors: readonly CommandDescriptor[]): CommandDescriptor[] {
+  return descriptors.filter((d) => !d.name.startsWith('_'));
+}
+
+/**
+ * A row of the option list. `name` stays the bare option name — it is the
+ * `labelKey` and the filter key — and `kind` is what tells the shared item
+ * template to render it as `name=`.
+ */
+type OptionItem = CommandArg & { kind: 'option' };
+
+/** A row of the value list: one of an option's `choices`. */
+interface ValueItem {
+  name: string;
+  kind: 'value';
+}
+
+/**
+ * What the space and `=` triggers may offer for the current text, or null for
+ * each one that must stay unregistered. See `command-completion.ts`.
+ */
+interface Completion {
+  command: string | null;
+  options: CommandArg[] | null;
+  value: CommandArg | null;
 }
 
 /**
@@ -178,6 +245,22 @@ export class ProcessUserInputComponent implements OnInit {
   } | null = null;
 
   private destroyRef = inject(DestroyRef);
+
+  /**
+   * Where the caret was at the last input, key release or click — null until
+   * the user has touched the field, which reads as "at the end".
+   *
+   * Tracked rather than read from the DOM inside `mentionConfig`, so the getter
+   * stays a pure function of component state. `keyup` and `click` matter, not
+   * only `input`: change detection after an arrow key's `keydown` runs BEFORE
+   * the caret moves, so without them Left-arrow then Space would open the
+   * option list in the middle of the text.
+   */
+  caret: number | null = null;
+
+  /** The directive behind `[mentionConfig]`, for `startSearch('=')`. */
+  @ViewChild(MentionDirective) private mention?: MentionDirective;
+  @ViewChild('composer') private composer?: ElementRef<HTMLTextAreaElement>;
 
   ngOnInit() {
     // Subscribe to nodes to populate mention items and dropdown agents
@@ -480,14 +563,11 @@ export class ProcessUserInputComponent implements OnInit {
     const agentId = this.targetedAgentId();
     if (!agentId) return [];
     const descriptors = this.ingestionService.commands.snapshot(agentId) ?? [];
-    return descriptors
-      // `_`-prefixed commands (e.g. `_expand_media_refs`) are internal, not
-      // user-invocable — keep them out of the `/` dropdown.
-      .filter((d) => !d.name.startsWith('_'))
+    return userCommands(descriptors)
       // `angular-mentions` renders a single flat list with no group headers, so
       // the best we can do is keep tool families adjacent: order by provenance
-      // (`tool_card`) then command name. `.filter()` above returns a fresh
-      // array, so sorting in place does not mutate the stored descriptors.
+      // (`tool_card`) then command name. `userCommands` returns a fresh array,
+      // so sorting in place does not mutate the stored descriptors.
       .sort(
         (a, b) =>
           a.tool_card.localeCompare(b.tool_card) || a.name.localeCompare(b.name),
@@ -513,19 +593,48 @@ export class ProcessUserInputComponent implements OnInit {
       ? (this.ingestionService.commands.snapshot(agentId) ?? null)
       : null;
 
+    const completion = this.completion(descriptors);
+
     // The identity of everything the config is built FROM. Cheap reference
     // comparisons: `mentionItems` is replaced wholesale on a roster emission
     // and `snapshot` hands back the stored array, so neither changes without
-    // the content changing.
-    const key: readonly unknown[] = [this.mentionItems, armed, agentId, descriptors];
+    // the content changing. The completion parts are PRIMITIVES — the unused
+    // options go in as one joined string, never as the fresh array they are
+    // computed into — so typing free text after a command rebuilds nothing.
+    const key: readonly unknown[] = [
+      this.mentionItems,
+      armed,
+      agentId,
+      descriptors,
+      completion.options !== null,
+      completion.options?.map((a) => a.name).join(' ') ?? '',
+      completion.value?.name ?? null,
+      completion.command,
+    ];
     const cached = this.mentionConfigCache;
     if (cached && cached.key.every((part, i) => part === key[i])) {
       return cached.value;
     }
 
-    const value = this.buildMentionConfig(armed);
+    const value = this.buildMentionConfig(armed, completion);
     this.mentionConfigCache = { key, value };
     return value;
+  }
+
+  /**
+   * Story 15-4 — what a typed space or `=` may complete right now, from the
+   * text and the tracked caret. The known commands are the target's
+   * user-invocable ones, the same set the `/` list offers.
+   */
+  private completion(descriptors: readonly CommandDescriptor[] | null): Completion {
+    const text = this.userInput ?? '';
+    const caret = this.caret ?? text.length;
+    const commands = descriptors ? userCommands(descriptors) : [];
+    return {
+      command: resolveCommand(text, commands)?.name ?? null,
+      options: optionCompletion(text, caret, commands),
+      value: valueCompletion(text, caret, commands),
+    };
   }
 
   /**
@@ -549,7 +658,19 @@ export class ProcessUserInputComponent implements OnInit {
    * Building only when an input actually changes breaks the loop, and costs
    * nothing else: the config is pure with respect to that key.
    */
-  private buildMentionConfig(armed: boolean) {
+  private buildMentionConfig(armed: boolean, completion: Completion) {
+    // Story 15-4: the option and value lists share every setting but their
+    // trigger, select and items. `allowSpace: false` closes the option list at
+    // the first space of the free text; the prefix filter keeps Enter from
+    // being captured by a word that merely contains an option's letters.
+    const completionEntry = {
+      labelKey: 'name',
+      allowSpace: false,
+      dropUp: true,
+      maxItems: -1,
+      disableSort: true,
+      mentionFilter: matchesPrefix,
+    };
     return {
       mentions: [
         {
@@ -584,6 +705,26 @@ export class ProcessUserInputComponent implements OnInit {
           disableSort: true,
           mentionFilter: matchesAnywhere,
           items: this.commandItems,
+        }]
+          : []),
+        // Withheld, not flagged: a registered trigger fires on EVERY matching
+        // key, so these two exist only while `command-completion` arms them.
+        ...(completion.options
+          ? [{
+          ...completionEntry,
+          triggerChar: ' ',
+          mentionSelect: this.selectOption,
+          items: completion.options.map((a): OptionItem => ({ ...a, kind: 'option' })),
+        }]
+          : []),
+        ...(completion.value
+          ? [{
+          ...completionEntry,
+          triggerChar: '=',
+          mentionSelect: this.selectValue,
+          items: (completion.value.choices ?? []).map(
+            (name): ValueItem => ({ name, kind: 'value' }),
+          ),
         }]
           : []),
       ],
@@ -621,19 +762,61 @@ export class ProcessUserInputComponent implements OnInit {
    * ADR-013 §2 — insert `/${name} ` (leading slash + trailing space) for the
    * chosen command so the user keeps typing arguments. Does NOT send; the
    * literal text is sent verbatim on the existing Enter path (AC-5).
+   *
+   * Story 15-4: a command that takes options gets NO trailing space. The space
+   * this inserts is programmatic — it fires no keydown, so it could never open
+   * the option list — and the user's own space after it would then leave two.
+   * Stopping at the name lets the space the user types be the one that opens
+   * the list.
    */
-  selectCommand = (item: { name: string }) => {
-    return `/${item.name} `;
+  selectCommand = (item: { name: string; args?: readonly CommandArg[] }) => {
+    return item.args?.some((a) => a.keyword_only) ? `/${item.name}` : `/${item.name} `;
   };
 
   /**
-   * ADR-013 §2 — render an args hint for a command dropdown row, e.g.
-   * `<role> [name]`: required args in angle brackets, optional in square
-   * brackets, in declared order. Empty string when the command takes no args.
+   * Story 15-4 — insert the chosen option after the space that opened the
+   * list (the directive replaces from that space, so it is returned too).
+   *
+   * Without choices: ` name=`, and the user types the value. With choices:
+   * ` name` only, and then `startSearch('=')` types the `=` and opens the value
+   * list. It must be DEFERRED: the `=` entry is registered only once change
+   * detection has seen the inserted name, and called synchronously here it
+   * would also run before the directive's own insert and corrupt its position.
    */
+  selectOption = (item: OptionItem) => {
+    if (!item.choices?.length) return ` ${item.name}=`;
+    setTimeout(() => this.openValueList(), 0);
+    return ` ${item.name}`;
+  };
+
+  /**
+   * Story 15-4 — insert `=value`, replacing from the `=` that opened the list.
+   * No trailing space: the space the user types next is what re-opens the
+   * option list, and a programmatic one would leave two.
+   */
+  selectValue = (item: ValueItem) => {
+    return `=${item.name}`;
+  };
+
+  /**
+   * `startSearch` writes the `=` straight into the DOM and dispatches no
+   * `input` event, so `ngModel` and the caret are resynced by hand — otherwise
+   * the text the arming reads would lag the text on screen by one character.
+   */
+  private openValueList(): void {
+    this.mention?.startSearch('=');
+    const textarea = this.composer?.nativeElement;
+    if (!textarea) return;
+    this.userInput = textarea.value;
+    this.trackCaret(textarea);
+  }
+
+  trackCaret(textarea: HTMLTextAreaElement): void {
+    this.caret = textarea.selectionStart;
+  }
+
+  /** ADR-013 §2 — the args hint for a command row; see `commandArgsHint`. */
   commandArgsHint(args: CommandDescriptor['args']): string {
-    return args
-      .map((a) => (a.required ? `<${a.name}>` : `[${a.name}]`))
-      .join(' ');
+    return commandArgsHint(args);
   }
 }
