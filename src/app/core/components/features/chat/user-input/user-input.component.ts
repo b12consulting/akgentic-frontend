@@ -385,6 +385,9 @@ export class ProcessUserInputComponent implements OnInit {
     if (!this.userInput || this.userInput.trim() === '') {
       return;
     }
+    // The directive ignores a key held with Ctrl/Meta, so a Ctrl+Enter send
+    // leaves an open mention list behind; only the button's blur closed it.
+    this.mention?.stopSearch();
 
     try {
       // Run state is consulted ONCE, and solely to decide whether a restore is

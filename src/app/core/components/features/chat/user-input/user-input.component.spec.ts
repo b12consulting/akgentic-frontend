@@ -1673,6 +1673,31 @@ describe('ProcessUserInputComponent', () => {
         flush();
       }));
 
+      it('Ctrl+Enter with the option list open sends and closes the list', fakeAsync(() => {
+        setText('/search_planning status=pending');
+        type(' ');
+        expect(openRows()).not.toBeNull();
+
+        textarea().dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'Enter',
+            keyCode: 13,
+            ctrlKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        fixture.detectChanges();
+
+        expect(openRows()).toBeNull();
+        expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+          'test-team-id',
+          '/search_planning status=pending ',
+          '@Manager',
+        );
+        flush();
+      }));
+
       it('Enter sends as usual once the typed text matches no option', fakeAsync(() => {
         setText('/search_graph');
         type(' ');
