@@ -1,4 +1,4 @@
-import { ComponentFixture, TestBed, fakeAsync, flush, tick } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, flush, flushMicrotasks, tick } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { FormsModule } from '@angular/forms';
 import { MentionDirective } from 'angular-mentions';
@@ -1512,18 +1512,29 @@ describe('ProcessUserInputComponent', () => {
         expect(startSearch).not.toHaveBeenCalled();
       }));
 
-      it('a value inserts `=value` with NO trailing space', () => {
+      it('a value inserts `=value`, then DEFERS startSearch(space)', fakeAsync(() => {
+        const startSearch = spyOn(directive(), 'startSearch');
         expect(component.selectValue({ name: 'vector', kind: 'value' })).toBe('=vector');
-      });
+        expect(startSearch).not.toHaveBeenCalled();
+        tick(0);
+        expect(startSearch).toHaveBeenCalledOnceWith(' ');
+      }));
 
-      it('selectCommand stops at the name for a command with options', () => {
+      it('selectCommand inserts `/name` for a command with options, then DEFERS startSearch(space)', fakeAsync(() => {
+        const startSearch = spyOn(directive(), 'startSearch');
         expect(component.selectCommand(SEARCH_PLANNING)).toBe('/search_planning');
-      });
+        expect(startSearch).not.toHaveBeenCalled();
+        tick(0);
+        expect(startSearch).toHaveBeenCalledOnceWith(' ');
+      }));
 
-      it('selectCommand keeps `/name ` for every other command', () => {
+      it('selectCommand keeps `/name ` for every other command and opens nothing', fakeAsync(() => {
+        const startSearch = spyOn(directive(), 'startSearch');
         expect(component.selectCommand(ROSTER)).toBe('/roster ');
         expect(component.selectCommand({ name: 'hire_member' })).toBe('/hire_member ');
-      });
+        tick(0);
+        expect(startSearch).not.toHaveBeenCalled();
+      }));
     });
 
     // ----- 7.6: identity -----
@@ -1640,15 +1651,41 @@ describe('ProcessUserInputComponent', () => {
         expect(textarea().value).toBe('/search_graph mode=');
         expect(component.userInput).toBe('/search_graph mode=');
         expect(openRows()).toEqual(MODES);
+        // ngModel writes the resynced text back in a microtask, which a browser
+        // runs before the next key; fakeAsync holds it until told to.
+        flushMicrotasks();
 
-        // Enter selects a value too — no trailing space…
+        // Enter selects a value too…
         pressEnter();
         expect(textarea().value).toBe('/search_graph mode=vector');
         expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
 
-        // …so the space the user types is the one that offers the rest.
-        type(' ');
+        // …and the deferred startSearch types the space and offers the rest.
+        tick(0);
+        fixture.detectChanges();
+        expect(textarea().value).toBe('/search_graph mode=vector ');
+        expect(component.userInput).toBe('/search_graph mode=vector ');
         expect(openRows()).toEqual(['top_k=']);
+        flush();
+      }));
+
+      it('the last value types its space and opens nothing once every option is used', fakeAsync(() => {
+        setText('/search_graph top_k=3');
+        type(' ');
+        expect(openRows()).toEqual(['mode=']);
+
+        pressEnter();
+        tick(0);
+        fixture.detectChanges();
+        expect(openRows()).toEqual(MODES);
+        flushMicrotasks();
+
+        pressEnter();
+        tick(0);
+        fixture.detectChanges();
+        expect(textarea().value).toBe('/search_graph top_k=3 mode=vector ');
+        expect(openRows()).toBeNull();
+        expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
         flush();
       }));
 
@@ -1715,17 +1752,19 @@ describe('ProcessUserInputComponent', () => {
         flush();
       }));
 
-      it('selecting a command with options inserts `/name`, opens nothing, and the typed space opens the options', fakeAsync(() => {
+      it('selecting a command with options types its space and opens the options', fakeAsync(() => {
         setText('');
         type('/search_p');
         expect(openRows()).toEqual(['search_planning']);
 
         pressEnter();
         expect(textarea().value).toBe('/search_planning');
-        expect(openRows()).toBeNull();
         expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
 
-        type(' ');
+        tick(0);
+        fixture.detectChanges();
+        expect(textarea().value).toBe('/search_planning ');
+        expect(component.userInput).toBe('/search_planning ');
         expect(openRows()).toEqual(['mode=', 'status=', 'owner=']);
         flush();
       }));

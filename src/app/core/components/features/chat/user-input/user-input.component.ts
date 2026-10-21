@@ -769,14 +769,14 @@ export class ProcessUserInputComponent implements OnInit {
    * chosen command so the user keeps typing arguments. Does NOT send; the
    * literal text is sent verbatim on the existing Enter path (AC-5).
    *
-   * Story 15-4: a command that takes options gets NO trailing space. The space
-   * this inserts is programmatic — it fires no keydown, so it could never open
-   * the option list — and the user's own space after it would then leave two.
-   * Stopping at the name lets the space the user types be the one that opens
-   * the list.
+   * Story 15-4: for a command that takes options, the space is typed by a
+   * deferred `startSearch(' ')` instead, which also opens the list — a space
+   * returned here would fire no keydown and open nothing.
    */
   selectCommand = (item: { name: string; args?: readonly CommandArg[] }) => {
-    return item.args?.some((a) => a.keyword_only) ? `/${item.name}` : `/${item.name} `;
+    if (!item.args?.some((a) => a.keyword_only)) return `/${item.name} `;
+    setTimeout(() => this.openList(' '), 0);
+    return `/${item.name}`;
   };
 
   /**
@@ -787,37 +787,40 @@ export class ProcessUserInputComponent implements OnInit {
    * ` name` only, and then `startSearch('=')` types the `=` and opens the value
    * list. It must be DEFERRED: called synchronously here it would run before
    * the directive's own insert and corrupt its position. The `=` entry it
-   * needs is registered by `openValueList` itself, not by a pass it waits for.
+   * needs is registered by `openList` itself, not by a pass it waits for.
    */
   selectOption = (item: OptionItem) => {
     if (!item.choices?.length) return ` ${item.name}=`;
-    setTimeout(() => this.openValueList(), 0);
+    setTimeout(() => this.openList('='), 0);
     return ` ${item.name}`;
   };
 
   /**
-   * Story 15-4 — insert `=value`, replacing from the `=` that opened the list.
-   * No trailing space: the space the user types next is what re-opens the
-   * option list, and a programmatic one would leave two.
+   * Story 15-4 — insert `=value`, replacing from the `=` that opened the list,
+   * then a deferred `startSearch(' ')` types the space and re-opens the option
+   * list. Once every option is used no space entry is registered, so the space
+   * is typed and nothing opens.
    */
   selectValue = (item: ValueItem) => {
+    setTimeout(() => this.openList(' '), 0);
     return `=${item.name}`;
   };
 
   /**
-   * `startSearch` opens a list only for a trigger the directive has already
-   * registered, so change detection is run first, on the inserted name. The
-   * app's `eventCoalescing` defers the pass after the select's keydown to a
-   * timeout queued AFTER this one, so it cannot be waited for.
+   * Type *trigger* and open its list. `startSearch` opens a list only for a
+   * trigger the directive has already registered, so change detection is run
+   * first, on the inserted text. The app's `eventCoalescing` defers the pass
+   * after the select's keydown to a timeout queued AFTER this one, so it cannot
+   * be waited for.
    *
-   * `startSearch` writes the `=` straight into the DOM and dispatches no
+   * `startSearch` writes the trigger straight into the DOM and dispatches no
    * `input` event, so `ngModel` and the caret are resynced by hand — otherwise
    * the text the arming reads would lag the text on screen by one character.
    */
-  private openValueList(): void {
+  private openList(trigger: ' ' | '='): void {
     if (this.destroyRef.destroyed) return;
     this.cdr.detectChanges();
-    this.mention?.startSearch('=');
+    this.mention?.startSearch(trigger);
     const textarea = this.composer?.nativeElement;
     if (!textarea) return;
     this.userInput = textarea.value;
