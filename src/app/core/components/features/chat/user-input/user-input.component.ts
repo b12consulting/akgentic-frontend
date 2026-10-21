@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
 import {
+  ChangeDetectorRef,
   Component,
   DestroyRef,
   ElementRef,
@@ -245,6 +246,7 @@ export class ProcessUserInputComponent implements OnInit {
   } | null = null;
 
   private destroyRef = inject(DestroyRef);
+  private cdr = inject(ChangeDetectorRef);
 
   /**
    * Where the caret was at the last input, key release or click — null until
@@ -779,9 +781,9 @@ export class ProcessUserInputComponent implements OnInit {
    *
    * Without choices: ` name=`, and the user types the value. With choices:
    * ` name` only, and then `startSearch('=')` types the `=` and opens the value
-   * list. It must be DEFERRED: the `=` entry is registered only once change
-   * detection has seen the inserted name, and called synchronously here it
-   * would also run before the directive's own insert and corrupt its position.
+   * list. It must be DEFERRED: called synchronously here it would run before
+   * the directive's own insert and corrupt its position. The `=` entry it
+   * needs is registered by `openValueList` itself, not by a pass it waits for.
    */
   selectOption = (item: OptionItem) => {
     if (!item.choices?.length) return ` ${item.name}=`;
@@ -799,11 +801,18 @@ export class ProcessUserInputComponent implements OnInit {
   };
 
   /**
+   * `startSearch` opens a list only for a trigger the directive has already
+   * registered, so change detection is run first, on the inserted name. The
+   * app's `eventCoalescing` defers the pass after the select's keydown to a
+   * timeout queued AFTER this one, so it cannot be waited for.
+   *
    * `startSearch` writes the `=` straight into the DOM and dispatches no
    * `input` event, so `ngModel` and the caret are resynced by hand — otherwise
    * the text the arming reads would lag the text on screen by one character.
    */
   private openValueList(): void {
+    if (this.destroyRef.destroyed) return;
+    this.cdr.detectChanges();
     this.mention?.startSearch('=');
     const textarea = this.composer?.nativeElement;
     if (!textarea) return;

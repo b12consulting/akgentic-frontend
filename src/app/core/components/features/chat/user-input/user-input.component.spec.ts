@@ -1504,6 +1504,14 @@ describe('ProcessUserInputComponent', () => {
         expect(startSearch).toHaveBeenCalledOnceWith('=');
       }));
 
+      it('a deferred value list does nothing once the component is gone', fakeAsync(() => {
+        const startSearch = spyOn(directive(), 'startSearch');
+        component.selectOption({ ...opt('mode', { choices: MODES }), kind: 'option' });
+        fixture.destroy();
+        expect(() => tick(0)).not.toThrow();
+        expect(startSearch).not.toHaveBeenCalled();
+      }));
+
       it('a value inserts `=value` with NO trailing space', () => {
         expect(component.selectValue({ name: 'vector', kind: 'value' })).toBe('=vector');
       });
@@ -1641,6 +1649,27 @@ describe('ProcessUserInputComponent', () => {
         // …so the space the user types is the one that offers the rest.
         type(' ');
         expect(openRows()).toEqual(['top_k=']);
+        flush();
+      }));
+
+      it('opens the value list even when change detection has not run since the select', fakeAsync(() => {
+        // The app runs with `eventCoalescing`, which defers the change
+        // detection after the select's keydown to a timeout queued AFTER
+        // selectOption's own. The deferred startSearch must therefore not rely
+        // on that pass having registered the `=` entry: no detectChanges here.
+        setText('/search_graph');
+        type(' ');
+        type('mo');
+        textarea().dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true, cancelable: true }),
+        );
+        expect(textarea().value).toBe('/search_graph mode');
+
+        tick(0);
+        fixture.detectChanges();
+        expect(textarea().value).toBe('/search_graph mode=');
+        expect(component.userInput).toBe('/search_graph mode=');
+        expect(openRows()).toEqual(MODES);
         flush();
       }));
 
