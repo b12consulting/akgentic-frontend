@@ -1,5 +1,6 @@
 import {
   commandArgsHint,
+  descriptionSummary,
   optionCompletion,
   resolveCommand,
   tokenize,
@@ -258,5 +259,27 @@ describe('command-completion', () => {
       expect(resolveCommand('search_graph', COMMANDS)).toBeNull();
       expect(resolveCommand('', COMMANDS)).toBeNull();
     });
+  });
+});
+
+describe('descriptionSummary', () => {
+  it('keeps the first paragraph of a docstring, on one line', () => {
+    const doc =
+      'Search tasks — options first, then the rest of the line\nis the query.\n\n' +
+      'Example: /search_planning status=pending deploy\n\nArgs:\n    mode: How to match.';
+    expect(descriptionSummary(doc)).toBe(
+      'Search tasks — options first, then the rest of the line is the query.',
+    );
+  });
+
+  it('joins a multi-line option description', () => {
+    expect(descriptionSummary('"hybrid" (default) = both,\n"keyword" = substring only.')).toBe(
+      '"hybrid" (default) = both, "keyword" = substring only.',
+    );
+  });
+
+  it('is empty for a missing description', () => {
+    expect(descriptionSummary(null)).toBe('');
+    expect(descriptionSummary(undefined)).toBe('');
   });
 });

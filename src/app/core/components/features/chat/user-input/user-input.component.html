@@ -37,8 +37,10 @@
     hint (e.g. `<role> [name]`).
 
     Story 15-4: an option row (`kind: 'option'`) renders as `name=` with its
-    choices in the args span; a value row carries only `name`. Inline spans
-    only — the library's arrow-key scrolling assumes one-line rows.
+    choices in the args span; a value row carries only `name`. The description
+    wraps on its own line: the library's arrow-key scrolling measures each
+    row's own box, so rows may differ in height as long as selecting one does
+    not change it.
   -->
   <ng-template #mentionItemTemplate let-item="item">
     <span class="mention-item-name">{{ item.name }}{{ item.kind === 'option' ? '=' : '' }}</span>
@@ -46,7 +48,7 @@
       {{ commandArgsHint(item.args) }}
     </span>
     <span *ngIf="item.choices?.length" class="mention-item-args">{{ item.choices.join(' | ') }}</span>
-    <span *ngIf="item.description" class="mention-item-desc">{{ item.description }}</span>
+    <span *ngIf="item.description" class="mention-item-desc">{{ descriptionSummary(item.description) }}</span>
   </ng-template>
 
   <div class="button-group">

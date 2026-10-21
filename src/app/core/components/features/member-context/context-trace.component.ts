@@ -42,7 +42,7 @@ import {
   CONVERSATION_SUMMARY_PREFIX,
 } from '../../../services/process/event/per-agent-specs';
 import { CommandDescriptor } from '../../../protocol/message.types';
-import { commandArgsHint } from '../../../shared/util/command-completion';
+import { commandArgsHint, descriptionSummary } from '../../../shared/util/command-completion';
 
 import { IconButtonComponent } from '../../primitives/icon-button/icon-button.component';
 
@@ -333,6 +333,11 @@ export class ContextTraceComponent implements OnInit, OnChanges {
    */
   commandArgsHint(args: CommandDescriptor['args']): string {
     return commandArgsHint(args);
+  }
+
+  /** The description a row shows; see `descriptionSummary`. */
+  descriptionSummary(description: string | null | undefined): string {
+    return descriptionSummary(description);
   }
 
   updateContext(context: any[]) {

@@ -214,7 +214,7 @@
         {{ commandArgsHint(item.args) }}
       </span>
       <span *ngIf="item.description" class="mention-item-desc">{{
-        item.description
+        descriptionSummary(item.description)
       }}</span>
     </ng-template>
     <div class="input-row-buttons">

@@ -36,6 +36,15 @@ function argHint(arg: CommandArg): string {
   return arg.required ? `<${arg.name}>` : `[${arg.name}]`;
 }
 
+/**
+ * The first paragraph of a row's description, on one line. A command's
+ * description is its whole docstring, whose `Example:` and `Args:` sections
+ * would only repeat what the args hint and the option rows already show.
+ */
+export function descriptionSummary(description: string | null | undefined): string {
+  return (description ?? '').split(/\n\s*\n/)[0].replace(/\s+/g, ' ').trim();
+}
+
 /** The text split into whitespace-separated tokens, quotes kept intact. */
 export interface Tokenized {
   tokens: string[];

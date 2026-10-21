@@ -27,6 +27,7 @@ import { UsdCostPipe } from '../../../../shared/pipes/usd-cost.pipe';
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 import {
   commandArgsHint,
+  descriptionSummary,
   optionCompletion,
   resolveCommand,
   valueCompletion,
@@ -827,5 +828,10 @@ export class ProcessUserInputComponent implements OnInit {
   /** ADR-013 §2 — the args hint for a command row; see `commandArgsHint`. */
   commandArgsHint(args: CommandDescriptor['args']): string {
     return commandArgsHint(args);
+  }
+
+  /** The description a row shows; see `descriptionSummary`. */
+  descriptionSummary(description: string | null | undefined): string {
+    return descriptionSummary(description);
   }
 }
