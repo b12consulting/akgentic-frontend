@@ -1276,13 +1276,17 @@ describe('ProcessUserInputComponent', () => {
     });
     // Internal, so it is not a known command even though it has options.
     const INTERNAL = mkDescriptor('_internal', { args: [opt('flag')] });
+    const MODELS = ['openai:gpt-6-luna', 'openai:gpt-6-astra'];
+    const SWITCH_MODEL = mkDescriptor('switch_model', {
+      args: [{ name: 'model', type: 'string', required: true, choices: MODELS }],
+    });
 
     beforeEach(() => {
       nodesSubject.next([
         makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
         makeNode({ name: 'dev-1', actorName: '@Developer', role: 'Worker' }),
       ]);
-      commandsById['mgr-1'] = [SEARCH_GRAPH, SEARCH_PLANNING, ROSTER, HIRE, INTERNAL];
+      commandsById['mgr-1'] = [SEARCH_GRAPH, SEARCH_PLANNING, ROSTER, HIRE, INTERNAL, SWITCH_MODEL];
       component.selectedAgents = ['@Manager'];
     });
 
@@ -1766,6 +1770,27 @@ describe('ProcessUserInputComponent', () => {
         expect(textarea().value).toBe('/search_planning ');
         expect(component.userInput).toBe('/search_planning ');
         expect(openRows()).toEqual(['mode=', 'status=', 'owner=']);
+        flush();
+      }));
+
+      it('selecting a command whose argument has choices opens them, and a pick types its space', fakeAsync(() => {
+        setText('');
+        type('/swi');
+        expect(openRows()).toEqual(['switch_model']);
+
+        pressEnter();
+        tick(0);
+        fixture.detectChanges();
+        expect(textarea().value).toBe('/switch_model ');
+        expect(openRows()).toEqual(MODELS);
+        flushMicrotasks();
+
+        pressEnter();
+        tick(0);
+        fixture.detectChanges();
+        expect(textarea().value).toBe('/switch_model openai:gpt-6-luna ');
+        expect(openRows()).toBeNull();
+        expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
         flush();
       }));
 

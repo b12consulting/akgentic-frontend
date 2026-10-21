@@ -27,8 +27,10 @@ import { UsdCostPipe } from '../../../../shared/pipes/usd-cost.pipe';
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 import {
   commandArgsHint,
+  completesAfterName,
   descriptionSummary,
   optionCompletion,
+  positionalCompletion,
   resolveCommand,
   valueCompletion,
 } from '../../../../shared/util/command-completion';
@@ -131,6 +133,7 @@ interface Completion {
   command: string | null;
   options: CommandArg[] | null;
   value: CommandArg | null;
+  positional: CommandArg | null;
 }
 
 /**
@@ -615,6 +618,7 @@ export class ProcessUserInputComponent implements OnInit {
       completion.options !== null,
       completion.options?.map((a) => a.name).join(' ') ?? '',
       completion.value?.name ?? null,
+      completion.positional?.name ?? null,
       completion.command,
     ];
     const cached = this.mentionConfigCache;
@@ -640,6 +644,7 @@ export class ProcessUserInputComponent implements OnInit {
       command: resolveCommand(text, commands)?.name ?? null,
       options: optionCompletion(text, caret, commands),
       value: valueCompletion(text, caret, commands),
+      positional: positionalCompletion(text, caret, commands),
     };
   }
 
@@ -715,6 +720,8 @@ export class ProcessUserInputComponent implements OnInit {
           : []),
         // Withheld, not flagged: a registered trigger fires on EVERY matching
         // key, so these two exist only while `command-completion` arms them.
+        // One space entry: a command's options, or else the choices of its
+        // first positional argument (`/switch_model` and the agent's models).
         ...(completion.options
           ? [{
           ...completionEntry,
@@ -722,7 +729,16 @@ export class ProcessUserInputComponent implements OnInit {
           mentionSelect: this.selectOption,
           items: completion.options.map((a): OptionItem => ({ ...a, kind: 'option' })),
         }]
-          : []),
+          : completion.positional
+            ? [{
+            ...completionEntry,
+            triggerChar: ' ',
+            mentionSelect: this.selectPositional,
+            items: (completion.positional.choices ?? []).map(
+              (name): ValueItem => ({ name, kind: 'value' }),
+            ),
+          }]
+            : []),
         ...(completion.value
           ? [{
           ...completionEntry,
@@ -769,12 +785,13 @@ export class ProcessUserInputComponent implements OnInit {
    * chosen command so the user keeps typing arguments. Does NOT send; the
    * literal text is sent verbatim on the existing Enter path (AC-5).
    *
-   * Story 15-4: for a command that takes options, the space is typed by a
-   * deferred `startSearch(' ')` instead, which also opens the list — a space
-   * returned here would fire no keydown and open nothing.
+   * Story 15-4: for a command that takes options, or whose first positional
+   * argument has choices, the space is typed by a deferred `startSearch(' ')`
+   * instead, which also opens the list — a space returned here would fire no
+   * keydown and open nothing.
    */
   selectCommand = (item: { name: string; args?: readonly CommandArg[] }) => {
-    if (!item.args?.some((a) => a.keyword_only)) return `/${item.name} `;
+    if (!completesAfterName(item.args)) return `/${item.name} `;
     setTimeout(() => this.openList(' '), 0);
     return `/${item.name}`;
   };
@@ -804,6 +821,15 @@ export class ProcessUserInputComponent implements OnInit {
   selectValue = (item: ValueItem) => {
     setTimeout(() => this.openList(' '), 0);
     return `=${item.name}`;
+  };
+
+  /**
+   * Insert a positional choice after the space that opened the list, then type
+   * the next space the same way `selectValue` does.
+   */
+  selectPositional = (item: ValueItem) => {
+    setTimeout(() => this.openList(' '), 0);
+    return ` ${item.name}`;
   };
 
   /**

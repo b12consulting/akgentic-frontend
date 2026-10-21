@@ -1,7 +1,9 @@
 import {
   commandArgsHint,
+  completesAfterName,
   descriptionSummary,
   optionCompletion,
+  positionalCompletion,
   resolveCommand,
   tokenize,
   valueCompletion,
@@ -281,5 +283,42 @@ describe('descriptionSummary', () => {
   it('is empty for a missing description', () => {
     expect(descriptionSummary(null)).toBe('');
     expect(descriptionSummary(undefined)).toBe('');
+  });
+});
+
+describe('positionalCompletion', () => {
+  const MODELS = ['openai:gpt-6-luna', 'openai:gpt-6-astra'];
+  const SWITCH_MODEL = command('switch_model', [
+    { name: 'model', type: 'string', required: true, choices: MODELS },
+  ]);
+  const ALL = [...COMMANDS, SWITCH_MODEL];
+
+  it('offers the first positional choices right after the command name', () => {
+    expect(positionalCompletion('/switch_model', 13, ALL)?.choices).toEqual(MODELS);
+  });
+
+  it('is null once the argument has been typed, mid-text, or without choices', () => {
+    expect(positionalCompletion('/switch_model openai:gpt', 24, ALL)).toBeNull();
+    expect(positionalCompletion('/switch_model', 5, ALL)).toBeNull();
+    expect(positionalCompletion('/workspace_write', 16, ALL)).toBeNull();
+    expect(positionalCompletion('/hire_member', 12, ALL)).toBeNull();
+    expect(positionalCompletion('/unknown', 8, ALL)).toBeNull();
+    expect(positionalCompletion('switch_model', 12, ALL)).toBeNull();
+  });
+});
+
+describe('completesAfterName', () => {
+  it('is true for a command with options or with positional choices', () => {
+    expect(completesAfterName(SEARCH_PLANNING.args)).toBeTrue();
+    expect(
+      completesAfterName([{ name: 'model', type: 'string', required: true, choices: ['a'] }]),
+    ).toBeTrue();
+  });
+
+  it('is false for every other command', () => {
+    expect(completesAfterName(ROSTER.args)).toBeFalse();
+    expect(completesAfterName(HIRE.args)).toBeFalse();
+    expect(completesAfterName(WORKSPACE_WRITE.args)).toBeFalse();
+    expect(completesAfterName(undefined)).toBeFalse();
   });
 });

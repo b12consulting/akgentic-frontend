@@ -193,3 +193,36 @@ export function valueCompletion(
     ) ?? null
   );
 }
+
+/** The first positional argument: neither an option nor the trailing free text. */
+function firstPositional(args: readonly CommandArg[]): CommandArg | undefined {
+  return args.find((a) => !a.keyword_only && !a.rest_of_line);
+}
+
+/**
+ * The positional argument whose `choices` a typed space may offer right now —
+ * or null. Armed only when the text is `/<known command>` and nothing after it,
+ * the caret is at the end, and the command's first positional argument has
+ * choices (`/switch_model` and the agent's models).
+ */
+export function positionalCompletion(
+  text: string,
+  caret: number,
+  commands: readonly CommandDescriptor[],
+): CommandArg | null {
+  if (caret < text.length || !text.startsWith('/')) return null;
+  const { tokens, unclosedQuote } = tokenize(text);
+  if (unclosedQuote || tokens.length !== 1) return null;
+  const command = commands.find((c) => c.name === tokens[0].slice(1));
+  const arg = command ? firstPositional(command.args) : undefined;
+  return arg && (arg.choices?.length ?? 0) > 0 ? arg : null;
+}
+
+/**
+ * Whether selecting this command should type its space and open a list: it
+ * has options, or its first positional argument has choices.
+ */
+export function completesAfterName(args: readonly CommandArg[] | undefined): boolean {
+  if (!args) return false;
+  return args.some((a) => a.keyword_only) || (firstPositional(args)?.choices?.length ?? 0) > 0;
+}
