@@ -176,8 +176,10 @@ describe('ContextService', () => {
 
   // --- AC4 ---------------------------------------------------------------
 
-  it('(AC4) createTeam grows _context$.value by one and RETURNS the new id', async () => {
-    const existing = [makeTeam('a')];
+  it('(AC4) createTeam PREPENDS the new team and RETURNS the new id', async () => {
+    // Prepended, not appended: the cache is the server's `created_at desc`
+    // page, so the newest team belongs on top of the rail.
+    const existing = [makeTeam('a'), makeTeam('b')];
     apiSpy.getTeams.and.returnValue(Promise.resolve(existing));
     await service.getTeams();
 
@@ -188,7 +190,7 @@ describe('ContextService', () => {
 
     const next = await firstValueFrom(service.teams$);
     expect(next.length).toBe(existing.length + 1);
-    expect(next[next.length - 1].team_id).toBe('new');
+    expect(next.map((t) => t.team_id)).toEqual(['new', 'a', 'b']);
     expect(teamId).toBe('new');
   });
 
@@ -252,7 +254,7 @@ describe('ContextService', () => {
     });
   });
 
-  it('(43.1 AC7) forwarding metadata leaves the cache append and the returned id unchanged', async () => {
+  it('(43.1 AC7) forwarding metadata leaves the cache prepend and the returned id unchanged', async () => {
     const existing = [makeTeam('a')];
     apiSpy.getTeams.and.returnValue(Promise.resolve(existing));
     await service.getTeams();
@@ -263,7 +265,7 @@ describe('ContextService', () => {
 
     const next = await firstValueFrom(service.teams$);
     expect(next.length).toBe(existing.length + 1);
-    expect(next[next.length - 1].team_id).toBe('new');
+    expect(next[0].team_id).toBe('new');
     expect(teamId).toBe('new');
     expect(routerSpy.navigate).not.toHaveBeenCalled();
   });
@@ -302,7 +304,7 @@ describe('ContextService', () => {
     expect(next.length).toBe(prev.length + 1);
     expect(next.find((t) => t.team_id === 'a')).toBe(prevA);
     expect(next.find((t) => t.team_id === 'b')).toBe(prevB);
-    expect(next[next.length - 1].team_id).toBe('new');
+    expect(next[0].team_id).toBe('new');
   });
 
   it('(AC3 10.4) after create + navigate, currentTeam$ emits the new team and currentTeamRunning$ reflects it', async () => {

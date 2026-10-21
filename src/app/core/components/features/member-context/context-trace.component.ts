@@ -42,6 +42,7 @@ import {
   CONVERSATION_SUMMARY_PREFIX,
 } from '../../../services/process/event/per-agent-specs';
 import { CommandDescriptor } from '../../../protocol/message.types';
+import { commandArgsHint, descriptionSummary } from '../../../shared/util/command-completion';
 
 import { IconButtonComponent } from '../../primitives/icon-button/icon-button.component';
 
@@ -327,13 +328,16 @@ export class ContextTraceComponent implements OnInit, OnChanges {
   };
 
   /**
-   * ADR-013 §2 — args hint for a command row, e.g. `<role> [name]`: required
-   * in angle brackets, optional in square brackets, declared order.
+   * ADR-013 §2 — args hint for a command row, e.g. `[mode=] <query…>`. The
+   * main chat renders the same rows from the same shared function.
    */
   commandArgsHint(args: CommandDescriptor['args']): string {
-    return args
-      .map((a) => (a.required ? `<${a.name}>` : `[${a.name}]`))
-      .join(' ');
+    return commandArgsHint(args);
+  }
+
+  /** The description a row shows; see `descriptionSummary`. */
+  descriptionSummary(description: string | null | undefined): string {
+    return descriptionSummary(description);
   }
 
   updateContext(context: any[]) {

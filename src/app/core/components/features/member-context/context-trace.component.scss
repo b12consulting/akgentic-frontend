@@ -463,6 +463,9 @@
 
 .mention-item-desc {
   display: block;
+  width: 0;
+  min-width: 100%;
+  white-space: normal;
   font-size: 10.5px;
   color: var(--akg-text-muted);
 }

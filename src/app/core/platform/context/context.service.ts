@@ -472,7 +472,10 @@ export class ContextService {
     const response = await this.apiService.createTeam(namespace, metadata);
     const newTeam = toTeamContext(response);
     const prev = this._context$.value;
-    this._context$.next([...prev, newTeam]);
+    // PREPENDED: the cache holds the server's `created_at desc` page, and a
+    // team created just now is the newest there is. Appending put it below
+    // every older team in the rail until the next reload.
+    this._context$.next([newTeam, ...prev]);
     return response.team_id;
   }
 

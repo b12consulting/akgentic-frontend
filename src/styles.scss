@@ -278,20 +278,38 @@ ul.mention-menu > li.active > a.dropdown-item.mention-item {
 }
 
 .mention-item-desc {
-  // Keep the whole row on a single line. `angular-mentions` ships its rows as
-  // `.mention-item { white-space: nowrap }` and its arrow-key scroll math
-  // (`offsetTop + rect.height - clientHeight`) assumes uniform single-line
-  // rows — a block-level (two-line) description breaks that geometry and makes
-  // the dropdown jump on navigation. Stay inline and ellipsize instead of
-  // wrapping so a long description can't widen the nowrap dropdown unbounded.
-  display: inline-block;
-  vertical-align: bottom;
-  max-width: 22rem;
-  margin-left: 0.5rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  // Its own line under the name, wrapped in full. `angular-mentions` ships its
+  // rows as `.mention-item { white-space: nowrap }`, hence the override.
+  // `width: 0; min-width: 100%` makes it fill the width the name lines set
+  // without ever widening the dropdown itself. Its arrow-key scroll measures
+  // each row's own box (`offsetTop + rect.height`), so rows may differ in
+  // height — what it cannot follow is a row that changes height when selected,
+  // which is why the selected row wraps like the others.
+  display: block;
+  width: 0;
+  min-width: 100%;
+  white-space: normal;
   font-size: 0.8rem;
   color: var(--akg-text-muted);
+}
+
+// In the composer, a list with descriptions spans from the caret to the
+// composer's right edge — the width of the chat panel, whatever the window.
+// Shrink-to-fit made it jump as typing filtered rows away (`/sw` left one short
+// row); a viewport width overflowed a chat panel narrower than the window. The
+// library positions the `mention-list` host absolutely by `left`/`top`, so a
+// `right` on it fixes the span, and `.input-container` is its anchor. The rows
+// wrap inside — the args hint too, or a long one would overflow.
+.input-container > mention-list:has(.mention-item-desc) {
+  right: 14px;
+
+  ul.dropdown-menu.mention-menu.scrollable-menu {
+    width: 100%;
+  }
+}
+
+ul.dropdown-menu.mention-menu.scrollable-menu:has(.mention-item-desc) > li > a.dropdown-item.mention-item {
+  white-space: normal;
 }
 
 /* Markdown styles.

@@ -1,6 +1,7 @@
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, flush, flushMicrotasks, tick } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { FormsModule } from '@angular/forms';
+import { MentionDirective } from 'angular-mentions';
 import { MessageService } from 'primeng/api';
 import { TranslateService } from '@ngx-translate/core';
 import { BehaviorSubject } from 'rxjs';
@@ -16,7 +17,11 @@ import {
   TeamTokenTotals,
   TokenUsageSelector,
 } from '../../../../services/process/selectors/token-usage.selector';
-import { ActorAddress, CommandDescriptor } from '../../../../protocol/message.types';
+import {
+  ActorAddress,
+  CommandArg,
+  CommandDescriptor,
+} from '../../../../protocol/message.types';
 import { NodeInterface } from '../../../../services/process/models/types';
 import { makeAgentNameUserFriendly } from '../../../../shared/util/util';
 
@@ -1231,6 +1236,617 @@ describe('ProcessUserInputComponent', () => {
       );
       expect(slash).toBeTruthy();
       expect((slash as any).disableSort).toBeTrue();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Story 15-4 — option (space) and value (`=`) completion
+  // -------------------------------------------------------------------------
+
+  describe('option and value completion (Story 15-4)', () => {
+    function opt(name: string, extra: Partial<CommandArg> = {}): CommandArg {
+      return { name, type: 'string', required: false, keyword_only: true, ...extra };
+    }
+
+    const MODES = ['vector', 'keyword', 'hybrid'];
+    const SEARCH_GRAPH = mkDescriptor('search_graph', {
+      tool_card: 'KnowledgeGraphTool',
+      args: [
+        opt('mode', { choices: MODES, description: 'How to match' }),
+        opt('top_k', { type: 'integer' }),
+        { name: 'query', type: 'string', required: true, rest_of_line: true },
+      ],
+    });
+    const SEARCH_PLANNING = mkDescriptor('search_planning', {
+      tool_card: 'PlanningTool',
+      args: [
+        opt('mode', { choices: MODES }),
+        opt('status', { choices: ['pending', 'done'] }),
+        opt('owner'),
+        { name: 'query', type: 'string', required: false, rest_of_line: true },
+      ],
+    });
+    const ROSTER = mkDescriptor('roster');
+    // An older backend: none of the new fields, not even as `false`.
+    const HIRE = mkDescriptor('hire_member', {
+      args: [
+        { name: 'role', type: 'string', required: true },
+        { name: 'name', type: 'string', required: false },
+      ],
+    });
+    // Internal, so it is not a known command even though it has options.
+    const INTERNAL = mkDescriptor('_internal', { args: [opt('flag')] });
+    const MODELS = ['openai:gpt-6-luna', 'openai:gpt-6-astra'];
+    const SWITCH_MODEL = mkDescriptor('switch_model', {
+      args: [{ name: 'model', type: 'string', required: true, choices: MODELS }],
+    });
+
+    beforeEach(() => {
+      nodesSubject.next([
+        makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
+        makeNode({ name: 'dev-1', actorName: '@Developer', role: 'Worker' }),
+      ]);
+      commandsById['mgr-1'] = [SEARCH_GRAPH, SEARCH_PLANNING, ROSTER, HIRE, INTERNAL, SWITCH_MODEL];
+      component.selectedAgents = ['@Manager'];
+    });
+
+    /** Set the text as the composer would see it; the caret defaults to the end. */
+    function typed(text: string, caret: number = text.length): void {
+      component.userInput = text;
+      component.caret = caret;
+    }
+
+    function triggers(): (string | undefined)[] {
+      return component.mentionConfig.mentions.map((m) => m.triggerChar);
+    }
+
+    function entry(triggerChar: string): any {
+      return component.mentionConfig.mentions.find((m) => m.triggerChar === triggerChar);
+    }
+
+    // ----- 7.1: the trigger list for every armed and disarmed case -----
+
+    describe('arming, through mentionConfig', () => {
+      const cases: {
+        name: string;
+        text: string;
+        caret?: number;
+        space: boolean;
+        equals: boolean;
+      }[] = [
+        { name: 'a bare known command', text: '/search_planning', space: true, equals: false },
+        {
+          name: 'after a complete option',
+          text: '/search_planning status=pending',
+          space: true,
+          equals: false,
+        },
+        {
+          name: 'after a quoted value with a space',
+          text: '/search_planning owner="Alice Smith"',
+          space: true,
+          equals: false,
+        },
+        {
+          name: 'a trailing space after the command',
+          text: '/search_planning ',
+          space: true,
+          equals: false,
+        },
+        {
+          name: 'a trailing space after a value',
+          text: '/search_planning status=pending ',
+          space: true,
+          equals: false,
+        },
+        { name: 'an option with choices before the caret', text: '/search_graph mode', space: false, equals: true },
+        { name: 'the empty input', text: '', space: false, equals: false },
+        { name: 'a non-command message', text: 'hello', space: false, equals: false },
+        { name: 'an @ mention', text: 'ask @Man', space: false, equals: false },
+        { name: 'a partial command name', text: '/search_plan', space: false, equals: false },
+        { name: 'a command with no options', text: '/roster', space: false, equals: false },
+        { name: 'an internal command', text: '/_internal', space: false, equals: false },
+        { name: 'text has started', text: '/search_planning deploy', space: false, equals: false },
+        {
+          name: 'a later `=` once text has started',
+          text: '/search_planning deploy mode=x',
+          space: false,
+          equals: false,
+        },
+        { name: 'an unknown option', text: '/search_planning bogus=1', space: false, equals: false },
+        { name: 'an empty value', text: '/search_planning status=', space: false, equals: false },
+        { name: 'an unclosed quote', text: '/search_planning owner="Alice', space: false, equals: false },
+        { name: 'an @ mention in a value', text: '/search_planning owner=@Ali', space: false, equals: false },
+        {
+          name: 'a duplicate option',
+          text: '/search_planning status=a status=b',
+          space: false,
+          equals: false,
+        },
+        {
+          name: 'every option already used',
+          text: '/search_graph mode=vector top_k=3',
+          space: false,
+          equals: false,
+        },
+        {
+          name: 'a caret before the end',
+          text: '/search_planning status=pending',
+          caret: 5,
+          space: false,
+          equals: false,
+        },
+        { name: 'an option with no choices', text: '/search_graph top_k', space: false, equals: false },
+        {
+          name: 'an option already used, as the value word',
+          text: '/search_graph mode=vector mode',
+          space: false,
+          equals: false,
+        },
+        { name: 'not an option name', text: '/search_graph mod', space: false, equals: false },
+        { name: 'a space after the option word', text: '/search_graph mode ', space: false, equals: false },
+        { name: 'a mid-text caret on the option word', text: '/search_graph mode', caret: 5, space: false, equals: false },
+        { name: 'an option word in a non-command message', text: 'hello mode', space: false, equals: false },
+      ];
+
+      for (const c of cases) {
+        it(`${c.name}: ${JSON.stringify(c.text)}`, () => {
+          typed(c.text, c.caret);
+          const present = triggers();
+          expect(present.includes(' '))
+            .withContext('space (option) trigger')
+            .toBe(c.space);
+          expect(present.includes('='))
+            .withContext('= (value) trigger')
+            .toBe(c.equals);
+          // The `@` trigger is never withheld.
+          expect(present).toContain('@');
+        });
+      }
+
+      it('with several Send-to recipients there is no single target, so nothing arms', () => {
+        component.selectedAgents = ['@Manager', '@Developer'];
+        typed('/search_planning');
+        expect(triggers()).not.toContain(' ');
+        typed('/search_graph mode');
+        expect(triggers()).not.toContain('=');
+      });
+
+      it('the space entry is a sorted-off, prefix-filtered list that closes on a space', () => {
+        typed('/search_graph');
+        const space = entry(' ');
+        expect(space.mentionSelect).toBe(component.selectOption);
+        expect(space.allowSpace).toBeFalse();
+        expect(space.disableSort).toBeTrue();
+        expect(space.dropUp).toBeTrue();
+        expect(space.maxItems).toBe(-1);
+        // Prefix, not substring: `de` would match `mode` anywhere.
+        expect(space.mentionFilter('mo', space.items).map((i: any) => i.name)).toEqual(['mode']);
+        expect(space.mentionFilter('de', space.items)).toEqual([]);
+        expect(space.mentionFilter('', space.items).length).toBe(2);
+      });
+
+      it('the = entry offers the choices in declared order, prefix-filtered', () => {
+        typed('/search_graph mode');
+        const equals = entry('=');
+        expect(equals.mentionSelect).toBe(component.selectValue);
+        expect(equals.allowSpace).toBeFalse();
+        expect(equals.disableSort).toBeTrue();
+        expect(equals.items).toEqual(MODES.map((name) => ({ name, kind: 'value' })));
+        expect(equals.mentionFilter('k', equals.items).map((i: any) => i.name)).toEqual([
+          'keyword',
+        ]);
+        expect(equals.mentionFilter('or', equals.items)).toEqual([]);
+      });
+    });
+
+    // ----- 7.2: an event without the new fields behaves exactly as today -----
+
+    describe('a descriptor without the new fields', () => {
+      for (const text of ['/hire_member', '/hire_member ', '/hire_member Developer']) {
+        it(`arms neither trigger for ${JSON.stringify(text)}`, () => {
+          typed(text);
+          expect(triggers()).not.toContain(' ');
+          expect(triggers()).not.toContain('=');
+        });
+      }
+
+      it('renders the same hint as before', () => {
+        expect(component.commandArgsHint(HIRE.args)).toBe('<role> [name]');
+      });
+
+      it('still gets a trailing space from selectCommand', () => {
+        expect(component.selectCommand(HIRE)).toBe('/hire_member ');
+      });
+    });
+
+    // ----- 7.3: option rows -----
+
+    it('option rows are the UNUSED options in declared order, carrying description and choices', () => {
+      typed('/search_planning status=done');
+      const items = entry(' ').items;
+      expect(items.map((i: any) => i.name)).toEqual(['mode', 'owner']);
+      expect(items[0]).toEqual(
+        jasmine.objectContaining({ name: 'mode', kind: 'option', choices: MODES }),
+      );
+
+      typed('/search_graph');
+      expect(entry(' ').items[0]).toEqual(
+        jasmine.objectContaining({ name: 'mode', description: 'How to match', choices: MODES }),
+      );
+    });
+
+    it('renders the new hint for an options-then-text command', () => {
+      expect(component.commandArgsHint(SEARCH_GRAPH.args)).toBe('[mode=] [top_k=] <query…>');
+    });
+
+    // ----- 7.4 / 7.5: what each select inserts -----
+
+    describe('selection', () => {
+      function directive(): MentionDirective {
+        return fixture.debugElement
+          .query(By.directive(MentionDirective))
+          .injector.get(MentionDirective);
+      }
+
+      it('an option without choices inserts ` name=` and opens nothing', fakeAsync(() => {
+        const startSearch = spyOn(directive(), 'startSearch');
+        expect(component.selectOption({ ...opt('top_k'), kind: 'option' })).toBe(' top_k=');
+        tick(0);
+        expect(startSearch).not.toHaveBeenCalled();
+      }));
+
+      it('an option with choices inserts ` name`, then DEFERS startSearch(=)', fakeAsync(() => {
+        const startSearch = spyOn(directive(), 'startSearch');
+        expect(
+          component.selectOption({ ...opt('mode', { choices: MODES }), kind: 'option' }),
+        ).toBe(' mode');
+        // Not synchronously: the directive has not inserted ` mode` yet, and
+        // the `=` entry is not registered until change detection has run.
+        expect(startSearch).not.toHaveBeenCalled();
+        tick(0);
+        expect(startSearch).toHaveBeenCalledOnceWith('=');
+      }));
+
+      it('a deferred value list does nothing once the component is gone', fakeAsync(() => {
+        const startSearch = spyOn(directive(), 'startSearch');
+        component.selectOption({ ...opt('mode', { choices: MODES }), kind: 'option' });
+        fixture.destroy();
+        expect(() => tick(0)).not.toThrow();
+        expect(startSearch).not.toHaveBeenCalled();
+      }));
+
+      it('a value inserts `=value`, then DEFERS startSearch(space)', fakeAsync(() => {
+        const startSearch = spyOn(directive(), 'startSearch');
+        expect(component.selectValue({ name: 'vector', kind: 'value' })).toBe('=vector');
+        expect(startSearch).not.toHaveBeenCalled();
+        tick(0);
+        expect(startSearch).toHaveBeenCalledOnceWith(' ');
+      }));
+
+      it('selectCommand inserts `/name` for a command with options, then DEFERS startSearch(space)', fakeAsync(() => {
+        const startSearch = spyOn(directive(), 'startSearch');
+        expect(component.selectCommand(SEARCH_PLANNING)).toBe('/search_planning');
+        expect(startSearch).not.toHaveBeenCalled();
+        tick(0);
+        expect(startSearch).toHaveBeenCalledOnceWith(' ');
+      }));
+
+      it('selectCommand keeps `/name ` for every other command and opens nothing', fakeAsync(() => {
+        const startSearch = spyOn(directive(), 'startSearch');
+        expect(component.selectCommand(ROSTER)).toBe('/roster ');
+        expect(component.selectCommand({ name: 'hire_member' })).toBe('/hire_member ');
+        tick(0);
+        expect(startSearch).not.toHaveBeenCalled();
+      }));
+    });
+
+    // ----- 7.6: identity -----
+
+    describe('mentionConfig identity', () => {
+      it('is the same reference across reads while the key is stable', () => {
+        typed('/search_graph');
+        expect(component.mentionConfig).toBe(component.mentionConfig);
+      });
+
+      it('rebuilds once when the space-armed state flips', () => {
+        typed('/search_grap');
+        const before = component.mentionConfig;
+        typed('/search_graph');
+        const armed = component.mentionConfig;
+        expect(armed).not.toBe(before);
+        expect(component.mentionConfig).toBe(armed);
+      });
+
+      it('does not rebuild while a disarmed text keeps changing', () => {
+        typed('/search_planning d');
+        const disarmed = component.mentionConfig;
+        typed('/search_planning de');
+        expect(component.mentionConfig).toBe(disarmed);
+        typed('/search_planning deploy the service');
+        expect(component.mentionConfig).toBe(disarmed);
+      });
+
+      it('rebuilds when the value-armed option appears', () => {
+        typed('/search_graph mo');
+        const before = component.mentionConfig;
+        typed('/search_graph mode');
+        expect(component.mentionConfig).not.toBe(before);
+        expect(triggers()).toContain('=');
+      });
+    });
+
+    // ----- 7.7 / 7.8: the real directive, real key events -----
+
+    describe('in the DOM', () => {
+      function textarea(): HTMLTextAreaElement {
+        return fixture.nativeElement.querySelector('textarea');
+      }
+
+      /** The open list's row names, or null while no list is shown. */
+      function openRows(): string[] | null {
+        const list: HTMLElement | null = fixture.nativeElement.querySelector('mention-list ul');
+        if (!list || list.hidden) return null;
+        return Array.from(list.querySelectorAll('.mention-item-name')).map((el) =>
+          (el.textContent ?? '').trim(),
+        );
+      }
+
+      /** Put `text` in the field as an edit would: caret at the end, an `input` event. */
+      function setText(text: string): void {
+        const el = textarea();
+        el.value = text;
+        el.setSelectionRange(text.length, text.length);
+        el.dispatchEvent(new Event('input'));
+        fixture.detectChanges();
+      }
+
+      /** One typed character: the keydown the directive decides on, then the insert. */
+      function type(chars: string): void {
+        for (const ch of chars) {
+          textarea().dispatchEvent(
+            new KeyboardEvent('keydown', {
+              key: ch,
+              keyCode: ch.toUpperCase().charCodeAt(0),
+              bubbles: true,
+              cancelable: true,
+            }),
+          );
+          setText(textarea().value + ch);
+        }
+      }
+
+      function pressEnter(): KeyboardEvent {
+        const event = new KeyboardEvent('keydown', {
+          key: 'Enter',
+          keyCode: 13,
+          bubbles: true,
+          cancelable: true,
+        });
+        textarea().dispatchEvent(event);
+        fixture.detectChanges();
+        return event;
+      }
+
+      beforeEach(() => {
+        component.userInputEnterKeySubmit = true;
+        fixture.detectChanges();
+        textarea().focus();
+      });
+
+      it('Enter with the option list open selects the option and does not send', fakeAsync(() => {
+        setText('/search_graph');
+        type(' ');
+        expect(openRows()).toEqual(['mode=', 'top_k=']);
+        const firstRow: HTMLElement = fixture.nativeElement.querySelector('mention-list li');
+        expect(firstRow.textContent).toContain('vector | keyword | hybrid');
+        expect(firstRow.textContent).toContain('How to match');
+
+        type('mo');
+        const enter = pressEnter();
+
+        expect(enter.defaultPrevented).toBeTrue();
+        expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+        expect(textarea().value).toBe('/search_graph mode');
+
+        // The deferred startSearch types the `=` and opens the value list.
+        tick(0);
+        fixture.detectChanges();
+        expect(textarea().value).toBe('/search_graph mode=');
+        expect(component.userInput).toBe('/search_graph mode=');
+        expect(openRows()).toEqual(MODES);
+        // ngModel writes the resynced text back in a microtask, which a browser
+        // runs before the next key; fakeAsync holds it until told to.
+        flushMicrotasks();
+
+        // Enter selects a value too…
+        pressEnter();
+        expect(textarea().value).toBe('/search_graph mode=vector');
+        expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+
+        // …and the deferred startSearch types the space and offers the rest.
+        tick(0);
+        fixture.detectChanges();
+        expect(textarea().value).toBe('/search_graph mode=vector ');
+        expect(component.userInput).toBe('/search_graph mode=vector ');
+        expect(openRows()).toEqual(['top_k=']);
+        flush();
+      }));
+
+      it('the last value types its space and opens nothing once every option is used', fakeAsync(() => {
+        setText('/search_graph top_k=3');
+        type(' ');
+        expect(openRows()).toEqual(['mode=']);
+
+        pressEnter();
+        tick(0);
+        fixture.detectChanges();
+        expect(openRows()).toEqual(MODES);
+        flushMicrotasks();
+
+        pressEnter();
+        tick(0);
+        fixture.detectChanges();
+        expect(textarea().value).toBe('/search_graph top_k=3 mode=vector ');
+        expect(openRows()).toBeNull();
+        expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+        flush();
+      }));
+
+      it('opens the value list even when change detection has not run since the select', fakeAsync(() => {
+        // The app runs with `eventCoalescing`, which defers the change
+        // detection after the select's keydown to a timeout queued AFTER
+        // selectOption's own. The deferred startSearch must therefore not rely
+        // on that pass having registered the `=` entry: no detectChanges here.
+        setText('/search_graph');
+        type(' ');
+        type('mo');
+        textarea().dispatchEvent(
+          new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true, cancelable: true }),
+        );
+        expect(textarea().value).toBe('/search_graph mode');
+
+        tick(0);
+        fixture.detectChanges();
+        expect(textarea().value).toBe('/search_graph mode=');
+        expect(component.userInput).toBe('/search_graph mode=');
+        expect(openRows()).toEqual(MODES);
+        flush();
+      }));
+
+      it('Ctrl+Enter with the option list open sends and closes the list', fakeAsync(() => {
+        setText('/search_planning status=pending');
+        type(' ');
+        expect(openRows()).not.toBeNull();
+
+        textarea().dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'Enter',
+            keyCode: 13,
+            ctrlKey: true,
+            bubbles: true,
+            cancelable: true,
+          }),
+        );
+        fixture.detectChanges();
+
+        expect(openRows()).toBeNull();
+        expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+          'test-team-id',
+          '/search_planning status=pending ',
+          '@Manager',
+        );
+        flush();
+      }));
+
+      it('Enter sends as usual once the typed text matches no option', fakeAsync(() => {
+        setText('/search_graph');
+        type(' ');
+        expect(openRows()).not.toBeNull();
+        // `d` begins no option, so the filtered list is empty and hidden.
+        type('deploy');
+        expect(openRows()).toBeNull();
+
+        pressEnter();
+        expect(apiServiceSpy.sendMessage).toHaveBeenCalledOnceWith(
+          'test-team-id',
+          '/search_graph deploy',
+          '@Manager',
+        );
+        flush();
+      }));
+
+      it('selecting a command with options types its space and opens the options', fakeAsync(() => {
+        setText('');
+        type('/search_p');
+        expect(openRows()).toEqual(['search_planning']);
+
+        pressEnter();
+        expect(textarea().value).toBe('/search_planning');
+        expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+
+        tick(0);
+        fixture.detectChanges();
+        expect(textarea().value).toBe('/search_planning ');
+        expect(component.userInput).toBe('/search_planning ');
+        expect(openRows()).toEqual(['mode=', 'status=', 'owner=']);
+        flush();
+      }));
+
+      it('a row arrowed to and then filtered away leaves the first row selected', fakeAsync(() => {
+        setText('');
+        type('/');
+        const down = (): void => {
+          textarea().dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true, cancelable: true }),
+          );
+          fixture.detectChanges();
+        };
+        down();
+        down();
+        down();
+
+        type('swi');
+        expect(openRows()).toEqual(['switch_model']);
+        const active: HTMLElement | null = fixture.nativeElement.querySelector('mention-list li.active');
+        expect(active?.textContent).toContain('switch_model');
+
+        pressEnter();
+        expect(textarea().value).toBe('/switch_model');
+        flush();
+      }));
+
+      it('a selected row that survives the filter stays selected', fakeAsync(() => {
+        setText('');
+        type('/s');
+        const rows = openRows() ?? [];
+        const target = rows.indexOf('switch_model');
+        expect(target).toBeGreaterThan(0);
+        for (let i = 0; i < target; i++) {
+          textarea().dispatchEvent(
+            new KeyboardEvent('keydown', { key: 'ArrowDown', keyCode: 40, bubbles: true, cancelable: true }),
+          );
+          fixture.detectChanges();
+        }
+
+        type('w');
+        const active: HTMLElement | null = fixture.nativeElement.querySelector('mention-list li.active');
+        expect(active?.textContent).toContain('switch_model');
+        flush();
+      }));
+
+      it('selecting a command whose argument has choices opens them, and a pick types its space', fakeAsync(() => {
+        setText('');
+        type('/swi');
+        expect(openRows()).toEqual(['switch_model']);
+
+        pressEnter();
+        tick(0);
+        fixture.detectChanges();
+        expect(textarea().value).toBe('/switch_model ');
+        expect(openRows()).toEqual(MODELS);
+        flushMicrotasks();
+
+        pressEnter();
+        tick(0);
+        fixture.detectChanges();
+        expect(textarea().value).toBe('/switch_model openai:gpt-6-luna ');
+        expect(openRows()).toBeNull();
+        expect(apiServiceSpy.sendMessage).not.toHaveBeenCalled();
+        flush();
+      }));
+
+      it('selecting a command without options inserts `/name ` and its programmatic space opens nothing', fakeAsync(() => {
+        setText('');
+        type('/ros');
+        expect(openRows()).toEqual(['roster']);
+
+        pressEnter();
+        expect(textarea().value).toBe('/roster ');
+        expect(openRows()).toBeNull();
+        expect(triggers()).not.toContain(' ');
+        flush();
+      }));
     });
   });
 
