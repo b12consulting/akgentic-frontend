@@ -98,8 +98,9 @@ export class ConnectionToast {
   /**
    * Story 8-2 (AC1, AC2, AC3): raise the persistent, non-closable warning toast
    * for a lost WebSocket. Called from the WS `error` handler and the WS
-   * `complete` handler — the two of them, and nothing else, are why the dedup
-   * flag exists.
+   * `complete` handler — the two of them are why the dedup flag exists — and,
+   * since Story 63-1, from a reconnect attempt whose socket cannot be built,
+   * where the flag makes it a no-op unless that attempt was a forced one.
    *
    * The payload is exact and load-bearing in both directions: `closable: false`
    * because this warning must not be dismissable, and NO `life` (any value

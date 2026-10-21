@@ -40,12 +40,13 @@ import { TraceFoldState } from '../ui-state/trace-fold-state';
  * stack — and one factory provider, `SELECTED_AGENT_ID`, which hands the event
  * tier the root-scoped member selection it may not import directly.
  *
- * All of those service classes but `WakeUpSource` (Story 63-1) used to be
- * the `process/:id` route's providers, and every component that wanted one injected it bare — which meant
- * every one of them could only ever be mounted inside that component. That is
- * the coupling in the way of reusing a panel anywhere else, and of anybody
- * assembling a second UI out of the same parts: a component that silently
- * requires a particular ancestor is not a component you can place.
+ * All of those service classes but `WakeUpSource` (Story 63-1) used to be the
+ * `process/:id` route's providers, and every component that wanted one
+ * injected it bare — which meant every one of them could only ever be mounted
+ * inside that component. That is the coupling in the way of reusing a panel
+ * anywhere else, and of anybody assembling a second UI out of the same parts:
+ * a component that silently requires a particular ancestor is not a component
+ * you can place.
  *
  * `Route.providers` gives them an ENVIRONMENT injector owned by the route, so
  * nothing has to be mounted under a specific component to reach them. The

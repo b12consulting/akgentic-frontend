@@ -151,7 +151,7 @@ export class IngestionService {
    * Story 63-1 (ADR-040 §1): the root team cache, re-read by `resync()`. Only
    * through its public refresh — `currentTeamRunning$` is never written here.
    */
-  private readonly teams: ContextService = inject(ContextService);
+  private readonly contextService: ContextService = inject(ContextService);
 
   /**
    * The pending reconnect attempt, if any. Not a subscription, so it stays out
@@ -450,8 +450,8 @@ export class IngestionService {
       ),
     );
     // Story 63-1 (ADR-040 §2): a wake-up forces a reconnect. In the cycle bag,
-    // so it is heard only while a cycle is open.
-    cycle.add(this.wakeUp.wake$.subscribe(() => this.forceReconnect()));
+    // so it is heard only while a cycle is open, and for THIS cycle's team.
+    cycle.add(this.wakeUp.wake$.subscribe(() => this.forceReconnect(processId)));
 
     try {
       this.socket.start(processId);
@@ -537,10 +537,10 @@ export class IngestionService {
    * `attemptReconnect`'s catch does the same. `TeamSocket.stop()` detaches
    * before closing, so the old socket closed here reports nothing.
    */
-  private forceReconnect(): void {
+  private forceReconnect(processId: string): void {
     if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
-    this.attemptReconnect(this.processId);
+    this.attemptReconnect(processId);
   }
 
   /**
@@ -570,7 +570,7 @@ export class IngestionService {
    */
   private async resync(token: number, processId: string): Promise<void> {
     try {
-      const team = await this.teams.refreshOneTeam(processId);
+      const team = await this.contextService.refreshOneTeam(processId);
       if (token !== this.cycleToken) return;
       if (!team || isRunning(team)) return;
       const messages = await this.replay.replayMessages(processId);

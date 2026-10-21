@@ -5,6 +5,7 @@ import {
   TestBed,
   tick,
 } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import { MessageService } from 'primeng/api';
 import { Toast } from 'primeng/toast';
 import { BehaviorSubject, of, ReplaySubject, Subject, Subscription } from 'rxjs';
@@ -38,7 +39,6 @@ import { TeamDescriptionReactor } from './team-description-reactor';
 import { WakeUpSource } from './wake-up-source';
 import { ContextService } from '../../../platform/context/context.service';
 import { TeamContext } from '../../../platform/context/team.interface';
-import { Router } from '@angular/router';
 import {
   ActorAddress,
   CLOSED_NOTIFICATION_MODEL,
@@ -4998,6 +4998,20 @@ describe('IngestionService — a reconnect resyncs, and a wake-up reconnects (St
     await settle();
 
     expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('a team switch during an unanswered attempt leaves the next first handshake a plain one', async () => {
+    await seed('running');
+    await openCycle(true);
+    // An attempt is under way — its handshake never comes — when team B opens.
+    loseAndRetry();
+    expect(sockets.length).toBe(2);
+
+    await service.init('team-B', true);
+    acceptLatest();
+    await settle();
+
+    expect(refresh).not.toHaveBeenCalled();
   });
 
   // --- the forced reconnect ---------------------------------------------------
