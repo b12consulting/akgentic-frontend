@@ -515,6 +515,7 @@ describe('FetchService', () => {
 describe('FetchService over the real AuthService — a burst of 401s', () => {
   let notificationsSpy: jasmine.SpyObj<NotificationPort>;
   let router: jasmine.SpyObj<Router>;
+  let fetchSpy: jasmine.Spy;
   let originalFetch: typeof fetch;
 
   beforeEach(() => {
@@ -535,7 +536,8 @@ describe('FetchService over the real AuthService — a burst of 401s', () => {
       ],
     });
     originalFetch = globalThis.fetch;
-    globalThis.fetch = jasmine.createSpy('fetch').and.callFake(async () => unauthorized());
+    fetchSpy = jasmine.createSpy('fetch').and.callFake(async () => unauthorized());
+    globalThis.fetch = fetchSpy;
   });
 
   afterEach(() => {
@@ -557,6 +559,9 @@ describe('FetchService over the real AuthService — a burst of 401s', () => {
       expect(reason instanceof HttpError).toBeTrue();
       expect((reason as HttpError).status).toBe(401);
     }
+    // Every 401 is confirmed before the latch is reached: three probes, one navigation.
+    const probes = fetchSpy.calls.allArgs().filter(([url]) => url === 'https://x/auth/me');
+    expect(probes.length).toBe(3);
     expect(router.navigate).toHaveBeenCalledOnceWith(['/login']);
     expect(notificationsSpy.notify).not.toHaveBeenCalled();
   });
