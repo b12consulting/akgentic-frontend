@@ -293,6 +293,25 @@ ul.mention-menu > li.active > a.dropdown-item.mention-item {
   color: var(--akg-text-muted);
 }
 
+// In the composer, a list with descriptions spans from the caret to the
+// composer's right edge — the width of the chat panel, whatever the window.
+// Shrink-to-fit made it jump as typing filtered rows away (`/sw` left one short
+// row); a viewport width overflowed a chat panel narrower than the window. The
+// library positions the `mention-list` host absolutely by `left`/`top`, so a
+// `right` on it fixes the span, and `.input-container` is its anchor. The rows
+// wrap inside — the args hint too, or a long one would overflow.
+.input-container > mention-list:has(.mention-item-desc) {
+  right: 14px;
+
+  ul.dropdown-menu.mention-menu.scrollable-menu {
+    width: 100%;
+  }
+}
+
+ul.dropdown-menu.mention-menu.scrollable-menu:has(.mention-item-desc) > li > a.dropdown-item.mention-item {
+  white-space: normal;
+}
+
 /* Markdown styles.
  *
  * TYPOGRAPHY ONLY — no colour and no leading. This block is unencapsulated and

@@ -15,6 +15,10 @@
   background: var(--akg-overlay-bg);
   box-shadow: var(--akg-overlay-shadow);
   padding: 12px 14px 10px;
+  /* The anchor of the `/` and `@` mention lists: `angular-mentions` places its
+     list at caret coordinates measured from the textarea's offset parent, and
+     the list stretches to this box's right edge (`styles.scss`). */
+  position: relative;
 
   textarea {
     width: 100%;
