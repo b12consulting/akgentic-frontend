@@ -4,6 +4,8 @@ import { BehaviorSubject, concatAll, Observable, Subscription } from 'rxjs';
 import {
   AkgenticMessage,
   CommandDescriptor,
+  isEventMessage,
+  isTeamStoppingEvent,
 } from '../../../protocol/message.types';
 
 import { ConnectionToast } from './connection-toast';
@@ -33,7 +35,10 @@ import { NOTIFICATION_PORT } from '../../../platform/notification/notification.p
 import { AuthService } from '../../../platform/auth/auth.service';
 import { ConfigService } from '../../../platform/config/config.service';
 import { ContextService } from '../../../platform/context/context.service';
-import { isRunning } from '../../../platform/context/team.interface';
+import {
+  isRunning,
+  TeamContext,
+} from '../../../platform/context/team.interface';
 
 /**
  * `IngestionService` — the ORCHESTRATOR of the ingestion layer (Epic 34 /
@@ -161,8 +166,10 @@ export class IngestionService {
   private readonly wakeUp: WakeUpSource = inject(WakeUpSource);
 
   /**
-   * Story 63-1 (ADR-040 §1): the root team cache, re-read by `resync()`. Only
-   * through its public refresh — `currentTeamRunning$` is never written here.
+   * Story 63-1 (ADR-040 §1): the root team cache, re-read by `resync()` and,
+   * while it says the team is not running, on a protocol frame (Story 63-3).
+   * Only through its public refresh — `currentTeamRunning$` is never written
+   * here.
    */
   private readonly contextService: ContextService = inject(ContextService);
 
@@ -181,6 +188,23 @@ export class IngestionService {
    * timer in `disposePriorSubscriptions()`.
    */
   private reconnecting = false;
+
+  /**
+   * Story 63-3 (ADR-040 §4): the record read in flight for this cycle, shared
+   * by `resync()` and the frame trigger so that one handshake or one burst
+   * costs one `GET`. Cleared in `disposePriorSubscriptions()`, so a new cycle
+   * never awaits the previous team's read.
+   */
+  private teamRead: Promise<TeamContext | null> | null = null;
+
+  /**
+   * Story 63-3: whether a protocol frame may trigger a record read. Disarmed
+   * by a `TeamStoppingEvent` on the socket — the frames a team emits while it
+   * tears down are new, and its record still says running until the teardown
+   * ends — and re-armed by a frame the log already holds, the first of a woken
+   * socket's cursor-0 replay. Armed again in `disposePriorSubscriptions()`.
+   */
+  private frameTriggerArmed = true;
 
   /** Epic 34 (ADR-025 §0-§1): the notification-toast reactor. */
   private readonly notificationToasts: NotificationToasts =
@@ -463,6 +487,9 @@ export class IngestionService {
       ),
     );
     cycle.add(this.socket.closed$.subscribe((code: number) => this.onSocketClosed(code)));
+    // Story 63-3 (ADR-040 §4): a frame on a team this tab believes stopped
+    // re-reads its record — the team was restored elsewhere.
+    cycle.add(this.socket.inbound$.subscribe((frame) => this.onProtocolFrame(processId, frame)));
     // Story 63-1 (ADR-040 §2): a wake-up forces a reconnect. In the cycle bag,
     // so it is heard only while a cycle is open, and for THIS cycle's team.
     cycle.add(this.wakeUp.wake$.subscribe(() => this.forceReconnect(processId)));
@@ -616,13 +643,58 @@ export class IngestionService {
   }
 
   /**
+   * Story 63-3 (ADR-040 §4): a parked socket sends nothing, so a frame on a
+   * team the tab believes stopped is evidence that its stream exists again.
+   * The record, not the frame, decides the status: the frame only re-reads it.
+   * One read at a time, shared with `resync()`, re-armed when it settles. A
+   * live stop disarms the trigger and a replayed frame re-arms it (see
+   * `frameTriggerArmed`). Nothing follows the read, so there is nothing to
+   * token-check: the cycle-scoped `teamRead` keeps a dead cycle's read out of
+   * the next one.
+   */
+  private onProtocolFrame(processId: string, frame: AkgenticMessage): void {
+    if (isEventMessage(frame) && isTeamStoppingEvent(frame.event)) {
+      this.frameTriggerArmed = false;
+      return;
+    }
+    if (!this.frameTriggerArmed && frame.id && this.log.snapshot().some((m) => m.id === frame.id)) {
+      this.frameTriggerArmed = true;
+    }
+    if (!this.frameTriggerArmed) return;
+    if (this.contextService.currentTeamRunning$.value || this.teamRead) return;
+    this.readTeam(processId).catch((err: unknown) =>
+      console.error('Team re-read on a frame failed:', err),
+    );
+  }
+
+  /**
+   * The cycle's one record read: joins the read in flight, or starts one. The
+   * clear touches only its own promise, so a dead cycle's late answer cannot
+   * wipe the live cycle's read — and it is `then(clear, clear)`, never
+   * `finally`, which would leave an uncaught copy of a rejection.
+   */
+  private readTeam(processId: string): Promise<TeamContext | null> {
+    if (this.teamRead) return this.teamRead;
+    const read = this.contextService.refreshOneTeam(processId);
+    this.teamRead = read;
+    const clear = (): void => {
+      if (this.teamRead === read) this.teamRead = null;
+    };
+    read.then(clear, clear);
+    return read;
+  }
+
+  /**
    * Story 63-1 (ADR-040 §1): catch up on what a lost socket missed. The record
    * upsert restates the team's status through `ContextService`; a team that is
    * no longer running gets its REST history, appended with the log's id-dedup.
+   * Story 63-3: the record read is shared with the frame trigger (`readTeam`).
    *
    * Never the history of a RUNNING team (epic trap T1): persisted history keeps
    * every earlier `TeamStoppingEvent`, and `TeamStatusReactor` would mark the
    * team stopped. Its cursor-0 socket replay already carries what it missed.
+   * Story 63-3: a team that came back while the history was in flight gets
+   * nothing appended either, because its socket replay carries it.
    *
    * Not `init()`: no log reset, no toast clear, no spinner. Each failed read is
    * logged and ends the resync — `FetchService` has already toasted — and the
@@ -630,11 +702,11 @@ export class IngestionService {
    */
   private async resync(token: number, processId: string): Promise<void> {
     try {
-      const team = await this.contextService.refreshOneTeam(processId);
+      const team = await this.readTeam(processId);
       if (token !== this.cycleToken) return;
       if (!team || isRunning(team)) return;
       const messages = await this.replay.replayMessages(processId);
-      if (token !== this.cycleToken) return;
+      if (token !== this.cycleToken || this.contextService.currentTeamRunning$.value) return;
       this.log.appendAll(messages);
     } catch (err) {
       console.error('Resync after reconnect failed:', err);
@@ -656,6 +728,8 @@ export class IngestionService {
     if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer);
     this.reconnectTimer = null;
     this.reconnecting = false;
+    this.teamRead = null;
+    this.frameTriggerArmed = true;
     this.socket.stop();
     this.cycle?.unsubscribe();
     this.cycle = null;
@@ -669,12 +743,15 @@ export class IngestionService {
    * Story 52-1 (FR2): close the team this service is currently running,
    * WITHOUT destroying the units the next team needs.
    *
-   * The difference from `ngOnDestroy` is one line — `socket.destroy()` — and it
-   * is the whole point: destroy COMPLETES the transport's streams, which ends
-   * them for good, so a view that outlives one team could never open another.
-   * The difference from step (a) of `init()` is the log: `close()` empties it,
-   * because after it there is no team, and every selector and per-agent store
-   * is a fold over that log.
+   * The difference from `ngOnDestroy` that MATTERS is `socket.destroy()`, and
+   * it is the whole point: destroy COMPLETES the transport's streams, which
+   * ends them for good, so a view that outlives one team could never open
+   * another. The other differences are deliberate: `close()` empties the log
+   * and clears `processId`, because after it there is no team, and every
+   * selector and per-agent store is a fold over that log; and it releases the
+   * Connection Lost toast with `hide()`, which re-arms the unit for the next
+   * team, where `ngOnDestroy` calls `stop()`, which enters the destroying
+   * state. The log is also the difference from step (a) of `init()`.
    *
    * Called by `TeamSessionService.close()` — on a switch, before its awaited
    * fetch, and on `dispose()` — not left to the next `init()`'s step (a): the

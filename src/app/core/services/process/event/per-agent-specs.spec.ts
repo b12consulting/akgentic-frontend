@@ -248,10 +248,14 @@ function configureBed(): {
       },
       // Story 37-2: `IngestionService` injects `TeamStatusReactor`, which
       // injects the root-scoped `ContextService`. A real one would need a
-      // `Router` this bed has no use for.
+      // `Router` this bed has no use for. Story 63-3: every protocol frame reads
+      // `currentTeamRunning$`; it answers running, so a frame re-reads nothing.
       {
         provide: ContextService,
-        useValue: { markStopped: jasmine.createSpy('markStopped') },
+        useValue: {
+          markStopped: jasmine.createSpy('markStopped'),
+          currentTeamRunning$: new BehaviorSubject<boolean>(true),
+        },
       },
       {
         provide: ApiService,

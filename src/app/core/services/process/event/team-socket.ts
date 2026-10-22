@@ -34,9 +34,12 @@ export const SESSION_EXPIRED_CLOSE_CODE = 4401;
  * Nothing is self-wired: the constructor opens no socket and subscribes to
  * nothing (ADR-025 §2, restating ADR-005 §Decision 6). `start()` / `stop()` /
  * `destroy()` are the explicit invocation points, all driven by
- * `IngestionService`: `start()` / `stop()` by `init()` and `close()`, and
- * `destroy()` by `ngOnDestroy()` — which runs only at app teardown, never on
- * navigation, because the router never destroys the route's injector.
+ * `IngestionService`: `start()` by `init()` and by `attemptReconnect()`, which
+ * serves both the scheduled and the forced reconnect; `stop()` by
+ * `disposePriorSubscriptions()` — which `init()`, `close()` and `ngOnDestroy()`
+ * all run — by `attemptReconnect()` and by `endForExpiredSession()`; and
+ * `destroy()` by `ngOnDestroy()` only — which runs only at app teardown, never
+ * on navigation, because the router never destroys the route's injector.
  *
  * This is the unit where self-wiring would be most tempting and most damaging:
  * a constructor that opened the socket would put the transport ahead of
@@ -67,7 +70,8 @@ export class TeamSocket {
    * frame carrying a `__model__`, pushed at the same synchronous instant the
    * socket delivers it. ONE hot subject with several subscribers, never one
    * stream per consumer: the frame-batched log feed, the spinner's `take(1)`
-   * side-channel and `NotificationToasts` all attach here, and the leak probe in
+   * side-channel and (Story 63-3) the orchestrator's stopped-team re-read
+   * trigger all attach here, and the leak probe in
    * `ingestion.service.spec.ts` reads this subject's observer list to prove a
    * cycle's subscriptions are disposed rather than accumulated.
    *
@@ -180,8 +184,9 @@ export class TeamSocket {
         if (!event || !event.__model__) return;
 
         // Story 6.1 (AC8): the single protocol-frame fan-out. The frame-batched
-        // log feed, the spinner side-channel and the notification reactor all
-        // hang off this one `next(...)`, in subscription order, synchronously.
+        // log feed, the spinner side-channel and (Story 63-3) the
+        // orchestrator's stopped-team re-read trigger all hang off this one
+        // `next(...)`, in subscription order, synchronously.
         this._inbound$.next(event as AkgenticMessage);
       },
       error: (err: any) => {

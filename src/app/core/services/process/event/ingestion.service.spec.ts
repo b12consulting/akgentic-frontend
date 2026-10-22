@@ -58,7 +58,9 @@ import {
  * every bed that does not care sees the frame forwarded exactly as before.
  * Story 63-1 added `refreshOneTeam`, which a reconnect's resync reads through,
  * answering `null` ("no team") so a reconnect in a bed that does not care
- * resyncs nothing.
+ * resyncs nothing. Story 63-3 added `currentTeamRunning$`, which every protocol
+ * frame reads, answering `true` ("running") so a frame in a bed that does not
+ * care re-reads nothing.
  */
 function contextServiceDouble(): any {
   return {
@@ -66,6 +68,7 @@ function contextServiceDouble(): any {
     setTeamDescription: jasmine.createSpy('setTeamDescription'),
     getCachedTeam: jasmine.createSpy('getCachedTeam').and.returnValue(null),
     refreshOneTeam: jasmine.createSpy('refreshOneTeam').and.resolveTo(null),
+    currentTeamRunning$: new BehaviorSubject<boolean>(true),
   };
 }
 
@@ -660,18 +663,19 @@ describe('IngestionService — Story 6.1 (frame-batched log ingestion)', () => {
         .and.returnValue(cycleSocket as unknown as WebSocketSubject<any>);
 
       await service.init('proc-' + i, true);
-      // After a full init() the two live subscribers are `LogFeeder`'s batched
-      // feed and `LoadingIndicator`'s take(1) side-channel — exactly 2, never
-      // more.
+      // After a full init() the three live subscribers are `LogFeeder`'s batched
+      // feed, `LoadingIndicator`'s take(1) side-channel and (Story 63-3) the
+      // stopped-team re-read trigger — exactly 3, never more.
       //
       // Story 34-5 raised this bound from 2 to 3 when the notification dispatch
       // became a subscriber of this subject; Story 35-1 took it back down by
       // moving that reactor onto `log.appended$`, which is the observable
-      // consequence of the argument change. The number is not the guarantee —
+      // consequence of the argument change, and Story 63-3 raised it to 3
+      // again. The number is not the guarantee —
       // its CONSTANCY across the five cycles is, and that is what catches a
       // subscription that is never disposed. Removing `feeder`'s teardown from
-      // the cycle bag makes this climb 2, 3, 4, 5, 6.
-      expect((inbound as any).observers.length).toBe(2);
+      // the cycle bag makes this climb 3, 4, 5, 6, 7.
+      expect((inbound as any).observers.length).toBe(3);
       expect(inbound.observed).toBeTrue();
     }
 
@@ -3420,8 +3424,9 @@ describe('IngestionService — init() ordering + self-wiring (Story 34-6)', () =
       expect(opened.observers.length).toBe(1);
       // And the inbound stream stays at its own post-init bound throughout.
       // Story 35-1 lowered that bound from 3 to 2: the notification reactor
-      // reads `log.appended$` now, not this subject.
-      expect(inboundSubject().observers.length).toBe(2);
+      // reads `log.appended$` now, not this subject. Story 63-3 raised it back
+      // to 3 with the stopped-team re-read trigger.
+      expect(inboundSubject().observers.length).toBe(3);
     }
 
     service.ngOnDestroy();
@@ -4063,13 +4068,14 @@ describe('IngestionService — Story 58-1 (team-description reactor wiring)', ()
     expect(context.setTeamDescription).not.toHaveBeenCalled();
   });
 
-  // AC18 — the reactor reads `log.appended$`, not the socket. The two live
-  // inbound subscribers are still `LogFeeder` and `LoadingIndicator`; a reactor
-  // hung off the transport would make this 3 and, worse, miss the REST replay.
+  // AC18 — the reactor reads `log.appended$`, not the socket. The three live
+  // inbound subscribers are `LogFeeder`, `LoadingIndicator` and (Story 63-3)
+  // the stopped-team re-read trigger; a reactor hung off the transport would
+  // make this 4 and, worse, miss the REST replay.
   it('AC18: the inbound-observer bound is unchanged — the reactor is not on the socket', async () => {
     await service.init('team-A', true);
 
-    expect((inboundSubject() as any).observers.length).toBe(2);
+    expect((inboundSubject() as any).observers.length).toBe(3);
   });
 
   it('AC14: the notification issues no refetch — ApiService keeps its call pattern', async () => {
@@ -5490,5 +5496,440 @@ describe('IngestionService — an expired session ends the reconnect loop (Story
     jasmine.clock().tick(5000);
     expect(create.calls.count()).toBe(2);
     expect(auth.sessionExpired).not.toHaveBeenCalled();
+  });
+});
+
+// =====================================================================
+// Story 63-3 — a frame on a team believed stopped re-reads its record
+//
+// The bed is the 63-1 bed, copied: the REAL root `ContextService` over a fake
+// `ApiService`, so the status a re-read writes reaches `currentTeamRunning$`
+// and the cached row through the production chain. The trigger runs
+// synchronously on `inbound$`, so call counts need no clock tick; the clock
+// is ticked only where a spec reads the LOG (the `LogFeeder` 16 ms buffer).
+// =====================================================================
+
+describe('IngestionService — a frame on a team believed stopped re-reads it (Story 63-3)', () => {
+  const TEAM = 'team-A';
+  const TEAM_STOPPING_MODEL =
+    'akgentic.core.messages.orchestrator.TeamStoppingEvent';
+
+  let service: IngestionService;
+  let context: ContextService;
+  let log: MessageLogService;
+  let replay: ReplaySeeder;
+  let api: any;
+  let port: any;
+  let wake$: Subject<void>;
+  let sockets: Subject<any>[];
+  let opens: { next: (e: Event) => void }[];
+  let create: jasmine.Spy;
+  let refresh: jasmine.Spy;
+  let replayMessages: jasmine.Spy;
+
+  function team(status: string, teamId: string = TEAM): TeamContext {
+    return {
+      team_id: teamId,
+      name: teamId,
+      status,
+      created_at: '2026-10-22T10:00:00Z',
+      updated_at: '2026-10-22T10:00:00Z',
+      config_name: teamId,
+      description: null,
+    };
+  }
+
+  function envelope(id: string, innerModel: string = 'x', teamId: string = TEAM): any {
+    return {
+      id,
+      parent_id: null,
+      team_id: teamId,
+      timestamp: '2026-10-22T10:00:00Z',
+      sender: makeAddress({
+        name: '@Orchestrator',
+        role: 'Orchestrator',
+        agent_id: 'orchestrator-1',
+      }),
+      display_type: 'other',
+      content: null,
+      __model__: EVENT_MESSAGE_MODEL,
+      event: { __model__: innerModel },
+    };
+  }
+
+  /** What `ApiService.getEvents` answers: one `{ event }` row per envelope. */
+  function history(...events: any[]): any[] {
+    return events.map((event: any) => ({ event }));
+  }
+
+  /** A promise the spec resolves or rejects by hand. */
+  function deferred<T>(): {
+    promise: Promise<T>;
+    resolve: (v: T) => void;
+    reject: (e: unknown) => void;
+  } {
+    let resolve: (v: T) => void = () => undefined;
+    let reject: (e: unknown) => void = () => undefined;
+    const promise = new Promise<T>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    return { promise, resolve, reject };
+  }
+
+  /** Drain the record → token → replay → append promise chain. */
+  async function settle(): Promise<void> {
+    for (let i = 0; i < 20; i++) await Promise.resolve();
+  }
+
+  /** Seed `teamId` in the root cache, in `status`, as the current team. */
+  async function seed(status: string, teamId: string = TEAM): Promise<void> {
+    api.getTeam.and.resolveTo(team(status, teamId));
+    await context.getCurrentTeam(teamId, false);
+    context.currentProcessId$.next(teamId);
+    api.getTeam.calls.reset();
+  }
+
+  /** Open a cycle on `teamId` and accept its first handshake. */
+  async function openCycle(running: boolean, teamId: string = TEAM): Promise<void> {
+    await service.init(teamId, running);
+    opens[opens.length - 1].next(new Event('open'));
+    await settle();
+  }
+
+  /** Lose the current socket and let the scheduled attempt run. */
+  function loseAndRetry(): void {
+    sockets[sockets.length - 1].error(new Error('connection lost'));
+    jasmine.clock().tick(5000);
+  }
+
+  /** The server accepts the latest attempt's handshake. */
+  function acceptLatest(): void {
+    opens[opens.length - 1].next(new Event('open'));
+  }
+
+  /** Push `count` frames with distinct ids on `socket`, synchronously. */
+  function burst(socket: Subject<any>, count: number, prefix: string, teamId: string = TEAM): void {
+    for (let n = 0; n < count; n++) socket.next(envelope(prefix + n, 'x', teamId));
+  }
+
+  /** The `refreshOneTeam` calls made for `teamId`. */
+  function readsOf(teamId: string): number {
+    return refresh.calls.allArgs().filter((a: any[]) => a[0] === teamId).length;
+  }
+
+  beforeEach(() => {
+    jasmine.clock().install();
+    jasmine.clock().mockDate(new Date(0));
+    wake$ = new Subject<void>();
+    api = {
+      getTeam: jasmine.createSpy('getTeam'),
+      getEvents: jasmine.createSpy('getEvents').and.resolveTo([]),
+      getAgentStates: jasmine.createSpy('getAgentStates').and.resolveTo([]),
+    };
+    port = {
+      notify: jasmine.createSpy('notify'),
+      dismiss: jasmine.createSpy('dismiss'),
+      clear: jasmine.createSpy('clear'),
+    };
+
+    TestBed.configureTestingModule({
+      providers: [
+        MessageLogService,
+        PerAgentStoreRegistry,
+        ProcessStores,
+        ReplaySeeder,
+        LoadingIndicator,
+        ConnectionToast,
+        NotificationToasts,
+        TeamSocket,
+        LogFeeder,
+        TeamStatusReactor,
+        TeamDescriptionReactor,
+        { provide: WakeUpSource, useValue: { wake$: wake$.asObservable() } },
+        IngestionService,
+        {
+          provide: SELECTED_AGENT_ID,
+          useValue: new BehaviorSubject<string | null>(null),
+        },
+        ContextService,
+        { provide: Router, useValue: jasmine.createSpyObj('Router', ['navigate']) },
+        { provide: ApiService, useValue: api },
+        { provide: NOTIFICATION_PORT, useValue: port },
+      ],
+    });
+    service = TestBed.inject(IngestionService);
+    context = TestBed.inject(ContextService);
+    log = TestBed.inject(MessageLogService);
+    replay = TestBed.inject(ReplaySeeder);
+    refresh = spyOn(context, 'refreshOneTeam').and.callThrough();
+    replayMessages = spyOn(replay, 'replayMessages').and.callThrough();
+
+    sockets = [];
+    opens = [];
+    create = spyOn<any>(teamSocket(), 'createWebSocket').and.callFake(
+      (_url: string, open: any) => {
+        const socket = new Subject<any>();
+        sockets.push(socket);
+        opens.push(open);
+        return socket as unknown as WebSocketSubject<any>;
+      },
+    );
+  });
+
+  afterEach(() => {
+    service.close();
+    jasmine.clock().uninstall();
+  });
+
+  // --- the record decides -----------------------------------------------------
+
+  it('a frame on a team restored elsewhere shows it running', async () => {
+    await seed('stopped');
+    await openCycle(false);
+    expect(context.currentTeamRunning$.value).toBe(false);
+
+    api.getTeam.and.resolveTo(team('running'));
+    burst(sockets[0], 3, 'w-');
+    await settle();
+
+    expect(refresh).toHaveBeenCalledOnceWith(TEAM);
+    expect(context.currentTeamRunning$.value).toBe(true);
+    expect(context.getCachedTeam(TEAM)!.status).toBe('running');
+  });
+
+  it('frames on a team whose record still says stopped leave it stopped', async () => {
+    await seed('stopped');
+    await openCycle(false);
+
+    api.getTeam.and.resolveTo(team('stopped'));
+    burst(sockets[0], 3, 'w-');
+    await settle();
+
+    expect(refresh).toHaveBeenCalledOnceWith(TEAM);
+    expect(context.currentTeamRunning$.value).toBe(false);
+  });
+
+  // --- one read at a time, re-armed -------------------------------------------
+
+  it('a burst of frames reads the record once, and none once it runs', async () => {
+    await seed('stopped');
+    await openCycle(false);
+    const record = deferred<TeamContext>();
+    api.getTeam.and.returnValue(record.promise);
+
+    burst(sockets[0], 25, 'w-a-');
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    record.resolve(team('running'));
+    await settle();
+    expect(context.currentTeamRunning$.value).toBe(true);
+    burst(sockets[0], 25, 'w-b-');
+    await settle();
+
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('a read that answers stopped is re-armed by the next frame', async () => {
+    await seed('stopped');
+    await openCycle(false);
+    api.getTeam.and.resolveTo(team('stopped'));
+
+    sockets[0].next(envelope('w-1'));
+    await settle();
+    sockets[0].next(envelope('w-2'));
+    await settle();
+
+    expect(refresh).toHaveBeenCalledTimes(2);
+    expect(context.currentTeamRunning$.value).toBe(false);
+  });
+
+  it('a failed re-read is logged, unhandled-free, and re-armed', async () => {
+    await seed('stopped');
+    await openCycle(false);
+    const err = spyOn(console, 'error');
+    api.getTeam.and.rejectWith(new Error('fetch failed'));
+    const notifiesBefore = port.notify.calls.count();
+
+    sockets[0].next(envelope('w-1'));
+    await settle();
+
+    expect(err).toHaveBeenCalledWith('Team re-read on a frame failed:', jasmine.any(Error));
+    expect(port.notify.calls.count()).toBe(notifiesBefore);
+
+    sockets[0].next(envelope('w-2'));
+    await settle();
+
+    expect(refresh).toHaveBeenCalledTimes(2);
+    // The socket is untouched: no reconnect attempt was built.
+    jasmine.clock().tick(15000);
+    expect(create.calls.count()).toBe(1);
+  });
+
+  // --- what the trigger leaves alone ------------------------------------------
+
+  it('a cycle opened on a running team reads nothing from its replay', async () => {
+    await seed('running');
+    await openCycle(true);
+
+    burst(sockets[0], 25, 'w-');
+    await settle();
+
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('a reconnect handshake and its replay burst read the record once', async () => {
+    await seed('stopped');
+    await openCycle(false);
+    const record = deferred<TeamContext>();
+    api.getTeam.and.returnValue(record.promise);
+
+    loseAndRetry();
+    acceptLatest();
+    burst(sockets[1], 25, 'w-');
+
+    expect(refresh).toHaveBeenCalledOnceWith(TEAM);
+  });
+
+  it("a reconnect handshake during a frame's pending read joins it", async () => {
+    await seed('stopped');
+    await openCycle(false);
+    const record = deferred<TeamContext>();
+    api.getTeam.and.returnValue(record.promise);
+    sockets[0].next(envelope('w-1'));
+    expect(refresh).toHaveBeenCalledTimes(1);
+
+    loseAndRetry();
+    acceptLatest();
+    await settle();
+
+    expect(refresh).toHaveBeenCalledOnceWith(TEAM);
+  });
+
+  // --- the cycle boundary -----------------------------------------------------
+
+  /**
+   * Team A's frame read is pending when team B, stopped in the cache, opens.
+   * Returns A's and B's pending reads.
+   */
+  async function switchDuringRead() {
+    await seed('stopped');
+    await openCycle(false);
+    const readA = deferred<TeamContext>();
+    api.getTeam.and.returnValue(readA.promise);
+    sockets[0].next(envelope('w-A-1'));
+    expect(refresh).toHaveBeenCalledOnceWith(TEAM);
+
+    await seed('stopped', 'team-B');
+    const readB = deferred<TeamContext>();
+    api.getTeam.and.returnValue(readB.promise);
+    await openCycle(false, 'team-B');
+    sockets[1].next(envelope('w-B-1', 'x', 'team-B'));
+    return { readA, readB };
+  }
+
+  it('a team switch during a pending re-read lets the new team read its own record', async () => {
+    await switchDuringRead();
+
+    expect(refresh).toHaveBeenCalledWith('team-B');
+  });
+
+  it('a late answer for the old team leaves the new team\'s read in flight', async () => {
+    const { readA } = await switchDuringRead();
+    expect(readsOf('team-B')).toBe(1);
+
+    readA.resolve(team('running'));
+    await settle();
+    sockets[1].next(envelope('w-B-2', 'x', 'team-B'));
+    await settle();
+    jasmine.clock().tick(20);
+
+    expect(readsOf('team-B')).toBe(1);
+    expect(context.currentTeamRunning$.value).toBe(false);
+    expect(log.snapshot().map((m: any) => m.id)).not.toContain('w-A-1');
+  });
+
+  // --- the resync's history read ----------------------------------------------
+
+  it('a resync whose team came back meanwhile appends no history', async () => {
+    await seed('stopped');
+    await openCycle(false);
+    const events = deferred<any[]>();
+    api.getTeam.and.resolveTo(team('stopped'));
+    api.getEvents.and.returnValue(events.promise);
+    loseAndRetry();
+    acceptLatest();
+    await settle();
+    // `init()`'s replay, then the resync's — now waiting on its history.
+    expect(replayMessages).toHaveBeenCalledTimes(2);
+
+    api.getTeam.and.resolveTo(team('running'));
+    sockets[1].next(envelope('w-1'));
+    await settle();
+    expect(context.currentTeamRunning$.value).toBe(true);
+
+    events.resolve(history(envelope('evt-stop', TEAM_STOPPING_MODEL)));
+    await settle();
+    jasmine.clock().tick(20);
+
+    expect(context.currentTeamRunning$.value).toBe(true);
+    expect(log.snapshot().map((m: any) => m.id)).not.toContain('evt-stop');
+  });
+
+  // --- a live stop disarms, a replay re-arms ----------------------------------
+
+  /**
+   * A running team, stopped live: its `TeamStoppingEvent` reaches the socket
+   * and the reactor marks it stopped. Its record would still answer running —
+   * the server writes the stopped status only after the teardown.
+   */
+  async function stopLive(): Promise<void> {
+    await seed('running');
+    await openCycle(true);
+    sockets[0].next(envelope('evt-1'));
+    jasmine.clock().tick(20);
+    sockets[0].next(envelope('evt-stop', TEAM_STOPPING_MODEL));
+    jasmine.clock().tick(20);
+    expect(context.currentTeamRunning$.value).toBe(false);
+    api.getTeam.and.resolveTo(team('running'));
+  }
+
+  it("a live stop's trailing frames never flip the team back to running", async () => {
+    await stopLive();
+
+    burst(sockets[0], 3, 'trailing-');
+    await settle();
+    jasmine.clock().tick(20);
+
+    expect(refresh).not.toHaveBeenCalled();
+    expect(context.currentTeamRunning$.value).toBe(false);
+  });
+
+  it('a woken socket after a live stop re-arms on its replay', async () => {
+    await stopLive();
+    burst(sockets[0], 3, 'trailing-');
+    await settle();
+    jasmine.clock().tick(20);
+
+    // The cursor-0 replay of the restored team: its first frame is one the
+    // log already holds.
+    sockets[0].next(envelope('evt-1'));
+    sockets[0].next(envelope('trailing-0'));
+    await settle();
+
+    expect(refresh).toHaveBeenCalledOnceWith(TEAM);
+    expect(context.currentTeamRunning$.value).toBe(true);
+  });
+
+  it('a new cycle after a live stop starts armed', async () => {
+    await stopLive();
+
+    await seed('stopped', 'team-B');
+    api.getTeam.and.resolveTo(team('running', 'team-B'));
+    await openCycle(false, 'team-B');
+    sockets[1].next(envelope('w-B-1', 'x', 'team-B'));
+    await settle();
+
+    expect(refresh).toHaveBeenCalledOnceWith('team-B');
   });
 });

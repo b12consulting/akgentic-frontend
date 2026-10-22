@@ -45,8 +45,8 @@ export const CONNECTION_LOST_TOAST_ID = 'connection-lost';
  * Nothing is self-wired: the constructor subscribes to nothing and raises
  * nothing (ADR-025 §2, restating ADR-005 §Decision 6). `start()` / `show()` /
  * `hide()` / `stop()` are the explicit invocation points, all four driven by
- * `IngestionService`. Wiring this unit to a `TeamSocket` status stream instead
- * of the two push call sites is story 34-6, not this one.
+ * `IngestionService`, which drives `show()` from `TeamSocket.status$` and
+ * `hide()` from its `opened$` (see each method for its other callers).
  *
  * The port's `clear()` is deliberately ABSENT here (and must stay absent): it
  * empties the whole keyless `<p-toast>` container, notification toasts included,
@@ -71,8 +71,8 @@ export class ConnectionToast {
    * fire in sequence, which is the ordinary shape of a dropped socket rather
    * than an edge case.
    *
-   * Reset by `start()` (per team cycle), by `hide()` (the socket is back) and
-   * by `stop()`, never anywhere else.
+   * Reset by `start()` (per team cycle), by `hide()` (the socket is back, or
+   * closed for good by `close()`) and by `stop()`, never anywhere else.
    */
   private wsDisconnectToastShown = false;
 
@@ -121,12 +121,14 @@ export class ConnectionToast {
   }
 
   /**
-   * The socket is back: remove THIS toast only — never the port's `clear()`,
-   * which would take the notification toasts with it — and re-arm the dedup
-   * flag so the next drop warns again.
+   * Remove THIS toast only — never the port's `clear()`, which would take the
+   * notification toasts with it — and re-arm the dedup flag so the next drop
+   * warns again.
    *
-   * Called on every accepted handshake, including the first one of a cycle,
-   * so it is a no-op unless the toast is actually showing.
+   * Two callers: every accepted handshake, including the first one of a cycle
+   * (the socket is back), and `IngestionService.close()`, when the team's
+   * socket is closed for good (Story 63-2). Either way it is a no-op unless
+   * the toast is actually showing.
    */
   hide(): void {
     if (!this.wsDisconnectToastShown) return;
