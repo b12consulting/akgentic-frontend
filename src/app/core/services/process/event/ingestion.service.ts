@@ -661,6 +661,7 @@ export class IngestionService {
       this.frameTriggerArmed = true;
     }
     if (!this.frameTriggerArmed) return;
+    // Not only `readTeam`'s memo: each frame that joined a failed read would log it.
     if (this.contextService.currentTeamRunning$.value || this.teamRead) return;
     this.readTeam(processId).catch((err: unknown) =>
       console.error('Team re-read on a frame failed:', err),

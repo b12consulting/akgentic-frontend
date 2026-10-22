@@ -5744,20 +5744,27 @@ describe('IngestionService — a frame on a team believed stopped re-reads it (S
     expect(context.currentTeamRunning$.value).toBe(false);
   });
 
-  it('a failed re-read is logged, unhandled-free, and re-armed', async () => {
+  // No spec here can see an orphaned rejection: a `finally` in place of
+  // `readTeam`'s `then(clear, clear)` stays green in this bed. That rule is
+  // enforced by `readTeam`'s docblock and by review.
+  it('a failed re-read is logged once, toasts nothing, and is re-armed', async () => {
     await seed('stopped');
     await openCycle(false);
     const err = spyOn(console, 'error');
     api.getTeam.and.rejectWith(new Error('fetch failed'));
     const notifiesBefore = port.notify.calls.count();
 
-    sockets[0].next(envelope('w-1'));
+    // A burst shares the one failed read, and the read is logged once — not
+    // once per frame that joined it.
+    burst(sockets[0], 3, 'w-a-');
     await settle();
 
-    expect(err).toHaveBeenCalledWith('Team re-read on a frame failed:', jasmine.any(Error));
+    expect(err.calls.allArgs()).toEqual([
+      ['Team re-read on a frame failed:', jasmine.any(Error)],
+    ]);
     expect(port.notify.calls.count()).toBe(notifiesBefore);
 
-    sockets[0].next(envelope('w-2'));
+    sockets[0].next(envelope('w-b-0'));
     await settle();
 
     expect(refresh).toHaveBeenCalledTimes(2);
