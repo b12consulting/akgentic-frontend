@@ -17,7 +17,9 @@ inspector's Team tab on the right showing the roster, the team's tools and its t
 spend](screenshot.png)
 
 Two pages, inside one persistent shell. Everything on them is derived from a single append-only
-event log fed by one WebSocket — there is no second source of truth and no polling.
+event log: a running team fills it over one WebSocket, which replays the team's stream from the
+start, and a stopped team fills it from one REST read of its history. There is no second source of
+truth and no polling.
 
 **`/` — the teams list.** The teams you own, server-paginated, each row carrying the business
 metadata its team type declares. Filter by any searchable metadata field and by team type; the filter
@@ -30,20 +32,45 @@ a team and back. The namespace editor opens from here, over the selected namespa
   tool-call history. A message an agent absorbs **mid-run** — read out of its own inbox rather than
   waiting for a turn — gets its own bubble under the message it answers, instead of disappearing into
   the turn that absorbed it.
-- **The inspector** ("Team details"), a tab strip over six panels:
+- **The inspector** ("Team details"), a tab strip over seven panels, in strip order:
 
 | Tab | Shows |
 |---|---|
 | Team | the roster — members, their tools, and what the team has spent |
 | Hierarchy | agent topology as a force-directed graph and a tree, built from `StartMessage` / `StopMessage` and message edges |
+| Run | the selected run in detail |
 | Member | one member's LLM context: pick an agent, read the system prompt and the trace of what it was sent |
-| Workspaces | the files a team's agents can read and write |
 | Knowledge graph | present **only when a knowledge-graph tool is**, driven by `ToolStateEvent` |
+| Workspaces | the files a team's agents can read and write — present **only when the team has a workspace** |
 | Messages | the raw protocol log, including the error / warning / notification family |
 
-The Knowledge-graph tab is the one that appears and disappears: `ToolPresenceService.hasKnowledgeGraph$`
-adds it when the team actually carries that tool, so the strip reflects the team rather than a fixed
-menu.
+Two tabs appear and disappear with the team: `ToolPresenceService.hasKnowledgeGraph$` adds the
+Knowledge-graph tab when the team actually carries that tool, and the Workspaces tab follows the
+team's workspace list, so the strip reflects the team rather than a fixed menu. A deployment can
+switch tabs off for good with `hiddenInspectorTabs` (see *Configuration*). The tab list itself is
+declared once, in `core/services/console/inspector/inspector-tabs.registry.ts`.
+
+### When the connection drops, or the session expires
+
+- **A lost socket reconnects on its own.** A "Connection Lost" warning appears, and the socket is
+  reopened every `wsReconnectIntervalSeconds` until the server accepts it again, which dismisses the
+  warning. The page is not reloaded: the server replays the stream from the start and the log keeps
+  only the messages it did not have.
+- **After a reconnect the team's record is read again.** A team that stopped while the socket was
+  down is shown as stopped, and its history is read over REST to recover what was missed, so the next
+  message you send restores it first. A running team's history is never read this way, because the
+  socket's replay already carries it.
+- **A sleeping laptop is checked as soon as it wakes.** When the page becomes visible after at least
+  30 seconds hidden, or the browser reports it is back online, the socket is reopened at once, with
+  no warning.
+- **A restore done in another tab shows up here.** A stopped team's socket sends nothing. If messages
+  start arriving on it, the page reads the team's record again, and the header, the rail and the
+  composer show the team as running once the record says so.
+- **An expired session goes to the login page, once.** A 401 is first checked against `/auth/me`.
+  Only a session that `/auth/me` also rejects sends the user to `/login`; that applies to an API
+  call, a failed reconnect, or a socket closed with code `4401`. A server that cannot be reached
+  never logs anyone out, and a route that answers 401 to a valid session only shows an error. With
+  `hideLogin` there is no session, and none of this runs.
 
 Architecture documentation lives in the parent
 [akgentic-framework](https://github.com/b12consulting/akgentic-framework) bundle at
@@ -84,9 +111,21 @@ Inject `ConfigService` to read configuration. Do **not** import `environment` di
 the runtime layer and silently ignores whatever the deployment set.
 
 Recognised keys: `api`, `logo`, `favicon`, `welcomeMessage`, `autoRedirectContext`, `hideHome`,
-`hideLogin`, `initRightPanelCollapsed`, `userInputEnterKeySubmit`, `loginProviders`, `production`,
-`languages`, `defaultLanguage`, `wsReconnectIntervalSeconds` (seconds between attempts to reopen a
-lost team socket; default 5).
+`hideLogin`, `hideAgentNames`, `initRightPanelCollapsed`, `initRailCollapsed`,
+`hiddenInspectorTabs`, `userInputEnterKeySubmit`, `loginProviders`, `production`, `languages`,
+`defaultLanguage`, `wsReconnectIntervalSeconds`.
+
+Three of them are optional and fall back to a default when absent, because they post-date every
+`config.json` in the field:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `initRailCollapsed` | `false` | Start with the team rail collapsed. |
+| `hiddenInspectorTabs` | `[]` | Inspector tabs to switch off, by id: `team`, `hierarchy`, `run`, `member`, `knowledge-graph`, `workspace`, `messages`. An unknown id is ignored, and a list that would hide every tab the team offers is ignored as a whole. |
+| `wsReconnectIntervalSeconds` | `5` | Seconds between attempts to reopen a lost team socket. Anything that is not a positive number falls back to the default. |
+
+`hideAgentNames` hides the agent's name on chat bubbles. Alignment, colour and threading stay, so
+the conversation remains readable without it.
 
 ### Using config.json
 
@@ -227,8 +266,12 @@ Two rules cover the team's services and are worth knowing before adding one:
 - They are provided on the **`process/:id` route**, not on `ProcessComponent`. A component that
   silently requires a particular ancestor is not a component you can place, and that ancestor
   requirement was the thing standing between these panels and being reusable.
-- Never `providedIn: 'root'`. The route injector dies when you leave the route; a root one would
-  carry one team's socket, log and per-agent stores into the next.
+- Never `providedIn: 'root'`. Note that the router keeps the route's injector alive after you
+  leave, so leaving the page does not tear these services down. What isolates one team from the
+  next is explicit: `TeamSessionService` closes the team on every switch and when the page goes
+  away, which stops the socket and its reconnect loop and empties the log. A root-scoped service
+  would sit outside that lifecycle, and nothing would stop it carrying one team's socket, log and
+  per-agent stores into the next.
 
 ### What the lint gate does and does not catch
 
@@ -283,14 +326,13 @@ A region-qualified tag resolves to its base, so a browser reporting `fr-BE` gets
 
 ### What is translated
 
-The screens a user reads: the teams list (page controls, filters, the table and the create dialog),
-the conversation (the transcript, the composer, the human-input and sub-agent-reader dialogs, the
-message log) and the process chrome (the menubar, the status tags, the visualisation switcher and the
-team / agent / workspace panels).
+Every screen a user reads: the login page, the teams list (page controls, filters, the table and the
+create dialog), the conversation (the transcript, the composer, the human-input and sub-agent-reader
+dialogs, the message log), the console chrome (the rail, the status tags and the inspector's tab
+strip) and the inspector's panels, including the workspace explorer and the knowledge graph.
 
-**Not yet:** the catalog admin, the login page, the workspace explorer and its upload dialog, the
-knowledge-graph panel, and the agent chat/state panels. They still carry English literals and are
-each a file drop away from the layer — the layer does not need to change for them.
+**Not yet:** the namespace editor (the namespace panel and its validation report). It still carries
+English literals and is a file drop away from the layer — the layer does not need to change for it.
 
 ### What is not translated
 
