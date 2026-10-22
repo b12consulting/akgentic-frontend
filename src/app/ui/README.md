@@ -42,7 +42,7 @@ What you see on `/process/:id` is three columns:
 
 ```
 │  rail  ║        conversation pane        ║   inspector   │
-│        ║  process-header + chat-panel    ║  "Team details"│
+│        ║ process-header + run-tree-panel ║  "Team details"│
          ↑                                 ↑
    divider #1                        divider #2
    console-shell.component.html      process.component.html
@@ -65,7 +65,7 @@ rail's divider also has to outlive navigation for the same reason the rail does,
 inspector's disappears entirely when the pane is collapsed (`*ngIf="!inspectorCollapsed()"`).
 
 The **conversation pane** is the middle column — `class="conversation-pane"`, holding
-`app-process-header` above `app-chat-panel`.
+`app-process-header` above `app-run-tree-panel`, the chat as a tree of runs.
 
 ## The folders
 

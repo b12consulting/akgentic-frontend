@@ -21,6 +21,7 @@ import { SELECTED_AGENT_ID } from '../event/selected-agent';
 import { TeamSocket } from '../event/team-socket';
 import { TeamStatusReactor } from '../event/team-status-reactor';
 import { TeamDescriptionReactor } from '../event/team-description-reactor';
+import { WakeUpSource } from '../event/wake-up-source';
 import { runGraphFold, runKey } from '../selectors/run-graph.selector';
 import { RunSelectionState } from '../ui-state/run-selection';
 import { TraceFoldState } from '../ui-state/trace-fold-state';
@@ -174,6 +175,7 @@ describe('TeamSessionService — a stale socket close raises no toast (#405)', (
         LogFeeder,
         TeamStatusReactor,
         TeamDescriptionReactor,
+        WakeUpSource,
         IngestionService,
         TraceFoldState,
         RunSelectionState,

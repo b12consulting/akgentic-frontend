@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import { NOTIFICATION_PORT, NotificationPort } from '../notification/notification.port';
 
+import { AuthService } from '../auth/auth.service';
 import { ConfigService } from '../config/config.service';
 import {
   FetchFailure,
@@ -58,9 +60,32 @@ function makeResponse({
   return resp as Response;
 }
 
+/** A bodyless 401, the answer for a request on an absent or expired session. */
+function unauthorized(): Response {
+  return makeResponse({
+    ok: false,
+    status: 401,
+    statusText: 'Unauthorized',
+    textValue: '',
+    throwOnJson: true,
+  });
+}
+
+/** Await a call expected to reject, and hand back what it rejected with. */
+async function failureOf(call: Promise<unknown>): Promise<unknown> {
+  try {
+    await call;
+  } catch (err) {
+    return err;
+  }
+  throw new Error('expected the call to reject');
+}
+
 describe('FetchService', () => {
   let service: FetchService;
   let notificationsSpy: jasmine.SpyObj<NotificationPort>;
+  let authSpy: jasmine.SpyObj<AuthService>;
+  let config: { hideLogin: boolean };
   let originalFetch: typeof fetch;
 
   beforeEach(() => {
@@ -69,15 +94,19 @@ describe('FetchService', () => {
       'dismiss',
       'clear',
     ]);
+    authSpy = jasmine.createSpyObj<AuthService>('AuthService', [
+      'sessionExpired',
+      'probeSession',
+    ]);
+    authSpy.probeSession.and.resolveTo('unknown');
+    config = { hideLogin: false };
 
     TestBed.configureTestingModule({
       providers: [
         FetchService,
         { provide: NOTIFICATION_PORT, useValue: notificationsSpy },
-        {
-          provide: ConfigService,
-          useValue: { hideLogin: false } as Partial<ConfigService>,
-        },
+        { provide: ConfigService, useValue: config },
+        { provide: AuthService, useValue: authSpy },
       ],
     });
 
@@ -276,28 +305,17 @@ describe('FetchService', () => {
       expect(toastArgs.summary as string).toContain('Nope');
     });
 
-    it('throws HttpError carrying status 401 without suppressing the toast', async () => {
-      globalThis.fetch = jasmine.createSpy('fetch').and.resolveTo(
-        makeResponse({
-          ok: false,
-          status: 401,
-          statusText: 'Unauthorized',
-          textValue: '',
-          throwOnJson: true,
-        }),
-      );
+    it('a 401 the probe confirms as expired goes to login, raises no toast, and still throws HttpError 401', async () => {
+      authSpy.probeSession.and.resolveTo('expired');
+      globalThis.fetch = jasmine.createSpy('fetch').and.resolveTo(unauthorized());
 
-      let caught: unknown = null;
-      try {
-        await service.fetch({ url: 'https://x/api' });
-      } catch (err) {
-        caught = err;
-      }
+      const caught = await failureOf(service.fetch({ url: 'https://x/api' }));
+
+      expect(authSpy.probeSession).toHaveBeenCalledTimes(1);
+      expect(authSpy.sessionExpired).toHaveBeenCalledTimes(1);
+      expect(notificationsSpy.notify).not.toHaveBeenCalled();
       expect(caught instanceof HttpError).toBeTrue();
       expect((caught as HttpError).status).toBe(401);
-      // Existing toast-on-error behaviour preserved — the panel's save
-      // handler relies on the global toast fired here for 401 fall-through.
-      expect(notificationsSpy.notify).toHaveBeenCalledTimes(1);
     });
 
     it('the HttpError is also a FetchFailure, and still carries status + body', async () => {
@@ -327,6 +345,90 @@ describe('FetchService', () => {
       expect(caught instanceof NetworkError).toBeFalse();
       expect((caught as HttpError).status).toBe(422);
       expect((caught as HttpError).body).toEqual(errBody);
+    });
+  });
+
+  // --- Story 63-2 — a 401 is checked against the session before it toasts ---
+
+  describe('a 401 is a session question first', () => {
+    it('a 401 on a session the probe finds valid toasts, stays signed in, and throws HttpError 401', async () => {
+      authSpy.probeSession.and.resolveTo('valid');
+      globalThis.fetch = jasmine.createSpy('fetch').and.resolveTo(unauthorized());
+
+      const caught = await failureOf(service.fetch({ url: 'https://x/api' }));
+
+      expect(authSpy.probeSession).toHaveBeenCalledTimes(1);
+      expect(authSpy.sessionExpired).not.toHaveBeenCalled();
+      expect(notificationsSpy.notify).toHaveBeenCalledTimes(1);
+      expect(notificationsSpy.notify.calls.first().args[0].severity).toBe('error');
+      expect((caught as HttpError).status).toBe(401);
+    });
+
+    it('a 401 the probe cannot judge toasts and stays signed in', async () => {
+      authSpy.probeSession.and.resolveTo('unknown');
+      globalThis.fetch = jasmine.createSpy('fetch').and.resolveTo(unauthorized());
+
+      const caught = await failureOf(service.fetch({ url: 'https://x/api' }));
+
+      expect(authSpy.probeSession).toHaveBeenCalledTimes(1);
+      expect(authSpy.sessionExpired).not.toHaveBeenCalled();
+      expect(notificationsSpy.notify).toHaveBeenCalledTimes(1);
+      expect((caught as HttpError).status).toBe(401);
+    });
+
+    it('a silent request on an expired session still goes to login', async () => {
+      authSpy.probeSession.and.resolveTo('expired');
+      globalThis.fetch = jasmine.createSpy('fetch').and.resolveTo(unauthorized());
+
+      const caught = await failureOf(service.fetch({ url: 'https://x/api', silent: true }));
+
+      expect(authSpy.sessionExpired).toHaveBeenCalledTimes(1);
+      expect(notificationsSpy.notify).not.toHaveBeenCalled();
+      expect((caught as HttpError).status).toBe(401);
+    });
+
+    for (const [status, statusText] of [
+      [403, 'Forbidden'],
+      [500, 'Internal Server Error'],
+    ] as const) {
+      it(`a ${status} toasts as before and asks nothing of the session`, async () => {
+        globalThis.fetch = jasmine.createSpy('fetch').and.resolveTo(
+          makeResponse({ ok: false, status, statusText, textValue: '', throwOnJson: true }),
+        );
+
+        const caught = await failureOf(service.fetch({ url: 'https://x/api' }));
+
+        expect(notificationsSpy.notify).toHaveBeenCalledTimes(1);
+        expect(authSpy.probeSession).not.toHaveBeenCalled();
+        expect(authSpy.sessionExpired).not.toHaveBeenCalled();
+        expect((caught as HttpError).status).toBe(status);
+      });
+    }
+
+    it('a request that never landed toasts as before and asks nothing of the session', async () => {
+      globalThis.fetch = jasmine
+        .createSpy('fetch')
+        .and.rejectWith(new TypeError('Failed to fetch'));
+
+      const caught = await failureOf(service.fetch({ url: 'https://x/api' }));
+
+      expect(caught instanceof NetworkError).toBeTrue();
+      expect(notificationsSpy.notify).toHaveBeenCalledTimes(1);
+      expect(authSpy.probeSession).not.toHaveBeenCalled();
+      expect(authSpy.sessionExpired).not.toHaveBeenCalled();
+    });
+
+    it('with the login page hidden a 401 toasts as before and asks nothing of the session', async () => {
+      config.hideLogin = true;
+      authSpy.probeSession.and.resolveTo('expired');
+      globalThis.fetch = jasmine.createSpy('fetch').and.resolveTo(unauthorized());
+
+      const caught = await failureOf(service.fetch({ url: 'https://x/api' }));
+
+      expect(notificationsSpy.notify).toHaveBeenCalledTimes(1);
+      expect(authSpy.probeSession).not.toHaveBeenCalled();
+      expect(authSpy.sessionExpired).not.toHaveBeenCalled();
+      expect((caught as HttpError).status).toBe(401);
     });
   });
 
@@ -405,5 +507,62 @@ describe('FetchService', () => {
         'Could not reach the catalog',
       );
     });
+  });
+});
+
+// The latch lives in the REAL AuthService, so the burst is driven through it:
+// every URL answers 401, the API calls and the /auth/me probes alike.
+describe('FetchService over the real AuthService — a burst of 401s', () => {
+  let notificationsSpy: jasmine.SpyObj<NotificationPort>;
+  let router: jasmine.SpyObj<Router>;
+  let fetchSpy: jasmine.Spy;
+  let originalFetch: typeof fetch;
+
+  beforeEach(() => {
+    notificationsSpy = jasmine.createSpyObj<NotificationPort>('NotificationPort', [
+      'notify',
+      'dismiss',
+      'clear',
+    ]);
+    router = jasmine.createSpyObj<Router>('Router', ['navigate']);
+    router.navigate.and.resolveTo(true);
+    TestBed.configureTestingModule({
+      providers: [
+        FetchService,
+        AuthService,
+        { provide: NOTIFICATION_PORT, useValue: notificationsSpy },
+        { provide: ConfigService, useValue: { api: 'https://x', hideLogin: false } },
+        { provide: Router, useValue: router },
+      ],
+    });
+    originalFetch = globalThis.fetch;
+    fetchSpy = jasmine.createSpy('fetch').and.callFake(async () => unauthorized());
+    globalThis.fetch = fetchSpy;
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  it('parallel 401s on an expired session navigate to login once and toast nothing', async () => {
+    const service = TestBed.inject(FetchService);
+
+    const results = await Promise.allSettled([
+      service.fetch({ url: 'https://x/a' }),
+      service.fetch({ url: 'https://x/b' }),
+      service.fetch({ url: 'https://x/c' }),
+    ]);
+
+    expect(results.map((r) => r.status)).toEqual(['rejected', 'rejected', 'rejected']);
+    for (const r of results) {
+      const reason = (r as PromiseRejectedResult).reason;
+      expect(reason instanceof HttpError).toBeTrue();
+      expect((reason as HttpError).status).toBe(401);
+    }
+    // Every 401 is confirmed before the latch is reached: three probes, one navigation.
+    const probes = fetchSpy.calls.allArgs().filter(([url]) => url === 'https://x/auth/me');
+    expect(probes.length).toBe(3);
+    expect(router.navigate).toHaveBeenCalledOnceWith(['/login']);
+    expect(notificationsSpy.notify).not.toHaveBeenCalled();
   });
 });

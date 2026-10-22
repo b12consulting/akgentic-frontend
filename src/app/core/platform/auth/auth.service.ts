@@ -1,17 +1,29 @@
 import { inject, Injectable } from '@angular/core';
+import { Router } from '@angular/router';
 import { BehaviorSubject, from, Observable, of } from 'rxjs';
 import { catchError, tap } from 'rxjs/operators';
 import { ConfigService } from '../config/config.service';
 
 const ANONYMOUS_USER = { user_id: 'anonymous', email: '', name: 'Anonymous' };
 
+/**
+ * What `/auth/me` says about the session (ADR-040 §3). `unknown` is not a
+ * polite `expired`: it is a server that could not answer — down, unreachable,
+ * or failing — and nobody is sent to login on its account.
+ */
+export type SessionProbe = 'valid' | 'expired' | 'unknown';
+
 @Injectable({
   providedIn: 'root',
 })
 export class AuthService {
   private config = inject(ConfigService);
+  private router = inject(Router);
   private currentUserSubject = new BehaviorSubject<any>(ANONYMOUS_USER);
   currentUser$ = this.currentUserSubject.asObservable();
+
+  /** Set by the first `sessionExpired()`; cleared only when a session is proven again. */
+  private expired = false;
 
   /**
    * Check auth status against the backend.
@@ -36,6 +48,7 @@ export class AuthService {
           if (!user.name) {
             user.name = user.email || user.user_id || 'User';
           }
+          this.expired = false;
           this.currentUserSubject.next(user);
         } else {
           this.currentUserSubject.next(ANONYMOUS_USER);
@@ -95,10 +108,48 @@ export class AuthService {
         if (user && !user.name) {
           user.name = user.email || user.user_id || 'User';
         }
+        this.expired = false;
         this.currentUserSubject.next(user);
         return user;
       })
     );
+  }
+
+  /**
+   * The one reaction to an expired session (ADR-040 §3): reset the current
+   * user and go to `/login`. The first caller wins — an HTTP 401, a failed
+   * reconnect's probe or a `4401` close — and every later one is a no-op until
+   * a session is proven again (a login, or a `checkAuth()` that resolves a
+   * user), so a burst of parallel 401s navigates once.
+   *
+   * It closes nothing itself: leaving `process/:id` destroys the team page,
+   * whose teardown closes the socket and its reconnect loop.
+   */
+  sessionExpired(): void {
+    if (this.config.hideLogin || this.expired) return;
+    this.expired = true;
+    this.currentUserSubject.next(ANONYMOUS_USER);
+    void this.router.navigate(['/login']);
+  }
+
+  /**
+   * Ask `/auth/me` whether the session still holds: `2xx` → `valid`, `401` →
+   * `expired`, anything else — another status or a request that never landed —
+   * `unknown`. Never rejects, never toasts, never writes the current user.
+   *
+   * Not `checkAuth()`, which maps a network failure to "no user" and would send
+   * every tab to login during an outage; and raw `fetch`, not `FetchService`,
+   * which would toast each probe and whose 401 handling calls back in here.
+   */
+  async probeSession(): Promise<SessionProbe> {
+    if (this.config.hideLogin) return 'valid';
+    try {
+      const r = await fetch(`${this.config.api}/auth/me`, { credentials: 'include' });
+      if (r.status === 401) return 'expired';
+      return r.ok ? 'valid' : 'unknown';
+    } catch {
+      return 'unknown';
+    }
   }
 
   /** Logout: redirect to backend logout which clears session and redirects to IdP logout. */

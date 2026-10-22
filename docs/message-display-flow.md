@@ -1,7 +1,9 @@
 # How a message becomes a row
 
-Every visible thing in the transcript comes from one append-only event log, fed by one WebSocket.
-This document is the map from a frame on that socket to a row on the screen: what is admitted, what
+Every visible thing in the transcript comes from one append-only event log, fed by one WebSocket for
+a running team and by one REST read of the history for a stopped one (and, after a reconnect onto a
+team that has stopped, by that read again — the log drops what it already holds).
+This document is the map from a frame in that log to a row on the screen: what is admitted, what
 it is classified as, what that classification decides, and what finally draws it.
 
 It lives beside the code rather than in the architecture bundle

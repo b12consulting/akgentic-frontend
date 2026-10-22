@@ -1051,6 +1051,20 @@ describe('ProcessComponent (Story 52-1 — team id as an input)', () => {
 
     expect(h.context.navigateHome).toHaveBeenCalled();
   });
+
+  it('(Story 63-2) leaving the route-mode view closes the team pipeline', async () => {
+    // The redirect to login destroys this view; the router keeps the route's
+    // injector, so this teardown — not IngestionService's own — stops the
+    // socket and its reconnect loop.
+    const h = await build({ routeId: 'team-a' });
+    await settle(h.fixture);
+    expect(h.ingestion.init).toHaveBeenCalledOnceWith('team-a', true);
+    expect(h.ingestion.close).not.toHaveBeenCalled();
+
+    h.fixture.destroy();
+
+    expect(h.ingestion.close).toHaveBeenCalledTimes(1);
+  });
 });
 
 // =====================================================================

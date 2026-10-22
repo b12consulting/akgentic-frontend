@@ -6,7 +6,7 @@ import { WebSocketSubject } from 'rxjs/webSocket';
 import { asyncClosingSocket } from '../../../../../testing/async-closing-socket';
 import { ConfigService } from '../../../platform/config/config.service';
 import { AkgenticMessage } from '../../../protocol/message.types';
-import { TeamSocket, TeamSocketStatus } from './team-socket';
+import { SESSION_EXPIRED_CLOSE_CODE, TeamSocket, TeamSocketStatus } from './team-socket';
 
 // ---------------------------------------------------------------------------
 // Story 34-6 (FR1, FR10) — `TeamSocket`, the transport source.
@@ -107,6 +107,7 @@ describe('TeamSocket — the createWebSocket seam (Story 34-6, AC11)', () => {
 
     expect(spy).toHaveBeenCalledWith(
       'ws://api.example.com/ws/proc-1',
+      jasmine.objectContaining({ next: jasmine.any(Function) }),
       jasmine.objectContaining({ next: jasmine.any(Function) }),
     );
   });
@@ -278,7 +279,7 @@ describe('TeamSocket — lifecycle (Story 34-6, AC4, AC12)', () => {
     expect(seen.map((m: any) => m.id)).toEqual(['b-1']);
   });
 
-  it('destroy() closes the socket FIRST, then completes the four streams', () => {
+  it('destroy() closes the socket FIRST, then completes the five streams', () => {
     const { socket } = setup();
     const stream = new Subject<any>();
     let closed = 0;
@@ -303,14 +304,56 @@ describe('TeamSocket — lifecycle (Story 34-6, AC4, AC12)', () => {
     expect(closed).toBe(1);
     expect(seen).toEqual([]);
 
-    // All four streams are finished: a subscriber attaching afterwards is
+    // All five streams are finished: a subscriber attaching afterwards is
     // completed immediately rather than left waiting on a dead socket.
     let completed = 0;
     socket.inbound$.subscribe({ complete: () => completed++ });
     socket.frames$.subscribe({ complete: () => completed++ });
     socket.status$.subscribe({ complete: () => completed++ });
     socket.opened$.subscribe({ complete: () => completed++ });
-    expect(completed).toBe(4);
+    socket.closed$.subscribe({ complete: () => completed++ });
+    expect(completed).toBe(5);
+  });
+});
+
+describe('TeamSocket — closed$ (the close code, reported, never acted on)', () => {
+  /** A fresh fake per `start()`, with the close observer it was handed. */
+  function setupWithClose(): {
+    socket: TeamSocket;
+    closes: { next: (e: CloseEvent) => void }[];
+  } {
+    const { socket } = setup();
+    const closes: { next: (e: CloseEvent) => void }[] = [];
+    (socket as any).createWebSocket = (_url: string, _open: any, close: any) => {
+      closes.push(close);
+      return new Subject<any>() as unknown as WebSocketSubject<any>;
+    };
+    return { socket, closes };
+  }
+
+  it("reports the current socket's close code", () => {
+    const { socket, closes } = setupWithClose();
+    const codes: number[] = [];
+    socket.closed$.subscribe((code) => codes.push(code));
+
+    socket.start('proc-1');
+    closes[0].next({ code: SESSION_EXPIRED_CLOSE_CODE } as CloseEvent);
+
+    expect(codes).toEqual([4401]);
+  });
+
+  it('stays silent for a socket that was stopped or replaced', () => {
+    const { socket, closes } = setupWithClose();
+    const codes: number[] = [];
+    socket.closed$.subscribe((code) => codes.push(code));
+
+    socket.start('proc-1');
+    socket.start('proc-2');
+    closes[0].next({ code: 1006 } as CloseEvent);
+    socket.stop();
+    closes[1].next({ code: 1000 } as CloseEvent);
+
+    expect(codes).toEqual([]);
   });
 });
 

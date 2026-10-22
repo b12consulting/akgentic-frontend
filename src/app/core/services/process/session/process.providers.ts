@@ -16,6 +16,7 @@ import { SELECTED_AGENT_ID } from '../event/selected-agent';
 import { TeamSocket } from '../event/team-socket';
 import { TeamStatusReactor } from '../event/team-status-reactor';
 import { TeamDescriptionReactor } from '../event/team-description-reactor';
+import { WakeUpSource } from '../event/wake-up-source';
 import { AgentsByIdService } from '../selectors/agents-by-id.selector';
 import { ChatService } from '../selectors/chat.selector';
 import { GraphDataService } from '../selectors/graph.selector';
@@ -35,16 +36,17 @@ import { TraceFoldState } from '../ui-state/trace-fold-state';
 /**
  * THE TEAM'S SERVICES, SCOPED TO THE ROUTE RATHER THAN TO A COMPONENT.
  *
- * It holds TWENTY-NINE entries: twenty-eight service classes — the team's
+ * It holds THIRTY entries: twenty-nine service classes — the team's
  * stack — and one factory provider, `SELECTED_AGENT_ID`, which hands the event
  * tier the root-scoped member selection it may not import directly.
  *
- * All twenty-eight service classes used to be the `process/:id` route's
- * providers, and every component that wanted one injected it bare — which meant
- * every one of them could only ever be mounted inside that component. That is
- * the coupling in the way of reusing a panel anywhere else, and of anybody
- * assembling a second UI out of the same parts: a component that silently
- * requires a particular ancestor is not a component you can place.
+ * All of those service classes but `WakeUpSource` (Story 63-1) used to be the
+ * `process/:id` route's providers, and every component that wanted one
+ * injected it bare — which meant every one of them could only ever be mounted
+ * inside that component. That is the coupling in the way of reusing a panel
+ * anywhere else, and of anybody assembling a second UI out of the same parts:
+ * a component that silently requires a particular ancestor is not a component
+ * you can place.
  *
  * `Route.providers` gives them an ENVIRONMENT injector owned by the route, so
  * nothing has to be mounted under a specific component to reach them. The
@@ -71,7 +73,7 @@ import { TraceFoldState } from '../ui-state/trace-fold-state';
 /**
  * EXPORTED, and that is not incidental. A developer who clones this repo to
  * build a different console needs this array verbatim — it is the team's whole
- * service stack — and an unexported `const` left them copying twenty-nine
+ * service stack — and an unexported `const` left them copying thirty
  * entries by hand, in order, from the file they were about to replace.
  *
  * IT LIVES BESIDE `team-session.service.ts` RATHER THAN IN THE ROUTER, which is
@@ -165,6 +167,12 @@ export const PROCESS_PROVIDERS = [
   // team switch, which is the transport half of the race ADR-005 §Decision 6
   // closes.
   TeamSocket,
+  // Story 63-1 (ADR-040 §2): the wake-up source — page shown after a long
+  // hide, or the network back — provided BEFORE IngestionService, which
+  // subscribes to it in its cycle bag and forces a reconnect. Never
+  // `providedIn: 'root'`, for the folder's uniform route scoping: it is cold
+  // and stateless, so the cycle bag alone decides when it listens.
+  WakeUpSource,
   // Epic 34 (ADR-025 §1): the frame-batched log feed, provided BEFORE
   // IngestionService (which injects it and hands it the socket's inbound
   // stream). Never `providedIn: 'root'` — a root instance would feed one

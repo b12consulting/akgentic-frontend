@@ -479,7 +479,25 @@ export class ContextService {
     return response.team_id;
   }
 
-  private async refreshOneTeam(teamId: string): Promise<TeamContext | null> {
+  /**
+   * Re-read one team from the server and upsert it into `_context$`, so
+   * `currentTeam$` — and through the constructor subscription
+   * `currentTeamRunning$` — re-emits when it is the current team.
+   *
+   * Public since Story 63-1. Its callers are the two bounded polls
+   * `stopTeamAndAwait` / `restoreTeamAndAwait`, the ingestion layer's resync
+   * after a reconnect (ADR-040 §1), which reads the record a team may have
+   * changed while the socket was down, and (Story 63-3, ADR-040 §4) the
+   * ingestion layer's frame-triggered re-read of a team believed stopped,
+   * which shares one in-flight read with the resync.
+   *
+   * Rejects with whatever `ApiService.getTeam` rejects with: a `FetchFailure`
+   * for an HTTP or network failure, or the `TypeError` that `toTeamContext`
+   * throws on an empty body. `getTeam` never resolves without a
+   * team, so the `null` in the return type and the `if (fresh)` guard are
+   * defensive only.
+   */
+  async refreshOneTeam(teamId: string): Promise<TeamContext | null> {
     const fresh = await this.apiService.getTeam(teamId);
     if (fresh) {
       this._upsertTeam(fresh);
@@ -491,7 +509,9 @@ export class ContextService {
    *  reference identity of other slots); append if not yet cached. The single
    *  write path, so its callers cannot diverge in a future change: the two
    *  PULL callers `getCurrentTeam` / `refreshOneTeam` (issue #104 regression
-   *  fix) and the two PUSH callers `markStopped` / `setTeamDescription`
+   *  fix; the latter also reached from the ingestion resync since Story 63-1
+   *  and from a protocol frame on a team believed stopped (63-3))
+   *  and the two PUSH callers `markStopped` / `setTeamDescription`
    *  (Epic 37). Two properties every caller depends on — it hands `next()` a
    *  fresh array and never mutates a member, and it APPENDS when the id is
    *  absent, which is why both push callers look the team up first. */
