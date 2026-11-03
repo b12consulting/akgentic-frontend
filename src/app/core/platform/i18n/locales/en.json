@@ -46,6 +46,7 @@
       "createdAt": "Creation Date",
       "status": "Status",
       "updated": "Updated",
+      "id": "ID",
       "currentPageReport": "{first}–{last} of {totalRecords}",
       "descriptionPrompt": "Click to add description...",
       "descriptionPlaceholder": "Enter team description"

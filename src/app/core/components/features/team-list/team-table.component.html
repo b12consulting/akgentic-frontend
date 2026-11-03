@@ -23,12 +23,15 @@
   (forbidden by ADR-032 §"What we will not do"; [scrollable] is explicitly
   allowed).
 
-  SIX COLUMNS, AND NONE OF THEM IS THE TEAM ID. W11 took the id's column away
-  — a 36-character uuid repeated down every row was the widest thing on screen
-  and the least often read — and demoted it to the quietest line of the Name
-  cell; Story 58-3 then took the printed value out of the row altogether. The
-  id is the row's identity as DATA, travelling through `rowSelected` and the
-  action outputs, and is printed nowhere. The sixth column is "Updated",
+  SIX COLUMNS, PLUS THE SHORT ID. W11 took the full id's column away — a
+  36-character uuid repeated down every row was the widest thing on screen and
+  the least often read — and Story 58-3 took the printed value out of the row
+  altogether. It is back as its FIRST SEGMENT only, in a column of its own
+  between Updated and the actions, and only while `showShortId` is on (the
+  deployment's `showTeamShortId`, shown by default): eight characters are
+  enough to name one team among several of the same type, and the full uuid is
+  the cell's `title`. The id is still the row's identity as DATA, travelling
+  through `rowSelected` and the action outputs. The sixth column is "Updated",
   beside Creation Date: the same date, the same format, the other end of the
   team's life. See the Updated cell below.
 
@@ -63,6 +66,7 @@
       <th>{{ "team.table.status" | translate }}</th>
       <th>{{ "team.table.createdAt" | translate }}</th>
       <th>{{ "team.table.updated" | translate }}</th>
+      <th *ngIf="showShortId">{{ "team.table.id" | translate }}</th>
       <th></th>
     </tr>
   </ng-template>
@@ -289,6 +293,15 @@
         [title]="ctx.updated_at"
       >
         {{ ctx.updated_at | date: "short" }}
+      </td>
+      <!-- The team id's first segment; the full uuid is the `title`. -->
+      <td
+        *ngIf="showShortId"
+        class="team-id-cell"
+        data-test="row-short-id"
+        [title]="ctx.team_id"
+      >
+        {{ ctx.team_id | teamShortId }}
       </td>
       <!--
         The row actions.

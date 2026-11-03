@@ -1,6 +1,6 @@
 import { Pipe, PipeTransform } from '@angular/core';
 
-import { metadataEntries, teamTitle, TeamMetadataEntry } from './team.interface';
+import { metadataEntries, shortTeamId, teamTitle, TeamMetadataEntry } from './team.interface';
 
 /**
  * A team's metadata as render-ready pairs, memoised.
@@ -60,6 +60,15 @@ export class TeamTitlePipe implements PipeTransform {
     titleKey: string | null | undefined,
   ): string | null {
     return teamTitle(metadata, titleKey);
+  }
+}
+
+/** A team id's first segment (`shortTeamId`). A pipe so a row recomputes it
+ *  only when its id changes, not on every change-detection cycle. */
+@Pipe({ name: 'teamShortId' })
+export class TeamShortIdPipe implements PipeTransform {
+  transform(teamId: string): string {
+    return shortTeamId(teamId);
   }
 }
 

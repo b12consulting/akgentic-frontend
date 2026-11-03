@@ -3,6 +3,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
+import { ConfigService } from '../../../core/platform/config/config.service';
 import { ContextService } from '../../../core/platform/context/context.service';
 import { TeamActivity, TeamContext } from '../../../core/platform/context/team.interface';
 import {
@@ -381,6 +382,27 @@ describe('RailTeamRowComponent', () => {
     expect(component.metaKey).toBe('rail.teamMeta');
     expect(meta).toContain('CS-4471');
     expect(meta.startsWith('<<meta:')).toBeTrue();
+  });
+
+  it('shows the team id\'s first segment after the date, the full uuid as its title', async () => {
+    const uuid = 'b3acbd93-4e0f-4e44-8959-4f17a5a38c71';
+    await render(makeRow('stopped', { team_id: uuid, metadata: { case_id: 'CS-4471' } }));
+
+    const meta = fixture.nativeElement.querySelector('.rail-row__meta') as HTMLElement;
+    const id = meta.querySelector('.rail-row__id') as HTMLElement;
+    expect(id.textContent!.trim()).toBe('b3acbd93');
+    expect(id.title).toBe(uuid);
+    // After the translated sentence, which carries the date.
+    expect(id.previousElementSibling!.classList).toContain('rail-row__meta-text');
+    expect(meta.textContent).not.toContain(uuid);
+  });
+
+  it('shows no id when the deployment turns showTeamShortId off', async () => {
+    spyOnProperty(TestBed.inject(ConfigService), 'showTeamShortId').and.returnValue(false);
+    await render(makeRow('stopped', { team_id: 'b3acbd93-4e0f-4e44-8959-4f17a5a38c71' }));
+
+    expect(component.shortId).toBeNull();
+    expect(fixture.nativeElement.querySelector('.rail-row__id')).toBeNull();
   });
 
   it('drops to the time-only key when the team carries no metadata summary', async () => {

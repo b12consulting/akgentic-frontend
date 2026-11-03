@@ -221,6 +221,16 @@ export function isRunning(team: Pick<TeamContext, 'status'>): boolean {
 }
 
 /**
+ * The team id's first segment — `b3acbd93` for
+ * `b3acbd93-4e0f-4e44-8959-4f17a5a38c71`. Short enough to sit in a column or
+ * beside a date, long enough to tell a page of teams apart. An id with no
+ * hyphen comes back whole.
+ */
+export function shortTeamId(teamId: string): string {
+  return teamId.split('-')[0];
+}
+
+/**
  * A trailing offset designator: `Z`, or `±hh:mm` / `±hhmm`. A string that has
  * a time part and lacks one is a NAIVE timestamp.
  */

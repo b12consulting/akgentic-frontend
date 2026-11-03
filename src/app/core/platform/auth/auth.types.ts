@@ -62,6 +62,18 @@ export interface Environment {
    * every `config.json` in the field. `ConfigService` supplies the default (5).
    */
   wsReconnectIntervalSeconds?: number;
+  /**
+   * Show the first segment of each team's uuid — the eight characters before
+   * the first hyphen — in the teams list (a column between Updated and the
+   * actions) and on each rail row (beside the date). It is what a person reads
+   * aloud or pastes into a log search to name one team among several of the
+   * same type.
+   *
+   * OPTIONAL, like `initRailCollapsed` and for the same reason: it post-dates
+   * every `config.json` in the field. `ConfigService` supplies the default
+   * (shown).
+   */
+  showTeamShortId?: boolean;
   userInputEnterKeySubmit: boolean;
   favicon: string;
   /**

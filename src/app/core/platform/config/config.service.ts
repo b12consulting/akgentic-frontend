@@ -175,6 +175,18 @@ export class ConfigService {
     return this.config.hideAgentNames;
   }
 
+  /**
+   * Show each team's short id in the teams list and the rail. See
+   * `Environment.showTeamShortId`.
+   *
+   * `?? true` for the reason spelled out on `initRailCollapsed`: the key
+   * post-dates every `config.json` in the field and `load()` fills no gaps, so
+   * an absent key must mean the default, which here is shown.
+   */
+  get showTeamShortId(): boolean {
+    return this.config.showTeamShortId ?? true;
+  }
+
   get initRightPanelCollapsed(): boolean {
     return this.config.initRightPanelCollapsed;
   }

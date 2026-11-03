@@ -207,4 +207,26 @@ describe('ConfigService', () => {
       }
     });
   });
+
+  describe('showTeamShortId — the short team id in the list and the rail', () => {
+    it('shows it for a config.json that predates the key', async () => {
+      const config = await loadConfig({ api: 'http://backend.test' });
+
+      expect(config.showTeamShortId).toBeTrue();
+    });
+
+    it('shows it when the key is absent from the merged config too', () => {
+      const config = new ConfigService();
+      const { showTeamShortId: _dropped, ...withoutKey } = environment;
+      (config as any).config = withoutKey;
+
+      expect(config.showTeamShortId).toBeTrue();
+    });
+
+    it('hides it when a deployment turns it off', async () => {
+      const config = await loadConfig({ showTeamShortId: false });
+
+      expect(config.showTeamShortId).toBeFalse();
+    });
+  });
 });

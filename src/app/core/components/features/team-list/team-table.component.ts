@@ -20,6 +20,7 @@ import { TagModule } from 'primeng/tag';
 
 import {
   TeamMetadataPipe,
+  TeamShortIdPipe,
   TeamTitlePipe,
   trackMetadataEntry,
 } from '../../../platform/context/team-metadata.pipe';
@@ -76,6 +77,7 @@ export interface TeamDescriptionSave {
     TagModule,
     InputTextModule,
     TeamMetadataPipe,
+    TeamShortIdPipe,
     TeamTitlePipe,
     TranslatePipe,
   ],
@@ -116,6 +118,13 @@ export class TeamTableComponent {
    * renders the row exactly as it did before this input existed.
    */
   @Input() titleKey: string | null = null;
+
+  /**
+   * Whether to show the ID column — each row's short team id, between Updated
+   * and the actions. The page passes `ConfigService.showTeamShortId`; the table
+   * reads no configuration of its own.
+   */
+  @Input() showShortId = true;
 
   /**
    * Whether the list is being fetched.
