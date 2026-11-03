@@ -126,6 +126,8 @@ export class HomeComponent {
   private route: ActivatedRoute = inject(ActivatedRoute);
   authService: AuthService = inject(AuthService);
   private config = inject(ConfigService);
+  /** Whether the teams table shows its short-id column (`showTeamShortId`). */
+  readonly showTeamShortId = this.config.showTeamShortId;
   /**
    * Public because the template reads `isRailCollapsed$` and calls
    * `toggleRail()` on it.

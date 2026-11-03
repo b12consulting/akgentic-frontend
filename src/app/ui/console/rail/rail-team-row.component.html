@@ -61,9 +61,19 @@
       two halves; that separator is punctuation a translator has to be able to
       move, and a splice in the template gives them nowhere to move it.
     -->
-    <span class="rail-row__meta">{{
-      metaKey | translate: { summary: summary, when: when }
-    }}</span>
+    <!--
+      The short id sits AFTER the sentence, in a span of its own that does not
+      shrink: the sentence ellipsises first, so the id stays readable on a
+      narrow rail. The full uuid is its `title`.
+    -->
+    <span class="rail-row__meta"
+      ><span class="rail-row__meta-text">{{
+        metaKey | translate: { summary: summary, when: when }
+      }}</span
+      >@if (shortId) {<span class="rail-row__id" [title]="row.team.team_id">{{
+          shortId
+        }}</span>}</span
+    >
   </span>
 </button>
 

@@ -354,6 +354,14 @@ p-table {
     white-space: nowrap;
 }
 
+.team-id-cell {
+    font-family: var(--akg-font-mono);
+    font-size: 11.5px;
+    line-height: 1.35;
+    color: var(--akg-text-muted);
+    white-space: nowrap;
+}
+
 // The loading overlay.
 //
 // PrimeNG's mask ships with `p-overlay-mask`, whose dim covers the whole table

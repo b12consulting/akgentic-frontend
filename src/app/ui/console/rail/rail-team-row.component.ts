@@ -16,12 +16,14 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 import { MenuItem } from 'primeng/api';
 import { Menu, MenuModule } from 'primeng/menu';
 
+import { ConfigService } from '../../../core/platform/config/config.service';
 import { ContextService } from '../../../core/platform/context/context.service';
 import { TeamTitlePipe } from '../../../core/platform/context/team-metadata.pipe';
 import { formatTeamWhen } from '../../../core/platform/context/team-when';
 import {
   isRunning,
   metadataEntries,
+  shortTeamId,
   TeamActivity,
 } from '../../../core/platform/context/team.interface';
 import { IconButtonComponent } from '../../../core/components/primitives/icon-button/icon-button.component';
@@ -68,6 +70,7 @@ const ACTIVITY_TITLE_KEY: Readonly<Record<TeamActivity, string>> = Object.freeze
 })
 export class RailTeamRowComponent implements OnChanges {
   private readonly contextService = inject(ContextService);
+  private readonly config = inject(ConfigService);
   private readonly translate = inject(TranslateService);
   private readonly cdr = inject(ChangeDetectorRef);
   private readonly locale = inject(LOCALE_ID);
@@ -153,6 +156,14 @@ export class RailTeamRowComponent implements OnChanges {
   /** The row's timestamp, already formatted. See `computeWhen`. */
   when = '';
 
+  /**
+   * The team id's first segment, shown beside the date — or `null` when the
+   * deployment turned it off (`showTeamShortId`, shown by default). Outside the
+   * translated meta sentence on purpose: it is an identifier, not words, and it
+   * keeps its own place at the end of the line however the sentence is ordered.
+   */
+  shortId: string | null = null;
+
   ngOnChanges(): void {
     const metadata = this.row?.team.metadata;
     // `||`, not `??`, on purpose: `''` is "no description" on this surface,
@@ -164,6 +175,8 @@ export class RailTeamRowComponent implements OnChanges {
     // slip.
     this.summary = metadataEntries(metadata, this.titleKey)[0]?.value ?? null;
     this.when = this.computeWhen();
+    this.shortId =
+      this.config.showTeamShortId && this.row ? shortTeamId(this.row.team.team_id) : null;
   }
 
   /** Reveal the kebab. Forty rows each wearing a permanent kebab is forty

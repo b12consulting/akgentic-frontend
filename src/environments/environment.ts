@@ -9,6 +9,7 @@ export const environment = {
   hideHome: false,
   hideLogin: true,
   hideAgentNames: false,
+  showTeamShortId: true,
   initRightPanelCollapsed: false,
   userInputEnterKeySubmit: false,
   favicon: 'favicon.png',

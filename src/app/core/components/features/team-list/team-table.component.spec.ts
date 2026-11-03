@@ -143,15 +143,12 @@ describe('TeamTableComponent', () => {
 
   // --- What it renders -----------------------------------------------------
 
-  it('(AC1, W11) renders one row per team, with six columns — Team ID is not one', async () => {
-    // UPDATED FOR W11, deliberately. This used to assert six keys ending
-    // `team.table.id`, and that assertion pinned the thing the round set out to
-    // change: a full uuid given a column of its own, at full width, in every
-    // row. Story 58-3 then took the printed id out of the row altogether — it
-    // travels as DATA through `rowSelected` now — and gave the team's updated
-    // date a column beside Creation Date. So what this spec owns is that the
-    // heading row says what the columns are and that each team gets a row,
-    // told apart by NAME.
+  it('(AC1, W11) renders one row per team, with the short ID column before the actions', async () => {
+    // W11 took the FULL uuid's column away and Story 58-3 took the printed id
+    // out of the row. The id is back as its first segment only, in a column
+    // between Updated and the actions, shown by default (`showShortId`). What
+    // this spec owns is that the heading row says what the columns are and
+    // that each team gets a row, told apart by NAME.
     await render([
       makeTeam({ team_id: 't-1', name: 'Alpha' }),
       makeTeam({ team_id: 't-2', name: 'Beta' }),
@@ -167,6 +164,7 @@ describe('TeamTableComponent', () => {
       'team.table.status',
       'team.table.createdAt',
       'team.table.updated',
+      'team.table.id',
       '',
     ]);
     const text = fixture.nativeElement.textContent as string;
@@ -179,8 +177,9 @@ describe('TeamTableComponent', () => {
     await render([]);
 
     expect(rows().length).toBe(0);
-    // Six: five since W11 took the id's column, plus Updated (Story 58-3).
-    expect(headerCells().length).toBe(6);
+    // Seven: five since W11 took the full id's column, plus Updated (Story
+    // 58-3), plus the short id (shown by default).
+    expect(headerCells().length).toBe(7);
     expect(
       fixture.nativeElement.querySelector('p-paginator, .p-paginator'),
     ).not.toBeNull();
@@ -646,20 +645,30 @@ describe('TeamTableComponent', () => {
     expect(nameCell.querySelector('.team-description')!.nextElementSibling).toBeNull();
   });
 
-  it('does not print the team id anywhere in the row', async () => {
-    // The uuid is the row's identity as DATA, and only as data. It is a
-    // 36-character string nobody reads, and it was the widest thing on screen.
+  it('prints the short id, never the full uuid, between Updated and the actions', async () => {
+    // The full uuid is the row's identity as DATA and the cell's `title`; the
+    // row PRINTS only its first segment.
     const uuid = '505835a6-f63e-4b5a-842f-e294c4ffa0d5';
     await render([makeTeam({ team_id: uuid, name: 'Alpha' })]);
 
     const row = rows()[0];
-    expect(row.querySelector('[data-test="row-team-id"]')).toBeNull();
+    const cell = row.querySelector('[data-test="row-short-id"]') as HTMLElement;
+    expect(cell.textContent?.trim()).toBe('505835a6');
+    expect(cell.title).toBe(uuid);
     expect(row.textContent).not.toContain(uuid);
-    // The heading row is as it was: the id's column went in W11 and its label
-    // is gone with the printed value.
+    expect(cell.previousElementSibling?.getAttribute('data-test')).toBe('row-updated-at');
+    expect(cell.nextElementSibling?.getAttribute('data-test')).toBe('row-actions');
+  });
+
+  it('drops the ID column, heading and cells, when showShortId is off', async () => {
+    component.showShortId = false;
+    await render([makeTeam({ team_id: '505835a6-f63e-4b5a-842f-e294c4ffa0d5' })]);
+
     expect(headerCells().map((th) => th.textContent?.trim())).not.toContain(
       'team.table.id',
     );
+    expect(rows()[0].querySelector('[data-test="row-short-id"]')).toBeNull();
+    expect(rows()[0].textContent).not.toContain('505835a6');
   });
 
   it('renders the updated date ONCE per row', async () => {

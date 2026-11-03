@@ -243,6 +243,7 @@
       [rows]="rows"
       [first]="first"
       [titleKey]="(titleKey$ | async) ?? null"
+      [showShortId]="showTeamShortId"
       (lazyLoad)="loadPage($event)"
       (rowSelected)="onRowSelect($event)"
       (stopRequested)="onStopRequested($event)"
