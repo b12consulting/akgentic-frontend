@@ -76,7 +76,12 @@
       the same gesture. The association is carried by `ariaLabel` on the control
       instead, which is what a screen reader reads anyway.
     -->
-    <div class="composer-pill" [class.composer-pill--disabled]="!canChooseSender">
+    <!--
+      Each pill can be switched off per deployment (`showSendAs` / `showSendTo`).
+      That is a fixed fact about the deployment, not about the team, so removing
+      it does not bring back the shape-shifting the disabled state below avoids.
+    -->
+    <div *ngIf="showSendAs" class="composer-pill" [class.composer-pill--disabled]="!canChooseSender">
       <!-- Decorative: the pill's own words name the setting. -->
       <svg class="composer-pill__glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
         <circle cx="12" cy="8" r="3.5" />
@@ -105,7 +110,7 @@
       ></p-select>
     </div>
 
-    <div class="composer-pill composer-pill--grow">
+    <div *ngIf="showSendTo" class="composer-pill composer-pill--grow">
       <svg class="composer-pill__glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
         <path d="M4 6h16M4 12h10M4 18h7" />
       </svg>

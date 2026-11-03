@@ -10,6 +10,8 @@ export const environment = {
   hideLogin: true,
   hideAgentNames: false,
   showTeamShortId: true,
+  showSendAs: true,
+  showSendTo: true,
   initRightPanelCollapsed: false,
   userInputEnterKeySubmit: false,
   favicon: 'favicon.png',

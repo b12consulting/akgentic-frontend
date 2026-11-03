@@ -8,6 +8,7 @@ import { BehaviorSubject } from 'rxjs';
 
 import { ProcessUserInputComponent } from './user-input.component';
 import { ApiService } from '../../../../platform/http/api.service';
+import { ConfigService } from '../../../../platform/config/config.service';
 import { HttpError, NetworkError } from '../../../../platform/http/fetch.service';
 import { ChatService } from '../../../../services/process/selectors/chat.selector';
 import { ContextService } from '../../../../platform/context/context.service';
@@ -511,6 +512,57 @@ describe('ProcessUserInputComponent', () => {
    * send as somebody else here?" had no answer at all. The pill now always
    * renders and reports whether it is available.
    */
+  describe('showSendAs / showSendTo — the pills can be switched off', () => {
+    const humans = () => [
+      makeNode({ name: 'human-1', actorName: '@Human', role: 'Human' }),
+      makeNode({ name: 'sup-1', actorName: '@Support', role: 'Human' }),
+      makeNode({ name: 'mgr-1', actorName: '@Manager', role: 'Worker' }),
+    ];
+
+    function render(flags: { sendAs: boolean; sendTo: boolean }): void {
+      const config = TestBed.inject(ConfigService);
+      spyOnProperty(config, 'showSendAs').and.returnValue(flags.sendAs);
+      spyOnProperty(config, 'showSendTo').and.returnValue(flags.sendTo);
+      nodesSubject.next(humans());
+      fixture.detectChanges();
+    }
+
+    const pills = () => fixture.nativeElement.querySelectorAll('.composer-pill');
+    const sendAs = () => fixture.nativeElement.querySelector('p-select');
+    const sendTo = () => fixture.nativeElement.querySelector('p-multiselect');
+
+    it('shows both by default', () => {
+      render({ sendAs: true, sendTo: true });
+
+      expect(pills().length).toBe(2);
+      expect(sendAs()).not.toBeNull();
+      expect(sendTo()).not.toBeNull();
+    });
+
+    it('drops only "Send as" when it is switched off', () => {
+      render({ sendAs: false, sendTo: true });
+
+      expect(pills().length).toBe(1);
+      expect(sendAs()).toBeNull();
+      expect(sendTo()).not.toBeNull();
+    });
+
+    it('drops only "Send to" when it is switched off', () => {
+      render({ sendAs: true, sendTo: false });
+
+      expect(pills().length).toBe(1);
+      expect(sendAs()).not.toBeNull();
+      expect(sendTo()).toBeNull();
+    });
+
+    it('keeps the send button with both switched off', () => {
+      render({ sendAs: false, sendTo: false });
+
+      expect(pills().length).toBe(0);
+      expect(submitButton()).not.toBeNull();
+    });
+  });
+
   describe('"Send as" availability (Story 7-1, restyled)', () => {
     function sendAsPill(): HTMLElement {
       return fixture.nativeElement.querySelector('.composer-pill');
