@@ -187,6 +187,16 @@ export class ConfigService {
     return this.config.showTeamShortId ?? true;
   }
 
+  /** Show the composer's "Send as" control. `?? true`: absent means shown. */
+  get showSendAs(): boolean {
+    return this.config.showSendAs ?? true;
+  }
+
+  /** Show the composer's "Send to" control. `?? true`: absent means shown. */
+  get showSendTo(): boolean {
+    return this.config.showSendTo ?? true;
+  }
+
   get initRightPanelCollapsed(): boolean {
     return this.config.initRightPanelCollapsed;
   }

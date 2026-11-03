@@ -74,6 +74,20 @@ export interface Environment {
    * (shown).
    */
   showTeamShortId?: boolean;
+  /**
+   * Show the composer's "Send as" control. Hidden, every message is sent as the
+   * signed-in user.
+   *
+   * OPTIONAL, like `initRailCollapsed`: absent means shown.
+   */
+  showSendAs?: boolean;
+  /**
+   * Show the composer's "Send to" control. Hidden, every message takes the
+   * default route — the same one an empty selection takes (the supervisors).
+   *
+   * OPTIONAL, like `initRailCollapsed`: absent means shown.
+   */
+  showSendTo?: boolean;
   userInputEnterKeySubmit: boolean;
   favicon: string;
   /**

@@ -374,6 +374,24 @@ export class ProcessUserInputComponent implements OnInit, AfterViewInit {
   }
 
   /**
+   * Whether the deployment shows the "Send as" pill at all. Read through the
+   * service on every pass rather than copied into a field, so it is the live
+   * config value. Hidden, `selectedSender` is never set and the user sends as
+   * themselves.
+   */
+  get showSendAs(): boolean {
+    return this.config.showSendAs;
+  }
+
+  /**
+   * Whether the deployment shows the "Send to" pill at all. Hidden,
+   * `selectedAgents` stays empty and every message takes the default route.
+   */
+  get showSendTo(): boolean {
+    return this.config.showSendTo;
+  }
+
+  /**
    * Comma-joined friendly labels of the current dropdown selection, e.g.
    * `@AgentA, @AgentB`. Used by the Send-to echo indicator in the template.
    * Empty string when no agent is selected (broadcast case).

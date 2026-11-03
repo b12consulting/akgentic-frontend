@@ -229,4 +229,36 @@ describe('ConfigService', () => {
       expect(config.showTeamShortId).toBeFalse();
     });
   });
+
+  describe('showSendAs / showSendTo — the composer pills', () => {
+    it('shows both for a config.json that predates the keys', async () => {
+      const config = await loadConfig({ api: 'http://backend.test' });
+
+      expect(config.showSendAs).toBeTrue();
+      expect(config.showSendTo).toBeTrue();
+    });
+
+    it('shows both when the keys are absent from the merged config too', () => {
+      const config = new ConfigService();
+      const { showSendAs: _a, showSendTo: _t, ...withoutKeys } = environment;
+      (config as any).config = withoutKeys;
+
+      expect(config.showSendAs).toBeTrue();
+      expect(config.showSendTo).toBeTrue();
+    });
+
+    it('hides only "Send as" when a deployment turns it off', async () => {
+      const config = await loadConfig({ showSendAs: false });
+
+      expect(config.showSendAs).toBeFalse();
+      expect(config.showSendTo).toBeTrue();
+    });
+
+    it('hides only "Send to" when a deployment turns it off', async () => {
+      const config = await loadConfig({ showSendTo: false });
+
+      expect(config.showSendAs).toBeTrue();
+      expect(config.showSendTo).toBeFalse();
+    });
+  });
 });

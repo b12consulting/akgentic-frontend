@@ -112,10 +112,10 @@ the runtime layer and silently ignores whatever the deployment set.
 
 Recognised keys: `api`, `logo`, `favicon`, `welcomeMessage`, `autoRedirectContext`, `hideHome`,
 `hideLogin`, `hideAgentNames`, `initRightPanelCollapsed`, `initRailCollapsed`,
-`hiddenInspectorTabs`, `showTeamShortId`, `userInputEnterKeySubmit`, `loginProviders`,
-`production`, `languages`, `defaultLanguage`, `wsReconnectIntervalSeconds`.
+`hiddenInspectorTabs`, `showTeamShortId`, `showSendAs`, `showSendTo`, `userInputEnterKeySubmit`,
+`loginProviders`, `production`, `languages`, `defaultLanguage`, `wsReconnectIntervalSeconds`.
 
-Four of them are optional and fall back to a default when absent, because they post-date every
+Six of them are optional and fall back to a default when absent, because they post-date every
 `config.json` in the field:
 
 | Key | Default | Meaning |
@@ -123,6 +123,8 @@ Four of them are optional and fall back to a default when absent, because they p
 | `initRailCollapsed` | `false` | Start with the team rail collapsed. |
 | `hiddenInspectorTabs` | `[]` | Inspector tabs to switch off, by id: `team`, `hierarchy`, `run`, `member`, `knowledge-graph`, `workspace`, `messages`. An unknown id is ignored, and a list that would hide every tab the team offers is ignored as a whole. |
 | `showTeamShortId` | `true` | Show the first segment of each team's id (`b3acbd93` for `b3acbd93-4e0f-…`) in a column of the teams list and beside the date on each rail row. The full id is the tooltip. |
+| `showSendAs` | `true` | Show the composer's "Send as" control. Off, every message is sent as the signed-in user. |
+| `showSendTo` | `true` | Show the composer's "Send to" control. Off, every message takes the default route (the supervisors). |
 | `wsReconnectIntervalSeconds` | `5` | Seconds between attempts to reopen a lost team socket. Anything that is not a positive number falls back to the default. |
 
 `hideAgentNames` hides the agent's name on chat bubbles. Alignment, colour and threading stay, so
