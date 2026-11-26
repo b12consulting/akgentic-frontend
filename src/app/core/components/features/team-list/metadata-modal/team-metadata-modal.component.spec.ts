@@ -1058,12 +1058,21 @@ describe('TeamMetadataModalComponent', () => {
     expect(input('folder').hasAttribute('placeholder')).toBeFalse();
   });
 
-  it('(64.1 AC5) the placeholder carries no prefix and is never translated', async () => {
-    await open(contract([field('folder', { default: 'Documents' })]));
+  it('(64.1 AC3) a zero default renders "0" — a falsy number is still a default', async () => {
+    await open(contract([field('retries', { default: 0 })]));
 
-    // Exact, not `toContain`: an `e.g. ` or `Default: ` prefix, or a translate
-    // key, must fail here.
-    expect(input('folder').getAttribute('placeholder')).toBe('Documents');
+    expect(input('retries').getAttribute('placeholder')).toBe('0');
+  });
+
+  it('(64.1 AC5) the placeholder carries no prefix and is never translated', async () => {
+    // The default IS a key the test translations resolve. The key-echoing
+    // loader hands back any unknown key unchanged, so a plain default like
+    // `Documents` reads the same translated or not and pins nothing; this one
+    // comes back as `<<pattern=...>>` if it ever goes through `translate`.
+    await open(contract([field('folder', { default: 'home.metadata.patternMismatch' })]));
+
+    // Exact, not `toContain`: an `e.g. ` or `Default: ` prefix must fail here.
+    expect(input('folder').getAttribute('placeholder')).toBe('home.metadata.patternMismatch');
   });
 
   it('(64.1 AC6) a blank field showing a placeholder emits no key', async () => {
