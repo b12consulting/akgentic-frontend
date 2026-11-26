@@ -105,4 +105,194 @@ describe('UploadModalComponent', () => {
     expect(() => component.onHide()).not.toThrow();
     expect(component.selectedFiles).toEqual([]);
   });
+
+  // --- new folder: path composition --------------------------------
+
+  function nameNewFolder(name: string): void {
+    component.openNewFolder();
+    component.newFolderName = name;
+  }
+
+  it('no new folder: the effective target is targetPath unchanged', () => {
+    component.targetPath = 'docs';
+    expect(component.getEffectiveTargetPath()).toBe('docs');
+
+    component.targetPath = '';
+    expect(component.getEffectiveTargetPath()).toBe('');
+  });
+
+  it('a name typed with the input closed is not used', () => {
+    component.targetPath = 'docs';
+    component.newFolderName = 'q4';
+    expect(component.getEffectiveTargetPath()).toBe('docs');
+  });
+
+  it('root base + segment: the effective target is the bare segment', () => {
+    component.targetPath = '';
+    nameNewFolder('q4');
+    expect(component.getEffectiveTargetPath()).toBe('q4');
+  });
+
+  it('nested base + segment: the effective target is base/segment', () => {
+    component.targetPath = 'docs/reports';
+    nameNewFolder('q4');
+    expect(component.getEffectiveTargetPath()).toBe('docs/reports/q4');
+  });
+
+  it('the segment is trimmed', () => {
+    component.targetPath = 'docs';
+    nameNewFolder('  q4  ');
+    expect(component.getEffectiveTargetPath()).toBe('docs/q4');
+  });
+
+  it('clearing the new folder brings the target back to the base', () => {
+    component.targetPath = 'docs';
+    nameNewFolder('q4');
+
+    component.clearNewFolder();
+
+    expect(component.newFolderName).toBe('');
+    expect(component.newFolderOpen).toBe(false);
+    expect(component.getEffectiveTargetPath()).toBe('docs');
+  });
+
+  for (const invalid of ['', '   ', 'a/b', 'a\\b', '.', '..']) {
+    it(`an invalid name (${JSON.stringify(invalid)}) leaves the target on the base and blocks upload`, () => {
+      component.targetPath = 'docs';
+      nameNewFolder(invalid);
+
+      expect(component.getEffectiveTargetPath()).toBe('docs');
+      expect(component.newFolderInvalid).toBe(true);
+    });
+  }
+
+  it('the name of a folder that may already exist is valid (the upload merges)', () => {
+    component.targetPath = '';
+    nameNewFolder('docs');
+
+    expect(component.newFolderInvalid).toBe(false);
+    expect(component.getEffectiveTargetPath()).toBe('docs');
+  });
+
+  it('onHide() clears the new-folder name and closes the input', () => {
+    component.targetPath = 'docs';
+    nameNewFolder('q4');
+
+    component.onHide();
+
+    expect(component.newFolderName).toBe('');
+    expect(component.newFolderOpen).toBe(false);
+    expect(component.newFolderInvalid).toBe(false);
+    expect(component.getEffectiveTargetPath()).toBe('docs');
+  });
+});
+
+// --------------------------------------------------------------------
+// The real template. The describe above strips it, so a deleted binding
+// would leave it green; this one drives the controls through the DOM.
+// --------------------------------------------------------------------
+
+describe('UploadModalComponent (rendered template)', () => {
+  let component: UploadModalComponent;
+  let fixture: ComponentFixture<UploadModalComponent>;
+
+  // p-dialog may render its content outside the host element, so query the
+  // whole document; TestBed tears the fixture down after each spec.
+  function el<T extends Element>(testId: string, inner = ''): T | null {
+    return document.querySelector<T>(
+      `[data-testid="${testId}"]${inner ? ' ' + inner : ''}`
+    );
+  }
+
+  function targetText(): string {
+    return (el('upload-target')?.textContent ?? '').replace(/\s+/g, ' ').trim();
+  }
+
+  function uploadButton(): HTMLButtonElement {
+    const button = el<HTMLButtonElement>('upload-submit', 'button');
+    expect(button).withContext('Upload button rendered').not.toBeNull();
+    return button!;
+  }
+
+  async function settle(): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  async function type(value: string): Promise<void> {
+    const input = el<HTMLInputElement>('new-folder-input');
+    expect(input).withContext('new-folder input rendered').not.toBeNull();
+    input!.value = value;
+    input!.dispatchEvent(new Event('input'));
+    await settle();
+  }
+
+  beforeEach(async () => {
+    await TestBed.configureTestingModule({
+      imports: [UploadModalComponent, NoopAnimationsModule],
+      providers: [provideTranslateTesting()],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(UploadModalComponent);
+    component = fixture.componentInstance;
+    component.targetPath = 'docs';
+    component.visible = true;
+    await settle();
+  });
+
+  it('New folder → type → preview; invalid name gates Upload; clear restores the base', async () => {
+    // A file is selected, so Upload is enabled before any folder is named:
+    // with no file it is disabled anyway and would prove nothing.
+    component.selectedFiles = [makeFile('a.md')];
+    await settle();
+    expect(targetText()).toBe('docs');
+    expect(el('new-folder-input')).toBeNull();
+    expect(uploadButton().disabled).toBe(false);
+
+    // Open the input: the toggle hides, the input appears.
+    el<HTMLButtonElement>('new-folder-toggle', 'button')!.click();
+    await settle();
+    expect(el('new-folder-input')).not.toBeNull();
+    expect(el('new-folder-toggle')).toBeNull();
+
+    // A valid name previews under the base.
+    await type('q4');
+    expect(targetText()).toBe('docs / q4');
+    expect(el('new-folder-hint')).toBeNull();
+    expect(uploadButton().disabled).toBe(false);
+
+    // An invalid name: hint shown, Upload disabled, preview back to the base.
+    await type('a/b');
+    expect(el('new-folder-hint')).not.toBeNull();
+    expect(uploadButton().disabled).toBe(true);
+    expect(targetText()).toBe('docs');
+
+    // A valid name again re-enables Upload.
+    await type('reports');
+    expect(el('new-folder-hint')).toBeNull();
+    expect(uploadButton().disabled).toBe(false);
+    expect(component.getEffectiveTargetPath()).toBe('docs/reports');
+
+    // Clear: the input goes, the toggle returns, the target is the base.
+    el<HTMLButtonElement>('new-folder-clear', 'button')!.click();
+    await settle();
+    expect(el('new-folder-input')).toBeNull();
+    expect(el('new-folder-toggle')).not.toBeNull();
+    expect(targetText()).toBe('docs');
+    expect(component.newFolderName).toBe('');
+  });
+
+  it('the root base previews the root-folder label, then label / name', async () => {
+    component.targetPath = '';
+    await settle();
+    expect(targetText()).toBe('workspace.upload.rootFolder');
+
+    el<HTMLButtonElement>('new-folder-toggle', 'button')!.click();
+    await settle();
+    await type('q4');
+
+    expect(targetText()).toBe('workspace.upload.rootFolder / q4');
+    expect(component.getEffectiveTargetPath()).toBe('q4');
+  });
 });

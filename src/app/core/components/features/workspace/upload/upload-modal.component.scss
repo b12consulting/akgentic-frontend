@@ -53,6 +53,7 @@
 
 .target-path {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1rem;
@@ -69,6 +70,27 @@
   strong {
     color: var(--akg-text);
   }
+}
+
+// The New folder button, or the name input and its clear button, sit on the
+// right of the bar and wrap below the target on a narrow dialog.
+.new-folder {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.new-folder-input {
+  width: 12rem;
+  max-width: 100%;
+  font-size: 0.875rem;
+}
+
+.new-folder-hint {
+  margin-top: -0.5rem;
+  font-size: 0.8rem;
+  color: var(--akg-danger-fg);
 }
 
 .upload-area {

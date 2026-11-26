@@ -1267,6 +1267,7 @@ describe('WorkspaceExplorerComponent', () => {
       // Stub the upload modal ViewChild
       component.uploadModal = {
         getSelectedFiles: () => [new File(['x'], 'b.md')],
+        getEffectiveTargetPath: () => 'docs',
       } as unknown as UploadModalComponent;
 
       // Fresh listing for docs after upload
@@ -1303,6 +1304,7 @@ describe('WorkspaceExplorerComponent', () => {
       component.uploadTargetPath = '';
       component.uploadModal = {
         getSelectedFiles: () => [new File(['x'], 'c.md')],
+        getEffectiveTargetPath: () => '',
       } as unknown as UploadModalComponent;
 
       workspaceServiceSpy.getWorkspaceTree.calls.reset();
@@ -1330,12 +1332,51 @@ describe('WorkspaceExplorerComponent', () => {
     it('scenario 11 — no files selected: no-op (uploadFiles NOT called)', async () => {
       component.uploadModal = {
         getSelectedFiles: () => [],
+        getEffectiveTargetPath: () => '',
       } as unknown as UploadModalComponent;
       workspaceServiceSpy.uploadFiles.calls.reset();
 
       await component.handleUploadComplete();
 
       expect(workspaceServiceSpy.uploadFiles).not.toHaveBeenCalled();
+    });
+
+    it('scenario 11b — a new folder: uploads to the composed path, refreshes the base', async () => {
+      const docs: TreeNode = {
+        label: 'docs',
+        data: fileNode({ name: 'docs', path: 'docs', type: 'directory' }),
+        leaf: false,
+        children: [],
+      };
+      component.treeNodes.set([docs]);
+      component.uploadTargetPath = 'docs';
+      component.uploadModal = {
+        getSelectedFiles: () => [new File(['x'], 'b.md')],
+        getEffectiveTargetPath: () => 'docs/q4',
+      } as unknown as UploadModalComponent;
+
+      workspaceServiceSpy.uploadFiles.calls.reset();
+      workspaceServiceSpy.getWorkspaceTree.calls.reset();
+      workspaceServiceSpy.getWorkspaceTree.and.resolveTo([
+        fileNode({ name: 'q4', path: 'docs/q4', type: 'directory' }),
+      ]);
+
+      await component.handleUploadComplete();
+
+      expect(workspaceServiceSpy.uploadFiles).toHaveBeenCalledOnceWith(
+        'proc',
+        jasmine.any(Array),
+        'docs/q4',
+        undefined
+      );
+      // The base, never the composed path: the tree has no node for `docs/q4`.
+      expect(workspaceServiceSpy.getWorkspaceTree).toHaveBeenCalledOnceWith(
+        'proc',
+        'docs'
+      );
+      expect(component.treeNodes()[0].children?.map((c) => c.label)).toEqual([
+        'q4',
+      ]);
     });
   });
 
@@ -1408,6 +1449,7 @@ describe('WorkspaceExplorerComponent', () => {
       component.uploadTargetPath = 'docs';
       component.uploadModal = {
         getSelectedFiles: () => [new File(['x'], 'b.md')],
+        getEffectiveTargetPath: () => 'docs',
       } as unknown as UploadModalComponent;
       await component.handleUploadComplete();
       expect(workspaceServiceSpy.uploadFiles).toHaveBeenCalledWith(
@@ -1455,6 +1497,7 @@ describe('WorkspaceExplorerComponent', () => {
       component.uploadTargetPath = 'docs';
       component.uploadModal = {
         getSelectedFiles: () => [new File(['x'], 'b.md')],
+        getEffectiveTargetPath: () => 'docs',
       } as unknown as UploadModalComponent;
       await component.handleUploadComplete();
       expect(workspaceServiceSpy.uploadFiles).toHaveBeenCalledWith(

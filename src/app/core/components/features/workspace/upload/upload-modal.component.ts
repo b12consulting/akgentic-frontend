@@ -7,9 +7,11 @@ import {
   ViewChild,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { ButtonModule } from 'primeng/button';
 import { FileUpload, FileUploadModule } from 'primeng/fileupload';
+import { InputTextModule } from 'primeng/inputtext';
 import { ProgressBarModule } from 'primeng/progressbar';
 import { MessageModule } from 'primeng/message';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
@@ -19,9 +21,11 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
   standalone: true,
   imports: [
     CommonModule,
+    FormsModule,
     DialogModule,
     ButtonModule,
     FileUploadModule,
+    InputTextModule,
     ProgressBarModule,
     MessageModule,
     TranslatePipe,
@@ -47,6 +51,34 @@ export class UploadModalComponent {
   uploadProgress = 0;
   errorMessage: string | null = null;
   successMessage: string | null = null;
+
+  /* A folder to create under `targetPath`, named in the dialog. The upload
+   * itself creates it: the backend makes missing parents when it writes. */
+  newFolderOpen = false;
+  newFolderName = '';
+
+  /** The trimmed new-folder name when it is one valid segment, else null. */
+  get newFolderSegment(): string | null {
+    if (!this.newFolderOpen) return null;
+    const name = this.newFolderName.trim();
+    if (name === '' || name === '.' || name === '..') return null;
+    if (name.includes('/') || name.includes('\\')) return null;
+    return name;
+  }
+
+  /** The input is open with a name that cannot be used: block the upload. */
+  get newFolderInvalid(): boolean {
+    return this.newFolderOpen && this.newFolderSegment === null;
+  }
+
+  openNewFolder() {
+    this.newFolderOpen = true;
+  }
+
+  clearNewFolder() {
+    this.newFolderName = '';
+    this.newFolderOpen = false;
+  }
 
   onHide() {
     this.visible = false;
@@ -112,10 +144,18 @@ export class UploadModalComponent {
     this.uploadProgress = 0;
     this.errorMessage = null;
     this.successMessage = null;
+    this.clearNewFolder();
   }
 
   getSelectedFiles(): File[] {
     return this.selectedFiles;
+  }
+
+  /** Where the files go: `targetPath`, plus the new folder when one is named. */
+  getEffectiveTargetPath(): string {
+    const segment = this.newFolderSegment;
+    if (segment === null) return this.targetPath;
+    return this.targetPath === '' ? segment : `${this.targetPath}/${segment}`;
   }
 
   formatFileSize(bytes: number): string {

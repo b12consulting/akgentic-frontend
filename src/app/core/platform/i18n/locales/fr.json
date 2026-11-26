@@ -286,7 +286,11 @@
       "submit": "Envoyer",
       "errNoFiles": "Sélectionnez au moins un fichier à envoyer",
       "errFailed": "Échec de l’envoi des fichiers",
-      "success": "{{count}} fichier(s) envoyé(s)"
+      "success": "{{count}} fichier(s) envoyé(s)",
+      "newFolder": "Nouveau dossier",
+      "newFolderPlaceholder": "Nom du dossier",
+      "newFolderInvalid": "Saisissez un seul nom de dossier, sans / ni \\, autre que . ou ..",
+      "clearNewFolder": "Retirer le nouveau dossier"
     }
   },
   "conversation": {
