@@ -1554,17 +1554,23 @@ export class WorkspaceExplorerComponent {
       return;
     }
 
+    // Read before any await: the modal resets its new-folder name when it
+    // auto-closes, so a later read would lose the folder.
+    const target = this.uploadModal.getEffectiveTargetPath();
+
     try {
       await this.workspaceService.uploadFiles(
         this.processId,
         files,
-        this.uploadTargetPath,
+        target,
         this.workspaceId()
       );
 
-      // Refresh ONLY the directory the user uploaded to — preserves the
-      // rest of the user's expansion state. Root ('') replaces `treeNodes`
-      // wholesale; subdirs are located via `findTreeNodeByPath`.
+      // Refresh the BASE directory, not `target`: a new folder is a child of
+      // the base, and the tree has no node yet for the folder itself, so
+      // refreshing it would find nothing to splice and leave it invisible.
+      // Root ('') replaces `treeNodes` wholesale; subdirs are located via
+      // `findTreeNodeByPath`, preserving the rest of the expansion state.
       await this.refreshDirectory(this.uploadTargetPath);
     } catch (error: any) {
       console.error('Upload failed', error);

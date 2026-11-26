@@ -7,21 +7,32 @@ import {
   ViewChild,
 } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { ButtonModule } from 'primeng/button';
 import { FileUpload, FileUploadModule } from 'primeng/fileupload';
+import { AutoFocusModule } from 'primeng/autofocus';
+import { InputTextModule } from 'primeng/inputtext';
 import { ProgressBarModule } from 'primeng/progressbar';
 import { MessageModule } from 'primeng/message';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
+
+/** A folder name the workspace can create: not empty, not `.` or `..`, no `\`. */
+function isFolderName(name: string): boolean {
+  return name !== '' && name !== '.' && name !== '..' && !name.includes('\\');
+}
 
 @Component({
   selector: 'app-upload-modal',
   standalone: true,
   imports: [
     CommonModule,
+    FormsModule,
     DialogModule,
     ButtonModule,
     FileUploadModule,
+    AutoFocusModule,
+    InputTextModule,
     ProgressBarModule,
     MessageModule,
     TranslatePipe,
@@ -47,6 +58,40 @@ export class UploadModalComponent {
   uploadProgress = 0;
   errorMessage: string | null = null;
   successMessage: string | null = null;
+
+  /* Folders to create under `targetPath`, named in the dialog as `a` or
+   * `a/b`. The upload itself creates them: the backend makes missing parents
+   * when it writes. */
+  newFolderOpen = false;
+  newFolderName = '';
+
+  /**
+   * The new folders as a relative path, normalised (`" a / b/ "` → `a/b`), or
+   * null when the input is closed or any folder name in it is unusable.
+   */
+  get newFolderPath(): string | null {
+    if (!this.newFolderOpen) return null;
+    const names = this.newFolderName
+      .trim()
+      .replace(/^\/+|\/+$/g, '')
+      .split('/')
+      .map((name) => name.trim());
+    return names.every(isFolderName) ? names.join('/') : null;
+  }
+
+  /** The input is open with a name that cannot be used: block the upload. */
+  get newFolderInvalid(): boolean {
+    return this.newFolderOpen && this.newFolderPath === null;
+  }
+
+  openNewFolder() {
+    this.newFolderOpen = true;
+  }
+
+  clearNewFolder() {
+    this.newFolderName = '';
+    this.newFolderOpen = false;
+  }
 
   onHide() {
     this.visible = false;
@@ -75,6 +120,9 @@ export class UploadModalComponent {
       this.errorMessage = this.translate.instant('workspace.upload.errNoFiles');
       return;
     }
+    // An invalid name falls back to the base in getEffectiveTargetPath(), so
+    // an upload past the disabled button would land in the wrong folder.
+    if (this.newFolderInvalid) return;
 
     this.uploading = true;
     this.uploadProgress = 0;
@@ -112,10 +160,18 @@ export class UploadModalComponent {
     this.uploadProgress = 0;
     this.errorMessage = null;
     this.successMessage = null;
+    this.clearNewFolder();
   }
 
   getSelectedFiles(): File[] {
     return this.selectedFiles;
+  }
+
+  /** Where the files go: `targetPath`, plus the new folders when named. */
+  getEffectiveTargetPath(): string {
+    const path = this.newFolderPath;
+    if (path === null) return this.targetPath;
+    return this.targetPath === '' ? path : `${this.targetPath}/${path}`;
   }
 
   formatFileSize(bytes: number): string {

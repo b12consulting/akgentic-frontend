@@ -19,11 +19,59 @@
       <i class="pi pi-folder"></i>
       <span>
         {{ "workspace.upload.target" | translate }}
-        <strong>{{
-          targetPath || ("workspace.upload.rootFolder" | translate)
-        }}</strong>
+        <strong data-testid="upload-target"
+          >{{ targetPath || ("workspace.upload.rootFolder" | translate)
+          }}<ng-container *ngIf="newFolderPath"
+            > / {{ newFolderPath }}</ng-container
+          ></strong
+        >
       </span>
+      <div class="new-folder">
+        <p-button
+          *ngIf="!newFolderOpen"
+          data-testid="new-folder-toggle"
+          icon="pi pi-folder-plus"
+          [text]="true"
+          size="small"
+          [label]="'workspace.upload.newFolder' | translate"
+          (onClick)="openNewFolder()"
+          [disabled]="uploading"
+        />
+        <ng-container *ngIf="newFolderOpen">
+          <input
+            pInputText
+            type="text"
+            class="new-folder-input"
+            data-testid="new-folder-input"
+            [pAutoFocus]="true"
+            [(ngModel)]="newFolderName"
+            [placeholder]="'workspace.upload.newFolderPlaceholder' | translate"
+            [attr.aria-label]="'workspace.upload.newFolderPlaceholder' | translate"
+            [attr.aria-invalid]="newFolderInvalid"
+            [attr.aria-describedby]="newFolderInvalid ? 'new-folder-hint' : null"
+            [disabled]="uploading"
+          />
+          <p-button
+            data-testid="new-folder-clear"
+            icon="pi pi-times"
+            [text]="true"
+            size="small"
+            severity="secondary"
+            [ariaLabel]="'workspace.upload.clearNewFolder' | translate"
+            (onClick)="clearNewFolder()"
+            [disabled]="uploading"
+          />
+        </ng-container>
+      </div>
     </div>
+
+    <small
+      *ngIf="newFolderInvalid"
+      id="new-folder-hint"
+      class="new-folder-hint"
+      data-testid="new-folder-hint"
+      >{{ "workspace.upload.newFolderInvalid" | translate }}</small
+    >
 
     <p-message
       *ngIf="errorMessage"
@@ -96,10 +144,11 @@
         [disabled]="uploading"
       />
       <p-button
+        data-testid="upload-submit"
         [label]="'workspace.upload.submit' | translate"
         icon="pi pi-upload"
         (onClick)="uploadFiles()"
-        [disabled]="selectedFiles.length === 0 || uploading"
+        [disabled]="selectedFiles.length === 0 || uploading || newFolderInvalid"
         [loading]="uploading"
       />
     </div>
