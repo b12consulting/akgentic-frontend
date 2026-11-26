@@ -87,6 +87,7 @@
            — a user who opened the dialog to type would start by closing it.
            `pAutoFocus` re-instantiates with the dialog's content on every
            open, so a reopened dialog focuses again. -->
+      <!-- `[attr.placeholder]`, not `[placeholder]`: only the attribute binding removes it on null. -->
       <input
         type="text"
         pInputText
@@ -95,6 +96,7 @@
         [required]="field.mandatory"
         [pAutoFocus]="isFirst"
         [attr.aria-describedby]="describedByFor(field)"
+        [attr.placeholder]="placeholderFor(field)"
         autocomplete="off"
         [attr.data-test]="'metadata-field-' + field.key"
       />

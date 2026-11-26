@@ -212,6 +212,25 @@ export class TeamMetadataModalComponent implements OnChanges {
   }
 
   /**
+   * The input's placeholder: the field's `default`, when it is a scalar.
+   *
+   * Scalars render verbatim (`String(value)`, so `false` and `0` still show).
+   * A composite or `null` renders nothing: this modal is free text, and JSON
+   * in a placeholder reads as an instruction to type JSON. The value is
+   * catalog data, like `pattern`, so it is never translated.
+   *
+   * PLACEHOLDER, NOT PREFILL: a blank input stays blank, emits no key, and the
+   * server applies the default. `null` removes the attribute entirely.
+   */
+  placeholderFor(field: MetadataFieldDescriptor): string | null {
+    const value = field.default;
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+      return String(value);
+    }
+    return null;
+  }
+
+  /**
    * Confirmation is blocked by a blank MANDATORY field or by a VISIBLE
    * pattern failure. `index` gates nothing, and a contract whose fields are
    * all optional and all match confirms with nothing typed (emitting `{}`,
