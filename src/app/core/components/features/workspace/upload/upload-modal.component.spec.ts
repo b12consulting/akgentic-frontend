@@ -155,6 +155,7 @@ describe('UploadModalComponent', () => {
   for (const [typed, path] of [
     [' a / b ', 'a/b'],
     ['/a/b/', 'a/b'],
+    [' a / b/ ', 'a/b'],
     ['a/b/c', 'a/b/c'],
   ]) {
     it(`nested names are normalised (${JSON.stringify(typed)} → ${path})`, () => {
@@ -318,8 +319,8 @@ describe('UploadModalComponent (rendered template)', () => {
     expect(el('new-folder-hint')).toBeNull();
     expect(uploadButton().disabled).toBe(false);
 
-    // Nested names preview under the base too.
-    await type('hugging-face/test');
+    // Nested names preview under the base too, normalised.
+    await type(' hugging-face / test/ ');
     expect(targetText()).toBe('docs / hugging-face/test');
     expect(el('new-folder-hint')).toBeNull();
     expect(uploadButton().disabled).toBe(false);
