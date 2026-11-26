@@ -43,8 +43,12 @@
             type="text"
             class="new-folder-input"
             data-testid="new-folder-input"
+            [pAutoFocus]="true"
             [(ngModel)]="newFolderName"
             [placeholder]="'workspace.upload.newFolderPlaceholder' | translate"
+            [attr.aria-label]="'workspace.upload.newFolderPlaceholder' | translate"
+            [attr.aria-invalid]="newFolderInvalid"
+            [attr.aria-describedby]="newFolderInvalid ? 'new-folder-hint' : null"
             [disabled]="uploading"
           />
           <p-button
@@ -63,6 +67,7 @@
 
     <small
       *ngIf="newFolderInvalid"
+      id="new-folder-hint"
       class="new-folder-hint"
       data-testid="new-folder-hint"
       >{{ "workspace.upload.newFolderInvalid" | translate }}</small

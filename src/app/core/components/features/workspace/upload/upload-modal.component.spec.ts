@@ -185,6 +185,32 @@ describe('UploadModalComponent', () => {
     expect(component.newFolderInvalid).toBe(false);
     expect(component.getEffectiveTargetPath()).toBe('docs');
   });
+
+  it('uploadFiles() refuses an invalid name instead of uploading to the base', () => {
+    const emitSpy = spyOn(component.uploadComplete, 'emit');
+    component.selectedFiles = [makeFile('a.md')];
+    component.targetPath = 'docs';
+    nameNewFolder('a/b');
+
+    component.uploadFiles();
+
+    expect(emitSpy).not.toHaveBeenCalled();
+    expect(component.successMessage).toBeNull();
+    expect(component.uploading).toBe(false);
+  });
+
+  it('uploadFiles() emits with a valid new-folder name', fakeAsync(() => {
+    const emitSpy = spyOn(component.uploadComplete, 'emit');
+    installFileUploadSpy(component);
+    component.selectedFiles = [makeFile('a.md')];
+    nameNewFolder('q4');
+
+    component.uploadFiles();
+    tick(0);
+    tick(1500);
+
+    expect(emitSpy).toHaveBeenCalledTimes(1);
+  }));
 });
 
 // --------------------------------------------------------------------
@@ -281,6 +307,34 @@ describe('UploadModalComponent (rendered template)', () => {
     expect(el('new-folder-toggle')).not.toBeNull();
     expect(targetText()).toBe('docs');
     expect(component.newFolderName).toBe('');
+  });
+
+  it('opening the input focuses it, and it is labelled and tied to the hint', async () => {
+    // Clicking New folder removes the focused toggle, so without autofocus
+    // keyboard focus would fall to <body>.
+    el<HTMLButtonElement>('new-folder-toggle', 'button')!.click();
+    await settle();
+    // pAutoFocus focuses through a setTimeout — drain it.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    const input = el<HTMLInputElement>('new-folder-input')!;
+    expect(document.activeElement).toBe(input);
+    expect(input.getAttribute('aria-label')).toBe(
+      'workspace.upload.newFolderPlaceholder'
+    );
+
+    // Empty name: invalid, and the hint describes the input.
+    expect(input.getAttribute('aria-invalid')).toBe('true');
+    const hintId = input.getAttribute('aria-describedby');
+    expect(hintId).not.toBeNull();
+    expect(el('new-folder-hint')).not.toBeNull();
+    expect(document.getElementById(hintId!)).toBe(
+      el<HTMLElement>('new-folder-hint')
+    );
+
+    await type('q4');
+    expect(input.getAttribute('aria-invalid')).toBe('false');
+    expect(input.hasAttribute('aria-describedby')).toBe(false);
   });
 
   it('the root base previews the root-folder label, then label / name', async () => {

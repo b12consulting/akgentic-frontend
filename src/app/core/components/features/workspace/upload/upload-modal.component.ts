@@ -11,6 +11,7 @@ import { FormsModule } from '@angular/forms';
 import { DialogModule } from 'primeng/dialog';
 import { ButtonModule } from 'primeng/button';
 import { FileUpload, FileUploadModule } from 'primeng/fileupload';
+import { AutoFocusModule } from 'primeng/autofocus';
 import { InputTextModule } from 'primeng/inputtext';
 import { ProgressBarModule } from 'primeng/progressbar';
 import { MessageModule } from 'primeng/message';
@@ -25,6 +26,7 @@ import { TranslatePipe, TranslateService } from '@ngx-translate/core';
     DialogModule,
     ButtonModule,
     FileUploadModule,
+    AutoFocusModule,
     InputTextModule,
     ProgressBarModule,
     MessageModule,
@@ -107,6 +109,9 @@ export class UploadModalComponent {
       this.errorMessage = this.translate.instant('workspace.upload.errNoFiles');
       return;
     }
+    // An invalid name falls back to the base in getEffectiveTargetPath(), so
+    // an upload past the disabled button would land in the wrong folder.
+    if (this.newFolderInvalid) return;
 
     this.uploading = true;
     this.uploadProgress = 0;
