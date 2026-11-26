@@ -21,8 +21,8 @@
         {{ "workspace.upload.target" | translate }}
         <strong data-testid="upload-target"
           >{{ targetPath || ("workspace.upload.rootFolder" | translate)
-          }}<ng-container *ngIf="newFolderSegment"
-            > / {{ newFolderSegment }}</ng-container
+          }}<ng-container *ngIf="newFolderPath"
+            > / {{ newFolderPath }}</ng-container
           ></strong
         >
       </span>

@@ -288,8 +288,8 @@
       "errFailed": "Failed to upload files",
       "success": "Uploaded {{count}} file(s)",
       "newFolder": "New folder",
-      "newFolderPlaceholder": "Folder name",
-      "newFolderInvalid": "Enter one folder name, without / or \\, other than . or ..",
+      "newFolderPlaceholder": "Folder or folder/subfolder",
+      "newFolderInvalid": "Folder names cannot be empty, . or .., or contain \\",
       "clearNewFolder": "Remove new folder"
     }
   },

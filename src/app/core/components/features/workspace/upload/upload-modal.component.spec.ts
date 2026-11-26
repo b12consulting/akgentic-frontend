@@ -127,23 +127,42 @@ describe('UploadModalComponent', () => {
     expect(component.getEffectiveTargetPath()).toBe('docs');
   });
 
-  it('root base + segment: the effective target is the bare segment', () => {
+  it('root base + new folder: the effective target is the bare folder', () => {
     component.targetPath = '';
     nameNewFolder('q4');
     expect(component.getEffectiveTargetPath()).toBe('q4');
   });
 
-  it('nested base + segment: the effective target is base/segment', () => {
+  it('nested base + new folder: the effective target is base/folder', () => {
     component.targetPath = 'docs/reports';
     nameNewFolder('q4');
     expect(component.getEffectiveTargetPath()).toBe('docs/reports/q4');
   });
 
-  it('the segment is trimmed', () => {
+  it('the new folder name is trimmed', () => {
     component.targetPath = 'docs';
     nameNewFolder('  q4  ');
     expect(component.getEffectiveTargetPath()).toBe('docs/q4');
   });
+
+  it('nested new folders: the effective target is base/folder/subfolder', () => {
+    component.targetPath = 'tmp';
+    nameNewFolder('hugging-face/test');
+    expect(component.newFolderInvalid).toBe(false);
+    expect(component.getEffectiveTargetPath()).toBe('tmp/hugging-face/test');
+  });
+
+  for (const [typed, path] of [
+    [' a / b ', 'a/b'],
+    ['/a/b/', 'a/b'],
+    ['a/b/c', 'a/b/c'],
+  ]) {
+    it(`nested names are normalised (${JSON.stringify(typed)} → ${path})`, () => {
+      component.targetPath = '';
+      nameNewFolder(typed);
+      expect(component.getEffectiveTargetPath()).toBe(path);
+    });
+  }
 
   it('clearing the new folder brings the target back to the base', () => {
     component.targetPath = 'docs';
@@ -156,7 +175,18 @@ describe('UploadModalComponent', () => {
     expect(component.getEffectiveTargetPath()).toBe('docs');
   });
 
-  for (const invalid of ['', '   ', 'a/b', 'a\\b', '.', '..']) {
+  for (const invalid of [
+    '',
+    '   ',
+    '/',
+    'a//b',
+    'a/ /b',
+    'a\\b',
+    '.',
+    '..',
+    'a/../b',
+    'a/./b',
+  ]) {
     it(`an invalid name (${JSON.stringify(invalid)}) leaves the target on the base and blocks upload`, () => {
       component.targetPath = 'docs';
       nameNewFolder(invalid);
@@ -190,7 +220,7 @@ describe('UploadModalComponent', () => {
     const emitSpy = spyOn(component.uploadComplete, 'emit');
     component.selectedFiles = [makeFile('a.md')];
     component.targetPath = 'docs';
-    nameNewFolder('a/b');
+    nameNewFolder('a//b');
 
     component.uploadFiles();
 
@@ -288,8 +318,14 @@ describe('UploadModalComponent (rendered template)', () => {
     expect(el('new-folder-hint')).toBeNull();
     expect(uploadButton().disabled).toBe(false);
 
+    // Nested names preview under the base too.
+    await type('hugging-face/test');
+    expect(targetText()).toBe('docs / hugging-face/test');
+    expect(el('new-folder-hint')).toBeNull();
+    expect(uploadButton().disabled).toBe(false);
+
     // An invalid name: hint shown, Upload disabled, preview back to the base.
-    await type('a/b');
+    await type('a//b');
     expect(el('new-folder-hint')).not.toBeNull();
     expect(uploadButton().disabled).toBe(true);
     expect(targetText()).toBe('docs');

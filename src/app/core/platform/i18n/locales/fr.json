@@ -288,8 +288,8 @@
       "errFailed": "Échec de l’envoi des fichiers",
       "success": "{{count}} fichier(s) envoyé(s)",
       "newFolder": "Nouveau dossier",
-      "newFolderPlaceholder": "Nom du dossier",
-      "newFolderInvalid": "Saisissez un seul nom de dossier, sans / ni \\, autre que . ou ..",
+      "newFolderPlaceholder": "Dossier ou dossier/sous-dossier",
+      "newFolderInvalid": "Un nom de dossier ne peut pas être vide, . ou .., ni contenir \\",
       "clearNewFolder": "Retirer le nouveau dossier"
     }
   },

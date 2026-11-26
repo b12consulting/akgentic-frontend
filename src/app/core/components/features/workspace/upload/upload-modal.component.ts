@@ -17,6 +17,11 @@ import { ProgressBarModule } from 'primeng/progressbar';
 import { MessageModule } from 'primeng/message';
 import { TranslatePipe, TranslateService } from '@ngx-translate/core';
 
+/** A folder name the workspace can create: not empty, not `.` or `..`, no `\`. */
+function isFolderName(name: string): boolean {
+  return name !== '' && name !== '.' && name !== '..' && !name.includes('\\');
+}
+
 @Component({
   selector: 'app-upload-modal',
   standalone: true,
@@ -54,23 +59,29 @@ export class UploadModalComponent {
   errorMessage: string | null = null;
   successMessage: string | null = null;
 
-  /* A folder to create under `targetPath`, named in the dialog. The upload
-   * itself creates it: the backend makes missing parents when it writes. */
+  /* Folders to create under `targetPath`, named in the dialog as `a` or
+   * `a/b`. The upload itself creates them: the backend makes missing parents
+   * when it writes. */
   newFolderOpen = false;
   newFolderName = '';
 
-  /** The trimmed new-folder name when it is one valid segment, else null. */
-  get newFolderSegment(): string | null {
+  /**
+   * The new folders as a relative path, normalised (`" a / b/ "` → `a/b`), or
+   * null when the input is closed or any folder name in it is unusable.
+   */
+  get newFolderPath(): string | null {
     if (!this.newFolderOpen) return null;
-    const name = this.newFolderName.trim();
-    if (name === '' || name === '.' || name === '..') return null;
-    if (name.includes('/') || name.includes('\\')) return null;
-    return name;
+    const names = this.newFolderName
+      .trim()
+      .replace(/^\/+|\/+$/g, '')
+      .split('/')
+      .map((name) => name.trim());
+    return names.every(isFolderName) ? names.join('/') : null;
   }
 
   /** The input is open with a name that cannot be used: block the upload. */
   get newFolderInvalid(): boolean {
-    return this.newFolderOpen && this.newFolderSegment === null;
+    return this.newFolderOpen && this.newFolderPath === null;
   }
 
   openNewFolder() {
@@ -156,11 +167,11 @@ export class UploadModalComponent {
     return this.selectedFiles;
   }
 
-  /** Where the files go: `targetPath`, plus the new folder when one is named. */
+  /** Where the files go: `targetPath`, plus the new folders when named. */
   getEffectiveTargetPath(): string {
-    const segment = this.newFolderSegment;
-    if (segment === null) return this.targetPath;
-    return this.targetPath === '' ? segment : `${this.targetPath}/${segment}`;
+    const path = this.newFolderPath;
+    if (path === null) return this.targetPath;
+    return this.targetPath === '' ? path : `${this.targetPath}/${path}`;
   }
 
   formatFileSize(bytes: number): string {
