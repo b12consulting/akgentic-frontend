@@ -3,6 +3,18 @@
  */
 
 /**
+ * Any value JSON can carry — a closed, recursive union, so a consumer narrows
+ * it with `typeof` rather than trusting an `any`.
+ */
+export type JsonValue =
+  | string
+  | number
+  | boolean
+  | null
+  | JsonValue[]
+  | { [key: string]: JsonValue };
+
+/**
  * One declared field of a team's metadata contract.
  *
  * Mirrors the catalog backend's `MetadataFieldDescriptor` DTO. The first four
@@ -29,6 +41,11 @@
  * `is_title` is optional and nullable for the same two reasons as `pattern`.
  * `undefined`, `null` and `false` all mean exactly the same thing: THIS FIELD
  * IS NOT THE TITLE.
+ *
+ * `default` is optional and nullable for the same two reasons as `pattern`;
+ * `undefined` and `null` both mean NO DEFAULT TO SHOW. It is the value the
+ * server stores when the key is omitted, as JSON. Only a scalar is rendered,
+ * as the input's placeholder.
  */
 export interface MetadataFieldDescriptor {
   key: string;
@@ -54,6 +71,7 @@ export interface MetadataFieldDescriptor {
    * the "whichever key came first" nondeterminism the rule exists to avoid.
    */
   is_title?: boolean | null;
+  default?: JsonValue | null;
 }
 
 /**

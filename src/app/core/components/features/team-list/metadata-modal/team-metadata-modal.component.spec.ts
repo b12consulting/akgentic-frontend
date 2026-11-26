@@ -1007,4 +1007,144 @@ describe('TeamMetadataModalComponent', () => {
     );
     expect(patternError('tenant')).toBeNull();
   });
+
+  // -------------------------------------------------------------------------
+  // 64.1 — a scalar default renders as the input placeholder
+  //
+  // Every spec below passes `default` through `overrides`; the factory does not
+  // default it, so every spec above keeps exercising the absent-key branch an
+  // older server sends.
+  // -------------------------------------------------------------------------
+
+  it('(64.1 AC2) a string default renders verbatim as the placeholder', async () => {
+    await open(contract([field('folder', { default: 'Documents' })]));
+
+    expect(input('folder').getAttribute('placeholder')).toBe('Documents');
+  });
+
+  it('(64.1 AC3) a number default renders as its string form', async () => {
+    await open(contract([field('retries', { default: 3 })]));
+
+    expect(input('retries').getAttribute('placeholder')).toBe('3');
+  });
+
+  it('(64.1 AC3) a false default renders "false" — a falsy default is still a default', async () => {
+    await open(contract([field('vip', { default: false })]));
+
+    expect(input('vip').getAttribute('placeholder')).toBe('false');
+  });
+
+  it('(64.1 AC4) a null default renders no placeholder attribute', async () => {
+    await open(contract([field('folder', { default: null })]));
+
+    expect(input('folder').hasAttribute('placeholder')).toBeFalse();
+  });
+
+  it('(64.1 AC4) an absent default renders no placeholder attribute', async () => {
+    await open(contract([field('folder')]));
+
+    expect(input('folder').hasAttribute('placeholder')).toBeFalse();
+  });
+
+  it('(64.1 AC4) an object default renders no placeholder attribute', async () => {
+    await open(contract([field('folder', { default: { a: 1 } })]));
+
+    expect(input('folder').hasAttribute('placeholder')).toBeFalse();
+  });
+
+  it('(64.1 AC4) an array default renders no placeholder attribute', async () => {
+    await open(contract([field('folder', { default: ['x'] })]));
+
+    expect(input('folder').hasAttribute('placeholder')).toBeFalse();
+  });
+
+  it('(64.1 AC5) the placeholder carries no prefix and is never translated', async () => {
+    await open(contract([field('folder', { default: 'Documents' })]));
+
+    // Exact, not `toContain`: an `e.g. ` or `Default: ` prefix, or a translate
+    // key, must fail here.
+    expect(input('folder').getAttribute('placeholder')).toBe('Documents');
+  });
+
+  it('(64.1 AC6) a blank field showing a placeholder emits no key', async () => {
+    await open(contract([field('tenant'), field('folder', { default: 'Documents' })]));
+    const emissions: Record<string, string>[] = [];
+    component.confirmed.subscribe((value) => emissions.push(value));
+
+    type('tenant', 'acme');
+    component.onConfirm();
+
+    expect(emissions[0]).toEqual({ tenant: 'acme' });
+    expect('folder' in emissions[0]).toBeFalse();
+  });
+
+  it('(64.1 AC6) an all-blank contract whose fields carry defaults emits {}', async () => {
+    await open(
+      contract([
+        field('folder', { default: 'Documents' }),
+        field('retries', { default: 3 }),
+      ]),
+    );
+    const emissions: Record<string, string>[] = [];
+    component.confirmed.subscribe((value) => emissions.push(value));
+
+    component.onConfirm();
+
+    expect(emissions[0]).toEqual({});
+  });
+
+  it('(64.1 AC7) a typed value replaces the default in the emission', async () => {
+    await open(contract([field('folder', { default: 'Documents' })]));
+    const emissions: Record<string, string>[] = [];
+    component.confirmed.subscribe((value) => emissions.push(value));
+
+    type('folder', '  Archive  ');
+    component.onConfirm();
+
+    expect(emissions[0]).toEqual({ folder: 'Archive' });
+  });
+
+  it('(64.1 AC8) a placeholder never satisfies a mandatory field', async () => {
+    await open(
+      contract([
+        field('tenant', { mandatory: true, default: 'acme', description: 'Tenant code' }),
+      ]),
+    );
+
+    expect(component.canConfirm).toBeFalse();
+    expect((el('metadata-confirm') as HTMLButtonElement).disabled).toBeTrue();
+    expect(el('metadata-blocked-hint')?.textContent).toContain('Tenant code');
+  });
+
+  it('(64.1 AC9) a default failing its own pattern is never checked while the field is blank', async () => {
+    await open(contract([field('folder', { default: 'Documents', pattern: '^[a-z]+$' })]));
+    const emissions: Record<string, string>[] = [];
+    component.confirmed.subscribe((value) => emissions.push(value));
+
+    blur('folder');
+    expect(patternError('folder')).toBeNull();
+
+    component.onConfirm();
+    fixture.detectChanges();
+
+    expect(patternError('folder')).toBeNull();
+    expect(emissions.length).toBe(1);
+    expect('folder' in emissions[0]).toBeFalse();
+  });
+
+  it('(64.1 AC10) the label stays the description, never the default', async () => {
+    await open(
+      contract([field('folder', { description: 'Workspace folder', default: 'Documents' })]),
+    );
+
+    expect(el('metadata-label-folder')?.textContent?.trim()).toBe('Workspace folder');
+  });
+
+  it('(64.1 AC10) the label falls back to the capitalised key, never the default', async () => {
+    await open(contract([field('folder', { description: '', default: 'Documents' })]));
+
+    const label = el('metadata-label-folder')?.textContent?.trim();
+    expect(label).toBe('Folder');
+    expect(label).not.toContain('Documents');
+  });
 });
